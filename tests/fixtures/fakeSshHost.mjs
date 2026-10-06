@@ -55,7 +55,9 @@ async function main() {
     // `instance` tells this start from any other, even one Windows gave the same PID; the launch script ignores it.
     instance: randomUUID(),
     // FAKE_HOST_BEFORE_BOOT_MARK stands in for a host release from before the 'boot' mark, which records only a launch script's start.
-    ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}) }
+    ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}),
+    // The address Tailscale Serve carries the host's tailnet listener at, which the real host records once Serve is on.
+    ...(process.env.FAKE_HOST_TAILNET_ADDRESS ? { tailnetAddress: process.env.FAKE_HOST_TAILNET_ADDRESS } : {}) }
   await publishDescriptor(descriptor)
   process.on('SIGTERM', () => server.close(async () => { await fs.rm(lockPath, { force: true }); process.exit(0) }))
 }

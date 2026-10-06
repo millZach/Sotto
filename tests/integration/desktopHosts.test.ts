@@ -43,6 +43,8 @@ let beforeStopReply: () => Promise<void> = async () => undefined
 /** What the fixture host answers to each operation of an update; by default it has none. */
 const noUpdates = async (): Promise<SshHostUpdateResult> => { throw new Error('This fixture host has no update.') }
 let updateHost: (operation: SshHostUpdateOperation) => Promise<SshHostUpdateResult> = noUpdates
+/** When set, the launch script's desktop-answers step fails with this. */
+let desktopAnswersFailure: Error | undefined
 /** Start at boot as the fixture's launch finds it (ADR-0054); absent unless a test says. */
 let bootStart: BootStatus | undefined
 /** What the fixture host answers to a start at boot operation; by default it has none. Every one it was asked is in `boots`. */
@@ -102,7 +104,7 @@ class FixtureSsh extends SshHostLauncher {
     return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE,
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
-      ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId),
+      ensureDesktopAnswers: async clientId => { if (desktopAnswersFailure) throw desktopAnswersFailure; await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId) },
       revokeClient: async clientId => { operations.push(`${which} revoke-client`); if (revokeError) throw revokeError; if (revokeFails) throw new SshFailure('revoke-failed'); return adminRevoke(clientId) },
       hostAdminToken: async () => (JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }).adminToken,
       stopHost: async () => { operations.push(`${which} stop-host`); stops.push(reportedHostId); await beforeStopReply(); if (stopResult instanceof Error) throw stopResult; return stopResult },
@@ -123,7 +125,7 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates
+  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined
   operations.length = 0; hostRunning = true; bootLeftOnStop = false; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0
   manager = newManager()
   await manager.start()
@@ -267,6 +269,42 @@ describe('desktop remote host management over a real socket', () => {
     const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
     try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
     expect(host.pairing.list()).toHaveLength(1)
+  })
+
+  it('records a desktop that may already answer as a desktop on its next SSH connect, so the host’s tailnet listener knows it (ADR-0053)', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    // Granted before this build, so its grant is there and no record of desktops is.
+    await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, paired.clientId)
+    await rm(join(root, 'remote', 'desktop-clients.json'))
+    const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
+    try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(JSON.parse(await readFile(join(root, 'remote', 'desktop-clients.json'), 'utf8'))).toEqual([paired.clientId])
+  })
+
+  it('keeps the connection of a desktop that may already answer when recording it as a desktop fails, and retries nothing', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, paired.clientId)
+    // The step that used to be skipped for this desktop fails the way a failed SSH request does, which would be final.
+    desktopAnswersFailure = new SshFailure('permission-setup-failed')
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(scheduled).toEqual([])
+  })
+
+  it('still fails the connect of a desktop that cannot answer yet when its grant cannot be written', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    desktopAnswersFailure = new SshFailure('permission-setup-failed')
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('error'))
+    expect(scheduled).toEqual([])
   })
 
   it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {

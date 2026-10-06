@@ -1,6 +1,7 @@
 import { HOST_NODE_MAJOR } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
+import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
 
 /**
  * The launch script: fixed Node source the desktop pipes to one `ssh` command per operation. It finds or
@@ -18,6 +19,10 @@ import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
  * install before host updates) or versions side by side under `versions/<X.Y.Z>/`, with a `current` file
  * naming the one to start (ADR-0040). The script starts the version `current` names when it is there, and
  * the flat install otherwise, so an install from before this keeps starting as it did.
+ *
+ * A launch reports the host's tailnet address and who started it, as the host's descriptor records them (ADR-0053).
+ * `desktop-answers`, which every SSH connect runs once the desktop's paired client ID is confirmed, also records that
+ * client as a desktop in `desktop-clients.json`, which is how the host's tailnet listener tells a desktop from a phone.
  *
  * An update is three operations the desktop runs in turn, each under the folder's update lock:
  * `update-fetch` downloads the release archive and its checksum on the host; `update-install` checks the
@@ -50,6 +55,9 @@ const descriptorPath = path.join(data, 'host-listener.json');
 // Written by launch scripts before a host recorded its own start. Read so a host started that way stays stoppable; never written.
 const legacyLauncherPath = path.join(data, 'host-launcher.json');
 const lockPath = path.join(data, 'host-listener.lock');
+const desktopsPath = path.join(data, ${JSON.stringify(DESKTOP_CLIENTS_FILE)});
+// Only an address the host's Serve setting could carry, on the owner's tailnet: https on a MagicDNS name, with its port.
+const TAILNET_ADDRESS = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net:\d{1,5}$/;
 const RELEASE = /^\d+\.\d+\.\d+$/;
 const ARCHIVE = /^Sotto-host-\d+\.\d+\.\d+-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/;
 const versionsPath = path.join(install, 'versions');
@@ -121,7 +129,11 @@ const discover = async () => {
   const legacy = await readLegacyLauncher();
   // A host its start at boot unit started is Sotto's as much as one this script started (ADR-0054).
   const owned = descriptor.startedBy === 'launch-script' || descriptor.startedBy === 'boot' || (!!legacy && legacy.pid === live.pid);
-  return { v: 1, status: 'ready', hostId: live.hostId, pid: live.pid, port: live.port, owned };
+  const about = {
+    ...(typeof descriptor.tailnetAddress === 'string' && descriptor.tailnetAddress.length <= 300 && TAILNET_ADDRESS.test(descriptor.tailnetAddress) ? { tailnetAddress: descriptor.tailnetAddress } : {}),
+    ...(typeof descriptor.startedBy === 'string' && /^[a-z-]{1,32}$/.test(descriptor.startedBy) ? { startedBy: descriptor.startedBy } : {}),
+  };
+  return { v: 1, status: 'ready', hostId: live.hostId, pid: live.pid, port: live.port, owned, ...about };
 };
 // Whether something already listens on the host's fixed port, which a host that could not start was asked to use.
 const portAnswers = port => new Promise(resolve => {
@@ -392,6 +404,32 @@ const admin = async () => {
     return finish({ type: 'pairing-code', code: value.code, expiresAt: value.expiresAt, hostId: value.hostId });
   } catch { return finish({ type: 'failed' }); }
 };
+// Records a confirmed paired client as a desktop, for the host's tailnet listener (ADR-0053). Only this script, over the
+// owner's SSH session, ever adds one. Written whole and renamed into place, so the host never reads half a file, and read
+// back, so two connects recording at once both stay. A record that cannot be written costs only the tailnet connection,
+// which falls back to SSH and records again there, so it never fails the grant.
+// Missing is nobody yet. A file that could not be read is never written over, since that would drop every other desktop
+// it names: the read is tried again, as a rename in progress can refuse it for a moment on some systems, and if it still
+// fails the file is left alone and the next connect records this one. A file that reads but holds no list already counts
+// nobody on the host, which never rewrites it, so this desktop starts it again.
+const readDesktops = async () => {
+  let text;
+  try { text = await fs.readFile(desktopsPath, 'utf8'); } catch (error) { return error && error.code === 'ENOENT' ? [] : undefined; }
+  try { const value = JSON.parse(text); return Array.isArray(value) ? value.filter(id => typeof id === 'string' && id.length > 0 && id.length <= ${DESKTOP_CLIENT_ID_MAX}) : []; }
+  catch { return []; }
+};
+const recordDesktop = async clientId => {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const ids = await readDesktops();
+    if (!ids) { await pause(25 + Math.floor(Math.random() * 50)); continue; }
+    if (ids.includes(clientId)) return;
+    const temporary = desktopsPath + '.' + process.pid + '.' + crypto.randomUUID() + '.tmp';
+    try {
+      await fs.writeFile(temporary, JSON.stringify([...ids, clientId].slice(-${DESKTOP_CLIENTS_MAX})) + '\n', { mode: 0o600 });
+      await fs.rename(temporary, desktopsPath);
+    } catch { await fs.rm(temporary, { force: true }).catch(() => undefined); await pause(25 + Math.floor(Math.random() * 50)); }
+  }
+};
 // The authenticated SSH account establishes its desktop's default authority, through the same policy
 // records the running host reads. One conditional write preserves revoked decisions and works with
 // existing host archives, without exposing a new grant operation to paired socket clients.
@@ -402,6 +440,7 @@ const desktopAnswers = async () => {
   try {
     const paired = JSON.parse(await fs.readFile(path.join(data, 'paired-clients.json'), 'utf8'));
     if (!Array.isArray(paired.clients) || !paired.clients.some(client => client.clientId === cfg.clientId)) return finish({ type: 'failed' });
+    await recordDesktop(cfg.clientId);
     const file = path.join(data, 'memory.sqlite');
     if (!(await fs.stat(file)).isFile()) return finish({ type: 'failed' });
     const { DatabaseSync } = require('node:sqlite');

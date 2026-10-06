@@ -1,4 +1,5 @@
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink } from 'node:fs/promises'
+import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
@@ -18,6 +19,8 @@ import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
 import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
+import { DesktopClients } from './desktopClients'
+import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 
 export interface HeadlessHostOptions {
@@ -127,15 +130,44 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
     let phones: HostPhoneAccess | undefined
+    const descriptorPath = join(directory, 'host-listener.json')
+    // The launch script reads the descriptor on every connect, while the host may be writing it again for a new tailnet
+    // address, so it is written whole to a private temporary file and renamed into place: a reader never sees half of it.
+    const descriptorStore = new AtomicJsonStore<Record<string, unknown>>(descriptorPath, value => value as Record<string, unknown>, () => ({}))
+    /** Whether the host writes its descriptor: from its listener's start until it closes. */
+    let describing = false
+    /** The tailnet address the descriptor last recorded, set only once a write succeeded, so a failed one is tried again. */
+    let recordedAddress: string | undefined
+    let descriptorWrites: Promise<void> = Promise.resolve()
+    const writeDescriptor = (): Promise<void> => {
+      // Each write starts after the last one settles either way, so one that failed never stops the ones after it.
+      const write = descriptorWrites.catch(() => undefined).then(async () => {
+        if (!listener || !describing) return
+        const tailnetAddress = phones?.address()
+        await descriptorStore.write({ ...listener.descriptor, adminToken: listener.adminToken,
+          ...(options.startedBy ? { startedBy: options.startedBy } : {}), ...(tailnetAddress ? { tailnetAddress } : {}) })
+        recordedAddress = tailnetAddress
+      })
+      descriptorWrites = write
+      return write
+    }
+    const about = () => ({ tailnetAddress: phones?.address(), startedBy: options.startedBy })
     try {
       await pairing.load()
       if (options.port !== undefined) {
-        // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry; this one,
-        // with the administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
+        // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
+        // retried command twice (ADR-0053).
+        const receipts = new CommandReceipts()
+        // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
+        // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
+        // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
+          desktops: new DesktopClients(directory, options.log), listener: { signIns, clientUpdates: true, receipts, about },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: phones.administration,
+        const tailnet = phones
+        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
+          receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
@@ -143,12 +175,12 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           },
         })
         const { peers } = listener
-        peersConnected = () => peers() > 0
-        // Written beside it and moved into place, so a launch script reading it never finds it half written.
-        const descriptorPath = join(directory, 'host-listener.json'), written = `${descriptorPath}.${process.pid}.tmp`
-        await writeFile(written, JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
-        await chmod(written, 0o600)
-        await rename(written, descriptorPath)
+        // A desktop or phone on the tailnet listener is a window in front as much as one through SSH is.
+        peersConnected = () => peers() > 0 || tailnet.peers() > 0
+        describing = true
+        await writeDescriptor()
+        // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
+        tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
     } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
@@ -160,13 +192,15 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         closing ??= (async () => {
           signIns.close()
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
+          // The descriptor is no longer written from here on, so the one removed below stays removed.
           try { await phones?.close() } catch { options.log?.('phone-access-close-failed') }
+          describing = false
+          await descriptorWrites.catch(() => undefined)
           try { await listener?.close() } finally {
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
-                const path = join(directory, 'host-listener.json')
-                try { const current = JSON.parse(await readFile(path, 'utf8')) as { adminToken?: string }; if (current.adminToken === listener.adminToken) await unlink(path) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') options.log?.('host-descriptor-cleanup-failed') }
+                try { const current = JSON.parse(await readFile(descriptorPath, 'utf8')) as { adminToken?: string }; if (current.adminToken === listener.adminToken) await unlink(descriptorPath) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') options.log?.('host-descriptor-cleanup-failed') }
               }
             }
           }
