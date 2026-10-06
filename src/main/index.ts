@@ -753,7 +753,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostSetupTools = hostSetupTools
   hostSetup.useTools(threadId => hostSetupTools.revoke(threadId))
   providerJobs.useTools(threadId => hostSetupTools.revoke(threadId))
-  agentHost.useHostSetupTools(hostSetupTools)
+  agentHost.useThreadTools([hostSetupTools])
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)

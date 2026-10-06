@@ -36,7 +36,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const host = {
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
-    useBrowserTools: idle, useHostSetupTools: idle,
+    useBrowserTools: idle, useThreadTools: idle,
     // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
     setMutationGuard: idle, gitActionFinished: async () => undefined,
     dispose: idle, disconnect: idle, close: async () => undefined,

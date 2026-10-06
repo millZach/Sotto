@@ -1,5 +1,5 @@
 import type { BrowserAgentTools } from './browserAgentServer'
-import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
+import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
@@ -155,8 +155,8 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
 export class ClaudeStreamJsonHost implements AgentHost {
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
-  private hostSetupTools: ScopedThreadTools | undefined
-  useHostSetupTools(tools: ScopedThreadTools): void { this.hostSetupTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -945,11 +945,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!resume && alias.origins.length) throw new Error('Claude native history is unavailable. Restore its session before continuing; Sotto will not recreate or resend an uncertain turn.')
     const browser = alias.kind !== 'personal' ? await this.browserTools?.mcpServer(id) : undefined
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    // A host setup thread also gets the host setup tools, while its setup runs; every other thread gets none.
-    const setup = alias.kind !== 'personal' ? await this.hostSetupTools?.mcpServer(id) : undefined
+    // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs, and the
+    // visual tool while visuals are on. A personal chat gets none.
+    const scoped = alias.kind !== 'personal' ? await scopedThreadServers(this.threadTools, id) : []
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     const servers = [...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
-      ...(setup ? [{ server: setup, definitions: this.hostSetupTools?.definitions ?? [] }] : [])]
+      ...scoped.map(({ server, tools }) => ({ server, definitions: tools.definitions }))]
+    // The longest wait any offered server needs: a host setup check can wait 5 minutes, a browser action 6.
+    const toolTimeoutMs = Math.max(0, ...(browser ? [360_000] : []), ...scoped.map(({ tools }) => tools.timeoutMs ?? 0))
     const mcpConfig = servers.length ? join(this.options.userDataPath, `claude-mcp-${randomUUID()}.json`) : undefined
     if (mcpConfig) {
       try {
@@ -965,7 +968,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       ...(alias.kind === 'personal' ? ['--append-system-prompt', this.personalContexts.get(id) ?? personalContext()] : []),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), contextMemoryIds: new Set(this.personalMemories.get(id)?.map(memory => memory.id)), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(setup ? { MCP_TOOL_TIMEOUT: '600000' } : browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), contextMemoryIds: new Set(this.personalMemories.get(id)?.map(memory => memory.id)), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
         // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others

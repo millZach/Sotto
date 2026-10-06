@@ -130,7 +130,7 @@ const WRITE_WINDOW_MS = 250
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
-  useHostSetupTools(tools: ScopedThreadTools): void { this.inner.useHostSetupTools?.(tools) }
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   private readonly store: AtomicJsonStore<Workspace>

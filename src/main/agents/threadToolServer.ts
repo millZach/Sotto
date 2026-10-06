@@ -115,10 +115,23 @@ export class ThreadToolServer {
 
 /**
  * A tool server only some threads get: `mcpServer` answers undefined for every other thread, so an adapter asks for
- * it at each launch and offers nothing when there is nothing to offer. The host setup tools are one (ADR-0035).
+ * it at each launch and offers nothing when there is nothing to offer. The host setup tools are one (ADR-0035), and
+ * the visual tool another (ADR-0055). An adapter is handed every one of them as a list.
  */
 export interface ScopedThreadTools {
   readonly name: string
   readonly definitions: readonly ThreadToolDefinition[]
+  /** How long one call may take before the client gives up, when that is longer than the client's own default. */
+  readonly timeoutMs?: number
   mcpServer(threadId: string): Promise<ThreadMcpServer | undefined>
+}
+
+/** The servers of `tools` this thread is given, in list order, each beside the tools that serve it. */
+export async function scopedThreadServers(tools: readonly ScopedThreadTools[], threadId: string): Promise<{ server: ThreadMcpServer; tools: ScopedThreadTools }[]> {
+  const servers: { server: ThreadMcpServer; tools: ScopedThreadTools }[] = []
+  for (const entry of tools) {
+    const server = await entry.mcpServer(threadId)
+    if (server) servers.push({ server, tools: entry })
+  }
+  return servers
 }

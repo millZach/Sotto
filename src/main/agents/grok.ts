@@ -1,6 +1,6 @@
 import { ProviderUnavailable } from './providerProblem'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
-import type { ScopedThreadTools } from './threadToolServer'
+import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
@@ -152,16 +152,20 @@ export interface GrokAcpOptions {
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
 export class GrokAcpHost implements AgentHost {
-  private browserHttp = false
+  /** Whether this Grok client takes HTTP MCP servers, which is how every one of Sotto's tool servers is reached. */
+  private httpToolServers = false
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
-  private hostSetupTools: ScopedThreadTools | undefined
-  useHostSetupTools(tools: ScopedThreadTools): void { this.hostSetupTools = tools }
-  /** Sotto's own tool servers for this thread: the browser's, and the host setup tools while its setup runs (ADR-0035). */
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  /**
+   * Sotto's own tool servers for this thread: the browser's, the host setup tools while its setup runs (ADR-0035), and
+   * the visual tool while visuals are on (ADR-0055).
+   */
   private async toolServers(id: string) {
-    if (this.aliases[id]?.kind === 'personal' || !this.browserHttp) return []
-    const setup = await this.hostSetupTools?.mcpServer(id)
-    return [...(this.browserTools ? [await this.browserTools.mcpServer(id)] : []), ...(setup ? [setup] : [])]
+    if (this.aliases[id]?.kind === 'personal' || !this.httpToolServers) return []
+    const browser = this.browserTools ? [await this.browserTools.mcpServer(id)] : []
+    return [...browser, ...(await scopedThreadServers(this.threadTools, id)).map(({ server }) => server)]
   }
   private showRequest(pending: Pending): void {
     if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.answering = true; pending.request.delivery = 'uncertain'; this.answeredRequests.add(pending.request.id) }
@@ -169,10 +173,16 @@ export class GrokAcpHost implements AgentHost {
   }
   /** Grok's prompt for one of this thread's own Sotto tool servers, answered here rather than shown (ADR-0020, ADR-0035). */
   private toolAdmission(pending: Pending): unknown {
-    if (!pending.permission || !this.browserHttp || this.aliases[pending.threadId]?.kind === 'personal') return undefined
-    // The host setup tools are answered the same way: adding asks the user in the thread itself (ADR-0035).
-    return (this.browserTools ? grokBrowserAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name)) : undefined)
-      ?? (this.hostSetupTools ? grokBrowserAdmission(pending, this.hostSetupTools.name, this.hostSetupTools.definitions.map(tool => tool.name)) : undefined)
+    if (!pending.permission || !this.httpToolServers || this.aliases[pending.threadId]?.kind === 'personal') return undefined
+    // Each scoped server is answered the same way, by its own name: adding a host asks the user in the thread itself
+    // (ADR-0035), and a visual changes nothing outside the thread (ADR-0055).
+    const browser = this.browserTools ? grokBrowserAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name)) : undefined
+    if (browser !== undefined) return browser
+    for (const entry of this.threadTools) {
+      const answer = grokBrowserAdmission(pending, entry.name, entry.definitions.map(tool => tool.name))
+      if (answer !== undefined) return answer
+    }
+    return undefined
   }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
@@ -340,7 +350,7 @@ export class GrokAcpHost implements AgentHost {
   }
   /** The provider's facts come from the newest client Sotto accepted, never from an older thread process. */
   private applyClient(client: GrokClient): void {
-    this.browserHttp = client.agentCapabilities.mcpCapabilities?.http === true
+    this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http === true
     this.state.version = `${client._meta.agentVersion} / ACP ${GROK_ACP_VERSION}`
     if (compareClientVersions(client._meta.agentVersion, GROK_CLI_VERSION) > 0) this.state.verifiedVersion = GROK_CLI_VERSION
     else delete this.state.verifiedVersion
