@@ -41,6 +41,8 @@ let beforeStopReply: () => Promise<void> = async () => undefined
 /** What the fixture host answers to each operation of an update; by default it has none. */
 const noUpdates = async (): Promise<SshHostUpdateResult> => { throw new Error('This fixture host has no update.') }
 let updateHost: (operation: SshHostUpdateOperation) => Promise<SshHostUpdateResult> = noUpdates
+/** When set, the launch script's desktop-answers step fails with this. */
+let desktopAnswersFailure: Error | undefined
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 /** Revokes the way the launch script does, through the host's admin endpoint, which closes the revoked peer before replying. */
 async function adminRevoke(clientId: string): Promise<boolean> {
@@ -74,7 +76,7 @@ class FixtureSsh extends SshHostLauncher {
     return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] },
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
-      ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId),
+      ensureDesktopAnswers: async clientId => { if (desktopAnswersFailure) throw desktopAnswersFailure; await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId) },
       revokeClient: adminRevoke,
       hostAdminToken: async () => (JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }).adminToken,
       stopHost: async () => { stops.push(reportedHostId); await beforeStopReply(); if (stopResult instanceof Error) throw stopResult; return stopResult },
@@ -94,7 +96,7 @@ beforeEach(async () => {
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates
+  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined
   manager = newManager()
   await manager.start()
 })
@@ -236,6 +238,28 @@ describe('desktop remote host management over a real socket', () => {
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
     await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
     expect(JSON.parse(await readFile(join(root, 'remote', 'desktop-clients.json'), 'utf8'))).toEqual([paired.clientId])
+  })
+
+  it('keeps the connection of a desktop that may already answer when recording it as a desktop fails, and retries nothing', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, paired.clientId)
+    // The step that used to be skipped for this desktop fails the way a failed SSH request does, which would be final.
+    desktopAnswersFailure = new SshFailure('permission-setup-failed')
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    expect(scheduled).toEqual([])
+  })
+
+  it('still fails the connect of a desktop that cannot answer yet when its grant cannot be written', async () => {
+    const remote = connection()
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Sotto desktop')
+    await credentials.set('remote-host:' + remote.id, paired.token)
+    desktopAnswersFailure = new SshFailure('permission-setup-failed')
+    await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
+    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('error'))
+    expect(scheduled).toEqual([])
   })
 
   it('saves, pairs itself, selects, sends only to the remote host and revokes on Forget', async () => {

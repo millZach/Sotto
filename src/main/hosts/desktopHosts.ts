@@ -805,8 +805,11 @@ export class DesktopHosts {
     // Use the host's authenticated client identity, never a saved or renderer-supplied ID. The SSH
     // account establishes the default only when this client has no policy history (ADR-0025), and
     // records it as a desktop on every connect, so the host's tailnet listener knows it, a desktop
-    // paired before that record existed included (ADR-0053).
-    await active.tunnel!.ensureDesktopAnswers(hello.clientId)
+    // paired before that record existed included (ADR-0053). For a desktop that may already answer,
+    // only that record is at stake, and the next SSH connect writes it again, so a failed step never
+    // ends a connection that used to skip it.
+    if (hello.capabilities.mayAnswer) await active.tunnel!.ensureDesktopAnswers(hello.clientId).catch(() => undefined)
+    else await active.tunnel!.ensureDesktopAnswers(hello.clientId)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId
