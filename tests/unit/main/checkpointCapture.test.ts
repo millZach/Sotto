@@ -164,6 +164,18 @@ describe('checkpoint capture', () => {
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
 
+  it('holds no verdict over a listing that timed out or could not be started, which may pass', async () => {
+    const f = await fixture({ repository: false })
+    const failures = [Object.assign(new Error('Command failed: git ls-files'), { killed: true, code: null, signal: 'SIGTERM' }),
+      Object.assign(new Error('spawn EMFILE'), { code: 'EMFILE' })]
+    for (const failure of failures) {
+      const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+        git: async (_cwd, args) => { if (args[0] === 'ls-files') throw failure; throw Object.assign(new Error('not a repository'), { code: 128 }) } })
+      await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toBe(failure)
+      expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+    }
+  })
+
   it('does not hold a verdict for a failure that may pass, such as a file that could not be read', async () => {
     const f = await fixture()
     vi.spyOn(fsPromises, 'readFile').mockImplementationOnce((...args) => typeof args[0] === 'string' && args[0].startsWith(f.repo)

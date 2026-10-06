@@ -40,8 +40,16 @@ interface Folder {
 type Outcome = BigIntStats | 'name' | 'invalid' | 'link' | null
 const storablePath = fileRelativePathSchema.refine(value => value.length > 0)
 
-/** An error from `git ls-files` itself: the folder cannot be listed, so it cannot be captured. */
+/** A listing Git refused: the folder cannot be listed, so it cannot be captured. */
 class ListingFailure extends Error {}
+/**
+ * A listing Git refused outright: it exited with an error of its own (the folder is not a repository) or its list
+ * outgrew the buffer. A timeout, or a process that could not be started, may pass, so it is not a verdict.
+ */
+const refusedByGit = (error: unknown): boolean => {
+  const failure = error as { code?: unknown; killed?: boolean }
+  return typeof failure.code === 'number' && !failure.killed || failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+}
 
 /**
  * Run `work` over `items`, at most `limit` at once, results in item order. After a failure no further item starts,
@@ -166,6 +174,7 @@ export class CheckpointCapture {
   private async walk(root: string, folder: Folder, reuse: boolean, started: bigint): Promise<CapturedSnapshot> {
     const { git } = this.options
     const raw = await git(root, ['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']).catch(error => {
+      if (!refusedByGit(error)) throw error
       throw Object.assign(new ListingFailure(error instanceof Error ? error.message : 'Git could not list this working copy.'), { cause: error })
     })
     const paths = [...new Set(raw.split('\0').filter(Boolean))].sort()
