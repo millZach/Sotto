@@ -4,6 +4,7 @@ import { providerIdSchema } from './agents'
 import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
+import type { BootStatus } from './bootStart'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -89,6 +90,8 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   startedBy?: string | undefined
   /** The host's phone access as its hello reported it on a tailnet connection, where nothing reads it over SSH. */
   phoneAccess?: { status: 'off' | 'starting' | 'on' | 'needs-you'; phones: number } | undefined
+  /** Start at boot on the host, as this connection last found it (ADR-0054). */
+  bootStart?: BootStatus | undefined
 }
 /** A model the host setup thread can run on: one of this computer's ready models. */
 export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string }

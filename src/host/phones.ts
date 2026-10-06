@@ -55,6 +55,8 @@ export interface HostPhoneAccess {
 }
 
 const NO_PAGE = 'Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.'
+/** For the first 5 minutes after a host starts, its phone access looks again at a Tailscale that is missing or a Serve that failed. */
+export const HOST_START_RETRY_WINDOW_MS = 5 * 60_000
 const NOT_SAVED = 'Phone access could not be saved on this host. Nothing was changed. Try again.'
 const TAILNET_NOT_SAVED = 'Tailnet connections could not be saved on this host. Nothing was changed. Try again.'
 
@@ -89,6 +91,8 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     settings: () => current, policy: options.policy,
     // A host has no browser. The desktop asks for the page with `open-serve-setup` and opens it itself.
     openExternal: async () => { throw new Error(NO_PAGE) },
+    // A host its boot unit started may come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+    startRetryWindowMs: HOST_START_RETRY_WINDOW_MS,
     listener: { ...options.listener, desktops: options.desktops, phoneAccess: (): HostPhoneAccessSummary => phoneAccessSummary(access.brief()), onRevoked: revoked },
     ...(options.log ? { log: options.log } : {}),
   })

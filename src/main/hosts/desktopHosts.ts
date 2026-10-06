@@ -12,7 +12,7 @@ import { TailnetStore } from './tailnetStore'
 import { hostTailnetSetting, settingAddress, settingNote, TailnetSettingRefused, type HostTailnetSetting } from './hostTailnetSetting'
 import type { HostHello } from '../../shared/hostProtocol'
 import { validateSshHost } from './sshConfiguration'
-import { SshFailure, SshHostLauncher, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
+import { SshFailure, SshHostLauncher, type SshBootResult, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
 import { failureStep } from './sshFailure'
 import { SignInStopped, type PressConnection } from './adminConnection'
 import { AdminConnections, type AdminSignInReport } from './adminConnections'
@@ -53,6 +53,8 @@ export interface HostUpdateSource {
 }
 /** The launch script's answers to a restart that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'update-stop-failed', 'update-busy', 'update-missing', 'update-invalid'])
+/** The launch script's answers to a start at boot change that it gave before stopping anything, so the host runs as it did. */
+const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'boot-stop-failed', 'update-busy', 'archive-missing'])
 /** The commands that act on one saved host's connection, which wait while that host is being updated. */
 const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'set-connection', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
@@ -84,7 +86,9 @@ interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: num
  * decides, never the message.
  */
 const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(['ssh-missing', 'ssh-too-old', 'auth-failed', 'host-key-changed', 'host-key-rejected',
-  'identity-file-unreadable', 'prompt-unanswered', 'tailscale-unapproved', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid', 'permission-setup-failed'])
+  'identity-file-unreadable', 'prompt-unanswered', 'tailscale-unapproved', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid', 'permission-setup-failed',
+  // A boot unit that would not start the host, or kept failing, needs its journal read on the host; retrying only starts it again (ADR-0054).
+  'boot-start-refused', 'boot-unit-failed'])
 /** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
 class FinalHostError extends Error {}
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
@@ -288,7 +292,37 @@ export class DesktopHosts {
       throw error
     }
   }
-  private async restartOver(host: SavedHost, connection: PressConnection, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
+  private restartOver(host: SavedHost, connection: PressConnection, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
+    return this.restartOnPurpose(host, () => connection.updateHost({ op: 'update-restart', version }, options),
+      result => result.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
+  }
+  /**
+   * Start at boot for a saved host (ADR-0054): installs its unit, or removes it, over the SSH connection the host is on or
+   * an admin connection. Removing starts the host again only when the saved host is switched on, so a host that is
+   * switched off stays stopped. Either may stop the host this computer is connected to on purpose, so its drop is not a
+   * lost connection: its threads stay on the Threads page reading Reconnecting, and this computer connects again, as after
+   * an update's restart. A failure the host reports comes back as its `error` result.
+   */
+  async setBootStart(id: string, action: 'install' | 'remove'): Promise<SshBootResult> {
+    const host = this.saved.find(item => item.id === id)
+    if (!host) throw new Error('This host is no longer saved. Nothing was changed.')
+    const busy = this.updates?.busy(id)
+    if (busy) throw new Error(busy)
+    if (!this.live.has(id) || this.status.get(id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before changing whether its host starts at boot. Nothing was changed.`)
+    return this.press(host, connection => this.restartOnPurpose(host, async () => {
+      const result = await connection.boot(action === 'install' ? { op: 'boot-install' } : { op: 'boot-remove', restart: host.enabled !== false })
+      if (result.type !== 'error') this.update(id, { bootStart: result.bootStart })
+      return result
+    }, result => result.type === 'error' ? UNTOUCHED_BOOT_CHANGES.has(result.reason) : result.type === 'boot-status' || !result.stopped))
+  }
+  /**
+   * Runs an operation that may stop the host this computer is connected to on purpose: an update's restart, or a change to
+   * start at boot. Its drop is not a lost connection, so the host's threads stay on the Threads page reading Reconnecting
+   * until a new connection takes their place, and the promise waits for the first connect. When nothing was stopped,
+   * because the operation was never sent or `untouched` says the host answered before stopping anything, the same
+   * connection carries on and the threads read as they did.
+   */
+  private async restartOnPurpose<T>(host: SavedHost, operation: () => Promise<T>, untouched: (result: T) => boolean): Promise<T> {
     const id = host.id
     const active = this.live.get(id)
     if (!active) throw new SshFailure('not-connected', `${host.name} is not connected. Nothing was changed.`)
@@ -296,14 +330,11 @@ export class DesktopHosts {
     this.clearRetry(id)
     const registered = active.registeredHostId
     this.hold(id, active)
-    let result: SshHostUpdateResult | undefined, unsent = false
-    try { result = await connection.updateHost({ op: 'update-restart', version }, options); return result }
+    let result: { readonly value: T } | undefined, unsent = false
+    try { result = { value: await operation() }; return result.value }
     catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
     finally {
-      // Nothing was stopped: the restart was never sent, or the host refused it before stopping anything. The same
-      // connection carries on, and the threads read as they did.
-      const untouched = unsent || (result?.type === 'error' && UNTOUCHED_RESTARTS.has(result.reason))
-      if (untouched && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
+      if ((unsent || (result !== undefined && untouched(result.value))) && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
         active.closing = false
         if (registered) { this.held.delete(id); active.registeredHostId = registered; this.options.router.setReconnecting(registered, false) }
       } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
@@ -506,9 +537,13 @@ export class DesktopHosts {
     if (active) active.closing = true
     // A connect still under way, or one already lost, ends first: the revoke goes over a connection of its own. A connect
     // past its SSH sign-in but still pairing or opening its socket is under way too, and would close that SSH under the press.
+    // Read before the disconnect below, which clears what the row knew of start at boot.
+    const unit = this.status.get(host.id)?.bootStart?.installed === true
     if (!(this.reachable(host.id) && this.onSsh(host.id))) await this.disconnect(host.id)
     let cause: HostForgottenCause | undefined, stopFailed = false
     try {
+      // A host that is not running has its boot unit taken away by the admin connection's own launch, which then fails
+      // with `host-not-running`: there is nothing to revoke on, but the forgotten host must not start at the next boot.
       await this.press(host, async connection => {
         // Any answer is a revoke: `revoked: false` says the host no longer knew this computer. Only the launch script's own
         // failure is the host refusing, which leaves it running; a request that never got an answer is the host not reached,
@@ -516,10 +551,16 @@ export class DesktopHosts {
         const failure = host.clientId ? await connection.revokeClient(host.clientId).then(() => undefined, (error: unknown) => error ?? new Error('The revoke failed.')) : undefined
         if (failure instanceof SshFailure && failure.code === 'revoke-failed') { cause = 'refused'; return }
         if (failure) cause = 'unreachable'
+        // Then its boot unit, so a forgotten host does not come back at the next boot (ADR-0054). Removing it starts nothing
+        // and stops a host the unit runs. One that could not be removed stays on the host; Forget does not say so yet,
+        // which item 7 of the tailnet plan, Start at boot's own surface, takes on.
+        if (unit || connection.bootStart?.installed) await connection.boot({ op: 'boot-remove', restart: false }).catch(() => undefined)
         if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
-      })
+      }, { removeBoot: true })
     } catch (error) {
-      if (error instanceof SignInStopped) return this.keepAfterForget(host, active)
+      // Forget's admin connection goes with its stopped sign-in: it signs in to take a stopped host's boot unit away, and
+      // the next press, which wants no such thing, opens one of its own.
+      if (error instanceof SignInStopped) { await this.admins.close(host.id); return this.keepAfterForget(host, active) }
       cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
     }
     if (stopFailed) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
@@ -803,7 +844,7 @@ export class DesktopHosts {
           this.clearRetry(host.id)
           this.releaseHeld(host.id)
           // Its version, when it said one, is what lets the Threads page offer to update it (ADR-0040).
-          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message, version })
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message, version, bootStart: active.ssh.bootStart })
           return
         }
       }
@@ -1036,9 +1077,10 @@ export class DesktopHosts {
     active.registeredHostId = hello.hostId
     this.clearRetry(host.id)
     // A host on its tailnet connection says itself whether the launch script started it, which Stop host needs.
-    const owned = active.ssh ? active.ssh.owned === true : hello.startedBy === 'launch-script'
+    const owned = active.ssh ? active.ssh.owned === true : hello.startedBy === 'launch-script' || hello.startedBy === 'boot'
+    // Start at boot comes with a launch; a tailnet connection has none, and keeps what the last one said.
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via, startedBy: hello.startedBy,
-      phoneAccess: active.ssh ? undefined : hello.phoneAccess })
+      phoneAccess: active.ssh ? undefined : hello.phoneAccess, ...(active.ssh ? { bootStart: active.ssh.bootStart } : {}) })
   }
   /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
   private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
@@ -1219,11 +1261,11 @@ export class DesktopHosts {
    * by the first press and shared until a minute after the last. An admin connection starts no host: one that is not
    * running fails the press.
    */
-  private press<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T> {
+  private press<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>, admin: { readonly removeBoot?: boolean } = {}): Promise<T> {
     const ssh = this.onSsh(host.id)
     if (ssh) return press(ssh)
     if (this.closed || !this.saved.includes(host)) return Promise.reject(new Error(`${host.name} is no longer saved. Nothing was changed.`))
-    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId }, async connection => { await this.writePendingGrant(host, connection); return press(connection) })
+    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId, ...admin }, async connection => { await this.writePendingGrant(host, connection); return press(connection) })
   }
   /**
    * The desktop grant a tailnet connection found missing, written over the next admin connection, the only place besides
@@ -1279,7 +1321,7 @@ export class DesktopHosts {
     }
     const status = this.status.get(id)
     if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version
-      delete status.via; delete status.tailnetNote; delete status.phoneAccess; status.phase = 'disconnected'; this.emit() }
+      delete status.bootStart; delete status.via; delete status.tailnetNote; delete status.phoneAccess; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer

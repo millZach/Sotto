@@ -5,7 +5,7 @@ import type { SshHostConnection } from './sshLauncher'
  * administrative routes on the port the connection forwards with the token its launch read. It is the host's SSH
  * connection while the socket is on it, and otherwise its admin connection.
  */
-export type PressConnection = Pick<SshHostConnection, 'url' | 'hostId' | 'owned' | 'revokeClient' | 'hostAdminToken' | 'stopHost' | 'updateHost' | 'ensureDesktopAnswers'>
+export type PressConnection = Pick<SshHostConnection, 'url' | 'hostId' | 'owned' | 'revokeClient' | 'hostAdminToken' | 'stopHost' | 'updateHost' | 'ensureDesktopAnswers' | 'bootStart' | 'boot'>
 
 /** How long an admin connection stays open after its last press finishes. */
 export const ADMIN_IDLE_MS = 60_000
@@ -131,12 +131,13 @@ export class AdminConnection {
   private view(open: Open): PressConnection {
     const connection = open.connection
     return {
-      url: connection.url, hostId: connection.hostId, owned: connection.owned,
+      url: connection.url, hostId: connection.hostId, owned: connection.owned, ...(connection.bootStart ? { bootStart: connection.bootStart } : {}),
       revokeClient: clientId => connection.revokeClient(clientId),
       ensureDesktopAnswers: clientId => connection.ensureDesktopAnswers(clientId),
       hostAdminToken: () => connection.hostAdminToken(),
       stopHost: async () => { try { return await connection.stopHost() } finally { this.end(open) } },
       updateHost: (operation, options) => connection.updateHost(operation, options),
+      boot: operation => connection.boot(operation),
     }
   }
 }

@@ -4,7 +4,7 @@ import { connect, createServer, Server } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { parseHostArguments, startHeadlessHost } from '../../src/host'
+import { parseHostArguments, startHeadlessHost, type HostStartedBy } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { standInTailscale } from '../fixtures/standInTailscale'
 import type { PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
@@ -15,7 +15,7 @@ afterEach(async () => {
   if (root && dirname(root) === tmpdir()) await rm(root, { recursive: true, force: true })
   root = undefined
 })
-async function start(options: { startedBy?: 'launch-script'; tailscale?: PhoneAccessTailscale } = {}) {
+async function start(options: { startedBy?: HostStartedBy; tailscale?: PhoneAccessTailscale } = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-host-listener-'))
   host = await startHeadlessHost({ dataDirectory: root, port: 0, ...options, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
@@ -85,4 +85,9 @@ it('keeps both its listeners on loopback with tailnet connections on, and the ad
     const response = await fetch(`http://127.0.0.1:${tailnetPort}/v1/admin/${route}`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: '{}' })
     expect(response.status).toBe(400)
   }
+})
+it('reads the mark its start at boot unit sets too, and records it in its descriptor as a start by Sotto (ADR-0054)', async () => {
+  expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'boot' })).toEqual({ dataDirectory: resolve('data'), port: 0, startedBy: 'boot' })
+  await start({ startedBy: 'boot' })
+  expect(JSON.parse(await readFile(join(root!, 'host-listener.json'), 'utf8'))).toMatchObject({ startedBy: 'boot', pid: process.pid })
 })

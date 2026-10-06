@@ -61,6 +61,7 @@ class FixtureSsh extends SshHostLauncher {
       hostAdminToken: async () => (await descriptor()).adminToken,
       stopHost: async () => { operations.push(`${which} stop-host`); return true },
       updateHost: async () => { throw new Error('This fixture host has no update.') },
+      boot: async () => { throw new Error('This fixture host has no start at boot.') },
     }
   }
   override async disconnect(): Promise<void> { this.disconnected = true }
