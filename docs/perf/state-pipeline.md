@@ -162,7 +162,10 @@ the host's publishes (one copy of the workspace each) and the store's writes. Th
 | `workspace.json` writes | 48-53 | 1 |
 
 Provider publishes are now gathered into a 16 ms window and provider writes into a 250 ms one; the first
-publish of a burst still goes out at once, so a reply appearing is as immediate as it was. The fixture
+publish of a burst still goes out at once, so a reply appearing is as immediate as it was. Since #771 a
+publish that brings a message's first words or a new activity record also goes out at once inside a window,
+here, in the coordinator and at the IPC boundary, so a reply's first words no longer wait out the window its
+prompt's echo opened (`2026-10-06-first-words-to-bridge.md`). The fixture
 workspace is small, so each copy costs about 13 us here; on the folder measured above, where one copy is
 4.5 ms, the same burst is the difference between roughly 9 s of copying and 60 ms.
 

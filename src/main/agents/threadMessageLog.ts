@@ -170,6 +170,12 @@ export class ThreadMessageLog {
     return id === undefined ? {} : { lastUserMessageId: id }
   }
   count(threadId: string): number { return this.track(threadId).order.length }
+  /** How many messages are recorded across every thread. A message's first words move it; a later chunk does not. */
+  recorded(): number {
+    let count = 0
+    for (const track of this.tracks.values()) count += track.order.length
+    return count
+  }
   has(threadId: string, messageId: string): boolean { return this.track(threadId).ids.has(messageId) }
   userMessageIds(threadId: string): readonly string[] { return this.track(threadId).userIds }
   lastUserMessageId(threadId: string): string | undefined { return this.track(threadId).userIds.at(-1) }

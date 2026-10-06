@@ -892,9 +892,10 @@ export class WorkspaceHost implements AgentHost {
     this.eventSourced = typeof inner.subscribeEvents === 'function'
     this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
       if (!this.ready || this.deliveryStopped) return
+      const records = this.activityRecordCount()
       this.accept(snapshot)
       this.writeSoon()
-      this.publishSoon()
+      this.publishSoon(this.activityRecordCount() > records)
     }, { historyFromEvents: this.eventSourced }))
     const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
       if (!this.deliveryStopped) this.recordEvent(threadId, event)
@@ -1112,7 +1113,7 @@ export class WorkspaceHost implements AgentHost {
     if (waiting) waiting.push(event)
     else this.pendingEvents.set(threadId, [event])
     this.eventChanged.add(threadId)
-    if (this.ready) this.publishSoon()
+    if (this.ready) this.publishSoon(event.kind === 'message-added')
   }
   /** Write what the events said. Called before anything reads the store, and at every publish. */
   private writeEvents(force = false): void {
@@ -1546,15 +1547,29 @@ export class WorkspaceHost implements AgentHost {
    * A publish the providers asked for. The first of a burst goes out at once, so a reply appearing
    * still feels immediate, and everything inside the window behind it becomes one publish at its
    * end with the last state. No adapter can make the host copy the workspace per event.
+   *
+   * `opening` is a change that starts something the window has not seen: a message's first words or a
+   * new activity record. It goes out at once even inside a window, and opens a fresh one behind it, so
+   * the first words of a reply never wait behind the echo of the prompt that asked for it. Later chunks
+   * of the same message still ride the window.
    */
-  private publishSoon(): void {
-    if (this.publishTimer) { this.publishPending = true; return }
+  private publishSoon(opening = false): void {
+    if (this.publishTimer) {
+      if (!opening) { this.publishPending = true; return }
+      clearTimeout(this.publishTimer); this.publishTimer = undefined; this.publishPending = false
+    }
     this.publish()
     this.publishTimer = setTimeout(() => {
       this.publishTimer = undefined
       if (this.publishPending) { this.publishPending = false; this.publishSoon() }
     }, PUBLISH_WINDOW_MS)
     this.publishTimer.unref?.()
+  }
+  /** Every activity record the workspace holds, so a provider snapshot that brought a new one can say so. */
+  private activityRecordCount(): number {
+    let count = 0
+    for (const thread of this.state.snapshot.threads) count += thread.activities?.length ?? 0
+    return count
   }
   /** A cache write the providers asked for: never more than one waiting, and the state it finds
    * when it runs is the one that is written. */

@@ -125,3 +125,18 @@ describe('the append path a provider rail is handed to', () => {
     expect(log.messages('t').map(item => item.text)).toEqual(['Ask', 'Partial reply'])
   })
 })
+
+describe('the count a publisher reads to tell a message’s first words from a chunk', () => {
+  it('moves when a message says something for the first time, and not when it grows', () => {
+    const log = new ThreadMessageLog()
+    expect(log.recorded()).toBe(0)
+    log.add('a', message('prompt', 'user', 'Ask'))
+    log.add('a', message('reply', 'assistant', ''))
+    expect(log.recorded()).toBe(1)
+    log.appendText('a', 'reply', 'First words')
+    expect(log.recorded()).toBe(2)
+    log.appendText('a', 'reply', ' and more')
+    log.add('b', message('other', 'user', 'Elsewhere'))
+    expect(log.recorded()).toBe(3)
+  })
+})

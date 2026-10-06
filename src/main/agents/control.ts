@@ -35,7 +35,7 @@ import { AttachmentStore, inlineStager, type StageInline } from './attachmentSto
 import type { ThreadTitleExchange } from '../llm/threadTitle'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
+import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
 import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
@@ -893,8 +893,27 @@ export class AgentControl {
     for (const turn of this.feedbackReady) turn.firstFeedbackAtMs ??= Date.now()
     this.feedbackReady.clear()
     // The first publish of a burst is never held back; anything during the window rides the trailing run.
-    if (this.broadcastOpen) this.broadcastPending = true
-    else this.broadcast()
+    // So is a thread a window is looking at starting a message or an activity record: the first words of a
+    // reply must not wait behind the echo of the prompt that asked for it.
+    if (this.broadcastOpen && !this.detailOpened()) { this.broadcastPending = true; return }
+    if (this.broadcastOpen) { this.broadcastCancel?.(); this.broadcastCancel = null; this.broadcastOpen = false }
+    this.broadcast()
+  }
+  /**
+   * Whether a thread whose detail a window holds has a newer message or activity record at its end than the
+   * one the window was sent. Only the ends are compared, so a chunk added to a message already sent is not
+   * an opening, and the check costs nothing like the diff the broadcast makes.
+   */
+  private detailOpened(): boolean {
+    if (!this.detailListeners.size) return false
+    for (const [threadId, held] of this.detailSnapshots) {
+      const thread = this.state.host.threads.find(item => item.id === threadId)
+      if (!thread) continue
+      if (thread.messages.at(-1)?.id !== held.messages.at(-1)?.id) return true
+      const activities = this.paneActivities(thread)
+      if (activities !== undefined && activities.at(-1)?.id !== held.activities?.at(-1)?.id) return true
+    }
+    return false
   }
   private broadcast(): void {
     if (this.disposed) return
@@ -3416,6 +3435,11 @@ export interface CoalescedThreadDetailPublisher {
  * holds — so a lane folds what is waiting into one update where it can (two appends to one message become
  * one) and keeps them in order where it cannot. Whole details still supersede everything before them.
  * A lane that goes quiet is dropped; the next update opens a fresh one.
+ *
+ * A delta that brings a message or an activity record the lane has not sent yet is not held either: it
+ * goes at once, with whatever was waiting ahead of it, and opens a fresh window. The echo of a prompt opens
+ * a window just before the reply's first words, and those words are what the person is waiting to see.
+ * Later chunks of a message already sent coalesce as before, so the window still updates at a bounded rate.
  */
 export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDetailUpdate) => void,
   options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedThreadDetailPublisher {
@@ -3423,16 +3447,24 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
   const schedule = options.schedule ?? realPublishScheduler
   // `sending` holds back an update published while the lane is sending, such as the change a whole read
   // made inside `send` flushes first: sent at once it would reach later listeners ahead of the one being sent.
-  const lanes = new Map<string, { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean }>()
+  // `sent` is every message and activity record this lane has sent, which is what makes a later one new.
+  type Lane = { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean; opening?: boolean; sent: Set<string> }
+  const lanes = new Map<string, Lane>()
   let disposed = false
   const flushLane = (threadId: string): void => {
-    const lane = lanes.get(threadId) ?? { cancel: null, pending: [] }
+    const lane = lanes.get(threadId) ?? { cancel: null, pending: [], sent: new Set<string>() }
     lanes.set(threadId, lane)
     lane.cancel?.()
-    const queued = lane.pending
-    lane.pending = []
     lane.sending = true
-    try { for (const update of queued) send(update) } finally { lane.sending = false }
+    try {
+      // An opening that arrives while this lane is sending goes out in the same flush, after what was ahead of it.
+      do {
+        lane.opening = false
+        const queued = lane.pending
+        lane.pending = []
+        for (const update of queued) { remember(lane, update); send(update) }
+      } while (lane.opening && !disposed)
+    } finally { lane.sending = false }
     if (disposed) return
     lane.cancel = schedule(() => { lane.cancel = null; if (lane.pending.length > 0) flushLane(threadId); else lanes.delete(threadId) }, intervalMs)
   }
@@ -3445,13 +3477,32 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
         const merged = held === undefined ? null : mergeAgentThreadDetailUpdates(held, update)
         if (merged === null) lane.pending.push(update)
         else lane.pending[lane.pending.length - 1] = merged
+        if (opens(lane, update)) {
+          if (lane.sending) lane.opening = true
+          else flushLane(update.threadId)
+        }
         return
       }
-      const open = lane ?? { cancel: null, pending: [] }
+      const open = lane ?? { cancel: null, pending: [], sent: new Set<string>() }
       lanes.set(update.threadId, open)
       open.pending.push(update)
       flushLane(update.threadId)
     },
     dispose: () => { disposed = true; for (const lane of lanes.values()) lane.cancel?.(); lanes.clear() },
   }
+}
+/** Whether a delta brings a message or an activity record this lane has not sent. A whole detail never opens. */
+function opens(lane: { sent: ReadonlySet<string> }, update: AgentThreadDetailUpdate): boolean {
+  if (!isAgentThreadDetailDelta(update)) return false
+  return update.messageDeltas.some(item => 'message' in item && !lane.sent.has(`m:${item.message.id}`))
+    || update.activityDeltas.some(item => 'record' in item && !lane.sent.has(`a:${item.record.id}`))
+}
+function remember(lane: { sent: Set<string> }, update: AgentThreadDetailUpdate): void {
+  if (isAgentThreadDetailDelta(update)) {
+    for (const item of update.messageDeltas) lane.sent.add(`m:${'message' in item ? item.message.id : item.id}`)
+    for (const item of update.activityDeltas) lane.sent.add(`a:${'record' in item ? item.record.id : item.id}`)
+    return
+  }
+  for (const message of update.messages) lane.sent.add(`m:${message.id}`)
+  for (const record of update.activities ?? []) lane.sent.add(`a:${record.id}`)
 }

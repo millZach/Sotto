@@ -9,14 +9,27 @@ import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../../src/shared/settings'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import type { ThreadHostEvent } from '../../../src/main/agents/host'
+import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { expectWithinBudget, PERF_ASSERT } from '../../fixtures/perfBudget'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
 
-async function fixture() {
+/** A provider that says what changed, the way every adapter's message log does. */
+class EventProviderHost extends FakeProviderHost {
+  private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
+  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void {
+    this.eventListeners.add(listener)
+    return () => { this.eventListeners.delete(listener) }
+  }
+  publish(threadId: string, event: ThreadEvent): void {
+    for (const listener of this.eventListeners) listener({ threadId, event })
+  }
+}
+
+async function fixture<T extends FakeProviderHost = FakeProviderHost>(adapter: T = new FakeProviderHost() as T) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-workspace-flood-'))
-  const adapter = new FakeProviderHost()
   const host = new WorkspaceHost(adapter, root)
   cleanup.push(async () => {
     host.disconnect()
@@ -174,5 +187,29 @@ describe('workspace publish coalescing', () => {
     expect(published.at(-1)).toBe('Named by hand')
     expect(write).toHaveBeenCalledTimes(1) // the waiting provider write was covered by this one
     expect(JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title).toBe('Named by hand')
+  })
+
+  it('publishes a message’s first words at once inside a window, and holds the chunks after them for it', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    // Everything below runs inside one task, so no window can close while it does.
+    f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'prompt', role: 'user', text: 'Which colour?', createdAt: at } })
+    expect(published).toBe(1)
+    f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'reply', role: 'assistant', text: 'Ind', createdAt: at } })
+    expect(published).toBe(2)
+    for (const appendText of ['igo', ' it', ' is.']) f.adapter.publish(id, { kind: 'message-text-appended', at, messageId: 'reply', appendText })
+    expect(published).toBe(2)
+    // A new activity record is an opening too; a change to it is not.
+    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running' }]
+    f.adapter.emit()
+    expect(published).toBe(3)
+    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running', output: 'ok' }]
+    f.adapter.emit()
+    expect(published).toBe(3)
+    // The held chunks and the record's change leave on the window's trailing publish, with the last state.
+    await expect.poll(() => published).toBe(4)
   })
 })

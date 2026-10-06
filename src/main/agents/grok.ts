@@ -3,7 +3,7 @@ import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer
 import type { ScopedThreadTools } from './threadToolServer'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { openedCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -194,7 +194,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  })
+  }, () => openedCount(this.log, this.threads.values()))
   /**
    * One ACP process per thread session, the way T3 Code runs Grok. The provider itself holds none between a
    * connect and the next: each thread's live work and requests go to its own process, one process exiting

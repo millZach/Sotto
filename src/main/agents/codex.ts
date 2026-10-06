@@ -2,7 +2,7 @@ import { sameMessageContent } from '../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { openedCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
 import { bracketCompaction } from './compactionActivity'
@@ -180,7 +180,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  })
+  }, () => openedCount(this.log, this.threads.values()))
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
   /**
