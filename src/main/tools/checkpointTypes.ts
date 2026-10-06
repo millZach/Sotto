@@ -20,7 +20,8 @@ export interface CheckpointDependencies {
   maxBytes?: number
   files: FilesService
   directory: string
-  resolveThread(threadId: string, options?: { mutationHeld: boolean }): Promise<CheckpointThread | null>
+  /** `historyOnly` asks for the thread's identity, history and running state alone; `busy` is then false unchecked. */
+  resolveThread(threadId: string, options?: { mutationHeld?: boolean; historyOnly?: boolean }): Promise<CheckpointThread | null>
   /** Holds the checkout stable while reading a turn snapshot. */
   acquireRead?(threadId: string): Promise<() => void>
   /** Reserves the checkout across native rollback and file restoration, including recovery. */

@@ -28,7 +28,7 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
       return { threadId, providerId: thread.providerId, bindingId: `${thread.providerId}:${binding?.sessionId ?? threadId}`,
         userMessageIds: thread.messages.filter(message => message.role === 'user').map(message => message.id),
         running: !connected || thread.status === 'running' || thread.historyStatus === 'loading' || thread.historyStatus === 'error',
-        busy: !connected || await pending(threadId) || !held?.mutationHeld && await host.isCheckoutMutating(threadId),
+        busy: !held?.historyOnly && (!connected || await pending(threadId) || !held?.mutationHeld && await host.isCheckoutMutating(threadId)),
         rollbackSupported: capability.supported, ...(capability.reason ? { unsupportedReason: capability.reason } : {}),
       }
     },
@@ -58,10 +58,10 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
       historyEnabled = next
     },
     isBlocked: async threadId => await blocked(threadId) || !unallocated(threadId) && await host.isCheckoutMutating(threadId),
+    // The coordinator read the thread just before this send, so the workspace already holds its user messages.
+    // `beforeTurn` settles the previous turn's checkpoint itself before taking this one.
     beforeTurn: async threadId => {
       await checkpoints.initialize()
-      await host.refreshThread(threadId)
-      await checkpoints.afterTurn(threadId)
       await checkpoints.beforeTurn(threadId)
     },
   })
