@@ -24,4 +24,25 @@ describe('agent roster IPC boundary', () => {
     expect(host.subagentAssignments).toHaveBeenCalledTimes(1)
     close(); expect(handlers.size).toBe(0); expect(unsubscribe).toHaveBeenCalledOnce()
   })
+  it('reads a paired host\'s thread on that host, and never from this computer (ADR-0025, October 5 amendment)', async () => {
+    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
+    const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
+    const url = 'file:///main.html', mainFrame = { parent: null, url }
+    const sender: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } }
+    const event: IpcInvocationEvent = { sender: sender.webContents, senderFrame: mainFrame }
+    const host = { subagentPage: vi.fn(), subagentAssignments: vi.fn(), subscribeSubagents: vi.fn().mockReturnValue(() => undefined) }
+    const threadId = 'host:22222222-2222-4222-8222-222222222222:thread'
+    const hosted = { subagentPage: vi.fn().mockResolvedValue({ threadId, revision: 0, rows: [], summary: EMPTY_SUBAGENT_SUMMARY }), subagentAssignments: vi.fn().mockResolvedValue({ threadId, agentId: 'agent', assignments: [] }) }
+    const close = registerSubagentIpc(ipc, host, () => [sender], vi.fn(), hosted)
+    await expect(handlers.get(SUBAGENTS_PAGE)!(event, { threadId })).resolves.toMatchObject({ threadId })
+    await expect(handlers.get(SUBAGENTS_ASSIGNMENTS)!(event, { threadId, agentId: 'agent' })).resolves.toMatchObject({ threadId, agentId: 'agent' })
+    expect(hosted.subagentPage).toHaveBeenCalledWith({ threadId }); expect(hosted.subagentAssignments).toHaveBeenCalledWith({ threadId, agentId: 'agent' })
+    expect(host.subagentPage).not.toHaveBeenCalled(); expect(host.subagentAssignments).not.toHaveBeenCalled()
+    close()
+    // Without the router, a paired host's thread is refused in words rather than looked up here.
+    const bare = registerSubagentIpc(ipc, host, () => [sender], vi.fn())
+    expect(() => handlers.get(SUBAGENTS_PAGE)!(event, { threadId })).toThrow('Agents cannot reach the host machine from this window.')
+    expect(host.subagentPage).not.toHaveBeenCalled()
+    bare()
+  })
 })

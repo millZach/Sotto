@@ -56,11 +56,18 @@ export type GitChangeListing = z.infer<typeof gitListingSchema>
 export type GitReviewScope = z.infer<typeof gitReviewScopeSchema>
 export type GitReviewFile = z.infer<typeof gitReviewFileSchema>
 export type GitReview = z.infer<typeof gitReviewSchema>
+export type GitReviewRequest = z.infer<typeof gitReviewRequestSchema>
+export type GitPathRequest = z.infer<typeof gitPathRequestSchema>
+/**
+ * Changes' reads and path actions. A thread on a paired host gets one without `reveal` or the checkpoints, whose watch
+ * asks that host on a timer, since its folder is on that host (ADR-0025, October 5 amendment); the controls they would
+ * back are absent.
+ */
 export interface GitChangesBridge extends CheckpointBridge {
   list(request: z.infer<typeof toolListRequestSchema>): Promise<ToolsResult<GitChangeListing>>
-  review(request: z.infer<typeof gitReviewRequestSchema>): Promise<ToolsResult<GitReview>>
-  copyPath(request: z.infer<typeof gitPathRequestSchema>): Promise<ToolsResult<FilePath>>
-  reveal(request: z.infer<typeof gitPathRequestSchema>): Promise<ToolsResult<FilePath>>
+  review(request: GitReviewRequest): Promise<ToolsResult<GitReview>>
+  copyPath(request: GitPathRequest): Promise<ToolsResult<FilePath>>
+  reveal?(request: GitPathRequest): Promise<ToolsResult<FilePath>>
   watch(request: z.infer<typeof gitWatchRequestSchema>): Promise<ToolsResult<void>>
   onChanged(listener: (event: z.infer<typeof gitChangedSchema>) => void): () => void
 }

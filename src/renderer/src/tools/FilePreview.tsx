@@ -29,7 +29,8 @@ export interface FilePreviewProps {
   readonly scrollTop: number
   readonly onScroll: (top: number) => void
   readonly onCopyPath: () => void
-  readonly onReveal: () => void
+  /** Absent for a thread on a paired host: its file is on that machine, so there is no folder to show here. */
+  readonly onReveal?: (() => void) | undefined
   readonly onClose: () => void
   readonly onRetry: () => void
   readonly onRefreshFolder: () => void
@@ -96,7 +97,7 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
         {renderable ? <button type="button" className="files-toggle tt-focusable" aria-pressed={!rendered} onClick={() => onMarkdownView(rendered ? 'source' : 'rendered')}>Source</button> : null}
         {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-icon tt-focusable" aria-label="Wrap lines" title={wrap ? 'Wrap lines: on' : 'Wrap lines: off'} aria-pressed={wrap} onClick={() => setWrap(value => !value)}><WrapText size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={`Copy path of ${name}`} title="Copy path" onClick={onCopyPath}><Copy size={16} aria-hidden="true" /></button>
-        <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${name}`} title={revealLabel(platform)} onClick={onReveal}><FolderOutput size={16} aria-hidden="true" /></button>
+        {onReveal ? <button type="button" className="files-icon tt-focusable" aria-label={`${revealLabel(platform)}: ${name}`} title={revealLabel(platform)} onClick={onReveal}><FolderOutput size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label="Close preview" title="Close preview" onClick={onClose}><X size={16} aria-hidden="true" /></button>
       </div>
     </header>

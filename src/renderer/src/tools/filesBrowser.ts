@@ -173,8 +173,11 @@ export class FilesBrowserStore {
     const current = this.threads.get(threadId)
     if (!bridge) return { ok: false, error: unavailableBridge }
     if (!current?.workspace) return { ok: false, error: { code: 'workspace-unavailable', message: 'Refresh Files first.' } }
+    // A thread on a paired host has no reveal: its folder is on that host, so the control is not offered.
+    const act = bridge[action]
+    if (!act) return { ok: false, error: { code: 'unavailable', message: 'This folder is on the host machine. Open it there.' } }
     const { generation, workspace } = current
-    const result = await this.call(() => bridge[action]({ threadId, path, workspaceId: workspace.workspaceId }))
+    const result = await this.call(() => act.call(bridge, { threadId, path, workspaceId: workspace.workspaceId }))
     this.checkWorkspace(bridge, threadId, generation, result)
     return result
   }
