@@ -1,14 +1,18 @@
 // How much sooner a Claude turn shows its first sign when thinking shows from its first byte (#768).
 //
 // Reads Claude Code's own transcripts and reports durations only: no prompt, reply or thinking text is read
-// into the output. For each prompt it finds the first block the model wrote in reply on the main chain, and
-// reports the wait from the prompt to that block finishing (when Sotto showed something before thinking was
-// shown) and to that block starting (when it shows now, if the block was thinking). A thinking line carries
-// `thinkingDurationMs`, so its start is its own timestamp less that.
+// into the output. For each prompt whose reply opened on a thinking block on the main chain, it reports the wait
+// from the prompt to that block finishing and to it starting. A thinking line is written when the block ends and
+// carries `thinkingDurationMs`, so its start is its own timestamp less that. Before thinking was shown, nothing
+// showed until the next block's first byte, which comes after the thinking ends, so "finished" is a floor for
+// what Sotto showed then. A reply that opened on text or a tool showed from that block's start before and after,
+// so it is counted but not timed.
 //
 // Usage:
 //   node scripts/perf-bench/claude-thinking-lead.mjs [--root <projects folder>] [--sessions <claude-threads.json>] [--since 2026-09-01] [--files 400]
 //
+// It reads the newest `--files` transcripts modified since `--since`, whichever sessions they belong to, and then
+// keeps the ones `--sessions` names.
 // `--sessions` keeps the sessions a Sotto data folder's `claude-threads.json` names; only their session IDs are read
 // from it. Claude Code records a thinking block's duration from 2.1.288, so only replies from that version on count.
 
@@ -31,7 +35,7 @@ const files = readdirSync(root).flatMap(folder => {
 
 const authored = line => line.type === 'user' && !line.isSidechain && !line.isMeta && (typeof line.message?.content === 'string'
   || (Array.isArray(line.message?.content) && line.message.content.some(block => block?.type === 'text') && !line.message.content.some(block => block?.type === 'tool_result')))
-const before = [], after = [], lead = [], thoughtBefore = [], thoughtAfter = []
+const lead = [], thoughtBefore = [], thoughtAfter = []
 let turns = 0, openedOnThinking = 0, withWords = 0, thinkingFirst = 0, blocks = 0, blocksWithWords = 0
 for (const { path } of files) {
   let prompt
@@ -50,15 +54,14 @@ for (const { path } of files) {
     if (!recorded(line.version)) { prompt = undefined; continue }
     turns++
     const waited = at - prompt
-    before.push(waited)
     const block = line.message.content[0]
     if (block?.type === 'thinking' || block?.type === 'redacted_thinking') thinkingFirst++
     if ((block?.type === 'thinking' || block?.type === 'redacted_thinking') && typeof line.thinkingDurationMs === 'number') {
       openedOnThinking++
       if (block.thinking) withWords++
       const shown = Math.max(0, waited - line.thinkingDurationMs)
-      after.push(shown); lead.push(waited - shown); thoughtBefore.push(waited); thoughtAfter.push(shown)
-    } else after.push(waited)
+      lead.push(waited - shown); thoughtBefore.push(waited); thoughtAfter.push(shown)
+    }
     prompt = undefined
   }
 }
@@ -66,9 +69,7 @@ const quantile = (values, q) => { if (!values.length) return NaN; const sorted =
 const seconds = value => `${(value / 1000).toFixed(1)} s`
 const row = (name, values) => console.log(`${name.padEnd(44)} median ${seconds(quantile(values, 0.5))}, p90 ${seconds(quantile(values, 0.9))}`)
 console.log(`${files.length} transcripts, ${turns} prompts answered, ${thinkingFirst} opened on a thinking block, ${openedOnThinking} of them with a recorded duration (${withWords} of those with words)`)
-row('Prompt to first block finished (before)', before)
-row('Prompt to first block started (after)', after)
-row('  of those opening on thinking, before', thoughtBefore)
-row('  of those opening on thinking, after', thoughtAfter)
-row('Lead the thinking row gives, where it opened', lead)
+row('Prompt to thinking finished (before, a floor)', thoughtBefore)
+row('Prompt to thinking started (after)', thoughtAfter)
+row('Lead the thinking row gives', lead)
 console.log(`Thinking blocks on the main chain: ${blocks}, ${blocksWithWords} with words in the transcript`)
