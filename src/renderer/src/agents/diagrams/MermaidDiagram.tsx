@@ -4,7 +4,7 @@ import { useTransientFlag, writeClipboard } from '../richActions'
 import { DiagramViewer } from './DiagramViewer'
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
-import { inspectDiagramSource } from './diagramSource'
+import { inspectDiagramSource } from '../../../../shared/diagramSource'
 import './diagrams.css'
 
 export interface MermaidDiagramProps {

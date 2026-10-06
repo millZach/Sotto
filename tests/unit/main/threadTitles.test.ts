@@ -100,6 +100,22 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId).title).toBe('Workshop')
   })
 
+  it('writes a title from the agent\'s own reply, never from a visual drawn before it (ADR-0055)', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    const thread = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = [
+      { id: 'first-prompt', role: 'user', text: 'How does a send work?', createdAt: at },
+      { id: 'visual:v1', role: 'assistant', text: '**How a send moves**\n\nThe visual is in Sotto on your computer.', createdAt: at },
+      { id: 'first-reply', role: 'assistant', text: 'The diagram above shows it.', createdAt: at },
+    ]
+    thread.status = 'idle'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    expect(f.titles.mock.calls[0]).toEqual([threadId, { prompt: 'How does a send work?', reply: 'The diagram above shows it.' }])
+  })
+
   it('names a stand-in titled thread once the first reply lands, keeping the name across provider events and a restart', async () => {
     const f = await coordinator()
     const threadId = workshop(f.control).id

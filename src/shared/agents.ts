@@ -4,6 +4,7 @@ import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkil
 import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
+import { agentVisualSchema, isVisualMessageId } from './visuals'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
@@ -241,6 +242,11 @@ export const agentMessageSchema = z.object({
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
+  /**
+   * Set on a message Sotto made for a visual an agent drew (ADR-0055), whose ID starts `visual:` and whose text is the
+   * visual's words. A visual this reader cannot read is dropped and the text stands in; an older reader drops the field.
+   */
+  visual: agentVisualSchema.optional().catch(undefined),
 })
 /**
  * What the sidebar reads about a thread's history without holding that history. The shell stream
@@ -775,9 +781,17 @@ export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
 
-/** The sidebar's facts about a thread's history, derived from the history itself. */
+/** Whether a message is one Sotto made for a visual an agent drew (ADR-0055), rather than words someone wrote. */
+export function isVisualMessage(message: Pick<AgentMessage, 'id'>): boolean {
+  return isVisualMessageId(message.id)
+}
+/**
+ * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
+ * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
+ */
 export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
-  const { messages, activities = [] } = thread
+  const { activities = [] } = thread
+  const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')

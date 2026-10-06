@@ -1,0 +1,115 @@
+import { z } from 'zod'
+import { inspectDiagramSource, MAX_DIAGRAM_SOURCE_LENGTH } from './diagramSource'
+
+/**
+ * A visual an agent draws in its thread with the `visualize` tool (ADR-0055): what it may send, what Sotto keeps, and the
+ * words a reader that cannot draw it is given instead. Main and the renderer both read this file, so the checks that
+ * refuse a call are the same ones the card trusts.
+ */
+
+export const VISUAL_TITLE_MAX = 120
+export const VISUAL_INTRO_MAX = 2_000
+export const VISUAL_STEPS_MAX = 12
+export const VISUAL_STEP_TEXT_MAX = 1_000
+export const VISUAL_HIGHLIGHTS_MAX = 12
+export const VISUAL_HIGHLIGHT_MAX = 120
+/** How many visuals one turn may draw, and one thread may hold. */
+export const VISUALS_PER_TURN_MAX = 6
+export const VISUALS_PER_THREAD_MAX = 100
+/** The kinds an agent may send. Interactive pages are a later kind (#794). */
+export const VISUAL_KINDS = ['diagram'] as const
+export type VisualKind = typeof VISUAL_KINDS[number]
+/** The prefix every visual message's ID starts with, so nothing mistakes one for a provider's message. */
+export const VISUAL_MESSAGE_PREFIX = 'visual:'
+/** The last line of every visual's text: where the drawing is for a reader that cannot show it. */
+export const VISUAL_FALLBACK_NOTE = 'The visual is in Sotto on your computer.'
+
+const notBlank = (value: string): boolean => value.trim().length > 0
+
+const visualStepInputSchema = z.object({
+  text: z.string().min(1).max(VISUAL_STEP_TEXT_MAX).refine(notBlank, 'A step needs words.')
+    .describe('What this step says, in one or two sentences.'),
+  highlight: z.array(z.string().min(1).max(VISUAL_HIGHLIGHT_MAX)).max(VISUAL_HIGHLIGHTS_MAX).optional()
+    .describe('The parts of the diagram this step is about, by name. Unknown names are ignored.'),
+}).strict()
+
+/** What the `visualize` tool takes. Strict: a field it does not know is refused rather than dropped. */
+export const visualInputSchema = z.object({
+  title: z.string().min(1).max(VISUAL_TITLE_MAX).refine(notBlank, 'A visual needs a title.')
+    .describe('A short name for the visual, shown above it.'),
+  kind: z.enum(VISUAL_KINDS).describe('diagram: Mermaid source.'),
+  source: z.string().min(1).max(MAX_DIAGRAM_SOURCE_LENGTH)
+    .describe('Mermaid source: a flowchart, sequence, state, class or entity relationship diagram. No init directives or front-matter configuration.'),
+  intro: z.string().max(VISUAL_INTRO_MAX).optional().describe('One or two sentences shown under the visual, before any steps.'),
+  steps: z.array(visualStepInputSchema).max(VISUAL_STEPS_MAX).optional()
+    .describe('An ordered walk through the visual, one part at a time.'),
+}).strict()
+export type VisualInput = z.infer<typeof visualInputSchema>
+
+/**
+ * One visual as a thread keeps it, and as a visual message carries it to a window, read leniently: `kind` is a string
+ * rather than the kinds this version knows, so a newer kind reads as its text rather than breaking the message. Bounds
+ * are the input's with room, so nothing a store holds is refused on the way to a window.
+ */
+export const agentVisualSchema = z.object({
+  id: z.string().min(1).max(256),
+  title: z.string().max(VISUAL_TITLE_MAX * 2),
+  kind: z.string().max(64),
+  source: z.string().max(200_000),
+  intro: z.string().max(VISUAL_INTRO_MAX * 2).optional(),
+  steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_HIGHLIGHT_MAX * 2)).max(VISUAL_HIGHLIGHTS_MAX * 2).optional() })).max(VISUAL_STEPS_MAX * 2).optional(),
+})
+export type AgentVisual = z.infer<typeof agentVisualSchema>
+
+/** A checked call: the visual to keep, and the diagram's kind in words for the reply. Or why nothing was drawn. */
+export type VisualCheck =
+  | { readonly ok: true; readonly input: VisualInput; readonly label: string }
+  | { readonly ok: false; readonly reason: string }
+
+const FIELD_NAMES: Record<string, string> = { title: 'The title', kind: 'The kind', source: 'The source', intro: 'The intro', steps: 'The steps' }
+
+/** The first thing wrong with a call, in plain words, naming the field. */
+function inputProblem(error: z.ZodError): string {
+  const issue = error.issues[0]
+  if (!issue) return 'The visual could not be read.'
+  if (issue.code === 'unrecognized_keys') return `The visual has fields it does not take: ${issue.keys.join(', ')}.`
+  const field = FIELD_NAMES[String(issue.path[0])] ?? 'The visual'
+  if (issue.path[0] === 'kind') return `The kind must be one of: ${VISUAL_KINDS.join(', ')}.`
+  if (issue.path[0] === 'steps' && issue.path.length > 1) {
+    const step = Number(issue.path[1]) + 1
+    if (issue.path[2] === 'highlight') return `Step ${step}'s highlight takes up to ${VISUAL_HIGHLIGHTS_MAX} names of 1 to ${VISUAL_HIGHLIGHT_MAX} characters.`
+    return `Step ${step} needs text of 1 to ${VISUAL_STEP_TEXT_MAX.toLocaleString('en-US')} characters.`
+  }
+  if (issue.code === 'too_big') return issue.path[0] === 'steps' ? `There are too many steps. Send up to ${VISUAL_STEPS_MAX}.`
+    : `${field} is too long. It takes up to ${Number(issue.maximum).toLocaleString('en-US')} characters.`
+  if (issue.code === 'too_small' || issue.code === 'custom') return `${field} is empty.`
+  return `${field} is not in the shape the tool takes.`
+}
+
+/** The schema and the diagram source checks, in that order: the same checks the card makes before drawing. */
+export function checkVisualInput(args: unknown): VisualCheck {
+  const parsed = visualInputSchema.safeParse(args)
+  if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error) }
+  const inspection = inspectDiagramSource(parsed.data.source)
+  if (inspection.problem) return { ok: false, reason: `The diagram cannot be drawn. ${inspection.problem}` }
+  return { ok: true, input: parsed.data, label: inspection.label }
+}
+
+/** A message's ID for a visual, and the reverse. */
+export const visualMessageId = (visualId: string): string => `${VISUAL_MESSAGE_PREFIX}${visualId}`
+export const isVisualMessageId = (messageId: string): boolean => messageId.startsWith(VISUAL_MESSAGE_PREFIX)
+
+/** Indents every line after the first, so a step with line breaks stays one numbered item. */
+const listItem = (index: number, text: string): string => `${index + 1}. ${text.trim().split(/\r?\n/u).join('\n   ')}`
+
+/**
+ * What a reader that cannot draw a visual is given: its title, intro and numbered steps, then where the drawing is. The
+ * iPhone, an older desktop and anything reading a thread's words read this.
+ */
+export function visualFallbackText(visual: Pick<AgentVisual, 'title' | 'intro' | 'steps'>): string {
+  const parts = [`**${visual.title.trim()}**`]
+  if (visual.intro?.trim()) parts.push(visual.intro.trim())
+  if (visual.steps?.length) parts.push(visual.steps.map((step, index) => listItem(index, step.text)).join('\n'))
+  parts.push(VISUAL_FALLBACK_NOTE)
+  return parts.join('\n\n')
+}
