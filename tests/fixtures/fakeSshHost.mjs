@@ -51,7 +51,8 @@ async function main() {
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
   // `entry` says which installed version is running, for the host update tests; the launch script ignores it.
   const descriptor = { v: 1, hostId, pid: process.pid, port: server.address().port, adminToken: 'remote-only-secret', entry: process.argv[1],
-    ...(['launch-script', 'boot'].includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}) }
+    // FAKE_HOST_BEFORE_BOOT_MARK stands in for a host release from before the 'boot' mark, which records only a launch script's start.
+    ...((process.env.FAKE_HOST_BEFORE_BOOT_MARK ? ['launch-script'] : ['launch-script', 'boot']).includes(process.env.SOTTO_HOST_STARTED_BY) ? { startedBy: process.env.SOTTO_HOST_STARTED_BY } : {}) }
   await publishDescriptor(descriptor)
   process.on('SIGTERM', () => server.close(async () => { await fs.rm(lockPath, { force: true }); process.exit(0) }))
 }

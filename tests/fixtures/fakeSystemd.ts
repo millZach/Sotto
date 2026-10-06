@@ -3,11 +3,14 @@ import { join, resolve } from 'node:path'
 
 /** What the fake `systemctl --user` and `loginctl` start from; see tests/fixtures/fakeSystemdCommand.mjs. */
 export interface FakeSystemdState {
+  /** False for a machine that does not run systemd at all. */
+  systemd?: boolean
   userManager?: boolean
   linger?: boolean
   enableLinger?: 'allow' | 'refuse'
   enabled?: boolean
   startExit?: number
+  enableExit?: number
   afterStart?: 'run' | 'failed' | 'crash-loop' | 'retry-once' | 'lost-lock'
   /** `afterStart` holds for the next start alone; the unit runs the host from the one after. */
   once?: boolean

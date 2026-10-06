@@ -3,10 +3,12 @@
 // and reads, and every call is appended to FAKE_SYSTEMD_RECORD. `start` runs the unit the launch script wrote under
 // XDG_CONFIG_HOME: through /bin/sh where there is one, and on Windows by reading the variables boot-start.sh sets.
 //
-// The state's switches: `userManager: false` makes every systemctl call fail as it does with no user manager; `linger`
-// is the account's setting and `enableLinger: 'refuse'` has polkit refuse `loginctl enable-linger`; `startExit` is the
-// exit code `start` gives; `afterStart` scripts what the unit does once started: `run` (the default) runs the host,
-// `failed` lands failed, `crash-loop` keeps restarting with its runs failing, `retry-once` fails once and then runs the
+// The state's switches: `systemd: false` is a machine that does not run systemd (WSL without it, a container), where
+// loginctl fails too and `is-system-running` says offline; `userManager: false` makes every `systemctl --user` call fail
+// as it does with no user manager, until `enable-linger` starts one on a machine that runs systemd; `linger` is the
+// account's setting and `enableLinger: 'refuse'` has polkit refuse `loginctl enable-linger`; `startExit` is the exit code
+// `start` gives and `enableExit` the one `enable` gives; `afterStart` scripts what the unit does once started: `run` (the
+// default) runs the host, `failed` lands failed, `crash-loop` keeps restarting with its runs failing, `retry-once` fails once and then runs the
 // host, and `lost-lock` has another host take the folder's lock while the unit's host gives up with exit code 75. With
 // `once` set, `afterStart` holds for the next start alone.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -65,6 +67,7 @@ function properties(state) {
 }
 
 async function systemctl(state, words) {
+  if (words[0] === 'is-system-running') { process.stdout.write((state.systemd === false ? 'offline' : 'running') + '\n'); return state.systemd === false ? 1 : 0 }
   if (words[0] !== '--user') return 1
   if (!state.userManager) { process.stderr.write('Failed to connect to bus: No medium found\n'); return 1 }
   const [verb, ...rest] = words.slice(1)
@@ -79,7 +82,7 @@ async function systemctl(state, words) {
   if (verb === 'is-active') { const active = properties(state).ActiveState; process.stdout.write(active + '\n'); return active === 'active' ? 0 : 3 }
   if (verb === 'is-enabled') { process.stdout.write((loaded ? (state.enabled ? 'enabled' : 'disabled') : 'not-found') + '\n'); return loaded && state.enabled ? 0 : 1 }
   if (verb === 'daemon-reload') return 0
-  if (verb === 'enable') { if (!loaded) return 1; state.enabled = true; return 0 }
+  if (verb === 'enable') { if (!loaded || state.enableExit) return state.enableExit || 1; state.enabled = true; return 0 }
   if (verb === 'disable') { state.enabled = false; if (rest.includes('--now')) await stopUnit(state); return 0 }
   if (verb === 'stop') { await stopUnit(state); return 0 }
   if (verb === 'reset-failed') {
@@ -111,11 +114,13 @@ async function systemctl(state, words) {
   return 1
 }
 function loginctl(state, words) {
+  if (state.systemd === false) { process.stderr.write('System has not been booted with systemd as init system (PID 1).\n'); return 1 }
   const list = words.filter(word => word !== '--no-ask-password')
   if (list[0] === 'show-user') { process.stdout.write(`Linger=${state.linger ? 'yes' : 'no'}\n`); return 0 }
   if (list[0] === 'enable-linger') {
     if (state.enableLinger === 'refuse') { process.stderr.write('Could not enable linger: Access denied\n'); return 1 }
-    state.linger = true; return 0
+    // Linger starts the account's user manager, as logind does for an account with no session.
+    state.linger = true; state.userManager = true; return 0
   }
   return 1
 }

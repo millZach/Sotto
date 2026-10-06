@@ -200,10 +200,14 @@ const unitText = () => ['# Written by Sotto. It starts the Sotto host when this 
   '[Service]', execStart, 'Environment=SOTTO_HOST_STARTED_BY=boot', 'KillMode=mixed', 'TimeoutStopSec=25',
   'Restart=on-failure', 'RestartSec=5', 'RestartPreventExitStatus=75',
   '[Install]', 'WantedBy=default.target', ''].join('\n');
-// Resolves current the way this script does, then runs the host under the Node this script runs under, with no key file.
+// A user unit does not see the SSH account's shell profile, so the key file a launch's host inherits travels as its path.
+const keyFile = typeof process.env.SOTTO_HOST_KEY_FILE === 'string' && process.env.SOTTO_HOST_KEY_FILE ? process.env.SOTTO_HOST_KEY_FILE : null;
+// Resolves current the way this script does, then runs the host under the Node this script runs under, with the key file
+// this script's own environment names, and with none when it names none, as a launch does.
 const bootScriptText = () => ['#!/bin/sh',
   '# Written by Sotto. The sotto-host user unit runs it to start the host in this folder; Sotto rewrites it.',
   'node=' + shellQuote(process.execPath), 'install=' + shellQuote(install), 'data=' + shellQuote(data), 'port=' + shellQuote(String(cfg.remotePort)),
+  ...(keyFile ? ['SOTTO_HOST_KEY_FILE=' + shellQuote(keyFile), 'export SOTTO_HOST_KEY_FILE'] : []),
   'entry="$install/host/index.js"',
   'version=$(cat "$install/current" 2>/dev/null)',
   'case $version in',
@@ -212,11 +216,15 @@ const bootScriptText = () => ['#!/bin/sh',
   'esac',
   'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');
 const writeBootScript = async () => { await writeAtomically(bootScriptPath, bootScriptText()); await fs.chmod(bootScriptPath, 0o700).catch(() => undefined); };
-// The Node the unit's script runs, or null without one.
-const pinnedNode = async () => {
-  try { const match = /^node='((?:[^']|'\\'')*)'$/m.exec(await fs.readFile(bootScriptPath, 'utf8')); return match ? match[1].split("'\\''").join("'") : null; }
-  catch { return null; }
+const readBootScript = async () => { try { return await fs.readFile(bootScriptPath, 'utf8'); } catch { return null; } };
+// One value the unit's script pins, such as its Node or data folder, or null without one.
+const pinned = (script, name) => {
+  const match = new RegExp('^' + name + "='((?:[^']|'\\\\'')*)'$", 'm').exec(script || '');
+  return match ? match[1].split("'\\''").join("'") : null;
 };
+// Whether the unit's script runs a host for another data folder or port than this launch's, as after Edit connection
+// changed them: that host is one this launch would never find.
+const pinnedElsewhere = script => pinned(script, 'data') !== data || pinned(script, 'port') !== String(cfg.remotePort);
 // Whether the account's unit is this installation's: another installation's unit is never started, changed or removed.
 const unitOurs = async () => { try { return (await fs.readFile(unitPath, 'utf8')).split(/\r?\n/).includes(execStart); } catch { return false; } };
 const removeBootFiles = async () => { await fs.rm(unitPath, { force: true }); await fs.rm(bootScriptPath, { force: true }); };
@@ -238,16 +246,22 @@ const readLinger = async () => {
   return process.platform === 'linux' && exists('/var/lib/systemd/linger/' + account);
 };
 const lingerFix = () => 'sudo loginctl enable-linger ' + (/^[A-Za-z0-9._-]+$/.test(account) ? account : shellQuote(account));
-// What boot-status reports, and what a launch, boot-install and boot-remove report beside their own result. Pass the
-// unit's properties when they were just read, or null when there is no user manager to ask.
-const bootStatus = async known => {
-  const properties = known === undefined ? await unitProperties() : known;
+// Whether this machine runs systemd at all, which a machine without it (WSL without systemd, a container) does not.
+const systemdBooted = async () => /^(initializing|starting|running|degraded|maintenance|stopping)$/m.test((await system('systemctl', ['is-system-running'])).stdout.trim());
+// What boot-status reports, and what a launch, boot-install and boot-remove report beside their own result, from the
+// unit's properties as unitProperties() read them: null when no user manager answered.
+const bootStatus = async properties => {
   const off = { installed: false, enabled: false, active: false, linger: false, nodeDrift: false };
   if (process.platform === 'darwin') return { supported: false, reason: 'macos', ...off };
-  if (!properties) return { supported: false, reason: 'no-user-manager', ...off };
-  const installed = await unitOurs(), linger = await readLinger(), pinned = installed ? await pinnedNode() : null;
+  if (!properties) {
+    // On a machine that runs systemd, an account with no sign-in session and no linger has no user manager yet, as over
+    // an SSH server that opens no session: turning linger on starts one, so start at boot is offered with the linger line.
+    if ((await readLinger()) || !(await systemdBooted())) return { supported: false, reason: 'no-user-manager', ...off };
+    return { supported: true, ...off, installed: await unitOurs(), fix: lingerFix() };
+  }
+  const installed = await unitOurs(), linger = await readLinger(), node = installed ? pinned(await readBootScript(), 'node') : null;
   return { supported: true, installed, enabled: installed && properties.UnitFileState === 'enabled', active: installed && properties.ActiveState === 'active', linger,
-    nodeDrift: installed && (pinned !== process.execPath || !(await exists(pinned))), ...(linger ? {} : { fix: lingerFix() }) };
+    nodeDrift: installed && (node !== process.execPath || !(await exists(node))), ...(linger ? {} : { fix: lingerFix() }) };
 };
 // Read before anything spawns, so a launch and the unit never race for the lock: whether this installation's enabled unit
 // starts the host. With linger off the unit would stop the host at sign-out, so start at boot goes off here: disable
@@ -283,31 +297,40 @@ const awaitUnit = async () => {
   }
   throw new Error('host-timeout');
 };
+const unitRunning = properties => properties.ActiveState !== 'inactive' && properties.ActiveState !== 'failed';
 // The unit starts the host, unless it runs one already or another host runs: a host Sotto did not start, which boot-install
-// leaves running beside the unit, is used as it is. The unit's script is rewritten first when its Node has drifted.
-const startByUnit = async properties => {
-  if (properties.ActiveState !== 'active') {
-    const found = await running();
-    if (found) return found;
-    if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
-    await say({ type: 'starting' });
-    if ((await pinnedNode()) !== process.execPath) await writeBootScript();
-    await systemctl(['reset-failed', UNIT]);
-    if ((await systemctl(['start', UNIT], 40000)).code !== 0) throw new Error('boot-start-refused');
-  }
+// leaves running beside the unit, is used as it is. A fresh start, a rollback's, stops whatever the unit runs first, since
+// that is the host that did not come up; so does a start whose script runs another data folder or port, after Edit
+// connection changed them. The unit's script is rewritten before any start the unit makes when it differs from this
+// launch's: another Node, data folder, port or key file.
+const startByUnit = async (properties, fresh) => {
+  const script = await readBootScript(), elsewhere = pinnedElsewhere(script);
+  if (properties.ActiveState === 'active' && !fresh && !elsewhere) return awaitUnit();
+  if ((fresh || elsewhere) && unitRunning(properties)) await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
+  if (script !== bootScriptText()) await writeBootScript();
+  const found = await running();
+  if (found) return found;
+  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+  await say({ type: 'starting' });
+  await systemctl(['reset-failed', UNIT]);
+  if ((await systemctl(['start', UNIT], 40000)).code !== 0) throw new Error('boot-start-refused');
   return awaitUnit();
-};
-// Finds the running host, or starts it: through the unit when start at boot is on, and as a detached process otherwise.
-// The answer carries start at boot's status, as boot-status reports it.
-const start = async () => {
-  const plan = await bootPlan();
-  const ready = plan.unit ? await startByUnit(plan.properties) : await startDetached();
-  return { ...ready, bootStart: await bootStatus(plan.properties ? undefined : null) };
 };
 // Whether the unit runs this process now, so stopping it goes through the user manager.
 const unitRuns = async pid => {
   const properties = await unitProperties();
-  return !!properties && Number(properties.MainPID) === pid && properties.ActiveState !== 'inactive' && properties.ActiveState !== 'failed' && (await unitOurs());
+  return !!properties && Number(properties.MainPID) === pid && unitRunning(properties) && (await unitOurs());
+};
+// Whether a host found running is Sotto's: one it recorded as started by Sotto, or one this installation's unit runs,
+// which a host from before the 'boot' mark does not record (ADR-0054).
+const sottoStarted = async found => found.owned || (await unitRuns(found.pid));
+// Finds the running host, or starts it: through the unit when start at boot is on, and as a detached process otherwise.
+// The answer carries start at boot's status, as boot-status reports it. fresh is a rollback's start (startByUnit).
+const start = async ({ fresh = false } = {}) => {
+  const plan = await bootPlan();
+  const ready = plan.unit ? await startByUnit(plan.properties, fresh) : await startDetached();
+  const owned = ready.owned || (plan.unit && (await unitRuns(ready.pid)));
+  return { ...ready, owned, bootStart: await bootStatus(plan.properties ? await unitProperties() : null) };
 };
 // A launch also hands back the host's administrative token, for the desktop on the other end of this session to
 // administer the host's phone access through the port it forwards (ADR-0050), without signing in over SSH again.
@@ -386,7 +409,7 @@ const stopRunning = async pid => {
 const stopHost = async () => {
   const current = await discover().catch(() => null);
   if (!current) return finish({ type: 'host-stopped', stopped: true, hostId: null });
-  if (current.hostId !== cfg.hostId || !current.owned) return finish({ type: 'host-stopped', stopped: false, hostId: current.hostId });
+  if (current.hostId !== cfg.hostId || !(await sottoStarted(current))) return finish({ type: 'host-stopped', stopped: false, hostId: current.hostId });
   const pid = current.pid;
   const stopped = await stopRunning(pid);
   const legacy = await readLegacyLauncher();
@@ -497,82 +520,101 @@ const prune = async keep => {
     if ((RELEASE.test(name) && !keep.includes(name)) || name.endsWith('.partial')) await fs.rm(path.join(versionsPath, name), { recursive: true, force: true }).catch(() => undefined);
   }
 };
+// A failure's own code for a result's cause, or host-start-failed for anything that is not one.
+const causeOf = error => error && typeof error.message === 'string' && error.message.length <= 64 ? error.message : 'host-start-failed';
+// Starts the host a restart stopped. When it does not come up, undo puts back what was there before, and the host is
+// started once more, fresh: restarted says whether that worked and cause why the first start did not.
+const startOrRollBack = async undo => {
+  try { return { ready: await start() }; }
+  catch (error) {
+    const cause = causeOf(error);
+    await undo().catch(() => undefined);
+    try { await start({ fresh: true }); return { restarted: true, cause }; }
+    catch { return { restarted: false, cause }; }
+  }
+};
 const restartForUpdate = async () => {
   const version = updateVersion();
   if (!(await exists(entryOf(version)))) throw new Error('update-missing');
-  const running = await discover().catch(() => null);
-  if (!running || running.hostId !== cfg.hostId || !running.owned) return { type: 'error', reason: 'update-not-owned' };
+  const current = await discover().catch(() => null);
+  if (!current || current.hostId !== cfg.hostId || !(await sottoStarted(current))) return { type: 'error', reason: 'update-not-owned' };
   const previous = await currentVersion();
   await say({ type: 'update-step', step: 'restart' });
   await writePointer(version);
   // A host the unit runs is stopped through it, and start() below has the unit start the new version (ADR-0054).
-  if (!(await stopRunning(running.pid))) { await writePointer(previous); return { type: 'error', reason: 'update-stop-failed' }; }
-  try {
-    const ready = await start();
-    await prune([version, previous]);
-    return ready;
-  } catch (error) {
-    // The new version did not start: point back at the old one and start it again, whatever the pointer's write says.
-    const cause = error && typeof error.message === 'string' && error.message.length <= 64 ? error.message : 'host-start-failed';
-    await writePointer(previous).catch(() => undefined);
-    try { await start(); return { type: 'error', reason: 'update-start-failed', restarted: true, cause }; }
-    catch { return { type: 'error', reason: 'update-start-failed', restarted: false, cause }; }
-  }
+  if (!(await stopRunning(current.pid))) { await writePointer(previous); return { type: 'error', reason: 'update-stop-failed' }; }
+  // The new version did not start: point back at the old one and start it again, whatever the pointer's write says.
+  const outcome = await startOrRollBack(() => writePointer(previous));
+  if (!outcome.ready) return { type: 'error', reason: 'update-start-failed', restarted: outcome.restarted, cause: outcome.cause };
+  await prune([version, previous]);
+  return outcome.ready;
 };
-// boot-install (ADR-0054): linger first, and nothing written while it is off; then the unit and its script, enabled; then
-// the host handed over. One Sotto started is stopped the way Stop host stops it and started again by the unit, so it
-// restarts once; one Sotto did not start keeps running, and the unit takes over at the next boot.
-const bootInstall = async () => {
-  const properties = await unitProperties();
-  if (!properties) return { type: 'boot-installed', installed: false, stopped: false, bootStart: await bootStatus(null) };
-  if (/[\u0000-\u001f\u007f]/.test(install + data)) throw new Error('boot-install-failed');
-  if (!(await unitOurs()) && await exists(unitPath)) return { type: 'error', reason: 'boot-unit-taken' };
-  let linger = await readLinger();
-  if (!linger) linger = (await system('loginctl', ['--no-ask-password', 'enable-linger'], 30000)).code === 0 && await readLinger();
-  // Polkit wants an administrator: the result carries the command for the owner, and the running host is untouched.
-  if (!linger) return { type: 'boot-installed', installed: false, stopped: false, bootStart: await bootStatus(properties) };
-  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
-  const current = await discover().catch(() => null);
+// Linger first (ADR-0054): the account's own setting, turned on without sudo. False when polkit wants an administrator.
+const ensureLinger = async () => (await readLinger()) || ((await system('loginctl', ['--no-ask-password', 'enable-linger'], 30000)).code === 0 && await readLinger());
+// The user manager, which linger just turned on starts a moment later when the account had no session; null without one.
+const awaitUserManager = async () => {
+  for (let tries = 0; tries < 20; tries++) { const properties = await unitProperties(); if (properties) return properties; await pause(500); }
+  return null;
+};
+// Writes the unit and its script and enables the unit; a step that fails takes back the ones before it.
+const writeUnit = async () => {
   try {
     await writeBootScript();
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
     await writeAtomically(unitPath, unitText());
     if ((await systemctl(['daemon-reload'], 30000)).code !== 0 || (await systemctl(['enable', UNIT], 30000)).code !== 0) throw new Error('boot-install-failed');
   } catch {
-    await removeBootFiles().catch(() => undefined);
-    await systemctl(['daemon-reload'], 30000);
+    await uninstallUnit().catch(() => undefined);
     throw new Error('boot-install-failed');
   }
-  if (!current || !current.owned || current.hostId !== cfg.hostId || await unitRuns(current.pid)) return { type: 'boot-installed', installed: true, stopped: false, bootStart: await bootStatus() };
-  if (!(await stopProcess(current.pid))) return { type: 'error', reason: 'boot-stop-failed' };
-  try {
-    const ready = await start();
-    return { type: 'boot-installed', installed: true, stopped: true, pid: ready.pid, bootStart: ready.bootStart };
-  } catch (error) {
-    // The unit would not run the host: start at boot comes off again, and the host starts the way a launch starts it.
-    const cause = error && typeof error.message === 'string' && error.message.length <= 64 ? error.message : 'host-start-failed';
-    await uninstallUnit(true).catch(() => undefined);
-    try { await start(); return { type: 'error', reason: 'boot-start-failed', restarted: true, cause }; }
-    catch { return { type: 'error', reason: 'boot-start-failed', restarted: false, cause }; }
-  }
+};
+// Hands a running host over to the unit just enabled. One Sotto started is stopped the way Stop host stops it and started
+// again by the unit, so it restarts once; one Sotto did not start keeps running, and the unit takes over at the next boot.
+// When the host cannot be stopped, or the unit does not bring it back, the install is undone: start at boot is off again.
+const handOver = async current => {
+  if (!current || !current.owned || current.hostId !== cfg.hostId || await unitRuns(current.pid)) return { type: 'boot-installed', installed: true, stopped: false, bootStart: await bootStatus(await unitProperties()) };
+  if (!(await stopProcess(current.pid))) { await uninstallUnit().catch(() => undefined); return { type: 'error', reason: 'boot-stop-failed' }; }
+  // The unit would not run the host: start at boot comes off again, and the host starts the way a launch starts it.
+  const outcome = await startOrRollBack(() => uninstallUnit());
+  if (!outcome.ready) return { type: 'error', reason: 'boot-start-failed', restarted: outcome.restarted, cause: outcome.cause };
+  return { type: 'boot-installed', installed: true, stopped: true, pid: outcome.ready.pid, bootStart: outcome.ready.bootStart };
+};
+// boot-install (ADR-0054): linger first, and nothing written while it is off; then the unit and its script, enabled; then
+// the host handed over.
+const bootInstall = async () => {
+  const unsupported = async properties => ({ type: 'boot-installed', installed: false, stopped: false, bootStart: await bootStatus(properties) });
+  const before = await unitProperties();
+  if (!(await bootStatus(before)).supported) return unsupported(before);
+  if (/[\u0000-\u001f\u007f]/.test(install + data + (keyFile || ''))) throw new Error('boot-install-failed');
+  if (!(await unitOurs()) && await exists(unitPath)) return { type: 'error', reason: 'boot-unit-taken' };
+  // Polkit wants an administrator: the result carries the command for the owner, and the running host is untouched.
+  if (!(await ensureLinger())) return unsupported(before);
+  const properties = before || await awaitUserManager();
+  if (!properties) return unsupported(null);
+  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+  const current = await discover().catch(() => null);
+  await writeUnit();
+  return handOver(current);
 };
 // Takes this installation's unit away: disabled, which stops a host it runs and keeps Restart= from bringing it back, both
 // files removed, the user manager reloaded, and the unit's failed state cleared so a failed unit leaves no entry behind.
-// Without a user manager to ask, only the files go.
-const uninstallUnit = async manager => {
-  if (manager) await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
-  try { await removeBootFiles(); } catch { throw new Error('boot-remove-failed'); }
-  if (manager) { await systemctl(['daemon-reload'], 30000); await systemctl(['reset-failed', UNIT]); }
+const uninstallUnit = async () => {
+  await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
+  await removeUnitFiles();
+  await systemctl(['daemon-reload'], 30000);
+  await systemctl(['reset-failed', UNIT]);
 };
-// boot-remove (ADR-0054): takes the unit away. Only when the desktop says the host is switched on does it start the host
-// again, the way a launch does, so it keeps running; a host that is switched off stays stopped.
+const removeUnitFiles = async () => { try { await removeBootFiles(); } catch { throw new Error('boot-remove-failed'); } };
+// boot-remove (ADR-0054): takes the unit away, or only its files where no user manager answers. Only when the desktop
+// says the host is switched on does it start the host again, the way a launch does, so it keeps running; a host that is
+// switched off stays stopped.
 const bootRemove = async () => {
   const before = await discover().catch(() => null);
   const properties = await unitProperties();
-  if (await unitOurs()) await uninstallUnit(!!properties);
+  if (await unitOurs()) await (properties ? uninstallUnit() : removeUnitFiles());
   const after = cfg.restart === true ? await start() : await discover().catch(() => null);
   return { type: 'boot-removed', stopped: !!before && (!after || after.pid !== before.pid), ...(after ? { pid: after.pid } : {}),
-    bootStart: await bootStatus(properties ? undefined : null) };
+    bootStart: await bootStatus(properties ? await unitProperties() : null) };
 };
 // One change to the boot unit at a time, under the folder's update lock, so an update and a boot change never restart the host together.
 const runBoot = async () => {
@@ -597,7 +639,7 @@ const runUpdate = async () => {
     else if (cfg.op === 'pairing-code' || cfg.op === 'revoke-client') await admin();
     else if (cfg.op === 'desktop-answers') await desktopAnswers();
     else if (cfg.op === 'stop-host') await stopHost();
-    else if (cfg.op === 'boot-status') await finish({ type: 'boot-status', ...(await bootStatus()) });
+    else if (cfg.op === 'boot-status') await finish({ type: 'boot-status', ...(await bootStatus(await unitProperties())) });
     else if (booting) await finish(await runBoot());
     else if (updating) await finish(await runUpdate());
     else await finish({ type: 'failed' });

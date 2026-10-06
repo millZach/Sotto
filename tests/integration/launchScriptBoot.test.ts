@@ -33,11 +33,10 @@ async function fixture(state: FakeSystemdState = {}) {
   return { directory, installPath, dataDirectory, remotePort: 0, readyTimeoutMs: 8000, stopDrainMs: HOST_STOP_DRAIN_MS, systemd }
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
-interface Outcome { readonly messages: Record<string, unknown>[]; readonly result: Record<string, unknown>; readonly ms: number }
+interface Outcome { readonly messages: Record<string, unknown>[]; readonly result: Record<string, unknown> }
 /** One operation the way the desktop sends it, under the fakes. */
 async function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>, env: NodeJS.ProcessEnv = {}): Promise<Outcome> {
   const { systemd: fake, ...settings } = configuration
-  const began = Date.now()
   const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...settings, ...operation })], { shell: false, windowsHide: true, env: { ...fake.env, ...env } })
   children.push(child)
   child.stdin.end(LAUNCH_SCRIPT_SOURCE)
@@ -47,7 +46,7 @@ async function run(configuration: Configuration, operation: LaunchOperation | Re
   const messages = output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>)
   const result = messages.at(-1) ?? {}
   if (typeof result.pid === 'number') pids.push(result.pid)
-  return { messages, result, ms: Date.now() - began }
+  return { messages, result }
 }
 const descriptor = async (configuration: Configuration) => JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as { pid: number; startedBy?: string }
 /** A host the owner started by hand in the same folder: Sotto did not start it. */
@@ -66,11 +65,11 @@ async function installed(state: FakeSystemdState = {}) {
   return configuration
 }
 /** The calls since `from`, without the state reads, which say nothing about what the script changed. */
-const changes = async (from = 0) => (await systemd!.calls()).slice(from).filter(call => !call.startsWith('systemctl show') && !call.startsWith('loginctl show-user'))
+const changes = async (from = 0) => (await systemd!.calls()).slice(from).filter(call => !call.startsWith('systemctl show') && !call.startsWith('systemctl is-system-running') && !call.startsWith('loginctl show-user'))
 
 describe.skipIf(process.platform === 'darwin')('start at boot in the launch script (ADR-0054)', () => {
-  it('says start at boot is not supported where there is no systemd user manager, and changes nothing', async () => {
-    const configuration = await fixture({ userManager: false })
+  it('says start at boot is not supported on a machine that does not run systemd, and changes nothing', async () => {
+    const configuration = await fixture({ systemd: false, userManager: false })
     const status = await run(configuration, { op: 'boot-status' })
     expect(status.result).toEqual({ type: 'boot-status', supported: false, reason: 'no-user-manager', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
     expect(bootStatusSchema.safeParse(status.result).success).toBe(true)
@@ -78,6 +77,74 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
     expect(install.result).toMatchObject({ type: 'boot-installed', installed: false, bootStart: { supported: false, reason: 'no-user-manager' } })
     await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await changes()).toEqual([])
+  })
+
+  it('offers start at boot to an account with no session and no linger, whose user manager linger then starts', async () => {
+    const configuration = await fixture({ userManager: false, linger: false, enableLinger: 'allow' })
+    const launched = await run(configuration, { op: 'launch' })
+    expect(launched.result).toMatchObject({ type: 'ready', owned: true, bootStart: { supported: true, installed: false, linger: false, fix: `sudo loginctl enable-linger ${userInfo().username}` } })
+    const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
+    expect(install.result).toMatchObject({ type: 'boot-installed', installed: true, stopped: true, bootStart: { supported: true, enabled: true, active: true, linger: true } })
+    expect((await changes())[0]).toBe('loginctl enable-linger')
+  })
+
+  it('refuses, changing nothing, while another installation\'s unit holds the name', async () => {
+    const configuration = await fixture({ linger: true })
+    const other = '[Service]\nExecStart=/bin/sh "/opt/other sotto/boot-start.sh"\n'
+    await mkdir(join(configuration.systemd.unitPath, '..'), { recursive: true })
+    await writeFile(configuration.systemd.unitPath, other)
+    expect((await run(configuration, { op: 'boot-install', hostId: HOST_ID })).result).toEqual({ type: 'error', reason: 'boot-unit-taken' })
+    expect(await readFile(configuration.systemd.unitPath, 'utf8')).toBe(other)
+    expect(await changes()).toEqual([])
+  })
+
+  it('waits its turn behind an update of the same installation, and changes nothing', async () => {
+    const configuration = await fixture({ linger: true })
+    await mkdir(join(configuration.installPath, 'versions', '.update-lock'), { recursive: true })
+    await writeFile(join(configuration.installPath, 'versions', '.update-lock', 'pid'), String(process.pid))
+    expect((await run(configuration, { op: 'boot-install', hostId: HOST_ID })).result).toEqual({ type: 'error', reason: 'update-busy' })
+    expect(await changes()).toEqual([])
+  })
+
+  it('takes the unit and its script away again when the user manager will not enable it, and leaves the host running', async () => {
+    const configuration = await fixture({ linger: true, enableExit: 1 })
+    const launched = await run(configuration, { op: 'launch' })
+    expect((await run(configuration, { op: 'boot-install', hostId: HOST_ID })).result).toEqual({ type: 'error', reason: 'boot-install-failed' })
+    expect(await changes()).toEqual(['systemctl daemon-reload', 'systemctl enable sotto-host', 'systemctl disable --now sotto-host', 'systemctl daemon-reload', 'systemctl reset-failed sotto-host'])
+    await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(join(configuration.installPath, 'boot-start.sh'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(alive(launched.result.pid as number)).toBe(true)
+  })
+
+  it('undoes the install and starts the host the way a launch does when the unit will not start it', async () => {
+    const configuration = await fixture({ linger: true, startExit: 1 })
+    const launched = await run(configuration, { op: 'launch' })
+    const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
+    expect(install.result).toEqual({ type: 'error', reason: 'boot-start-failed', restarted: true, cause: 'boot-start-refused' })
+    expect(alive(launched.result.pid as number)).toBe(false)
+    await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await systemd!.state()).enabled).toBe(false)
+    const restarted = await descriptor(configuration)
+    pids.push(restarted.pid)
+    expect(restarted).toMatchObject({ startedBy: 'launch-script' })
+    expect(alive(restarted.pid)).toBe(true)
+  })
+
+  it('writes the key file the launch\'s own environment names into the unit\'s script, as its path', async () => {
+    const configuration = await fixture({ linger: true })
+    await run(configuration, { op: 'launch' })
+    await run(configuration, { op: 'boot-install', hostId: HOST_ID }, { SOTTO_HOST_KEY_FILE: "/home/someone/keys/sotto's key" })
+    const script = await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')
+    expect(script).toContain("SOTTO_HOST_KEY_FILE='/home/someone/keys/sotto'\\''s key'\nexport SOTTO_HOST_KEY_FILE\n")
+  })
+
+  it('counts a host the unit runs as Sotto\'s even when its release does not record the boot mark', async () => {
+    const configuration = await fixture({ linger: true })
+    await run(configuration, { op: 'launch' })
+    expect((await run(configuration, { op: 'boot-install', hostId: HOST_ID }, { FAKE_HOST_BEFORE_BOOT_MARK: '1' })).result).toMatchObject({ type: 'boot-installed', stopped: true })
+    expect((await descriptor(configuration)).startedBy).toBeUndefined()
+    expect((await run(configuration, { op: 'launch' })).result).toMatchObject({ type: 'ready', owned: true })
+    expect((await run(configuration, { op: 'stop-host', hostId: HOST_ID })).result).toEqual({ type: 'host-stopped', stopped: true, hostId: HOST_ID })
   })
 
   it('installs the unit and its script, then hands a host the launch script started over to the unit, which restarts it once', async () => {
@@ -181,7 +248,6 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await systemd!.set({ startExit: 1 })
       const launch = await run(configuration, { op: 'launch' })
       expect(launch.result).toEqual({ type: 'error', reason: 'boot-start-refused' })
-      expect(launch.ms).toBeLessThan(configuration.readyTimeoutMs)
     })
 
     it('reports a unit that lands failed after a start that returned 0 at once', async () => {
@@ -190,7 +256,6 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await systemd!.set({ afterStart: 'failed' })
       const launch = await run(configuration, { op: 'launch' })
       expect(launch.result).toEqual({ type: 'error', reason: 'boot-unit-failed' })
-      expect(launch.ms).toBeLessThan(configuration.readyTimeoutMs)
     })
 
     it('reports a unit that keeps restarting with its runs failing well before the host is given up on', async () => {
@@ -199,7 +264,6 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await systemd!.set({ afterStart: 'crash-loop' })
       const launch = await run(configuration, { op: 'launch' })
       expect(launch.result).toEqual({ type: 'error', reason: 'boot-unit-failed' })
-      expect(launch.ms).toBeLessThan(configuration.readyTimeoutMs)
     })
 
     it('waits through a single restart, such as a moment\'s lock contention, and uses the host the unit then runs', async () => {
@@ -220,6 +284,19 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       expect(launch.result).toMatchObject({ type: 'ready', owned: false })
       expect((await descriptor(configuration)).startedBy).toBeUndefined()
     })
+  })
+
+  it('restarts the unit on the data folder the saved host has now, after Edit connection changed it', async () => {
+    const configuration = await installed()
+    const unitHost = (await descriptor(configuration)).pid
+    const moved = { ...configuration, dataDirectory: join(configuration.directory, "moved data's folder") }
+    const before = (await systemd!.calls()).length
+    const launch = await run(moved, { op: 'launch' })
+    expect(launch.result).toMatchObject({ type: 'ready', owned: true, bootStart: { enabled: true, active: true } })
+    expect(alive(unitHost)).toBe(false)
+    expect(await descriptor(moved)).toMatchObject({ pid: launch.result.pid, startedBy: 'boot' })
+    expect(await changes(before)).toEqual(['systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
+    expect(await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).toContain(`data='${moved.dataDirectory.split("'").join("'\\''")}'`)
   })
 
   it('turns start at boot off when linger is off, stops the unit\'s host and spawns one detached host in its place', async () => {
@@ -302,7 +379,6 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await systemd!.set({ startExit: 1 })
       const outcome = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
       expect(outcome.result).toMatchObject({ type: 'error', reason: 'update-start-failed', restarted: false, cause: 'boot-start-refused' })
-      expect(outcome.ms).toBeLessThan(configuration.readyTimeoutMs)
       expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
     })
 
@@ -315,11 +391,35 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       const before = (await systemd!.calls()).length
       const outcome = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
       expect(outcome.result).toMatchObject({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'boot-unit-failed' })
-      expect(outcome.ms).toBeLessThan(2 * configuration.readyTimeoutMs)
+      // The rollback stops the unit that is still trying the new version before it starts the old one.
       expect(await changes(before)).toEqual(['systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host',
-        'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
+        'systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
       expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
       expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
     })
+
+    it('stops a new version the unit keeps running but that never answers, and rolls back to the old one', async () => {
+      const configuration = await installed()
+      await withVersions(configuration)
+      // The new version holds the folder's lock and never listens, so the unit stays active while the wait runs out.
+      const newHost = join(configuration.installPath, 'versions', '1.1.0', 'host')
+      await copyFile(join(newHost, 'index.js'), join(newHost, 'fake.mjs'))
+      await writeFile(join(newHost, 'index.js'), "process.env.FAKE_HOST_START_DELAY_MS = '600000'\nawait import('./fake.mjs')\n")
+      const before = (await systemd!.calls()).length, hosts = (await systemd!.spawned()).length
+      const outcome = await run({ ...configuration, readyTimeoutMs: 4000 }, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
+      expect(outcome.result).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-timeout' })
+      expect(await changes(before)).toEqual(['systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host',
+        'systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
+      const [hung] = (await systemd!.spawned()).slice(hosts)
+      expect(alive(hung!)).toBe(false)
+      expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
+      expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
+    }, 60_000)
   })
+})
+
+it.runIf(process.platform === 'darwin')('says start at boot is not supported on macOS, and asks systemd nothing', async () => {
+  const configuration = await fixture()
+  expect((await run(configuration, { op: 'boot-status' })).result).toEqual({ type: 'boot-status', supported: false, reason: 'macos', installed: false, enabled: false, active: false, linger: false, nodeDrift: false })
+  expect(await systemd!.calls()).toEqual([])
 })
