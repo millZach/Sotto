@@ -117,6 +117,22 @@ describe('a send whose thread moved after the read before it', () => {
     expect(methods).not.toContain('session/prompt')
   }, 60_000)
 
+  it('Grok reads at the start of a send whose thread moved after the read before it, and refuses there', async () => {
+    const { f, id } = await answeredThread('grok')
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'stale' })
+    // Typed in the Grok CLI after that read and seen by another read before the send, as the poll would.
+    await f.driver.typeInProvider(id, 'Typed and seen after the read')
+    await expect.poll(async () => (await readFile(join(f.root, 'native-sessions.json'), 'utf8')).includes('Typed and seen after the read')).toBe(true)
+    await f.host.refreshThread!(id)
+    const from = (await f.driver.requests()).length
+    await expect(send(f, id, 'stale', 'own-1')).rejects.toThrow('changed')
+    const methods = (await f.driver.requests()).slice(from).map(request => request.method)
+    // The thread moved, so the read before the send no longer stood for the send's: it read at its start, found the
+    // typed message already held, and refused before saving anything to recheck.
+    expect(methods.filter(method => method === '_x.ai/session/updates')).toHaveLength(1)
+    expect(methods).not.toContain('session/prompt')
+  }, 60_000)
+
   it('Grok reads at the start of a send the read before it was not made for', async () => {
     const { f, id } = await answeredThread('grok')
     await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'refused' })

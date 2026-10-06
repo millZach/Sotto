@@ -68,8 +68,9 @@ describe('the hosts between the coordinator and the adapter hand on what a read 
   it('reaches the adapter with the read before a send, under the adapter\'s own session ID', async () => {
     const { host, adapter, id } = await composed()
     adapter.reads.length = 0
-    await host.refreshThread(id, { beforeSend: true })
-    expect(adapter.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true } }])
+    await host.refreshThread(id, { beforeSend: true, sendMessageId: 'own-2' })
+    // The message ID of the send it is for comes with it, which is what lets it stand for the adapter's own read (#765).
+    expect(adapter.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: 'own-2' } }])
   })
 
   it('reaches the adapter without a purpose for any other read', async () => {
@@ -80,22 +81,26 @@ describe('the hosts between the coordinator and the adapter hand on what a read 
   })
 
   it.each([
-    ['WorkspaceHost', (inner: AgentHost, root: string) => new WorkspaceHost(inner, root)],
+    // The workspace answers the read after a send from what it holds, so that read goes no further (#765).
+    ['WorkspaceHost', (inner: AgentHost, root: string) => new WorkspaceHost(inner, root), []],
     ['ConfiguredProviderHost', (inner: AgentHost, root: string) => {
       const hosts = {} as Record<ProviderId, AgentHost>
       for (const provider of providerIdSchema.options) hosts[provider] = provider === 'codex' ? inner : new ReadRecordingHost()
       return new ConfiguredProviderHost({ directory: root, hosts, provider: () => 'codex', threadProvider: () => 'codex' })
-    }],
-  ] as const)('%s hands the read before a send to the host it wraps', async (_name, wrap) => {
+    }, [{ threadId: 'workshop', purpose: { afterSend: true } }]],
+  ] as const)('%s hands the read before a send to the host it wraps', async (_name, wrap, afterSend) => {
     const root = await directory()
     const inner = new ReadRecordingHost()
     const host = wrap(inner, root)
     cleanup.push(async () => { host.disconnect(); if (host instanceof WorkspaceHost) await host.close() })
     await host.connect()
     inner.reads.length = 0
-    await host.refreshThread!('workshop', { beforeSend: true })
+    await host.refreshThread!('workshop', { beforeSend: true, sendMessageId: 'own-2' })
     await host.refreshThread!('workshop')
-    expect(inner.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true } }, { threadId: 'workshop', purpose: undefined }])
+    expect(inner.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: 'own-2' } }, { threadId: 'workshop', purpose: undefined }])
+    inner.reads.length = 0
+    await host.refreshThread!('workshop', { afterSend: true })
+    expect(inner.reads).toEqual(afterSend)
   })
 })
 
