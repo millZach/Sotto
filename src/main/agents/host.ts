@@ -59,12 +59,17 @@ export function confirmedSettingsSnapshot(result: AgentHostResult): [Omit<AgentH
 /**
  * What a thread read is for, and what its reader keeps for itself. `beforeSend` is the read immediately before a
  * send: an adapter brings the thread up to date from what is new (Codex's newest-turn check, ADR-0005), and reads
- * it whole whenever it cannot show nothing changed. It stands for the adapter's own read at the start of that send,
- * which the adapter then skips, and a host above it writes and publishes nothing when the read changed nothing
- * (#765). Every other read omits it.
+ * it whole whenever it cannot show nothing changed. A host above it writes and publishes nothing when the read
+ * changed nothing (#765). Every other read omits it.
  */
 export interface ThreadReadPurpose {
   readonly beforeSend?: boolean
+  /**
+   * The message ID of the send a read before a send is for. That read stands for the adapter's own read at the start
+   * of that send and no other, which the adapter then skips while the thread has not moved (`readsBeforeSend.ts`,
+   * #765). A read before a send without it stands for none.
+   */
+  readonly sendMessageId?: string
   /**
    * The read after a host accepted a send, made only to find the provider's echo of the sent message. A host that
    * already holds the thread newer than it has published (the workspace, between publishes) answers from what it

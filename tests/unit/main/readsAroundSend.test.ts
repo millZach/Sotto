@@ -132,19 +132,21 @@ describe('the read after an accepted send', () => {
     host.reads.length = 0
     return { host, control }
   }
+  /** The read before a send names the send it is for; `threadReadPurpose.test.ts` shows it is the one dispatched. */
+  const beforeSend = { beforeSend: true, sendMessageId: expect.any(String) }
   const userMessages = (control: AgentControl) => control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.filter(message => message.role === 'user').map(message => message.text)
 
   it('is not made when the echo already settled the send', async () => {
     const { host, control } = await coordinator()
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Echoed prompt' })).error).toBeNull()
-    expect(host.reads).toEqual([{ beforeSend: true }])
+    expect(host.reads).toEqual([beforeSend])
   })
 
   it('asks the host for what it holds when the echo is not yet published, and reads no further when it is there', async () => {
     const { host, control } = await coordinator()
     host.quiet = true
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Quiet prompt' })).error).toBeNull()
-    expect(host.reads).toEqual([{ beforeSend: true }, { afterSend: true }])
+    expect(host.reads).toEqual([beforeSend, { afterSend: true }])
     expect(userMessages(control)).toContain('Quiet prompt')
   })
 
@@ -153,7 +155,7 @@ describe('the read after an accepted send', () => {
     host.quiet = true
     host.staleAfterSend = await host.snapshot()
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Late prompt' })).error).toBeNull()
-    expect(host.reads).toEqual([{ beforeSend: true }, { afterSend: true }, undefined])
+    expect(host.reads).toEqual([beforeSend, { afterSend: true }, undefined])
     expect(userMessages(control)).toContain('Late prompt')
   })
 })
@@ -172,14 +174,33 @@ describe('sameSnapshot', () => {
 })
 
 describe('ReadsBeforeSend', () => {
-  it('stands for a send\'s read once, and only while the thread is as it was read', () => {
-    const marks = new ReadsBeforeSend()
-    marks.mark('thread', '1:4')
-    expect(marks.take('thread', '1:4')).toBe(true)
-    expect(marks.take('thread', '1:4')).toBe(false)
-    marks.mark('thread', '1:4')
-    expect(marks.take('thread', '1:5')).toBe(false)
-    marks.mark('thread', '1:4'); marks.clear()
-    expect(marks.take('thread', '1:4')).toBe(false)
+  const send = (messageId: string) => ({ type: 'send' as const, commandId: 'command', threadId: 'thread', messageId, text: 'Prompt' })
+  it('stands for the send it was read for, once, and only while the thread is as it was read', () => {
+    let state = '1:4'
+    const marks = new ReadsBeforeSend(() => state)
+    const read = { beforeSend: true, sendMessageId: 'own-2' }
+    marks.mark('thread', read)
+    expect(marks.covers('thread', send('own-2'))).toBe(true)
+    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    marks.mark('thread', read); state = '1:5'
+    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    marks.mark('thread', read); marks.clear()
+    expect(marks.covers('thread', send('own-2'))).toBe(false)
+  })
+
+  it('stands for no other send, and leaves nothing behind for one', () => {
+    const marks = new ReadsBeforeSend(() => '1:4')
+    // A send refused after the read leaves its mark; the next send on the thread is another message, and reads.
+    marks.mark('thread', { beforeSend: true, sendMessageId: 'refused' })
+    expect(marks.covers('thread', send('queued'))).toBe(false)
+    expect(marks.covers('thread', send('refused'))).toBe(false)
+    // Any other command clears it too.
+    marks.mark('thread', { beforeSend: true, sendMessageId: 'own-2' })
+    expect(marks.covers('thread', { type: 'interrupt', commandId: 'command', threadId: 'thread' })).toBe(false)
+    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    // A read for no named send, or any other read, marks nothing.
+    marks.mark('thread', { beforeSend: true })
+    marks.mark('thread', undefined)
+    expect(marks.covers('thread', send('own-2'))).toBe(false)
   })
 })

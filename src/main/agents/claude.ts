@@ -198,7 +198,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly logOrigins = new Map<string, Set<string>>()
   private readonly lastLogDigest = new Map<string, string>()
   /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
-  private readonly readsBeforeSend = new ReadsBeforeSend()
+  private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly staleMemoryContexts = new Set<string>()
   private readonly nativeTakeovers = new Set<string>()
   private readonly completedOrigins = new Set<string>()
@@ -440,7 +440,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     await this.sync(id, purpose)
-    if (purpose?.beforeSend) this.readsBeforeSend.mark(id, this.readState(id))
+    this.readsBeforeSend.mark(id, purpose)
     return this.view(purpose?.historyFromEvents)
   }
   /** How far this thread has been read, as a send's first read compares it with the read the coordinator made for it. */
@@ -631,9 +631,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
-    // The coordinator's read before this send stands for its first read while the thread has not moved since (#765).
-    // Any command takes the mark; only a send uses it.
-    const readForSend = this.readsBeforeSend.take(id, this.readState(id)) && command.type === 'send'
+    // The coordinator's read before this send stands for its first read (#765).
+    const readForSend = this.readsBeforeSend.covers(id, command)
     this.reaper.touch(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')

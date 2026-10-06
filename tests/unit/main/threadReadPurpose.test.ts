@@ -20,8 +20,14 @@ import { manualSendCoordinator } from '../../fixtures/manualSendCoordinator'
  */
 class ReadRecordingHost extends E2EAgentHost {
   readonly reads: { threadId: string; purpose: ThreadReadPurpose | undefined }[] = []
+  /** The message ID of each send dispatched to this host. */
+  readonly sent: string[] = []
   async refreshThread(threadId: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     this.reads.push({ threadId, purpose: purpose && structuredClone(purpose) }); return this.snapshot()
+  }
+  override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    if (command.type === 'send') this.sent.push(command.messageId)
+    return super.execute(command)
   }
 }
 /** The same, publishing thread events so a workspace above it keeps history from them, and recording settings changes (#368). */
@@ -151,13 +157,14 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     host.reads.length = 0
     return { host, control }
   }
-  const beforeSend = { threadId: 'workshop', purpose: { beforeSend: true } }
+  /** The read before a send, naming the message of the send that followed it (#765). */
+  const beforeSend = (host: ReadRecordingHost) => ({ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: host.sent.at(-1) ?? 'no send was dispatched' } })
   const plain = { threadId: 'workshop', purpose: undefined }
 
   it('a manual send', async () => {
     const { host, control } = await coordinator()
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Manual prompt' })).error).toBeNull()
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('a coordinator draft send, and not the assign read before it', async () => {
@@ -167,7 +174,7 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     await control.command({ type: 'compose', text: 'Drafted prompt' })
     host.reads.length = 0
     expect((await control.command({ type: 'send' })).error).toBeNull()
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('a supervision follow-up', async () => {
@@ -178,7 +185,7 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
     await expect.poll(() => control.get().assignments[0]?.followups).toBe(1)
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.status).toBe('running')
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('not the read that reconciles a send whose delivery is uncertain', async () => {

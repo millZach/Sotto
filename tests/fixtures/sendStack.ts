@@ -10,9 +10,20 @@ import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { publicProviderEntityId, type AgentCommand } from '../../src/shared/agents'
 import type { AdapterFixture } from '../integration/adapterContract'
-import type { RecordedRpc } from './codexFixture'
+import { claudeFixture } from './claudeFixture'
+import { codexFixture, type RecordedRpc } from './codexFixture'
+import { grokFixture } from './fakeGrokThreadFixture'
 
 export type SendStackProvider = 'claude' | 'codex' | 'grok'
+
+/** Long enough that no poll timer reads a thread during a case: what is counted is what the send itself read. */
+export const QUIET_POLL_MS = 600_000
+/** A provider's real adapter over its fake client, with no poll timer reading in between. */
+export function nativeFixture(provider: SendStackProvider) {
+  return provider === 'claude' ? claudeFixture(undefined, undefined, undefined, { pollIntervalMs: QUIET_POLL_MS })
+    : provider === 'codex' ? codexFixture(undefined, false, undefined, { pollIntervalMs: QUIET_POLL_MS })
+      : grokFixture(undefined, undefined, QUIET_POLL_MS)
+}
 
 /** The request that hands each provider the prompt, and the requests that read a thread's history back from it. */
 const PROMPT: Record<SendStackProvider, string> = { claude: 'user', codex: 'turn/start', grok: 'session/prompt' }
@@ -25,7 +36,10 @@ function historyRequest(provider: SendStackProvider, record: RecordedRpc): boole
 export interface SendCost {
   error: string | null
   elapsedMs: number
-  /** Each call of the adapter's own `refreshThread`, from outside it or inside it, by what it was for. */
+  /**
+   * Each call of the adapter's own `refreshThread`, by what it was for. Those are the reads that reach the adapter
+   * from the hosts above it; the adapter's own reads inside a send are not calls of it, and `history` counts them.
+   */
   reads: ('beforeSend' | 'afterSend' | 'other')[]
   /**
    * Reads of the thread's history from the provider: Codex's `thread/turns/list` and whole `thread/read`, Grok's
@@ -94,7 +108,7 @@ export async function sendStack(provider: SendStackProvider, native: AdapterFixt
   const adapter = native.adapter as unknown as Record<string, (...args: unknown[]) => unknown>
   const refresh = adapter.refreshThread!.bind(adapter)
   const readSpy = vi.spyOn(native.adapter, 'refreshThread').mockImplementation(async (id: string, purpose?: ThreadReadPurpose) => {
-    reads.push(purpose?.beforeSend ? 'beforeSend' : (purpose as { afterSend?: boolean } | undefined)?.afterSend ? 'afterSend' : 'other')
+    reads.push(purpose?.beforeSend ? 'beforeSend' : purpose?.afterSend ? 'afterSend' : 'other')
     return refresh(id, purpose) as ReturnType<NonNullable<AgentHost['refreshThread']>>
   })
   const emit = adapter.emit!

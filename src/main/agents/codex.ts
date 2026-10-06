@@ -167,7 +167,7 @@ export class CodexAppServerHost implements AgentHost {
   private turnsListSupported = true
   private readonly revisions = new Map<string, number>()
   /** Threads the coordinator just read for a send (#765): that read's newest-turn check stands for the send's own. */
-  private readonly readsBeforeSend = new ReadsBeforeSend()
+  private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly dispatching = new Set<string>()
   private readonly runningTurns = new Map<string, string>()
   private readonly terminalTurns = new Set<string>()
@@ -662,7 +662,8 @@ export class CodexAppServerHost implements AgentHost {
   async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>, memories: readonly { id: string; content: string }[]): Promise<AgentHostResult> {
     const alias = this.aliases[command.threadId]
     if (alias?.kind !== 'personal') throw new Error('This is not an owned personal conversation.')
-    await this.readThread(command.threadId, { beforeSend: true })
+    // This read stands for the send's own, below, while nothing moves in between (#765).
+    await this.readThread(command.threadId, { beforeSend: true, sendMessageId: command.messageId })
     const thread = this.ensureThread(command.threadId)
     if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the current turn and answer its requests first.')
     // ThreadResumeParams.developerInstructions is verified against installed 0.154.
@@ -774,7 +775,7 @@ export class CodexAppServerHost implements AgentHost {
     this.threadReads.set(id, work)
     try {
       await work
-      if (purpose.beforeSend) this.readsBeforeSend.mark(id, this.readState(id))
+      this.readsBeforeSend.mark(id, purpose)
     }
     catch (error) {
       // A failed read cannot hide native-authored input. Without corroboration,
@@ -1209,9 +1210,8 @@ export class CodexAppServerHost implements AgentHost {
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
-        // The coordinator's read before this send stands for the send's own while the thread has not moved since (#765).
-        // Any command takes the mark; only a send uses it.
-        const readForSend = this.readsBeforeSend.take(id, this.readState(id)) && command.type === 'send'
+        // The coordinator's read before this send stands for the send's own (#765).
+        const readForSend = this.readsBeforeSend.covers(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
@@ -1338,7 +1338,8 @@ export class CodexAppServerHost implements AgentHost {
           })
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
-          try { if (readForSend) await this.resume(id); else await this.readThread(id, { beforeSend: true }) }
+          // The session was resumed above, so a send the coordinator's read stands for has nothing left to do here.
+          try { if (!readForSend) await this.readThread(id, { beforeSend: true }) }
           catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')

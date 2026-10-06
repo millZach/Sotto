@@ -18,19 +18,11 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { codexFixture } from '../fixtures/codexFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import type { claudeFixture } from '../fixtures/claudeFixture'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
-import { sendStack, type SendCost, type SendStackProvider } from '../fixtures/sendStack'
+import { nativeFixture, sendStack, type SendCost } from '../fixtures/sendStack'
 
 const SENDS = 9
-/** Long enough that no poll timer reads the thread during a send: what is counted is what the send itself read. */
-const QUIET_POLL_MS = 600_000
-
-const fixture = (provider: SendStackProvider) => provider === 'claude' ? claudeFixture(undefined, undefined, undefined, { pollIntervalMs: QUIET_POLL_MS })
-  : provider === 'codex' ? codexFixture(undefined, false, undefined, { pollIntervalMs: QUIET_POLL_MS })
-    : grokFixture(undefined, undefined, QUIET_POLL_MS)
 
 /** Append `exchanges` finished exchanges of filler to a fake Claude thread's transcript, as Claude Code writes them. */
 async function longClaudeTranscript(f: Awaited<ReturnType<typeof claudeFixture>>, sessionId: string, exchanges: number): Promise<void> {
@@ -49,7 +41,7 @@ async function longClaudeTranscript(f: Awaited<ReturnType<typeof claudeFixture>>
 
 describe.skipIf(!PERF_BENCH)('reads around a send from the Threads page', () => {
   it.each([['claude', 0], ['claude', 1000], ['codex', 0], ['grok', 0]] as const)('%s after %i earlier exchanges', async (provider, earlier) => {
-    const native = await fixture(provider)
+    const native = await nativeFixture(provider)
     const stack = await sendStack(provider, native, earlier ? sessionId => longClaudeTranscript(native as Awaited<ReturnType<typeof claudeFixture>>, sessionId, earlier) : undefined)
     try {
       const sends: SendCost[] = []

@@ -17,8 +17,8 @@ const fixtures: Fixture[] = []
 afterEach(async () => { for (const fixture of fixtures.splice(0)) await fixture.cleanup() })
 
 /** A thread that has sent `own-1` and whose turn has finished, so its newest turn is one Sotto holds. */
-async function answeredThread(script: Record<string, unknown> = {}): Promise<{ f: Fixture; id: string }> {
-  const f = await codexFixture(); fixtures.push(f)
+async function answeredThread(script: Record<string, unknown> = {}, session: Parameters<typeof codexFixture>[3] = {}): Promise<{ f: Fixture; id: string }> {
+  const f = await codexFixture(undefined, false, undefined, session); fixtures.push(f)
   await f.script(script)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -207,15 +207,45 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     expect((await f.driver.requests()).slice(stale).some(request => request.method === 'turn/start')).toBe(false)
   })
 
+  it('checks the newest turn once when the read before the send was made for it (#765)', async () => {
+    const { f, id } = await answeredThread()
+    const from = (await f.driver.requests()).length
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'own-2' })
+    await turn(f, id, 'own-2', 'own-1')
+    expect(await historyRequests(f, from)).toEqual(['turns'])
+  })
+
+  it('checks the newest turn again for a send the read before it was not made for (#765)', async () => {
+    const { f, id } = await answeredThread()
+    // A read for a send that was then refused leaves its mark; the next send is another message, such as a queued
+    // follow-up, which no read is made for, and makes its own check.
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'refused' })
+    const from = (await f.driver.requests()).length
+    await turn(f, id, 'own-2', 'own-1')
+    expect(await historyRequests(f, from)).toEqual(['turns'])
+  })
+
   it('checks the newest turn again when the thread moved after the read before the send (#765)', async () => {
     const { f, id } = await answeredThread()
     const from = (await f.driver.requests()).length
-    await f.host.refreshThread!(id, { beforeSend: true })
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'stale' })
     // Input typed into the Codex session log after that read moves the thread, so the read no longer stands for the send's.
     await f.driver.typeInProvider(id, 'Typed after the read')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.some(message => message.text === 'Typed after the read')).toBe(true)
     await expect(send(f, id, 'stale', 'own-1')).rejects.toThrow('changed')
     expect(await historyRequests(f, from)).toEqual(['turns', 'turns'])
+    expect((await f.driver.requests()).slice(from).some(request => request.method === 'turn/start')).toBe(false)
+  })
+
+  it('refuses a reply to input typed after the read and not yet seen, on the session-log poll before turn/start (#765)', async () => {
+    // No poll timer reads the session log during the case, so only the send's own poll can find the typed input.
+    const { f, id } = await answeredThread({}, { pollIntervalMs: 600_000 })
+    const from = (await f.driver.requests()).length
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'stale' })
+    await f.typeUnseen(id, 'Typed after the read')
+    await expect(send(f, id, 'stale', 'own-1')).rejects.toThrow('changed')
+    // The read before the send stood for the send's own check, and the poll before turn/start refused the reply.
+    expect(await historyRequests(f, from)).toEqual(['turns'])
     expect((await f.driver.requests()).slice(from).some(request => request.method === 'turn/start')).toBe(false)
   })
 

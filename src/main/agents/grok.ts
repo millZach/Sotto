@@ -218,7 +218,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly historyReads = new Map<string, Promise<void>>()
   private readonly histories = new Map<string, HistoryRead>()
   /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
-  private readonly readsBeforeSend = new ReadsBeforeSend()
+  private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
   private readonly log = new ThreadMessageLog()
   /** What the host's event store already holds, so a session read from its start is not added twice. */
@@ -625,7 +625,7 @@ export class GrokAcpHost implements AgentHost {
    */
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     await this.sync(id)
-    if (purpose?.beforeSend) this.readsBeforeSend.mark(id, this.readState(id))
+    this.readsBeforeSend.mark(id, purpose)
     return this.current(purpose?.historyFromEvents)
   }
   /** How far this thread's history has been read, as a send compares it with the read the coordinator made for it. */
@@ -868,9 +868,8 @@ export class GrokAcpHost implements AgentHost {
         releaseCreate()
       } else {
         const alias = this.aliases[command.threadId]; if (!alias?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session. Do not repeat its creation automatically.')
-        // The coordinator's read before this send stands for its first read while the thread has not moved since (#765).
-        // Any command takes the mark; only a send uses it.
-        const readForSend = this.readsBeforeSend.take(command.threadId, this.readState(command.threadId)) && command.type === 'send'
+        // The coordinator's read before this send stands for its first read (#765).
+        const readForSend = this.readsBeforeSend.covers(command.threadId, command)
         // Lazy sessions: an action on a thread whose session is not loaded loads it before the command runs.
         this.reaper.touch(command.threadId); await this.loadSession(command.threadId)
         if (command.type === 'configure-thread') {

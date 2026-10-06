@@ -2567,9 +2567,11 @@ export class AgentControl {
     for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
   }
   /**
-   * Read a thread back from its host. `purpose` says what the read is for: the read immediately before a send
-   * passes `{ beforeSend: true }`, which an adapter may make lighter than a whole read when it can show nothing
-   * changed (Codex's newest-turn check, ADR-0005). What the send then checks is the same.
+   * Read a thread back from its host. `purpose` says what the read is for. The read immediately before a send passes
+   * `{ beforeSend: true }` and the message ID of the send: an adapter reads only what is new where it can (Codex's
+   * newest-turn check, ADR-0005), and the read stands for the adapter's own at the start of that send (#765). The
+   * read after a host accepted a send passes `{ afterSend: true }`, which the workspace answers from what it holds.
+   * What the send checks is the same either way.
    */
   private readThread(threadId?: string, provider?: ProviderId, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     const host = this.dependencies.host
@@ -2794,7 +2796,8 @@ export class AgentControl {
     }
     this.canAct()
     this.observe(threadId)
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true }))
+    const messageId = randomUUID()
+    this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true, sendMessageId: messageId }))
     const validate = (): void => {
       this.canAct()
       const latest = this.thread(threadId)
@@ -2809,7 +2812,6 @@ export class AgentControl {
     }
     validate()
     const thread = this.thread(threadId)
-    const messageId = randomUUID()
     const assignment = this.state.assignments.find(a => a.threadId === threadId)
     assignment?.ownMessageIds.push(messageId)
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId)
@@ -2840,7 +2842,8 @@ export class AgentControl {
     }
     this.canAct()
     this.observe()
-    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true }))
+    const messageId = randomUUID()
+    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true, ...(draftRequestId ? {} : { sendMessageId: messageId }) }))
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
@@ -2859,7 +2862,6 @@ export class AgentControl {
     }
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
-    const messageId = randomUUID()
     assignment.ownMessageIds.push(messageId)
     assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
     assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
@@ -3227,7 +3229,8 @@ export class AgentControl {
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()
       // Refresh immediately before dispatch, so a direct host send revokes this queued reply.
-      this.acceptSnapshot(await this.readThread(thread.id, undefined, { beforeSend: true }))
+      const messageId = randomUUID()
+      this.acceptSnapshot(await this.readThread(thread.id, undefined, { beforeSend: true, ...(requestId ? {} : { sendMessageId: messageId }) }))
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
@@ -3250,7 +3253,7 @@ export class AgentControl {
           turn, validate, undefined, this.supervisionClient)
         assignment.handledRequestIds.push(requestId)
       } else {
-        const messageId = randomUUID(); assignment.ownMessageIds.push(messageId)
+        assignment.ownMessageIds.push(messageId)
         await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text: decision.text, expectedLastUserMessageId: lastUserMessageIdOf(latest) }, turn, validate)
       }
     } catch (error) {
