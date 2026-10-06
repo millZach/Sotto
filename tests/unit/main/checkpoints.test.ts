@@ -207,7 +207,7 @@ describe('completed native turn checkpoints', () => {
     expect(unwrap(await restarted.recoverCheckpoint(request)).status).toBe('reverted')
     expect(f.rollback).toHaveBeenCalledTimes(1)
   })
-  it('keeps a reverting journal and its blobs when its thread is forgotten', async () => {
+  it('keeps a reverting checkpoint record and its blobs when its thread is forgotten', async () => {
     const f = await fixture(); await f.complete()
     const path = join(f.dependencies.directory, 'checkpoints.json')
     const saved = JSON.parse(await readFile(path, 'utf8'))
@@ -243,6 +243,20 @@ describe('completed native turn checkpoints', () => {
     expect((await readdir(join(f.dependencies.directory, 'blobs'))).length).toBeGreaterThan(0)
     await f.service.forgetThread('thread-b')
     expect(await readdir(join(f.dependencies.directory, 'blobs'))).toEqual([])
+  })
+  it('writes a backup deleted outside Sotto again once a save has seen it gone', async () => {
+    const f = await fixture()
+    // The clock a minute ahead of the files, so no file is too recent to reuse its hash.
+    f.dependencies.now = () => Date.now() + 60_000
+    await f.complete()
+    const blobs = join(f.dependencies.directory, 'blobs')
+    for (const name of await readdir(blobs)) await rm(join(blobs, name))
+    // This send's capture still trusts the backups; its save sees they are gone.
+    await f.service.beforeTurn(f.state.threadId)
+    f.state.userMessageIds = ['user-1', 'user-2']
+    // So the capture that completes the turn writes them again.
+    await f.service.afterTurn(f.state.threadId)
+    expect((await readdir(blobs)).length).toBeGreaterThan(0)
   })
   it('evicts the oldest checkpoint first when newer snapshots exceed the byte budget', async () => {
     const f = await fixture(); let now = Date.now(); f.dependencies.now = () => now
@@ -305,7 +319,7 @@ describe('completed native turn checkpoints', () => {
     await expect(restarted.initialize()).rejects.toThrow(path)
     await rm(path, { recursive: true }); await writeFile(path, '[]')
     await restarted.initialize(); await restarted.beforeTurn('thread-a')
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1 })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2 })
   })
   it('refuses an expired checkpoint before calling native rollback between hourly sweeps', async () => {
     const f = await fixture(); let now = Date.now(); f.dependencies.now = () => now
@@ -339,7 +353,7 @@ describe('completed native turn checkpoints', () => {
       expect(await readdir(join(f.dependencies.directory, 'blobs'))).toEqual([])
     } finally { restarted.dispose(); vi.useRealTimers() }
   })
-  it('backs up damaged JSON and keeps readable recovery journals without blocking unrelated sends', async () => {
+  it('backs up damaged JSON and keeps readable recovery records without blocking unrelated sends', async () => {
     const f = await fixture(), request = await f.complete()
     f.rollback.mockResolvedValue({ accepted: false, uncertain: true })
     unwrap(await f.service.revertCheckpoint({ ...request, confirmed: true }))
@@ -355,7 +369,7 @@ describe('completed native turn checkpoints', () => {
     expect(await readFile(join(f.dependencies.directory, backup), 'utf8')).toBe(damaged)
     expect(report).toHaveBeenCalledWith(`Sotto set aside a checkpoint file it could not read as ${backup} and kept the rest.`)
     expect(unwrap(await restarted.checkpoints(f.target)).reason).toBe(`Sotto set aside a checkpoint file it could not read as ${backup} and kept the rest.`)
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1, records: saved.records })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2, records: saved.records })
     expect(f.rollback).toHaveBeenCalledTimes(1)
     f.dependencies.historyEnabled = () => false
     await restarted.privacyChanged()
@@ -378,7 +392,7 @@ describe('completed native turn checkpoints', () => {
     const restarted = new CheckpointService(f.dependencies); cleanup.push(async () => restarted.dispose())
     await restarted.initialize()
     expect(unwrap(await restarted.checkpoints(f.target)).checkpoints).toHaveLength(1)
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1, records: saved.records })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2, records: saved.records })
   })
   it('recovers an unreadable file once and accepts fresh checkpoints without restarting', async () => {
     const f = await fixture()
