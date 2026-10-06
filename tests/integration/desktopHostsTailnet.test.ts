@@ -35,6 +35,8 @@ const launchers: FixtureSsh[] = []
 /** Every launch script operation a fixture connection ran, with the kind of connection it ran on. */
 const operations: string[] = []
 let returnMs = 60_000
+/** How long a reconnect waits; at once unless a test holds it to see the threads reading Reconnecting. */
+let retryMs = 0
 /** Whether Tailscale is installed on the host's machine; the stand-in's Serve is used only while it is. */
 let tailscaleInstalled = true
 
@@ -78,7 +80,7 @@ beforeEach(async () => {
   stand = await serveStandIn(() => hostTailscale.proxied())
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; operations.length = 0; returnMs = 60_000
+  launchers.length = 0; operations.length = 0; returnMs = 60_000; retryMs = 0
   manager = newManager()
   await manager.start()
 })
@@ -87,7 +89,7 @@ afterEach(async () => {
   if (root && dirname(root) === tmpdir() && root.includes('sotto-desktop-tailnet-')) await rm(root, { recursive: true, force: true })
 })
 function newManager(): DesktopHosts {
-  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: () => 0,
+  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: () => retryMs,
     launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher }, tailnetReturnMs: returnMs,
     // MagicDNS and Serve's certificate cannot run here: the forge name goes to the stand-in on loopback.
     resolveTailnet: address => new URL(address).hostname === DNS ? stand.url : address })
@@ -154,10 +156,14 @@ describe('a tailnet connection (ADR-0053)', () => {
     await add()
     const thread = await remoteThread()
     launchers.length = 0
+    retryMs = 60_000
     stand.cut()
     await vi.waitFor(() => expect(row(thread)).toMatchObject({ clientReconnecting: true }))
-    await vi.waitFor(() => expect(row(thread)?.clientReconnecting).toBeUndefined(), { timeout: 20_000 })
+    expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true })
+    // The retry, pressed rather than waited for, goes over the tailnet and takes the same place.
+    await manager.command({ type: 'connect', id: first().id })
     await onTailnet()
+    expect(row(thread)?.clientReconnecting).toBeUndefined()
     expect(router.shell().activeThreadId).toBe(thread)
     expect(launchers).toEqual([])
   })
