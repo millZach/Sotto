@@ -126,6 +126,42 @@ describe('the append path a provider rail is handed to', () => {
   })
 })
 
+describe('the mark of a reply that is still growing', () => {
+  it('is kept as the chunks arrive, so a re-read of the same words is recognised and a different one is not', () => {
+    const log = new ThreadMessageLog()
+    log.observe([])
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('t', message('prompt', 'user', 'Ask'))
+    log.add('t', message('reply', 'assistant', 'Ind'))
+    // Both append paths: a suffix the stream names, and a whole message that grew.
+    log.appendText('t', 'reply', 'igo')
+    log.add('t', message('reply', 'assistant', 'Indigo it'))
+    for (const chunk of [' is', ', with', ' white', ' text.']) log.appendText('t', 'reply', chunk)
+    // A later message moves the newest one on, so a re-read of the reply is compared by its mark alone.
+    log.add('t', message('next', 'user', 'Thanks'))
+    events.length = 0
+    log.add('t', message('reply', 'assistant', 'Indigo it is, with white text.'))
+    expect(events).toEqual([])
+    log.add('t', message('reply', 'assistant', 'Indigo it is, with black text.'))
+    expect(events.map(item => item.event.kind)).toEqual(['message-replaced'])
+  })
+  it('starts again from the words after a reply was replaced', () => {
+    const log = new ThreadMessageLog()
+    log.observe([])
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('t', message('reply', 'assistant', 'First'))
+    log.appendText('t', 'reply', ' draft')
+    log.add('t', { ...message('reply', 'assistant', 'Second'), createdAt: '2026-09-19T10:00:01.000Z' })
+    log.appendText('t', 'reply', ' take')
+    log.add('t', message('next', 'user', 'Thanks'))
+    events.length = 0
+    log.add('t', { ...message('reply', 'assistant', 'Second take'), createdAt: '2026-09-19T10:00:01.000Z' })
+    expect(events).toEqual([])
+  })
+})
+
 describe('the count a publisher reads to tell a message’s first words from a chunk', () => {
   it('moves when a message says something for the first time, and not when it grows', () => {
     const log = new ThreadMessageLog()

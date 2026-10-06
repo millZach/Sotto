@@ -42,24 +42,29 @@ interface Track {
   /** Messages opened with no text yet: a stream that has announced a reply but not said anything. An
    * empty message is never recorded, so nothing has to be taken back when the turn drops it. */
   readonly empty: Set<string>
+  /** The hash behind the mark of the reply growing now, so the next chunk extends it rather than hashing
+   * the whole reply again. Only good for the message and the length it names. */
+  growing: { id: string; length: number; hash: number } | undefined
 }
 
 function freshTrack(): Track {
   return { messages: [], ids: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
-    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Set() }
+    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Set(), growing: undefined }
 }
 
 /** The mark of a message the store holds whose words the log never saw. The first report of it matches. */
 const UNREAD = '?'
 
 /** A short mark of a message's text, so an unchanged one can be recognised without keeping the words. */
-function mark(text: string): string {
-  let hash = 0x811c9dc5
+function mark(text: string): string { return markOf(text.length, fnv(text)) }
+function markOf(length: number, hash: number): string { return `${length}:${hash.toString(36)}` }
+/** FNV-1a over the text, continued from `hash`: the hash of a text and a suffix is the suffix hashed on from the text's. */
+function fnv(text: string, hash = 0x811c9dc5): number {
   for (let index = 0; index < text.length; index++) {
     hash ^= text.charCodeAt(index)
     hash = Math.imul(hash, 0x01000193) >>> 0
   }
-  return `${text.length}:${hash.toString(36)}`
+  return hash
 }
 
 /** True when the two messages differ in anything but their text. */
@@ -253,6 +258,7 @@ export class ThreadMessageLog {
     if (track.ids.get(message.id) === UNREAD) {
       // The store already holds this one; the provider is reading its own history back to us.
       track.ids.set(message.id, mark(message.text))
+      if (track.growing?.id === message.id) track.growing = undefined
       if (existing) Object.assign(existing, message)
       else track.messages?.push({ ...message })
       return
@@ -342,6 +348,7 @@ export class ThreadMessageLog {
     if (track.last?.id === messageId && !last || track.lastUser?.id === messageId && !lastUser
       || track.lastAssistant?.id === messageId && !lastAssistant) return
     track.ids.delete(messageId)
+    track.growing = undefined
     track.order = order
     track.userIds = userIds
     if (track.messages) track.messages = track.messages.filter(message => message.id !== messageId)
@@ -383,11 +390,20 @@ export class ThreadMessageLog {
       if (track.lastUser?.id === event.messageId) track.lastUser = { ...track.lastUser, text: track.lastUser.text + event.appendText }
       const grown = track.last?.id === event.messageId ? track.last.text
         : track.lastAssistant?.id === event.messageId ? track.lastAssistant.text : undefined
-      if (grown !== undefined) track.ids.set(event.messageId, mark(grown))
+      if (grown !== undefined) {
+        // The reply's mark is kept as it grows: the chunk is hashed on from the text before it, so a long
+        // reply costs its chunk rather than all of itself on every delta.
+        const before = grown.length - event.appendText.length
+        const growing = track.growing
+        const hash = growing?.id === event.messageId && growing.length === before ? fnv(event.appendText, growing.hash) : fnv(grown)
+        track.growing = { id: event.messageId, length: grown.length, hash }
+        track.ids.set(event.messageId, markOf(grown.length, hash))
+      }
       track.lastTextId = event.messageId
     } else if (event.kind === 'message-replaced') {
       const { message } = event
       track.ids.set(message.id, mark(message.text))
+      if (track.growing?.id === message.id) track.growing = undefined
       if (track.last?.id === message.id) track.last = { id: message.id, role: message.role, text: message.text }
       if (message.role === 'user' && track.lastUser?.id === message.id) track.lastUser = { ...message }
       if (message.role === 'assistant' && track.lastAssistant?.id === message.id) track.lastAssistant = { ...message }
