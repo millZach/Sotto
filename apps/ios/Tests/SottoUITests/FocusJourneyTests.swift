@@ -684,6 +684,26 @@ import XCTest
     func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
     func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
 
+    /// The app's CPU while a sentence is typed into a thread's reply box, three times. The comparison passes
+    /// --ui-drafts-on-model, which publishes each keystroke on the whole model as the app did before the draft store.
+    private func typingCPU(_ arguments: [String]) {
+        launch(["--ui-fixture", "--reset-ui-preferences"] + arguments)
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box opens the keyboard")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTCPUMetric(application: app)], options: options) {
+            reply.typeText("The tooltips look right now, ship it. ")
+        }
+    }
+    func testTypingCPUInAReply() { typingCPU([]) }
+    func testTypingCPUInAReplyPublishingOnTheModel() { typingCPU(["--ui-drafts-on-model"]) }
+
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
         let counts = byID("thread-counts")
