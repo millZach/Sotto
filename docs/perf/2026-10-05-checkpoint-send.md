@@ -21,6 +21,8 @@ October 5 amendment has the whole of it):
   own listing, Git's ignore files and the paths behind the reason (the largest files, for a folder over the size
   limit) stay as they were. Holding it costs a few `lstat`s and no Git command.
 - A send appends its record to `checkpoints.journal` instead of rewriting `checkpoints.json`.
+- A save counts the file backups of only the records added or changed since the last save, so a send's save does
+  not grow with the saved history.
 
 ## How it was measured
 
@@ -39,8 +41,11 @@ The working copies:
   with one file rewritten in each turn.
 - **Over the limits**: 3,000 files of 32 KiB (94 MiB), committed. Once more starting from a synthetic
   `checkpoints.json` of 1.5 MB (1,000 unavailable checkpoints and five completed ones of 1,000 files each), the
-  size of the file on the development machine. Once more, on its own copy, with an empty commit at the end of each
-  turn, which moves `HEAD` and so turns the held verdict around before every send.
+  size of the file on the development machine. Once more starting from 40 completed checkpoints of 2,000 files
+  before and after, every backup a different one, a long history (about 22 MB of `checkpoints.json`). Once more, on
+  its own copy, with an empty commit at the end of each turn, which moves `HEAD` and so turns the held verdict
+  around before every send. Its largest files are more than a verdict watches, so its verdict watches Git's state,
+  the top-level listing and the ignore files alone: the cheapest verdict to hold.
 - **Not a Git repository**: 200 files of 1 KiB with no `.git`.
 - **This repository**: the branch's own checkout, 4,552 files and 324 MiB as Git lists them (tracked files and
   untracked ones it does not ignore), so over the size limit.
@@ -50,24 +55,29 @@ seconds within which a snapshot does not trust its times.
 
 ## Before and after
 
-The checkpoint taken before each send, which the send waits on (run of October 6, after review):
+The checkpoint taken before each send, which the send waits on (run of October 6, after the second review):
 
 | Working copy | First send, before | First send, after | Later sends, before | Later sends, after | Files read a later send, before / after | Listings in 15 later sends, after |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Under the limits, unchanged | 4,391 ms | 1,028 ms | 2,946 ms (2,575-3,458) | 129 ms (109-178) | 2,001 / 0 | 15 |
-| Under the limits, one file edited a turn | 5,089 ms | 1,135 ms | 3,454 ms (2,966-4,140) | 139 ms (112-163) | 2,001 / 1 | 15 |
-| Over the limits | 7,180 ms | 391 ms | 7,882 ms (6,128-8,703) | 3.4 ms (2.4-5.5) | 2,048 (64 MiB) / 0 | 0 |
-| Over the limits, 1.5 MB of saved checkpoints | 8,780 ms | 275 ms | 9,133 ms (6,054-11,612) | 4.9 ms (3.8-6.6) | 2,048 (64 MiB) / 0 | 0 |
-| Over the limits, a commit each turn | 7,664 ms | 276 ms | 6,950 ms (5,684-50,148) | 142 ms (123-351) | 2,048 (64 MiB) / 0 | 15 |
-| Not a Git repository | 109 ms | 123 ms | 72 ms (63-93) | 9.9 ms (3.2-331) | 0 / 0 | 0 |
-| This repository | 2,971 ms | 273 ms | 1,864 ms (1,146-3,698) | 4.7 ms (2.8-20) | 605 (64 MiB) / 0 | 0 |
+| Under the limits, unchanged | 5,292 ms | 1,113 ms | 5,238 ms (4,473-5,982) | 169 ms (116-359) | 2,001 / 0 | 15 |
+| Under the limits, one file edited a turn | 4,485 ms | 808 ms | 4,915 ms (3,781-5,606) | 104 ms (95-241) | 2,001 / 1 | 15 |
+| Over the limits | 7,402 ms | 249 ms | 9,439 ms (6,934-11,630) | 3.8 ms (1.9-402) | 2,048 (64 MiB) / 0 | 0 |
+| Over the limits, 1.5 MB of saved checkpoints | 7,162 ms | 198 ms | 8,308 ms (6,698-10,955) | 2.7 ms (2.2-3.5) | 2,048 (64 MiB) / 0 | 0 |
+| Over the limits, 40 saved checkpoints of 2,000 files | 8,660 ms | 219 ms | 8,401 ms (7,310-10,040) | 2.3 ms (1.7-3.3) | 2,048 (64 MiB) / 0 | 0 |
+| Over the limits, a commit each turn | 6,062 ms | 228 ms | 7,473 ms (5,942-9,664) | 163 ms (108-333) | 2,048 (64 MiB) / 0 | 15 |
+| Not a Git repository | 98 ms | 122 ms | 92 ms (72-242) | 2.2 ms (1.9-4.3) | 0 / 0 | 0 |
+| This repository | 1,415 ms | 283 ms | 2,006 ms (930-3,185) | 3.2 ms (2.3-216) | 605 (64 MiB) / 0 | 0 |
+
+Before the second review a send's save still went over every saved checkpoint's files to count their backups.
+Against that commit (`1bb3f1ca`, `SOTTO_PERF_CHECKPOINT_BASE`), a later send into the copy with 40 saved
+checkpoints of 2,000 files took 73 ms (66-85); it takes 2.4 ms (1.6-2.8) now.
 
 The checkpoint taken when a turn completes, which no send waits on unless the next one arrives first:
 
 | Working copy | Later turns, before | Later turns, after | Files read, before / after |
 | --- | ---: | ---: | ---: |
-| Under the limits, unchanged | 2,955 ms | 155 ms | 2,001 / 0 |
-| Under the limits, one file edited a turn | 3,379 ms | 162 ms | 2,001 / 1 |
+| Under the limits, unchanged | 5,272 ms | 189 ms | 2,001 / 0 |
+| Under the limits, one file edited a turn | 4,614 ms | 141 ms | 2,001 / 1 |
 
 Over the limits and outside Git a turn has no capturing checkpoint to complete, before and after, so its
 completion costs nothing either way.
@@ -78,13 +88,15 @@ file only when it has outgrown it, which that test bounds at fewer than 20 rewri
 
 What the issue asked for:
 
-- **Over the limit, every send after the first under 50 ms and no file read**: 2.4-6.6 ms and none on the synthetic
-  copy, with and without the development machine's file size, and 2.8-20 ms and none on this repository, while the
-  verdict holds. A send after something turned the verdict around (a commit, a checkout, a reset, a file added to or
-  removed from the index, a change at the top of the folder, in its ignore files or in the large files behind the
-  reason) lists the folder again: 123-351 ms and no file read in the "commit each turn" row.
+- **Over the limit, every send after the first under 50 ms and no file read**: medians of 2.3-3.8 ms and none on
+  the synthetic copies, with the development machine's file size and with a long history, and 3.2 ms and none on
+  this repository, while the verdict holds. Two of those 45 sends took 216 and 402 ms with no listing and no read,
+  on a machine another agent's builds were using (below). A send after something turned the verdict around (a
+  commit, a checkout, a reset, a file added to or removed from the index, a change at the top of the folder, in its
+  ignore files or in the large files behind the reason) lists the folder again: 108-333 ms and no file read in the
+  "commit each turn" row.
 - **Under the limit, nothing changed since the last snapshot, no file contents read**: none, for files last written
-  more than three seconds before the snapshot that read them. What remains, about 130 ms, is the three Git commands
+  more than three seconds before the snapshot that read them. What remains, about 100-170 ms, is the three Git commands
   every snapshot runs (`ls-files` for the file list, `ls-files --stage` and `rev-parse HEAD` for the record) and
   2,000 `lstat`s. A file edited in the turn is read once by the completion snapshot and once more by the next
   send's, because it was written within three seconds of the first.
@@ -103,12 +115,12 @@ The oldest folders' files are forgotten first; their verdicts, a few hundred byt
   either column. The resolver the app uses copies the workspace snapshot to find the thread, which neither column
   includes either. What the old read cost depends on the provider and the thread; for Codex a whole read was 48-902
   ms at 50 to 500 turns (`2026-09-26-codex-send-read.md`). The first send after Sotto starts also asks Git for the
-  folder's checkout and its Git directory, which later sends do not.
+  folder's checkout and its Git directory, which later sends do not. A save still lists the backup folder to clean
+  it up, which none of these copies fills; that cost is as it was before this work.
 - Taken on the Windows development machine (Intel Core Ultra 9 275HX, Node v24) while another agent's build and test
-  runs shared it, which is why the ranges are wide and why the "not a Git repository" row has a 331 ms send that ran
-  no listing: four `lstat`s waited on a busy disk. An earlier run of October 6, before the listing count was added,
-  had stretches of held sends at 70-370 ms that I could not reproduce in about thirty runs since; the counted run
-  above ran no listing on any held send. Read them as sizes, not budgets. Nothing asserts a time.
+  runs shared it, which is why the ranges are wide and why two held sends took 216 and 402 ms while running no
+  listing and reading no file: a few `lstat`s waited on a busy disk. Read them as sizes, not budgets. Nothing
+  asserts a time.
 - The synthetic copies are filler of fixed sizes, not measured from real projects.
 
 ## Re-run

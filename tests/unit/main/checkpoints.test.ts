@@ -207,7 +207,7 @@ describe('completed native turn checkpoints', () => {
     expect(unwrap(await restarted.recoverCheckpoint(request)).status).toBe('reverted')
     expect(f.rollback).toHaveBeenCalledTimes(1)
   })
-  it('keeps a reverting journal and its blobs when its thread is forgotten', async () => {
+  it('keeps a reverting checkpoint record and its blobs when its thread is forgotten', async () => {
     const f = await fixture(); await f.complete()
     const path = join(f.dependencies.directory, 'checkpoints.json')
     const saved = JSON.parse(await readFile(path, 'utf8'))
@@ -339,7 +339,7 @@ describe('completed native turn checkpoints', () => {
       expect(await readdir(join(f.dependencies.directory, 'blobs'))).toEqual([])
     } finally { restarted.dispose(); vi.useRealTimers() }
   })
-  it('backs up damaged JSON and keeps readable recovery journals without blocking unrelated sends', async () => {
+  it('backs up damaged JSON and keeps readable recovery records without blocking unrelated sends', async () => {
     const f = await fixture(), request = await f.complete()
     f.rollback.mockResolvedValue({ accepted: false, uncertain: true })
     unwrap(await f.service.revertCheckpoint({ ...request, confirmed: true }))
