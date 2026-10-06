@@ -133,6 +133,10 @@ private final class FollowBox {
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
     var atBottom = true
+    /// The user is holding the page, dragging it or letting a flick run out, so it never moves under them.
+    var userScrolling = false
+    /// Counts requests to follow, so a burst of them (a reply arriving a few words at a time) scrolls once.
+    var follows = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -233,6 +237,13 @@ private struct Conversation: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onUserScrolling { scrolling in
+                follow.userScrolling = scrolling
+                guard !scrolling else { return }
+                // What arrived while they held the page is followed once they let go at the bottom.
+                follow.settle()
+                if follow.atBottom { toBottom(proxy) }
+            }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)
@@ -400,13 +411,30 @@ private struct Conversation: View {
     }
 
     /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
+    /// Only the last of several requests made together scrolls, and none while the user is moving the page.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
+        guard !box.userScrolling else { return }
+        box.follows += 1
+        let request = box.follows
         Task { @MainActor in
             await Task.yield()
+            guard box.follows == request, !box.userScrolling else { return }
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            if box.atBottom { scroll.scrollTo(Self.end, anchor: .bottom) }
+            if box.follows == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+        }
+    }
+}
+
+private extension View {
+    /// Says whether the user is moving the page: holding it, dragging it or letting a flick run out. iOS 17 can't say,
+    /// so there the page follows as it did before.
+    @ViewBuilder func onUserScrolling(_ changed: @escaping (Bool) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollPhaseChange { _, phase in changed(phase == .tracking || phase == .interacting || phase == .decelerating) }
+        } else {
+            self
         }
     }
 }
