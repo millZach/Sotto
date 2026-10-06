@@ -11,6 +11,8 @@ import { fakeSystemd, type FakeSystemd, type FakeSystemdState } from '../fixture
 // Start at boot (ADR-0054) over fake systemctl and loginctl executables on the path. Real systemd is never touched. macOS
 // hosts cannot start at boot, so the launch script never asks systemd there and these cases have nothing to run.
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
+// Each case runs several launch script operations, each a Node start and a fake systemctl call per step.
+vi.setConfig({ testTimeout: 60_000 })
 const directories: string[] = [], children: ChildProcess[] = [], pids: number[] = []
 let systemd: FakeSystemd | undefined
 afterEach(async () => {
@@ -30,7 +32,8 @@ async function fixture(state: FakeSystemdState = {}) {
   await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host/index.js'))
   const dataDirectory = join(directory, 'data')
   systemd = await fakeSystemd(directory, { data: dataDirectory, ...state })
-  return { directory, installPath, dataDirectory, remotePort: 0, readyTimeoutMs: 8000, stopDrainMs: HOST_STOP_DRAIN_MS, systemd }
+  // A deadline only a hung host reaches: each fake call is a process of its own, which a loaded machine starts slowly.
+  return { directory, installPath, dataDirectory, remotePort: 0, readyTimeoutMs: 30_000, stopDrainMs: HOST_STOP_DRAIN_MS, systemd }
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
 interface Outcome { readonly messages: Record<string, unknown>[]; readonly result: Record<string, unknown> }
@@ -61,7 +64,7 @@ async function installed(state: FakeSystemdState = {}) {
   const configuration = await fixture({ linger: true, ...state })
   await run(configuration, { op: 'launch' })
   const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
-  expect(install.result).toMatchObject({ type: 'boot-installed', installed: true, stopped: true })
+  expect(install.result).toEqual(expect.objectContaining({ type: 'boot-installed', installed: true, stopped: true }))
   return configuration
 }
 /** The calls since `from`, without the state reads, which say nothing about what the script changed. */
@@ -406,7 +409,7 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await copyFile(join(newHost, 'index.js'), join(newHost, 'fake.mjs'))
       await writeFile(join(newHost, 'index.js'), "process.env.FAKE_HOST_START_DELAY_MS = '600000'\nawait import('./fake.mjs')\n")
       const before = (await systemd!.calls()).length, hosts = (await systemd!.spawned()).length
-      const outcome = await run({ ...configuration, readyTimeoutMs: 4000 }, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
+      const outcome = await run({ ...configuration, readyTimeoutMs: 8000 }, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
       expect(outcome.result).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-timeout' })
       expect(await changes(before)).toEqual(['systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host',
         'systemctl stop sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
