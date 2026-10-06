@@ -93,6 +93,14 @@ it('starts the sign-in deadline after the askpass helper is ready', async () => 
     await connecting.catch(() => undefined)
   }
 })
+it('says the host refused a revoke only when the launch script answered so, and that SSH failed when no answer came', async () => {
+  for (const [mode, code] of [['revoke-refused', 'revoke-failed'], ['revoke-silent', 'ssh-failed']] as const) {
+    const { launcher } = await fixture(mode)
+    const connection = await launcher.connect(configuration)
+    await expect(connection.revokeClient('22222222-2222-4222-8222-222222222222')).rejects.toMatchObject({ code })
+    await connection.close()
+  }
+})
 it('turns multiplexing and any configured remote command off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
   const { launcher, spawns } = await fixture('started')
   const connection = await launcher.connect(configuration)
@@ -324,6 +332,27 @@ it('keeps the administrative token the launch read for this connection, and neve
   expect(spawned.filter(item => item.op).map(item => item.op)).toEqual(['launch'])
   for (const item of spawned) expect(item.args.join(' ')).not.toContain('remote-only-secret')
   await connection.stopHost()
+})
+// An admin connection (ADR-0053): the same sign-in and forward, but the launch only finds a running host.
+it('opens an admin connection only to a running host, starts none, and names the Node its launch ran under', async () => {
+  const { launcher, path, spawns } = await fixture('run')
+  const install = join(path, 'opt', 'sotto release', 'host')
+  await mkdir(install, { recursive: true })
+  await writeFile(join(install, '..', 'package.json'), JSON.stringify({ type: 'module' }))
+  await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(install, 'index.js'))
+  const descriptor = join(path, 'data', 'sotto', 'host-listener.json')
+  expect((await failure(launcher.connect(configuration, {}, { start: false }))).code).toBe('host-not-running')
+  await expect(readFile(descriptor, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  // No forward was opened for a host that is not there.
+  expect((await spawns()).some(item => item.tunnel)).toBe(false)
+  const started = await launcher.connect(configuration)
+  hosts.push((JSON.parse(await readFile(descriptor, 'utf8')) as { pid: number }).pid)
+  expect(started.node).toMatch(/node(\.exe)?$/iu)
+  await started.close()
+  const admin = await launcher.connect(configuration, {}, { start: false })
+  expect(admin).toMatchObject({ owned: true, hostId: started.hostId, node: started.node })
+  expect(await admin.hostAdminToken()).toBe('remote-only-secret')
+  expect(await admin.stopHost()).toBe(true)
 })
 it('says phone access cannot be reached when the launch handed back no token', async () => {
   const { launcher } = await fixture('started')

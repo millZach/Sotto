@@ -28,7 +28,7 @@ Implementation shapes the ADRs leave open, recorded here so the pull requests ag
 - Drops and moves call the router's `setReconnecting` and then `replace`, generalising the path a host update's restart uses. `remove` is for Forget, switch-off and a final failure.
 - `tailnetConnections` is host-local but lives in `AppSettings` like `phoneAccess`, because the host's settings store validates against it. It is not on the desktop's settings allow-list in `registerIpc.ts`: nothing on a desktop sets it, and the host's administrative route writes it. `tests/integration/ipc.test.ts`'s every-field check leaves it out the way it leaves out `hotkey` and `launchAtStartup`, with a comment saying why.
 - The launch script's `boot-status` result is `{ supported, reason?, installed, enabled, active, linger, nodeDrift, fix? }`, where `fix` is the `sudo loginctl enable-linger <user>` line whenever linger is off. A launch reports the same shape.
-- The launch script's `revoke-client` stays the only revoke. `LiveHost.admin()` exposes it, and Forget calls it through `admin()` whichever connection carries the socket; the socket gains no revoke command.
+- The launch script's `revoke-client` stays the only revoke. `DesktopHosts.press()` runs it, keyed by the saved host rather than the live connect so that Forget of a switched-off host has one, and Forget calls it through `press()` whichever connection carries the socket (ADR-0053, October 5 amendment); the socket gains no revoke command.
 
 ## 2. The unit
 
@@ -115,19 +115,19 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
 3. **Keep the admin SSH apart from a host's socket connection**
    - Branch: `feat/host-admin-connection`.
    - A refactor that changes no behaviour a user sees, except Forget's when SSH cannot reach the host:
-     - `LiveHost` gets `admin(): Promise<AdminConnection>`, which returns the SSH connection when the host is on it and otherwise opens an admin connection (lazy, 60 seconds idle close);
+     - `DesktopHosts` gets `press(host, work)`, which runs the press over the SSH connection when the host is on it and otherwise over an admin connection (lazy, held for the whole press, 60 seconds idle close);
      - `openSocket` takes `{ url, expectedHostId }`;
-     - phones, updates, stop, forget and cancelAdd go through `admin()`;
-     - Forget revokes this desktop with `admin()`'s `revokeClient` (the launch script's `revoke-client`) before the stop and the boot unit's removal, whichever connection carries the socket, no longer only when the host has a tunnel. When `admin()` cannot reach the host, or reaches it stopped so `revoke-client` fails, Forget still removes it from this desktop and clears its credential, and its result says the pairing was not revoked, which Settings > Hosts turns into the sentence and command in section 4;
+     - phones, updates, stop, forget and cancelAdd go through `press()`;
+     - Forget revokes this desktop with `press()`'s `revokeClient` (the launch script's `revoke-client`) before the stop and the boot unit's removal, whichever connection carries the socket, no longer only when the host has a tunnel. When `press()` cannot reach the host, or reaches it stopped so `revoke-client` fails, Forget still removes it from this desktop and clears its credential, and its result says the pairing was not revoked, which Settings > Hosts turns into the sentence and command in section 4;
      - drops use `setReconnecting` then `replace`;
      - `SocketHostService` gates on hello's features, and `pair()` refuses any address that is not loopback.
    - Tests:
      - `desktopHosts.test.ts`: threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it;
-     - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `admin()` failing to connect, or reaching a stopped host so `revoke-client` returns `failed`, the host is removed, its credential cleared and the result says not revoked; `revoked: false` counts as revoked; the revoke's drop of the socket does not reconnect or pair again;
+     - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `press()` failing to connect, or reaching a stopped host so `revoke-client` returns `failed`, the host is removed, its credential cleared and the result says not revoked; `revoked: false` counts as revoked; the revoke's drop of the socket does not reconnect or pair again;
      - the `hostPhones` and `hostUpdates` unit tests.
 4. **Connect to a host over its tailnet before SSH**
    - Branch: `feat/host-tailnet-connection`.
-   - Files: `hostConnectionPlan.ts`; the tailnet store; `HostStatus.via` and `tailnetNote`; the 5-minute return check; the `set-connection` command, which turns `tailnetConnections` on or off over `admin()`; the grant left for the next SSH or admin connection.
+   - Files: `hostConnectionPlan.ts`; the tailnet store; `HostStatus.via` and `tailnetNote`; the 5-minute return check; the `set-connection` command, which turns `tailnetConnections` on or off over `press()`; the grant left for the next SSH or admin connection.
    - Test seam: a `resolveTailnet` option on `DesktopHosts`, wired in main only for e2e (`SOTTO_E2E_TAILNET_MAP=forge.tail5728ca.ts.net=127.0.0.1:<port>`, guarded like `SOTTO_E2E_SSH_SCRIPT`), which lets plain HTTP reach that one loopback mapping.
    - Tests:
      - unit tests of the planner's table, including a host with no entry staying on SSH;
