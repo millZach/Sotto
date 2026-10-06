@@ -43,13 +43,14 @@ export type HostSetupStep = typeof HOST_SETUP_STEPS[number]
 export type HostTailnetNote = 'unreachable' | 'no-address' | 'no-tailscale' | 'operator'
 /**
  * Where Add host's tailnet step stands. `ssh` says why the host stayed on its SSH connection: one of the row's notes, a host
- * too old for tailnet connections (`old-host`), or a host that could not be reached for the setting or refused it, with the
- * host's own sentence (`error`) when it answered that it could not save the setting.
+ * too old for tailnet connections (`old-host`), a host Sotto could not reach for the setting, or lost while the step ran
+ * (`not-reached`), or a host that refused the setting, with the host's own sentence (`error`) when it answered that it
+ * could not save it.
  */
 export type HostAddTailnet =
   | { readonly state: 'active' }
   | { readonly state: 'done' }
-  | { readonly state: 'ssh'; readonly why: HostTailnetNote | 'old-host' }
+  | { readonly state: 'ssh'; readonly why: HostTailnetNote | 'old-host' | 'not-reached' }
   | { readonly state: 'ssh'; readonly why: 'refused'; readonly error?: string | undefined }
 /** How long Sotto waits for the user to approve a connection Tailscale SSH holds in its `check` mode. */
 export const TAILSCALE_APPROVAL_MS = 5 * 60_000

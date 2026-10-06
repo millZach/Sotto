@@ -12,6 +12,7 @@ describe('what Add host’s tailnet step says when it kept the host on SSH (ADR-
     ['no-address', 'forge hasn’t said where your tailnet reaches it yet, so forge is connected over SSH and nothing was lost. Sotto tries again every 5 minutes.', undefined],
     ['old-host', 'The host on forge can’t be reached over your tailnet until it is updated, so forge is connected over SSH and nothing was lost. Update it from the Threads page, then press Try the tailnet again.', undefined],
     ['refused', 'The host on forge didn’t turn on its tailnet connections, so forge is connected over SSH and nothing was lost. Press Try the tailnet again.', undefined],
+    ['not-reached', 'Sotto couldn’t reach the host on forge to turn on its tailnet connections, so forge is connected over SSH and nothing was lost. Press Try the tailnet again.', undefined],
     ['unreachable', `forge didn’t answer at ${ADDRESS}, so forge is connected over SSH and nothing was lost. Sotto tries the tailnet again every 5 minutes.`, undefined],
   ] as const)('says why for %s', (why, text, command) => {
     expect(tailnetStepNote({ state: 'ssh', why }, 'forge', ADDRESS)).toEqual({ text, ...(command ? { command } : {}) })
@@ -64,6 +65,8 @@ describe('Add host’s tailnet step as the dialog shows it', () => {
     expect(tailnetStepView(kept, undefined, { running: false })).toEqual({ state: 'ssh', why: 'operator' })
     expect(tailnetStepView(forge({ via: 'ssh', addTailnet: { state: 'ssh', why: 'old-host' } }), undefined, { running: false })).toEqual({ state: 'ssh', why: 'unreachable' })
     expect(tailnetStepView(forge({ via: 'tailnet', addTailnet: { state: 'ssh', why: 'operator' } }), undefined, { running: false })).toEqual({ state: 'done' })
+    // A press that failed, then a 5-minute check that reached the tailnet after all: the step follows the host.
+    expect(tailnetStepView(forge({ via: 'tailnet', addTailnet: { state: 'ssh', why: 'operator' } }), undefined, { running: false, error: 'Nothing was changed.' })).toEqual({ state: 'done' })
   })
 })
 

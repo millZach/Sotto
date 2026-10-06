@@ -47,6 +47,7 @@ export function tailnetStepNote(view: Extract<TailnetStepView, { state: 'ssh' }>
     case 'operator': return { text: `${name}’s Tailscale Serve needs your SSH account to be Tailscale’s operator there, ${ssh} Run this on ${name}, ${again}`, command: TAILSCALE_OPERATOR_COMMAND }
     case 'no-tailscale': return { text: `Tailscale isn’t running on ${name}, ${ssh} Start Tailscale there, ${again}` }
     case 'no-address': return { text: `${name} hasn’t said where your tailnet reaches it yet, ${ssh} Sotto tries again every 5 minutes.` }
+    case 'not-reached': return { text: `Sotto couldn’t reach the host on ${name} to turn on its tailnet connections, ${ssh} Press ${TRY_TAILNET_AGAIN}.` }
     case 'old-host': return { text: `The host on ${name} can’t be reached over your tailnet until it is updated, ${ssh} Update it from the Threads page, ${again}` }
     case 'refused': return { text: view.error ? `${view.error} ${name} is connected over SSH and nothing was lost. Press ${TRY_TAILNET_AGAIN}.` : `The host on ${name} didn’t turn on its tailnet connections, ${ssh} Press ${TRY_TAILNET_AGAIN}.` }
     case 'error': return { text: view.error }

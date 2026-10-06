@@ -42,7 +42,8 @@ export function hostConnectionLine(host: HostStatus): { readonly connection: str
   if (tailnet && host.phase === 'connecting' && !host.reconnecting && !host.tailscale?.waiting && !host.prompt) {
     return { connection: null, via: null, status: host.via === 'tailnet' ? 'Connecting over your tailnet…' : 'Connecting over SSH…', note: null }
   }
-  const note = tailnet && host.phase === 'connected' && host.via === 'ssh' && host.tailnetNote ? 'Tailnet did not answer' : null
+  // The tailnet did not answer at its address, or the host has not set it up yet; the line under the row says which.
+  const note = tailnet && host.phase === 'connected' && host.via === 'ssh' && host.tailnetNote ? host.tailnetNote === 'unreachable' ? 'Tailnet did not answer' : 'Tailnet not ready' : null
   // A reconnect says which connection it is trying, as a connected host does.
   const reconnectingOverTailnet = host.phase === 'connecting' && host.via === 'tailnet'
   return { connection: reconnectingOverTailnet ? 'Tailnet' : ssh, via: reconnectingOverTailnet ? 'tailnet' : 'ssh', status: hostStatusLabel(host), note }

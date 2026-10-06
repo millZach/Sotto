@@ -6,6 +6,7 @@ import type { HostPhoneAccessSummary } from '../../../../shared/hostProtocol'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
+import { HostSshQuestion } from './HostSshQuestion'
 import { HostsModal } from './HostsModal'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
 import { TAILSCALE_GUIDE_URL, TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
@@ -119,9 +120,15 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
 
   const live = connected && state !== undefined
   const approving = host.adminSignIn === true && host.tailscale?.waiting === true
-  // What the dialog last read stays on show while Tailscale holds a new admin connection, but nothing is pressed through it
-  // until the user approves: a change would only wait behind the approval.
-  const busy = view?.busy === true || approving
+  // SSH's question for that admin connection, asked here because the question over the page waits while this dialog is open.
+  const asking = host.adminSignIn === true ? host.prompt : undefined
+  // What the dialog last read stays on show while Tailscale or SSH holds a new admin connection, but nothing is pressed
+  // through it until the user approves or answers: a change would only wait behind the sign-in.
+  const busy = view?.busy === true || approving || asking !== undefined
+  const answer = async (prompt: NonNullable<HostStatus['prompt']>, value: string): Promise<void> => {
+    try { await bridge.command({ type: 'ssh-answer', id, promptId: prompt.id, answer: value }) }
+    catch { setError(`SSH did not take the answer. Close Phones on ${name} and open it again to sign in again.`) }
+  }
   const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
   const failure = state ? hostPhonesFailure(state, name) : null
@@ -174,10 +181,12 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
           </span>
         </div>
       </div> : null}
+      {asking ? <HostSshQuestion prompt={asking} onAnswer={value => answer(asking, value)}
+        actions={<Button variant="secondary" onClick={() => void bridge.command({ type: 'stop-admin-sign-in', id }).catch(() => undefined)}>Stop signing in</Button>} /> : null}
       {/* Until the host is read, nothing here is known: the switch shows once it is, rather than reading off. */}
       {connected && !state ? <ol className="phones-steps host-phones-steps host-phones-unread" aria-label={`Phone access on ${name}`} aria-busy={!view?.error || undefined}>
         <li data-step="waiting"><StepMark step="waiting" /><div className="phones-step__copy"><b>Let phones reach {name}</b>
-          <p role="status">{view?.error ? 'Not read.' : approving ? `Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : `Reading phone access on ${name}…`}</p></div></li>
+          <p role="status">{view?.error ? 'Not read.' : approving || asking ? `Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : `Reading phone access on ${name}…`}</p></div></li>
         {[`Tailscale on ${name}`, `Tailscale Serve on port ${PHONE_ACCESS_SERVE_PORT}`, 'Paired phones'].map(title => <li key={title} data-step="waiting"><StepMark step="waiting" />
           <div className="phones-step__copy"><b>{title}</b><p>Waits for the step above.</p></div></li>)}
       </ol> : <div className="phones-switch">

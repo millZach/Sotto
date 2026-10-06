@@ -138,6 +138,17 @@ it('keeps what it last read on show, with nothing to press, while Tailscale wait
   expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toBeDisabled()
 })
 
+it('asks SSH’s question for its admin connection in the dialog, and stops signing in on a press (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { sent } = fixture({ state: phones() }, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, prompt: { id: 'prompt-3', kind: 'password', text: 'Password:' } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toBeDisabled()
+  await user.type(within(dialog).getByLabelText('SSH password'), 'secret{Enter}')
+  expect(sent()).toContainEqual({ type: 'ssh-answer', id: REMOTE, promptId: 'prompt-3', answer: 'secret' })
+  await user.click(within(dialog).getByRole('button', { name: 'Stop signing in' }))
+  expect(sent()).toContainEqual({ type: 'stop-admin-sign-in', id: REMOTE })
+})
+
 it('shows phone access as not read yet until the host is read, with no switch to mislead (ADR-0053)', async () => {
   const user = userEvent.setup()
   const { push } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))

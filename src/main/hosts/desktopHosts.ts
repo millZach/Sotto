@@ -117,7 +117,7 @@ class MoveWaits extends Error {}
 /** Why a connect went to SSH past the tailnet: what the row says, and the address that just failed, which waits for the 5-minute check. */
 interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined }
 /** What Add host's tailnet step found: the host's setting once it is on, or why the host stays on its SSH connection. */
-type StayedOnSsh = 'no-tailscale' | 'old-host' | 'refused'
+type StayedOnSsh = 'no-tailscale' | 'old-host' | 'not-reached' | 'refused'
 /** Add host's tailnet step: the setting once it is on, or why the host stays on SSH, with the host's sentence when it gave one. */
 type AddStepAnswer = { readonly setting: HostTailnetSetting } | { readonly why: StayedOnSsh; readonly error?: string | undefined }
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
@@ -817,18 +817,25 @@ export class DesktopHosts {
     if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
     validateConnection(input)
     const choosing = prefer !== undefined && prefer !== this.tailnet.get(existing.id).prefer
-    if (choosing) {
-      await this.setConnection(existing, prefer)
-      if (sameConnection(existing, input)) return this.get()
-    }
-    try { return await this.saveConnection(existing, input) }
+    if (!choosing) return this.saveConnection(existing, input)
+    if (sameConnection(existing, input)) { await this.setConnection(existing, prefer); return this.get() }
+    // New SSH settings with a new choice: the settings are saved and connected with first, so the choice is pressed over the
+    // route the owner just corrected, on the SSH connection that connect opens, and choosing SSH only signs in once.
+    await this.saveConnection(existing, input, true)
+    const saved = this.saved.find(item => item.id === existing.id)
+    if (!saved) return this.get()
+    try { await this.setConnection(saved, prefer) }
     catch (error) {
-      if (!choosing) throw error
-      throw new Error(`Sotto now connects to ${existing.name} the way you chose, but its SSH settings were not saved. Save the connection again.`, { cause: error })
+      if (error instanceof SignInStopped) throw error
+      throw new Error(`The SSH settings for ${existing.name} are saved, but how Sotto connects did not change. Check that ${existing.name} is reachable with them, then choose again in Edit connection.`, { cause: error })
     }
+    return this.get()
   }
-  /** Saves a checked connection and connects again with it if the host is on. */
-  private async saveConnection(existing: SavedHost, input: Connection): Promise<HostsState> {
+  /**
+   * Saves a checked connection and connects again with it if the host is on; `wait` waits for that connect to end, connected
+   * or not, as Edit connection does before it presses a new choice over it.
+   */
+  private async saveConnection(existing: SavedHost, input: Connection, wait = false): Promise<HostsState> {
     await this.disconnect(existing.id)
     // Editing a route must not silently transfer a credential to a different host: the saved host identity stays
     // and is checked on the next connect. The switch is not part of the connection, so it stays as it was.
@@ -838,7 +845,10 @@ export class DesktopHosts {
     this.status.set(next.id, { ...this.status.get(next.id)!, ...this.fields(next), phase: 'disconnected' })
     await this.save(); this.emit()
     // Saving is a test connect of the saved route, so it goes over SSH even for a host that prefers the tailnet (ADR-0053).
-    if (next.enabled !== false) this.keepConnected(next, false, true)
+    if (next.enabled !== false) {
+      const connecting = this.keepConnected(next, false, true)
+      if (wait) await connecting
+    }
     return this.get()
   }
   /**
@@ -846,11 +856,11 @@ export class DesktopHosts {
    * as a dropped connection is. At launch the row reads Reconnecting… from the first attempt; after a switch-on
    * or an edit, the first attempt reads Connecting… and only a retry reads Reconnecting….
    */
-  private keepConnected(host: SavedHost, atLaunch = false, edited = false): void {
-    if (this.closed) return
+  private keepConnected(host: SavedHost, atLaunch = false, edited = false): Promise<void> {
+    if (this.closed) return Promise.resolve()
     this.clearRetry(host.id)
     this.retries.set(host.id, { timer: undefined, attempt: 0, active: undefined, ...(atLaunch ? {} : { first: true }), ...(edited ? { edited: true } : {}) })
-    void this.open(host).catch(() => undefined)
+    return this.open(host).catch(() => undefined)
   }
   private async open(host: SavedHost): Promise<void> {
     const adding = this.isAttempt(host)
@@ -1228,8 +1238,12 @@ export class DesktopHosts {
       if (step && 'why' in step) kept = step
       await this.followTailnet(host, active, { setting: step && 'setting' in step ? step.setting : undefined, ...miss })
     } catch { /* The host stays where it is, on its SSH connection. */ }
-    // Add host's tailnet step ends here, on whichever connection the socket is on now.
-    if (addStep) this.update(host.id, { addTailnet: this.addTailnetOutcome(host, kept) })
+    if (!addStep || !this.saved.includes(host)) return
+    // Add host's tailnet step ends here, on whichever connection the socket is on now. A host whose connection dropped
+    // while the step ran says so, whatever the step's press made of it, and its retry is Try the tailnet again.
+    const now = this.live.get(host.id)
+    const lost = now !== active && now?.via !== 'tailnet'
+    this.update(host.id, { addTailnet: lost ? { state: 'ssh', why: 'not-reached' } : this.addTailnetOutcome(host, kept) })
   }
   /** How Add host's tailnet step came out: done when the socket is on the tailnet connection, and otherwise why it is not. */
   private addTailnetOutcome(host: SavedHost, kept: Extract<AddStepAnswer, { why: StayedOnSsh }> | undefined): HostAddTailnet {
@@ -1252,8 +1266,10 @@ export class DesktopHosts {
       before = await this.press(host, connection => hostTailnetSetting(connection, hostId))
       setting = before.enabled ? before : await this.press(host, connection => hostTailnetSetting(connection, hostId, true))
     } catch (error) {
-      // A host too old for the route answers 400; anything else that does not reach it, or that it refuses, keeps it on SSH.
-      return { why: error instanceof HostAdminRefused && error.status === 400 ? 'old-host' : 'refused' }
+      // A host too old for the route answers 400, and any other answer refuses it. A press that got no answer, such as a
+      // timeout or a dropped SSH connection, did not reach the host. Each keeps it on SSH.
+      if (error instanceof HostAdminRefused) return { why: error.status === 400 ? 'old-host' : 'refused' }
+      return { why: 'not-reached' }
     }
     // The host's own sentence says why it could not save the setting; the step shows it.
     if (setting.error) return { why: 'refused', error: setting.error }
@@ -1353,9 +1369,10 @@ export class DesktopHosts {
     // A host that gave no address may have a Serve that waited for Tailscale, or for the SSH account to be its operator,
     // which the host does not try again by itself. The check reads the setting and tries that Serve again, over the SSH
     // connection the host is on, so it still signs in nothing.
+    // Only a connection already open carries it: a dropped one, or one a restart is closing, is passed over, not signed in again.
     const note = this.status.get(host.id)?.tailnetNote, hostId = host.hostId
-    if (note && note !== 'unreachable' && hostId && !this.updates?.busy(host.id)) {
-      const setting = await this.press(host, async connection => {
+    if (note && note !== 'unreachable' && hostId && !active.closing && !active.sshClosed && !this.updates?.busy(host.id)) {
+      const setting = await this.pressIfOpen(host, async connection => {
         const now = await hostTailnetSetting(connection, hostId)
         return now.enabled && !now.error && settingNote(now) ? retryTailnetServe(connection, hostId) : now
       }).catch(() => undefined)

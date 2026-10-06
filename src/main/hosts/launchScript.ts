@@ -434,8 +434,13 @@ const withDesktopsLock = async work => {
       else await pause(10 + Math.floor(Math.random() * 40));
       continue;
     }
-    try { await work(); }
-    finally { await handle.close().catch(() => undefined); await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined); }
+    // The lock names its holder, so a holder that stalled past the takeover removes only its own lock, never the next one's.
+    const token = crypto.randomUUID();
+    try { await handle.writeFile(token); await work(); }
+    finally {
+      await handle.close().catch(() => undefined);
+      if ((await fs.readFile(desktopsLockPath, 'utf8').catch(() => '')) === token) await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined);
+    }
     return;
   }
 };

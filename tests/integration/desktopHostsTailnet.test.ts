@@ -49,6 +49,8 @@ let clock = 0
 let adminTokenOverride: string | undefined
 /** Holds every administrative token request until released, so a press stays running while something else happens. */
 let tokenGate: Promise<void> | undefined
+/** Fails every administrative token request as a dropped SSH connection would, with no answer from the host. */
+let tokenUnanswered = false
 /** What a start at boot change on the fixture's connections answers; none has one unless a test gives it. */
 let bootChange: (() => Promise<SshBootResult>) | undefined
 const bootOn = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } as const
@@ -73,7 +75,7 @@ class FixtureSsh extends SshHostLauncher {
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: about.hostId }),
       ensureDesktopAnswers: async clientId => { operations.push(`${which} desktop-answers`); await ensureFixtureDesktopAnswers(data, about.hostId, clientId) },
       revokeClient: async clientId => { operations.push(`${which} revoke-client`); return (await admin('revoke-client', { clientId })).revoked === true },
-      hostAdminToken: async () => { await tokenGate; return adminTokenOverride ?? (await descriptor()).adminToken },
+      hostAdminToken: async () => { await tokenGate; if (tokenUnanswered) throw new Error('ssh: connection reset'); return adminTokenOverride ?? (await descriptor()).adminToken },
       stopHost: async () => { operations.push(`${which} stop-host`); return true },
       updateHost: async () => { throw new Error('This fixture host has no update.') },
       boot: async () => { if (!bootChange) throw new Error('This fixture host has no start at boot.'); return bootChange() },
@@ -92,7 +94,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-desktop-tailnet-'))
   data = join(root, 'remote')
   hostTailscale = standInTailscale({ ok: true }, DNS)
-  tailscaleInstalled = true; serveDenied = false; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined; bootChange = undefined
+  tailscaleInstalled = true; serveDenied = false; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined; tokenUnanswered = false; bootChange = undefined
   host = await startHost('launch-script')
   stand = await serveStandIn(() => hostTailscale.proxied())
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
@@ -207,6 +209,13 @@ describe('a tailnet connection (ADR-0053)', () => {
     adminTokenOverride = undefined
     expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh', addTailnet: { state: 'ssh', why: 'refused' } })
     expect(await admin('tailnet', {})).toMatchObject({ enabled: false })
+  })
+
+  it('says at Add host that Sotto could not reach the host for its tailnet connections when the press got no answer', async () => {
+    tokenUnanswered = true
+    await add()
+    tokenUnanswered = false
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh', addTailnet: { state: 'ssh', why: 'not-reached' } })
   })
 
   it('tries a Serve that needed its operator again at the 5-minute check, over the SSH connection it is on', async () => {
@@ -511,6 +520,18 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(first()).toMatchObject({ sshPort: 2222 })
     expect((await saved())[0]).toMatchObject({ prefer: 'tailnet' })
     await onTailnet()
+  })
+
+  it('saves and connects with new SSH settings before pressing a new choice over that connection, signing in once', async () => {
+    const remote = await add()
+    await onTailnet()
+    launchers.length = 0
+    await manager.command({ type: 'save', host: { ...remote, sshPort: 2222 }, prefer: 'ssh' })
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh', sshPort: 2222 })
+    // The connect that checks the new settings carried the choice: no admin connection, and no second SSH connect.
+    expect(launchers.map(launcher => launcher.options)).toEqual([{}])
+    expect(await admin('tailnet', {})).toMatchObject({ enabled: false })
+    expect((await saved())[0]).toMatchObject({ prefer: 'ssh' })
   })
 
   it('keeps the choice and says the host refused when it will not take the change', async () => {

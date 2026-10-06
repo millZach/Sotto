@@ -28,7 +28,8 @@ export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?
 export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: string } | null): TailnetStepView {
   if (press?.running) return { state: 'active' }
   if (!added) return adding?.addTailnet ?? { state: 'todo' }
-  if (press?.error) return { state: 'ssh', why: 'error', error: press.error }
+  // A press that failed says why, until a 5-minute check moves the host to the tailnet after all.
+  if (press?.error && !(added.via === 'tailnet' && added.phase === 'connected')) return { state: 'ssh', why: 'error', error: press.error }
   const step = added.addTailnet
   if (step?.state === 'active') return step
   if (!press && !step) return { state: 'todo' }

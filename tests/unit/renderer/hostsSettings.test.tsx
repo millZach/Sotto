@@ -117,6 +117,8 @@ it('begins the row with how the host is connected, and says when the tailnet did
   expect(meta()).toBe('SSH forge · Connected · Tailnet did not answer')
   expect(within(row).getByText('Sotto tries it again every 5 minutes.')).toBeTruthy()
   push({ hosts: [forge({ via: 'ssh', tailnetNote: 'operator' })] })
+  // The tailnet answered nothing because forge has not set it up: the row does not say it did not answer.
+  expect(meta()).toBe('SSH forge · Connected · Tailnet not ready')
   expect(row.querySelector('.hosts-row__note')!.textContent).toBe('forge’s Tailscale Serve needs sudo tailscale set --operator=$USER, run on forge. Sotto stays on SSH until it can, and tries again every 5 minutes.')
   push({ hosts: [forge({ phase: 'connecting', via: 'tailnet' })] })
   expect(meta()).toBe('Connecting over your tailnet…')
@@ -338,6 +340,38 @@ it('stops an Edit connection save’s admin sign-in when the dialog closes while
   await user.keyboard('{Escape}')
   expect(screen.queryByRole('dialog', { name: 'Edit connection to forge' })).toBeNull()
   expect(command).toHaveBeenLastCalledWith({ type: 'stop-admin-sign-in', id: REMOTE })
+})
+
+it('asks the SSH question of the connect an Edit connection save waits on, though it is not an admin connection', async () => {
+  const forge = host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })
+  const { bridge, command, push } = fixture([forge], (input, current) => input.type === 'save' ? new Promise<HostsState>(() => undefined) : current)
+  const user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Edit connection' }))
+  const dialog = screen.getByRole('dialog', { name: 'Edit connection to forge' })
+  await user.click(within(dialog).getByRole('radio', { name: 'SSH only' }))
+  await user.click(within(dialog).getByRole('button', { name: 'Save connection' }))
+  // SSH only reconnects over SSH inside the save, and that connect asks for a password.
+  push({ hosts: [{ ...forge, phase: 'connecting', via: 'ssh', prompt: { id: 'prompt-7', kind: 'password', text: 'Password:' } }] })
+  await user.type(within(dialog).getByLabelText('SSH password'), 'secret{Enter}')
+  expect(command).toHaveBeenLastCalledWith({ type: 'ssh-answer', id: REMOTE, promptId: 'prompt-7', answer: 'secret' })
+})
+
+it('sends no choice from Edit connection when its radio was not moved, though main wrote one since it opened', async () => {
+  const forge = host({ target: 'forge', name: 'forge', prefer: 'ssh', via: 'ssh' })
+  const { bridge, command, push } = fixture([forge])
+  const user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Edit connection' }))
+  const dialog = screen.getByRole('dialog', { name: 'Edit connection to forge' })
+  // Add host's tailnet step chose the tailnet for forge while the dialog was open.
+  push({ hosts: [{ ...forge, prefer: 'tailnet' }] })
+  await user.click(within(dialog).getByRole('button', { name: 'Save connection' }))
+  const save = command.mock.calls.map(call => call[0]).find(input => input.type === 'save')
+  expect(save).toBeDefined()
+  expect(save).not.toHaveProperty('prefer')
 })
 
 it('says on Rename that how Sotto connects does not change', async () => {
