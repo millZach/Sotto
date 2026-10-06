@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { MAX_ACTIVITY_TEXT, compactAgentIdentity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, THINKING_TITLE, compactAgentIdentity, isTerminalActivity, mergeAgentActivities, planSteps, thinkingText, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
 import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
@@ -14,6 +14,10 @@ const MAX_TRANSCRIPT_TARGETS = 64
 type AgentKeys = { tool?: string | undefined; task?: string | undefined }
 /** An activity row holds at most 200 agents: the workflow's own and this many of its agents. */
 const MAX_WORKFLOW_AGENTS = 199
+/** Content blocks that hold the model's thinking. A redacted one carries no words Sotto can show, only that it thought. */
+const THINKING_BLOCKS = new Set(['thinking', 'redacted_thinking'])
+/** A thinking block is known by its reply and its place in it, which the stream and the transcript both name. */
+const claudeThinkingId = (reply: string, index: number): string => `claude-thinking-${reply}-${index}`
 const iso = (value: unknown): string | undefined => typeof value === 'number' && Number.isFinite(value) && value > 0 ? new Date(value).toISOString() : undefined
 
 /**
@@ -75,6 +79,12 @@ export class ClaudeActivity {
   private readonly workflowMembers = new Map<string, ObservedAgent>()
   /** How many of each workflow's agents are waiting for a place to start, by the workflow's observed id. */
   private readonly queuedAgents = new Map<string, number>()
+  /** The reply each stream (the thread's own, or a subagent's by its tool call) is writing now, from its `message_start`. */
+  private readonly replies = new Map<string, string>()
+  /** Thinking blocks the stream has started and not yet stopped, by stream and block index, with their words so far. */
+  private readonly thinking = new Map<string, { id: string; words: string }>()
+  /** Replies whose thinking the stream showed, so the live frame repeating a finished block is not needed. */
+  private readonly streamedThinking = new Set<string>()
   constructor(private readonly readActivity?: (activityId: string) => AgentActivity | undefined) {}
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false): AgentActivity[] {
     const rows: AgentActivity[] = []
@@ -103,9 +113,15 @@ export class ClaudeActivity {
     // start there is; `observedAt` already prefers the provider's own time where a replayed frame has one.
     // Replay without a timestamp still records nothing, because a transcript must not be given a clock
     // it never had. Codex has timed its running rows this way since `codexActivity` was written.
-    const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
+    const shared = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}),
       ...(observedAt ? { startedAt: observedAt, timingSource: typeof frame.timestamp === 'string' ? ('provider' as const) : ('observed' as const) } : {}),
       ...(typeof frame.parent_tool_use_id === 'string' ? { parentId: `claude-tool-${frame.parent_tool_use_id}` } : {}) }
+    const base = { ...shared, cwd }
+    // Thinking is the model's own, so its row names no folder. A subagent's sits under that subagent, as its tools do.
+    const thought = (id: string, status: AgentActivity['status'], words: string, extra: Partial<AgentActivity> = {}): void => {
+      rows.push({ ...shared, id, kind: 'reasoning', title: THINKING_TITLE, status, ...thinkingText(words), ...extra })
+    }
+    const replyId = typeof object(frame.message)?.id === 'string' ? object(frame.message)!.id as string : undefined
     const tool = (block: ClaudeFrame): void => {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return
       const input = object(block.input)
@@ -141,9 +157,23 @@ export class ClaudeActivity {
         ...(path ? { changes: [{ path, kind: name, ...(typeof input?.old_string === 'string' && typeof input?.new_string === 'string' ? { diff: text(`--- before\n${input.old_string}\n+++ after\n${input.new_string}`) } : {}) }] } : {}) })
     }
     const blocks = object(frame.message)?.content
-    if (Array.isArray(blocks)) for (const value of blocks) {
+    if (Array.isArray(blocks)) for (const [position, value] of blocks.entries()) {
       const block = object(value); if (!block) continue
       if (['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(block.type))) tool(block)
+      if (THINKING_BLOCKS.has(String(block.type)) && replyId) {
+        // A transcript line names the block's place in its reply (`apiBlockIndex`), the same index the stream
+        // started it under, so a replayed block lands on the row the live one made. A live frame carries no index,
+        // and a block the stream already showed needs nothing more from it.
+        const index = typeof frame.apiBlockIndex === 'number' && blocks.length === 1 ? frame.apiBlockIndex : position
+        if (!(live && typeof frame.apiBlockIndex !== 'number' && this.streamedThinking.has(replyId))) {
+          const words = typeof block.thinking === 'string' ? block.thinking : ''
+          const durationMs = typeof frame.thinkingDurationMs === 'number' && Number.isFinite(frame.thinkingDurationMs) && frame.thinkingDurationMs >= 0 ? frame.thinkingDurationMs : undefined
+          // The line is written when the block ends, so its own time is the end and the reported duration gives the start.
+          const timed = durationMs !== undefined && observedAt && typeof frame.timestamp === 'string'
+            ? { startedAt: new Date(Date.parse(observedAt) - durationMs).toISOString(), completedAt: observedAt, timingSource: 'provider' as const, durationMs } : {}
+          thought(claudeThinkingId(replyId, index), 'completed', words, timed)
+        }
+      }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         const old = previous.find(row => row.id === `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
         const result = object(frame.tool_use_result)
@@ -187,17 +217,48 @@ export class ClaudeActivity {
       }
     }
     if (frame.type === 'stream_event') {
-      const event = object(frame.event); const key = `${frame.parent_tool_use_id ?? 'main'}:${event?.index}`
+      const stream = parentTool ?? 'main'
+      const event = object(frame.event); const key = `${stream}:${event?.index}`
       const block = object(event?.content_block)
+      const reply = event?.type === 'message_start' ? object(event.message)?.id : undefined
+      if (typeof reply === 'string') this.replies.set(stream, reply)
       if (event?.type === 'content_block_start' && block && ['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(block.type))) {
         this.blocks.set(key, { block, input: '' }); tool(block)
+      }
+      // Thinking shows from its first byte: the row starts with the block and grows with each delta. A redacted
+      // block, or one the model sends no words for, still shows the row. Its signature is not reply content.
+      const replying = this.replies.get(stream)
+      if (event?.type === 'content_block_start' && block && THINKING_BLOCKS.has(String(block.type)) && replying && typeof event.index === 'number') {
+        const open = { id: claudeThinkingId(replying, event.index), words: typeof block.thinking === 'string' ? block.thinking.slice(0, MAX_ACTIVITY_TEXT + 1) : '' }
+        this.thinking.set(key, open); this.streamedThinking.add(replying)
+        for (const id of this.streamedThinking) { if (this.streamedThinking.size <= MAX_TRANSCRIPT_TARGETS) break; this.streamedThinking.delete(id) }
+        thought(open.id, 'running', open.words)
       }
       const partial = this.blocks.get(key); const delta = object(event?.delta)
       if (partial && event?.type === 'content_block_delta' && delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
         partial.input = (partial.input + delta.partial_json).slice(0, MAX_ACTIVITY_TEXT)
         try { tool({ ...partial.block, input: JSON.parse(partial.input) }) } catch { /* Incomplete JSON is not tool input yet. */ }
       }
-      if (event?.type === 'content_block_stop') this.blocks.delete(key)
+      const thinking = this.thinking.get(key)
+      if (thinking && event?.type === 'content_block_delta' && delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+        // One character past the budget is kept so the row can say its text was cut.
+        thinking.words = (thinking.words + delta.thinking).slice(0, MAX_ACTIVITY_TEXT + 1)
+        thought(thinking.id, 'running', thinking.words)
+      }
+      if (event?.type === 'content_block_stop') {
+        this.blocks.delete(key)
+        if (thinking) { this.thinking.delete(key); thought(thinking.id, 'completed', thinking.words, observedAt ? { completedAt: observedAt } : {}) }
+      }
+    }
+    // A turn that ends with a block still open (stopped mid-thought) settles its row: nothing more will come for it.
+    if (frame.type === 'result' && !parentTool) {
+      for (const [key, open] of this.thinking) {
+        if (!key.startsWith('main:')) continue
+        this.thinking.delete(key)
+        thought(open.id, frame.is_error === true ? 'interrupted' : 'completed', open.words, observedAt ? { completedAt: observedAt } : {})
+      }
+      // Every stream starts its next reply afresh, so the replies seen so far are not needed past the turn.
+      this.replies.clear()
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
