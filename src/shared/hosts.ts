@@ -5,6 +5,7 @@ import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionRes
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import type { BootStatus } from './bootStart'
+import type { HostPhoneAccessSummary } from './hostProtocol'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -89,7 +90,7 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   /** Who started the host, as it last said: `launch-script`, `boot`, or absent for its owner by hand. */
   startedBy?: string | undefined
   /** The host's phone access as its hello reported it on a tailnet connection, where nothing reads it over SSH. */
-  phoneAccess?: { status: 'off' | 'starting' | 'on' | 'needs-you'; phones: number } | undefined
+  phoneAccess?: HostPhoneAccessSummary | undefined
   /** Start at boot on the host, as this connection last found it (ADR-0054). */
   bootStart?: BootStatus | undefined
 }

@@ -187,8 +187,6 @@ export class DesktopHosts {
     resolveTailnet?: (address: string) => string;
     /** How long a host on its SSH connection waits before it tries the tailnet again; 5 minutes unless a test says. */
     tailnetReturnMs?: number;
-    fetch?: typeof fetch;
-    now?: () => number;
   }) {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
@@ -1089,7 +1087,7 @@ export class DesktopHosts {
   }
   /** Whether this computer holds the host's pairing and knows its ID: a tailnet connection never pairs (ADR-0053). */
   private paired(host: SavedHost): boolean { return host.hostId !== undefined && this.options.credentials.has(`remote-host:${host.id}`) }
-  private now(): number { return this.options.now?.() ?? Date.now() }
+  private now(): number { return Date.now() }
   private resolveTailnet(address: string): string { return this.options.resolveTailnet?.(address) ?? address }
   /** The socket is on the tailnet connection: the row says so, and the SSH-only note and its 5-minute check go. */
   private async connectedOverTailnet(host: SavedHost, address: string): Promise<void> {
@@ -1111,11 +1109,11 @@ export class DesktopHosts {
       if (fromDialog) {
         await this.tailnet.set(host.id, { prefer: 'tailnet' })
         this.emit()
-        setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, true, this.options.fetch)).catch(() => undefined)
+        setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, true)).catch(() => undefined)
         // A host with no Tailscale running has no tailnet to be reached on: it stays on SSH, with its setting off again,
         // until the owner chooses the tailnet for it.
         if (setting && settingNote(setting) === 'no-tailscale' && this.live.get(host.id) === active) {
-          await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, false, this.options.fetch)).catch(() => undefined)
+          await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, false)).catch(() => undefined)
           await this.tailnet.set(host.id, { prefer: 'ssh' })
           this.emit()
           setting = undefined
@@ -1200,7 +1198,7 @@ export class DesktopHosts {
   }
   private async forwardedAddress(url: string): Promise<string | undefined> {
     try {
-      const response = await (this.options.fetch ?? fetch)(`${url}/v1/health`, { redirect: 'error', signal: AbortSignal.timeout(TAILNET_HEALTH_MS) })
+      const response = await fetch(`${url}/v1/health`, { redirect: 'error', signal: AbortSignal.timeout(TAILNET_HEALTH_MS) })
       const body = await response.json() as { tailnetAddress?: unknown }
       return isTailnetAddress(body.tailnetAddress) ? body.tailnetAddress : undefined
     } catch { return undefined }
@@ -1216,19 +1214,18 @@ export class DesktopHosts {
     const before = this.tailnet.get(host.id).prefer
     await this.tailnet.set(host.id, { prefer })
     this.emit()
+    const putBack = async (): Promise<void> => { await this.tailnet.set(host.id, { prefer: before }).catch(() => undefined); this.emit() }
     let setting: HostTailnetSetting
-    try {
-      setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, prefer === 'tailnet', this.options.fetch))
-      if (setting.error) throw new Error(setting.error)
-    } catch (error) {
-      await this.tailnet.set(host.id, { prefer: before }).catch(() => undefined)
-      this.emit()
+    try { setting = await this.press(host, connection => hostTailnetSetting(connection, host.hostId!, prefer === 'tailnet')) }
+    catch (error) {
+      await putBack()
       if (error instanceof SignInStopped) throw error
       throw new Error(error instanceof TailnetSettingRefused
         ? `The host on ${host.name} can't be reached over your tailnet yet. Nothing was changed. Update the host on ${host.name} from the Threads page, then try again.`
-        : error instanceof Error && /Nothing was changed/u.test(error.message) ? error.message
-          : `How Sotto connects to ${host.name} could not be changed. Nothing was changed. Check that ${host.name} is reachable over SSH and its host is running, then try again.`, { cause: error })
+        : `How Sotto connects to ${host.name} could not be changed. Nothing was changed. Check that ${host.name} is reachable over SSH and its host is running, then try again.`, { cause: error })
     }
+    // The host's own sentence when it could not save its setting, which says nothing was changed.
+    if (setting.error) { await putBack(); throw new Error(setting.error) }
     const active = this.live.get(host.id)
     const connected = active !== undefined && this.status.get(host.id)?.phase === 'connected'
     if (prefer === 'ssh') {
