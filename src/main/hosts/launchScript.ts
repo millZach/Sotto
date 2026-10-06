@@ -100,10 +100,17 @@ const health = port => new Promise((resolve, reject) => {
   });
   request.on('timeout', () => request.destroy(new Error('timeout'))); request.on('error', reject);
 });
+// A descriptor read partway through its host writing it does not parse; a few reads apart tell that from one that is broken.
+const readDescriptor = async () => {
+  for (let attempt = 0; ; attempt++) {
+    try { return JSON.parse(await fs.readFile(descriptorPath, 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return null; if (attempt >= 4) throw new Error('descriptor-invalid'); }
+    await pause(25);
+  }
+};
 const discover = async () => {
-  let descriptor;
-  try { descriptor = JSON.parse(await fs.readFile(descriptorPath, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return null; throw new Error('descriptor-invalid'); }
+  const descriptor = await readDescriptor();
+  if (descriptor === null) return null;
   if (descriptor.v !== 1 || !Number.isInteger(descriptor.port) || descriptor.port < 1 || descriptor.port > 65535 || typeof descriptor.hostId !== 'string' || !Number.isInteger(descriptor.pid)) throw new Error('descriptor-invalid');
   // The host that wrote it has gone, as one an update just stopped has: its port may not refuse a connection cleanly yet.
   if (!alive(descriptor.pid)) return null;

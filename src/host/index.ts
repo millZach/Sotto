@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
@@ -144,8 +144,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         })
         const { peers } = listener
         peersConnected = () => peers() > 0
-        await writeFile(join(directory, 'host-listener.json'), JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
-        await chmod(join(directory, 'host-listener.json'), 0o600)
+        // Written beside it and moved into place, so a launch script reading it never finds it half written.
+        const descriptorPath = join(directory, 'host-listener.json'), written = `${descriptorPath}.${process.pid}.tmp`
+        await writeFile(written, JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken, ...(options.startedBy ? { startedBy: options.startedBy } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
+        await chmod(written, 0o600)
+        await rename(written, descriptorPath)
       }
     } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
