@@ -375,7 +375,7 @@ describe('ThreadDraftStore sending', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())
     store.edit('thread', { text: '  Ship it  ' })
-    const draft = store.submit('thread', 12)
+    const draft = store.submit('thread', 12, 'send', 'main')
     expect(store.submissions()).toEqual([expect.objectContaining({ threadId: 'thread', draftId: draft!.draftId, text: 'Ship it', submittedAt: 12, resolved: false })])
     // The press empties the composer under a revision of its own.
     expect(store.draft('thread')).toMatchObject({ text: '', attachments: [] })
@@ -394,10 +394,10 @@ describe('ThreadDraftStore sending', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())
     store.edit('thread', { text: 'first' })
-    const first = store.submit('thread', 1)!
+    const first = store.submit('thread', 1, 'send', 'main')!
     store.edit('thread', { text: 'second' })
     vi.advanceTimersByTime(100)
-    const second = store.submit('thread', 2, 'queue')!
+    const second = store.submit('thread', 2, 'queue', 'main')!
     store.resolve('thread', first.draftId, null)
     vi.advanceTimersByTime(1_000)
     // The typing between the two was dropped with its debounce: the queue command carries it.
@@ -405,6 +405,53 @@ describe('ThreadDraftStore sending', () => {
     store.resolve('thread', second.draftId, null)
     vi.advanceTimersByTime(250)
     expect(held.saves()).toEqual([expect.objectContaining({ text: '' })])
+  })
+
+  it('records the emptied composer when a save of the sent revision was still running at the press', async () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Ship it' })
+    vi.advanceTimersByTime(250)
+    // The debounced save of the revision about to be sent is still on its way when Enter is pressed.
+    expect(held.saves()).toEqual([expect.objectContaining({ text: 'Ship it' })])
+    const sent = store.submit('thread', 1, 'send', 'main')!
+    held.calls[0]!.resolve(published(held.saves()[0]!))
+    await vi.advanceTimersByTimeAsync(0)
+    store.resolve('thread', sent.draftId, null)
+    vi.advanceTimersByTime(250)
+    expect(held.saves()).toEqual([expect.objectContaining({ text: 'Ship it' }), expect.objectContaining({ draftId: store.draft('thread').draftId, text: '' })])
+  })
+
+  it('records the emptied composer when the queue owned a queued prompt before its reply came back', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Queue me' })
+    const queued = store.submit('thread', 1, 'queue', 'main')!
+    // Main publishes while it saves the queue: the queue owning the revision retires the submission here.
+    store.receive(baseState({ followups: [{ threadId: 'thread', draftId: queued.draftId }] as AgentState['followups'] }))
+    expect(store.submissions()).toEqual([])
+    store.resolve('thread', queued.draftId, null)
+    vi.advanceTimersByTime(250)
+    // Without it, main would keep whatever older revision of the prompt the debounce last saved.
+    expect(held.saves()).toEqual([expect.objectContaining({ draftId: store.draft('thread').draftId, text: '' })])
+  })
+
+  it('saves nothing in front of a retried send, and records the emptied composer once it resolves', () => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    store.edit('thread', { text: 'Refuse me' })
+    const sent = store.submit('thread', 0, 'send', 'main')!
+    store.resolve('thread', sent.draftId, 'The provider rejected this action.')
+    store.receive(baseState({ deliveries: [{ threadId: 'thread', draftId: sent.draftId, status: 'failed', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }))
+    expect(store.draft('thread').text).toBe('Refuse me')
+    vi.advanceTimersByTime(250)
+    const before = held.saves().length
+    store.retry('thread', sent.draftId, 5)
+    vi.advanceTimersByTime(5_000)
+    expect(held.saves()).toHaveLength(before)
+    store.resolve('thread', sent.draftId, null)
+    vi.advanceTimersByTime(250)
+    expect(held.saves().slice(before)).toEqual([expect.objectContaining({ draftId: store.draft('thread').draftId, text: '' })])
   })
 
   it('saves an answer before it goes, as main keeps no draft for one', () => {

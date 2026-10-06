@@ -58,7 +58,7 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  */
 export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string): Promise<void> {
   const threadId = row.thread.id
-  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode) : store.retry(threadId, retryDraftId, submittedAt)
+  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
   let attempted = false
   try {
