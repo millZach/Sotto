@@ -96,13 +96,13 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     const userMessage = transcript.locator('.thread-message').filter({ hasText: 'Why does the parser keep the newline?' })
     expect(await userMessage.evaluate((message, target) => !!(message.compareDocumentPosition(target!) & Node.DOCUMENT_POSITION_FOLLOWING), await running.elementHandle())).toBe(true)
 
-    const capture = async (name: string, shown = running) => {
+    const capture = async (name: string) => {
       for (const [width, height] of SIZES) {
         await size(width, height)
-        await expect(shown).toBeVisible()
+        await expect(running).toBeVisible()
         const overflow = await page.locator('section.thread-pane').first().evaluate(element => element.scrollWidth - element.clientWidth)
         expect(overflow).toBeLessThanOrEqual(1)
-        await shown.scrollIntoViewIfNeeded()
+        await running.scrollIntoViewIfNeeded()
         await page.mouse.move(0, height - 1)
         await page.screenshot({ path: join(evidence, `thinking-${name}-${width}x${height}.png`), animations: 'disabled', caret: 'hide' })
       }
@@ -129,10 +129,10 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     // The reply follows the thinking, below it.
     await writeFile(join(client, 'release-reply'), '')
     await expect(transcript.getByText(REPLY, { exact: true })).toBeVisible(wait)
-    const fold = transcript.getByRole('button', { name: /^Worked for/ })
-    if (await fold.count()) await fold.click()
+    // The finished turn folds its work; opened, the Thinking row sits above the reply.
+    await transcript.getByRole('button', { name: /^Worked for/ }).click()
+    await transcript.getByRole('button', { name: 'Thought once' }).click()
     const settled = transcript.getByRole('button', { name: new RegExp(`^Thinking, ${THINKING.slice(0, 20)}`) })
-    if (!await settled.isVisible()) await transcript.getByRole('button', { name: /thought once/i }).click()
     const answer = transcript.locator('.thread-message').filter({ hasText: REPLY })
     expect(await settled.evaluate((target, reply) => !!(target.compareDocumentPosition(reply!) & Node.DOCUMENT_POSITION_FOLLOWING), await answer.elementHandle())).toBe(true)
     expect(await page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === threadId)?.status, id)).toBe('idle')

@@ -1,5 +1,6 @@
-import { MAX_ACTIVITY_TEXT, THINKING_TITLE, isTerminalActivity, planSteps, thinkingText, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { settledThoughts, thoughtChunk } from './thoughtActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
 /** What Grok's `_meta` says about the stream an update belongs to; history keeps it as the live notification had it. */
@@ -15,33 +16,12 @@ const AFTER_THOUGHT = new Set(['agent_message_chunk', 'tool_call', 'plan', 'user
  * keeps both, so the row a live thought made is the row a read of history finds.
  */
 export function grokActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false, stream: GrokStream = {}): AgentActivity[] {
-  if (update.sessionUpdate === 'agent_thought_chunk') return grokThought(update, context, previous, live, stream)
+  if (update.sessionUpdate === 'agent_thought_chunk') return thoughtChunk(update, { prefix: THOUGHT, turnId: context.turnId, afterMessageId: context.afterMessageId,
+    key: stream.streamStartMs === undefined ? undefined : `${stream.promptId ?? context.turnId}-${stream.streamStartMs}` }, previous, live)
   const rows = grokWork(update, context, previous, live)
   if (!AFTER_THOUGHT.has(String(update.sessionUpdate))) return rows
   const stopped = update.sessionUpdate === 'turn_completed' && (update.stop_reason ?? update.stopReason) === 'cancelled'
-  return [...settledThoughts(previous, stopped ? 'interrupted' : 'completed', live), ...rows]
-}
-
-function settledThoughts(previous: readonly AgentActivity[], status: AgentActivity['status'], live: boolean, except?: string): AgentActivity[] {
-  const now = live ? new Date().toISOString() : undefined
-  return previous.filter(row => row.status === 'running' && row.kind === 'reasoning' && row.id.startsWith(THOUGHT) && row.id !== except)
-    .map(row => ({ ...row, status, ...(now ? { completedAt: now } : {}) }))
-}
-
-function grokThought(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean, stream: GrokStream): AgentActivity[] {
-  const content = object(update.content)
-  const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : ''
-  // Without a stream time, a thought continues the turn's running one, or starts the turn's next.
-  const running = stream.streamStartMs === undefined
-    ? previous.findLast(row => row.status === 'running' && row.kind === 'reasoning' && row.turnId === context.turnId && row.id.startsWith(THOUGHT)) : undefined
-  const id = stream.streamStartMs !== undefined ? `${THOUGHT}${stream.promptId ?? context.turnId}-${stream.streamStartMs}`
-    : running?.id ?? `${THOUGHT}${context.turnId}-${previous.filter(row => row.turnId === context.turnId && row.id.startsWith(THOUGHT)).length}`
-  const old = previous.find(row => row.id === id)
-  if (old && isTerminalActivity(old.status)) return []
-  const startedAt = live && !old?.startedAt ? new Date().toISOString() : undefined
-  return [...settledThoughts(previous, 'completed', live, id), { turnId: context.turnId, ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}), ...old,
-    id, sequence: old?.sequence ?? 0, kind: 'reasoning', title: THINKING_TITLE, status: 'running',
-    ...thinkingText((old?.text ?? '') + words), ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}) }]
+  return [...settledThoughts(THOUGHT, previous, stopped ? 'interrupted' : 'completed', live), ...rows]
 }
 
 /**

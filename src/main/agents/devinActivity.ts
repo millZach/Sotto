@@ -1,5 +1,6 @@
-import { MAX_ACTIVITY_TEXT, THINKING_TITLE, isTerminalActivity, planSteps, thinkingText, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { settledThoughts, thoughtChunk } from './thoughtActivity'
 
 type Context = { turnId: string; afterMessageId?: string; cwd: string }
 const THOUGHT = 'devin-thought-'
@@ -11,33 +12,16 @@ const AFTER_THOUGHT = new Set(['agent_message_chunk', 'tool_call', 'plan'])
  * (`agent_thought_chunk`) streams into a Thinking row that runs until the model moves on to something else.
  */
 export function devinActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
-  if (update.sessionUpdate === 'agent_thought_chunk') return devinThought(update, context, previous, live)
+  // ACP may name the message a chunk belongs to; without it, chunks that run on in order are one thought.
+  if (update.sessionUpdate === 'agent_thought_chunk') return thoughtChunk(update, { prefix: THOUGHT, turnId: context.turnId, afterMessageId: context.afterMessageId,
+    key: typeof update.messageId === 'string' && update.messageId ? `${context.turnId}-${update.messageId.slice(0, 128)}` : undefined }, previous, live)
   const rows = devinWork(update, context, previous, live)
-  return AFTER_THOUGHT.has(String(update.sessionUpdate)) ? [...settledDevinThoughts(previous, 'completed', live), ...rows] : rows
+  return AFTER_THOUGHT.has(String(update.sessionUpdate)) ? [...settledThoughts(THOUGHT, previous, 'completed', live), ...rows] : rows
 }
 
-/** Thinking rows still running, settled: the model moved on, or the turn ended with nothing more to come for them. */
-export function settledDevinThoughts(previous: readonly AgentActivity[], status: AgentActivity['status'], live = true, except?: string): AgentActivity[] {
-  const now = live ? new Date().toISOString() : undefined
-  return previous.filter(row => row.status === 'running' && row.kind === 'reasoning' && row.id.startsWith(THOUGHT) && row.id !== except)
-    .map(row => ({ ...row, status, ...(now ? { completedAt: now } : {}) }))
-}
-
-function devinThought(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
-  const content = object(update.content)
-  const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : ''
-  // ACP may name the message a chunk belongs to. Without it, a thought continues the turn's running one or starts the next.
-  const message = typeof update.messageId === 'string' && update.messageId ? update.messageId.slice(0, 128) : undefined
-  const running = message === undefined
-    ? previous.findLast(row => row.status === 'running' && row.kind === 'reasoning' && row.turnId === context.turnId && row.id.startsWith(THOUGHT)) : undefined
-  const id = message !== undefined ? `${THOUGHT}${context.turnId}-${message}`
-    : running?.id ?? `${THOUGHT}${context.turnId}-${previous.filter(row => row.turnId === context.turnId && row.id.startsWith(THOUGHT)).length}`
-  const old = previous.find(row => row.id === id)
-  if (old && isTerminalActivity(old.status)) return []
-  const startedAt = live && !old?.startedAt ? new Date().toISOString() : undefined
-  return [...settledDevinThoughts(previous, 'completed', live, id), { turnId: context.turnId, ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}), ...old,
-    id, sequence: old?.sequence ?? 0, kind: 'reasoning', title: THINKING_TITLE, status: 'running',
-    ...thinkingText((old?.text ?? '') + words), ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}) }]
+/** Devin's Thinking rows still running, settled: the turn ended with nothing more to come for them. */
+export function settledDevinThoughts(previous: readonly AgentActivity[], status: AgentActivity['status'], live = true): AgentActivity[] {
+  return settledThoughts(THOUGHT, previous, status, live)
 }
 
 function devinWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
