@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
-import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserCapture } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -76,9 +76,9 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const newPage = creating || pages.length === 0
   const shown = draft !== null && draft.pageId === (newPage ? null : activeId) ? draft.text : newPage ? '' : active?.url ?? ''
   const full = browser.pages.length >= 32
-  // Under the grant every page is shared, so an unshared one is a page the user made private (ADR-0029). A page
-  // still waiting for its Open and share answer is not, so it says nothing here.
-  const madePrivate = Boolean(browser.grant && active && !newPage && !active.sharedOrigin && !agentToolsUnavailable && !task?.pendingAction)
+  // Under the grant every page is shared, so an unshared one is a page the user made private (ADR-0029). A page an
+  // agent asked to open and nobody has opened yet, its request waiting, denied or expired, is not, so it says nothing.
+  const madePrivate = Boolean(browser.grant && active && !newPage && !active.sharedOrigin && !agentToolsUnavailable && !task?.pendingAction && active.error !== BROWSER_WAITING_TO_OPEN)
   const shareTitle = browser.grant ? active?.sharedOrigin ? 'The agent in this thread can see and use this page. Stop sharing keeps it private.' : 'This page is private. Share it with the agent in this thread.'
     : active?.sharedOrigin ? 'Stop sharing page contents with the agent' : 'Let the agent in this thread read page contents and screenshots. Opening, clicking and typing still ask you.'
 

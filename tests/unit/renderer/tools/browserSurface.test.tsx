@@ -238,6 +238,14 @@ describe('browser grant', () => {
     // The line took its own button away, so focus lands on the Share button that now shows the page shared.
     await waitFor(() => expect(within(panel()).getByRole('button', { name: 'Stop sharing' })).toHaveFocus())
   })
+  it('says nothing about privacy for a page an agent asked to open that nobody has opened yet', async () => {
+    const waiting = page(PAGE_1, { sharedOrigin: null, error: 'Waiting for you to open and share this page.' })
+    const browser = fakeBrowser([waiting])
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [waiting], grant: { grantedAt: 1, source: 'settings' } }))
+    setup(browser)
+    expect(await within(panel()).findByText('This thread uses the browser without asking')).toBeInTheDocument()
+    expect(within(panel()).queryByText('This page is private. The agent cannot see it')).not.toBeInTheDocument()
+  })
   it('follows main when the answer is given or ends elsewhere', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
     setup(browser)

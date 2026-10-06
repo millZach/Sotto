@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
+import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
 import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
@@ -254,7 +254,7 @@ export class BrowserService extends ToolOperations {
     })
     contents.on('render-process-gone', () => this.issue(record, 'This page stopped unexpectedly. Reload to reopen it.', true))
     if (!initial) { this.load(record, request.url); this.shareByGrant(record) }
-    else record.page.error = 'Waiting for you to open and share this page.'
+    else record.page.error = BROWSER_WAITING_TO_OPEN
     return this.publish(record)
   }
   private load(record: PageRecord, url: string): void {
