@@ -131,12 +131,16 @@ const OUTPUT_ACTIVITY = new Set<AgentActivity['kind']>(['reasoning', 'tool', 'co
 /** What a thread already showed when a send went out, so its reply's first output can be told from what was there. */
 export interface FirstOutputBaseline { readonly messageIds: ReadonlySet<string>; readonly activityIds: ReadonlySet<string> }
 
-export function firstOutputBaseline(thread: Pick<AgentThread, 'messages' | 'activities'> | undefined): FirstOutputBaseline {
-  return { messageIds: new Set(thread?.messages.map(message => message.id) ?? []), activityIds: new Set(thread?.activities?.map(activity => activity.id) ?? []) }
+export function firstOutputBaseline(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'> | undefined): FirstOutputBaseline {
+  // A thread no pane shows holds its summary alone, whose newest reply stands in for its messages.
+  const latest = thread?.summary?.lastAssistant?.id
+  return { messageIds: new Set([...thread?.messages.map(message => message.id) ?? [], ...latest === undefined ? [] : [latest]]), activityIds: new Set(thread?.activities?.map(activity => activity.id) ?? []) }
 }
 
 /** True when the thread shows reply text or reply activity it did not show at `baseline`. */
-export function showsFirstOutput(thread: Pick<AgentThread, 'messages' | 'activities'>, baseline: FirstOutputBaseline): boolean {
+export function showsFirstOutput(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>, baseline: FirstOutputBaseline): boolean {
+  const latest = thread.summary?.lastAssistant
+  if (latest && !baseline.messageIds.has(latest.id) && latest.text.trim()) return true
   for (let index = thread.messages.length - 1; index >= 0; index--) {
     const message = thread.messages[index]!
     if (baseline.messageIds.has(message.id)) break
@@ -145,7 +149,7 @@ export function showsFirstOutput(thread: Pick<AgentThread, 'messages' | 'activit
   return thread.activities?.some(activity => OUTPUT_ACTIVITY.has(activity.kind) && !baseline.activityIds.has(activity.id)) ?? false
 }
 
-type WatchedThread = Pick<AgentThread, 'id' | 'messages' | 'activities' | 'status' | 'lastTurn'>
+type WatchedThread = Pick<AgentThread, 'id' | 'messages' | 'activities' | 'summary' | 'status' | 'lastTurn'>
 
 /**
  * The sends whose reply's first output the coordinator is watching for, one per thread, each with what its thread
@@ -155,7 +159,7 @@ export class FirstOutputWatches {
   private readonly watches = new Map<string, { clock: SendStageClock; baseline: FirstOutputBaseline; sawRunning: boolean; turnAtSend: string | undefined }>()
 
   /** Watch `thread`, as it is now, for the first output of the reply to the send `clock` times. A newer send replaces an older one. */
-  watch(threadId: string, clock: SendStageClock, thread: Pick<AgentThread, 'messages' | 'activities' | 'lastTurn'> | undefined): void {
+  watch(threadId: string, clock: SendStageClock, thread: Pick<AgentThread, 'messages' | 'activities' | 'summary' | 'lastTurn'> | undefined): void {
     const watch = { clock, baseline: firstOutputBaseline(thread), sawRunning: false, turnAtSend: thread?.lastTurn?.id }
     this.watches.get(threadId)?.clock.close()
     this.watches.set(threadId, watch)

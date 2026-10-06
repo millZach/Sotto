@@ -160,6 +160,15 @@ describe('first output', () => {
     expect(newer.awaitsFirstOutput()).toBe(false)
   })
 
+  it('is seen in the summary of a thread no pane shows, whose messages are not held', () => {
+    const summarised = (id: string, text: string) => ({ messages: [], activities: [],
+      summary: { messageCount: 3, activityCount: 0, lastAssistant: { id, text, createdAt: '2026-10-06T00:00:00.000Z' } } })
+    const atSend = firstOutputBaseline(summarised('earlier-reply', 'Earlier words'))
+    expect(showsFirstOutput(summarised('earlier-reply', 'Earlier words'), atSend)).toBe(false)
+    expect(showsFirstOutput(summarised('reply', ' '), atSend)).toBe(false)
+    expect(showsFirstOutput(summarised('reply', 'First words'), atSend)).toBe(true)
+  })
+
   it('is given up when the reply\'s turn has already ended by the first snapshot after the acknowledgement', () => {
     const watches = new FirstOutputWatches()
     const earlier = { id: 'earlier-turn', status: 'completed' as const }
