@@ -1,5 +1,6 @@
 import { bootUnsupportedSentence, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
 import type { HostUpdateThreads } from './hostUpdate'
+import { shellQuoted } from './revokeCommand'
 import type { SshBootResult } from './sshLauncher'
 
 /** A saved host that is connected now, as a start at boot change needs it. */
@@ -47,9 +48,7 @@ const JOURNAL = 'journalctl --user -u sotto-host -n 50 --no-pager'
  * the unit ran stops with it. Sotto never runs it.
  */
 export function bootRemovalCommand(installPath: string): string {
-  const home = installPath === '~' || installPath.startsWith('~/')
-  const folder = `"${home ? '$HOME' : ''}${(home ? installPath.slice(1) : installPath).replace(/["$`\\]/gu, character => `\\${character}`)}"`
-  return `systemctl --user disable --now sotto-host; rm -f "\${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service" ${folder}/boot-start.sh; systemctl --user daemon-reload`
+  return `systemctl --user disable --now sotto-host; rm -f "\${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/sotto-host.service" ${shellQuoted(installPath)}/boot-start.sh; systemctl --user daemon-reload`
 }
 
 /**
