@@ -1002,6 +1002,29 @@ describe('admin connections and Forget (ADR-0053)', () => {
     expect(scheduled).toEqual([])
   })
 
+  it('ends a connect still opening its socket before it revokes, and revokes and stops over an admin connection instead', async () => {
+    const remote = await add()
+    await manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let held = false
+    const connect = SocketHostService.prototype.connect
+    const opening = vi.spyOn(SocketHostService.prototype, 'connect').mockImplementation(async function (this: SocketHostService) {
+      held = true
+      await gate
+      return connect.call(this)
+    })
+    try {
+      await manager.command({ type: 'set-enabled', id: remote.id, enabled: true })
+      await vi.waitFor(() => expect(held).toBe(true), { timeout: 20_000 })
+      const state = await manager.command({ type: 'forget', id: remote.id })
+      // The connect's SSH is past its sign-in, but the press does not go over it: the connect ended first.
+      expect(operations).toEqual(['admin revoke-client', 'admin stop-host'])
+      expect(state.hosts).toEqual([]); expect(state.forgotten).toBeUndefined()
+    } finally { release(); opening.mockRestore() }
+    expect(scheduled).toEqual([])
+  })
+
   it('stops no host it did not start, over either connection', async () => {
     owned = false
     const remote = await add()

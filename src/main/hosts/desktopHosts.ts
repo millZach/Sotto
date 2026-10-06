@@ -463,8 +463,9 @@ export class DesktopHosts {
     const active = this.live.get(host.id)
     // The revoke drops this computer's socket, and the stop closes the host under it: neither may reconnect or pair again.
     if (active) active.closing = true
-    // A connect still under way, or one already lost, ends first: the revoke goes over a connection of its own.
-    if (!this.onSsh(host.id)) await this.disconnect(host.id)
+    // A connect still under way, or one already lost, ends first: the revoke goes over a connection of its own. A connect
+    // past its SSH sign-in but still pairing or opening its socket is under way too, and would close that SSH under the press.
+    if (!(this.reachable(host.id) && this.onSsh(host.id))) await this.disconnect(host.id)
     let cause: HostForgottenCause | undefined, stopFailed = false
     try {
       await this.press(host, async connection => {
@@ -706,7 +707,7 @@ export class DesktopHosts {
           return
         }
       }
-      if (!adding && error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && active.ssh) {
+      if (!adding && error instanceof HostConnectionError && error.pairingRequired && this.live.get(host.id) === active && !active.closing && active.ssh) {
         await active.socket?.close().catch(() => undefined)
         delete active.socket
         await this.options.credentials.set(`remote-host:${host.id}`, '')
