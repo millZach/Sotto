@@ -119,6 +119,18 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
     expect(alive(launched.result.pid as number)).toBe(true)
   })
 
+  it('leaves an install that was already there, and the host it runs, when installing again fails', async () => {
+    const configuration = await installed()
+    const unitHost = (await descriptor(configuration)).pid
+    await systemd!.set({ enableExit: 1 })
+    const before = (await systemd!.calls()).length
+    expect((await run(configuration, { op: 'boot-install', hostId: HOST_ID })).result).toEqual({ type: 'error', reason: 'boot-install-failed' })
+    expect(await changes(before)).toEqual(['systemctl daemon-reload', 'systemctl enable sotto-host'])
+    await expect(readFile(configuration.systemd.unitPath, 'utf8')).resolves.toContain('Sotto host')
+    await expect(readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).resolves.toContain('exec "$node"')
+    expect(alive(unitHost)).toBe(true)
+  })
+
   it('undoes the install and starts the host the way a launch does when the unit will not start it', async () => {
     const configuration = await fixture({ linger: true, startExit: 1 })
     const launched = await run(configuration, { op: 'launch' })

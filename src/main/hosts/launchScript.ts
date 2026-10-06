@@ -565,15 +565,18 @@ const awaitUserManager = async () => {
   for (let tries = 0; tries < 20; tries++) { const properties = await unitProperties(); if (properties) return properties; await pause(500); }
   return null;
 };
-// Writes the unit and its script and enables the unit; a step that fails takes back the ones before it.
+// Writes the unit and its script and enables the unit; a step that fails takes back the ones before it. A unit that was
+// already this installation's is left in place rather than taken back, so a failed install again never stops the host it
+// runs: boot-install-failed promises the host untouched.
 const writeUnit = async () => {
+  const reinstall = await unitOurs();
   try {
     await writeBootScript();
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
     await writeAtomically(unitPath, unitText());
     if ((await systemctl(['daemon-reload'], 30000)).code !== 0 || (await systemctl(['enable', UNIT], 30000)).code !== 0) throw new Error('boot-install-failed');
   } catch {
-    await uninstallUnit().catch(() => undefined);
+    if (!reinstall) await uninstallUnit().catch(() => undefined);
     throw new Error('boot-install-failed');
   }
 };
