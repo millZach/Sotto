@@ -1,7 +1,6 @@
 import type { BigIntStats } from 'node:fs'
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ToolsError } from '../../shared/tools'
 import { checkoutIdentity } from '../agents/threadWorktrees'
 import { INVALID_REQUEST, ToolFailure } from './common'
@@ -98,19 +97,6 @@ function gitignoresDown(top: string, root: string): string[] {
   return files
 }
 
-/**
- * Where a folder Git does not know could become known: a `.git` appearing in it or any folder above it, or Git's
- * global configuration changing, as when the folder is added to `safe.directory`.
- */
-function discoveryPaths(root: string): string[] {
-  const home = process.env.HOME || homedir()
-  const paths = [join(home, '.gitconfig'), join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'git', 'config')]
-  for (let directory = root; ; directory = dirname(directory)) {
-    paths.push(join(directory, '.git'))
-    if (dirname(directory) === directory) return paths
-  }
-}
-
 /** For a path that is not there: null. Any other error is thrown. */
 const absentAsNull = (error: unknown): null => {
   if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null
@@ -184,8 +170,9 @@ export class CheckpointCapture {
 
   /**
    * A cheap signature of the folder's Git state and listing: Git's HEAD, its reflog (every commit, checkout and
-   * reset), the index's size (a file added to or removed from it) and the folder's own listing. A folder Git
-   * does not know is watched where it could become known (`discoveryPaths`).
+   * reset), the index's size (a file added to or removed from it) and the folder's own listing. A folder Git does
+   * not know has none: a refused listing is cheap, and the many ways a folder becomes known (a repository made in it
+   * or above it, an ownership change, `safe.directory`) are not all visible to `lstat`, so Git is asked every time.
    */
   private async signature(root: string, folder: Folder): Promise<string | undefined> {
     const read = (path: string, fields: (info: BigIntStats) => unknown[]): Promise<unknown> =>
@@ -202,7 +189,7 @@ export class CheckpointCapture {
       }
       return JSON.stringify(parts)
     }
-    return JSON.stringify(await Promise.all([...discoveryPaths(root).map(path => read(path, times)), read(root, info => [info.mtimeNs])]))
+    return undefined
   }
 
   /** What `lstat` says of each path, and whether any was changed too recently to trust that it stays as read. */

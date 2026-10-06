@@ -153,33 +153,17 @@ describe('checkpoint capture', () => {
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
 
-  it('keeps a failed listing verdict for a folder Git does not know until it or a folder above becomes a repository', async () => {
+  it('holds no verdict for a folder Git does not know, so Git is asked again on every capture', async () => {
     const f = await fixture({ repository: false })
-    const home = join(f.root, 'home'); await mkdir(home)
-    vi.stubEnv('HOME', home); vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'))
-    cleanup.push(async () => { vi.unstubAllEnvs() })
     const unlisted = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    // However the folder becomes known (a repository made in it or above it, an ownership change, safe.directory),
+    // the next capture finds out, because it asks Git.
     f.commands.length = 0
-    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
-    expect(f.commands).toEqual([])
     git(f.repo, 'init', '-q')
-    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
-    await rm(join(f.repo, '.git'), { recursive: true, force: true })
-
-    // A repository made in a folder above it.
-    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
-    git(f.root, 'init', '-q')
-    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
-    await rm(join(f.root, '.git'), { recursive: true, force: true })
-
-    // Git told to trust it, as `git config --global --add safe.directory` does.
-    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
-    await writeFile(join(home, '.gitconfig'), `[safe]\n\tdirectory = ${f.repo.replaceAll('\\', '/')}\n`)
-    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toBeDefined()
+    expect(f.commands.some(args => args[0] === 'ls-files')).toBe(true)
   })
 
   it('holds no verdict over a listing that timed out or could not be started, which may pass', async () => {

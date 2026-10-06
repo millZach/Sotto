@@ -244,6 +244,20 @@ describe('completed native turn checkpoints', () => {
     await f.service.forgetThread('thread-b')
     expect(await readdir(join(f.dependencies.directory, 'blobs'))).toEqual([])
   })
+  it('writes a backup deleted outside Sotto again once a save has seen it gone', async () => {
+    const f = await fixture()
+    // The clock a minute ahead of the files, so no file is too recent to reuse its hash.
+    f.dependencies.now = () => Date.now() + 60_000
+    await f.complete()
+    const blobs = join(f.dependencies.directory, 'blobs')
+    for (const name of await readdir(blobs)) await rm(join(blobs, name))
+    // This send's capture still trusts the backups; its save sees they are gone.
+    await f.service.beforeTurn(f.state.threadId)
+    f.state.userMessageIds = ['user-1', 'user-2']
+    // So the capture that completes the turn writes them again.
+    await f.service.afterTurn(f.state.threadId)
+    expect((await readdir(blobs)).length).toBeGreaterThan(0)
+  })
   it('evicts the oldest checkpoint first when newer snapshots exceed the byte budget', async () => {
     const f = await fixture(); let now = Date.now(); f.dependencies.now = () => now
     const first = await f.complete(); now++

@@ -35,7 +35,8 @@ export class CheckpointService extends ToolOperations {
   constructor(private readonly dependencies: CheckpointDependencies) {
     super()
     this.store = new CheckpointStore(dependencies.directory, event => dependencies.report?.(event))
-    this.capture = new CheckpointCapture({ blobDirectory: join(dependencies.directory, 'blobs'), blobSizes: this.blobSizes, git: (cwd, args) => this.git(cwd, args) })
+    this.capture = new CheckpointCapture({ blobDirectory: join(dependencies.directory, 'blobs'), blobSizes: this.blobSizes, git: (cwd, args) => this.git(cwd, args),
+      now: () => this.dependencies.now?.() ?? Date.now() })
     this.maintenance = setInterval(() => { void this.privacyChanged().catch(() => this.dependencies.report?.('Expired checkpoints could not be removed. Check access to local storage.')) }, 60 * 60 * 1000)
     this.maintenance.unref()
   }
@@ -85,10 +86,17 @@ export class CheckpointService extends ToolOperations {
     let removed = false
     for (const record of this.records.values()) if (!this.unresolved(record) && (this.dependencies.historyEnabled?.() === false || Date.parse(record.createdAt) < cutoff)) { this.records.delete(record.id); removed = true }
     const directory = join(this.dependencies.directory, 'blobs')
-    const blobInfo = await lstat(directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
+    let blobsMissing = false, listed = false
+    const blobInfo = await lstat(directory).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') blobsMissing = true
+      else this.dependencies.report?.('checkpoint-cleanup-failed')
+      return null
+    })
     const safeDirectory = blobInfo?.isDirectory() && !blobInfo.isSymbolicLink()
     if (blobInfo && !safeDirectory) this.dependencies.report?.('checkpoint-cleanup-unsafe-directory')
-    const names = safeDirectory ? (await readdir(directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => /^[a-f0-9]{64}$/.test(name)) : []
+    const names = safeDirectory ? (await readdir(directory).then(found => { listed = true; return found }).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => /^[a-f0-9]{64}$/.test(name)) : []
+    // A backup removed outside Sotto is forgotten, so the next capture of its file writes it again.
+    if (listed || blobsMissing) { const present = new Set(names); for (const name of [...this.blobSizes.keys()]) if (!present.has(name)) this.blobSizes.delete(name) }
     const regular = new Set<string>()
     for (const name of names) {
       if (this.blobSizes.has(name)) { regular.add(name); continue }
