@@ -125,9 +125,9 @@ public struct Hello: Decodable, Sendable {
     /// `shell` is a `var` only so the connection can put back a catalog the host named by revision (`ModelCatalogCache`).
     public let hostId: String; public let clientId: String; public var shell: Shell; public let capabilities: Capabilities
     public let features: [String]?
-    public struct Capabilities: Decodable, Sendable { public let mayAnswer: Bool }
+    public struct Capabilities: Decodable, Equatable, Sendable { public let mayAnswer: Bool }
 }
-public struct Shell: Decodable, Sendable {
+public struct Shell: Decodable, Equatable, Sendable {
     /// `host` is a `var` only so the connection can put back a catalog the host named by revision (`ModelCatalogCache`).
     public let hostId: String?; public var host: HostSnapshot; public let deliveries: [Delivery]?; public let deliveredDrafts: [DeliveryReceipt]?
     public let globalLaneBusy: Bool?; public let busyThreadIds: [String]?; public let error: String?
@@ -139,7 +139,7 @@ public struct Shell: Decodable, Sendable {
               host.threads.allSatisfy({ $0.hostId == nil || $0.hostId == hostID }) else { throw ClientError.invalidIdentity }
     }
 }
-public struct HostSnapshot: Decodable, Sendable {
+public struct HostSnapshot: Decodable, Equatable, Sendable {
     public let hostId: String?; public let name: String; public let threads: [ThreadSummary]
     public let projects: [Project]; public let providers: [Provider]?
     /// Always whole once a shell leaves `HostConnection`: a catalog the host named by revision is put back there.
@@ -149,16 +149,16 @@ public struct HostSnapshot: Decodable, Sendable {
     public let modelsRevision: Int?
     public let capabilities: ProviderCapabilities
 }
-public struct Project: Decodable, Identifiable, Sendable {
+public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?
     public let path: String?; public let providerId: String?
 }
-public struct Provider: Decodable, Sendable { public let id: String; public let connection: String; public let capabilities: ProviderCapabilities }
-public struct ProviderCapabilities: Decodable, Sendable {
+public struct Provider: Decodable, Equatable, Sendable { public let id: String; public let connection: String; public let capabilities: ProviderCapabilities }
+public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     public let submit: Bool; public let interrupt: Bool; public let questions: Bool; public let permissions: Bool
     public let projects: Bool?; public let threads: Bool?
 }
-public struct ThreadSummary: Decodable, Identifiable, Sendable {
+public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String
     public let providerId: String?; public let status: String; public let requests: [AgentRequest]
     /// The thread's model in its computer's catalog (`host.models`), which says whether it takes photos.
@@ -173,10 +173,10 @@ public struct ThreadSummary: Decodable, Identifiable, Sendable {
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
     public let worktree: ThreadWorktree?
     /// Current provider-confirmed work only; never infer it from retained activity or messages.
-    public struct BackgroundWork: Decodable, Sendable { public let type: String }
-    public struct Compaction: Decodable, Sendable { public let status: String }
+    public struct BackgroundWork: Decodable, Equatable, Sendable { public let type: String }
+    public struct Compaction: Decodable, Equatable, Sendable { public let status: String }
     /// What a row reads about the thread's history without holding it.
-    public struct Summary: Decodable, Sendable {
+    public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
 }
@@ -251,13 +251,13 @@ public struct ThreadDetail: Decodable, Sendable {
 }
 /// Provider-reported work beside a thread's messages. Observational only: nothing here is an answer or a grant.
 /// `kind` and `status` stay strings so a kind this build does not know still shows, by its title.
-public struct Activity: Decodable, Identifiable, Sendable {
+public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let sequence: Int; public let kind: String; public let status: String; public let title: String
     public let command: String?; public let exitCode: Int?; public let durationMs: Double?
     public let startedAt: String?; public let changes: [Change]?
     /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
     public let afterMessageId: String?
-    public struct Change: Decodable, Sendable { public let path: String; public let kind: String }
+    public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
         if let command, !command.isEmpty { return command }
@@ -280,8 +280,8 @@ public struct Attachment: Decodable, Identifiable, Equatable, Sendable {
     public struct Preview: Decodable, Equatable, Sendable { public let available: Bool? }
     public var hasPreview: Bool { preview != nil }
 }
-public struct DeliveryReceipt: Decodable, Sendable { public let threadId: String; public let draftId: String }
-public struct Delivery: Decodable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
+public struct DeliveryReceipt: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String }
+public struct Delivery: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?
