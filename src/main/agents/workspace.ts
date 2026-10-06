@@ -928,6 +928,11 @@ export class WorkspaceHost implements AgentHost {
     this.publishSoon()
     return { added: true, visual: stored.visual, anchor }
   }
+  /** Whether a thread may draw a visual: one this host holds, on a provider that offers Sotto's tools (Devin does not). */
+  admitsVisuals(threadId: string): boolean {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread !== undefined && thread.providerId !== 'devin'
+  }
   /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
   private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
     if (this.storeUnavailable) return [...messages]

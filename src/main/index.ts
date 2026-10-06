@@ -6,6 +6,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
+import { VisualToolServer } from './agents/visualTools'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -753,7 +754,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostSetupTools = hostSetupTools
   hostSetup.useTools(threadId => hostSetupTools.revoke(threadId))
   providerJobs.useTools(threadId => hostSetupTools.revoke(threadId))
-  agentHost.useThreadTools([hostSetupTools])
+  // Let an agent draw a visual in its thread (ADR-0055): every admitted launch gets the tool while the switch is on, read live.
+  const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
+    admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
+  quitHandles.visualTools = visualTools
+  agentHost.useThreadTools([hostSetupTools, visualTools])
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
