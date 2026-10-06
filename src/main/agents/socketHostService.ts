@@ -73,6 +73,7 @@ export class SocketHostService implements HostService {
   private cached?: AgentState
   private readonly details = new Map<string, AgentThreadDetail | null>()
   private readonly storedEvents = new Map<number, StoredThreadEvent>()
+  private readonly answerTargets = new Map<string, HostAnswerTarget>()
   private readonly acceptedAnswers = new Map<string, NonNullable<HostReceipt['acceptedAnswer']>>()
   private latestSeq = 0
   private catchup: Promise<void> | undefined
@@ -172,7 +173,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates'] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts'] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -214,6 +215,7 @@ export class SocketHostService implements HostService {
     try {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(this.read(protocolAgentStateSchema, message.state)) }
+        else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.publish(this.cached) }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
@@ -389,15 +391,25 @@ export class SocketHostService implements HostService {
   /** Reads an existing attempt's receipt; this never sends the answer again. */
   async refreshRequestAnswer(commandId: string, answer: HostAnswerTarget): Promise<void> {
     if (!this.features.includes('answer-receipts')) return
+    const previous = this.answerTargets.get(commandId)
+    if (previous && (previous.threadId !== answer.threadId || previous.providerId !== answer.providerId
+      || previous.requestId !== answer.requestId || previous.questionsDigest !== answer.questionsDigest)) return
+    this.answerTargets.set(commandId, answer)
+    while (this.answerTargets.size > 512) this.answerTargets.delete(this.answerTargets.keys().next().value!)
     const generation = this.generation
     const receipt = await this.receipt(commandId, answer)
     this.sameGeneration(generation)
-    const accepted = receipt.acceptedAnswer
-    if (receipt.status !== 'completed' || !accepted || accepted.decisionId !== commandId
-      || accepted.threadId !== answer.threadId || accepted.providerId !== answer.providerId
-      || accepted.requestId !== answer.requestId || accepted.questionsDigest !== answer.questionsDigest) return
-    this.acceptedAnswers.set(commandId, accepted)
+    if (receipt.status === 'completed' && receipt.acceptedAnswer?.decisionId === commandId) this.cacheAcceptedAnswer(receipt.acceptedAnswer)
+  }
+  /** Replies and opted-in pushes prove the same exact attempt. A negative reply can never undo proof. */
+  private cacheAcceptedAnswer(accepted: NonNullable<HostReceipt['acceptedAnswer']>): boolean {
+    const target = this.answerTargets.get(accepted.decisionId)
+    if (!target || accepted.threadId !== target.threadId || accepted.providerId !== target.providerId
+      || accepted.requestId !== target.requestId || accepted.questionsDigest !== target.questionsDigest) return false
+    if (this.acceptedAnswers.has(accepted.decisionId)) return false
+    this.acceptedAnswers.set(accepted.decisionId, accepted)
     while (this.acceptedAnswers.size > 512) this.acceptedAnswers.delete(this.acceptedAnswers.keys().next().value!)
+    return true
   }
   requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
     return { uncertainRequestIds: this.cached?.host.threads.find(thread => thread.id === threadId)?.requests

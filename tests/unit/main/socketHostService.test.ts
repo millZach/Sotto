@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../../package.json'
@@ -204,5 +205,44 @@ describe('SocketHostService on a tailnet connection (ADR-0053)', () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:' + address.port, token: 'paired-token', healthTimeoutMs: 50 })
     await expect(client.connect()).rejects.toMatchObject({ name: 'TimeoutError' })
     server.closeAllConnections()
+  })
+})
+
+describe('SocketHostService exact acceptance pushes', () => {
+  it('accepts proof that arrives before its negative receipt reply, without accepting unknown or mismatched targets', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused' })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
+    const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
+    const proof = { ...target, decisionId: 'decision' }
+    const notify = vi.fn(); client.subscribe(notify)
+    vi.spyOn(client, 'receipt').mockImplementation(async () => {
+      for (const changed of [{ decisionId: 'unknown' }, { threadId: 'other' }, { providerId: 'codex' },
+        { requestId: 'other' }, { questionsDigest: 'b'.repeat(64) }]) {
+        receive({ v: 1, event: 'answer-receipt', acceptedAnswer: { ...proof, ...changed } })
+        expect(client.requestAnswerRecovery('thread', 'claude').completed).toEqual([])
+      }
+      receive({ v: 1, event: 'answer-receipt', acceptedAnswer: proof })
+      return { status: 'unknown' }
+    })
+    await client.refreshRequestAnswer('decision', target)
+    expect(client.requestAnswerRecovery('thread', 'claude').completed).toEqual([{ requestId: 'question', questionsDigest: target.questionsDigest, decisionId: 'decision' }])
+    expect(notify).toHaveBeenCalledTimes(1)
+    receive({ v: 1, event: 'answer-receipt', acceptedAnswer: proof })
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+  it('bounds queried targets and refuses a decision being rebound to different questions', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused' })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    const receipt = vi.spyOn(client, 'receipt').mockResolvedValue({ status: 'unknown' })
+    const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
+    for (let i = 0; i < 513; i++) await client.refreshRequestAnswer(String(i), target)
+    await client.refreshRequestAnswer('512', { ...target, questionsDigest: 'b'.repeat(64) })
+    expect(receipt).toHaveBeenCalledTimes(513)
+    const receive = (decisionId: string) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify({ v: 1, event: 'answer-receipt', acceptedAnswer: { ...target, decisionId } }))
+    receive('0')
+    expect(client.requestAnswerRecovery('thread', 'claude').completed).toEqual([])
+    receive('512')
+    expect(client.requestAnswerRecovery('thread', 'claude').completed).toHaveLength(1)
   })
 })

@@ -6,6 +6,8 @@ import type { FileListRequest, FileRequest } from '../../../src/shared/files'
 import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
 import { hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
+import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
+import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -443,5 +445,44 @@ describe('a host restarting for an update (ADR-0040)', () => {
     const own = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local')
     local.state.clientUpdates = [reading]; own.add(local.connection)
     expect(own.shell().clientUpdates).toEqual([reading])
+  })
+})
+
+describe('exact answer notice ownership', () => {
+  function answerNoticeFixture() {
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.providerId = 'claude'
+    remote.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Question', options: [{ id: 'yes', label: 'Yes' }] }]
+    const completed: RequestAnswerRecovery['completed'] = []
+    const bound: RequestAnswerRecovery['completed'] = []
+    remote.connection.service.requestAnswerRecovery = () => ({ uncertainRequestIds: [], completed })
+    const router = new DesktopHostRouter(emptyDesktopState, { bindRequestDraftDecision: async (target, decisionId) => {
+      bound.push({ requestId: target.requestId, questionsDigest: requestQuestionsDigest(target.questions), decisionId })
+    } })
+    router.add(remote.connection)
+    const answer = { type: 'answer' as const, threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', answer: 'yes' }
+    return { remote, completed, bound, router, answer }
+  }
+  it.each(['before', 'after'] as const)('retires only its exact answer notice when proof arrives %s the command reply', async timing => {
+    const f = answerNoticeFixture()
+    f.remote.command.mockImplementationOnce(async () => {
+      if (timing === 'before') f.completed.push(f.bound[0]!)
+      return { ...f.remote.state, error: 'Synthetic unconfirmed answer' }
+    })
+    const result = await f.router.command(f.answer, desktopWindowClient())
+    expect(result.error).toBe(timing === 'before' ? null : 'Synthetic unconfirmed answer')
+    if (timing === 'after') f.completed.push(f.bound[0]!)
+    expect(f.router.shell().error).toBeNull()
+    f.router.dispose()
+  })
+  it.each(['answer', 'interrupt'] as const)('keeps a newer %s notice with the same wording when an older answer gains proof', async later => {
+    const f = answerNoticeFixture()
+    f.remote.command.mockImplementation(async () => ({ ...f.remote.state, error: 'Synthetic unconfirmed answer' }))
+    await f.router.command(f.answer, desktopWindowClient())
+    const oldProof = f.bound[0]!
+    await f.router.command(later === 'answer' ? f.answer : { type: 'interrupt', threadId: f.answer.threadId }, desktopWindowClient())
+    f.completed.push(oldProof)
+    expect(f.router.shell().error).toBe('Synthetic unconfirmed answer')
+    f.router.dispose()
   })
 })

@@ -85,7 +85,7 @@ export class DesktopHostRouter {
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
-  private notice: string | undefined
+  private notice: { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget } } | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
@@ -155,6 +155,12 @@ export class DesktopHostRouter {
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   get(): AgentState { return this.shell() }
   shell(): AgentState {
+    const answer = this.notice?.answer
+    if (answer) {
+      const proof = this.hosts.get(answer.hostId)?.connection.service.requestAnswerRecovery?.(answer.target.threadId, answer.target.providerId)
+      if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
+        && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
+    }
     const entries = [...this.hosts.values()].map(({ connection }) => {
       const original = connection.service.shell()
       return { connection, original, state: clientAgentState(original) }
@@ -196,7 +202,7 @@ export class DesktopHostRouter {
       ...(entries.some(item => item.state.unconfirmedSettings?.length) ? { unconfirmedSettings: entries.flatMap(item => item.state.unconfirmedSettings ?? []) } : {}),
       activeThreadId: this.selectedThreadId === undefined ? base.activeThreadId : this.selectedThreadId,
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
-      ...(this.notice ? { error: this.notice } : {}),
+      ...(this.notice ? { error: this.notice.message } : {}),
     }
   }
   private target(id?: string): { connection: DesktopHostConnection; id: string | undefined } {
@@ -400,7 +406,7 @@ export class DesktopHostRouter {
       // Forward selection so the remote peer can target its own picked thread.
       if (connection.available?.() !== false) {
         const result = await connection.service.command(command, client)
-        if (result.error) this.notice = this.refusal(connection, result.error)
+        if (result.error) this.notice = { message: this.refusal(connection, result.error) }
       }
       this.emit(); return this.shell()
     }
@@ -422,6 +428,7 @@ export class DesktopHostRouter {
     let refused = false
     try {
       let decisionId: string | undefined
+      let answerTarget: HostAnswerTarget | undefined
       if (connection.kind === 'remote' && command.type === 'answer') {
         const state = this.shell()
         const thread = state.host.threads.find(item => item.id === hostEntityKey(connection.hostId, command.threadId))
@@ -429,6 +436,8 @@ export class DesktopHostRouter {
         const questions = request ? requestDraftQuestions(request) : []
         if (thread && request && questions.length) {
           decisionId = randomUUID()
+          answerTarget = { threadId: command.threadId, providerId: requestDraftProvider(state.host, thread, state.configuration.provider),
+            requestId: request.id, questionsDigest: requestQuestionsDigest(questions) }
           await this.options.bindRequestDraftDecision?.({ kind: 'thread', ownerId: thread.id,
             providerId: requestDraftProvider(state.host, thread, state.configuration.provider), requestId: request.id, questions }, decisionId,
           request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
@@ -436,13 +445,17 @@ export class DesktopHostRouter {
       }
       const result = await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
         : connection.service.command(command as AgentCommand, client))
-      if (result.error) { refused = true; this.notice = this.refusal(connection, result.error) }
+      if (result.error) {
+        refused = true
+        this.notice = { message: this.refusal(connection, result.error), ...(decisionId && answerTarget
+          ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
+      }
     } catch (error) {
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.
       if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
-      refused = true; this.notice = this.refusal(connection, error.message)
+      refused = true; this.notice = { message: this.refusal(connection, error.message) }
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }

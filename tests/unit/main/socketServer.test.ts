@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { Duplex } from 'node:stream'
 import { request as httpRequest, type Server } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -232,4 +233,36 @@ it('opens nothing for a phone while phones are not admitted, closes one already 
   expect(pair.status).toBe(403)
   expect(await upgradeStatus(listener.descriptor.port, pairing.signSession(paired.clientId))).toBe(403)
   expect((await fetch(`${url}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${desktop.token}` } })).status).toBe(200)
+})
+
+it('pushes late exact acceptance once only to an authenticated client that watched and opted in', async () => {
+  const { pairing, paired } = await pairedClient('New desktop')
+  const another = await pairing.redeem(pairing.issuePairingCode().code, 'Other desktop')
+  const { service } = recordingService()
+  let publish: () => void = () => undefined
+  const completed: { requestId: string; questionsDigest: string; decisionId: string }[] = []
+  Object.assign(service, {
+    subscribe: (listener: (state: ReturnType<typeof service.shell>) => void) => { publish = () => listener(service.shell()); return () => undefined },
+    requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed }),
+  })
+  listener = await startSocketServer({ service, pairing })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const older = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const other = await connected(listener.descriptor.port, pairing.signSession(another.clientId))
+  await desktop.call('hello-new', { op: 'hello', accepts: ['answer-receipts'] })
+  await older.call('hello-old', { op: 'hello' })
+  await other.call('hello-other', { op: 'hello', accepts: ['answer-receipts'] })
+  const target = { threadId: 'thread', providerId: 'claude', requestId: 'question', questionsDigest: 'a'.repeat(64) }
+  for (const peer of [desktop, older, other]) expect(await peer.call('read-receipt', { op: 'receipt', commandId: 'decision', answer: target })).toMatchObject({ result: { status: 'unknown' } })
+  publish()
+  // Read a shell as a transport barrier; unrelated publications send no acceptance.
+  await desktop.call('barrier-before', { op: 'shell' })
+  expect(desktop.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
+  completed.push({ requestId: target.requestId, questionsDigest: target.questionsDigest,
+    decisionId: 'socket-answer:' + createHash('sha256').update(JSON.stringify([paired.clientId, 'decision'])).digest('hex') })
+  publish(); publish()
+  await desktop.call('barrier-after', { op: 'shell' })
+  expect(desktop.messages.filter(message => message.event === 'answer-receipt')).toEqual([{ v: 1, event: 'answer-receipt', acceptedAnswer: { ...target, decisionId: 'decision' } }])
+  expect(older.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
+  expect(other.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
 })

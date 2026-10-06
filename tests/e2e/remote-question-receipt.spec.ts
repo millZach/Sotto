@@ -17,12 +17,14 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
 class AnswerProvider extends E2EAgentHost {
   readonly answers: Extract<AgentHostCommand, { type: 'answer' }>[] = []
-  constructor(private readonly uncertainAnswer = false) { super() }
+  constructor(private readonly uncertainAnswer = false, private readonly answerCompletion?: Promise<boolean>) { super() }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'answer') this.answers.push(structuredClone(command))
     const result = await super.execute(command)
     // The request disappearing is deliberately insufficient evidence of acceptance.
-    return command.type === 'answer' && this.uncertainAnswer ? { accepted: false, uncertain: true } : result
+    return command.type === 'answer' && this.uncertainAnswer
+      ? { accepted: false, uncertain: true, ...(this.answerCompletion ? { answerCompletion: this.answerCompletion } : {}) }
+      : result
   }
 }
 
@@ -34,7 +36,7 @@ const structured: AgentRequest = { id: 'remote-form', kind: 'question', text: 'F
 ] }
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 
-async function fixture(provider: ProviderId, uncertain = false) {
+async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>) {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
@@ -42,7 +44,7 @@ async function fixture(provider: ProviderId, uncertain = false) {
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
       localHostEnabled: false, reducedMotion: 'on', historyEnabled: false }))
-    const providers = { codex: new AnswerProvider(uncertain), claude: new AnswerProvider(uncertain), grok: new AnswerProvider(uncertain), devin: new AnswerProvider() }
+    const providers = { codex: new AnswerProvider(uncertain, answerCompletion), claude: new AnswerProvider(uncertain, answerCompletion), grok: new AnswerProvider(uncertain, answerCompletion), devin: new AnswerProvider() }
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
       providers, reasoner: e2eAgentReasoner })
@@ -172,6 +174,51 @@ test('a late exact receipt after remote reconnect removes the mounted unconfirme
     expect(f.native.answers).toHaveLength(1)
     expect(f.errors).toEqual([])
   } finally { f.host.service.requestAnswerRecovery = originalRecovery; await f.close() }
+})
+
+for (const accepted of [true, false]) test(`a native answer settling after the idle laptop cached uncertainty clears its card only with acceptance ${accepted}`, async () => {
+  test.setTimeout(120_000)
+  let finishNative: (accepted: boolean) => void = () => undefined
+  const completion = new Promise<boolean>(resolve => { finishNative = resolve })
+  const f = await fixture('claude', true, completion)
+  try {
+    const { page } = f.launched
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const live = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await live.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(live).toHaveAttribute('data-save', 'saved')
+    await live.getByRole('button', { name: 'Send answer', exact: true }).click()
+    const retained = page.getByRole('region', { name: 'Unconfirmed answer', exact: true })
+    await expect(retained).toBeVisible()
+    await expect.poll(() => page.evaluate(async threadId => {
+      const state = await window.sotto!.agents!.get()
+      return { busy: state.busyThreadIds?.includes(threadId) ?? false,
+        requests: state.host.threads.find(thread => thread.id === threadId)?.requests.length }
+    }, f.threadId)).toEqual({ busy: false, requests: 0 })
+    // A negative read has finished before the late native callback. No read is held open across it.
+    await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.completedIdleReceiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    await expect.poll(async () => (await drafts(f.profile)).map(draft => draft.held)).toEqual([true])
+    expect(f.native.answers).toHaveLength(1)
+    finishNative(accepted)
+    if (accepted) {
+      // Native completion alone must clear the already-mounted card, without reconnect or another action.
+      await expect.poll(() => drafts(f.profile)).toEqual([])
+      await expect(retained).toHaveCount(0)
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).error)).toBeNull()
+      await expect(page.getByRole('alert')).toHaveCount(0)
+      await page.screenshot({ path: test.info().outputPath('native-late-receipt-cleared.png'), animations: 'disabled' })
+    } else {
+      await completion
+      await expect(retained).toContainText('Coast')
+      await page.reload()
+      await openThreads(page)
+      await page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
+      await expect(retained).toContainText('Coast')
+      expect((await drafts(f.profile)).map(draft => draft.held)).toEqual([true])
+    }
+    expect(f.native.answers).toHaveLength(1)
+    expect(f.errors).toEqual([])
+  } finally { finishNative(false); await f.close() }
 })
 
 test('Forge leaves a genuinely uncertain answer held on the laptop even after its question disappears, without replay', async () => {

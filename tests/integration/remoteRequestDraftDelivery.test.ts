@@ -294,9 +294,55 @@ it.each([true, false])('rechecks a pending receipt after its command finishes wi
     expect(router.shell().host.threads.find(thread => thread.id === owner.ownerId)?.requests).toEqual([])
     await router.reconcileRequestDrafts(drafts)
     expect(await drafts.list(owner), 'The settled command must clear its hold only with positive native acceptance.').toHaveLength(accepted ? 0 : 1)
-    expect(statuses).toEqual(['pending', 'completed'])
+    // Exact pushed acceptance settles the positive branch without another read. A settled
+    // negative command still invalidates its pending memo through the busy-state transition.
+    expect(statuses).toEqual(accepted ? ['pending'] : ['pending', 'completed'])
     await router.reconcileRequestDrafts(drafts)
-    expect(receipt).toHaveBeenCalledTimes(2)
+    expect(receipt).toHaveBeenCalledTimes(accepted ? 1 : 2)
     expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
   } finally { releaseNative(); await wireResponse }
+})
+
+it.each([true, false])('settles a late native answer completion %s after a negative receipt with an absent question and idle command', async accepted => {
+  const f = await fixture('claude')
+  let settle: (accepted: boolean) => void = () => undefined
+  const answerCompletion = new Promise<boolean>(resolve => { settle = resolve })
+  const original = f.native.execute.bind(f.native)
+  const execute = vi.spyOn(f.native, 'execute').mockImplementation(async command => {
+    const result = await original(command)
+    return command.type === 'answer' ? { accepted: false, uncertain: true, answerCompletion } : result
+  })
+  const receipt = vi.spyOn(f.client, 'receipt')
+  await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+  await expect.poll(() => f.router.shell().busyThreadIds?.includes(f.owner.ownerId) ?? false).toBe(false)
+  await expect.poll(() => f.router.shell().host.threads.find(thread => thread.id === f.owner.ownerId)?.requests).toEqual([])
+  await f.router.reconcileRequestDrafts(f.drafts)
+  const held = (await f.drafts.list(f.owner))[0]!
+  expect(held).toMatchObject({ held: true, decisionId: expect.any(String) })
+  expect(f.router.requestDraftState(f.owner)?.completed).toEqual([])
+  const reads = receipt.mock.calls.length
+  // Unrelated and repeated publications must leave the cached negative read alone.
+  f.native.event({ type: 'stream', threadId: 'docs', messageId: 'unrelated-stream', text: 'Synthetic unrelated output' })
+  await f.router.reconcileRequestDrafts(f.drafts)
+  await f.router.reconcileRequestDrafts(f.drafts)
+  expect(receipt).toHaveBeenCalledTimes(reads)
+  const off = f.router.subscribe(() => { void f.router.reconcileRequestDrafts(f.drafts) })
+  try {
+    settle(accepted)
+    if (accepted) {
+      await expect.poll(() => f.host.service.requestAnswerRecovery(f.threadId, 'claude').completed.length).toBe(1)
+      await expect.poll(async () => (await f.drafts.list(f.owner)).length).toBe(0)
+      expect(receipt).toHaveBeenCalledTimes(reads)
+    } else {
+      await answerCompletion
+      await f.router.reconcileRequestDrafts(f.drafts)
+      expect(await f.drafts.list(f.owner)).toEqual([held])
+      expect(f.router.requestDraftState(f.owner)?.completed).toEqual([])
+      expect(receipt).toHaveBeenCalledTimes(reads)
+    }
+    await f.router.reconcileRequestDrafts(f.drafts)
+    expect(receipt).toHaveBeenCalledTimes(reads)
+    expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+  } finally { off(); settle(false) }
 })
