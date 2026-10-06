@@ -8,8 +8,8 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { retryWindowsFileOperation } from '../storage/windowsFileRetry'
 
 const fileSchema = z.object({ hash: z.string().regex(/^[a-f0-9]{64}$/), mode: z.number() }).strict()
-export const snapshotSchema = z.object({ files: z.record(fileRelativePathSchema, fileSchema), index: z.string(), head: z.string() }).strict()
-export const recordSchema = z.object({ id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), cwd: z.string(), checkout: z.string().optional(), providerId: z.string(), bindingId: z.string(), createdAt: z.string().datetime(),
+const snapshotSchema = z.object({ files: z.record(fileRelativePathSchema, fileSchema), index: z.string(), head: z.string() }).strict()
+const recordSchema = z.object({ id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), cwd: z.string(), checkout: z.string().optional(), providerId: z.string(), bindingId: z.string(), createdAt: z.string().datetime(),
   beforeUsers: z.array(z.string()), afterUsers: z.array(z.string()).optional(), before: snapshotSchema, after: snapshotSchema.optional(),
   status: z.enum(['capturing', 'ready', 'reverting', 'uncertain', 'reverted', 'unavailable']), reason: z.string().optional(),
 }).strict()

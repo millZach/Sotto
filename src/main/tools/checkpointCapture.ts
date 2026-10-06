@@ -1,13 +1,12 @@
 import type { BigIntStats } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ToolsError } from '../../shared/tools'
-import { fileRelativePathSchema } from '../../shared/files'
 import { checkoutIdentity } from '../agents/threadWorktrees'
 import { INVALID_REQUEST, ToolFailure } from './common'
 import type { Snapshot } from './checkpointStore'
+import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointPaths'
 
 const FILE_LIMIT = 10_000
 const MIB = 1024 * 1024
@@ -17,7 +16,6 @@ const COUNT_MESSAGE = `This working copy exceeds the ${FILE_LIMIT.toLocaleString
 const SIZE_MESSAGE = `This working copy exceeds the checkpoint size limit (${TOTAL_BYTE_LIMIT / MIB} MiB total, ${FILE_BYTE_LIMIT / MIB} MiB per file).`
 /** Git refused to list the folder: it is not in a repository, or Git does not trust the repository's owner. */
 const UNLISTED_MESSAGE = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
-export const LINK_MESSAGE = 'Checkpoint paths cannot follow symbolic links or directory junctions.'
 /** `lstat` and directory checks are cheap and many; reads hold up to 8 MiB each, so fewer run at once. */
 const STAT_CONCURRENCY = 32
 const READ_CONCURRENCY = 8
@@ -34,21 +32,19 @@ const REMEMBERED_FOLDERS = 32
  * Node 24 with 40-character paths): some 25 MB at most. The oldest folders' files are forgotten first.
  */
 const REMEMBERED_FILES = 50_000
-/** Paths a verdict watches beyond Git's state and the top-level listing; a verdict that needs more watches none. */
+/**
+ * Paths a verdict watches beyond Git's state and the top-level listing. Past it the paths that decided the verdict
+ * are dropped and only the ignore files are watched; past it with those alone, none is.
+ */
 const WATCH_LIMIT = 1_000
 
-/** A checkpoint path: relative to its working folder, inside it, and not the folder itself. */
-export const checkpointPathSchema = fileRelativePathSchema.refine(value => value.length > 0)
-/** Whether `candidate` is `root` or inside it. */
-export function isInside(root: string, candidate: string): boolean {
-  const path = relative(root, candidate)
-  return path === '' || !isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`)
-}
-/** The name a file's backup is stored under, and the hash a checkpoint records for it. */
-export const blobName = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
-
-/** What one file looked like when its contents were last hashed. */
-interface Seen { size: bigint; mtimeNs: bigint; ctimeNs: bigint; ino: bigint; mode: bigint; hash: string; reusable: boolean }
+/** What `lstat` says of a file that its contents cannot change without changing: size, both times, inode and mode. */
+const STAMP = ['size', 'mtimeNs', 'ctimeNs', 'ino', 'mode'] as const
+type Stamp = Pick<BigIntStats, typeof STAMP[number]>
+const stampOf = (info: BigIntStats): Stamp => ({ size: info.size, mtimeNs: info.mtimeNs, ctimeNs: info.ctimeNs, ino: info.ino, mode: info.mode })
+const sameStamp = (a: Stamp, b: Stamp): boolean => STAMP.every(field => a[field] === b[field])
+/** What one file looked like when its contents were last hashed. Kept flat: there can be 50,000 of them. */
+interface Seen extends Stamp { hash: string; reusable: boolean }
 /**
  * Why a folder could not be captured, with what was cheap to read about it then: Git's state and the top-level
  * listing (`signature`), and the paths that decided it (`watched`) as `lstat` saw them (`fingerprints`).
@@ -74,10 +70,10 @@ class Refusal {
 const parentOf = (path: string): string => { const cut = path.lastIndexOf('/'); return cut < 0 ? '' : path.slice(0, cut) }
 
 /**
- * Run `work` over `items`, at most `limit` at once, results in item order. After a failure no further item starts,
+ * Run `work` over `items`, at most `limit` at once, and return the results in item order. After a failure no further item starts,
  * and the first failure is thrown once the items already started have finished, so nothing outlives the call.
  */
-async function inOrder<T, R>(items: readonly T[], limit: number, work: (item: T, index: number) => Promise<R>): Promise<R[]> {
+async function mapConcurrently<T, R>(items: readonly T[], limit: number, work: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length)
   let next = 0, failed = false
   const worker = async (): Promise<void> => {
@@ -120,13 +116,11 @@ const absentAsNull = (error: unknown): null => {
   if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null
   throw error
 }
-const unchanged = (seen: Seen, info: BigIntStats): boolean => seen.size === info.size && seen.mtimeNs === info.mtimeNs
-  && seen.ctimeNs === info.ctimeNs && seen.ino === info.ino && seen.mode === info.mode
 /**
  * A listing Git refused outright: it exited with an error of its own (the folder is not a repository) or its list
  * outgrew the buffer. A timeout, or a process that could not be started, may pass, so it is not a verdict.
  */
-const refusedByGit = (error: unknown): boolean => {
+const gitRefusedListing = (error: unknown): boolean => {
   const failure = error as { code?: unknown; killed?: boolean }
   return typeof failure.code === 'number' && !failure.killed || failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
 }
@@ -214,9 +208,9 @@ export class CheckpointCapture {
   /** What `lstat` says of each path, and whether any was changed too recently to trust that it stays as read. */
   private async fingerprints(paths: readonly string[], started?: bigint): Promise<{ text: string; recent: boolean }> {
     let recent = false
-    const prints = await inOrder(paths, STAT_CONCURRENCY, path => lstat(path, { bigint: true }).then(info => {
+    const prints = await mapConcurrently(paths, STAT_CONCURRENCY, path => lstat(path, { bigint: true }).then(info => {
       if (started !== undefined && (info.mtimeNs >= started - RACY_NS || info.ctimeNs >= started - RACY_NS)) recent = true
-      return [info.size, info.mtimeNs, info.ctimeNs, info.ino, info.mode, info.nlink].join(':')
+      return [...STAMP.map(field => info[field]), info.nlink].join(':')
     }, error => (error as NodeJS.ErrnoException).code ?? 'error'))
     return { text: JSON.stringify(prints), recent }
   }
@@ -254,7 +248,7 @@ export class CheckpointCapture {
     let listing: string
     try { listing = await git(root, ['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']) }
     catch (error) {
-      if (!refusedByGit(error)) throw error
+      if (!gitRefusedListing(error)) throw error
       // An outgrown list is usually fixed in an ignore file. A folder Git refused is watched by its signature.
       const outgrown = (error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
       return new Refusal(outgrown ? new ToolFailure('too-large', COUNT_MESSAGE) : new ToolFailure('not-repository', UNLISTED_MESSAGE), folder.ignoreFiles ?? [])
@@ -294,7 +288,7 @@ export class CheckpointCapture {
       }
       return check
     }
-    const entries = await inOrder<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
+    const entries = await mapConcurrently<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
       if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', 'This working copy contains a file name that checkpoint storage cannot safely represent.', [path, ''])
       // The path cannot be watched; the nearest directory that can be changes its listing when the path is renamed or removed.
       if (!valid(path)) {
@@ -323,11 +317,11 @@ export class CheckpointCapture {
     await mkdir(blobDirectory, { recursive: true })
     const previous = reuse ? folder.files : undefined
     const trusted = (info: BigIntStats): boolean => info.mtimeNs < started - RACY_NS && info.ctimeNs < started - RACY_NS
-    const seen = await inOrder<number, Seen | null>(paths.map((_path, index) => index), READ_CONCURRENCY, async index => {
+    const seen = await mapConcurrently<number, Seen | null>(paths.map((_path, index) => index), READ_CONCURRENCY, async index => {
       const info = entries[index]
       if (!info || info instanceof Refusal) return null
       const path = paths[index]!, before = previous?.get(path)
-      if (before?.reusable && unchanged(before, info) && this.options.blobSizes.has(before.hash)) return before
+      if (before?.reusable && sameStamp(before, info) && this.options.blobSizes.has(before.hash)) return before
       // A file removed since its lstat is not in the snapshot, as if it had gone a moment sooner.
       const bytes = await readFile(join(root, path)).catch(absentAsNull)
       if (!bytes) return null
@@ -335,8 +329,7 @@ export class CheckpointCapture {
       await writeFile(join(blobDirectory, hash), bytes, { flag: 'wx', mode: 0o600 }).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error })
       this.options.blobSizes.set(hash, bytes.length)
       // A file that changed size while it was read is not trusted next time, whatever its times say.
-      return { size: info.size, mtimeNs: info.mtimeNs, ctimeNs: info.ctimeNs, ino: info.ino, mode: info.mode, hash,
-        reusable: trusted(info) && BigInt(bytes.length) === info.size }
+      return { ...stampOf(info), hash, reusable: trusted(info) && BigInt(bytes.length) === info.size }
     })
     const files: Snapshot['files'] = Object.create(null), remembered = new Map<string, Seen>()
     paths.forEach((path, index) => {
