@@ -121,12 +121,29 @@ interface Connection {
   /** The Devin mode confirmed on this process. Any other mode it announces after that is its own change. */
   mode: string | undefined
   intentionalClose: boolean
+  /** When the profile and native integrations were last confirmed for this process, so one send checks them once. */
+  checkedAt: number
 }
 interface ActiveTurn {
   origin: Origin
   text: string
   assistant: string
+  /** The owner's own stream has carried this turn's work: Devin took the prompt (see `send`). */
+  streamed: boolean
+  /** The prompt's own answer came, or the turn was settled without one. */
+  ended: boolean
+  /** Wakes the send waiting on this turn's acceptance. */
+  wake: (() => void) | undefined
 }
+/**
+ * What only a prompt being worked on streams. Devin streams these between a prompt and its answer and at no
+ * other time, so on the connection that holds the session they are evidence its one prompt was taken. A
+ * `tool_call_update` is left out because background work started by an earlier turn may still report.
+ */
+const TURN_WORK = new Set(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'plan'])
+/** How long a send waits on the owner's stream before it also reads the replay for its dispatch identity. */
+const ACCEPTANCE_GRACE_MS = 1_500
+const settle = (turn: ActiveTurn): void => { turn.ended = true; turn.wake?.() }
 export interface DevinAcpOptions {
   executable?: string
   /** Arguments before native flags, used by the scripted provider. */
@@ -135,6 +152,8 @@ export interface DevinAcpOptions {
   nativeConfigDirectory?: string
   requestTimeoutMs?: number
   pollIntervalMs?: number
+  /** How long a send waits on the owner's stream before reading the replay as well. */
+  acceptanceGraceMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
 }
@@ -230,12 +249,14 @@ export class DevinAcpHost implements AgentHost {
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
+    const checking = Date.now()
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
+    // Before the process exists: an integration it would load is refused before it can start.
     await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const connection: Connection = {
       rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
-      transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, intentionalClose: false,
+      transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, intentionalClose: false, checkedAt: 0,
     }
     const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile.path, 'acp'], cwd,
       devinEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
@@ -264,6 +285,7 @@ export class DevinAcpHost implements AgentHost {
       })
       await rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
+      connection.checkedAt = checking
       return connection
     } catch (error) { connection.intentionalClose = true; rpc.close(); await rpc.closed; throw error }
   }
@@ -273,11 +295,18 @@ export class DevinAcpHost implements AgentHost {
     }
     try {
       current()
+      const checking = Date.now()
       const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, cwd, this.options.nativeConfigDirectory)
-      await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
+      // The process is already running, so the integration lists and its own reading of the profile are
+      // independent and run side by side. Both must pass; the lists are judged first so a refusal reads the same.
+      const [integrations, config] = await Promise.allSettled([
+        assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd),
+        connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile) }),
+      ])
+      if (integrations.status === 'rejected') throw integrations.reason
+      if (config.status === 'rejected') throw config.reason
       current()
-      await connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile) })
-      current()
+      connection.checkedAt = checking
     } catch (error) {
       connection.rpc.close(); await connection.rpc.closed
       throw error
@@ -286,7 +315,7 @@ export class DevinAcpHost implements AgentHost {
   private finishUnsettledTurn(id: string, status: 'failed' | 'interrupted'): void {
     const turn = this.active.get(id)
     if (!turn) return
-    this.publishActive(id); this.active.delete(id)
+    this.publishActive(id); this.active.delete(id); settle(turn)
     const thread = this.thread(id)
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.origin.messageId, status }
@@ -467,7 +496,8 @@ export class DevinAcpHost implements AgentHost {
       await this.mergeReplay(id, connection.transcript)
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       connection.transcript = { messages: [], bytes: 0 }
-      connection.replaying = false; this.log.pin(id); this.reaper.touch(id)
+      // Loading replayed the whole session, so the thread has just been read; the next poll need not repeat it.
+      connection.replaying = false; this.log.pin(id); this.reaper.touch(id); this.lastReadAt.set(id, Date.now())
       this.thread(id).status = 'idle'; await this.persist()
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       this.emit(); return connection
@@ -497,8 +527,12 @@ export class DevinAcpHost implements AgentHost {
     const ids = [...this.connections.keys()].filter(id => {
       // A session still opening is read once its open settles, not on this tick.
       if (this.loading.has(id)) return false
-      const busy = this.active.has(id) || this.thread(id).requests.length > 0
-      const interval = this.options.pollIntervalMs ?? (busy ? 1_500 : 15_000)
+      const active = this.active.get(id)
+      const busy = active !== undefined || this.thread(id).requests.length > 0
+      // Every thread polled here has a live owner, and the owner's stream carries its turn once Devin has shown
+      // it took the prompt. Until then only a replay can confirm it, so that is the one wait read at the busy pace.
+      const awaiting = active !== undefined && !active.streamed && !active.origin.confirmed
+      const interval = this.options.pollIntervalMs ?? (awaiting ? 1_500 : 15_000)
       return (this.observed.has(id) || busy) && now - (this.lastReadAt.get(id) ?? 0) >= interval
     })
     const polling = Promise.all(ids.map(id => this.readHistory(id))).then(() => undefined)
@@ -507,7 +541,14 @@ export class DevinAcpHost implements AgentHost {
     return polling
   }
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
-    await this.open(id); await this.readHistory(id); return this.current(purpose?.historyFromEvents)
+    await this.open(id)
+    // While this thread's own connection holds its session, Devin refuses the session to every other client
+    // (-32015), so the replay the owner loaded and its stream since are the whole history and nothing can have
+    // changed it unseen. A replay then adds only the confirmation of a dispatch not yet confirmed by one, which a
+    // reconciliation read still gets; the read before a send needs none, so it never starts an observer (ADR-0017).
+    const unconfirmed = this.aliases[id]?.origins.some(origin => !origin.confirmed) === true
+    if (!this.connections.has(id) || unconfirmed && !purpose?.beforeSend) await this.readHistory(id)
+    return this.current(purpose?.historyFromEvents)
   }
   private readHistory(id: string): Promise<void> {
     const previous = this.reading.get(id)
@@ -592,7 +633,8 @@ export class DevinAcpHost implements AgentHost {
   }
   private publishActive(id: string): void {
     const active = this.active.get(id)
-    if (!active?.origin.confirmed) return
+    // Shown once Devin has taken the prompt, by its replay or by its own stream, so a reply appears as it streams.
+    if (!active || !active.origin.confirmed && !active.streamed) return
     this.log.add(id, { id: active.origin.messageId, role: 'user', text: active.text,
       commandId: active.origin.commandId, createdAt: active.origin.createdAt })
     const existing = this.log.message(id, 'devin-assistant-' + active.origin.nativeMessageId)
@@ -622,6 +664,8 @@ export class DevinAcpHost implements AgentHost {
         connection.tools.set(update.toolCallId, tool)
       }
       const active = this.active.get(id)
+      if (active && !active.streamed && typeof update.sessionUpdate === 'string' && TURN_WORK.has(update.sessionUpdate)
+        && this.connections.get(id) === connection) { active.streamed = true; this.publishActive(id); active.wake?.() }
       if (update.sessionUpdate === 'agent_message_chunk' && active) {
         const content = record(update.content)
         if (content?.type === 'text' && typeof content.text === 'string') {
@@ -658,6 +702,9 @@ export class DevinAcpHost implements AgentHost {
           await connection.rpc.reply(frame.id, devinDecline(decision)); return
         }
         this.pending.set(decision.request.id, { decision, connection, fingerprint }); this.thread(id).requests.push(decision.request)
+        // A question or a permission on the owner's session is the prompt being worked on, as streamed work is.
+        const active = this.active.get(id)
+        if (active && !active.streamed && this.connections.get(id) === connection) { active.streamed = true; this.publishActive(id); active.wake?.() }
         this.reaper.touch(id); this.emit()
       } catch {
         connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported request' } })
@@ -673,7 +720,7 @@ export class DevinAcpHost implements AgentHost {
     try { return await this.executeNative(command) } finally { this.dispatching.delete(command.threadId) }
   }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
-    const generation = this.generation
+    const generation = this.generation; const began = Date.now()
     if (!this.state.connected) throw new Error('Connect Devin before managing threads.')
     let creation: Connection | undefined
     try {
@@ -720,7 +767,8 @@ export class DevinAcpHost implements AgentHost {
         if (this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
         alias.settingsConfirmed = true; await this.persist()
         if (generation !== this.generation || this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
-        this.log.pin(command.threadId); this.reaper.touch(command.threadId)
+        // A session made just now has no history to read, so the next poll need not start an observer for it.
+        this.log.pin(command.threadId); this.reaper.touch(command.threadId); this.lastReadAt.set(command.threadId, Date.now())
         this.thread(command.threadId).status = 'idle'
       } else if (command.type === 'configure-thread') {
         if (command.modelId !== undefined || command.reasoningEffort !== undefined || command.runtimeMode !== undefined) {
@@ -762,7 +810,7 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
         this.reaper.touch(id)
         if (!alias.settingsConfirmed) throw new Error('Devin has not confirmed this thread’s settings. Reconnect before sending.')
-        if (command.type === 'send') return await this.send(command, connection)
+        if (command.type === 'send') return await this.send(command, connection, began)
         if (command.type === 'answer') {
           const saved = this.pending.get(command.requestId)
           if (!saved || saved.decision.threadId !== id || saved.connection !== connection) throw new Error('That Devin request is no longer pending.')
@@ -802,7 +850,8 @@ export class DevinAcpHost implements AgentHost {
       throw error
     }
   }
-  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection): Promise<AgentHostResult> {
+  /** `began` is when this send was asked for: checks this connection passed since then are not run again. */
+  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection, began: number): Promise<AgentHostResult> {
     const generation = this.generation
     const id = command.threadId; const alias = this.aliases[id]!
     const checkConnection = (): void => {
@@ -818,11 +867,11 @@ export class DevinAcpHost implements AgentHost {
       await this.readHistory(id)
       return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
-    const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, alias.cwd, this.options.nativeConfigDirectory)
-    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), alias.cwd)
-    await connection.rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
-    await this.readHistory(id)
-    await this.revalidate(connection, alias.cwd, generation)
+    // The profile and native integrations are confirmed fresh before every prompt (ADR-0017): once, here, unless
+    // opening the session for this same send has just done it. No history is read first. This connection holds the
+    // session, Devin refuses it to every other client while it does (-32015), and the replay it loaded and its
+    // stream since are the whole history, so the stale-input check below needs nothing more.
+    if (connection.checkedAt < began) await this.revalidate(connection, alias.cwd, generation)
     checkConnection()
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The Devin thread changed before this follow-up. Review the newest input first.')
     if (this.active.has(id) || this.thread(id).requests.length) throw new Error('Devin is still working. Queue this follow-up.')
@@ -830,7 +879,8 @@ export class DevinAcpHost implements AgentHost {
       digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false }
     alias.origins.push(origin); alias.ephemeral = false; await this.persist()
     checkConnection()
-    this.active.set(id, { origin, text: command.text, assistant: '' })
+    const turn: ActiveTurn = { origin, text: command.text, assistant: '', streamed: false, ended: false, wake: undefined }
+    this.active.set(id, turn)
     this.thread(id).status = 'running'
     this.thread(id).lastTurn = { id: origin.messageId, status: 'running' }
     this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status: 'running' })
@@ -839,29 +889,51 @@ export class DevinAcpHost implements AgentHost {
       sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: command.text }],
       _meta: { 'cognition.ai/clientMessageId': origin.nativeMessageId },
     }, async value => {
-      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) return
+      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
       const stopReason = z.object({ stopReason: z.string() }).parse(value).stopReason
-      // A completion is native evidence of this prompt, but still verify replay before reconciliation.
-      this.publishActive(id); this.active.delete(id); this.clearRequests(id); connection.tools.clear(); connection.toolBytes = 0
+      // A completion alone is not taken as acceptance: one with no work streamed is checked against the replay.
+      this.publishActive(id); this.active.delete(id); settle(turn); this.clearRequests(id); connection.tools.clear(); connection.toolBytes = 0
       const status = stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : 'failed'
       this.thread(id).status = status === 'failed' ? 'error' : 'idle'
       this.thread(id).lastTurn = { id: origin.messageId, status }
       this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
       this.reaper.touch(id); this.emit()
     }, true).catch(() => {
-      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) return
+      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id); this.thread(id).status = 'error'; this.emit()
     })
-    // Native ACP has no initial prompt acknowledgement. Poll durable UUID evidence until the normal
-    // request deadline; completion latency is independent, and an ambiguous prompt is never resent.
+    return this.acceptance(id, turn, generation)
+  }
+  /**
+   * Whether Devin took a prompt. Native ACP sends no acknowledgement and no echo of it, so there are two kinds of
+   * evidence. The first is the owner's own stream: Devin streams a turn's work only while a prompt runs, and only
+   * this connection can prompt the session it holds, so work streamed after this prompt went out is this prompt
+   * being worked on. The second is the replay of the dispatch identity saved before sending, which an observer
+   * reads only once the stream has shown nothing for the grace period, or the turn ended without showing any work.
+   * Neither ever sends the prompt again; a prompt with no evidence by the request deadline stays uncertain.
+   */
+  private async acceptance(id: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
     const deadline = Date.now() + (this.options.requestTimeoutMs ?? 15_000)
-    do {
-      try { await this.readHistory(id) } catch { return { accepted: false, uncertain: true } }
-      if (origin.confirmed) return { accepted: true }
+    const cadence = this.options.pollIntervalMs ?? 1_500
+    let nextRead = Date.now() + (this.options.acceptanceGraceMs ?? ACCEPTANCE_GRACE_MS)
+    let readAfterEnd = false
+    while (true) {
+      if (turn.streamed || turn.origin.confirmed) return { accepted: true }
       if (generation !== this.generation) return { accepted: false, uncertain: true }
-      await new Promise<void>(resolve => { const timer = setTimeout(resolve, Math.min(100, Math.max(0, deadline - Date.now()))); timer.unref() })
-    } while (Date.now() < deadline)
-    return { accepted: false, uncertain: true }
+      if (turn.ended && !readAfterEnd) { readAfterEnd = true; nextRead = Date.now() }
+      const now = Date.now()
+      if (now >= deadline) return { accepted: false, uncertain: true }
+      if (now >= nextRead) {
+        try { await this.readHistory(id) } catch { return { accepted: false, uncertain: true } }
+        nextRead = Date.now() + cadence
+        continue
+      }
+      await new Promise<void>(resolve => {
+        const done = (): void => { clearTimeout(timer); if (turn.wake === done) turn.wake = undefined; resolve() }
+        const timer = setTimeout(done, Math.min(nextRead, deadline) - now); timer.unref()
+        turn.wake = done
+      })
+    }
   }
   private removeRequest(id: string): void {
     const saved = this.pending.get(id); if (!saved) return

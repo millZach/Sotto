@@ -5,8 +5,9 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
-import { DevinRejected } from '../../src/main/agents/devinRpc'
+import { DevinRejected, DevinRpc, devinEnvironment, findDevinExecutable } from '../../src/main/agents/devinRpc'
 import { DevinAcpHost } from '../../src/main/agents/devin'
+import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
 
 it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identity, decisions, questions, interrupt, and restart in a disposable Git project', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-devin-live-'))
@@ -32,7 +33,13 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identi
     expect((await thread()).id).toBe(id)
     expect((await thread()).modelId).toBe('swe-1-6-fast')
     expect((await thread()).messages).toHaveLength(0)
-    const send = async (text: string) => host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text })
+    // Durations only: how long each send took to be accepted, never what it said.
+    const send = async (text: string) => {
+      const started = performance.now()
+      const result = await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text })
+      console.info('devin-live-send', { stage, acceptedMs: Math.round(performance.now() - started) })
+      return result
+    }
     const denied = join(cwd, 'denied.txt')
     stage = 'send-denied'
     expect(await send('Use the file write tool to create denied.txt containing SOTTO_DENIED. Do not read other files, use shell commands, fetch URLs, or delegate. If permission is denied, stop.')).toEqual({ accepted: true })
@@ -41,6 +48,28 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identi
     await host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: false })
     await expect.poll(async () => (await thread()).status, { timeout: 30_000 }).toBe('idle')
     expect(await readFile(denied).then(() => true, () => false)).toBe(false)
+
+    // Sotto sends without reading history first because the owner holds the session even between turns: another
+    // client that loads it is refused (#770). This checks that on the idle owner, with no prompt.
+    stage = 'idle-lock'
+    const sessionId = JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].devinSessionId as string
+    const executable = await findDevinExecutable()
+    if (!executable) throw new Error('Devin CLI was not found')
+    const probe = new DevinRpc(executable, ['--config', devinPolicyPath(data, 'nothing'), 'acp'], cwd, devinEnvironment(), 30_000, () => undefined, () => undefined)
+    try {
+      await probe.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '0.0.0' } })
+      const refused = await probe.request('session/load', { sessionId, cwd, mcpServers: [] }).then(() => undefined, (error: unknown) => error)
+      expect(refused instanceof DevinRejected ? refused.code : 'loaded').toBe(-32015)
+    } finally { probe.close(); await probe.closed }
+
+    // Accepted from the owner's own stream: the dispatch is not yet confirmed by a replay when the send returns,
+    // and the reply reaches the thread as it streams.
+    stage = 'stream'
+    expect(await send('Reply with the single word SOTTO_STREAMED. Do not use any tools.')).toEqual({ accepted: true })
+    const origins = JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].origins as { confirmed: boolean }[]
+    console.info('devin-live-acceptance', { stage, fromStream: origins.at(-1)?.confirmed === false })
+    await expect.poll(async () => (await thread()).status, { timeout: 30_000 }).toBe('idle')
+    expect((await thread()).messages.some(message => message.role === 'assistant' && message.text.includes('SOTTO_STREAMED'))).toBe(true)
 
     stage = 'send-allowed'
     expect(await send('Use the file write tool to create allowed.txt containing exactly SOTTO_ALLOWED. Do not read other files, use shell commands, fetch URLs, or delegate.')).toEqual({ accepted: true })
@@ -142,7 +171,10 @@ it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1' || process.platform !== 'win32
       expect(await readFile(join(cwd, 'lost-owner.txt')).then(() => true, () => false)).toBe(false)
       return
     }
-    host.observeThreads([id]); await host.connect()
+    host.observeThreads([id])
+    // A refused reconnect says so here, by its problem kind alone, rather than as a missing thread further down.
+    const reconnected = await host.connect()
+    expect(reconnected.connected, reconnected.problem ?? 'refused without a problem kind').toBe(true)
     expect(JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].devinSessionId).toBe(before)
     expect((await thread()).messages.some(message => message.id === messageId)).toBe(true)
     expect((await thread()).requests).toHaveLength(0)

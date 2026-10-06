@@ -156,6 +156,27 @@ it('bounds native integration checks and keeps subprocess output out of failures
 })
 
 
+it('runs both integration lists side by side and names the plugin refusal first however they finish', async () => {
+  const { root } = await setup()
+  const script = join(root, 'native-list.cjs')
+  const profile = join(root, 'profile.json')
+  const log = join(root, 'runs.log')
+  await writeFile(profile, '{}')
+  // Each run notes when it starts and ends; the plugin list is the slower one and also refuses.
+  await writeFile(script, `const { appendFileSync } = require('node:fs')
+const kind = process.argv.includes('plugins') ? 'plugins' : 'mcp'
+appendFileSync(${JSON.stringify(log)}, 'start ' + kind + '\\n')
+setTimeout(() => {
+  appendFileSync(${JSON.stringify(log)}, 'end ' + kind + '\\n')
+  console.log(kind === 'plugins' ? 'Installed plugins: one' : 'Configured MCP servers:\\n\\n  \\u2022 enabled\\n    Command: synthetic')
+}, kind === 'plugins' ? 400 : 0)`)
+  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow(/plugins/u)
+  const runs = (await readFile(log, 'utf8')).trim().split('\n')
+  // The MCP list started before the plugin list ended: they overlapped rather than ran one after the other.
+  expect(runs.indexOf('start mcp')).toBeLessThan(runs.indexOf('end plugins'))
+  expect(runs).toHaveLength(4)
+})
+
 it('accepts native version-one normalization and formatting without accepting new policy fields', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)

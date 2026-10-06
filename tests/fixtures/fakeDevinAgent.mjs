@@ -11,6 +11,9 @@ const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(nam
 const write = (name, value) => writeFileSync(path(name), JSON.stringify(value))
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const violate = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
+// Every process Sotto starts says what it is, so a test can count the processes a send costs.
+record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
+ : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
 if (process.argv.includes('--version')) { process.stdout.write('devin ' + (read('script.json', {}).cliVersion ?? '3000.10.31') + ' (b98cc431)\n'); process.exit(0) }
 if (process.argv.includes('plugins') && process.argv.includes('list')) { process.stdout.write('No plugins installed.\n'); process.exit(0) }
 if (process.argv.includes('mcp') && process.argv.includes('list')) {
@@ -171,6 +174,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   saveMessage(p.sessionId, { role: 'user', id, text: p.prompt[0].text, timestamp: new Date().toISOString(), visibleAfter: Date.now() + (script.delayPrompt ?? 0) })
   // Opt-in synthetic filesystem effect used only by the cross-provider working-copy contract.
   if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), p.prompt[0].text)
+  // Opt-in: start streaming the reply at once, the way a model's first words arrive while the turn runs.
+  if (script.streamOnPrompt) update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.streamOnPrompt } })
   if (script.delayPrompt) write('script.json', {})
   // Native Devin does not emit a live user echo; only a later load proves acceptance.
  } else if (frame.method === 'session/cancel') { complete(p.sessionId, '', 'cancelled'); result(frame.id) }

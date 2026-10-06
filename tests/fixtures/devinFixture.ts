@@ -2,15 +2,22 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { DevinAcpHost } from '../../src/main/agents/devin'
+import { DevinAcpHost, type DevinAcpOptions } from '../../src/main/agents/devin'
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterSessionOptions } from '../integration/adapterContract'
 
-/** Every request deadline includes process startup; lost evidence is scripted, never inferred from a short timer. */
-export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, knownSessions = new Map<string, Set<string>>()) {
+/**
+ * Every request deadline includes process startup; lost evidence is scripted, never inferred from a short timer.
+ * The fake streams nothing after a prompt unless a test scripts it, so a send reads its replay at once unless
+ * `options` says otherwise; a test of the owner's stream as evidence sets `acceptanceGraceMs` past its deadline. A
+ * `pollIntervalMs` of `null` leaves the adapter's own production pace.
+ */
+export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs: number | null = 20, session: AdapterSessionOptions = {}, knownSessions = new Map<string, Set<string>>(),
+  options: Partial<DevinAcpOptions> = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-devin-thread-'))
   const adapter = new DevinAcpHost(root, { executable: process.execPath,
-    nativeConfigDirectory: join(root, 'native-config'), args: [resolve('tests/fixtures/fakeDevinAgent.mjs'), root], requestTimeoutMs, pollIntervalMs, ...session })
+    nativeConfigDirectory: join(root, 'native-config'), args: [resolve('tests/fixtures/fakeDevinAgent.mjs'), root], requestTimeoutMs, ...(pollIntervalMs === null ? {} : { pollIntervalMs }),
+    acceptanceGraceMs: 0, ...session, ...options })
   const checkViolations = async (): Promise<void> => {
     const text = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')
     if (text) throw new Error(`Invalid Devin fixture traffic: ${text}`)
@@ -65,7 +72,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
         if (method !== 'session/prompt') throw new Error('Only prompt acceptance can be delayed by this script')
         await script({ delayPrompt: requestTimeoutMs + 1000 })
       }, requests,
-      restart: async () => { adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions) },
+      restart: async () => { adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, options) },
     },
     cleanup: async (): Promise<void> => {
       adapter.disconnect(); await adapter.closed()

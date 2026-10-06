@@ -215,8 +215,17 @@ export async function assertDevinNoPlugins(executable: string, argsPrefix: reado
   verifyDevinPluginList(await nativeList(executable, [...argsPrefix, 'plugins', 'list'], environment, cwd))
 }
 
-/** Allow an empty native MCP registry or entries all explicitly disabled. */
+/**
+ * Allow an empty native MCP registry or entries all explicitly disabled. The two lists are independent reads that
+ * change nothing, so they run side by side. Both are awaited and judged in a fixed order, plugins first, so a
+ * refusal names the same cause however the two runs finish.
+ */
 export async function assertDevinNoIntegrations(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
-  await assertDevinNoPlugins(executable, argsPrefix, environment, cwd)
-  verifyDevinMcpList(await nativeList(executable, [...argsPrefix, 'mcp', 'list'], environment, cwd))
+  const [plugins, mcp] = await Promise.allSettled([
+    assertDevinNoPlugins(executable, argsPrefix, environment, cwd),
+    nativeList(executable, [...argsPrefix, 'mcp', 'list'], environment, cwd),
+  ])
+  if (plugins.status === 'rejected') throw plugins.reason
+  if (mcp.status === 'rejected') throw mcp.reason
+  verifyDevinMcpList(mcp.value)
 }
