@@ -236,9 +236,10 @@ export class CheckpointCapture {
     try { listing = await git(root, ['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']) }
     catch (error) {
       if (!gitRefusedListing(error)) throw error
-      // An outgrown list is usually fixed in an ignore file. A folder Git refused is watched by its signature.
-      const outgrown = (error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
-      return new Refusal(outgrown ? new ToolFailure('too-large', COUNT_MESSAGE) : new ToolFailure('not-repository', UNLISTED_MESSAGE), folder.ignoreFiles ?? [])
+      // An outgrown list is a verdict, usually fixed in an ignore file. A folder Git will not list is asked again on
+      // every send: what fixes it (a repository made, an ownership change, `safe.directory`) is not visible to `lstat`.
+      if ((error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return new Refusal(new ToolFailure('too-large', COUNT_MESSAGE), folder.ignoreFiles ?? [])
+      throw new ToolFailure('not-repository', UNLISTED_MESSAGE)
     }
     const paths = [...new Set(listing.split('\0').filter(Boolean))].sort()
     const valid = (path: string): boolean => checkpointPathSchema.safeParse(path).success && isInside(root, join(root, path))

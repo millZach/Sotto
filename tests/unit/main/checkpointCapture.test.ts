@@ -166,14 +166,20 @@ describe('checkpoint capture', () => {
     expect(f.commands.some(args => args[0] === 'ls-files')).toBe(true)
   })
 
-  it('holds no verdict over a listing that timed out or could not be started, which may pass', async () => {
-    const f = await fixture({ repository: false })
-    const failures = [Object.assign(new Error('Command failed: git ls-files'), { killed: true, code: null, signal: 'SIGTERM' }),
-      Object.assign(new Error('spawn EMFILE'), { code: 'EMFILE' })]
-    for (const failure of failures) {
+  it('holds no verdict over a listing Git refused, timed out on or could not start, all of which may pass', async () => {
+    // A repository whose Git directory is known, so a verdict could be held if one were kept.
+    const f = await fixture()
+    const unlisted = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
+    const failures = [
+      { failure: Object.assign(new Error('fatal: detected dubious ownership'), { code: 128 }), shown: unlisted },
+      { failure: Object.assign(new Error('Command failed: git ls-files'), { killed: true, code: null, signal: 'SIGTERM' }), shown: 'Command failed: git ls-files' },
+      { failure: Object.assign(new Error('spawn EMFILE'), { code: 'EMFILE' }), shown: 'spawn EMFILE' },
+    ]
+    for (const { failure, shown } of failures) {
       const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
-        git: async (_cwd, args) => { if (args[0] === 'ls-files') throw failure; throw Object.assign(new Error('not a repository'), { code: 128 }) } })
-      await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toBe(failure)
+        git: (cwd, args) => args[0] === 'ls-files' && args[1] === '-c' ? Promise.reject(failure)
+          : new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' }, (error, output) => error ? reject(error) : done(output))) })
+      await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(shown)
       expect(await capture.heldVerdict(f.repo)).toBeUndefined()
     }
   })

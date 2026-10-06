@@ -46,7 +46,7 @@ The working copies:
   its own copy, with an empty commit at the end of each turn, which moves `HEAD` and so turns the held verdict
   around before every send. Its largest files are more than a verdict watches, so its verdict watches Git's state,
   the top-level listing and the ignore files alone: the cheapest verdict to hold.
-- **Not a Git repository**: 200 files of 1 KiB with no `.git`.
+- **Not a Git repository**: 200 files of 1 KiB with no `.git`. After the third review such a folder holds no verdict, so every send asks Git again (a `rev-parse` and a refused listing); its row is from one run of that code, where the other rows are three runs of the code before it, which held a verdict here at about 2 ms a send.
 - **This repository**: the branch's own checkout, 4,552 files and 324 MiB as Git lists them (tracked files and
   untracked ones it does not ignore), so over the size limit.
 
@@ -65,7 +65,7 @@ The checkpoint taken before each send, which the send waits on (run of October 6
 | Over the limits, 1.5 MB of saved checkpoints | 7,162 ms | 198 ms | 8,308 ms (6,698-10,955) | 2.7 ms (2.2-3.5) | 2,048 (64 MiB) / 0 | 0 |
 | Over the limits, 40 saved checkpoints of 2,000 files | 8,660 ms | 219 ms | 8,401 ms (7,310-10,040) | 2.3 ms (1.7-3.3) | 2,048 (64 MiB) / 0 | 0 |
 | Over the limits, a commit each turn | 6,062 ms | 228 ms | 7,473 ms (5,942-9,664) | 163 ms (108-333) | 2,048 (64 MiB) / 0 | 15 |
-| Not a Git repository | 98 ms | 122 ms | 92 ms (72-242) | 2.2 ms (1.9-4.3) | 0 / 0 | 0 |
+| Not a Git repository (one run, after the third review) | 65 ms | 113 ms | 86 ms (55-296) | 81 ms (68-119) | 0 / 0 | 15 |
 | This repository | 1,415 ms | 283 ms | 2,006 ms (930-3,185) | 3.2 ms (2.3-216) | 605 (64 MiB) / 0 | 0 |
 
 Before the second review a send's save still went over every saved checkpoint's files to count their backups.
