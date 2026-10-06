@@ -1320,6 +1320,12 @@ describe('kept recordings', () => {
     expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true, retried: true })
   })
 
+  it('announces nothing before setup is finished', () => {
+    const harness = createHarness({ currentSettings: settings({ onboardingComplete: false }) })
+    harness.controller.announceIdle()
+    expect(harness.publishWidgetState).not.toHaveBeenCalled()
+  })
+
   it('announces idle for a new controller, and not over a session', async () => {
     const harness = createHarness({ currentSettings: settings({ onboardingComplete: true }) })
     harness.controller.announceIdle()

@@ -255,8 +255,11 @@ export class DictationController {
     try {
       settings = this.dependencies.getSettings()
     } catch {
-      settings = defaultSettings(defaultHotkey(this.platform))
+      return
     }
+    // Main keeps the widget hidden until setup is finished; an idle publication
+    // could reveal the resting sliver early, and there is nothing to reset yet.
+    if (!settings.onboardingComplete) return
     try {
       const publication = this.dependencies.publishWidgetState({
         status: 'idle',

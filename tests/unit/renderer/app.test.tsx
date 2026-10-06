@@ -1100,6 +1100,24 @@ describe('transcription pipeline prewarm', () => {
     return prewarm
   }
 
+  it('has each new controller announce it holds no session, so a reload clears the widget', async () => {
+    const announceIdle = vi.fn()
+    const factory: AppControllerFactory = () => ({
+      getState: () => ({ status: 'idle' }),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      toggle: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+      announceIdle,
+    })
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    })
+    render(<AppProvider bridge={bridge} createController={factory}><App /></AppProvider>)
+    await waitFor(() => expect(announceIdle).toHaveBeenCalledTimes(1))
+  })
+
   it('prewarms the pipeline once the controller becomes ready', async () => {
     const bridge = createBridge({
       getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
