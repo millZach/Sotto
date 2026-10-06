@@ -117,7 +117,8 @@ class MoveWaits extends Error {}
 /** Why a connect went to SSH past the tailnet: what the row says, and the address that just failed, which waits for the 5-minute check. */
 interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined }
 /** What Add host's tailnet step found: the host's setting once it is on, or why the host stays on its SSH connection. */
-interface AddStepAnswer { readonly setting?: HostTailnetSetting | undefined; readonly why?: 'no-tailscale' | 'old-host' | 'refused' | undefined }
+type StayedOnSsh = 'no-tailscale' | 'old-host' | 'refused'
+type AddStepAnswer = { readonly setting: HostTailnetSetting } | { readonly why: StayedOnSsh }
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
 const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
 export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
@@ -134,6 +135,11 @@ function unsavedMessage(message: string): string {
 }
 /** The host part of an SSH target, which names a new host until the user renames it. */
 const targetHost = (target: string): string => target.split('@').at(-1) ?? target
+/** Whether a saved host already has these SSH settings and name, so saving them would change nothing. */
+function sameConnection(saved: SavedHost, input: Connection): boolean {
+  return saved.name === input.name && saved.target === input.target && saved.installPath === input.installPath && saved.dataDirectory === input.dataDirectory
+    && (saved.identityFile ?? '') === (input.identityFile ?? '') && saved.sshPort === input.sshPort
+}
 /** Checks a connection the way the launcher will, so a mistyped one is refused before anything starts. */
 function validateConnection(host: Connection): void {
   validateSshHost({ target: host.target, installPath: host.installPath, dataDirectory: host.dataDirectory,
@@ -545,7 +551,7 @@ export class DesktopHosts {
       const busy = this.updates?.busy(id) ?? this.boot?.busy(id)
       if (busy) throw new Error(busy)
     }
-    if (command.type === 'save') return this.edit(command.host)
+    if (command.type === 'save') return this.edit(command.host, command.prefer)
     const host = this.saved.find(item => item.id === command.id)
     if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
     if (command.type === 'ssh-answer') {
@@ -800,13 +806,28 @@ export class DesktopHosts {
     this.emit()
   }
   /**
-   * Edit connection. The new connection takes effect on a fresh connect, so a live one closes first, including
-   * a host of another version whose SSH session is kept only for Stop host; a host that is on connects again.
+   * Edit connection. The SSH settings are checked first, then a new choice of how Sotto connects is written (ADR-0053), so
+   * a mistyped host changes nothing. A save that changes only the choice ends there. Otherwise the new connection takes
+   * effect on a fresh connect, so a live one closes first, including a host of another version whose SSH session is kept
+   * only for Stop host; a host that is on connects again.
    */
-  private async edit(input: Connection): Promise<HostsState> {
+  private async edit(input: Connection, prefer?: HostConnectionPreference): Promise<HostsState> {
     const existing = this.saved.find(item => item.id === input.id)
     if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
     validateConnection(input)
+    const choosing = prefer !== undefined && prefer !== this.tailnet.get(existing.id).prefer
+    if (choosing) {
+      await this.setConnection(existing, prefer)
+      if (sameConnection(existing, input)) return this.get()
+    }
+    try { return await this.saveConnection(existing, input) }
+    catch (error) {
+      if (!choosing) throw error
+      throw new Error(`Sotto now connects to ${existing.name} the way you chose, but its SSH settings were not saved. Save the connection again.`, { cause: error })
+    }
+  }
+  /** Saves a checked connection and connects again with it if the host is on. */
+  private async saveConnection(existing: SavedHost, input: Connection): Promise<HostsState> {
     await this.disconnect(existing.id)
     // Editing a route must not silently transfer a credential to a different host: the saved host identity stays
     // and is checked on the next connect. The switch is not part of the connection, so it stays as it was.
@@ -1198,18 +1219,19 @@ export class DesktopHosts {
    */
   private async connectedOverSsh(host: SavedHost, active: LiveHost, miss: TailnetMiss, addStep?: () => Promise<AddStepAnswer>): Promise<void> {
     this.lastVia.set(host.id, 'ssh')
-    if (this.live.get(host.id) !== active || !this.saved.includes(host)) { if (addStep) this.update(host.id, { addTailnet: { state: 'ssh', why: 'refused' } }); return }
-    let why: AddStepAnswer['why']
+    // Superseded or forgotten: the status is the next connect's, or gone, and says nothing of this step.
+    if (this.live.get(host.id) !== active || !this.saved.includes(host)) return
+    let why: StayedOnSsh | undefined
     try {
       const step = addStep ? await addStep() : undefined
-      why = step?.why
-      await this.followTailnet(host, active, { setting: step?.setting, ...miss })
+      if (step && 'why' in step) why = step.why
+      await this.followTailnet(host, active, { setting: step && 'setting' in step ? step.setting : undefined, ...miss })
     } catch { /* The host stays where it is, on its SSH connection. */ }
     // Add host's tailnet step ends here, on whichever connection the socket is on now.
     if (addStep) this.update(host.id, { addTailnet: this.addTailnetOutcome(host, why) })
   }
   /** How Add host's tailnet step came out: done when the socket is on the tailnet connection, and otherwise why it is not. */
-  private addTailnetOutcome(host: SavedHost, why: AddStepAnswer['why']): HostAddTailnet {
+  private addTailnetOutcome(host: SavedHost, why: StayedOnSsh | undefined): HostAddTailnet {
     if (this.live.get(host.id)?.via === 'tailnet') return { state: 'done' }
     return { state: 'ssh', why: why ?? this.status.get(host.id)?.tailnetNote ?? 'unreachable' }
   }
@@ -1218,7 +1240,8 @@ export class DesktopHosts {
    * and writes the tailnet as this host's choice. The setting is read first, so a host whose Tailscale is not running is
    * left as it was: its setting goes off again only when this step turned it on, since another desktop may use it. A host
    * that cannot be reached, refuses the setting or cannot save it stays on SSH, as a host with no Tailscale running does,
-   * until the owner chooses the tailnet for it. The answer, when the host will be reached over its tailnet.
+   * until the owner chooses the tailnet for it. The answer is the setting once it is on, and otherwise why the host stays on
+   * its SSH connection.
    */
   private async tailnetAtAdd(host: SavedHost): Promise<AddStepAnswer> {
     const hostId = host.hostId!
@@ -1317,7 +1340,10 @@ export class DesktopHosts {
     this.returns.set(host.id, timer)
   }
   private clearReturn(id: string): void { const timer = this.returns.get(id); if (timer) { clearTimeout(timer); this.returns.delete(id) } }
-  /** The 5-minute check (ADR-0053, step 4). The host's health over the SSH forward says its address now, with no new sign-in. */
+  /**
+   * The 5-minute check (ADR-0053, step 4), over the SSH connection the host is on, with no new sign-in. A host that gave no
+   * address for a reason on the host has its Serve set up again; otherwise its health over the SSH forward says its address now.
+   */
   private async returnToTailnet(host: SavedHost): Promise<void> {
     const active = this.live.get(host.id)
     if (this.closed || !active || active.via !== 'ssh' || !this.saved.includes(host)) return

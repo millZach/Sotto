@@ -190,6 +190,25 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect((await saved())[0]).toMatchObject({ prefer: 'tailnet', address: ADDRESS })
   })
 
+  it('says at Add host that a host too old for the tailnet route needs updating, and keeps it on SSH', async () => {
+    // A host older than the route answers 400 to it.
+    const real = globalThis.fetch
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => String(input).endsWith('/v1/admin/tailnet') ? new Response('{}', { status: 400 }) : real(input, init))
+    await add()
+    vi.restoreAllMocks()
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh', addTailnet: { state: 'ssh', why: 'old-host' } })
+    expect(await saved()).toEqual([])
+  })
+
+  it('says at Add host that the host refused its tailnet connections, and keeps it on SSH', async () => {
+    // The host will not take the administrative token, even when asked again: it refuses the setting.
+    adminTokenOverride = 'A'.repeat(43)
+    await add()
+    adminTokenOverride = undefined
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh', addTailnet: { state: 'ssh', why: 'refused' } })
+    expect(await admin('tailnet', {})).toMatchObject({ enabled: false })
+  })
+
   it('tries a Serve that needed its operator again at the 5-minute check, over the SSH connection it is on', async () => {
     returnMs = 300
     await relaunch()
@@ -449,6 +468,25 @@ describe('a tailnet connection (ADR-0053)', () => {
     await manager.command({ type: 'save', host: { ...remote, name: 'forge' } })
     await vi.waitFor(() => expect(launchers).toHaveLength(1), { timeout: 20_000 })
     expect(launchers[0]!.options).toEqual({})
+    await onTailnet()
+  })
+
+  it('saves a new choice with Edit connection’s SSH settings, and changes nothing when those settings are mistyped', async () => {
+    const remote = await add()
+    launchers.length = 0
+    // A host name with a space is refused before the choice is written, so the host stays on the tailnet.
+    await expect(manager.command({ type: 'save', host: { ...remote, target: 'for ge' }, prefer: 'ssh' })).rejects.toThrow('Enter an SSH host such as forge or user@forge.')
+    expect(first()).toMatchObject({ prefer: 'tailnet', via: 'tailnet', phase: 'connected', target: 'forge' })
+    expect((await saved())[0]).toMatchObject({ prefer: 'tailnet' })
+    expect(launchers).toEqual([])
+    // The same SSH settings with a new choice write the choice and nothing else: no test connect over SSH follows the move.
+    await manager.command({ type: 'save', host: remote, prefer: 'ssh' })
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'ssh' }), { timeout: 20_000 })
+    expect(launchers.map(launcher => launcher.options)).toEqual([{ start: false }, {}])
+    // A changed port with the tailnet chosen again writes the choice, then saves the port and connects again over SSH to check it.
+    await manager.command({ type: 'save', host: { ...remote, sshPort: 2222 }, prefer: 'tailnet' })
+    expect(first()).toMatchObject({ sshPort: 2222 })
+    expect((await saved())[0]).toMatchObject({ prefer: 'tailnet' })
     await onTailnet()
   })
 

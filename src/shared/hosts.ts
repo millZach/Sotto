@@ -216,7 +216,11 @@ export interface HostPhonesView {
 export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('add'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
   z.object({ type: z.literal('cancel-add'), id: z.uuid() }).strict(),
-  z.object({ type: z.literal('save'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
+  /**
+   * Edit connection's Save: the SSH settings, and how Sotto connects when the dialog offers the choice (ADR-0053). Both are
+   * checked before either is written.
+   */
+  z.object({ type: z.literal('save'), host: remoteHostSchema.omit({ enabled: true }), prefer: z.enum(HOST_CONNECTIONS).optional() }).strict(),
   z.object({ type: z.literal('rename'), id: z.uuid(), name: z.string().trim().min(1).max(80) }).strict(),
   z.object({ type: z.literal('set-enabled'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ type: z.literal('connect'), id: z.uuid() }).strict(),
