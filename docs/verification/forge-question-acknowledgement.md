@@ -16,11 +16,25 @@ The same probe and an inspected Electron screenshot exposed a separate stale del
 
 ## Validation
 
+The initial validation below applies to `f516eb06`, published with evidence at `ad77b7a6`. The subsequent PR review fixes and their validation are recorded separately below.
+
 - `npm run typecheck`, `npm run lint` and `npm run notices:verify` passed on the final source; 174 third-party notice components were verified. The app and standalone host build passed.
 - `npm test -- --maxWorkers=2` on `f516eb06`: 567 files passed and 42 skipped; 7,910 tests passed and 166 skipped. No failures, in 1,329.55 seconds. Source and tests stayed unchanged throughout the run.
 - `npx vitest run tests/integration/remoteRequestDraftDelivery.test.ts tests/unit/main/desktopHostRouter.test.ts tests/integration/remoteClaudeLateAnswer.test.ts --maxWorkers=2`: all 57 cases passed. The earlier six-file transport/recovery run passed all 150 cases; the full gate above includes the final versions of every regression.
 - On the final source at `f516eb06`, `npm run build` passed, followed by `npx playwright test tests/e2e/remote-question-receipt.spec.ts tests/e2e/thread-sidebar-question.spec.ts tests/e2e/request-draft-restart.spec.ts tests/e2e/request-draft-recovery.spec.ts tests/e2e/host-identity.spec.ts --workers=1 --trace retain-on-failure --output test-results/forge-ack-all-final`: all 20 cases passed in 2.8 minutes. The seven remote cases include both late native completion outcomes and the absence of a stale delivery alert.
 - Separate GPT-6.1 Sol standards and specification reviews have no remaining findings. Their delivery findings were reproduced before fixing them, including the independent real-Claude callback probe after the final fix.
+
+## PR review follow-up
+
+[PR #796](https://github.com/millZach/Sotto/pull/796) found four additional defects. The desktop Check callback passed a full request target into a strict owner-only list lookup, so both Check and the automatic check after a refusal failed before reaching the host. It now reads and refreshes that exact target. Optional receipt-read failures after acknowledgement preserve the command-local outcome and retain unproved text. Recovery reconciles known acceptance immediately and queues receipt reads separately per connection; a blocked host cannot stall local, personal or other-host acceptance. Finally, an acceptance push notifies recovery without clearing an unrelated oversized-shell error.
+
+Both new Electron regressions failed against the prior bundled desktop, then passed after rebuilding: Check makes an unsent held answer editable without submitting it, and a refused answer can be edited and retried. The tests exercise the actual main-process callback through IPC and the rendered controls. The unsent-hold fixture saves a held revision through preload to model an interrupted send; it does not submit an answer through that bridge.
+
+The router's two blocked-host regressions and the transport regressions also failed before their fixes. Final focused runs passed 84 router/draft/delivery cases, 49 socket-client unit cases and 70 socket integration cases. The router tests include independent 16-read-per-second budgets and bounded 512-entry pending/negative caches. Separate GPT-6.1 Sol standards and specification reviews have no open findings; the standards review's shortened polling timeout was removed.
+
+On the review fixes, typecheck, lint, notices (174 components) and build passed. All 22 Electron cases passed in 1.8 minutes with the five-spec command above, using `--output test-results/forge-ack-review-final`. The complete two-worker suite and GitHub gates are checked on the published revision before merge; their final status is recorded on the PR. No source or test edits are made during the complete local run.
+
+The inspected [Check result](../../artifacts/forge-question-ack/remote-check-editable.png) retains the selected answer, removes Check again and enables Send answer. The test then edits the choice and verifies one accepted submission and no saved hold.
 
 Three existing saved-answer UI tests initially failed because they looked up bare thread IDs after the host-scoped identity migration. A clean checkout of `77d24f8d` reproduced the same three failures. The tests now use the existing `hostKeys` helper, and all three pass; these changes do not alter production behavior. The temporary baseline checkout was removed after preserving its test evidence.
 

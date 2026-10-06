@@ -49,7 +49,7 @@ export class RequestDraftService {
   private readonly listeners = new Set<(owner: RequestDraftOwner) => void>()
 
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
-    private readonly refresh: (owner: RequestDraftOwner) => Promise<void>,
+    private readonly refresh: (target: RequestDraftTarget) => Promise<void>,
     store?: Pick<AtomicJsonStore<Saved>, 'write'>) {
     this.path = join(directory, 'request-drafts.json')
     this.store = store ?? new AtomicJsonStore(this.path, savedSchema.parse, () => ({ version: 1, drafts: [] }))

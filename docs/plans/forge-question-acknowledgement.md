@@ -22,6 +22,8 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Integrate current `main` at `febe51a6` and preserve its command-local outcomes and shared host receipts.
 - [x] Fix the final review's late native acceptance case after a negative receipt was already cached, including its stale delivery banner.
 - [x] Repeat the final local gates and both review axes.
+- [x] Address all four PR review findings and repeat both review axes, including real desktop Check and refusal/retry regressions.
+- [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `febe51a6`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.
 
@@ -31,4 +33,4 @@ The regression first failed for accepted Codex, Claude and Grok answers. Additio
 
 The final specification review reproduced a late Claude callback recording acceptance after both the question and busy state had settled. A cached negative result kept the saved warning visible, and a separate notice could retain its delivery error. Exact acceptance now reaches the desktop without another read and retires both surfaces while preserving genuine uncertainty and newer notices.
 
-The final source at `f516eb06` passed 7,910 tests with 166 skipped, all 20 Electron journeys, typecheck, lint, dependency notices and build. Both review axes have no remaining findings. Screenshots and remaining live-host/platform limits are recorded in [the verification note](../verification/forge-question-acknowledgement.md). PR delivery must address review comments and pass GitHub checks before the authorized merge.
+The initial source at `f516eb06` passed 7,910 tests with 166 skipped, all 20 Electron journeys, typecheck, lint, dependency notices and build. PR review then found four additional recovery defects: exact Check routing, optional receipt failures after acknowledgement, one host stalling other owners, and receipt notifications clearing unrelated shell errors. Their fixes pass focused regressions, both review axes, all 22 Electron journeys, typecheck, lint, notices and build. The complete two-worker suite is repeated with source and tests frozen; its final result and the published revision's GitHub gates are recorded on [PR #796](https://github.com/millZach/Sotto/pull/796) before merge. Screenshots and remaining live-host/platform limits are recorded in [the verification note](../verification/forge-question-acknowledgement.md).

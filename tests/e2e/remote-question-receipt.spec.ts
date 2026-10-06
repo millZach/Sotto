@@ -176,6 +176,66 @@ test('a late exact receipt after remote reconnect removes the mounted unconfirme
   } finally { f.host.service.requestAnswerRecovery = originalRecovery; await f.close() }
 })
 
+test('Check again refreshes the exact saved remote answer through desktop wiring and unlocks an unsent hold without submitting it', async () => {
+  test.setTimeout(120_000)
+  const f = await fixture('codex')
+  try {
+    const { page } = f.launched
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await card.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    const saved = (await drafts(f.profile))[0]!
+    // Model restarting after the sending hold was saved but before an answer was dispatched.
+    await page.evaluate(async draft => window.sotto!.requestDrafts!.save({ ...draft, revision: draft.revision + 1, held: true }), saved)
+    await page.reload()
+    await openThreads(page)
+    await page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
+    await card.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect.poll(async () => (await drafts(f.profile)).map(draft => draft.held)).toEqual([false])
+    await expect(card.getByRole('radio', { name: 'Coast', exact: true })).toBeChecked()
+    await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeEnabled()
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
+    expect(f.native.answers).toHaveLength(0)
+    await page.screenshot({ path: test.info().outputPath('remote-check-editable.png'), animations: 'disabled' })
+    await card.getByRole('radio', { name: 'Hills', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    await expect(card).toHaveCount(0)
+    expect(f.native.answers.map(answer => answer.questionAnswers)).toEqual([{ route: { optionIds: ['hills'] } }])
+    expect(f.errors).toEqual([])
+  } finally { await f.close() }
+})
+
+test('a refused remote answer automatically checks its original attempt and lets the user edit and retry', async () => {
+  test.setTimeout(120_000)
+  const f = await fixture('codex')
+  try {
+    const { page } = f.launched
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await card.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    f.native.event({ type: 'reject', threadId: 'workshop', text: 'Synthetic answer refusal' })
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect.poll(() => f.native.answers.length).toBe(1)
+    await expect.poll(async () => (await drafts(f.profile)).map(draft => ({ held: draft.held, decisionId: draft.decisionId }))).toEqual([{ held: false, decisionId: undefined }])
+    await expect(card).toHaveAttribute('data-phase', 'failed')
+    await expect(card.getByRole('radio', { name: 'Hills', exact: true })).toBeEnabled()
+    await card.getByRole('radio', { name: 'Hills', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    await expect(card).toHaveCount(0)
+    expect(f.native.answers.map(answer => answer.questionAnswers)).toEqual([
+      { route: { optionIds: ['coast'] } }, { route: { optionIds: ['hills'] } },
+    ])
+    expect(f.errors).toEqual([])
+  } finally { await f.close() }
+})
+
 for (const accepted of [true, false]) test(`a native answer settling after the idle laptop cached uncertainty clears its card only with acceptance ${accepted}`, async () => {
   test.setTimeout(120_000)
   let finishNative: (accepted: boolean) => void = () => undefined

@@ -844,13 +844,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
-  }, async owner => {
-    if (owner.kind === 'personal') await personalChats.refresh(owner.ownerId)
+  }, async target => {
+    if (target.kind === 'personal') await personalChats.refresh(target.ownerId)
     else {
-      const key = parseHostEntityKey(owner.ownerId)
+      const key = parseHostEntityKey(target.ownerId)
       if (key && key.hostId !== agentControl.get().hostId) {
-        for (const draft of await requestDrafts.list(owner)) await hostRouter.refreshRequestDraft(draft.target, draft.decisionId)
-      } else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId)
+        await hostRouter.refreshRequestDraft(target, (await requestDrafts.get(target))?.decisionId)
+      } else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId)
     }
   })
   await requestDrafts.start()

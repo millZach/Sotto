@@ -91,10 +91,12 @@ export class DesktopHostRouter {
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
   /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
-  private readonly answerChecks = new WeakMap<DesktopHostConnection, Map<string, Promise<void>>>()
-  private answerReceiptLane: Promise<void> = Promise.resolve()
-  private answerReceiptWindow = 0
-  private answerReceiptReads = 0
+  private readonly answerRecovery = new WeakMap<DesktopHostConnection, {
+    checks: Map<string, { promise: Promise<void>; pending: boolean }>
+    lane: Promise<void>
+    window: number
+    reads: number
+  }>()
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
 
@@ -234,15 +236,22 @@ export class DesktopHostRouter {
       : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }
   async reconcileRequestDrafts(drafts: Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>): Promise<void> {
+    // Already-known local, personal and remote acceptance must not wait for a socket read.
+    await drafts.reconcile()
     const state = this.shell()
+    const pending: Promise<void>[] = []
     for (const draft of await drafts.heldThreadAnswers()) {
       const owner = draft.target
       const identity = parseHostEntityKey(owner.ownerId)
       const connection = identity ? this.hosts.get(identity.hostId)?.connection : undefined
       if (!identity || !connection || connection.kind !== 'remote' || connection.available?.() === false
         || !connection.refreshRequestAnswer || !draft.decisionId) continue
-      let checks = this.answerChecks.get(connection)
-      if (!checks) { checks = new Map(); this.answerChecks.set(connection, checks) }
+      let recovery = this.answerRecovery.get(connection)
+      if (!recovery) {
+        recovery = { checks: new Map(), lane: Promise.resolve(), window: 0, reads: 0 }
+        this.answerRecovery.set(connection, recovery)
+      }
+      const { checks } = recovery
       const decisionId = draft.decisionId
       const questionsDigest = requestQuestionsDigest(owner.questions)
       const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
@@ -257,27 +266,50 @@ export class DesktopHostRouter {
         state.busyThreadIds?.includes(owner.ownerId) ?? false])
       let check = checks.get(key)
       if (!check) {
-        const heldChecks = checks
-        check = this.answerReceiptLane.then(async () => {
-          // Background recovery leaves room in the socket's message budget for the user's commands.
-          const elapsed = Date.now() - this.answerReceiptWindow
-          if (elapsed >= 1000) { this.answerReceiptWindow = Date.now(); this.answerReceiptReads = 0 }
-          if (this.answerReceiptReads >= 16) {
-            await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000 - elapsed)))
-            this.answerReceiptWindow = Date.now(); this.answerReceiptReads = 0
+        // Keep both negative memo entries and queued reads bounded. Never evict an in-flight
+        // read: repeated shell publications must share it instead of queueing duplicates.
+        if (checks.size >= 512) {
+          const oldest = [...checks].find(([, entry]) => !entry.pending)
+          if (oldest) checks.delete(oldest[0])
+          else continue
+        }
+        const budget = recovery
+        const entry = { promise: Promise.resolve(), pending: true }
+        entry.promise = budget.lane.then(async () => {
+          if (this.hosts.get(connection.hostId)?.connection !== connection || connection.available?.() === false) {
+            checks.delete(key)
+            return
           }
-          this.answerReceiptReads++
+          // A push or another queued read may already have proved this exact acceptance.
+          if (connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed.some(item =>
+            item.decisionId === decisionId && item.requestId === owner.requestId && item.questionsDigest === questionsDigest)) {
+            await drafts.reconcile()
+            return
+          }
+          // Each socket leaves room in its own message budget for the user's commands.
+          const elapsed = Date.now() - budget.window
+          if (elapsed >= 1000) { budget.window = Date.now(); budget.reads = 0 }
+          if (budget.reads >= 16) {
+            await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000 - elapsed)))
+            budget.window = Date.now(); budget.reads = 0
+          }
+          budget.reads++
           await connection.refreshRequestAnswer!(decisionId, { threadId: identity.id,
             providerId: owner.providerId, requestId: owner.requestId, questionsDigest })
-          while (heldChecks.size > 512) heldChecks.delete(heldChecks.keys().next().value!)
-        }).catch(() => { heldChecks.delete(key) })
-        this.answerReceiptLane = check
-        checks.set(key, check)
+          // Each host retires its accepted holds as soon as its read finishes, independently
+          // of another host whose receipt is still pending.
+          await drafts.reconcile()
+        }).catch(() => { checks.delete(key) }).finally(() => { entry.pending = false })
+        budget.lane = entry.promise
+        checks.set(key, entry)
+        check = entry
       }
-      await check
+      pending.push(check.promise)
     }
+    await Promise.all(pending)
     await drafts.reconcile()
   }
+
   async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
     const { connection, id } = this.target(target.ownerId)
     const questionsDigest = requestQuestionsDigest(target.questions)

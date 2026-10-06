@@ -215,7 +215,7 @@ export class SocketHostService implements HostService {
     try {
       if ('event' in message) {
         if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(this.read(protocolAgentStateSchema, message.state)) }
-        else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.publish(this.cached) }
+        else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
@@ -315,9 +315,11 @@ export class SocketHostService implements HostService {
   private publish(state: AgentState): void {
     this.validateState(state)
     delete state.clientScoped; delete state.connections
-    this.cached = state; for (const listener of this.listeners) listener(this.state())
+    this.cached = state; this.notifyState()
     if (this.pushErrorThread === null) this.clearPushError()
   }
+  /** New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. */
+  private notifyState(): void { for (const listener of this.listeners) listener(this.state()) }
   private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
     if (detail && detail.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
@@ -362,7 +364,9 @@ export class SocketHostService implements HostService {
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
     this.publish(state)
     const acknowledged = this.state()
-    if (answer) await this.refreshRequestAnswer(commandId, answer)
+    // Receipt evidence is optional after acknowledgement. A failed read preserves the command-local
+    // outcome and leaves its saved answer held until an exact positive receipt is recovered later.
+    if (answer) await this.refreshRequestAnswer(commandId, answer).catch(() => undefined)
     const receipt = this.acceptedAnswers.get(commandId)
     const accepted = answer !== undefined && receipt !== undefined && receipt.threadId === answer.threadId
       && receipt.providerId === answer.providerId && receipt.requestId === answer.requestId
