@@ -43,6 +43,8 @@ export interface SocketHostServiceOptions {
    */
   catchUpEvents?: boolean
 }
+/** The names of this computer, where a forward listens and plain HTTP may go. */
+const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost'])
 /** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
 const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
 /** A 429 is the host's request budget, not this device's pairing, so it says to wait rather than to pair again. */
@@ -59,7 +61,10 @@ export class SocketHostService implements HostService {
   private catchup: Promise<void> | undefined
   /** The thread the last push error named, null for the shell, undefined when none is outstanding. */
   private pushErrorThread: string | null | undefined
-  /** What the host advertised on this connection; a client uses a feature only when the host lists it. */
+  /**
+   * What the host advertised. A client uses a feature only when this connection's hello lists it: health lists what the
+   * listener offers anyone, and a hello what this client may use (ADR-0053). Until a hello arrives, nothing is listed.
+   */
   private hostVersion: string | undefined
   private features: readonly string[] = []
   /** Threads being read whole because a delta did not follow the revision held, so a run of them costs one read. */
@@ -76,8 +81,13 @@ export class SocketHostService implements HostService {
   private previewTail: Promise<unknown> = Promise.resolve()
   constructor(private readonly options: SocketHostServiceOptions) { this.endpoint('/v1/health') }
   private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
+  /**
+   * Redeems a pairing code. A desktop pairs only through the SSH connection's forward, on this computer, so a code is never
+   * sent to any other address, whatever asks (ADR-0053).
+   */
   static async pair(url: string, code: string, name: string): Promise<HostPairing> {
     const endpoint = new SocketHostService({ url, token: '' }).endpoint('/v1/pair')
+    if (endpoint.protocol !== 'http:' || !LOOPBACK.has(endpoint.hostname)) throw new Error('This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH.')
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code, name }), signal: AbortSignal.timeout(15000), redirect: 'error' })
     if (!response.ok) throw refusal(response.status, 'This pairing code could not be used. Make a new code on the host and try again.', 'unauthenticated')
     return hostPairingSchema.parse(await response.json())
@@ -85,7 +95,7 @@ export class SocketHostService implements HostService {
   private endpoint(path: string): URL {
     const url = new URL(path, this.options.url)
     if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('Use a host HTTP or HTTPS address without credentials in its URL.')
-    if (url.protocol === 'http:' && !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)) throw new Error('A remote host address must use HTTPS.')
+    if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) throw new Error('A remote host address must use HTTPS.')
     return url
   }
   connect(): Promise<HostHello> {
@@ -114,7 +124,7 @@ export class SocketHostService implements HostService {
       this.hostVersion = typeof advertised === 'string' ? advertised : undefined
       throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     }
-    this.hostVersion = health.sottoVersion; this.features = health.features
+    this.hostVersion = health.sottoVersion; this.features = []
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
     if (!response.ok) throw refusal(response.status, 'This device needs to connect again or be paired on the host.', 'unauthenticated', response.status === 401)
@@ -142,7 +152,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates'] as const).filter(feature => this.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates'] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
