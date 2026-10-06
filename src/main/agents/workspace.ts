@@ -73,6 +73,21 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
   return latest?.turnId ?? (status === 'running' ? newest?.turnId : undefined)
 }
 
+/**
+ * Whether a working-copy record is still the one a task read before it awaited Git, apart from its Git status. A
+ * status read runs in the thread's status lane and writes a new record with only `git` changed (issue #766); that
+ * write must not make a thread-lane task's inspection look stale, or it drops a branch the task just read.
+ */
+function sameWorktreeRecord(read: AgentWorktree | undefined, current: AgentWorktree | undefined): boolean {
+  if (read === current) return true
+  if (!read || !current) return false
+  return isDeepStrictEqual({ ...read, git: undefined }, { ...current, git: undefined })
+}
+/** `next` with the newest Git status on the record it replaces, since a status read may have written one meanwhile. */
+function withCurrentGit(next: AgentWorktree, current: AgentWorktree): AgentWorktree {
+  return current.git === undefined ? next : { ...next, git: current.git }
+}
+
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
@@ -432,12 +447,12 @@ export class WorkspaceHost implements AgentHost {
       try {
         const inspected = await this.worktrees.inspect(worktree)
         const current = this.state.snapshot.threads.find(item => item.id === threadId)
-        if (current?.worktree === worktree) {
+        if (current?.worktree && sameWorktreeRecord(worktree, current.worktree)) {
           // A switch made here is the user's own: the sent branch moves with it in the same publish, so the
           // branch notice never shows for it and stays for a checkout someone else moved (ADR-0014).
           const sentBranch = worktree.sentBranch === undefined ? undefined : options.followSentBranch && inspected.branch ? inspected.branch : worktree.sentBranch
           // The status it had stays on the record until the read below replaces it, so the controls never blank between the two.
-          current.worktree = { ...inspected, ...(worktree.git ? { git: worktree.git } : {}), ...(sentBranch !== undefined ? { sentBranch } : {}) }
+          current.worktree = { ...withCurrentGit(inspected, current.worktree), ...(sentBranch !== undefined ? { sentBranch } : {}) }
           this.dirty = true
           if (sentBranch !== worktree.sentBranch) await this.flush().catch(() => undefined)
         }
@@ -691,9 +706,9 @@ export class WorkspaceHost implements AgentHost {
       const pulled = lane === 'status' ? await this.onLane(threadId, () => this.autoPull(threadId, folder)).catch(() => null) : await this.autoPull(threadId, folder)
       if (pulled) ({ status, ticket } = pulled)
     }
+    if (!this.stillThreadFolder(threadId, folder)) return
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
-    if (!current?.worktree || current.worktree.status !== 'ready' || current.worktree.reclaimedAt || this.stopping) return
-    try { if (!sameFolder(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)), folder)) return } catch { return }
+    if (!current?.worktree) return
     const tickets = this.gitStatusTickets.get(threadId)!
     if (ticket <= tickets.written) return
     tickets.written = ticket
@@ -702,6 +717,12 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
+  }
+  /** Whether the thread's folder is still `folder`, ready and not reclaimed, as it was when a read of it began. */
+  private stillThreadFolder(threadId: string, folder: string): boolean {
+    const current = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!current?.worktree || current.worktree.status !== 'ready' || current.worktree.reclaimedAt || this.stopping) return false
+    try { return sameFolder(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)), folder) } catch { return false }
   }
   private gitStatusTicket(threadId: string): number {
     const tickets = this.gitStatusTickets.get(threadId) ?? { issued: 0, written: 0 }
@@ -717,7 +738,9 @@ export class WorkspaceHost implements AgentHost {
    * Fast-forwards the folder with the Pull action's own `git pull --ff-only`, while the caller holds the thread's
    * lane. A folder any thread is working in, waiting on, setting up or running a Git action in is left for the next
    * read, and a pull that fails changes nothing. The status read after the pull with its ticket, or null when
-   * nothing was pulled.
+   * nothing was pulled. The read that asked for the pull may have run in the status lane while the thread's lane
+   * switched the branch or changed the tree, so the folder is checked again under the checkout guard first: still
+   * the thread's, and still a clean default branch only behind its upstream.
    */
   private async autoPull(threadId: string, folder: string): Promise<{ status: GitStatus; ticket: number } | null> {
     const projects = this.state.snapshot.projects
@@ -731,6 +754,8 @@ export class WorkspaceHost implements AgentHost {
       const release = await this.acquireCheckoutMutation(threadId, { kind: 'automatic-pull' })
       try {
         if (this.mutationGuard && !await this.mutationGuard(threadId)) return null
+        if (!this.stillThreadFolder(threadId, folder) || !this.mayAutoPull(await this.gitStatus.read(folder, { remote: false }))) return null
+        if (!this.stillThreadFolder(threadId, folder)) return null
         const result = await this.gitActions.pull(folder, { automatic: true })
         if (result.status !== 'pulled') return null
         const ticket = this.gitStatusTicket(threadId)
@@ -1710,9 +1735,9 @@ export class WorkspaceHost implements AgentHost {
     catch { this.fullCheckDue.add(threadId); return false }
     this.fullCheckDue.delete(threadId)
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (this.stopping || !current || current.worktree !== worktree) return true
+    if (this.stopping || !current?.worktree || !sameWorktreeRecord(worktree, current.worktree)) return true
     if (inspected.branch !== worktree.branch || inspected.dirty !== worktree.dirty) {
-      current.worktree = { ...inspected, ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
+      current.worktree = { ...withCurrentGit(inspected, current.worktree), ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
@@ -2057,11 +2082,11 @@ export class WorkspaceHost implements AgentHost {
     try { next = await this.worktrees.inspect(worktree) }
     catch (error) { next = worktree.reclaimedAt ? worktree : { ...worktree, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (this.stopping || !current || current.worktree !== worktree) return
+    if (this.stopping || !current?.worktree || !sameWorktreeRecord(worktree, current.worktree)) return
     if (next.status === 'ready') this.fullCheckDue.delete(threadId)
     // A send may have recorded its branch on this same record while Git ran.
-    next = { ...next, ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
-    if (isDeepStrictEqual(next, worktree)) return
+    next = { ...withCurrentGit(next, current.worktree), ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
+    if (isDeepStrictEqual(next, current.worktree)) return
     current.worktree = next
     this.dirty = true; await this.flush(); this.publish()
   }
@@ -2115,13 +2140,14 @@ export class WorkspaceHost implements AgentHost {
       try { inspected = await this.worktrees.inspect(await this.worktrees.restore(worktree)) }
       catch (error) { if (worktree.status === 'ready') throw error }
       // A branch switched inside the worktree is adopted, so the pane's label follows it (ADR-0014).
-      // A newer working-copy choice or refresh wins; provider snapshots preserve the worktree object.
-      if (inspected && this.thread(threadId).worktree === worktree) {
+      // A newer working-copy choice or refresh wins; provider snapshots preserve the worktree object, and a Git
+      // status read from the status lane changes only its `git`.
+      if (inspected && sameWorktreeRecord(worktree, this.thread(threadId).worktree)) {
         // Setup can fail after Git creates the checkout but before its verified folder is recorded.
         const workingDirectory = this.thread(threadId).workingDirectory ?? await this.worktrees.workingDirectory(inspected)
         const current = this.thread(threadId)
-        if (current.worktree === worktree && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || worktree.reclaimedAt || current.workingDirectory === undefined)) {
-          current.worktree = inspected; current.workingDirectory ??= workingDirectory; this.dirty = true
+        if (current.worktree && sameWorktreeRecord(worktree, current.worktree) && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || worktree.reclaimedAt || current.workingDirectory === undefined)) {
+          current.worktree = withCurrentGit(inspected, current.worktree); current.workingDirectory ??= workingDirectory; this.dirty = true
           // The folder was just verified; a cache write that fails must not refuse the send.
           try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
           this.publish()
@@ -2149,10 +2175,11 @@ export class WorkspaceHost implements AgentHost {
     const worktree = thread.worktree
     if (worktree?.path && worktree.status === 'ready' && !worktree.reclaimedAt && thread.workingDirectory !== undefined && !this.fullCheckDue.has(threadId)) {
       const seen = await this.worktrees.readyOnDisk(worktree)
-      if (seen && this.thread(threadId).worktree === worktree) {
+      const latest = this.thread(threadId).worktree
+      if (seen && latest && sameWorktreeRecord(worktree, latest)) {
         if (seen.branch !== worktree.branch) {
           // The folder's own branch is the one this send goes to, as `inspect` would have recorded it.
-          this.thread(threadId).worktree = { ...worktree, branch: seen.branch, ...(worktree.temporaryBranch ? { temporaryBranch: false } : {}) }
+          this.thread(threadId).worktree = { ...latest, branch: seen.branch, ...(worktree.temporaryBranch ? { temporaryBranch: false } : {}) }
           this.dirty = true
           // The folder was just verified; a cache write that fails must not refuse the send.
           try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }

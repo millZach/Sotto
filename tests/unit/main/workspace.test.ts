@@ -679,6 +679,77 @@ describe('durable project/thread organization', () => {
     expect(git()?.behind).toBe(0)
   })
 
+  it('checks the folder again before an automatic pull a background read asked for, since the thread\'s own work may have moved it', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    // Each read answers what the folder is when it is asked: behind on main, and a branch of its own after the switch.
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: `origin/${branch}`, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 2, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    const remoteRead = deferred()
+    const read = vi.fn(async (_cwd: string, options: { remote: boolean }) => { const answer = status(); if (options.remote) remoteRead.release(); return answer })
+    f.host.setGitStatus({ read, invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
+    const switching = deferred()
+    const pull = vi.fn(async () => ({ status: 'pulled' as const, branch, upstream: `origin/${branch}` }))
+    f.host.setGitActions({ pull, switchBranch: vi.fn(async (_cwd: string, ref: string) => { await switching.promise; branch = ref; return { branch: ref } }) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // The user switches to a branch of their own while the refresh's remote read finds main behind its upstream.
+    const switched = f.host.switchThreadBranch('local', 'topic', true)
+    const refreshed = f.host.updateThreadWorktree('local', false)
+    await remoteRead.promise
+    switching.release()
+    await Promise.all([switched, refreshed])
+    // The pull the read asked for waited for the switch, and the folder it would have pulled is no longer a clean main.
+    expect(pull).not.toHaveBeenCalled()
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('topic')
+  })
+
+  it('lets a branch switch made in Sotto move the sent branch even when a background status read lands during its inspection', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main', ahead = 0
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    // The inspection after the switch is held, so the status read below lands while it runs.
+    const inspecting = deferred(), inspected = deferred()
+    let holdInspection = false
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
+      const answer = { ...metadata, status: 'ready' as const, branch }
+      if (holdInspection) { holdInspection = false; inspecting.release(); await inspected.promise }
+      return answer
+    })
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    f.host.setGitStatus({ read: vi.fn(async () => status()), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    f.host.setGitActions({ switchBranch: vi.fn(async (_cwd: string, ref: string) => { branch = ref; holdInspection = true; return { branch: ref } }) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    await vi.waitFor(() => expect(worktree()?.sentBranch).toBe('main'))
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    const switched = f.host.switchThreadBranch('local', 'topic', true)
+    await inspecting.promise
+    // The timer's read finishes mid-inspection and writes a new status onto the record.
+    ahead = 3
+    await f.host.gitActionFinished('local')
+    expect(worktree()?.git?.ahead).toBe(3)
+    inspected.release()
+    await switched
+    // The switch is the user's own, so the label and the sent branch both follow it and no branch notice shows.
+    expect(worktree()).toMatchObject({ branch: 'topic', sentBranch: 'topic' })
+  })
+
   it('refuses a Git action on the same folder while an automatic pull runs, rather than racing it', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
