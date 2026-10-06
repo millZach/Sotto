@@ -8,7 +8,6 @@ import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
@@ -33,6 +32,7 @@ import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
 import { ReadsBeforeSend } from './readsBeforeSend'
+import { sameSnapshot } from './sameSnapshot'
 
 // Only strip our suffix after durable origin/digest matching; foreign native
 // messages remain untouched and no extra plaintext prompt is stored in aliases.
@@ -762,7 +762,7 @@ export class GrokAcpHost implements AgentHost {
     thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
     // A read that found nothing new and moved no status publishes nothing (#765): every send reads its thread,
     // and a publish is a copy of every thread for each subscriber.
-    if (sawNew || restarted || thread.status !== before.status || !isDeepStrictEqual(thread.lastTurn, before.lastTurn)) this.emit()
+    if (sawNew || restarted || thread.status !== before.status || !sameSnapshot(thread.lastTurn, before.lastTurn)) this.emit()
   }
   /**
    * Grok's append path. The durable rail stays as Sotto read it; the live tail is merged into a copy of
