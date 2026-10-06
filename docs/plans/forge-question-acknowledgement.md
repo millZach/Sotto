@@ -19,11 +19,16 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Production fix and positive/negative regression coverage.
 - [x] Review, documentation and local gates.
 - [x] Real Electron verification and visual inspection.
+- [x] Integrate current `main` at `febe51a6` and preserve its command-local outcomes and shared host receipts.
+- [x] Fix the final review's late native acceptance case after a negative receipt was already cached, including its stale delivery banner.
+- [x] Repeat the final local gates and both review axes.
 
-The implementation is on `fix/forge-question-ack`, based on local `main` at `77d24f8d`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. No publish, install or live host restart has been performed.
+The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `febe51a6`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.
 
 The throwaway state demonstration is preserved on `prototype/forge-answer-receipt` at `4f81c4b4`, in `docs/prototypes/forge-answer-receipt-prototype.html`. It illustrates the existing question panel: only a receipt for the exact submission clears its saved answer. It makes no visual change to the shipped interface. The user clarified that the bug affects multiple providers; no new design choice was needed.
 
 The regression first failed for accepted Codex, Claude and Grok answers. Additional red cases covered checking after both processes restart, a desktop detail-read failure after acceptance, a host provider-read failure after acceptance, and recovery after reconnect when the question is absent and the UI has no Check button. The fix preserves exact identity and digest matching throughout, including read-only background recovery. Older unbound drafts remain recoverable; they cannot be proved delivered retroactively.
 
-The full suite passed 6,382 tests, the final remote-delivery/router run passed 33, and the real Electron journeys passed all 18. Typecheck, lint, dependency notices, build and both review axes passed. Screenshots and remaining live-host/platform limits are recorded in [the verification note](../verification/forge-question-acknowledgement.md).
+The final specification review reproduced a late Claude callback recording acceptance after both the question and busy state had settled. A cached negative result kept the saved warning visible, and a separate notice could retain its delivery error. Exact acceptance now reaches the desktop without another read and retires both surfaces while preserving genuine uncertainty and newer notices.
+
+The final source at `f516eb06` passed 7,910 tests with 166 skipped, all 20 Electron journeys, typecheck, lint, dependency notices and build. Both review axes have no remaining findings. Screenshots and remaining live-host/platform limits are recorded in [the verification note](../verification/forge-question-acknowledgement.md). PR delivery must address review comments and pass GitHub checks before the authorized merge.
