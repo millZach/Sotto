@@ -105,11 +105,27 @@ test('Forget revokes this computer over an admin connection, and says how to rev
     expect(await paired()).toEqual([])
     await expect(page.getByRole('status', { name: 'forge still trusts this computer' })).toHaveCount(0)
 
-    // Added again, then switched off, and now SSH cannot reach forge: Forget removes it here anyway, and says how to
-    // revoke this computer there.
+    // Added again and switched off, with Tailscale SSH holding the sign-in for approval: Forget's dialog shows the wait
+    // with Open approval page, and Keep host stops the sign-in with nothing sent and forge still saved.
     const second = await addForge()
     await row.getByRole('switch', { name: 'Keep forge connected, now and when Sotto starts' }).click()
     await expect(row.getByText('SSH forge · Switched off')).toBeVisible()
+    await writeFile(modeFile, 'run+tailscale')
+    const held = await lines()
+    const waiting = await forget()
+    await waiting.getByRole('button', { name: 'Forget host' }).click()
+    await expect(waiting.getByRole('status')).toContainText('Waiting for your approval in Tailscale.', { timeout: 60_000 })
+    await expect(waiting.getByRole('button', { name: 'Open the Tailscale approval page for forge' })).toBeVisible()
+    await capture(launched, 'forget-waiting', async () => { expect(await inside(waiting)).toBe(true) })
+    const keep = waiting.getByRole('button', { name: 'Keep host' })
+    await keep.focus()
+    await page.keyboard.press('Enter')
+    await expect(waiting).toHaveCount(0, { timeout: 30_000 })
+    await expect(row.getByText('SSH forge · Switched off')).toBeVisible()
+    expect(await operations(held)).toEqual(['admin launch'])
+    expect(await paired()).toEqual([second])
+
+    // Now SSH cannot reach forge: Forget removes it here anyway, and says how to revoke this computer there.
     await writeFile(modeFile, 'unreachable')
     const unreachable = await forget()
     await capture(launched, 'forget-confirm', async () => { expect(await inside(unreachable)).toBe(true) })
@@ -117,8 +133,8 @@ test('Forget revokes this computer over an admin connection, and says how to rev
     await expect(row).toHaveCount(0, { timeout: 60_000 })
     expect(await paired()).toEqual([second])
     const notice = page.getByRole('status', { name: 'forge still trusts this computer' })
-    await expect(notice).toContainText('Sotto removed forge from this computer, but could not revoke this computer’s access there')
-    const command = (await notice.locator('code').textContent())!
+    await expect(notice).toContainText('SSH could not reach forge, so Sotto removed it from this computer without revoking this computer’s access there.')
+    const command = (await notice.getByRole('region', { name: 'Command to run on forge' }).textContent())!
     expect(command).toContain(`--revoke-client "${second}"`)
     expect(command).toContain('--data "$HOME/.sotto"')
     expect(command).toMatch(/^I="\$HOME\/\.local\/share\/sotto-host"; /u)
@@ -134,6 +150,8 @@ test('Forget revokes this computer over an admin connection, and says how to rev
     await expect(notice.getByRole('button', { name: 'Dismiss what Sotto said about forge' })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(notice).toHaveCount(0)
+    // The focused button went with the notice, so focus goes to Add host rather than to the page.
+    await expect(page.getByRole('button', { name: 'Add host', exact: true })).toBeFocused()
     expect(JSON.parse(await readFile(join(profile, 'remote-hosts.json'), 'utf8'))).toEqual([])
     expect(errors).toEqual([])
   } finally {
