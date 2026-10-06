@@ -43,7 +43,8 @@ describe('request answers', () => {
     const request = { ...structured([single]), delivery: 'uncertain' as const }
     const saved: RequestDraft = { target: { ...owner, requestId: request.id, questions: request.questions! },
       revision: 4, held: true, decisionId: 'exact-attempt', selections: { 'q-db': { optionIds: ['pg'], other: false, text: '' } } }
-    const bridge: RequestDraftBridge = { get: vi.fn(async () => saved), save: vi.fn(async draft => draft), list: vi.fn(async () => [saved]),
+    const bridge: RequestDraftBridge = { get: vi.fn(async () => saved), status: vi.fn(async () => ({ status: 'draft' as const, draft: saved })),
+      save: vi.fn(async draft => draft), list: vi.fn(async () => [saved]),
       discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'accepted' as const, decisionId: 'exact-attempt', revision: 4 })) }
     const onCheck = vi.fn(async () => true), onSubmit = vi.fn(async () => ({ error: null }))
     render(<AgentRequestCard ownerId={owner.ownerId} ownerTitle="Workshop" draftOwner={owner} request={request} blocked={null}

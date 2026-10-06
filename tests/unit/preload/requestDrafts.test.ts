@@ -2,7 +2,29 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+
+it('validates read-only accepted, draft and missing status without invoking Check', async () => {
+  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
+  const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'claude', requestId: 'request', questions: [
+    { id: 'q', question: 'Notes', options: [], multiSelect: false, allowFreeText: true },
+  ] }
+  const draft = requestDraftSchema.parse({ target, revision: 3, held: true, selections: {} })
+  const accepted = { status: 'accepted', decisionId: 'exact-attempt', revision: 3 }
+  for (const result of [accepted, { status: 'draft', draft }, { status: 'missing' }]) {
+    ipc.invoke.mockResolvedValue(result)
+    expect(await bridge.status(target)).toEqual(result)
+    expect(ipc.invoke).toHaveBeenLastCalledWith(REQUEST_DRAFT_STATUS, target)
+  }
+  for (const invalid of [null, draft, { status: 'missing', draft }, { ...accepted, revision: 0 },
+    { ...accepted, answer: 'Private words' }, { status: 'draft', draft: { ...draft, held: 'true' } }]) {
+    ipc.invoke.mockResolvedValue(invalid)
+    await expect(bridge.status(target)).rejects.toThrow()
+  }
+  expect(ipc.invoke.mock.calls.every(([channel]) => channel === REQUEST_DRAFT_STATUS)).toBe(true)
+  expect(() => bridge.status({ ...target, questions: [] })).toThrow()
+})
 
 it('keeps exact acceptance separate from an editable draft across the Check bridge', async () => {
   const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }

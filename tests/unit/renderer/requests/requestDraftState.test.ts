@@ -20,7 +20,12 @@ const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', provider
 const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
 function gate<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
-function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })) } }
+function bridge(): RequestDraftBridge {
+  const api: RequestDraftBridge = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null),
+    status: vi.fn(async target => { const draft = await api.get(target); return draft ? { status: 'draft' as const, draft } : { status: 'missing' as const } }),
+    save: vi.fn(async value => value), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })) }
+  return api
+}
 
 describe('request draft renderer ordering', () => {
   it.each(['release', 'submit'] as const)('does not save or replay an accepted answer returned by a %s check', async operation => {

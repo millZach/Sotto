@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
-import { requestDraftQuestions, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftTarget } from '../../../../shared/requestDrafts'
+import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
 export type StructuredQuestion = NonNullable<AgentRequest['questions']>[number]
 export type PermissionChoice = NonNullable<AgentRequest['permissionChoices']>[number]
@@ -167,6 +167,9 @@ interface DraftBinding {
   retiring: Promise<void> | null
   writing: Promise<boolean>
   loaded: boolean
+  statusRead: number
+  offChanged: (() => void) | null
+  accepted?: Extract<RequestDraftStatus, { status: 'accepted' }>
 }
 
 export type SubmitOutcome = { readonly error: string | null } | null
@@ -227,26 +230,71 @@ export class RequestAnswerStore {
     if (existing?.retiring) return existing.retiring.then(() => this.connect(ownerId, requestId, target))
     if (existing?.loaded) return Promise.resolve()
     if (existing?.loading) return existing.loading
-    const binding = existing ?? { target, bridge, loading: null, retiring: null, writing: Promise.resolve(true), loaded: false }
+    const binding: DraftBinding = existing ?? { target, bridge, loading: null, retiring: null, writing: Promise.resolve(true), loaded: false,
+      statusRead: 0, offChanged: null }
     this.bindings.set(key, binding)
     const before = this.get(ownerId, requestId)
     this.set(ownerId, requestId, { ...before, save: 'loading', saveError: null })
-    const load = bridge.get(target).then(draft => {
+    if (!existing) binding.offChanged = bridge.onChanged?.(owner => {
+      if (requestDraftOwnerKey(owner) === requestDraftOwnerKey(binding.target) && this.bindings.get(key) === binding) {
+        void this.readStatus(ownerId, requestId, binding)
+      }
+    }) ?? null
+    const load = this.readStatus(ownerId, requestId, binding).finally(() => { if (binding.loading === load) binding.loading = null })
+    binding.loading = load
+    return load
+  }
+
+  /** Owner changes read durable status only; Check is reserved for an explicit release. */
+  private async readStatus(ownerId: string, requestId: string, binding: DraftBinding): Promise<void> {
+    const read = ++binding.statusRead, restoring = !binding.loaded, before = this.get(ownerId, requestId)
+    const currentRead = (): boolean => this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding && read === binding.statusRead
+    try {
+      const status = await binding.bridge.status(binding.target)
+      if (!currentRead()) return
       const current = this.get(ownerId, requestId)
+      if (status.status === 'draft' && requestDraftKey(status.draft.target) !== requestDraftKey(binding.target)) {
+        throw new Error('The saved answer belongs to a different question. Reload the original answer before editing.')
+      }
+      if (status.status === 'accepted') {
+        const pristine = !binding.loaded && current.revision === 0 && current.phase === 'idle' && Object.keys(current.selections).length === 0
+        if (pristine || current.revision === status.revision && (current.phase === 'sending' || current.phase === 'sent' || current.phase === 'unconfirmed')) {
+          this.accepted(ownerId, requestId, binding, status)
+          binding.loaded = true
+          return
+        }
+        if (!binding.accepted || status.revision > binding.accepted.revision) binding.accepted = status
+      }
+      if (!restoring || binding.loaded) return
+      const draft = status.status === 'draft' ? status.draft : null
       binding.loaded = true
       // Edits made while a read was pending win per question. Normal controls wait for this initial read.
       const edited = current.revision !== before.revision || before.revision > 0
       this.set(ownerId, requestId, { ...current,
         selections: edited ? { ...draft?.selections, ...current.selections } : draft?.selections ?? current.selections,
-        revision: edited ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft?.revision ?? current.revision,
+        revision: edited ? Math.max(current.revision, draft?.revision ?? (status.status === 'accepted' ? status.revision : 0)) + 1 : draft?.revision ?? current.revision,
         phase: draft?.held ? 'unconfirmed' : current.phase,
         save: edited ? 'saving' : 'saved', saveError: null,
       })
-    }).catch((error: unknown) => {
-      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), save: 'unsaved', saveError: draftError(error) })
-    }).finally(() => { binding.loading = null })
-    binding.loading = load
-    return load
+    } catch (error) {
+      if (currentRead() && restoring && !this.isAccepted(ownerId, requestId, binding)) {
+        this.set(ownerId, requestId, { ...this.get(ownerId, requestId), save: 'unsaved', saveError: draftError(error) })
+      }
+    }
+  }
+
+  private isAccepted(ownerId: string, requestId: string, binding: DraftBinding): boolean {
+    const current = this.get(ownerId, requestId)
+    return current.phase === 'sent' && binding.accepted?.revision === current.revision
+  }
+
+  private accepted(ownerId: string, requestId: string, binding: DraftBinding, proof: Extract<RequestDraftStatus, { status: 'accepted' }>): void {
+    if (binding.accepted && binding.accepted.revision > proof.revision) return
+    binding.accepted = proof
+    binding.offChanged?.()
+    binding.offChanged = null
+    this.set(ownerId, requestId, { ...this.get(ownerId, requestId), revision: proof.revision,
+      phase: 'sent', error: null, choice: null, save: 'saved', saveError: null })
   }
 
   select(ownerId: string, requestId: string, questionId: string, selection: QuestionSelection): void {
@@ -266,6 +314,7 @@ export class RequestAnswerStore {
       // A successful restore already proves durability when no local edits were made.
       if (this.get(ownerId, requestId).save === 'saved') return true
     }
+    if (this.isAccepted(ownerId, requestId, binding)) return true
     const entry = this.get(ownerId, requestId)
     const parsed = requestDraftSchema.safeParse({ target: binding.target, revision: Math.max(1, entry.revision),
       selections: Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }])),
@@ -277,6 +326,7 @@ export class RequestAnswerStore {
     const draft = parsed.data
     this.set(ownerId, requestId, { ...entry, revision: draft.revision, save: 'saving', saveError: null })
     const work = binding.writing.then(async () => {
+      if (this.isAccepted(ownerId, requestId, binding) && draft.revision <= binding.accepted!.revision) return true
       try {
         const saved = await binding.bridge.save(draft)
         if (saved.revision !== draft.revision || JSON.stringify(saved) !== JSON.stringify(draft)) throw new Error(SAVE_ERROR)
@@ -285,6 +335,7 @@ export class RequestAnswerStore {
         return true
       } catch (error) {
         const current = this.get(ownerId, requestId)
+        if (this.isAccepted(ownerId, requestId, binding) && draft.revision <= current.revision) return true
         if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: draftError(error) })
         return false
       }
@@ -302,14 +353,18 @@ export class RequestAnswerStore {
     this.set(ownerId, requestId, sending)
     if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
       // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
+      if (submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
       this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: 'This answer was not sent because its draft could not be saved. Check again after storage is available.' })
       return
     }
+    if (submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
+    const submittedRevision = this.get(ownerId, requestId).revision
     let outcome: SubmitOutcome
     try { outcome = await send() } catch { outcome = null }
     const current = this.get(ownerId, requestId)
     // A departed unbound request may already have been pruned or its ID reused while this reply waited.
-    if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== submittedBinding || (!submittedBinding && current !== sending)) return
+    if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== submittedBinding || (!submittedBinding && current !== sending)
+      || current.revision !== submittedRevision || submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
     if (outcome === null) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: null })
     else if (outcome.error !== null) {
       const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
@@ -319,11 +374,11 @@ export class RequestAnswerStore {
         try {
           const draft = await binding.bridge.check(binding.target)
           if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
-            || this.get(ownerId, requestId).revision !== checkedRevision) return
+            || this.get(ownerId, requestId).revision !== checkedRevision || this.isAccepted(ownerId, requestId, binding)) return
           await this.checked(ownerId, requestId, draft, 'failed', outcome.error)
         } catch {
           if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
-            && this.get(ownerId, requestId).revision === checkedRevision) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: outcome.error })
+            && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: outcome.error })
         }
       } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
     }
@@ -350,11 +405,11 @@ export class RequestAnswerStore {
         checkedRevision = this.get(ownerId, requestId).revision
         const draft = await binding.bridge.check(binding.target)
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
-          || this.get(ownerId, requestId).revision !== checkedRevision) return
+          || this.get(ownerId, requestId).revision !== checkedRevision || this.isAccepted(ownerId, requestId, binding)) return
         await this.checked(ownerId, requestId, draft, 'idle', null)
       } catch (error) {
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
-          && this.get(ownerId, requestId).revision === checkedRevision) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), saveError: draftError(error) })
+          && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), saveError: draftError(error) })
       }
       return
     }
@@ -367,6 +422,8 @@ export class RequestAnswerStore {
       // Acceptance retires this revision in main. Saving it again would recreate delivered
       // text as an unsent answer. Older proof cannot settle or save newer local edits.
       const accepted = result.revision === current.revision
+      const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+      if (accepted && binding) { this.accepted(ownerId, requestId, binding, result); return }
       this.set(ownerId, requestId, { ...current, phase: accepted ? 'sent' : phase, error: accepted ? null : error, choice: null,
         ...(accepted ? { save: 'saved', saveError: null } : {}) })
       return
@@ -404,9 +461,11 @@ export class RequestAnswerStore {
     const entry = this.entries.get(key)
     if (!entry || entry.save !== 'saved') return
     try {
-      const draft = await binding.bridge.get(binding.target)
+      const status = await binding.bridge.status(binding.target)
       const current = this.entries.get(key)
-      if (draft !== null || current?.save !== 'saved' || current.revision !== entry.revision || this.bindings.get(key) !== binding) return
+      if (status.status === 'draft' || current?.save !== 'saved' || current.revision !== entry.revision || this.bindings.get(key) !== binding) return
+      binding.offChanged?.()
+      binding.statusRead++
       this.entries.delete(key)
       this.bindings.delete(key)
       this.emit()

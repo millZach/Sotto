@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
-import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner } from '../../../../src/shared/requestDrafts'
+import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
 import { RequestDraftRecovery, savedAnswerClipboard, type RecoveryObservation } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 
@@ -29,6 +29,10 @@ function fakeBridge(initial: RequestDraft[]) {
   const listeners = new Set<(owner: RequestDraftOwner) => void>()
   const bridge = {
     get: vi.fn(), save: vi.fn(), check: vi.fn(),
+    status: vi.fn(async (target: RequestDraftTarget): Promise<RequestDraftStatus> => {
+      const draft = await bridge.get(target)
+      return draft ? { status: 'draft', draft } : { status: 'missing' }
+    }),
     onChanged: vi.fn((listener: (owner: RequestDraftOwner) => void) => {
       listeners.add(listener)
       return vi.fn(() => { listeners.delete(listener) })

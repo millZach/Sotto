@@ -440,3 +440,226 @@ it.each([false, true])('a delayed Check preserves a newer saved revision (held %
     expect((await disk()).drafts).toEqual([newer])
   } finally { finish(); await checking.catch(() => {}) }
 })
+
+
+it('reports already retired acceptance before Check and after restart without another native read', async () => {
+  let state: RequestDraftOwnerState | undefined = { connected: true, ready: true, requests: [request] }
+  const refresh = vi.fn(async () => {})
+  const service = new RequestDraftService(directory, () => state, refresh)
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'background-accepted', submittedAnswers)
+  state = { connected: true, ready: true, requests: [{ ...request, delivery: 'uncertain' }],
+    completed: [{ requestId: target.requestId, decisionId: 'background-accepted', questionsDigest: requestQuestionsDigest(questions) }] }
+  await service.reconcile()
+  const accepted = { status: 'accepted', decisionId: 'background-accepted', revision: 1 }
+  await expect(service.check(target)).resolves.toEqual(accepted)
+  expect(refresh).not.toHaveBeenCalled()
+  state = undefined
+  const restarted = new RequestDraftService(directory, () => state, refresh)
+  await restarted.start()
+  expect(await restarted.status(target)).toEqual(accepted)
+  expect(await restarted.check(target)).toEqual(accepted)
+  expect(refresh).not.toHaveBeenCalled()
+  const contents = await readFile(join(directory, 'request-drafts.json'), 'utf8')
+  for (const words of ['Destination?', 'A quiet beach', 'Keep this unsent', 'Coast', 'Notes?']) expect(contents).not.toContain(words)
+  expect(JSON.parse(contents)).toEqual({ version: 1, drafts: [], retirements: [{ owner, requestId: target.requestId,
+    questionsDigest: requestQuestionsDigest(questions), decisionId: 'background-accepted', revision: 1 }] })
+})
+
+it('isolates retired status by owner, kind, provider, request and form, and prefers a newer draft', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'isolated', submittedAnswers)
+  state = { ...state, completed: [{ requestId: target.requestId, decisionId: 'isolated', questionsDigest: requestQuestionsDigest(questions) }] }
+  await service.reconcile()
+  for (const other of [{ ...target, ownerId: 'other' }, { ...target, kind: 'personal' as const },
+    { ...target, providerId: 'claude' as const }, { ...target, requestId: 'other' },
+    { ...target, questions: [{ ...questions[1]!, question: 'Another form' }] }]) {
+    expect(await service.status(other)).toEqual({ status: 'missing' })
+  }
+  await expect(service.save(draft())).rejects.toThrow('already accepted')
+  const newer = draft({ revision: 2, selections: { notes: { optionIds: [], other: false, text: 'Newer local edit' } } })
+  await service.save(newer)
+  expect(await service.status(target)).toEqual({ status: 'draft', draft: newer })
+  expect(await service.check(target)).toEqual({ status: 'editable', draft: newer })
+  expect(await service.get(target)).toEqual(newer)
+})
+
+it('keeps held text and emits no accepted status or notification when atomic retirement fails', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const seed = new RequestDraftService(directory, () => state, async () => {})
+  await seed.start(); await seed.save(draft({ held: true }))
+  await seed.bindDecision(target, 'atomic-accepted', submittedAnswers)
+  const before = await readFile(join(directory, 'request-drafts.json'), 'utf8')
+  const write = vi.fn().mockRejectedValueOnce(new Error('disk denied')).mockImplementation(async value => {
+    await writeFile(join(directory, 'request-drafts.json'), JSON.stringify(value))
+  })
+  const service = new RequestDraftService(directory, () => state, async () => {}, { write })
+  await service.start()
+  const changed = vi.fn(); service.onChanged(changed)
+  state = { connected: false, ready: true, requests: [], completed: [{ requestId: target.requestId,
+    decisionId: 'atomic-accepted', questionsDigest: requestQuestionsDigest(questions) }] }
+  await expect(service.reconcile()).rejects.toThrow('Could not save')
+  expect(await service.status(target)).toEqual({ status: 'draft', draft: { ...draft({ held: true }), decisionId: 'atomic-accepted' } })
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(before)
+  expect(changed).not.toHaveBeenCalled()
+  await service.reconcile()
+  expect(await service.status(target)).toEqual({ status: 'accepted', decisionId: 'atomic-accepted', revision: 1 })
+  expect(changed).toHaveBeenCalledExactlyOnceWith(owner)
+  expect(write).toHaveBeenCalledTimes(2)
+  expect(write.mock.calls[1]![0]).toMatchObject({ drafts: [], retirements: [{ decisionId: 'atomic-accepted' }] })
+})
+
+it('bounds retirement metadata at 512 and never treats an evicted or unrelated form as accepted', async () => {
+  const drafts = Array.from({ length: 513 }, (_, index) => draft({ target: { ...target, requestId: `request-${index}` },
+    held: true, decisionId: `attempt-${index}` }))
+  await writeFile(join(directory, 'request-drafts.json'), JSON.stringify({ version: 1, drafts }))
+  const state: RequestDraftOwnerState = { connected: false, ready: true, requests: [], completed: drafts.map(item => ({
+    requestId: item.target.requestId, decisionId: item.decisionId!, questionsDigest: requestQuestionsDigest(questions) })) }
+  const write = vi.fn(async value => { await writeFile(join(directory, 'request-drafts.json'), JSON.stringify(value)) })
+  const service = new RequestDraftService(directory, () => state, async () => {}, { write })
+  await service.start(); await service.reconcile()
+  expect(write).toHaveBeenCalledOnce()
+  const saved = JSON.parse(await readFile(join(directory, 'request-drafts.json'), 'utf8'))
+  expect(saved.drafts).toEqual([]); expect(saved.retirements).toHaveLength(512)
+  expect(await service.status(drafts[0]!.target)).toEqual({ status: 'missing' })
+  expect(await service.status(drafts[512]!.target)).toEqual({ status: 'accepted', decisionId: 'attempt-512', revision: 1 })
+  await expect(service.check(drafts[0]!.target)).rejects.toThrow('still unconfirmed')
+  expect(await service.status({ ...drafts[512]!.target, ownerId: 'other' })).toEqual({ status: 'missing' })
+})
+
+
+it('rejects a delayed save that would recreate a retired revision', async () => {
+  const state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request], completed: [] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'accepted-before-save', submittedAnswers)
+  const lookup = { ...state, completed: [{ requestId: target.requestId, decisionId: 'accepted-before-save',
+    questionsDigest: requestQuestionsDigest(questions) }] }
+  const restarted = new RequestDraftService(directory, () => lookup, async () => {})
+  await restarted.start(); await restarted.reconcile()
+  await expect(restarted.save(draft())).rejects.toThrow('already accepted')
+  expect((await disk()).drafts).toEqual([])
+})
+
+it('passes the captured held decision into the native refresh', async () => {
+  const refresh = vi.fn(async () => {})
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), refresh)
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'captured-for-refresh', submittedAnswers)
+  await service.check(target)
+  expect(refresh).toHaveBeenCalledExactlyOnceWith(target, 'captured-for-refresh')
+})
+
+
+it('reads legacy v1 drafts without inventing retirement status or rewriting storage', async () => {
+  const contents = JSON.stringify({ version: 1, drafts: [draft()] })
+  await writeFile(join(directory, 'request-drafts.json'), contents)
+  const refresh = vi.fn(async () => {})
+  const service = new RequestDraftService(directory, () => undefined, refresh)
+  await service.start()
+  expect(await service.status(target)).toEqual({ status: 'draft', draft: draft() })
+  expect(await service.status({ ...target, requestId: 'missing' })).toEqual({ status: 'missing' })
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(contents)
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+it.each(['digest', 'words', 'duplicate', 'bound'] as const)('preserves malformed retirement storage (%s) verbatim', async invalid => {
+  const retirement = { owner, requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions),
+    decisionId: 'stored-attempt', revision: 1 }
+  const retirements = invalid === 'digest' ? [{ ...retirement, questionsDigest: 'not-a-digest' }]
+    : invalid === 'words' ? [{ ...retirement, answer: 'private answer words' }]
+      : invalid === 'duplicate' ? [retirement, retirement]
+        : Array.from({ length: 513 }, (_, index) => ({ ...retirement, requestId: `request-${index}` }))
+  const contents = JSON.stringify({ version: 1, drafts: [draft({ held: true })], retirements })
+  await writeFile(join(directory, 'request-drafts.json'), contents)
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), async () => {})
+  await service.start()
+  await expect(service.status(target)).rejects.toThrow('original request-drafts.json is unchanged')
+  await expect(service.save(draft({ revision: 2 }))).rejects.toThrow('original request-drafts.json is unchanged')
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(contents)
+  expect(await readdir(directory)).toEqual(['request-drafts.json'])
+})
+
+
+it('does not replace a newer accepted retirement with a delayed older Check result', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  let begin!: () => void, finish!: () => void
+  const started = new Promise<void>(resolve => { begin = resolve })
+  const gate = new Promise<void>(resolve => { finish = resolve })
+  const refresh = vi.fn(async () => {})
+  refresh.mockImplementationOnce(async () => { begin(); await gate })
+  const service = new RequestDraftService(directory, () => state, refresh)
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'old-retirement', submittedAnswers)
+  const checking = service.check(target)
+  const rejection = expect(checking).rejects.toThrow('newer answer draft')
+  try {
+    await started
+    await service.check(target)
+    await service.save(draft({ revision: 3, held: true }))
+    await service.bindDecision(target, 'new-retirement', submittedAnswers)
+    state = { connected: false, ready: true, requests: [], completed: ['old-retirement', 'new-retirement'].map(decisionId => ({
+      requestId: target.requestId, decisionId, questionsDigest: requestQuestionsDigest(questions) })) }
+    await service.reconcile()
+    const accepted = { status: 'accepted', decisionId: 'new-retirement', revision: 3 }
+    expect(await service.status(target)).toEqual(accepted)
+    finish(); await rejection
+    expect(await service.status(target)).toEqual(accepted)
+    expect((await disk()).drafts).toEqual([])
+  } finally { finish(); await checking.catch(() => {}) }
+})
+
+
+it.each([false, true])('returns exact acceptance despite a later refresh failure (already retired %s)', async retired => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const failure = new Error('Detail disconnected after acceptance publication')
+  const service: RequestDraftService = new RequestDraftService(directory, () => state, async () => {
+    state = { connected: false, ready: true, requests: [], completed: [{ requestId: target.requestId,
+      decisionId: 'accepted-before-detail-failure', questionsDigest: requestQuestionsDigest(questions) }] }
+    if (retired) await service.reconcile()
+    throw failure
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'accepted-before-detail-failure', submittedAnswers)
+  const accepted = { status: 'accepted', decisionId: 'accepted-before-detail-failure', revision: 1 }
+  await expect(service.check(target)).resolves.toEqual(accepted)
+  expect(await service.status(target)).toEqual(accepted)
+  expect((await disk()).drafts).toEqual([])
+})
+
+it('keeps the original refresh failure and held draft without exact acceptance', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const failure = new Error('Original refresh failed')
+  const service = new RequestDraftService(directory, () => state, async () => {
+    state = { connected: true, ready: true, requests: [request], completed: [{ requestId: target.requestId,
+      decisionId: 'another-attempt', questionsDigest: requestQuestionsDigest(questions) }] }
+    throw failure
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'still-held', submittedAnswers)
+  await expect(service.check(target)).rejects.toBe(failure)
+  expect(await service.status(target)).toEqual({ status: 'draft', draft: { ...draft({ held: true }), decisionId: 'still-held' } })
+})
+
+it('does not report accepted after refresh failure when the retirement write still fails', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const seed = new RequestDraftService(directory, () => state, async () => {})
+  await seed.start(); await seed.save(draft({ held: true }))
+  await seed.bindDecision(target, 'not-durable', submittedAnswers)
+  const before = await readFile(join(directory, 'request-drafts.json'), 'utf8')
+  const write = vi.fn(async () => { throw new Error('disk denied') })
+  const service: RequestDraftService = new RequestDraftService(directory, () => state, async () => {
+    state = { connected: false, ready: true, requests: [], completed: [{ requestId: target.requestId,
+      decisionId: 'not-durable', questionsDigest: requestQuestionsDigest(questions) }] }
+    await service.reconcile()
+    throw new Error('Detail disconnected')
+  }, { write })
+  await service.start()
+  const changed = vi.fn(); service.onChanged(changed)
+  await expect(service.check(target)).rejects.toThrow('Could not save')
+  expect(await service.status(target)).toEqual({ status: 'draft', draft: { ...draft({ held: true }), decisionId: 'not-durable' } })
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(before)
+  expect(changed).not.toHaveBeenCalled()
+})

@@ -220,6 +220,43 @@ test('acceptance recovered by a receipt reply after reconnect clears the existin
   } finally { finishNative(false); await f.close() }
 })
 
+test('background acceptance marks a still-visible native question sent without a Check or another read', async () => {
+  test.setTimeout(120_000)
+  let finishNative: (accepted: boolean) => void = () => undefined
+  const completion = new Promise<boolean>(resolve => { finishNative = resolve })
+  const f = await fixture('claude', true, completion, true)
+  try {
+    const { page } = f.launched
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await card.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect(card).toHaveAttribute('data-phase', 'unconfirmed')
+    await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.completedReceiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    finishNative(true)
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    await expect(card).toHaveAttribute('data-phase', 'sent')
+    await expect(card.getByText('Answer sent.', { exact: true })).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await page.screenshot({ path: test.info().outputPath('background-accepted-sent.png'), animations: 'disabled' })
+    // The native snapshot is still uncertain. A new renderer must recover the accepted
+    // revision from metadata after its answer text has already been removed.
+    await page.reload()
+    await openThreads(page)
+    await expect(card).toHaveAttribute('data-phase', 'sent')
+    await expect(card.getByText('Answer sent.', { exact: true })).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    expect(await drafts(f.profile)).toEqual([])
+    expect(f.native.answers).toHaveLength(1)
+    expect(f.errors).toEqual([])
+  } finally { finishNative(false); await f.close() }
+})
+
 test('Check confirming an accepted answer keeps its visible card sent and never recreates a saved draft', async () => {
   test.setTimeout(120_000)
   let finishNative: (accepted: boolean) => void = () => undefined

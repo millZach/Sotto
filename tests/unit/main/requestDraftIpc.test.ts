@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { registerRequestDraftIpc } from '../../../src/main/agents/requestDraftIpc'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
 
 it('authorizes main-frame draft access only, validates identity/selections, and exposes no delivery command', async () => {
@@ -9,9 +9,9 @@ it('authorizes main-frame draft access only, validates identity/selections, and 
   const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
   const sender = (role: 'main' | 'widget'): TrustedIpcSender => { const url = `file:///${role}.html`, mainFrame = { parent: null, url }; return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } } }
   const main = sender('main'), widget = sender('widget'), event = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
-  const service = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(), save: vi.fn(), check: vi.fn() }
+  const service = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(), status: vi.fn(), save: vi.fn(), check: vi.fn() }
   const cleanup = registerRequestDraftIpc(ipc, service, () => [main, widget])
-  for (const channel of [REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD]) {
+  for (const channel of [REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD]) {
     for (const bad of [{ sender: widget.webContents, senderFrame: widget.webContents.mainFrame }, { ...event, senderFrame: { parent: {}, url: main.url } },
       { ...event, senderFrame: { parent: null, url: main.url } }, { ...event, senderFrame: null }]) expect(() => handlers.get(channel)!(bad)).toThrow('MAIN_WINDOW_REQUIRED')
     expect(() => handlers.get(channel)!(event)).toThrow()
@@ -25,6 +25,11 @@ it('authorizes main-frame draft access only, validates identity/selections, and 
   expect(service.save).not.toHaveBeenCalled()
   handlers.get(REQUEST_DRAFT_GET)!(event, target)
   expect(service.get).toHaveBeenCalledWith(target)
+  const accepted = { status: 'accepted', decisionId: 'read-only-attempt', revision: 2 }
+  service.status.mockResolvedValue(accepted)
+  expect(await handlers.get(REQUEST_DRAFT_STATUS)!(event, target)).toEqual(accepted)
+  expect(service.status).toHaveBeenCalledExactlyOnceWith(target)
+  expect(service.check).not.toHaveBeenCalled()
   for (const result of [{ status: 'accepted', decisionId: 'exact-attempt', revision: 1 }, { status: 'editable', draft: null }]) {
     service.check.mockResolvedValue(result)
     expect(await handlers.get(REQUEST_DRAFT_CHECK)!(event, target)).toEqual(result)

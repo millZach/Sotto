@@ -29,7 +29,8 @@ function requestDrafts() {
     revision: 2, held: false, selections: { place: { optionIds: [], other: true, text } } })
   const bridge = {
     list: vi.fn(async (owner: RequestDraftOwner) => [saved(owner, vanished, 'Recovered after restart'), saved(owner, current, 'Shown in its live card')]),
-    discard: vi.fn(), get: vi.fn(async () => null), save: vi.fn(async (draft: RequestDraft) => draft), check: vi.fn(),
+    discard: vi.fn(), get: vi.fn(async () => null), status: vi.fn(async () => ({ status: 'missing' as const })),
+    save: vi.fn(async (draft: RequestDraft) => draft), check: vi.fn(),
   }
   Object.defineProperty(window, 'sotto', { configurable: true, value: { requestDrafts: bridge } })
   return bridge

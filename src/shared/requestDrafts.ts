@@ -32,17 +32,26 @@ export const requestDraftSchema = z.object({
 })
 export type RequestDraft = z.infer<typeof requestDraftSchema>
 /** A retired accepted attempt is distinct from a missing editable draft. */
+const acceptedDraftResultSchema = z.object({ status: z.literal('accepted'), decisionId: id,
+  revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 export const requestDraftCheckResultSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('accepted'), decisionId: id,
-    revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict(),
+  acceptedDraftResultSchema,
   z.object({ status: z.literal('editable'), draft: requestDraftSchema.nullable() }).strict(),
 ])
 export type RequestDraftCheckResult = z.infer<typeof requestDraftCheckResultSchema>
+/** Read-only saved status; missing content alone is never proof of acceptance. */
+export const requestDraftStatusSchema = z.discriminatedUnion('status', [
+  acceptedDraftResultSchema,
+  z.object({ status: z.literal('draft'), draft: requestDraftSchema }).strict(),
+  z.object({ status: z.literal('missing') }).strict(),
+])
+export type RequestDraftStatus = z.infer<typeof requestDraftStatusSchema>
 export const requestDraftDiscardSchema = z.object({ target: requestDraftTargetSchema, revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
 export type RequestDraftDiscard = z.infer<typeof requestDraftDiscardSchema>
 export const REQUEST_DRAFT_LIST = 'request-draft:list'
 export const REQUEST_DRAFT_DISCARD = 'request-draft:discard'
 export const REQUEST_DRAFT_GET = 'request-draft:get'
+export const REQUEST_DRAFT_STATUS = 'request-draft:status'
 export const REQUEST_DRAFT_SAVE = 'request-draft:save'
 export const REQUEST_DRAFT_CHECK = 'request-draft:check'
 export const REQUEST_DRAFT_CHANGED = 'request-draft:changed'
@@ -53,6 +62,7 @@ export interface RequestDraftBridge {
   list(owner: RequestDraftOwner): Promise<RequestDraft[]>
   discard(input: RequestDraftDiscard): Promise<boolean>
   get(target: RequestDraftTarget): Promise<RequestDraft | null>
+  status(target: RequestDraftTarget): Promise<RequestDraftStatus>
   save(draft: RequestDraft): Promise<RequestDraft>
   /** Only main can release a held attempt after a fresh native read. This never delivers an answer. */
   check(target: RequestDraftTarget): Promise<RequestDraftCheckResult>
