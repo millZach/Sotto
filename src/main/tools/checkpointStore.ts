@@ -16,9 +16,12 @@ export const recordSchema = z.object({ id: z.string().uuid(), threadId: z.string
 export type CheckpointRecord = z.infer<typeof recordSchema>
 export type Snapshot = z.infer<typeof snapshotSchema>
 
-/** `generation` names this write of the file; journal lines written against another one are already in it, or stale. */
-const STORAGE_VERSION = 1
-const storageSchema = z.object({ version: z.literal(STORAGE_VERSION), generation: z.string().uuid().optional(), records: z.array(recordSchema) }).strict()
+/**
+ * Version 1 is the file alone. Version 2 adds the journal: `generation` names this write of the file, and journal
+ * lines written against another one are already in it, or stale. Version 1 is still read.
+ */
+const STORAGE_VERSION = 2
+const storageSchema = z.object({ version: z.union([z.literal(1), z.literal(STORAGE_VERSION)]), generation: z.string().uuid().optional(), records: z.array(recordSchema) }).strict()
 const journalLineSchema = z.object({ generation: z.string().uuid(), record: z.unknown() }).strict()
 /** The journal is folded into `checkpoints.json` once it outgrows the file, and never before this much. */
 const JOURNAL_FOLD_BYTES = 64 * 1024

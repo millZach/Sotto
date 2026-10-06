@@ -1,7 +1,7 @@
 // @vitest-environment node
 import * as fsPromises from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -34,13 +34,23 @@ describe('checkpoint storage and its journal', () => {
     const first = record(), second = record()
     await f.store.write([first])
     const file = await readFile(f.store.path, 'utf8')
-    expect(JSON.parse(file)).toMatchObject({ version: 1, generation: expect.any(String) })
+    expect(JSON.parse(file)).toMatchObject({ version: 2, generation: expect.any(String) })
     await f.store.append([second], [first, second])
     expect(await readFile(f.store.path, 'utf8')).toBe(file)
     const loaded = await f.open().load()
     expect(ids(loaded.records)).toEqual(ids([first, second]))
     expect(loaded.setAside).toBeUndefined()
     expect(await readdir(f.directory)).not.toContain('checkpoints.journal')
+  })
+
+  it('reads a version 1 file, which has no journal', async () => {
+    const f = await fixture()
+    const kept = record()
+    await writeFile(f.store.path, `${JSON.stringify({ version: 1, records: [kept] }, null, 2)}\n`)
+    const loaded = await f.store.load()
+    expect(ids(loaded.records)).toEqual([kept.id])
+    expect(loaded.setAside).toBeUndefined()
+    expect(f.store.mustRewrite()).toBe(true)
   })
 
   it('cuts off an append that failed part-way, so the next one lands on a whole line', async () => {

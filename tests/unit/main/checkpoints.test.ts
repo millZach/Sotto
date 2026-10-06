@@ -305,7 +305,7 @@ describe('completed native turn checkpoints', () => {
     await expect(restarted.initialize()).rejects.toThrow(path)
     await rm(path, { recursive: true }); await writeFile(path, '[]')
     await restarted.initialize(); await restarted.beforeTurn('thread-a')
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1 })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2 })
   })
   it('refuses an expired checkpoint before calling native rollback between hourly sweeps', async () => {
     const f = await fixture(); let now = Date.now(); f.dependencies.now = () => now
@@ -355,7 +355,7 @@ describe('completed native turn checkpoints', () => {
     expect(await readFile(join(f.dependencies.directory, backup), 'utf8')).toBe(damaged)
     expect(report).toHaveBeenCalledWith(`Sotto set aside a checkpoint file it could not read as ${backup} and kept the rest.`)
     expect(unwrap(await restarted.checkpoints(f.target)).reason).toBe(`Sotto set aside a checkpoint file it could not read as ${backup} and kept the rest.`)
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1, records: saved.records })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2, records: saved.records })
     expect(f.rollback).toHaveBeenCalledTimes(1)
     f.dependencies.historyEnabled = () => false
     await restarted.privacyChanged()
@@ -378,7 +378,7 @@ describe('completed native turn checkpoints', () => {
     const restarted = new CheckpointService(f.dependencies); cleanup.push(async () => restarted.dispose())
     await restarted.initialize()
     expect(unwrap(await restarted.checkpoints(f.target)).checkpoints).toHaveLength(1)
-    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 1, records: saved.records })
+    expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ version: 2, records: saved.records })
   })
   it('recovers an unreadable file once and accepts fresh checkpoints without restarting', async () => {
     const f = await fixture()
