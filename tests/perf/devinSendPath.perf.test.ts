@@ -111,11 +111,11 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
         execFile(executable, ['--config', profile.path, ...args], { cwd: root, env: environment, windowsHide: true, timeout: 30_000 }, error => error ? reject(new Error('list failed')) : resolve())
       })
       const timed = async (work: () => Promise<unknown>): Promise<number> => { const started = performance.now(); await work(); return performance.now() - started }
-      const sequential: number[] = []; const parallel: number[] = []; const process: number[] = []
+      const sequential: number[] = []; const parallel: number[] = []; const acp: number[] = []
       for (let index = 0; index < SENDS; index++) {
         sequential.push(await timed(async () => { await list('plugins', 'list'); await list('mcp', 'list') }))
         parallel.push(await timed(() => Promise.all([list('plugins', 'list'), list('mcp', 'list')])))
-        process.push(await timed(async () => {
+        acp.push(await timed(async () => {
           const rpc = new DevinRpc(executable, ['--config', profile.path, 'acp'], root, environment, 30_000, () => undefined, () => undefined)
           try {
             await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '0.0.0' } })
@@ -123,7 +123,7 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
           } finally { rpc.close(); await rpc.closed }
         }))
       }
-      console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(process)) })
+      console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(acp)) })
     } finally { await rm(root, { recursive: true, force: true }) }
   }, 300_000)
 })

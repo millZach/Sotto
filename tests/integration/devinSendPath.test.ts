@@ -115,3 +115,16 @@ it('reads the replay of a held session only to confirm a dispatch no replay has 
   await f.host.refreshThread(id)
   expect(await loads(f)).toBe(loaded + 1)
 })
+
+it('confirms a turn taken on the stream by one replay read once the turn ends', async () => {
+  f = await quiet()
+  const id = await opened(f)
+  await f.script({ streamOnPrompt: 'Working on it' })
+  expect(await send(f, id)).toEqual({ accepted: true })
+  const loaded = await loads(f)
+  const confirmed = async (): Promise<boolean> => JSON.parse(await readFile(join(f!.root, 'devin-threads.json'), 'utf8'))[id].origins[0].confirmed
+  expect(await confirmed()).toBe(false)
+  await f.driver.completeTurn(id, ' and done')
+  await expect.poll(confirmed).toBe(true)
+  expect(await loads(f)).toBe(loaded + 1)
+})

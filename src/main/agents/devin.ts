@@ -631,6 +631,8 @@ export class DevinAcpHost implements AgentHost {
     if (changed) await this.persist()
     this.publishActive(id); this.emit()
   }
+  /** The owner's stream showed Devin working on this turn's prompt: show it, and wake the send waiting on it. */
+  private taken(id: string, turn: ActiveTurn): void { turn.streamed = true; this.publishActive(id); turn.wake?.() }
   private publishActive(id: string): void {
     const active = this.active.get(id)
     // Shown once Devin has taken the prompt, by its replay or by its own stream, so a reply appears as it streams.
@@ -665,7 +667,7 @@ export class DevinAcpHost implements AgentHost {
       }
       const active = this.active.get(id)
       if (active && !active.streamed && typeof update.sessionUpdate === 'string' && TURN_WORK.has(update.sessionUpdate)
-        && this.connections.get(id) === connection) { active.streamed = true; this.publishActive(id); active.wake?.() }
+        && this.connections.get(id) === connection) this.taken(id, active)
       if (update.sessionUpdate === 'agent_message_chunk' && active) {
         const content = record(update.content)
         if (content?.type === 'text' && typeof content.text === 'string') {
@@ -704,7 +706,7 @@ export class DevinAcpHost implements AgentHost {
         this.pending.set(decision.request.id, { decision, connection, fingerprint }); this.thread(id).requests.push(decision.request)
         // A question or a permission on the owner's session is the prompt being worked on, as streamed work is.
         const active = this.active.get(id)
-        if (active && !active.streamed && this.connections.get(id) === connection) { active.streamed = true; this.publishActive(id); active.wake?.() }
+        if (active && !active.streamed && this.connections.get(id) === connection) this.taken(id, active)
         this.reaper.touch(id); this.emit()
       } catch {
         connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported request' } })
@@ -898,6 +900,12 @@ export class DevinAcpHost implements AgentHost {
       this.thread(id).lastTurn = { id: origin.messageId, status }
       this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
       this.reaper.touch(id); this.emit()
+      // A turn taken on the stream's evidence alone has its replay read once it ends, unless a read has confirmed it
+      // already, so a dispatch the replay contradicts still says so, and the next send's reads find nothing to confirm.
+      if (!origin.confirmed) void this.readHistory(id).catch(() => {
+        if (generation !== this.generation) return
+        this.state.error = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'; this.emit()
+      })
     }, true).catch(() => {
       if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id); this.thread(id).status = 'error'; this.emit()
