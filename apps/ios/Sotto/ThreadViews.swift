@@ -1210,7 +1210,7 @@ private struct ReplyDock: View {
             requestButton(request, requests)
                 .padding(6)
                 .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .shadow(color: Color.black.opacity(0.22), radius: 16, x: 0, y: 8)
+                .softShadow(RoundedRectangle(cornerRadius: 26, style: .continuous), color: Color.black.opacity(0.22), radius: 16, y: 8)
         } else {
             replyField
         }
@@ -1272,7 +1272,13 @@ private struct ReplyDock: View {
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
-        .shadow(color: focused ? theme.color(.accent).opacity(0.35) : Color.black.opacity(0.22), radius: focused ? 18 : 16, x: 0, y: focused ? 0 : 8)
+        // Two shadows drawn once each and crossfaded, rather than one live shadow redrawn as the conversation moves under it.
+        .background {
+            ZStack {
+                SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
+                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+            }
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
@@ -1678,7 +1684,7 @@ private struct OptionLabel: View {
                 .opacity(chosen ? 1 : 0)
         }
         .frame(width: 22, height: 22)
-        .shadow(color: chosen ? theme.color(.accent).opacity(0.6) : Color.clear, radius: 6)
+        .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
     }
@@ -1699,7 +1705,7 @@ private struct PermissionCommand: View {
         .padding(Space.s4)
         .background(Palette.code, in: shape)
         .overlay(shape.strokeBorder(theme.color(.warning).opacity(0.3), lineWidth: 1))
-        .shadow(color: theme.color(.warning).opacity(0.3), radius: 16, x: 0, y: 8)
+        .softShadow(shape, color: theme.color(.warning).opacity(0.3), radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Command: \(command)")
     }
@@ -1720,7 +1726,7 @@ private struct SheetBackdrop: View {
                 Rectangle().fill(.ultraThinMaterial)
                 fill.opacity(0.86)
             }
-            if wash { Wash(warm: true, height: 300) }
+            if wash { Wash(warm: true, height: 300, drifts: false) }
         }
         .ignoresSafeArea()
     }

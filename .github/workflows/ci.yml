@@ -154,7 +154,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    # Fourteen simulator journeys on two phones, with the package tests and two builds before them.
+    # Fifteen simulator journeys on two phones, with the package tests and two builds before them.
     timeout-minutes: 75
     env:
       # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.
