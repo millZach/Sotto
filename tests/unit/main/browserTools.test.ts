@@ -544,6 +544,26 @@ describe('browser grant (ADR-0029)', () => {
     expect(await sharedOrigin()).toBe('https://example.com')
   })
 
+  it('leaves a page an agent asked to open unshared until it is opened, then shares it once the user loads it', async () => {
+    let on = false
+    const { service, target } = await browserFixture(false, new Set(), () => on)
+    const owner = { threadId: target.threadId, workspaceId: target.workspaceId }
+    const opened = unwrap(await service.agentOpen({ ...owner, url: 'http://localhost:4555/', description: 'Check the app' }))
+    const page = { ...owner, pageId: opened.task.pageId }
+    unwrap(await service.answerAction({ ...page, taskId: opened.task.id, actionId: opened.task.pendingAction!.id, allow: false }))
+    const sharedOrigin = async () => unwrap(await service.list({ threadId: 'a' })).pages.find(item => item.id === page.pageId)?.sharedOrigin
+    on = true
+    service.settingChanged()
+    // Denied, it was never opened, so the grant does not share it.
+    expect(await sharedOrigin()).toBeNull()
+    unwrap(await service.navigate({ ...page, url: 'http://localhost:4555/' }))
+    expect(await sharedOrigin()).toBe('http://localhost:4555')
+    unwrap(await service.share({ ...page, enabled: false }))
+    unwrap(await service.reload(page))
+    // Reloading a page the user made private keeps it private.
+    expect(await sharedOrigin()).toBeNull()
+  })
+
   it('shares the thread’s open pages when the grant is given, not only the pages opened after it', async () => {
     let on = false
     const { service, target, emit } = await browserFixture(false, new Set(), () => on)

@@ -284,12 +284,14 @@ export class BrowserService extends ToolOperations {
     const record = await this.owned(request)
     record.initial = false
     this.load(record, request.url)
+    // A page the user loads is the user's own now: under the grant it is shared like any other (ADR-0029).
+    this.shareByGrant(record)
     return this.publish(record)
   }) }
   private history(payload: unknown, action: 'back' | 'forward' | 'reload') { return this.run(async () => {
     const record = await this.owned(parse(browserRequestSchema, payload))
     const history = record.view.webContents.navigationHistory
-    if (action === 'reload') { record.initial = false; this.load(record, record.page.url) }
+    if (action === 'reload') { record.initial = false; this.load(record, record.page.url); this.shareByGrant(record) }
     else if (action === 'back' && history.canGoBack()) history.goBack()
     else if (action === 'forward' && history.canGoForward()) history.goForward()
     return this.publish(record)
