@@ -195,7 +195,7 @@ test('Add host shows its tailnet step, says why it kept forge on SSH and tries a
     await expect(kept).toBeVisible({ timeout: 90_000 })
     // The dialog's name follows the step, so its steps are found by the list's own name.
     const titles = page(launched).getByRole('list', { name: 'Connection steps' }).locator('.host-setup__title')
-    await expect(titles).toHaveText(['Reached forge', 'Signed in', 'Host installed', 'Host started', 'Paired', 'forge did not answer over your tailnet'])
+    await expect(titles).toHaveText(['Reached forge', 'Signed in', 'Host installed', 'Host started', 'Paired', 'Could not reach forge over your tailnet'])
     await expect(kept.getByText(/^forge’s Tailscale Serve needs your SSH account to be Tailscale’s operator there/u)).toBeVisible()
     await expect(kept.getByText('sudo tailscale set --operator=$USER')).toBeVisible()
     const done = kept.getByRole('button', { name: 'Done' })

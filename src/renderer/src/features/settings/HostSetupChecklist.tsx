@@ -218,7 +218,7 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
 /** Each state's title for the tailnet step. */
 function tailnetStepTitle(state: TailnetStepView['state'], name: string): string {
   return state === 'active' ? `Reaching ${name} over your tailnet…` : state === 'done' ? `Reached ${name} over your tailnet`
-    : state === 'ssh' ? `${name} did not answer over your tailnet` : `Reach ${name} over your tailnet`
+    : state === 'ssh' ? `Could not reach ${name} over your tailnet` : `Reach ${name} over your tailnet`
 }
 
 /**

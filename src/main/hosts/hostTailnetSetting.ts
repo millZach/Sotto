@@ -3,6 +3,7 @@ import { phonesStateSchema, type PhonesState } from '../../shared/phones'
 import { isTailnetAddress } from '../../shared/hostConnection'
 import type { PressConnection } from './adminConnection'
 import { HOST_ADMIN_COMMAND_TIMEOUT_MS, hostAdminRequest } from './hostAdminRequest'
+import { hostPhonesAnswerSchema } from './hostPhones'
 
 /**
  * A host's own `tailnetConnections` setting (ADR-0053, "The host side"), read or set through its administrative route on
@@ -25,15 +26,13 @@ export async function hostTailnetSetting(connection: PressConnection, hostId: st
   return { enabled: answer.enabled, state: answer.state, ...(answer.error ? { error: answer.error } : {}) }
 }
 
-const phonesAnswerSchema = z.object({ v: z.literal(1), hostId: z.uuid(), state: phonesStateSchema, url: z.string().max(2100).optional(), error: z.string().max(1000).optional() })
-
 /**
  * Asks the host to set up its Tailscale Serve again, as the Phones dialog's Try again does, then reads the setting: for a
  * Serve that failed because Tailscale was not running or the SSH account was not Tailscale's operator, which the host does
  * not try again by itself.
  */
 export async function retryTailnetServe(connection: PressConnection, hostId: string): Promise<HostTailnetSetting> {
-  await hostAdminRequest(connection, 'phones-command', { command: { type: 'retry' } }, phonesAnswerSchema, hostId, HOST_ADMIN_COMMAND_TIMEOUT_MS)
+  await hostAdminRequest(connection, 'phones-command', { command: { type: 'retry' } }, hostPhonesAnswerSchema, hostId, HOST_ADMIN_COMMAND_TIMEOUT_MS)
   return hostTailnetSetting(connection, hostId)
 }
 

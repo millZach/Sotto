@@ -192,7 +192,7 @@ it('says why Add host kept a host on SSH, and Try again chooses the tailnet agai
   push({ hosts: [forge({ prefer: 'tailnet', via: 'ssh', tailnetNote: 'operator', addTailnet: { state: 'ssh', why: 'operator' } })] })
   finish()
   await waitFor(() => expect(screen.getByRole('dialog', { name: 'forge is connected over SSH' })).toBe(dialog))
-  expect(steps().at(-1)).toBe('Failed: forge did not answer over your tailnet')
+  expect(steps().at(-1)).toBe('Failed: Could not reach forge over your tailnet')
   expect(within(dialog).getByText(/^forge’s Tailscale Serve needs your SSH account to be Tailscale’s operator there, so forge is connected over SSH\. Run this on forge, then press Try again\.$/u)).toBeTruthy()
   expect(within(dialog).getByText('sudo tailscale set --operator=$USER')).toBeTruthy()
   expect(within(dialog).getByText(/^forge is added and connected over SSH\./u)).toBeTruthy()
@@ -221,7 +221,7 @@ it('chooses SSH from Add host’s tailnet step with Use SSH only, and says what 
   expect(within(dialog).getByText('forge didn’t answer at https://forge.tail5728ca.ts.net:8443, so forge is connected over SSH. Sotto tries the tailnet again every 5 minutes.')).toBeTruthy()
   await user.click(within(dialog).getByRole('button', { name: 'Try again' }))
   await waitFor(() => expect(within(dialog).getByText(refusal)).toBeTruthy())
-  expect(steps().at(-1)).toBe('Failed: forge did not answer over your tailnet')
+  expect(steps().at(-1)).toBe('Failed: Could not reach forge over your tailnet')
   refuse = false
   await user.click(within(dialog).getByRole('button', { name: 'Use SSH only' }))
   expect(command).toHaveBeenLastCalledWith({ type: 'set-connection', id: state().hosts[0]!.id, prefer: 'ssh' })
