@@ -196,14 +196,27 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     await answered('own-1')
     const from = (await f.driver.requests()).length
     await answered('own-2', 'own-1')
-    // One check before the chat's own instructions are resumed and one inside the send itself; neither reads whole.
-    expect(await historyRequests(f, from)).toEqual(['turns', 'turns'])
+    // One check, before the chat's own instructions are resumed; it stands for the send's own, since nothing moved
+    // in between (#765), and it does not read whole.
+    expect(await historyRequests(f, from)).toEqual(['turns'])
     await elsewhere(f, id, { type: 'native-turn', text: 'Typed in another Codex' })
     const stale = (await f.driver.requests()).length
-    // The chat's own check reads the whole transcript; the send's check then finds the newest turn it just read.
+    // The chat's own check reads the whole transcript, and the send refuses the stale reply on what that read found.
     await expect(personal('stale', 'own-2')).rejects.toThrow('changed')
-    expect(await historyRequests(f, stale)).toEqual(['turns', 'read', 'turns'])
+    expect(await historyRequests(f, stale)).toEqual(['turns', 'read'])
     expect((await f.driver.requests()).slice(stale).some(request => request.method === 'turn/start')).toBe(false)
+  })
+
+  it('checks the newest turn again when the thread moved after the read before the send (#765)', async () => {
+    const { f, id } = await answeredThread()
+    const from = (await f.driver.requests()).length
+    await f.host.refreshThread!(id, { beforeSend: true })
+    // Input typed into the Codex session log after that read moves the thread, so the read no longer stands for the send's.
+    await f.driver.typeInProvider(id, 'Typed after the read')
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.some(message => message.text === 'Typed after the read')).toBe(true)
+    await expect(send(f, id, 'stale', 'own-1')).rejects.toThrow('changed')
+    expect(await historyRequests(f, from)).toEqual(['turns', 'turns'])
+    expect((await f.driver.requests()).slice(from).some(request => request.method === 'turn/start')).toBe(false)
   })
 
   it('reads the whole transcript when the newest turn does not say it carries the full items', async () => {
@@ -259,8 +272,8 @@ describe('A send from the Threads page uses the newest-turn check', () => {
     const { f, id, control } = await coordinated()
     const from = (await f.driver.requests()).length
     expect((await control.command({ type: 'manual-send', threadId: id, text: 'Second prompt' })).error).toBeNull()
-    // The coordinator's read before the send and the adapter's own, each the newest turn alone.
-    expect(await beforeStart(f, from)).toEqual(['turns', 'turns'])
+    // The coordinator's read before the send, the newest turn alone. It stands for the adapter's own (#765).
+    expect(await beforeStart(f, from)).toEqual(['turns'])
     expect(control.get().host.threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)).toEqual(['First prompt', 'Second prompt'])
   })
 
@@ -270,7 +283,7 @@ describe('A send from the Threads page uses the newest-turn check', () => {
     const from = (await f.driver.requests()).length
     // A manual send is written against what the coordinator's read shows, so after reading the other turn it goes.
     expect((await control.command({ type: 'manual-send', threadId: id, text: 'After the other turn' })).error).toBeNull()
-    expect(await beforeStart(f, from)).toEqual(['turns', 'read', 'turns'])
+    expect(await beforeStart(f, from)).toEqual(['turns', 'read'])
     expect(control.get().host.threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text))
       .toEqual(['First prompt', 'Typed in another Codex', 'After the other turn'])
   })

@@ -2715,8 +2715,16 @@ export class AgentControl {
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw uncertaintyError
     if ((command.type === 'configure-thread' || prompt) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
-      // reconciliation; the thread is read again only when the adapter has none to give.
-      try { this.acceptSnapshot(command.type === 'configure-thread' && result.snapshot ? result.snapshot : await this.readThread(threadId)) }
+      // reconciliation; the thread is read again only when the adapter has none to give. A send's echo has usually
+      // reached the host already and is waiting to be published, so the host is asked for what it holds first and
+      // the thread is read whole only when the echo is not there (#765).
+      try {
+        if (command.type === 'configure-thread' && result.snapshot) this.acceptSnapshot(result.snapshot)
+        else {
+          if (prompt) this.acceptSnapshot(await this.readThread(threadId, undefined, { afterSend: true }))
+          if (!prompt || this.outbox.some(item => item.id === command.commandId)) this.acceptSnapshot(await this.readThread(threadId))
+        }
+      }
       catch (error) {
         // The exact echo can arrive while this required reconciliation read is
         // in flight. Keep its receipt; an unconfirmed command still fails here.

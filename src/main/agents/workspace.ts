@@ -6,6 +6,7 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { sameSnapshot } from './sameSnapshot'
 import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -1837,9 +1838,20 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const thread = this.thread(threadId)
     if (thread.nativeSessionStarted === false || !isThreadProviderConnected(this.state.snapshot, thread)) return this.workspaceSnapshot()
+    // The read after an accepted send looks for the provider's echo, which reached this workspace as an event and
+    // may be waiting for the end of a publish window. What is held here answers it; the caller reads whole when the
+    // echo is not in it (#765).
+    if (purpose?.afterSend) return this.workspaceSnapshot()
     const creation = this.state.creations.find(item => item.threadId === threadId)
+    const before = { snapshot: this.state.snapshot, organization: JSON.stringify([this.state.projectAliases, this.state.creations]), dirty: this.dirty }
     this.accept(await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
       : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId)))
+    // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
+    if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot)
+      && JSON.stringify([this.state.projectAliases, this.state.creations]) === before.organization) {
+      this.dirty = before.dirty
+      return this.workspaceSnapshot()
+    }
     await this.flush(); this.publish(); return this.workspaceSnapshot()
   }
   /**
