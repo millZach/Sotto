@@ -96,7 +96,7 @@ describe('a send whose thread moved after the read before it', () => {
   it('Claude reads at the start of a send the read before it was not made for', async () => {
     const { f, id } = await answeredThread('claude')
     const polls = vi.spyOn(ClaudeSessionLog.prototype, 'poll')
-    // A read for a send that was then refused; the next send is another message, such as a queued follow-up.
+    // A read for a send that was then refused; the next send is another message, whose read does not match it.
     await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'refused' })
     polls.mockClear()
     await expect(send(f, id, 'own-2', 'own-1')).resolves.toEqual({ accepted: true })

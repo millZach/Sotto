@@ -273,8 +273,8 @@ describe('Codex send checks the newest turn before reading the whole transcript'
 
   it('checks the newest turn again for a send the read before it was not made for (#765)', async () => {
     const { f, id } = await answeredThread()
-    // A read for a send that was then refused leaves its mark; the next send is another message, such as a queued
-    // follow-up, which no read is made for, and makes its own check.
+    // A read for a send that was then refused leaves its mark; the next send is another message, whose read does not
+    // match it, so it makes its own check.
     await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'refused' })
     const from = (await f.driver.requests()).length
     await turn(f, id, 'own-2', 'own-1')

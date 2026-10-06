@@ -8,8 +8,7 @@ import type { AgentHostCommand, ThreadReadPurpose } from './host'
  *
  * This is not a cache. A mark stands for one send, the one it was read for, and only while the thread is as that
  * read left it. The next command on the thread clears it, whatever it is, so a send that was refused or never
- * dispatched leaves nothing for a later one, and a queued follow-up, which no read is made for, reads as it always
- * did. Each adapter still checks the provider where the send is about to go out (Claude's and Grok's recheck,
+ * dispatched leaves nothing for a later one, and a send whose read named another message makes its own read. Each adapter still checks the provider where the send is about to go out (Claude's and Grok's recheck,
  * Codex's session-log poll before `turn/start`), and refuses a reply written against an old last message there.
  */
 export class ReadsBeforeSend {
