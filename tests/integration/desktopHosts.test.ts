@@ -55,6 +55,8 @@ const operations: string[] = []
 let hostRunning = true
 /** When set, the launch script's revoke-client fails the way it does when the host refuses it. */
 let revokeFails = false
+/** When set, the launch script's revoke-client fails with this instead, the way a request that never got an answer does. */
+let revokeError: Error | undefined
 /** When set, the next connect asks this SSH question and waits for its answer, or for the attempt to be cancelled. */
 let askOnConnect: 'passphrase' | undefined
 /** Every answer given to an SSH question, to prove where the dialog's answer went. */
@@ -87,7 +89,7 @@ class FixtureSsh extends SshHostLauncher {
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
       ensureDesktopAnswers: clientId => ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId),
-      revokeClient: async clientId => { operations.push(`${which} revoke-client`); if (revokeFails) throw new SshFailure('revoke-failed'); return adminRevoke(clientId) },
+      revokeClient: async clientId => { operations.push(`${which} revoke-client`); if (revokeError) throw revokeError; if (revokeFails) throw new SshFailure('revoke-failed'); return adminRevoke(clientId) },
       hostAdminToken: async () => (JSON.parse(await readFile(join(root, 'remote', 'host-listener.json'), 'utf8')) as { adminToken: string }).adminToken,
       stopHost: async () => { operations.push(`${which} stop-host`); stops.push(reportedHostId); await beforeStopReply(); if (stopResult instanceof Error) throw stopResult; return stopResult },
       updateHost: async operation => { operations.push(`${which} ${operation.op}`); return updateHost(operation) },
@@ -107,7 +109,7 @@ beforeEach(async () => {
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
   launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates
-  operations.length = 0; hostRunning = true; revokeFails = false
+  operations.length = 0; hostRunning = true; revokeFails = false; revokeError = undefined
   manager = newManager()
   await manager.start()
 })
@@ -975,6 +977,14 @@ describe('admin connections and Forget (ADR-0053)', () => {
     } finally { phones.close() }
   })
 
+  it('opens no admin connection for a Phones press on a link whose connect has ended', async () => {
+    const remote = await add()
+    const [link] = manager.phonesLinks()
+    await manager.command({ type: 'disconnect', id: remote.id })
+    await expect(link!.press(async () => 'sent')).rejects.toThrow('Forge fixture is not connected. Nothing was changed.')
+    expect(launchers).toHaveLength(1)
+  })
+
   it('revokes over the SSH connection the socket is on, before the stop, with no second ssh, and never pairs again', async () => {
     const remote = await add()
     const token = credentials.get('remote-host:' + remote.id)
@@ -1062,6 +1072,27 @@ describe('admin connections and Forget (ADR-0053)', () => {
       expect(stops).toEqual([])
     })
   }
+
+  it('counts a revoke that never got an answer as the host not reached, not refused, and still stops a host Sotto started', async () => {
+    const remote = await add()
+    const token = credentials.get('remote-host:' + remote.id)
+    await manager.command({ type: 'disconnect', id: remote.id })
+    revokeError = new SshFailure('request-busy')
+    const state = await manager.command({ type: 'forget', id: remote.id })
+    expect(operations).toEqual(['admin revoke-client', 'admin stop-host'])
+    expect(state.hosts).toEqual([])
+    expect(host.pairing.verifyToken(token)).toBeDefined()
+    expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, cause: 'unreachable' })])
+  })
+
+  it('keeps a host Sotto started when its revoke never got an answer and its stop failed too', async () => {
+    const remote = await add()
+    await manager.command({ type: 'disconnect', id: remote.id })
+    revokeError = new SshFailure('not-connected'); stopResult = false
+    await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow('may still be running')
+    expect(manager.get().hosts).toEqual([expect.objectContaining({ id: remote.id })])
+    expect(manager.get().forgotten).toBeUndefined()
+  })
 
   it('keeps every not-revoked notice until its own Dismiss, whatever later Forgets do', async () => {
     const first = await add()

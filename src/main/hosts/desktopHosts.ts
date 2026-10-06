@@ -218,8 +218,12 @@ export class DesktopHosts {
   phonesLinks(): HostPhonesLink[] {
     return this.saved.flatMap(host => {
       const active = this.live.get(host.id), status = this.status.get(host.id)
+      // A press queued behind another runs only while this link's connect is still the host's: after a Disconnect or a drop
+      // it would otherwise open a sign-in nobody asked for.
+      const current = (): boolean => this.live.get(host.id) === active
       return active && status?.phase === 'connected' && status.hostId ? [{ id: host.id, name: host.name, hostId: status.hostId, generation: active.generation,
-        press: request => this.press(host, request), pressIfOpen: request => this.pressIfOpen(host, request) }] : []
+        press: request => current() ? this.press(host, request) : Promise.reject(new Error(`${host.name} is not connected. Nothing was changed.`)),
+        pressIfOpen: request => this.pressIfOpen(host, request) }] : []
     })
   }
   /** Saved hosts an update can reach now, with the Sotto version each said it runs (ADR-0040). */
@@ -469,8 +473,12 @@ export class DesktopHosts {
     let cause: HostForgottenCause | undefined, stopFailed = false
     try {
       await this.press(host, async connection => {
-        // Any answer is a revoke: `revoked: false` says the host no longer knew this computer.
-        if (host.clientId && !(await connection.revokeClient(host.clientId).then(() => true, () => false))) { cause = 'refused'; return }
+        // Any answer is a revoke: `revoked: false` says the host no longer knew this computer. Only the launch script's own
+        // failure is the host refusing, which leaves it running; a request that never got an answer is the host not reached,
+        // and a host Sotto started is still stopped, or kept here if that fails too.
+        const failure = host.clientId ? await connection.revokeClient(host.clientId).then(() => undefined, (error: unknown) => error ?? new Error('The revoke failed.')) : undefined
+        if (failure instanceof SshFailure && failure.code === 'revoke-failed') { cause = 'refused'; return }
+        if (failure) cause = 'unreachable'
         if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
       })
     } catch (error) {
