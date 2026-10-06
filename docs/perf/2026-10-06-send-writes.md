@@ -12,8 +12,9 @@ through the real Claude or Codex adapter to the fake client in `tests/fixtures/`
 press to Sotto writing the prompt to the client's pipe (the `user` frame for Claude Code, `turn/start` for Codex).
 `tests/fixtures/durableWrites.ts` counts every fsync the process makes through `node:fs/promises` in that time, by
 file, and the bytes each made durable; a store's temporary sibling counts as the store. Before the sends, the
-provider's thread store is grown with other synthetic threads to the size it had on the development machine:
-388 KB for `claude-threads.json`, 1.3 MB for `codex-threads.json`. "Before" is the source at `e8a82a03`
+provider's thread store is grown with other synthetic threads until, laid out indented as the old code wrote it, it
+is the size it had on the development machine: 388 KB for `claude-threads.json`, 1.3 MB for `codex-threads.json`.
+Each press waits until no fsync has started for 100 ms, so the last reply's trailing writes are not counted. "Before" is the source at `e8a82a03`
 (`origin/main` when the work started), bundled from Git; "after" is this change. Each run is a fresh process on a
 fresh profile, four runs of each, alternating. The first send of a run also starts the thread's session; the other
 five, 20 per mode, are the common case and are what the tables give.
@@ -29,37 +30,53 @@ Durable writes per send, median of 20 sends on a running session:
 
 | | Before | After |
 | --- | --- | --- |
-| Claude Code | `agents.json` x3, `claude-threads.json` x1 (502 KB) | `agents.json` x1, `claude-origins.jsonl` x1 (327 bytes) |
-| Codex | `agents.json` x3, `codex-threads.json` x1 (2.08 MB) | `agents.json` x1, `codex-threads.json` x1 (1.34 MB) |
+| Claude Code | `agents.json` x3, `claude-threads.json` x1 (408 KB) | `agents.json` x1, `claude-origins.jsonl` x1 (327 bytes) |
+| Codex | `agents.json` x3, `codex-threads.json` x1 (1.34 MB) | `agents.json` x1, `codex-threads.json` x1 (0.86 MB) |
 
 | | Before | After |
 | --- | ---: | ---: |
-| Claude Code, press to prompt written | 21.2 ms (16-330) | 9.9 ms (6.7-60) |
-| Codex, press to `turn/start` | 43.5 ms (35-313) | 27.0 ms (21-68) |
-| Claude Code, first send of a run | 25.7 ms | 9.2 ms |
-| Codex, first send of a run | 101 ms | 58 ms |
+| Claude Code, press to prompt written | 29.8 ms (17.6-140) | 10.8 ms (7.5-19.3) |
+| Codex, press to `turn/start` | 49.8 ms (34.3-207) | 39.6 ms (18.1-59.2) |
+| Claude Code, first send of a run | 25.4 ms | 11.2 ms |
+| Codex, first send of a run | 85.1 ms | 66.2 ms |
 
-The three `agents.json` writes were the window's save of the revision on the press, the coordinator's admission
-write and its outbox entry. Each was about 4 KB here. A fourth, the window's save of the emptied composer 250 ms
-after the press, landed after these sends because the fake clients answer in milliseconds; at the development
-machine's median of 2.8 s from Send to the provider hearing the prompt (#762) it landed in the middle of the send,
-so it is a fourth write there. The Codex first send also writes `codex-threads.json` three times before and after:
-starting the thread's session records it.
+These are the figures after review, with the stores seeded at their indented size. Another agent's test suite
+was running on the same machine. The first Claude run met it and gave 35.9 ms against 32.9 ms, with the after
+range reaching 101 ms; the Claude row is a second run of the same benchmark. The counts and bytes were the same in
+both runs.
+
+The three `agents.json` writes in the benchmark were the coordinator's admission write, a save of the thread
+snapshot it read just before the send, and the outbox entry. Each was about 4 KB here. The snapshot's save now rides
+on the outbox write, and admission writes only for a prompt that waits behind other work on its thread (ADR-0056).
+
+Two more writes of `agents.json` were the window's, and the benchmark does not show them. The window saved the
+revision it was sending when Enter came within 250 ms of the last keystroke; the benchmark presses after the typed
+draft is saved, so that save had nothing to do. And it saved the emptied composer 250 ms after the press, which
+landed after these sends because the fake clients answer in milliseconds; at the development machine's median of
+2.8 s from Send to the provider hearing the prompt (#762) it landed in the middle of the send. Neither is made in
+front of a send now. `tests/unit/renderer/threadDraftStore.test.ts` covers both; nothing here times them.
+
+The Codex first send also writes `codex-threads.json` three times before and after: starting the thread's session
+records it. The pinned count covers sends to a running session only.
 
 What is left is what the guarantees need. The one `agents.json` write is the outbox entry, so a prompt is never
 sent twice after a crash, and it now carries the draft and its delivery record that admission used to write
 separately. The origin is the adapter's record of sending, so the provider's echo is matched and no prompt the
 provider took is left looking unsent; Claude Code now records it as one synced line instead of rewriting every
-thread's record, and Codex still writes it into its thread store, now without indentation (1.34 MB instead of
-2.08 MB for the same records).
+thread's record, and Codex still writes it into its thread store, now without indentation (0.86 MB instead of
+1.34 MB for the same records).
 
 ## While the reply streams
 
 Codex no longer holds a frame behind the save of the frame before. `tests/integration/sendWrites.test.ts` holds a
 save of `codex-threads.json` open and shows the reply's words reach the thread while it is held; with the adapter
 from `e8a82a03` the same test times out after 15 s, because the frame announcing the reply waited on that save
-before the frame carrying the words was read. The saves still happen, behind the frames: one in flight at a time, and every
-frame that asks for one while it runs shares the next.
+before the frame carrying the words was read. A second test holds every save from the moment `turn/start` is
+written and sees the turn complete while the send still waits for its own save; before the review fix the
+acknowledgement's save held the frames behind it, and that test times out too. The saves still happen, behind the
+frames: one in flight at a time, and every frame that asks for one while it runs shares the next. Resuming a
+session, reading a thread and recording a compaction still wait for their saves; they are not on the path from
+Send to the reply's first words on a running session.
 
 The usage ledger, for one streamed reply, median of four runs:
 
@@ -77,7 +94,8 @@ it spent most of the reply serializing a 6.5 MB ledger, so the frames' timers fi
 
 The coordinator still compares its saved state on every snapshot, so a snapshot that changed nothing saved writes
 nothing. That comparison is now one serialization of the state rather than a structured clone, a serialization and a
-SHA-256 of every draft; a draft's signature is worked out once per draft. Snapshots accepted in one run share one
+SHA-256 of every draft; a draft's signature is worked out once per draft, and a write that follows hands the store
+the same text. It still runs once per snapshot a provider event produces; nothing here measured it. Snapshots accepted in one run share one
 comparison, and the one a send reads just before its outbox write is carried by that write.
 
 ## What these numbers are not
