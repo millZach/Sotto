@@ -64,6 +64,8 @@ The adapter reads native history within a 16 MiB text limit and a 20,000-message
 
 Native resume, reconciliation, and polling therefore cost a bounded read of the provider transcript, not only its new tail. A long Devin thread can take longer to reconnect or send to. If native history exceeds the supported limit, Sotto refuses that read and cannot safely reconcile or continue the thread through Devin; saved Sotto history remains readable, and uncertain work is never resent automatically. The limit is a safe refusal, not a claim that only the newest part was read.
 
+Since October 6, 2026 (#770), a send to a thread whose Devin session Sotto already holds replays nothing before its prompt, and its acceptance can come from the session's own stream; the replay confirms the dispatch afterwards. Opening a session, reconnecting and reading a session Sotto does not hold still replay it whole. See [ADR-0017's amendment](0017-devin-native-provider-data-policies.md#amendment-a-send-checks-once-and-reads-nothing-while-sotto-holds-the-session-october-6-2026-770).
+
 This exception accepts a verified protocol limitation instead of inventing a cursor or weakening delivery evidence. It does not change history retention, permission authority, or provider data policies. See the [native compatibility evidence](../verification/2026-09-19-devin-native-compatibility.md) and [Devin data-policy decision](0017-devin-native-provider-data-policies.md).
 
 
