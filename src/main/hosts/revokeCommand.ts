@@ -1,5 +1,5 @@
 /** A value inside double quotes for a POSIX shell, with a leading `~/` written as `$HOME/` so the shell still expands it. */
-function quoted(value: string): string {
+export function shellQuoted(value: string): string {
   const home = value === '~' || value.startsWith('~/')
   const rest = home ? value.slice(1) : value
   return `"${home ? '$HOME' : ''}${rest.replace(/["$`\\]/gu, character => `\\${character}`)}"`
@@ -13,9 +13,9 @@ function quoted(value: string): string {
  */
 export function revokeByHandCommand(input: { readonly installPath: string; readonly dataDirectory: string; readonly clientId: string; readonly node?: string | undefined }): string {
   return [
-    `I=${quoted(input.installPath)}`,
+    `I=${shellQuoted(input.installPath)}`,
     'E="$I/host/index.js"',
     '[ -f "$I/current" ] && V=$(cat "$I/current") && [ -f "$I/versions/$V/host/index.js" ] && E="$I/versions/$V/host/index.js"',
-    `${input.node ? quoted(input.node) : 'node'} "$E" --data ${quoted(input.dataDirectory)} --revoke-client ${quoted(input.clientId)}`,
+    `${input.node ? shellQuoted(input.node) : 'node'} "$E" --data ${shellQuoted(input.dataDirectory)} --revoke-client ${shellQuoted(input.clientId)}`,
   ].join('; ')
 }
