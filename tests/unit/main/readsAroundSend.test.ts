@@ -65,10 +65,20 @@ async function composed(): Promise<{ host: WorkspaceHost; adapter: ReadRecording
   const connected = await host.connect()
   return { host, adapter, id: connected.threads.find(thread => thread.title === 'Workshop')!.id }
 }
+/**
+ * Wait until the workspace has nothing left to publish or write: no publish window open, no write window waiting and
+ * no write in flight. These are its own private timers, read by name, so a rename fails here rather than letting
+ * the wait pass at once.
+ */
+async function settled(host: WorkspaceHost): Promise<void> {
+  const fields = ['publishTimer', 'writeTimer', 'saving'] as const
+  for (const field of fields) expect(Object.hasOwn(host, field), `WorkspaceHost.${field}`).toBe(true)
+  const timers = host as unknown as Record<(typeof fields)[number], unknown>
+  await vi.waitFor(() => { if (fields.some(field => timers[field] !== undefined)) throw new Error('Still settling') }, { timeout: 5_000, interval: 5 })
+}
 /** What the workspace publishes and writes from now on, once what connecting and earlier reads set going has gone out. */
 async function watch(host: WorkspaceHost): Promise<{ published: () => number; written: () => number }> {
-  const timers = host as unknown as { publishTimer?: unknown; writeTimer?: unknown; saving?: unknown }
-  await vi.waitFor(() => { if (timers.publishTimer !== undefined || timers.writeTimer !== undefined || timers.saving !== undefined) throw new Error('Still settling') }, { timeout: 5_000, interval: 5 })
+  await settled(host)
   let published = 0, written = 0
   cleanup.push(host.subscribe(() => { published++ }))
   const write = AtomicJsonStore.prototype.write
@@ -89,8 +99,10 @@ describe('a read before a send', () => {
     const snapshot = await host.refreshThread(id, { beforeSend: true })
     expect(adapter.reads).toEqual([{ beforeSend: true }])
     expect(snapshot.threads.find(thread => thread.id === id)?.title).toBe('Workshop')
-    // A publish the switch had sent would reach the workspace's own subscribers at the end of its window.
-    await new Promise(done => setTimeout(done, 100))
+    // Anything the read set going, a publish window or a write, has gone out by now.
+    await settled(host)
+    // Publishing is what the read used to do whatever it found. The write stays at none either way, since a write
+    // of an unchanged organization is skipped where it is made; this read does not set one going at all.
     expect({ published: seen.published(), written: seen.written() }).toEqual({ published: 0, written: 0 })
   })
 
