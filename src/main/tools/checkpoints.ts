@@ -10,6 +10,7 @@ import { ToolOperations, fail, parse, workspace } from './common'
 import { checkoutIdentity } from '../agents/threadWorktrees'
 import { CheckpointCapture, LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointCapture'
 import { CheckpointStore, type CheckpointRecord as Record, type Snapshot } from './checkpointStore'
+import { CheckpointReferences } from './checkpointReferences'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -27,6 +28,7 @@ export class CheckpointService extends ToolOperations {
   private readonly maintenance: ReturnType<typeof setInterval>
   private readonly locks = new Set<string>()
   private readonly capture: CheckpointCapture
+  private readonly references = new CheckpointReferences()
   constructor(private readonly dependencies: CheckpointDependencies) {
     super()
     this.store = new CheckpointStore(dependencies.directory, event => dependencies.report?.(event))
@@ -90,13 +92,11 @@ export class CheckpointService extends ToolOperations {
       const info = await lstat(join(directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
       if (info?.isFile() && !info.isSymbolicLink()) { regular.add(name); if (!this.blobSizes.has(name)) this.blobSizes.set(name, info.size) }
     }
-    const hashes = (record: Record): Set<string> => new Set([record.before, record.after].flatMap(snapshot => snapshot ? Object.values(snapshot.files).map(file => file.hash) : []))
-    const counts = new Map<string, number>()
-    // The stored size, from each record's own: a journal save measures only the records it writes.
+    // Only records added or changed since the last save are counted again, so a send's save does not scan every
+    // saved checkpoint's files. The stored size comes from each record's own: a journal save measures only its own.
+    this.references.sync(this.records.values())
     let total = this.store.measure([...this.records.values()], changed)
-    for (const record of this.records.values()) {
-      for (const hash of hashes(record)) { if (!counts.has(hash)) total += this.blobSizes.get(hash) ?? 0; counts.set(hash, (counts.get(hash) ?? 0) + 1) }
-    }
+    for (const hash of this.references.hashes()) total += this.blobSizes.get(hash) ?? 0
     const backupNames = (await readdir(this.dependencies.directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => name.startsWith('checkpoints.json.corrupt-'))
     const backups = new Map<string, { size: number; createdAt: number }>()
     const removedBackups = new Set<string>()
@@ -113,21 +113,16 @@ export class CheckpointService extends ToolOperations {
     for (const item of oldest) {
       if (total <= (this.dependencies.maxBytes ?? 500_000_000)) break
       if (item.recordId) {
-        const record = this.records.get(item.recordId)!
         this.records.delete(item.recordId); removed = true
         total -= this.store.sizeOf(item.recordId)
-        for (const hash of hashes(record)) {
-          const remaining = counts.get(hash)! - 1
-          if (remaining) counts.set(hash, remaining)
-          else { counts.delete(hash); total -= this.blobSizes.get(hash) ?? 0 }
-        }
+        for (const hash of this.references.remove(item.recordId)) total -= this.blobSizes.get(hash) ?? 0
       }
       if (item.backup) { total -= backups.get(item.backup)!.size; backups.delete(item.backup); removedBackups.add(item.backup) }
     }
     this.store.retain(new Set(this.records.keys()))
     // Commit references before deleting any file backups. A removal cannot be journaled.
     await this.store.commit([...this.records.values()], removed ? undefined : changed?.filter(record => this.records.has(record.id)))
-    for (const name of regular) if (!counts.has(name)) {
+    for (const name of regular) if (!this.references.has(name)) {
       const info = await lstat(join(directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
       if (info?.isFile() && !info.isSymbolicLink()) await this.removeBackup(join(directory, name))
       this.blobSizes.delete(name)
