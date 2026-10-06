@@ -215,6 +215,22 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     expect(await historyRequests(f, from)).toEqual(['turns'])
   })
 
+  it('waits for a read of the thread in flight before turn/start when the read before the send was made for it (#765)', async () => {
+    const { f, id } = await answeredThread()
+    await f.host.refreshThread!(id, { beforeSend: true, sendMessageId: 'own-2' })
+    // Another read of the thread, a whole one the fake answers late, is in flight when the send arrives.
+    await f.script({ delay: { method: 'thread/read', ms: 300 } })
+    const from = (await f.driver.requests()).length
+    const order: string[] = []
+    const reading = f.host.refreshThread!(id).then(() => { order.push('read') })
+    await expect.poll(async () => (await f.driver.requests()).slice(from).some(request => request.method === 'thread/read')).toBe(true)
+    await expect(send(f, id, 'own-2', 'own-1').finally(() => { order.push('send') })).resolves.toEqual({ accepted: true })
+    await reading
+    // The send went out after the read had applied the thread, not across it, and made no check of its own.
+    expect(order).toEqual(['read', 'send'])
+    expect(await historyRequests(f, from)).toEqual(['read'])
+  })
+
   it('checks the newest turn again for a send the read before it was not made for (#765)', async () => {
     const { f, id } = await answeredThread()
     // A read for a send that was then refused leaves its mark; the next send is another message, such as a queued
