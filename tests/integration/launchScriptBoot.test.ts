@@ -362,6 +362,20 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       expect(alive(unitHost)).toBe(false)
       expect(await descriptor(configuration)).toMatchObject({ pid: remove.result.pid, startedBy: 'launch-script' })
     })
+
+    it('goes with Forget\'s admin connection when the host is stopped, which still finds no host and starts none', async () => {
+      const configuration = await installed()
+      await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      const before = (await systemd!.calls()).length, hosts = (await systemd!.spawned()).length
+      // Any other admin connection to a stopped host leaves the unit where it is.
+      expect((await run(configuration, { op: 'launch', start: false })).result).toEqual({ type: 'error', reason: 'host-not-running' })
+      expect(await changes(before)).toEqual([])
+      expect((await run(configuration, { op: 'launch', start: false, removeBoot: true })).result).toEqual({ type: 'error', reason: 'host-not-running' })
+      expect(await changes(before)).toEqual(['systemctl disable --now sotto-host', 'systemctl daemon-reload', 'systemctl reset-failed sotto-host'])
+      await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(readFile(join(configuration.installPath, 'boot-start.sh'))).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(await systemd!.spawned()).toHaveLength(hosts)
+    })
   })
 
   describe('an update of a host the unit runs', () => {

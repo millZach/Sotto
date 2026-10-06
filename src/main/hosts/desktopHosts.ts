@@ -500,10 +500,13 @@ export class DesktopHosts {
     if (active) active.closing = true
     // A connect still under way, or one already lost, ends first: the revoke goes over a connection of its own. A connect
     // past its SSH sign-in but still pairing or opening its socket is under way too, and would close that SSH under the press.
+    // Read before the disconnect below, which clears what the row knew of start at boot.
+    const unit = this.status.get(host.id)?.bootStart?.installed === true
     if (!(this.reachable(host.id) && this.onSsh(host.id))) await this.disconnect(host.id)
     let cause: HostForgottenCause | undefined, stopFailed = false
-    const unit = this.status.get(host.id)?.bootStart?.installed === true
     try {
+      // A host that is not running has its boot unit taken away by the admin connection's own launch, which then fails
+      // with `host-not-running`: there is nothing to revoke on, but the forgotten host must not start at the next boot.
       await this.press(host, async connection => {
         // Any answer is a revoke: `revoked: false` says the host no longer knew this computer. Only the launch script's own
         // failure is the host refusing, which leaves it running; a request that never got an answer is the host not reached,
@@ -516,7 +519,7 @@ export class DesktopHosts {
         // which item 7 of the tailnet plan, Start at boot's own surface, takes on.
         if (unit || connection.bootStart?.installed) await connection.boot({ op: 'boot-remove', restart: false }).catch(() => undefined)
         if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
-      })
+      }, { removeBoot: true })
     } catch (error) {
       if (error instanceof SignInStopped) return this.keepAfterForget(host, active)
       cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
@@ -978,11 +981,11 @@ export class DesktopHosts {
    * by the first press and shared until a minute after the last. An admin connection starts no host: one that is not
    * running fails the press.
    */
-  private press<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T> {
+  private press<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>, admin: { readonly removeBoot?: boolean } = {}): Promise<T> {
     const ssh = this.onSsh(host.id)
     if (ssh) return press(ssh)
     if (this.closed || !this.saved.includes(host)) return Promise.reject(new Error(`${host.name} is no longer saved. Nothing was changed.`))
-    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId }, press)
+    return this.admins.run({ id: host.id, route: this.route(host), hostId: host.hostId, ...admin }, press)
   }
   /** The same press, over a connection already open, opening none: undefined when the host has none. */
   private pressIfOpen<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T | undefined> {

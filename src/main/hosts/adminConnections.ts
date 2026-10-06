@@ -8,6 +8,8 @@ export interface AdminHost {
   readonly route: SshHostConfiguration
   /** The host's own ID, once this computer has met it: a host that answers with another one is refused. */
   readonly hostId?: string | undefined
+  /** Forget's connection: a host that is not running has its boot unit taken away before the sign-in fails (ADR-0054). */
+  readonly removeBoot?: boolean
 }
 
 /** What an admin connection's sign-in reports to the host's row, which shows it wherever the user is. */
@@ -93,7 +95,7 @@ export class AdminConnections {
         onPrompt: prompt => { sign.asking = prompt?.id; report({ prompt }) },
         onApproval: value => { approval = value !== null; report({ approval: value }) },
         onDisconnected: dropped,
-      }, { start: false })
+      }, { start: false, ...(host.removeBoot ? { removeBoot: true } : {}) })
       if (host.hostId && connection.hostId !== host.hostId) { await connection.close(); throw this.options.identityChanged() }
       if (connection.node) this.options.node(host.id, connection.node)
       return connection

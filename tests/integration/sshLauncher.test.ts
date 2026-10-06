@@ -21,7 +21,7 @@ afterEach(async () => {
 })
 const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }
 const SCRIPT_SHA = createHash('sha256').update(LAUNCH_SCRIPT_SOURCE).digest('hex')
-interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; stdinSha256: string; askpass: boolean }
+interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; removeBoot?: boolean; stdinSha256: string; askpass: boolean }
 async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; approvalTimeoutMs?: number; startMs?: number; holdMs?: number; version?: string; platform?: NodeJS.Platform; readyTimeoutMs?: number; env?: NodeJS.ProcessEnv } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-')); directories.push(path)
   const record = join(path, 'ssh.jsonl')
@@ -345,6 +345,9 @@ it('opens an admin connection only to a running host, starts none, and names the
   await expect(readFile(descriptor, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   // No forward was opened for a host that is not there.
   expect((await spawns()).some(item => item.tunnel)).toBe(false)
+  // Forget's admin connection asks the same launch to take the boot unit away first; it still fails the same way.
+  expect((await failure(launcher.connect(configuration, {}, { start: false, removeBoot: true }))).code).toBe('host-not-running')
+  expect((await spawns()).filter(item => item.op === 'launch').map(item => item.removeBoot ?? false)).toEqual([false, true])
   const started = await launcher.connect(configuration)
   hosts.push((JSON.parse(await readFile(descriptor, 'utf8')) as { pid: number }).pid)
   expect(started.node).toMatch(/node(\.exe)?$/iu)

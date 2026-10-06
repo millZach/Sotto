@@ -91,6 +91,11 @@ export interface SshConnectOptions {
    * host fails with `host-not-running` rather than starting one.
    */
   readonly start?: boolean
+  /**
+   * Forget's admin connection (ADR-0054): when no host runs, the launch script takes this installation's boot unit away
+   * before the connect fails with `host-not-running`, so the forgotten host does not start again at the next boot.
+   */
+  readonly removeBoot?: boolean
 }
 export interface SshLauncherDependencies {
   readonly spawn?: SpawnSsh
@@ -291,7 +296,7 @@ export class SshHostLauncher {
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       timeout = setTimeout(expire, authentication)
       const route = attempt.route = await this.resolve(attempt)
-      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
+      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const, ...(options.removeBoot ? { removeBoot: true as const } : {}) } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
       if (!parsed.success) throw new SshFailure('host-start-failed')

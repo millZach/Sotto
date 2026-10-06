@@ -346,7 +346,14 @@ const adminToken = async ready => {
 // The result names the Node this script runs under, which is the one the host's own --revoke-client would take.
 const launch = async () => {
   const found = cfg.start === false ? await discover() : null;
-  if (cfg.start === false && !found) return finish({ type: 'error', reason: 'host-not-running' });
+  if (cfg.start === false && !found) {
+    // Forget of a stopped host (ADR-0054): there is no host to revoke on, but this installation's boot unit still goes, the
+    // way boot-remove takes it, so the forgotten host does not come back at the next boot. Nothing is started either way.
+    if (cfg.removeBoot === true && await unitOurs()) {
+      try { await takeUpdateLock(); try { await bootRemove(); } finally { await releaseUpdateLock(); } } catch { /* the unit stays */ }
+    }
+    return finish({ type: 'error', reason: 'host-not-running' });
+  }
   // A found host reports start at boot as a started one does, and counts as Sotto's when this installation's unit runs it.
   const ready = found ? { type: 'ready', ...found, owned: await sottoStarted(found), bootStart: await bootStatus(await unitProperties()) } : await start();
   const token = await adminToken(ready);
@@ -780,8 +787,11 @@ export const HOST_DOWNLOAD_TIMEOUT_MS = 5 * 60_000
 export const HOST_ARCHIVE_LIMIT_BYTES = 512 * 1024 * 1024
 
 export type LaunchOperation =
-  /** Find or start the host. `start: false` only finds one, for an admin connection, and starts nothing. */
-  | { readonly op: 'launch'; readonly start?: false }
+  /**
+   * Find or start the host. `start: false` only finds one, for an admin connection, and starts nothing. `removeBoot`, for
+   * Forget, also takes this installation's boot unit away when no host runs (ADR-0054).
+   */
+  | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true }
   | { readonly op: 'pairing-code'; readonly hostId: string }
   | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string }
   | { readonly op: 'revoke-client'; readonly hostId: string; readonly clientId: string }

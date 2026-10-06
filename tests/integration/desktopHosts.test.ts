@@ -1099,7 +1099,8 @@ describe('admin connections and Forget (ADR-0053)', () => {
     const state = await manager.command({ type: 'forget', id: remote.id })
     // One ssh for the add, and one admin connection for both of Forget's presses.
     expect(launchers).toHaveLength(2)
-    expect(launchers[1]!.options).toEqual({ start: false })
+    // Forget's own: a host found stopped would have its boot unit taken away before the connect failed.
+    expect(launchers[1]!.options).toEqual({ start: false, removeBoot: true })
     expect(operations).toEqual(['admin revoke-client', 'admin stop-host'])
     expect(host.pairing.verifyToken(token)).toBeUndefined()
     expect(state.hosts).toEqual([]); expect(state.forgotten).toBeUndefined()
@@ -1165,6 +1166,8 @@ describe('admin connections and Forget (ADR-0053)', () => {
       expect(host.pairing.verifyToken(token)).toBeDefined()
       expect(state.forgotten).toEqual([expect.objectContaining({ id: remote.id, name: 'Forge fixture', cause, command: expect.stringContaining('--revoke-client') })])
       expect(stops).toEqual([])
+      // A stopped host's launch takes its boot unit away before it fails, so the forgotten host does not start at the next boot.
+      expect(launchers.at(-1)!.options).toEqual({ start: false, removeBoot: true })
     })
   }
 
