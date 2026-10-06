@@ -632,8 +632,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     // The coordinator's read before this send stands for its first read while the thread has not moved since (#765).
-    const readForSend = command.type === 'send' && this.readsBeforeSend.take(id, this.readState(id))
-    if (command.type !== 'send') this.readsBeforeSend.drop(id)
+    // Any command takes the mark; only a send uses it.
+    const readForSend = this.readsBeforeSend.take(id, this.readState(id)) && command.type === 'send'
     this.reaper.touch(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')

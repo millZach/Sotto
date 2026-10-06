@@ -65,8 +65,10 @@ async function composed(): Promise<{ host: WorkspaceHost; adapter: ReadRecording
   const connected = await host.connect()
   return { host, adapter, id: connected.threads.find(thread => thread.title === 'Workshop')!.id }
 }
-/** What the workspace publishes and writes from now on. */
-function watch(host: WorkspaceHost): { published: () => number; written: () => number } {
+/** What the workspace publishes and writes from now on, once what connecting and earlier reads set going has gone out. */
+async function watch(host: WorkspaceHost): Promise<{ published: () => number; written: () => number }> {
+  const timers = host as unknown as { publishTimer?: unknown; writeTimer?: unknown; saving?: unknown }
+  await vi.waitFor(() => { if (timers.publishTimer !== undefined || timers.writeTimer !== undefined || timers.saving !== undefined) throw new Error('Still settling') }, { timeout: 5_000, interval: 5 })
   let published = 0, written = 0
   cleanup.push(host.subscribe(() => { published++ }))
   const write = AtomicJsonStore.prototype.write
@@ -82,7 +84,7 @@ describe('a read before a send', () => {
     const { host, adapter, id } = await composed()
     // A first read settles what connecting left for a read to say.
     await host.refreshThread(id, { beforeSend: true })
-    const seen = watch(host)
+    const seen = await watch(host)
     adapter.reads.length = 0
     const snapshot = await host.refreshThread(id, { beforeSend: true })
     expect(adapter.reads).toEqual([{ beforeSend: true }])
@@ -95,7 +97,7 @@ describe('a read before a send', () => {
   it('writes and publishes what it found when the provider changed the thread', async () => {
     const { host, adapter, id } = await composed()
     await host.refreshThread(id, { beforeSend: true })
-    const seen = watch(host)
+    const seen = await watch(host)
     adapter.change('workshop')
     const snapshot = await host.refreshThread(id, { beforeSend: true })
     expect(snapshot.threads.find(thread => thread.id === id)?.title).toBe('Workshop again')
@@ -106,7 +108,7 @@ describe('a read before a send', () => {
   it('is any other read\'s to write and publish as it always did', async () => {
     const { host, id } = await composed()
     await host.refreshThread(id, { beforeSend: true })
-    const seen = watch(host)
+    const seen = await watch(host)
     await host.refreshThread(id)
     expect(seen.published()).toBeGreaterThan(0)
   })
@@ -177,8 +179,6 @@ describe('ReadsBeforeSend', () => {
     expect(marks.take('thread', '1:4')).toBe(false)
     marks.mark('thread', '1:4')
     expect(marks.take('thread', '1:5')).toBe(false)
-    marks.mark('thread', '1:4'); marks.drop('thread')
-    expect(marks.take('thread', '1:4')).toBe(false)
     marks.mark('thread', '1:4'); marks.clear()
     expect(marks.take('thread', '1:4')).toBe(false)
   })

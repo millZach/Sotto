@@ -19,7 +19,5 @@ export class ReadsBeforeSend {
     this.marks.delete(id)
     return marked === state
   }
-  /** A command other than a send reached `id`, or the thread went away. */
-  drop(id: string): void { this.marks.delete(id) }
   clear(): void { this.marks.clear() }
 }

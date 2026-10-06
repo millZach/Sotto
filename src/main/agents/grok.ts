@@ -869,8 +869,8 @@ export class GrokAcpHost implements AgentHost {
       } else {
         const alias = this.aliases[command.threadId]; if (!alias?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session. Do not repeat its creation automatically.')
         // The coordinator's read before this send stands for its first read while the thread has not moved since (#765).
-        const readForSend = command.type === 'send' && this.readsBeforeSend.take(command.threadId, this.readState(command.threadId))
-        if (command.type !== 'send') this.readsBeforeSend.drop(command.threadId)
+        // Any command takes the mark; only a send uses it.
+        const readForSend = this.readsBeforeSend.take(command.threadId, this.readState(command.threadId)) && command.type === 'send'
         // Lazy sessions: an action on a thread whose session is not loaded loads it before the command runs.
         this.reaper.touch(command.threadId); await this.loadSession(command.threadId)
         if (command.type === 'configure-thread') {

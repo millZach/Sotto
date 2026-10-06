@@ -1210,8 +1210,8 @@ export class CodexAppServerHost implements AgentHost {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
         // The coordinator's read before this send stands for the send's own while the thread has not moved since (#765).
-        const readForSend = command.type === 'send' && this.readsBeforeSend.take(id, this.readState(id))
-        if (command.type !== 'send') this.readsBeforeSend.drop(id)
+        // Any command takes the mark; only a send uses it.
+        const readForSend = this.readsBeforeSend.take(id, this.readState(id)) && command.type === 'send'
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
