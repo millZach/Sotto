@@ -28,14 +28,18 @@ export function grokActivities(update: Record<string, unknown>, context: Context
 
 /**
  * A history read can trail the live stream it describes. Its copy of a thought still being written is a prefix of the
- * one the stream has shown, and must not take the stream's later words back.
+ * one the stream has shown, and must not take the stream's later words back. Nor can it tell a thought cut off by its
+ * process ending from one the model moved on from: Grok records no end for that turn, so the next prompt reads as
+ * moving on. A thought Sotto saw cut off stays interrupted.
  */
 export function keepStreamedThinking(history: readonly AgentActivity[], shown: readonly AgentActivity[] | undefined): AgentActivity[] {
   if (!shown?.length) return [...history]
-  const streamed = new Map(shown.filter(row => row.id.startsWith(GROK_THINKING_ID_PREFIX) && row.text).map(row => [row.id, row.text!]))
+  const streamed = new Map(shown.filter(row => row.id.startsWith(GROK_THINKING_ID_PREFIX)).map(row => [row.id, row]))
   return history.map(row => {
-    const longer = streamed.get(row.id)
-    return longer !== undefined && longer.length > (row.text?.length ?? 0) && longer.startsWith(row.text ?? '') ? { ...row, text: longer } : row
+    const seen = streamed.get(row.id); if (!seen) return row
+    const longer = seen.text !== undefined && seen.text.length > (row.text?.length ?? 0) && seen.text.startsWith(row.text ?? '') ? { text: seen.text } : {}
+    const cut = seen.status === 'interrupted' && row.status === 'completed' ? { status: seen.status } : {}
+    return { ...row, ...longer, ...cut }
   })
 }
 

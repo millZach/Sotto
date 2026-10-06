@@ -22,7 +22,8 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { grokActivities, keepStreamedThinking } from './grokActivity'
+import { GROK_THINKING_ID_PREFIX, grokActivities, keepStreamedThinking } from './grokActivity'
+import { settledThinking } from './thinkingActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -401,7 +402,7 @@ export class GrokAcpHost implements AgentHost {
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
     const thread = this.threads.get(id)
     if (thread) {
-      thread.requests = []
+      thread.requests = []; this.cutThoughts(id)
       if (this.endTurn(id, 'failed')) void this.persist().catch(() => undefined)
       // A Sotto prompt fails through its own request; a turn Sotto only watched fails here.
       if (thread.status === 'running' && !this.activePrompts.has(id)) { thread.status = 'error'; this.liveStatus.delete(id); this.markTurn(id, 'failed', undefined, THREAD_PROCESS_LOST) }
@@ -925,6 +926,7 @@ export class GrokAcpHost implements AgentHost {
             this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error)
             this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed' }
             // A process that ended mid-turn failed this thread alone, and the next send starts a new one.
+            this.cutThoughts(command.threadId)
             this.markTurn(command.threadId, 'failed', command.messageId, entry.lost ? THREAD_PROCESS_LOST : error instanceof Error ? error.message : undefined)
             this.emit()
           }).catch(() => this.disconnect())
@@ -1039,6 +1041,15 @@ export class GrokAcpHost implements AgentHost {
       this.record(id, thread.status)
       this.emit(!['user_message_chunk', 'turn_completed', 'interaction_resolved'].includes(update.sessionUpdate))
     }
+  }
+  /**
+   * A thought still running when its process ended or its prompt failed was cut off. Grok's history never records
+   * that turn's end, so nothing else would settle it until the next prompt, and then as completed.
+   */
+  private cutThoughts(id: string): void {
+    const thread = this.threads.get(id); if (!thread?.activities) return
+    const cut = settledThinking(GROK_THINKING_ID_PREFIX, thread.activities, 'interrupted', true)
+    if (cut.length) thread.activities = mergeAgentActivities(thread.activities, cut)
   }
   /**
    * Grok reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by

@@ -166,3 +166,27 @@ it.each([
     expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'interrupted']])
   } finally { await f.cleanup() }
 })
+
+it.each([
+  ['Sotto’s prompt', true],
+  ['a turn Sotto only watched', false],
+])('Grok settles a thought as interrupted when its process ends in the middle of %s, and the next prompt leaves it so', async (_name, own) => {
+  const f = await grokFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    if (own) await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Think first' })
+    else { await f.host.refreshThread(id); await f.action(id, { type: 'takeover', text: 'Typed in Grok', notify: true }) }
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('running')
+    await f.action(id, { type: 'thought', text: 'Half of a thought.', meta: { promptId: 'prompt', streamStartMs: 10 } })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    await f.action(id, { type: 'malformed' })
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('error')
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+    await f.host.execute({ type: 'send', commandId: 'again', messageId: 'again', threadId: id, text: 'Carry on' })
+    await f.driver.completeTurn(id, 'Carried on.')
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('idle')
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+  } finally { await f.cleanup() }
+})
