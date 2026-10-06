@@ -25,13 +25,18 @@ try {
     usage.claude('thread-0', { type: 'stream_event', event: { type: 'message_start', message: message('live', 0) } })
     await usage.flushed()
   }
-  const store = (usage as unknown as { store: { write(value: Archive): Promise<void> } }).store
+  // The baseline hands the store a copy of the ledger; later versions hand it the ledger already serialized.
+  const store = (usage as unknown as { store: { write(value: Archive): Promise<void>; writeSerialized?(text: string): Promise<void> } }).store
   const original = store.write.bind(store)
   let writes = 0, entriesWritten = 0
-  store.write = value => {
+  const count = (value: Archive): void => {
     writes++
     for (const ledger of Object.values(value)) entriesWritten += Object.keys(ledger.entries).length
-    return original(value)
+  }
+  store.write = value => { count(value); return original(value) }
+  if (store.writeSerialized) {
+    const serialized = store.writeSerialized.bind(store)
+    store.writeSerialized = text => { count(JSON.parse(text) as Archive); return serialized(text) }
   }
   const before = totals(usage.get('thread-0'))
   const outputBefore = Array.from({ length: threads }, (_, i) => usage.get(`thread-${i}`)?.total?.output ?? 0).reduce((sum, value) => sum + value, 0)

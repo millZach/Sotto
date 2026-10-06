@@ -39,7 +39,17 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
   return matches.length === 1 ? rows[matches[0]!] : undefined
 }
 
-/** Accounting observation only: never changes delivery, native sessions, or billing settings. */
+/** How often the ledger is written while a reply streams. A turn's end is written at once. */
+export const USAGE_WRITE_INTERVAL_MS = 1000
+
+/**
+ * Accounting observation only: never changes delivery, native sessions, or billing settings.
+ *
+ * The ledger holds every request of every thread and is written whole. A reply reports usage on nearly every
+ * frame, so while it streams the ledger is written at most once every `writeIntervalMs`, and at once when a turn
+ * ends (`elapsed`, Grok's `turn_completed`) or a compaction is recorded. What a crash between two writes loses is
+ * that second's counts, which the provider reports again when the thread is read.
+ */
 export class NativeUsage {
   private readonly store: AtomicJsonStore<Record<string, Ledger>>
   private data: Record<string, Ledger> = {}
@@ -47,7 +57,13 @@ export class NativeUsage {
   private writing: Promise<void> | undefined
   private readonly dirty = new Set<string>()
   private readonly failed = new Set<string>()
-  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok') {
+  /** When the last write started, by the monotonic clock: a wall clock set back must not hold writes back. */
+  private lastWriteAt = Number.NEGATIVE_INFINITY
+  private timer: ReturnType<typeof setTimeout> | undefined
+  /** A turn ended while a write was running: the next one goes as soon as it finishes. */
+  private urgent = false
+  private draining = 0
+  constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly writeIntervalMs = USAGE_WRITE_INTERVAL_MS) {
     this.store = new AtomicJsonStore(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
   }
   async load(): Promise<void> {
@@ -73,12 +89,15 @@ export class NativeUsage {
       changed ||= JSON.stringify(ledger.view) !== before
       if (changed) this.dirty.add(id)
     }
-    this.writePending()
+    this.writePending(true)
   }
   /** Drain the latest observations, retrying a prior failure once without spinning on a broken disk. */
   async flushed(): Promise<void> {
-    this.writePending()
-    while (this.writing) await this.writing
+    this.draining += 1
+    try {
+      this.writePending(true)
+      while (this.writing) await this.writing
+    } finally { this.draining -= 1 }
   }
   get(id: string): ThreadUsage | undefined { return this.data[id]?.view }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
@@ -87,7 +106,7 @@ export class NativeUsage {
     ledger.view.contextUsed = count(used)
     ledger.view.contextUpdatedAt = updatedAt
     ledger.contextCompacted = true
-    this.save(id, changed)
+    this.save(id, changed, true)
   }
   private ledger(id: string): Ledger {
     return this.data[id] ??= { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
@@ -106,27 +125,35 @@ export class NativeUsage {
     }
     ledger.view.total = Object.keys(total).length ? total : undefined
   }
-  private save(id: string, changed = true): void {
+  /** `now`: a turn ended, so this is written without waiting out the interval. */
+  private save(id: string, changed = true, now = false): void {
     if (changed) {
       this.summarize(this.data[id]!)
       this.dirty.add(id)
     }
     // Even an unchanged observation can retry a failed archive write.
-    this.writePending()
+    this.writePending(now)
   }
-  private writePending(): void {
-    if (this.writing || !this.dirty.size && !this.failed.size) return
-    // Defer the clone as well as the write: a replay batch makes one snapshot, and
-    // changes arriving during I/O share one pending snapshot of the latest totals.
+  private writePending(now = false): void {
+    if (!this.dirty.size && !this.failed.size) return
+    if (this.writing) { this.urgent ||= now; return }
+    const wait = now || this.draining ? 0 : this.lastWriteAt + this.writeIntervalMs - performance.now()
+    if (wait > 0) {
+      this.timer ??= setTimeout(() => { this.timer = undefined; this.writePending(true) }, wait)
+      return
+    }
+    if (this.timer !== undefined) { clearTimeout(this.timer); this.timer = undefined }
+    // Deferred to the next microtask: a replay batch makes one write, and changes arriving during I/O share the
+    // next one. The ledger is serialized as the write starts, so it is never copied whole to hold it still.
     this.writing = Promise.resolve().then(async () => {
       try {
         do {
           const ids = new Set([...this.failed, ...this.dirty])
           this.dirty.clear()
+          this.urgent = false
           try {
-            const snapshot = structuredClone(this.data)
-            for (const ledger of Object.values(snapshot)) delete ledger.view.persistenceError
-            await this.store.write(snapshot)
+            this.lastWriteAt = performance.now()
+            await this.store.writeSerialized(this.serialized())
             for (const id of ids) {
               // An older successful snapshot cannot clear a newer failed/unsaved state.
               if (this.dirty.has(id)) continue
@@ -139,9 +166,20 @@ export class NativeUsage {
               this.data[id]!.view.persistenceError = true
             }
           }
-        } while (this.dirty.size)
-      } finally { this.writing = undefined }
+        } while (this.dirty.size && (this.urgent || this.draining > 0))
+      } finally {
+        this.writing = undefined
+        // What arrived during the write waits out the rest of the interval, unless a turn ended meanwhile.
+        if (this.dirty.size) this.writePending(this.urgent)
+      }
     })
+  }
+  /** The ledger as the file holds it: a write failure is this process's to show, never saved. */
+  private serialized(): string {
+    const flagged = Object.values(this.data).filter(ledger => ledger.view.persistenceError)
+    for (const ledger of flagged) delete ledger.view.persistenceError
+    try { return JSON.stringify(this.data) }
+    finally { for (const ledger of flagged) ledger.view.persistenceError = true }
   }
   private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): boolean {
     if (model === SYNTHETIC || !Object.values(tokens).some(value => value !== undefined)) return false
@@ -248,7 +286,8 @@ export class NativeUsage {
     const changed = ledger.view.elapsedMs !== count(elapsed) || ledger.view.contextWindow !== (count(contextWindow) || ledger.view.contextWindow)
     ledger.view.elapsedMs = count(elapsed)
     ledger.view.contextWindow = count(contextWindow) || ledger.view.contextWindow
-    this.save(id, changed)
+    // The turn's duration comes with its end, which is written at once.
+    this.save(id, changed, true)
   }
   claudeResult(id: string, value: unknown): void {
     const frame = object(value); const ledger = this.data[id]
@@ -284,6 +323,7 @@ export class NativeUsage {
         ledger.view.updatedAt = new Date(timestamp ?? Date.now()).toISOString()
       }
     }
-    this.save(id, identity !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete]))
+    // Grok reports usage once, at the turn's end, which is written at once.
+    this.save(id, identity !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete]), true)
   }
 }
