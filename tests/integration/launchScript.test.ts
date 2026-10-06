@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -129,7 +129,84 @@ it('refuses unpaired clients and another host without writing policies', async (
       expect((await run(configuration, invalid)).messages.at(-1)).toEqual({ type: 'failed' })
     }
     expect(policies.list({ includeInactive: true })).toEqual([])
+    // Nor is either recorded as a desktop: only a paired client of this host is.
+    await expect(readFile(join(configuration.dataDirectory, 'desktop-clients.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   } finally { memory.close() }
+})
+
+const desktops = async (configuration: Configuration): Promise<unknown> => JSON.parse(await readFile(join(configuration.dataDirectory, 'desktop-clients.json'), 'utf8'))
+
+it('records the desktop on every SSH connect, a desktop paired before the record existed and one that may already answer included', async () => {
+  const { configuration, memory, policies, client, clientId, operation } = await desktopPermissionFixture()
+  try {
+    // Paired, granted and connected before this build: no record of desktops exists on the host yet.
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    await rm(join(configuration.dataDirectory, 'desktop-clients.json'))
+    // Its next connect records it, though its grant is already there and is left as it is.
+    const before = policies.list({ scope: 'client:' + clientId, includeInactive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(await desktops(configuration)).toEqual([clientId])
+    expect(policies.list({ scope: 'client:' + clientId, includeInactive: true })).toEqual(before)
+    // Once, however often it connects.
+    await run(configuration, operation)
+    expect(await desktops(configuration)).toEqual([clientId])
+  } finally { memory.close() }
+})
+
+it('records two desktops connecting at once, and keeps the desktops already recorded', async () => {
+  const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
+  try {
+    await writeFile(join(configuration.dataDirectory, 'desktop-clients.json'), JSON.stringify(['laptop-recorded-earlier']))
+    const pairing = new PairedClients(configuration.dataDirectory)
+    await pairing.load()
+    const other = await pairing.redeem(pairing.issuePairingCode().code, 'Second desktop')
+    const results = await Promise.all([run(configuration, operation), run(configuration, { ...operation, clientId: other.clientId }), run(configuration, operation)])
+    for (const result of results) expect(result.messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(new Set(await desktops(configuration) as string[])).toEqual(new Set(['laptop-recorded-earlier', clientId, other.clientId]))
+  } finally { memory.close() }
+})
+
+it('records a confirmed desktop even when its grant cannot be written, since the grant and the record are separate', async () => {
+  const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
+  memory.close()
+  await rm(join(configuration.dataDirectory, 'memory.sqlite'))
+  expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'failed' })
+  expect(await desktops(configuration)).toEqual([clientId])
+})
+
+it('leaves a record of desktops it cannot read as it is, and still writes the grant', async () => {
+  const { configuration, memory, policies, client, operation } = await desktopPermissionFixture()
+  try {
+    // A folder where the file should be cannot be read as one, on every system the host runs on.
+    const record = join(configuration.dataDirectory, 'desktop-clients.json')
+    await mkdir(join(record, 'kept'), { recursive: true })
+    expect((await run(configuration, operation)).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(policies.mayGrant(client).allowed).toBe(true)
+    expect((await stat(join(record, 'kept'))).isDirectory()).toBe(true)
+  } finally { memory.close() }
+})
+
+it('reports the tailnet address and who started the host, as its descriptor records them, and only a well-formed address', async () => {
+  const configuration = await fixture()
+  const ready = await launch(configuration, { ...process.env, FAKE_HOST_TAILNET_ADDRESS: 'https://forge.tail5728ca.ts.net:8443' })
+  expect(ready).toMatchObject({ type: 'ready', owned: true, startedBy: 'launch-script', tailnetAddress: 'https://forge.tail5728ca.ts.net:8443' })
+  for (const address of ['http://forge.tail5728ca.ts.net:8443', 'https://forge.example.com:8443', 'https://forge.tail5728ca.ts.net', 'https://forge.tail5728ca.ts.net:8443/x']) {
+    const descriptor = JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(join(configuration.dataDirectory, 'host-listener.json'), JSON.stringify({ ...descriptor, tailnetAddress: address }))
+    const again = await launch(configuration)
+    expect(again).toMatchObject({ type: 'ready', pid: ready.pid, startedBy: 'launch-script' })
+    expect(again).not.toHaveProperty('tailnetAddress')
+  }
+})
+
+it('reports no tailnet address or starter for a host its owner started by hand with Serve off', async () => {
+  const configuration = await fixture()
+  await startedByHand(configuration)
+  const ready = await launch(configuration)
+  expect(ready).toMatchObject({ type: 'ready', owned: false })
+  expect(ready).not.toHaveProperty('tailnetAddress')
+  expect(ready).not.toHaveProperty('startedBy')
 })
 
 it('refuses missing or corrupt policy stores without creating or replacing them', async () => {

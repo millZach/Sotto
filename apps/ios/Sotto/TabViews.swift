@@ -587,6 +587,8 @@ private struct RequestCard: View {
 /// A thread at work: a breathing accent halo, how long it has been at it, and what it is doing.
 private struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched for the step the open thread is running, which the thread's history carries.
+    @EnvironmentObject var detailStore: DetailStore
     let row: HostedThread
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
