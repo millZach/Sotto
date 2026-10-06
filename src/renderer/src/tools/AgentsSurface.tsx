@@ -197,9 +197,19 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
   </>
 }
 
-export function AgentsSurface({ threadId, store, bridge }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined }): ReactNode {
+/**
+ * `rosterSignal` is for a thread on a paired host, whose host pushes no roster changes: what the thread's shell says of
+ * its agents, so a change there reads the roster again.
+ */
+export function AgentsSurface({ threadId, store, bridge, rosterSignal }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined }): ReactNode {
   const state = useThreadSubagents(store, threadId)
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
+  const followed = useRef(rosterSignal)
+  useEffect(() => {
+    if (followed.current === rosterSignal) return
+    followed.current = rosterSignal
+    if (rosterSignal !== undefined) void store.page(threadId)
+  }, [store, threadId, rosterSignal])
   const [page, setPage] = useState<{ threadId: string; id: string } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
   // Focus moves only after the user opens or leaves a workflow page, never when a thread switch or reset does it.

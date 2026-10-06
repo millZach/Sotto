@@ -5,6 +5,10 @@ import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
 import { gitPullRequestRequestSchema } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
+import { fileListRequestSchema, fileRequestSchema } from './files'
+import { gitReviewRequestSchema } from './gitChanges'
+import { toolListRequestSchema } from './tools'
+import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { PASTED_CODE_MAX } from './hostProviders'
 import type { AgentActivity } from './agentActivity'
 import { providerIdSchema, type ProviderClientUpdate } from './agents'
@@ -61,8 +65,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `model-catalog-revision`: to a client that accepts it, every shell's `host` names its model catalog's revision
  * (`modelsRevision`) and carries `models` only when this connection has not yet been sent that revision whole
  * (ADR-0028, October 3 amendment). Every other client is sent the whole catalog in every shell.
+ * `thread-files`: the host answers `thread-files` with a folder's entries in a thread's working copy and
+ * `thread-file-preview` with one file's preview, for Files. `thread-changes`: the host answers `thread-changes` with a thread's
+ * changed files as Git's status lists them and `thread-changes-review` with its Working tree or Branch changes comparison, for
+ * Changes. `subagents`: the host answers `subagent-page` and `subagent-assignments` with a thread's agents, for Agents.
+ * All six are reads, bounded as the desktop's own are (ADR-0025, October 5 amendment).
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
@@ -172,6 +181,17 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('attachment-content'), digest: attachmentDigestSchema }).strict(),
   /** One folder's subfolders on the host, for the Add project dialog's folder browser; read on request. */
   z.object({ ...base, op: z.literal('host-folders'), request: hostFoldersRequestSchema }).strict(),
+  /** One folder's entries in a thread's working copy, for Files; read on request (ADR-0025, October 5 amendment). */
+  z.object({ ...base, op: z.literal('thread-files'), request: fileListRequestSchema }).strict(),
+  /** One file's preview from a thread's working copy, for Files; one at a time per client, on the preview guard. */
+  z.object({ ...base, op: z.literal('thread-file-preview'), request: fileRequestSchema }).strict(),
+  /** A thread's changed files as Git's status lists them, for Changes; read on request. */
+  z.object({ ...base, op: z.literal('thread-changes'), request: toolListRequestSchema }).strict(),
+  /** A thread's Working tree or Branch changes comparison, for Changes; one at a time per client, on the preview guard. */
+  z.object({ ...base, op: z.literal('thread-changes-review'), request: gitReviewRequestSchema }).strict(),
+  /** A page of a thread's agents, and one agent's assignments, for Agents; read on request. */
+  z.object({ ...base, op: z.literal('subagent-page'), request: subagentPageRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it
    * stands, hand its client a code pasted from the sign-in page, or cancel it. Each answers with the sign-in, or null.
