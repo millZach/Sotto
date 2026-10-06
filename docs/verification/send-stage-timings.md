@@ -26,8 +26,13 @@ the coordinator's read returns the workspace's own record.
 ## Automated checks
 
 - `tests/unit/main/agentTurns.test.ts`, "send stages": a typed send through the coordinator writes the six
-  durations, its record waits for the first words while the command does not, the record's whole set of timing
-  fields is pinned and holds no prompt, reply or path, a host that confirms nothing writes the record at once, and a
-  turn that ends having shown nothing, or a coordinator that stops first, writes it without a first output.
+  durations, its record waits for the first words while the command does not, and its finish time and `totalMs`
+  stay at the command finishing when the first words come a minute later. The record's whole set of timing fields is
+  pinned and holds no prompt, reply or path, and a turn that sends nothing has no send stages. A host that confirms
+  nothing writes the record at once, a saved draft sent with Send times its admission and read, and a turn that ends
+  having shown nothing, or a coordinator that closes first, writes the record without a first output.
 - `tests/unit/main/sendStages.test.ts`: the arithmetic of each step, waiting and its two-minute limit, the stopwatch
-  lent by command ID, and what counts as a reply's first output.
+  lent by command ID and a mark that never throws, the workspace marking a send prepared before the provider stack
+  sees it, what counts as a reply's first output, and watching each thread for it.
+- `tests/integration/adapterContract.ts`: the Claude, Codex and Grok adapters, over their fake clients, mark the
+  prompt written and its acknowledgement on the stopwatch lent for the send. Devin and the fake provider skip it.
