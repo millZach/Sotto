@@ -140,8 +140,7 @@ export class SocketHostService implements HostService {
     }
     this.hostVersion = health.sottoVersion; this.features = []
     // A host that says it is another one is not sent this device's token at all.
-    const answered = (healthBody as { hostId?: unknown }).hostId
-    if (this.options.expectedHostId && answered !== this.options.expectedHostId) throw new WrongHostError()
+    if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
     if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
     if (!response.ok) throw refusal(response.status, 'This device needs to connect again or be paired on the host.', 'unauthenticated', response.status === 401)

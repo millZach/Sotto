@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, Copy, Info, Plus } from 'lucide-react'
 import { PHONE_ACCESS_SERVE_PORT, type HostPhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { HostPhonesView, HostsBridge, HostStatus } from '../../../../shared/hosts'
+import type { HostPhoneAccessSummary } from '../../../../shared/hostProtocol'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
@@ -15,15 +16,22 @@ export const TAILSCALE_OPERATOR_COMMAND = 'sudo tailscale set --operator=$USER'
 /** How often an open dialog tells main it is still open, well inside main's minute (HOST_PHONES_WATCH_MS). */
 const RENEW_WATCH_MS = 30_000
 
-/** A remote host's phone access in a few words, for the end of its row: off, on and how many phones, or that it needs the owner. */
+/** A host's phone access in the row's words: off, starting, on and how many phones, or that it needs the owner. */
+export function phoneWords(summary: HostPhoneAccessSummary): string {
+  if (summary.status === 'off') return 'Phones off'
+  if (summary.status === 'starting') return 'Phones starting…'
+  if (summary.status === 'needs-you') return 'Phones need you'
+  return summary.phones ? `Phones on, ${summary.phones} paired` : 'Phones on'
+}
+
+/** A remote host's phone access in a few words, for the end of its row, as the Phones dialog last read it. */
 export function hostPhonesLabel(view: HostPhonesView | undefined): string | null {
   const state = view?.state
   if (!state) return null
-  if (!state.enabled) return 'Phones off'
-  if (state.phase === 'failed' || state.phase === 'cleanup-failed') return 'Phones need you'
-  if (state.phase === 'starting') return 'Phones starting…'
-  if (state.phase !== 'on') return 'Phones off'
-  return state.phones.length ? `Phones on, ${state.phones.length} paired` : 'Phones on'
+  if (!state.enabled) return phoneWords({ status: 'off', phones: 0 })
+  if (state.phase === 'failed' || state.phase === 'cleanup-failed') return phoneWords({ status: 'needs-you', phones: 0 })
+  if (state.phase === 'starting') return phoneWords({ status: 'starting', phones: 0 })
+  return phoneWords({ status: state.phase === 'on' ? 'on' : 'off', phones: state.phase === 'on' ? state.phones.length : 0 })
 }
 
 /** What a failed step on a remote host says: what happened there, that nothing was changed, and what to do. */

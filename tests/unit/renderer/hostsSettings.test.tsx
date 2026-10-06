@@ -132,7 +132,9 @@ it('says before Add host is pressed that it turns on Tailscale Serve on the host
   const { bridge } = fixture([]), user = userEvent.setup()
   settings(bridge)
   const { dialog } = await openAddHost(user)
-  expect(within(dialog).getByText(/^Sotto turns on Tailscale Serve on the host, on your tailnet only/u)).toBeTruthy()
+  const sentence = within(dialog).getByText(/^Sotto turns on Tailscale Serve on the host, on your tailnet only/u)
+  // A keyboard or screen reader user meets it on the press itself.
+  expect(within(dialog).getByRole('button', { name: 'Add host' })).toHaveAccessibleDescription(sentence.textContent!)
 })
 
 it('opens the row menu from the keyboard, moves with the arrows and gives focus back on Escape', async () => {

@@ -10,7 +10,7 @@ import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, HOST_STOP_REPLY_MS, LAUNC
 import { AskpassBroker, type AskpassQuestion } from './sshAskpass'
 import { LAUNCH_REASONS, SshFailure, classifySshExit, failureFix, type SshFailureCode } from './sshFailure'
 import { tailscaleHold, type TailscaleHold } from './tailscaleApproval'
-import { isTailnetAddress } from './hostConnectionPlan'
+import { isTailnetAddress } from '../../shared/hostConnection'
 import { TAILSCALE_APPROVAL_MS, type HostSetupStep } from '../../shared/hosts'
 import { HOST_ARCHIVE_PATTERN, type HostUpdateStep } from '../../shared/hostUpdates'
 import { bootStatusSchema, type BootStatus } from '../../shared/bootStart'
@@ -68,8 +68,6 @@ export interface SshHostConnection {
    * its tailnet listener (ADR-0053). Absent until Serve is up, which is often a few seconds after a start.
    */
   readonly tailnetAddress?: string
-  /** Who started the host, as its descriptor records: `launch-script`, `boot` (ADR-0054), or absent for its owner by hand. */
-  readonly startedBy?: string
   /** Start at boot on the host, as this connection's launch found it (ADR-0054). Absent when the launch did not say. */
   readonly bootStart?: BootStatus
   showHostPairingCode(): Promise<SshPairingCode>
@@ -124,9 +122,8 @@ const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boo
   adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional(),
   /** The launch's Node, from `process.execPath` on the host. Only a launch's result carries it; one Sotto cannot read is left out. */
   node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined),
-  /** The host's tailnet address and who started it (ADR-0053). One this build cannot accept reads as absent. */
+  /** The host's tailnet address (ADR-0053). One this build cannot accept reads as absent. */
   tailnetAddress: z.string().max(300).refine(value => isTailnetAddress(value)).optional().catch(undefined),
-  startedBy: z.string().regex(/^[a-z-]{1,32}$/u).optional().catch(undefined),
   /** Start at boot on the host, which every launch reports (ADR-0054). One this build cannot read is left out. */
   bootStart: bootStatusSchema.optional().catch(undefined) })
 const pairingSchema = z.object({ type: z.literal('pairing-code'), code: z.string().min(1).max(256), expiresAt: z.string().datetime(), hostId: z.uuid() })
@@ -343,7 +340,7 @@ export class SshHostLauncher {
       attempt.connected = true
       this.status(attempt, 'ready')
       return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
-        ...(remote.tailnetAddress ? { tailnetAddress: remote.tailnetAddress } : {}), ...(remote.startedBy ? { startedBy: remote.startedBy } : {}),
+        ...(remote.tailnetAddress ? { tailnetAddress: remote.tailnetAddress } : {}),
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
         hostAdminToken: () => this.adminToken(attempt),
         stopHost: async () => { try { return await this.stopHost(attempt) } finally { await this.closeAttempt(attempt) } },

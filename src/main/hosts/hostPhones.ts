@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { phonesStateSchema, type HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesView } from '../../shared/hosts'
 import type { PressConnection } from './adminConnection'
+import { HOST_ADMIN_COMMAND_TIMEOUT_MS, HostAdminRefused, hostAdminRequest } from './hostAdminRequest'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 
 /**
@@ -57,15 +58,12 @@ const answerSchema = z.object({
 })
 type Answer = z.infer<typeof answerSchema>
 
-/** A read can wait on nothing slow; a command can wait on Tailscale, whose own calls time out after 20 seconds. */
+/** A read can wait on nothing slow; a command can wait on Tailscale (HOST_ADMIN_COMMAND_TIMEOUT_MS). */
 const READ_TIMEOUT_MS = 10_000
-const COMMAND_TIMEOUT_MS = 45_000
 const POLL_MS = 2_000
 /** An open dialog says so again well inside this, so a window that went away without closing it stops the reads. */
 export const HOST_PHONES_WATCH_MS = 60_000
 
-/** The host answered, but not with phone access: it has no such route, or answered with something else. */
-class HostRefused extends Error {}
 
 interface Entry {
   view: HostPhonesView
@@ -119,7 +117,7 @@ export class HostPhones {
     const run = entry.commands.then(async () => {
       this.set(id, { busy: true })
       let answer: Answer
-      try { answer = await link.press(connection => this.post(connection, link, 'phones-command', { command }, COMMAND_TIMEOUT_MS)) }
+      try { answer = await link.press(connection => this.post(connection, link, 'phones-command', { command }, HOST_ADMIN_COMMAND_TIMEOUT_MS)) }
       catch (error) {
         this.options.log?.('host-phones-command-failed')
         this.set(id, { busy: false })
@@ -181,28 +179,15 @@ export class HostPhones {
     return entry.reading
   }
 
-  /** One administrative request over a connection, asking it for its token again once if the host does not take it. */
-  private async post(connection: PressConnection, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number, again = true): Promise<Answer> {
-    const token = await connection.hostAdminToken()
-    const response = await (this.options.fetch ?? fetch)(`${connection.url}/v1/admin/${route}`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
-    })
-    if (response.status === 401) {
-      if (again) return this.post(connection, link, route, body, timeoutMs, false)
-      throw new Error('The host refused the administrative token.')
-    }
-    if (!response.ok) throw new HostRefused('The host refused the request.')
-    const parsed = answerSchema.safeParse(await response.json())
-    if (!parsed.success) throw new HostRefused('The host answered with something else.')
-    const answer = parsed.data
-    if (answer.hostId !== link.hostId) throw new Error('The host identity changed.')
-    return answer
+  /** One administrative request over a connection (see `hostAdminRequest`). */
+  private post(connection: PressConnection, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number): Promise<Answer> {
+    return hostAdminRequest(connection, route, body, answerSchema, link.hostId, timeoutMs, this.options.fetch ?? fetch)
   }
 
   private failure(name: string, error: unknown): string {
     if (error instanceof Error && error.name === 'TimeoutError') return `${name} did not answer about phone access in time. Nothing was changed. Try again.`
-    if (error instanceof HostRefused) {
+    // The host answered, but not with phone access: it has no such route, or answered with something else.
+    if (error instanceof HostAdminRefused && error.status !== 401) {
       return `The host on ${name} can’t share phone access with this computer. Nothing was changed. Update the host on ${name} from the Threads page, then try again.`
     }
     return `Phone access on ${name} could not be reached. Nothing was changed. Check that ${name} is connected, then try again.`

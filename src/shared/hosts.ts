@@ -6,6 +6,7 @@ import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import type { BootStatus } from './bootStart'
 import type { HostPhoneAccessSummary } from './hostProtocol'
+import { HOST_CONNECTIONS, type HostConnectionName } from './hostConnection'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -73,22 +74,18 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
    * Which connection the owner prefers (ADR-0053): the tailnet, with SSH when it does not answer, or SSH only. A host saved
    * before tailnet connections prefers SSH until the owner chooses otherwise; Add host prefers the tailnet. Absent reads as SSH.
    */
-  prefer?: 'tailnet' | 'ssh' | undefined
+  prefer?: HostConnectionName | undefined
   /**
    * The connection the socket is on while connected, or the one a connect is trying while connecting: the host's
    * **tailnet connection** or its **SSH connection**.
    */
-  via?: 'tailnet' | 'ssh' | undefined
+  via?: HostConnectionName | undefined
   /**
    * Why a host whose owner prefers the tailnet is on its SSH connection: the tailnet did not answer, the host has not
    * reported a tailnet address, Tailscale is not running on the host, or its Tailscale Serve needs the SSH account to be
    * Tailscale's operator first. Sotto tries the tailnet again every 5 minutes.
    */
   tailnetNote?: 'unreachable' | 'no-address' | 'no-tailscale' | 'operator' | undefined
-  /** The host's tailnet address, as it last reported it. Shown; never typed. */
-  tailnetAddress?: string | undefined
-  /** Who started the host, as it last said: `launch-script`, `boot`, or absent for its owner by hand. */
-  startedBy?: string | undefined
   /** The host's phone access as its hello reported it on a tailnet connection, where nothing reads it over SSH. */
   phoneAccess?: HostPhoneAccessSummary | undefined
   /** Start at boot on the host, as this connection last found it (ADR-0054). */
@@ -200,7 +197,7 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
    * `tailnetConnections` setting follows, over the SSH connection or an admin connection, so the press is the owner's
    * consent to the Tailscale Serve setting it turns on there.
    */
-  z.object({ type: z.literal('set-connection'), id: z.uuid(), prefer: z.enum(['tailnet', 'ssh']) }).strict(),
+  z.object({ type: z.literal('set-connection'), id: z.uuid(), prefer: z.enum(HOST_CONNECTIONS) }).strict(),
   /** Puts away what Forget said about a host it could not revoke this computer on. */
   z.object({ type: z.literal('dismiss-forgotten'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),

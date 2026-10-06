@@ -22,6 +22,7 @@ import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
+import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -50,8 +51,7 @@ export interface HeadlessHostOptions {
 
 export { HostLockError, HostLockHeldError } from './lock'
 /** Who started a host, as SOTTO_HOST_STARTED_BY says: the desktop's launch script, or the host's start at boot unit (ADR-0054). */
-export type HostStartedBy = 'launch-script' | 'boot'
-const STARTED_BY: ReadonlySet<string> = new Set<HostStartedBy>(['launch-script', 'boot'])
+export type { HostStartedBy } from '../shared/hostConnection'
 /** The command line itself was wrong. The message names the fix and is safe to print; the key-file hint would only mislead. */
 export class HostArgumentError extends Error {}
 
@@ -225,7 +225,7 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   }
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
-    ...(env.SOTTO_HOST_STARTED_BY && STARTED_BY.has(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY as HostStartedBy } : {}) }
+    ...(startedBySotto(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY } : {}) }
 }
 
 /**

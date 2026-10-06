@@ -124,7 +124,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   const closeRef = useRef(onClose)
   closeRef.current = onClose
   const hintId = useId(), closeHintId = useId()
-  const hostId = useId(), userId = useId(), portId = useId(), installId = useId(), dataId = useId(), dataHintId = useId(), identityId = useId(), answerId = useId()
+  const hostId = useId(), serveId = useId(), userId = useId(), portId = useId(), installId = useId(), dataId = useId(), dataHintId = useId(), identityId = useId(), answerId = useId()
   // The add this dialog started, as main reports it; it leaves `adding` for `hosts` once the host is saved.
   const adding = attempt !== null && state?.adding?.id === attempt ? state.adding : undefined
   const addedHost = attempt !== null ? state?.hosts.find(item => item.id === attempt) : undefined
@@ -317,10 +317,13 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
     </div>
   </div> : null
   const agentChosen = !editing && how === 'agent' && agentAvailable
+  // Adding it yourself turns on the host's tailnet connections, so the press is the owner's consent to that Serve setting, and
+  // the sentence that says so describes the press, and the SSH host field whose Enter makes it (ADR-0053).
+  const serveShown = !editing && !checklist && !agentChosen
   return <HostsModal title={editing ? `Edit connection to ${editing.name}` : checklist ? hostSetupTitle(submitted.name, outcome) : 'Add host'} onClose={close} busy={connecting || starting} className="hosts-dialog--connection"
     footer={checklist && outcome === 'connected' ? <Button ref={doneButton} onClick={onClose}>Done</Button> : <>
       <Button ref={cancelButton} variant="secondary" onClick={close}>Cancel</Button>
-      <Button ref={addButton} disabled={connecting || starting || prompt !== undefined} onClick={() => { if (checklist) void submit(); else go() }}>
+      <Button ref={addButton} disabled={connecting || starting || prompt !== undefined} {...(serveShown ? { 'aria-describedby': serveId } : {})} onClick={() => { if (checklist) void submit(); else go() }}>
         {editing ? (sending ? 'Saving…' : 'Save connection') : connecting ? 'Connecting…' : checklist ? 'Try again' : agentChosen ? (starting ? 'Starting…' : 'Start setup') : 'Add host'}</Button>
     </>}>
     {checklist ? <HostSetupChecklist name={submitted.name} summary={hostSetupSummary(submitted.user, submitted.port)} host={adding ?? addedHost} outcome={outcome}
@@ -332,7 +335,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
       onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } const target = event.target as HTMLElement; if (event.key === 'Enter' && target instanceof HTMLInputElement && target.type !== 'radio') { event.preventDefault(); go() } }}>
       {typing ? <div className="tt-field">
         <label className="tt-field__label" htmlFor={hostId}>SSH host</label>
-        <input id={hostId} className="tt-input tt-focusable" value={host} disabled={fieldsDisabled} aria-describedby={hintId} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={MAX_TARGET_LENGTH}
+        <input id={hostId} className="tt-input tt-focusable" value={host} disabled={fieldsDisabled} aria-describedby={serveShown ? `${hintId} ${serveId}` : hintId} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={MAX_TARGET_LENGTH}
           autoFocus={entry === 'typed'} placeholder="forge or user@server" onChange={event => setHost(event.target.value)} />
         <p className="tt-field__description" id={hintId}>{editing ? 'An alias from your SSH configuration, or a host name.'
           : <>A host name, an alias from your SSH configuration or user@server. <button type="button" className="hosts-devices__back tt-focusable" disabled={fieldsDisabled} onClick={chooseFromDevices}>Choose from your devices</button></>}</p>
@@ -340,8 +343,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
         onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} />}
       {!editing ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
         onModel={setModelId} disabled={fieldsDisabled} /> : null}
-      {/* Adding it yourself turns on the host's tailnet connections, so the press is the owner's consent to that Serve setting (ADR-0053). */}
-      {!editing && !agentChosen ? <p className="tt-field__description">Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</p> : null}
+      {serveShown ? <p className="tt-field__description" id={serveId}>Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</p> : null}
       {typing ? <div className="hosts-dialog__pair">
         <div className="tt-field"><label className="tt-field__label" htmlFor={userId}>Username <span className="hosts-dialog__optional">(optional)</span></label>
           <input id={userId} className="tt-input tt-focusable" value={user} disabled={fieldsDisabled} autoCapitalize="none" spellCheck={false} maxLength={64} placeholder="From your SSH configuration" onChange={event => setUser(event.target.value)} /></div>

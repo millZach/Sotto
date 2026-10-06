@@ -24,14 +24,25 @@ describe('TailnetStore (ADR-0053)', () => {
     expect(await file()).toEqual([])
   })
 
-  it('reads an address it cannot accept as none, and keeps a later Sotto’s fields as they are', async () => {
-    await writeFile(join(root, TAILNET_STORE_FILE), JSON.stringify([{ id: ID, prefer: 'tailnet', address: 'http://forge.example.com', bootStart: { enabled: true } }]))
+  it('reads an address or start at boot state it cannot accept as none, and keeps a later Sotto’s fields as they are', async () => {
+    await writeFile(join(root, TAILNET_STORE_FILE), JSON.stringify([{ id: ID, prefer: 'tailnet', address: 'http://forge.example.com', bootStart: { enabled: true }, later: { kept: true } }]))
     const store = new TailnetStore(root)
     await store.load()
     expect(store.get(ID)).toMatchObject({ prefer: 'tailnet' })
     expect(store.get(ID).address).toBeUndefined()
+    expect(store.get(ID).bootStart).toBeUndefined()
     await store.set(ID, { prefer: 'ssh' })
-    expect(await file()).toEqual([{ id: ID, prefer: 'ssh', bootStart: { enabled: true } }])
+    expect(await file()).toEqual([{ id: ID, prefer: 'ssh', later: { kept: true } }])
+  })
+
+  it('keeps the start at boot state a launch reported (ADR-0054)', async () => {
+    const bootStart = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false }
+    const store = new TailnetStore(root)
+    await store.load()
+    await store.set(ID, { bootStart })
+    const again = new TailnetStore(root)
+    await again.load()
+    expect(again.get(ID)).toEqual({ id: ID, prefer: 'ssh', bootStart })
   })
 })
 

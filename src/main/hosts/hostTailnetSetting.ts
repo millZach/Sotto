@@ -1,12 +1,14 @@
 import { z } from 'zod'
 import { phonesStateSchema, type PhonesState } from '../../shared/phones'
+import { isTailnetAddress } from '../../shared/hostConnection'
 import type { PressConnection } from './adminConnection'
-import { isTailnetAddress } from './hostConnectionPlan'
+import { HOST_ADMIN_COMMAND_TIMEOUT_MS, hostAdminRequest } from './hostAdminRequest'
 
 /**
  * A host's own `tailnetConnections` setting (ADR-0053, "The host side"), read or set through its administrative route on
  * the port an SSH connection or an admin connection forwards, with the token that connection's launch read. Setting it
- * answers once the host's Tailscale Serve has followed, so the answer says how Serve came out.
+ * answers once the host's Tailscale Serve has followed, so the answer says how Serve came out. A refusal is
+ * `HostAdminRefused`.
  */
 export interface HostTailnetSetting {
   readonly enabled: boolean
@@ -17,25 +19,10 @@ export interface HostTailnetSetting {
 
 const answerSchema = z.object({ v: z.literal(1), hostId: z.uuid(), enabled: z.boolean(), state: phonesStateSchema, error: z.string().max(1000).optional() })
 
-/** Serve can take Tailscale's own 20 seconds a call, and setting the switch waits for it. */
-const TIMEOUT_MS = 45_000
-
-/** The host answered, but not with its tailnet setting: it has no such route, or answered something else. */
-export class TailnetSettingRefused extends Error {}
-
-export async function hostTailnetSetting(connection: PressConnection, hostId: string, enabled: boolean | undefined, fetcher: typeof fetch = fetch, again = true): Promise<HostTailnetSetting> {
-  const token = await connection.hostAdminToken()
-  const response = await fetcher(`${connection.url}/v1/admin/tailnet`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(enabled === undefined ? {} : { enabled }), redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS),
-  })
-  // The token is asked of the connection again once, as the Phones dialog does, in case the host started again under it.
-  if (response.status === 401 && again) return hostTailnetSetting(connection, hostId, enabled, fetcher, false)
-  if (!response.ok) throw new TailnetSettingRefused('The host refused the request.')
-  const parsed = answerSchema.safeParse(await response.json().catch(() => null))
-  if (!parsed.success) throw new TailnetSettingRefused('The host answered with something else.')
-  if (parsed.data.hostId !== hostId) throw new Error('The host identity changed.')
-  return { enabled: parsed.data.enabled, state: parsed.data.state, ...(parsed.data.error ? { error: parsed.data.error } : {}) }
+/** Sets the host's tailnet connections on or off, or, with `enabled` left out, reads the setting as it stands. */
+export async function hostTailnetSetting(connection: PressConnection, hostId: string, enabled?: boolean): Promise<HostTailnetSetting> {
+  const answer = await hostAdminRequest(connection, 'tailnet', enabled === undefined ? {} : { enabled }, answerSchema, hostId, HOST_ADMIN_COMMAND_TIMEOUT_MS)
+  return { enabled: answer.enabled, state: answer.state, ...(answer.error ? { error: answer.error } : {}) }
 }
 
 /** The tailnet address a setting's answer carries: there only while Serve carries the host's tailnet listener. */

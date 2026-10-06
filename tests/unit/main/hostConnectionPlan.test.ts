@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BOOT_TAILNET_ONLY_MS, classifyTailnetFailure, connectOrder, isTailnetAddress, tryTailnetAfterSsh, type ConnectFacts } from '../../../src/main/hosts/hostConnectionPlan'
+import { afterTailnetFailure, BOOT_TAILNET_ONLY_MS, classifyTailnetFailure, connectOrder, tryTailnetAfterSsh, type ConnectFacts } from '../../../src/main/hosts/hostConnectionPlan'
+import { isTailnetAddress } from '../../../src/shared/hostConnection'
 import { HostConnectionError, WrongHostError } from '../../../src/main/agents/socketHostService'
 
 // The order of a connect (ADR-0053), row by row.
@@ -18,6 +19,9 @@ describe('connectOrder', () => {
     expect(connectOrder(facts({ paired: false }))).toEqual(['ssh'])
     expect(connectOrder(facts({ adding: true }))).toEqual(['ssh'])
   })
+  it('goes over SSH for the first connect after Edit connection is saved, which tries the saved route', () => {
+    expect(connectOrder(facts({ edited: true }))).toEqual(['ssh'])
+  })
   it('tries only the tailnet for the first minute of retries of a host that starts at boot and was on its tailnet', () => {
     expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet', retryingForMs: 0 }))).toEqual(['tailnet'])
     expect(connectOrder(facts({ startedBy: 'boot', lastVia: 'tailnet', retryingForMs: BOOT_TAILNET_ONLY_MS - 1 }))).toEqual(['tailnet'])
@@ -30,12 +34,31 @@ describe('connectOrder', () => {
   })
 })
 
+describe('afterTailnetFailure', () => {
+  it('sends a tailnet that did not answer, or answered as another host, to SSH with the note, which waits for the 5-minute check', () => {
+    expect(afterTailnetFailure('tailnet-unreachable', ['tailnet', 'ssh'])).toEqual({ next: 'ssh', note: 'unreachable' })
+    expect(afterTailnetFailure('tailnet-wrong-host', ['tailnet', 'ssh'])).toEqual({ next: 'ssh', note: 'unreachable' })
+  })
+  it('sends what SSH mends to SSH with no note, so the tailnet is tried again as soon as SSH is up', () => {
+    for (const failure of ['tailnet-not-desktop', 'pairing-required', 'version-mismatch'] as const) expect(afterTailnetFailure(failure, ['tailnet', 'ssh'])).toEqual({ next: 'ssh' })
+  })
+  it('retries the tailnet alone in the first minute of a boot host when it did not answer, and sends anything SSH mends to SSH', () => {
+    expect(afterTailnetFailure('tailnet-unreachable', ['tailnet'])).toEqual({ next: 'retry-tailnet' })
+    expect(afterTailnetFailure('pairing-required', ['tailnet'])).toEqual({ next: 'ssh' })
+    expect(afterTailnetFailure('tailnet-wrong-host', ['tailnet'])).toEqual({ next: 'ssh', note: 'unreachable' })
+  })
+})
+
 describe('tryTailnetAfterSsh', () => {
   it('moves across only when the owner prefers the tailnet, an address is known and this computer is paired', () => {
     expect(tryTailnetAfterSsh(facts())).toBe(true)
     expect(tryTailnetAfterSsh(facts({ prefer: 'ssh' }))).toBe(false)
     expect(tryTailnetAfterSsh(facts({ address: undefined }))).toBe(false)
     expect(tryTailnetAfterSsh(facts({ paired: false }))).toBe(false)
+  })
+  it('waits for the 5-minute check only for the address that just failed, and tries a new one at once', () => {
+    expect(tryTailnetAfterSsh({ ...facts(), failed: ADDRESS })).toBe(false)
+    expect(tryTailnetAfterSsh({ ...facts(), failed: 'https://forge-old.tail5728ca.ts.net:8443' })).toBe(true)
   })
 })
 

@@ -276,12 +276,12 @@ export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), c
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
 /**
- * The Sotto version and features a host's health advertises, or null when the host does not speak the
+ * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the
  * frozen v1: another protocol version, or a host from before the freeze that advertises neither.
  */
-export function hostHealthFeatures(value: unknown): { sottoVersion: string; features: string[] } | null {
+export function hostHealthFeatures(value: unknown): { hostId: string; sottoVersion: string; features: string[] } | null {
   const health = hostHealthSchema.safeParse(value)
-  return health.success ? { sottoVersion: health.data.sottoVersion, features: health.data.features } : null
+  return health.success ? { hostId: health.data.hostId, sottoVersion: health.data.sottoVersion, features: health.data.features } : null
 }
 export const hostProtocolErrorSchema = z.object({ code: z.enum(['unauthenticated', 'invalid_request', 'stale_request', 'forbidden', 'unavailable', 'busy', 'too_large']), message: z.string().min(1).max(1000) })
 export const hostResponseSchema = z.discriminatedUnion('ok', [
