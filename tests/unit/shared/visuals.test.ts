@@ -90,7 +90,7 @@ describe('a visual on a message', () => {
     const messages: AgentMessage[] = [
       { id: 'u1', role: 'user', text: 'Show me', createdAt: at },
       { id: 'a1', role: 'assistant', text: 'Here it is.', createdAt: at },
-      { id: visualMessageId('v1'), role: 'assistant', text: visualFallbackText(valid), createdAt: '2026-10-06T10:00:05.000Z' },
+      { id: visualMessageId('v1'), role: 'assistant', text: visualFallbackText(valid), createdAt: '2026-10-06T10:00:05.000Z', visual: { id: 'v1', title: valid.title, kind: 'diagram', source: valid.source } },
     ]
     const summary = summarizeThread({ messages })
     expect(summary.lastAssistant?.text).toBe('Here it is.')

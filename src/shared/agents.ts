@@ -791,7 +791,9 @@ export function isVisualMessage(message: Pick<AgentMessage, 'id'>): boolean {
  */
 export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
   const { activities = [] } = thread
-  const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
+  // A visual's message carries its visual; asking that first keeps a summary from reading every message's ID.
+  const drawnVisual = (message: AgentMessage): boolean => message.visual !== undefined && isVisualMessage(message)
+  const messages = thread.messages.some(drawnVisual) ? thread.messages.filter(message => !drawnVisual(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')
