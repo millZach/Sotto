@@ -692,8 +692,8 @@ export class GrokAcpHost implements AgentHost {
     const current = () => generation === this.generation && this.processes.get(id) === entry && this.state.connected
     const history = this.histories.get(id) ?? freshHistory()
     this.histories.set(id, history)
-    // `changed` is an origin learning its history entry, which is saved; `delivered` is anything new at all.
-    let more = true; let changed = false; let pages = 0; let restarted = false; let delivered = false
+    // `changed` is an origin learning its history entry, which is saved; `sawNew` is any history entry not seen before.
+    let more = true; let changed = false; let pages = 0; let restarted = false; let sawNew = false
     while (more && pages < maxPages) {
       pages++
       await rpc.request('_x.ai/session/updates', { sessionId: alias.grokSessionId, cwd: alias.cwd, offset: history.offset, limit: HISTORY_PAGE_SIZE }, value => {
@@ -711,7 +711,7 @@ export class GrokAcpHost implements AgentHost {
           const parsed = updateSchema.safeParse(entry.params); if (!parsed.success || parsed.data.sessionId !== alias.grokSessionId) continue
           const key = eventKey(parsed.data, `${entry.timestamp}-${ordinal}`)
           if (history.events.has(key)) continue
-          history.events.add(key); delivered = true
+          history.events.add(key); sawNew = true
           if (this.loaded.has(id)) this.reaper.touch(id)
           const createdAt = new Date(parsed.data._meta?.agentTimestampMs ?? (typeof entry.timestamp === 'number' ? entry.timestamp * 1000 : entry.timestamp)).toISOString()
           const update = parsed.data.update; const content = object(update.content)
@@ -742,8 +742,8 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (!current()) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    const shown = { status: thread.status, lastTurn: thread.lastTurn }
-    if (delivered || restarted) if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
+    const before = { status: thread.status, lastTurn: thread.lastTurn }
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
     let status = history.status; let lastTurn = history.lastTurn
     // A turn whose process ended before it finished never records its end in Grok's history, which would
     // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how.
@@ -762,7 +762,7 @@ export class GrokAcpHost implements AgentHost {
     thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
     // A read that found nothing new and moved no status publishes nothing (#765): every send reads its thread,
     // and a publish is a copy of every thread for each subscriber.
-    if (delivered || restarted || thread.status !== shown.status || !isDeepStrictEqual(thread.lastTurn, shown.lastTurn)) this.emit()
+    if (sawNew || restarted || thread.status !== before.status || !isDeepStrictEqual(thread.lastTurn, before.lastTurn)) this.emit()
   }
   /**
    * Grok's append path. The durable rail stays as Sotto read it; the live tail is merged into a copy of

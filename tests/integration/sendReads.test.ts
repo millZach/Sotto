@@ -128,3 +128,18 @@ describe('a send whose thread moved after the read before it', () => {
   }, 60_000)
 })
 
+describe('a Grok history read', () => {
+  it('publishes nothing when it found nothing new and moved no status, and publishes what it found', async () => {
+    const { f, id } = await answeredThread('grok')
+    // Grok publishes a command's state at once, not on a timer, so a count straight after the read is the whole count.
+    let published = 0
+    const unsubscribe = f.host.subscribe(() => { published++ })
+    cleanup.push(async () => { unsubscribe() })
+    await f.host.refreshThread!(id)
+    await f.host.refreshThread!(id, { beforeSend: true })
+    expect(published).toBe(0)
+    await f.driver.typeInProvider(id, 'Typed in the Grok CLI')
+    await f.host.refreshThread!(id)
+    expect(published).toBeGreaterThan(0)
+  }, 60_000)
+})
