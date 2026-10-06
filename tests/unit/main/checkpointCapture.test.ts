@@ -176,6 +176,58 @@ describe('checkpoint capture', () => {
     }
   })
 
+  it('holds a verdict only while the paths that decided it are as they were', async () => {
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1)
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'assets/big.bin': big, '.gitignore': 'ignored/\n' } })
+    // A tracked file removed below the top level: the listing at the top, HEAD and the index stay as they were.
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    expect(await f.capture.heldVerdict(f.repo)).toMatch('size limit')
+    await rm(join(f.repo, 'assets', 'big.bin'))
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toBeDefined()
+
+    // An untracked file cut down in place.
+    await writeFile(join(f.repo, 'assets', 'loose.bin'), big)
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    await writeFile(join(f.repo, 'assets', 'loose.bin'), 'small now')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toBeDefined()
+
+    // `.gitignore` saved in place so that Git no longer lists the large file.
+    await writeFile(join(f.repo, 'assets', 'loose.bin'), big)
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    await writeFile(join(f.repo, '.gitignore'), 'ignored/\nassets/loose.bin\n')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toBeDefined()
+
+    // A directory junction below the top level, then removed.
+    const outside = join(f.root, 'outside'); await mkdir(outside); await writeFile(join(outside, 'secret.txt'), 'outside\n')
+    await symlink(outside, join(f.repo, 'assets', 'linked'), 'junction')
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('Checkpoint paths cannot follow symbolic links or directory junctions.')
+    expect(await f.capture.heldVerdict(f.repo)).toMatch('symbolic links')
+    await rm(join(f.repo, 'assets', 'linked'), { force: true })
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toBeDefined()
+  })
+
+  it('holds a file-count verdict while no directory holding a listed file gains or loses one', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'deep/inner.txt': 'inner\n' } })
+    const many = Array.from({ length: 10_000 }, (_, index) => `deep/listed-${index}.txt`).join('\0')
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' },
+        (error, output) => error ? reject(error) : done(args[0] === 'ls-files' && args[1] === '-c' ? `${output}${many}\0` : output))) })
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('This working copy exceeds the 10,000-file checkpoint limit.')
+    expect(await capture.heldVerdict(f.repo)).toMatch('10,000-file')
+    await rm(join(f.repo, 'deep', 'inner.txt'))
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
+  it('holds no verdict over a path changed too recently to trust', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) }, now: Date.now })
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
   it('forgets every folder\'s verdict and remembered files', async () => {
     const f = await fixture({ files: { 'a.txt': 'small\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) } })
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')

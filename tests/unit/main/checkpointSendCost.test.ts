@@ -52,6 +52,8 @@ async function fixture(files: Record<string, string | Buffer> = { 'app.txt': 'be
 describe('what a send pays for its checkpoint', () => {
   it('skips a working copy over the limit on every send after the first, without Git or reads', async () => {
     const f = await fixture({ 'app.txt': 'before\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) })
+    // The large file is older than the snapshots, so the verdict is not held back as too recent to trust.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000)
     await f.service.initialize()
     const commands = vi.spyOn(f.service as unknown as { git(cwd: string, args: string[]): Promise<string> }, 'git')
     const identity = vi.spyOn(worktrees, 'checkoutIdentity')
