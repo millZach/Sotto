@@ -551,25 +551,25 @@ const bootInstall = async () => {
   } catch (error) {
     // The unit would not run the host: start at boot comes off again, and the host starts the way a launch starts it.
     const cause = error && typeof error.message === 'string' && error.message.length <= 64 ? error.message : 'host-start-failed';
-    await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
-    await removeBootFiles().catch(() => undefined);
-    await systemctl(['daemon-reload'], 30000);
-    await systemctl(['reset-failed', UNIT]);
+    await uninstallUnit(true).catch(() => undefined);
     try { await start(); return { type: 'error', reason: 'boot-start-failed', restarted: true, cause }; }
     catch { return { type: 'error', reason: 'boot-start-failed', restarted: false, cause }; }
   }
 };
-// boot-remove (ADR-0054): disables the unit, which stops a host it runs, removes the unit and its script, and clears a
-// failed unit's leftover entry once its files are gone. Only when the desktop says the host is switched on does it start
-// the host again, the way a launch does, so it keeps running; a host that is switched off stays stopped.
+// Takes this installation's unit away: disabled, which stops a host it runs and keeps Restart= from bringing it back, both
+// files removed, the user manager reloaded, and the unit's failed state cleared so a failed unit leaves no entry behind.
+// Without a user manager to ask, only the files go.
+const uninstallUnit = async manager => {
+  if (manager) await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
+  try { await removeBootFiles(); } catch { throw new Error('boot-remove-failed'); }
+  if (manager) { await systemctl(['daemon-reload'], 30000); await systemctl(['reset-failed', UNIT]); }
+};
+// boot-remove (ADR-0054): takes the unit away. Only when the desktop says the host is switched on does it start the host
+// again, the way a launch does, so it keeps running; a host that is switched off stays stopped.
 const bootRemove = async () => {
   const before = await discover().catch(() => null);
   const properties = await unitProperties();
-  if (await unitOurs()) {
-    if (properties) await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
-    try { await removeBootFiles(); } catch { throw new Error('boot-remove-failed'); }
-    if (properties) { await systemctl(['daemon-reload'], 30000); await systemctl(['reset-failed', UNIT]); }
-  }
+  if (await unitOurs()) await uninstallUnit(!!properties);
   const after = cfg.restart === true ? await start() : await discover().catch(() => null);
   return { type: 'boot-removed', stopped: !!before && (!after || after.pid !== before.pid), ...(after ? { pid: after.pid } : {}),
     bootStart: await bootStatus(properties ? undefined : null) };

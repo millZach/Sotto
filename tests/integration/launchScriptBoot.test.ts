@@ -296,6 +296,16 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       expect(await readFile(script, 'utf8')).toContain(`node='${process.execPath.split("'").join("'\\''")}'`)
     })
 
+    it('reports a restart the user manager refuses at once, as a launch does', async () => {
+      const configuration = await installed()
+      await withVersions(configuration)
+      await systemd!.set({ startExit: 1 })
+      const outcome = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '1.1.0' })
+      expect(outcome.result).toMatchObject({ type: 'error', reason: 'update-start-failed', restarted: false, cause: 'boot-start-refused' })
+      expect(outcome.ms).toBeLessThan(configuration.readyTimeoutMs)
+      expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
+    })
+
     it('reports a new version the unit cannot keep running at once, and rolls back through the unit the same way', async () => {
       const configuration = await installed()
       await withVersions(configuration)
