@@ -61,7 +61,7 @@ const MESSAGES: Readonly<Record<SshFailureCode, string>> = {
   'host-busy': 'A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect.',
   'host-start-failed': 'The host could not start. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account.',
   'host-timeout': 'The host was not ready in time. Check that it starts on the SSH host, then reconnect.',
-  'host-not-running': 'The host is not running on the SSH host, so nothing was changed there.',
+  'host-not-running': 'The host is not running on the SSH host, so nothing was changed there. Connect to it in Settings > Hosts, which starts it, then try again.',
   'forward-failed': 'The SSH port forward could not open. Reconnect, and if it fails again, check that the SSH server allows port forwarding.',
   'forward-timeout': 'The SSH forward was not ready in time. Check SSH access and reconnect.',
   'pairing-failed': 'The pairing code could not be read from the host. Check that the host is running and try again.',
