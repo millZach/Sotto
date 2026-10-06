@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, vi } from 'vitest'
 import { it } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { HostCredentialEncryption } from '../../src/host/credentials'
@@ -29,6 +29,7 @@ import { standInTailscale } from '../fixtures/standInTailscale'
 import { HostPhones } from '../../src/main/hosts/hostPhones'
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 let hostTailscale: ReturnType<typeof standInTailscale>
+let hostTailscaleRunning = false
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, credentials: AgentCredentials, router: DesktopHostRouter, manager: DesktopHosts
 let reportedHostId: string
 const launchers: FixtureSsh[] = [], failures: Error[] = []
@@ -38,6 +39,18 @@ const scheduled: number[] = []
 let owned = true, stopResult: boolean | Error = true
 /** Where the fixture tunnel leads; by default the real host's listener. */
 let tunnelUrl: (() => string) | undefined
+/**
+ * Where the host's tailnet address is opened, for a test whose host runs Tailscale: a stand-in for Tailscale Serve with
+ * nothing behind it, which answers 502 at once, so the host stays on its SSH connection, as these tests expect.
+ */
+let noTailnet: Server
+let tailnetAt: (address: string) => string = () => serveWithNothingBehind()
+const serveWithNothingBehind = (): string => { const address = noTailnet.address(); return typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : 'http://127.0.0.1:2' }
+beforeAll(async () => {
+  noTailnet = createServer((_request, response) => { response.statusCode = 502; response.end() })
+  await new Promise<void>(resolve => noTailnet.listen(0, '127.0.0.1', resolve))
+})
+afterAll(async () => { await new Promise<void>(resolve => noTailnet.close(() => resolve())) })
 /** Runs before a stop answers; the real host closes its listener, dropping every peer, before it replies. */
 let beforeStopReply: () => Promise<void> = async () => undefined
 /** What the fixture host answers to each operation of an update; by default it has none. */
@@ -121,18 +134,22 @@ class FixtureSsh extends SshHostLauncher {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-desktop-hosts-'))
   hostTailscale = standInTailscale()
-  host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner, tailscale: hostTailscale.tailscale })
+  // Tailscale is not running on the host unless a test says so, so a host Add host saves stays on SSH (ADR-0053).
+  hostTailscaleRunning = false
+  const standIn = hostTailscale.tailscale
+  host = await startHeadlessHost({ dataDirectory: join(root, 'remote'), port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner,
+    tailscale: { ...standIn, status: async () => hostTailscaleRunning ? standIn.status() : { state: 'missing' } } })
   reportedHostId = host.descriptor!.hostId
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
   router = new DesktopHostRouter(emptyDesktopState)
-  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined
+  launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined; tailnetAt = () => serveWithNothingBehind()
   operations.length = 0; hostRunning = true; bootLeftOnStop = false; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0
   manager = newManager()
   await manager.start()
 })
 function newManager(): DesktopHosts {
   return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
-    openExternal: async url => { opened.push(url) } })
+    openExternal: async url => { opened.push(url) }, resolveTailnet: address => tailnetAt(address) })
 }
 /** Quits and starts Sotto again over the same saved hosts, the way a relaunch does; `saved` replaces the file first when given. */
 async function relaunch(saved?: object[]): Promise<void> {
@@ -142,6 +159,8 @@ async function relaunch(saved?: object[]): Promise<void> {
   await manager.start()
 }
 const savedFile = async (): Promise<unknown[]> => JSON.parse(await readFile(join(root, 'desktop', 'remote-hosts.json'), 'utf8').catch(() => '[]')) as unknown[]
+/** The socket a saved host is connected on now. */
+const liveSocket = (id: string): SocketHostService => (manager as unknown as { live: Map<string, { socket?: SocketHostService }> }).live.get(id)!.socket!
 afterEach(async () => { await manager?.close(); router?.dispose(); await host?.close(); if (root && dirname(root) === tmpdir() && root.includes('sotto-desktop-hosts-')) await rm(root, { recursive: true, force: true }) })
 type Connection = Omit<RemoteHost, 'enabled'>
 const connection = (target = 'forge'): Connection => ({ id: randomUUID(), name: 'Forge fixture', target, identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data/sotto' })
@@ -168,6 +187,7 @@ async function remoteThread(): Promise<string> {
 const row = (id: string) => router.shell().host.threads.find(thread => thread.id === id)
 describe('phones on a remote host (ADR-0050)', () => {
   it('reads a connected host’s phone access through its tunnel, and turns it on there from the Phones dialog', async () => {
+    hostTailscaleRunning = true
     const phones = new HostPhones({ hosts: { links: () => manager.phonesLinks(), subscribe: listener => manager.subscribe(() => listener()) }, openExternal: async () => undefined })
     manager.usePhones(phones)
     try {
@@ -515,7 +535,9 @@ describe('desktop remote host management over a real socket', () => {
     try {
       const remote = await add()
       // The host sent none of the log in the hello, and a routed command reads none after it.
-      const hello = (index: number) => connect.mock.results[index]!.value as ReturnType<SocketHostService['connect']>
+      // Each tailnet try answers nothing here, so only the hellos that arrived are the SSH connection's.
+      const hello = async (index: number) => (await Promise.allSettled(connect.mock.results.map(result => result.value as ReturnType<SocketHostService['connect']>)))
+        .flatMap(result => result.status === 'fulfilled' ? [result.value] : [])[index]
       expect(await hello(0)).toMatchObject({ events: [], latestSeq: Number.MAX_SAFE_INTEGER, hasMore: false })
       await router.command({ type: 'configure', patch: { enabled: false } }, client)
       await manager.command({ type: 'disconnect', id: remote.id })
@@ -1190,7 +1212,7 @@ describe('a drop keeps the host’s threads on the page (ADR-0053)', () => {
     const remote = await add()
     const thread = await remoteThread()
     retryDelay = () => 60_000
-    await sockets.at(-1)!.close()
+    await liveSocket(remote.id).close()
     expect(manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
     expect(row(thread)).toMatchObject({ clientReconnecting: true })
     expect(router.shell().activeThreadId).toBe(thread)
