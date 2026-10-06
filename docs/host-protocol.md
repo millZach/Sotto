@@ -106,6 +106,8 @@ Shell pushes are also paced to what the client reads. While output to a client i
 | `detail-delta` | `threadId`, `delta` | What changed in an observed thread, to a client that accepted `detail-delta`. |
 | `error` | `threadId?`, `error` | In place of a push that would not fit in one frame (`too_large`). `threadId` names the thread whose detail or delta it replaced. |
 
+A message whose ID starts `visual:` is a visual an agent drew in its thread (ADR-0055). Its `text` is the visual's title, intro and numbered steps, then a line saying the visual is in Sotto on the computer. The desktop keeps the drawing itself in a `visual` field that no socket client is sent, in a `detail`, a `detail-delta` or a read, so a client shows the text as it would any reply.
+
 Every shell returned by hello, a read or a command, and every shell push, may include `clientCapabilities: { mayAnswer }`. This is the receiving client's current host policy, read when that shell is sent. Changing Can answer publishes a new shell even if no thread changed. Older hosts omit the field; those clients retain the authority from hello until reconnecting. The field reports authority and never grants it.
 
 A thread in the shell may carry `finishedUnread: true`: it finished while no client observed it, and no client has observed it since (ADR-0046). The host sets and clears it and saves it across a restart. Observing the thread, with `observe` or the `observe-threads` command, is what clears it, for every client, and the next shell says so. Older hosts never send it, and a client that does not know it ignores it.
