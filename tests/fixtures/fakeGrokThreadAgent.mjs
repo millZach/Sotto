@@ -114,8 +114,8 @@ function update(sessionId, update, extension = false, notify = true, meta = {}) 
  hold(sessionId).updates.push(entry); save()
  if (notify) send(entry)
 }
-// With `thought`, the reply opens on thought chunks, as Grok 1.0.46 sends them: the thought and the reply that
-// follows share one prompt and one stream start in `_meta`, which is how its history keeps them too.
+// With `thought`, the reply opens on thought chunks the way Grok's own history keeps them: the thought and the reply
+// that follows share one prompt and one stream start in `_meta`.
 function complete(sessionId, text, reason = 'end_turn', thought) {
  const stream = typeof thought === 'string' ? { promptId: `prompt-${sessionId}`, streamStartMs: Date.now() } : {}
  if (typeof thought === 'string') {
