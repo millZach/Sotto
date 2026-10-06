@@ -1221,11 +1221,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   private seedHistory(id: string, alias: Alias, restored: RestoredThreadHistory | undefined): void {
     const cursor = alias.transcriptCursor
-    if (!cursor || cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; return }
     const matching = restored?.historyEpoch === alias.historyEpoch ? restored : undefined
     const stored = matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
+    // Without a usable cursor the transcript is read from its first byte. The log still learns which messages the
+    // store holds, so that read recognises them instead of recording each one a second time: a restart before the
+    // first read of a new turn's transcript had saved a cursor showed its prompt twice.
+    if (!cursor || cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; this.messageLog.seed(id, stored); return }
     const activities = matching?.activities ?? this.history?.activities?.(id, alias.historyEpoch)
-    if (!stored.length || activities === undefined) { delete alias.transcriptCursor; return }
+    if (!stored.length || activities === undefined) { delete alias.transcriptCursor; this.messageLog.seed(id, stored); return }
     this.messageLog.seed(id, stored)
     this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
     // A later block of an assistant message already projected must add to its text, not replace it.
