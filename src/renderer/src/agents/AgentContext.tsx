@@ -84,8 +84,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // render it causes must not sit in front of a keystroke. `startTransition`
   // gives the commit low priority so a sync update — the composer's draft store — interrupts it, while
   // React still guarantees the transition itself lands, just later. `urgent` opts a caller out of that:
-  // the initial connect (nothing is on screen yet to stay interruptible for) and a command's own reply
-  // (the user is watching that one land) both ask for it.
+  // the initial connect (nothing is on screen yet to stay interruptible for), a command's own reply
+  // (the user is watching that one land) and the first words of a message in the thread on screen all ask for it.
   const receiveState = useCallback((next: AgentState, options: { urgent?: boolean } = {}): void => {
     if (next.stale !== true) {
       const owners = new Set(next.host.threads.map(thread => thread.id))
@@ -134,6 +134,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       if (held !== undefined && held.revision > update.revision) return
       next = update
     }
+    // The first words of a message, or a new activity record, in the thread the user is looking at commit
+    // urgently: that is the moment they are waiting for. Every later chunk is a transition, so a long
+    // transcript re-rendering for each one never sits in front of a keystroke.
+    const opening = held !== undefined && isAgentThreadDetailDelta(update) && next.threadId === detail.shell?.activeThreadId
+      && (next.messages.length > held.messages.length || (next.activities?.length ?? 0) > (held.activities?.length ?? 0))
     detail.held.set(next.threadId, next)
     // A history that arrives unasked, for work main wants this window to see land, starts as recent as its
     // arrival. After that only a look moves it: a streamed chunk is not the user coming back to a thread.
@@ -144,8 +149,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       for (const id of evictable.slice(0, detail.held.size - DETAIL_CACHE_LIMIT)) { detail.held.delete(id); detail.used.delete(id) }
     }
     // A shell being held for its frame commits now, inside the detail's own task: one chunk, one commit.
-    if (detail.pendingShell !== null) commitPendingShell()
-    else if (detail.shell !== null) receiveState(detail.shell)
+    if (detail.pendingShell !== null) commitPendingShell({ urgent: opening })
+    else if (detail.shell !== null) receiveState(detail.shell, { urgent: opening })
   }
   /**
    * A thread's history the window does not hold, asked for once until it arrives. A resync asks for a
