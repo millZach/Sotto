@@ -30,6 +30,8 @@ const RETRY_JITTER_MS = 250
 const OTHER_RETRY_DELAY_MS = 300
 /** A retry starts only when at least this much of the deadline is left after its wait. */
 const MIN_ATTEMPT_BUDGET_MS = 1_500
+/** After a rate limit the retry also uploads and transcribes a whole part, so it needs more. */
+const RATE_LIMIT_ATTEMPT_BUDGET_MS = 3_000
 /** Rate-limit answers are short JSON; anything longer is not read for its reason. */
 const MAX_RATE_LIMIT_BODY = 16_384
 
@@ -227,10 +229,13 @@ export class OpenRouterTranscriptionService {
         ...(phrases.length === 0 ? {} : { provider: { options: { azure: { phraseList: { phrases } } } } }),
       })
 
+      // Running out of time while waiting out a rate limit is still the rate limit,
+      // not a lost connection, so it is reported as one.
+      const timedOut = (): TranscriptionResult => ({ ok: false, reason: trace.rateLimited > 0 ? 'rate-limited' : 'timeout' })
       let otherRetries = 0
       for (;;) {
         if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
-        if (signal.aborted) return { ok: false, reason: 'timeout' }
+        if (signal.aborted) return timedOut()
         let reason: TranscriptionFailureReason
         let wait: number | null = null
         trace.attempts += 1
@@ -243,7 +248,7 @@ export class OpenRouterTranscriptionService {
             signal,
           })
           if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
-          if (signal.aborted) return { ok: false, reason: 'timeout' }
+          if (signal.aborted) return timedOut()
           trace.status = response.status
           if (response.status === 429) {
             reason = 'rate-limited'
@@ -278,17 +283,20 @@ export class OpenRouterTranscriptionService {
         } catch (error: unknown) {
           if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
           reason = networkReason(error, signal)
+          if (reason === 'timeout') return timedOut()
           if (reason === 'network' && otherRetries === 0) wait = OTHER_RETRY_DELAY_MS
         }
         // Retry only while the original deadline leaves a useful request budget after the wait.
-        if (wait === null || deadline - Date.now() - wait < MIN_ATTEMPT_BUDGET_MS) {
+        const budget = reason === 'rate-limited' ? RATE_LIMIT_ATTEMPT_BUDGET_MS : MIN_ATTEMPT_BUDGET_MS
+        if (wait === null || deadline - Date.now() - wait < budget) {
           return { ok: false, reason }
         }
         if (reason !== 'rate-limited') otherRetries += 1
         try {
           await this.sleep(wait, signal)
         } catch (error: unknown) {
-          return { ok: false, reason: controller.signal.aborted ? 'cancelled' : networkReason(error, signal) }
+          if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
+          return networkReason(error, signal) === 'timeout' ? timedOut() : { ok: false, reason: 'network' }
         }
       }
     } finally {

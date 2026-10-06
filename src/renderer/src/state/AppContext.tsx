@@ -59,6 +59,8 @@ export interface AppController {
   /** Sends a kept recording again. */
   retry?(): Promise<void>
   prewarm?(): Promise<void>
+  /** Tells main the new controller holds no session, so a widget left over from a reload returns to idle. */
+  announceIdle?(): void
   dispose(): void
 }
 
@@ -481,6 +483,7 @@ export function AppProvider({
           controller = createController(bindings)
           localController = controller
           controllerRef.current = controller
+          controller.announceIdle?.()
           unsubscribeSettings = bridge.onSettingsChanged((authoritativeSettings) => {
             if (!isCurrentGeneration(generation) || localController !== controller) return
             ++settingsVersionRef.current

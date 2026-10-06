@@ -13,7 +13,7 @@ The retry is fixed in the same change: a rate-limited request now waits at least
 ## Decision
 
 - **A failed transcription keeps its recording in memory.** The parts that came back keep their text and let go of their audio. The others keep their audio. This is a **kept recording**.
-- **Try again sends only the parts without text**, then finishes the dictation the normal way: cleanup, paste, history. Turned away again, the recording stays kept.
+- **Try again sends only the parts without text**, then finishes the dictation the normal way: cleanup, paste, history. Turned away again, the recording stays kept. Cancelling a Try again while it runs, with Escape or the widget's esc, stops it and returns to the kept recording.
 - **A kept recording is let go** when the user discards it, starts another dictation or closes Sotto. It is never written to disk and never sent anywhere without a press of Try again.
 - **Every dictation error stays on screen until it is dismissed**, rather than for the success-message duration.
 - **The widget's pill is the button** (prototype variant C, the user's pick from `docs/prototypes/dictation-retry-prototype.html`). For a kept recording the pill reads **Click to try again**, with the failure's title and sentence in its tooltip and the screen-reader alert. A **×** beside it discards. For an error that keeps nothing, clicking the pill or the × dismisses it.

@@ -1234,13 +1234,15 @@ describe('kept recordings', () => {
     expect(calls).toEqual([1, 2, 3])
   })
 
-  it('cancels a Try again that is still transcribing', async () => {
+  it('returns to the kept recording when a Try again still transcribing is cancelled', async () => {
     const pending = deferred<TranscriptionResult>()
-    let first = true
+    let call = 0
     const harness = createHarness({
       transcribe: async () => {
-        if (first) { first = false; throw new TranscriptionError('network') }
-        return pending.promise
+        call += 1
+        if (call === 1) throw new TranscriptionError('network')
+        if (call === 2) return pending.promise
+        return { text: 'kept words', language: 'en' }
       },
     })
     await harness.controller.start()
@@ -1248,11 +1250,31 @@ describe('kept recordings', () => {
     expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_OFFLINE', kept: true })
     const retry = harness.controller.retry()
     expect(harness.controller.getState()).toMatchObject({ status: 'processing' })
+
     await harness.controller.cancel()
+    expect(harness.transcriber.cancel).toHaveBeenCalledWith('session')
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_OFFLINE', kept: true })
+    expect(harness.controller.getState()).not.toHaveProperty('retried')
+
+    // The cancelled attempt's late answer decides nothing.
     pending.resolve({ text: 'too late', language: 'en' })
     await retry
-    expect(harness.controller.getState()).toMatchObject({ status: 'cancelled' })
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
     expect(harness.deliverOutput).not.toHaveBeenCalled()
+
+    await harness.controller.retry()
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'kept words' }))
+  })
+
+  it('announces idle for a new controller, and not over a session', async () => {
+    const harness = createHarness()
+    harness.controller.announceIdle()
+    expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle', cancellable: false })
+    expect(widgetSnapshotSchema.safeParse(snapshots(harness).at(-1)).success).toBe(true)
+    await harness.controller.start()
+    const published = harness.publishWidgetState.mock.calls.length
+    harness.controller.announceIdle()
+    expect(harness.publishWidgetState).toHaveBeenCalledTimes(published)
   })
 
   it('keeps nothing for an error that is not a transcription failure', async () => {

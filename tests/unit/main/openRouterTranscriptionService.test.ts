@@ -295,6 +295,30 @@ describe('rate-limited transcription', () => {
     expect(run.waits).toEqual([])
   })
 
+  it('reports a rate-limited request whose last retry runs out of time as rate limited', async () => {
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerLimited())
+      // The retry is cut off by the request's deadline.
+      .mockRejectedValue(new DOMException('timed out', 'TimeoutError'))
+    const onFailure = vi.fn()
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
+      fetchFn,
+      onFailure,
+      sleep: async () => undefined,
+      random: () => 0,
+    })
+    expect(await service.transcribe({ ...request, timeoutMs: 4_500 })).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'rate-limited', attempts: 2, limitedBy: 'provider' }))
+  })
+
+  it('leaves a rate-limit retry room to upload and transcribe its part', async () => {
+    const run = limited([providerLimited()], { timeoutMs: 3_900 })
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.fetchFn).toHaveBeenCalledOnce()
+  })
+
   it('cancels while waiting out a rate limit without another attempt', async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(providerLimited())
     let waiting!: () => void

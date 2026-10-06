@@ -8,6 +8,7 @@ import {
   type DictationEvent,
   type DictationState,
   type WidgetProcessingStage,
+  type TranscriptionErrorCode,
   type WidgetErrorCode,
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
@@ -110,6 +111,10 @@ interface ActiveSession {
   kept: boolean
   /** Try again has been pressed for this recording. */
   retried: boolean
+  /** Why the recording was kept, so a cancelled Try again can return to it. */
+  keptCode?: TranscriptionErrorCode
+  /** Counts each wait for the parts, so a cancelled Try again's late answers are ignored. */
+  attempt: number
 }
 
 /**
@@ -237,6 +242,32 @@ export class DictationController {
     return this.state
   }
 
+  /**
+   * Tells main this controller holds no session. A reload, by any path, makes
+   * a new controller; an error or kept recording the widget still shows from
+   * the old one now stays until dismissed, and nothing here could answer it.
+   */
+  announceIdle(): void {
+    if (this.disposed || this.session !== null) return
+    let settings: Readonly<AppSettings>
+    try {
+      settings = this.dependencies.getSettings()
+    } catch {
+      settings = defaultSettings(defaultHotkey(this.platform))
+    }
+    try {
+      const publication = this.dependencies.publishWidgetState({
+        status: 'idle',
+        ...cachedWidgetPresentation(settings),
+        shortcut: settings.hotkey,
+        cancellable: false,
+      })
+      void Promise.resolve(publication).catch(() => undefined)
+    } catch {
+      // Widget synchronization is observational and cannot break dictation.
+    }
+  }
+
   prewarm(): Promise<void> {
     if (this.disposed || this.isActive()) return Promise.resolve()
     const load = this.dependencies.transcriber.load
@@ -285,6 +316,7 @@ export class DictationController {
       durationMs: 0,
       kept: false,
       retried: false,
+      attempt: 0,
     }
     this.session = session
     this.dispatch({ type: 'REQUESTED', sessionId: session.id }, session)
@@ -395,6 +427,21 @@ export class DictationController {
       return
     }
     if (session === null || !session.cancellable || !this.isCancellableState()) return
+    // Cancelling a Try again stops it and returns to the kept recording; only
+    // Discard, a new dictation or closing Sotto lets a kept recording go.
+    if (this.state.status === 'processing' && session.keptCode !== undefined && this.isCurrent(session)) {
+      session.attempt += 1
+      try {
+        this.dependencies.transcriber.cancel(session.id)
+      } catch {
+        // The late answers are ignored by attempt regardless.
+      }
+      for (const part of session.parts) delete part.result
+      session.kept = true
+      session.retried = false
+      this.fail(session, session.keptCode)
+      return
+    }
 
     const resetToken = ++this.lifecycleToken
     this.dispatch({ type: 'CANCELLED', sessionId: session.id }, session)
@@ -543,10 +590,11 @@ export class DictationController {
    */
   private async finishRecording(session: ActiveSession): Promise<void> {
     const parts = session.parts
+    const attempt = ++session.attempt
     const outcomes = await Promise.allSettled(
       parts.map((part) => part.result ?? Promise.resolve(part.transcript!)),
     )
-    if (!this.isCurrent(session)) return
+    if (!this.isCurrent(session) || session.attempt !== attempt) return
     let failure: { readonly reason: unknown } | undefined
     outcomes.forEach((outcome, index) => {
       const part = parts[index]!
@@ -694,8 +742,11 @@ export class DictationController {
     session.cancellable = false
     session.errorCode = code
     const kept = session.kept && isTranscriptionErrorCode(code)
-    if (!kept) {
+    if (kept) {
+      session.keptCode = code
+    } else {
       session.kept = false
+      delete session.keptCode
       session.parts.length = 0
     }
     this.dispatch(
