@@ -168,7 +168,7 @@ function ForgottenNotice({ forgotten, onDismiss }: { readonly forgotten: HostFor
   return <section className="hosts-notice hosts-notice--error hosts-forgotten" role="status" aria-label={`${name} still trusts this computer`}>
     <AlertTriangle size={16} aria-hidden="true" />
     <div className="hosts-forgotten__copy">
-      <p>Sotto removed {name} from this computer, but could not revoke this computer’s access there: SSH could not reach {name}, or its host was not running. {name} still trusts this computer until it is removed there. To remove it, run this on {name} while its host is running:</p>
+      <p>Sotto removed {name} from this computer, but could not revoke this computer’s access there: SSH could not reach {name}, its host was not running, or it refused. {name} still trusts this computer until it is removed there. To remove it, run this on {name} while its host is running:</p>
       <code className="hosts-forgotten__command">{command}</code>
       <span className="hosts-forgotten__actions">
         <Button variant="secondary" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy()}>{copied === 'copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy command'}</Button>

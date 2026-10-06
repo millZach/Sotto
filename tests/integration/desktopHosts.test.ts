@@ -132,6 +132,21 @@ async function add(target = 'forge'): Promise<Connection> {
   await manager.command({ type: 'add', host: remote })
   return remote
 }
+/** A thread on the host, connected, so its row on the Threads page has something to lose. */
+async function remoteThread(): Promise<string> {
+  await manager.command({ type: 'select', hostId: reportedHostId })
+  const client = desktopWindowClient('desktop-test')
+  await router.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, client)
+  await router.command({ type: 'connect', provider: 'codex' }, client)
+  const state = await router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: root, useExisting: true }, client)
+  const project = state.host.projects.find(item => item.path === root)!
+  const threadId = randomUUID()
+  await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
+  const qualified = hostEntityKey(reportedHostId, threadId)
+  await router.command({ type: 'select-thread', threadId: qualified }, client)
+  return qualified
+}
+const row = (id: string) => router.shell().host.threads.find(thread => thread.id === id)
 describe('phones on a remote host (ADR-0050)', () => {
   it('reads a connected host’s phone access through its tunnel, and turns it on there from the Phones dialog', async () => {
     const phones = new HostPhones({ hosts: { links: () => manager.phonesLinks(), subscribe: listener => manager.subscribe(() => listener()) }, openExternal: async () => undefined })
@@ -817,21 +832,6 @@ describe('a host from before protocol v1 froze', () => {
 
 describe('updating a host from the Threads page (ADR-0040)', () => {
   const providers = () => ({ codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() })
-  /** A thread on the host, connected, so its row on the Threads page has something to lose. */
-  async function remoteThread(): Promise<string> {
-    await manager.command({ type: 'select', hostId: reportedHostId })
-    const client = desktopWindowClient('desktop-test')
-    await router.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, client)
-    await router.command({ type: 'connect', provider: 'codex' }, client)
-    const state = await router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: root, useExisting: true }, client)
-    const project = state.host.projects.find(item => item.path === root)!
-    const threadId = randomUUID()
-    await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
-    const qualified = hostEntityKey(reportedHostId, threadId)
-    await router.command({ type: 'select-thread', threadId: qualified }, client)
-    return qualified
-  }
-  const row = (id: string) => router.shell().host.threads.find(thread => thread.id === id)
   beforeEach(async () => {
     // The fixture host runs an older Sotto than this computer.
     await manager.close(); await host.close()
@@ -912,21 +912,6 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
 })
 
 describe('a drop keeps the host’s threads on the page (ADR-0053)', () => {
-  /** A thread on the connected host, selected, so the page has something to lose. */
-  async function remoteThread(): Promise<string> {
-    await manager.command({ type: 'select', hostId: reportedHostId })
-    const client = desktopWindowClient('desktop-test')
-    await router.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } }, client)
-    await router.command({ type: 'connect', provider: 'codex' }, client)
-    const state = await router.command({ type: 'create-project', provider: 'codex', title: 'Remote', path: root, useExisting: true }, client)
-    const project = state.host.projects.find(item => item.path === root)!
-    const threadId = randomUUID()
-    await router.command({ type: 'create-thread', projectId: project.id, threadId, title: 'Remote task', modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' }, client)
-    const qualified = hostEntityKey(reportedHostId, threadId)
-    await router.command({ type: 'select-thread', threadId: qualified }, client)
-    return qualified
-  }
-  const row = (id: string) => router.shell().host.threads.find(thread => thread.id === id)
   /** Every socket the manager opened, so a test can drop one the way a lost network does. */
   const sockets: SocketHostService[] = []
   beforeEach(() => {

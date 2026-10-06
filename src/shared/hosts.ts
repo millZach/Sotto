@@ -123,8 +123,8 @@ export interface HostsState {
   forgotten?: HostForgotten
 }
 /**
- * A host Forget removed from this computer whose pairing it could not revoke there: SSH could not reach the host, or its
- * host was not running. The host still trusts this computer until the command, run on the host while its host runs,
+ * A host Forget removed from this computer whose pairing it  * A host Forget removed from this computer whose pairing it could not revoke there: SSH could not reach the host, its
+ * host was not running, or it refused. The host still trusts this computer until the command, run on the host while its host runs,
  * removes it. Kept in memory only.
  */
 export interface HostForgotten {

@@ -196,7 +196,7 @@ it('says a forgotten host still trusts this computer, offers the command that re
   await screen.findByText('No remote hosts yet.')
   push({ forgotten: { id: REMOTE, name: 'forge', command } })
   const notice = await screen.findByRole('status', { name: 'forge still trusts this computer' })
-  expect(notice.textContent).toContain('Sotto removed forge from this computer, but could not revoke this computer’s access there: SSH could not reach forge, or its host was not running. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
+  expect(notice.textContent).toContain('Sotto removed forge from this computer, but could not revoke this computer’s access there: SSH could not reach forge, its host was not running, or it refused. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
   expect(within(notice).getByText(command)).toBeTruthy()
   await user.click(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }))
   expect(clipboard).toHaveBeenCalledWith(command)
