@@ -152,15 +152,32 @@ describe('checkpoint capture', () => {
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
 
-  it('keeps a failed listing verdict for a folder Git does not know until it becomes a repository', async () => {
+  it('keeps a failed listing verdict for a folder Git does not know until it or a folder above becomes a repository', async () => {
     const f = await fixture({ repository: false })
-    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow()
-    const verdict = await f.capture.heldVerdict(f.repo)
-    expect(verdict).toMatch(/not a git repository/i)
+    const home = join(f.root, 'home'); await mkdir(home)
+    vi.stubEnv('HOME', home); vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'))
+    cleanup.push(async () => { vi.unstubAllEnvs() })
+    const unlisted = /not a git repository/i
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
     f.commands.length = 0
-    expect(await f.capture.heldVerdict(f.repo)).toBe(verdict)
+    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
     expect(f.commands).toEqual([])
     git(f.repo, 'init', '-q')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await rm(join(f.repo, '.git'), { recursive: true, force: true })
+
+    // A repository made in a folder above it.
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    git(f.root, 'init', '-q')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await rm(join(f.root, '.git'), { recursive: true, force: true })
+
+    // Git told to trust it, as `git config --global --add safe.directory` does.
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    await writeFile(join(home, '.gitconfig'), `[safe]\n\tdirectory = ${f.repo.replaceAll('\\', '/')}\n`)
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
 
@@ -194,6 +211,30 @@ describe('checkpoint capture', () => {
     expect(await capture.heldVerdict(f.repo)).toBeUndefined()
   })
 
+  it('watches the ignore files Git reads for a linked worktree and for a folder below the top of the working tree', async () => {
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1)
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'app/b.txt': 'small\n' } })
+    const worktree = join(f.root, 'worktree')
+    git(f.repo, 'worktree', 'add', '-q', worktree)
+    await writeFile(join(worktree, 'big.bin'), big)
+    await expect(f.capture.snapshot(worktree, { reuse: true })).rejects.toThrow('size limit')
+    expect(await f.capture.heldVerdict(worktree)).toMatch('size limit')
+    // A linked worktree shares the main checkout's `info/exclude`.
+    await writeFile(join(f.repo, '.git', 'info', 'exclude'), 'big.bin\n')
+    expect(await f.capture.heldVerdict(worktree)).toBeUndefined()
+    await expect(f.capture.snapshot(worktree, { reuse: true })).resolves.toBeDefined()
+
+    const below = join(f.repo, 'app')
+    await writeFile(join(below, 'big.bin'), big)
+    await writeFile(join(f.repo, '.git', 'info', 'exclude'), '')
+    await expect(f.capture.snapshot(below, { reuse: true })).rejects.toThrow('size limit')
+    expect(await f.capture.heldVerdict(below)).toMatch('size limit')
+    // The `.gitignore` at the top of the working tree, which the folder's own listing does not name.
+    await writeFile(join(f.repo, '.gitignore'), 'big.bin\n')
+    expect(await f.capture.heldVerdict(below)).toBeUndefined()
+    await expect(f.capture.snapshot(below, { reuse: true })).resolves.toBeDefined()
+  })
+
   it('holds an invalid listed path\'s verdict only until its directory changes', async () => {
     const f = await fixture({ files: { 'a.txt': 'small\n', 'deep/inner.txt': 'inner\n' } })
     // A name the checkpoint store cannot represent, as Git might list one from another platform.
@@ -204,6 +245,36 @@ describe('checkpoint capture', () => {
     expect(await capture.heldVerdict(f.repo)).toMatch('This tool request is invalid.')
     // Removing a file below the top level moves neither Git's state nor the top-level listing, only its directory's.
     await rm(join(f.repo, 'deep', 'inner.txt'))
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
+  it('watches the nearest directory that can be watched when a listed directory\'s own name is invalid', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'deep/inner.txt': 'inner\n' } })
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' },
+        (error, output) => error ? reject(error) : done(args[0] === 'ls-files' && args[1] === '-c' ? `${output}deep/trailing./out.log\0` : output))) })
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('This tool request is invalid.')
+    expect(await capture.heldVerdict(f.repo)).toMatch('This tool request is invalid.')
+    await rm(join(f.repo, 'deep', 'inner.txt'))
+    expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
+  it('keeps watching the ignore files when the files behind a verdict are too many to watch', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', '.gitignore': 'ignored/\n' } })
+    await mkdir(join(f.repo, 'bulk'))
+    // Over the total size in 1,100 files of 64 KiB, more than a verdict watches. They are listed and sized, not written.
+    const bulk = Array.from({ length: 1_100 }, (_, index) => `bulk/part-${index}.bin`)
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' },
+        (error, output) => error ? reject(error) : done(args[0] === 'ls-files' && args[1] === '-c' ? `${output}${bulk.join('\0')}\0` : output))) })
+    const small = await lstat(join(f.repo, 'a.txt'), { bigint: true })
+    const sized = Object.assign(Object.create(Object.getPrototypeOf(small) as object) as BigIntStats, small, { size: 64n * 1024n })
+    const actual = fsPromises.lstat
+    vi.spyOn(fsPromises, 'lstat').mockImplementation(((target: string, options?: { bigint?: boolean }) =>
+      target.includes(`${join('bulk', 'part-')}`) ? Promise.resolve(sized) : actual(target, options as never)) as typeof fsPromises.lstat)
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    expect(await capture.heldVerdict(f.repo)).toMatch('size limit')
+    await writeFile(join(f.repo, '.gitignore'), 'ignored/\nbulk/\n')
     expect(await capture.heldVerdict(f.repo)).toBeUndefined()
   })
 

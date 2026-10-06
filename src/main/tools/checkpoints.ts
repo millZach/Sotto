@@ -220,12 +220,6 @@ export class CheckpointService extends ToolOperations {
     }
     const owner = await workspace(this.dependencies.files, threadId)
     const canonical = await realpath(owner.workingDirectory)
-    const checkout = await this.capture.checkout(canonical)
-    const candidates = [...this.records.values()].filter(record => record.threadId !== threadId && record.status === 'capturing')
-    const sameCheckout = await Promise.all(candidates.map(record => this.sharesCheckout(record, checkout)))
-    const overlapping = candidates.filter((_record, index) => sameCheckout[index])
-    const overlapReason = overlapping.length ? 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.' : undefined
-    for (const other of overlapping) other.reason = overlapReason
     let before: Snapshot = { files: {}, index: '', head: '' }
     // A folder that could not be captured last time, and has not visibly changed since, is not walked again.
     let reason = await this.capture.heldVerdict(canonical)
@@ -235,6 +229,13 @@ export class CheckpointService extends ToolOperations {
       catch (error) { reason = error instanceof Error ? error.message : 'File checkpoint capture was unavailable.' }
       finally { release?.() }
     }
+    // Asked after the capture, which notices when the folder's Git directory changed and forgets its checkout.
+    const checkout = await this.capture.checkout(canonical)
+    const candidates = [...this.records.values()].filter(record => record.threadId !== threadId && record.status === 'capturing')
+    const sameCheckout = await Promise.all(candidates.map(record => this.sharesCheckout(record, checkout)))
+    const overlapping = candidates.filter((_record, index) => sameCheckout[index])
+    const overlapReason = overlapping.length ? 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.' : undefined
+    for (const other of overlapping) other.reason = overlapReason
     const record: Record = { id: randomUUID(), threadId, workspaceId: owner.workspaceId, cwd: canonical, checkout, providerId: thread.providerId, bindingId: thread.bindingId, beforeUsers: [...thread.userMessageIds], before, status: 'capturing', createdAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString() }
     if (overlapReason) record.reason = overlapReason
     if (reason) { record.status = 'unavailable'; record.reason = reason.slice(0, 2000) }

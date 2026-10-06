@@ -1,7 +1,8 @@
 import type { BigIntStats } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ToolsError } from '../../shared/tools'
 import { fileRelativePathSchema } from '../../shared/files'
 import { checkoutIdentity } from '../agents/threadWorktrees'
@@ -54,6 +55,12 @@ interface Verdict { error: Error; signature: string; watched: readonly string[];
 interface Folder {
   /** Git's directory for this folder: a path, null for a folder Git does not know, or unresolved. */
   gitDirectory?: string | null
+  /**
+   * The ignore files Git reads for this folder that its listing does not name: `info/exclude` in the repository's
+   * common directory, which a linked worktree shares, and the `.gitignore` in each directory from the top of the
+   * working tree down to the folder.
+   */
+  ignoreFiles?: readonly string[]
   checkout?: string
   files?: Map<string, Seen>
   verdict?: Verdict
@@ -62,7 +69,6 @@ interface Folder {
 class Refusal {
   constructor(readonly error: Error, readonly watch: readonly string[]) {}
 }
-const refusal = (code: ToolsError['code'], message: string, watch: readonly string[]): Refusal => new Refusal(new ToolFailure(code, message), watch)
 const parentOf = (path: string): string => { const cut = path.lastIndexOf('/'); return cut < 0 ? '' : path.slice(0, cut) }
 
 /**
@@ -82,6 +88,29 @@ async function inOrder<T, R>(items: readonly T[], limit: number, work: (item: T,
   const rejected = settled.find(outcome => outcome.status === 'rejected')
   if (rejected) throw rejected.reason
   return results
+}
+
+/** The `.gitignore` in each directory from the top of the working tree `top` down to `root`, both included. */
+function gitignoresDown(top: string, root: string): string[] {
+  const below = relative(top, root)
+  if (isAbsolute(below) || below === '..' || below.startsWith(`..${sep}`)) return [join(root, '.gitignore')]
+  const files = [join(top, '.gitignore')]
+  let directory = top
+  for (const part of below.split(sep).filter(Boolean)) { directory = join(directory, part); files.push(join(directory, '.gitignore')) }
+  return files
+}
+
+/**
+ * Where a folder Git does not know could become known: a `.git` appearing in it or any folder above it, or Git's
+ * global configuration changing, as when the folder is added to `safe.directory`.
+ */
+function discoveryPaths(root: string): string[] {
+  const home = process.env.HOME || homedir()
+  const paths = [join(home, '.gitconfig'), join(process.env.XDG_CONFIG_HOME || join(home, '.config'), 'git', 'config')]
+  for (let directory = root; ; directory = dirname(directory)) {
+    paths.push(join(directory, '.git'))
+    if (dirname(directory) === directory) return paths
+  }
 }
 
 /** For a path that is not there: null. Any other error is thrown. */
@@ -160,7 +189,7 @@ export class CheckpointCapture {
   /**
    * A cheap signature of the folder's Git state and listing: Git's HEAD, its reflog (every commit, checkout and
    * reset), the index's size (a file added to or removed from it) and the folder's own listing. A folder Git
-   * does not know is watched for a `.git` appearing.
+   * does not know is watched where it could become known (`discoveryPaths`).
    */
   private async signature(root: string, folder: Folder): Promise<string | undefined> {
     const read = (path: string, fields: (info: BigIntStats) => unknown[]): Promise<unknown> =>
@@ -172,12 +201,12 @@ export class CheckpointCapture {
         read(join(git, 'index'), info => [info.size]), read(root, info => [info.mtimeNs])])
       if (typeof parts[0] === 'string') {
         // Git's directory moved or went: ask again next time, and the checkout with it.
-        delete folder.gitDirectory; delete folder.checkout
+        delete folder.gitDirectory; delete folder.ignoreFiles; delete folder.checkout
         return undefined
       }
       return JSON.stringify(parts)
     }
-    return JSON.stringify(await Promise.all([read(join(root, '.git'), info => [info.mtimeNs]), read(root, info => [info.mtimeNs])]))
+    return JSON.stringify(await Promise.all([...discoveryPaths(root).map(path => read(path, times)), read(root, info => [info.mtimeNs])]))
   }
 
   /** What `lstat` says of each path, and whether any was changed too recently to trust that it stays as read. */
@@ -198,7 +227,10 @@ export class CheckpointCapture {
     const root = await realpath(cwd), folder = this.folder(root)
     if (!folder.gitDirectory) {
       const previous = folder.gitDirectory
-      folder.gitDirectory = await this.options.git(root, ['rev-parse', '--absolute-git-dir']).then(text => text.trim() || null, () => null)
+      const [gitDirectory, exclude, top] = await this.options.git(root, ['rev-parse', '--absolute-git-dir', '--git-path', 'info/exclude', '--show-toplevel'])
+        .then(text => text.split('\n').map(line => line.trim()), (): string[] => [])
+      folder.gitDirectory = gitDirectory || null
+      folder.ignoreFiles = gitDirectory && exclude && top ? [resolve(root, exclude), ...gitignoresDown(resolve(top), root)] : []
       if (previous !== undefined && previous !== folder.gitDirectory) delete folder.checkout
     }
     // Taken before the walk, so a change during it shows as a different signature next time.
@@ -221,24 +253,23 @@ export class CheckpointCapture {
     try { listing = await git(root, ['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']) }
     catch (error) {
       if (!refusedByGit(error)) throw error
-      // No listing names the ignore files, so the verdict watches the two an outgrown list is usually fixed in.
-      const ignores = [join(root, '.gitignore'), ...(folder.gitDirectory ? [join(folder.gitDirectory, 'info', 'exclude')] : [])]
-      return new Refusal(new Error(error instanceof Error ? error.message : 'Git could not list this working copy.', { cause: error }), ignores)
+      // An outgrown list is usually fixed in an ignore file. A folder Git refused is watched by its signature.
+      return new Refusal(new Error(error instanceof Error ? error.message : 'Git could not list this working copy.', { cause: error }), folder.ignoreFiles ?? [])
     }
     const paths = [...new Set(listing.split('\0').filter(Boolean))].sort()
     const valid = (path: string): boolean => checkpointPathSchema.safeParse(path).success && isInside(root, join(root, path))
     // Git's ignore files decide which untracked files are listed, so every verdict watches them too.
     const ignores = paths.filter(path => (path === '.gitignore' || path.endsWith('/.gitignore')) && valid(path))
     const refuse = (code: ToolsError['code'], message: string, decided: readonly string[]): Refusal => {
-      const watch = [...new Set(decided.filter(path => path === '' || valid(path)))]
-      const named = [...watch, ...ignores].map(path => join(root, path))
-      if (folder.gitDirectory) named.push(join(folder.gitDirectory, 'info', 'exclude'))
-      return refusal(code, message, named.length <= WATCH_LIMIT ? named : [])
+      const ignoreFiles = [...new Set([...ignores.map(path => join(root, path)), ...folder.ignoreFiles ?? []])]
+      const named = [...new Set(decided.filter(path => path === '' || valid(path)))].map(path => join(root, path))
+      // Past the limit the decided paths are dropped first: the ignore files are what a user edits to fix it.
+      const watch = named.length + ignoreFiles.length <= WATCH_LIMIT ? [...named, ...ignoreFiles] : ignoreFiles.length <= WATCH_LIMIT ? ignoreFiles : []
+      return new Refusal(new ToolFailure(code, message), watch)
     }
     if (paths.length > FILE_LIMIT) {
       // A file added or removed anywhere changes the listing of the directory holding it.
-      const directories = new Set(paths.filter(valid).map(parentOf).filter(Boolean))
-      return refuse('too-large', COUNT_MESSAGE, directories.size + ignores.length < WATCH_LIMIT ? [...directories] : [])
+      return refuse('too-large', COUNT_MESSAGE, [...new Set(paths.filter(valid).map(parentOf).filter(Boolean))])
     }
     const gitState = Promise.all([git(root, ['ls-files', '--stage', '-z']), git(root, ['rev-parse', '--verify', 'HEAD']).then(text => text.trim(), () => '')])
     gitState.catch(() => undefined)
@@ -262,8 +293,12 @@ export class CheckpointCapture {
     }
     const entries = await inOrder<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
       if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', 'This working copy contains a file name that checkpoint storage cannot safely represent.', [path, ''])
-      // The path itself cannot be watched; its directory's listing changes when it is renamed or removed.
-      if (!valid(path)) return refuse('invalid-request', INVALID_REQUEST, [parentOf(path)])
+      // The path cannot be watched; the nearest directory that can be changes its listing when the path is renamed or removed.
+      if (!valid(path)) {
+        let directory = parentOf(path)
+        while (directory && !valid(directory)) directory = parentOf(directory)
+        return refuse('invalid-request', INVALID_REQUEST, [directory])
+      }
       const parent = await directorySafety(parentOf(path))
       if (parent !== true) return parent || null
       return lstat(join(root, path), { bigint: true }).catch(absentAsNull)
