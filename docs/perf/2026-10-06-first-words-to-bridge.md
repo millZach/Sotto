@@ -18,8 +18,9 @@ thread a window is looking at ends in a message or record that window was not se
 carries a message or record it has not sent. The adapter's publisher also sends the first frame of a burst at once
 now, as the others already did. Later chunks of the same message ride the windows as before.
 
-In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged;
-"The window's commit" below says why an urgent commit was tried and taken back.
+In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged.
+The shell waiting in its own window now goes just ahead of a detail that opens a message, so the two are painted in
+one commit. "The window's commit" below has both, and why an urgent commit was tried and taken back.
 
 ## First chunk to the bridge
 
@@ -71,22 +72,33 @@ connection hook, still makes one commit per streamed chunk.
 ## The window's commit
 
 The issue asked for the thread on screen to commit its detail promptly without letting a long transcript make
-typing lag. A version of this change committed the delta that brought a new message or activity record to the
-active thread urgently, and every other chunk as a transition. The render benchmarks above cannot see the
-difference, since they do not go through the connection, so it was checked in the running app with
-`tests/e2e/workspace-performance.spec.ts`, which streams into four panes with 80 and 2,000 messages of history
-while sending, typing and switching panes:
+typing lag. The render benchmarks above do not go through the connection, so this part was checked in the running
+app with `tests/e2e/workspace-performance.spec.ts`, which streams into four panes over 80 and 2,000 messages of
+history while sending, typing and switching panes, and holds frame and staleness budgets (100, 200 and 300 ms).
 
-| Build | Runs | Runs that missed a frame budget |
-| --- | ---: | ---: |
-| `origin/main` | 3 | 0 |
-| this change, urgent first words | 3 | 3: a four-pane stream's next frame (p95 296 ms against 200), a stream's visible update gap (368 ms against 200), a send's next frame (173 ms against 100) |
-| this change, first words as a transition | 3 | 0 |
+- **An urgent commit of the first words was tried and taken back.** Committing the delta that brought a new
+  message or record to the active thread urgently, and everything else as a transition, missed a budget in each
+  of three runs: a four-pane stream's next frame at p95 296 ms against 200, a stream's visible update gap of
+  368 ms against 200, a send's next frame at 173 ms against 100. An urgent commit renders the whole Threads page
+  without yielding, and each send and each finished reply in the spec made one. The window still commits a detail
+  as a transition the moment it arrives, which lands within the next frames when nothing urgent is waiting.
+- **The shell now goes just ahead of an opening detail.** A detail that opens a message left the IPC boundary at
+  once while the shell from the same broadcast could still be waiting in its own 50 ms window, so the window
+  painted twice, once for each. The desktop now delivers its held shell just before such a detail
+  (`beforeOpening` on the detail lane), and the window paints them in one commit, as it does every other chunk.
 
-An urgent commit renders the whole Threads page without yielding, and each send and each finished reply in the
-spec made one. A transition already commits within the next frames when nothing urgent is waiting, so the first
-words keep it; the time they were losing was in main's windows. Every run, on `origin/main` too, failed the
-spec's `messageCount <= 81` check, which this change does not touch.
+Runs of this spec on one machine shared with another build vary more than any change here moves them, so the
+final comparison interleaved the two builds, rebuilding between each run: four of `origin/main` (which moved
+from `be3e7946` to `2e47e2d6` while they ran) and four of this branch.
+
+| Build | Runs | Runs that missed a frame budget | Worst four-pane staleness, 2,000 messages |
+| --- | ---: | ---: | ---: |
+| `origin/main` | 4 | 1 (309 ms against 300) | 218-309 ms |
+| this branch | 4 | 0 | 178-281 ms |
+
+Every run of every build, `origin/main` included, failed the spec's `messageCount <= 81` check, which this change
+does not touch. Serial runs of this branch before the shell pairing, done while the machine was busier, missed a
+budget more often than serial runs of `origin/main` done at other times; interleaved, the difference did not hold.
 
 ## Per-chunk work in main
 
