@@ -937,9 +937,16 @@ export class DesktopHosts {
     const hello = await socket.connect()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     // Use the host's authenticated client identity, never a saved or renderer-supplied ID. The SSH
-    // account establishes the default only when this client has no policy history (ADR-0025), and only over the SSH
-    // connection this connect signed in with: a socket on no SSH connection leaves it for the next one (ADR-0053).
-    if (!hello.capabilities.mayAnswer && active.ssh) await active.ssh.ensureDesktopAnswers(hello.clientId)
+    // account establishes the default only when this client has no policy history (ADR-0025), and
+    // records it as a desktop on every connect, so the host's tailnet listener knows it, a desktop
+    // paired before that record existed included (ADR-0053). Both happen only over the SSH connection
+    // this connect signed in with: a socket on no SSH connection leaves them for the next one. For a
+    // desktop that may already answer, only that record is at stake, and the next SSH connect writes
+    // it again, so a failed step never ends a connection that used to skip it.
+    if (active.ssh) {
+      if (hello.capabilities.mayAnswer) await active.ssh.ensureDesktopAnswers(hello.clientId).catch(() => undefined)
+      else await active.ssh.ensureDesktopAnswers(hello.clientId)
+    }
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId

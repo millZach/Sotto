@@ -59,6 +59,30 @@ it('turns on: checks Tailscale, opens a loopback listener with no admin routes, 
   await access.close()
 })
 
+it('honours tailnetConnections only when told which clients are desktops, so a desktop’s settings file never raises its phone listener', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  // The desktop's own phone access: a hand-edited settings file naming the headless host's setting changes nothing.
+  const desktop = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  await desktop.access.start()
+  expect(server.started).toEqual([])
+  expect(fake.calls).toEqual([])
+  expect(desktop.access.get()).toMatchObject({ enabled: false, phase: 'off' })
+  await desktop.access.close()
+
+  // A headless host's, told its desktops: the listener and Serve come up for them with phone access off.
+  const host = create({ tailscale: fake.tailscale, startServer: server.startServer, listener: { desktops: { refresh: async () => undefined, has: () => false } } },
+    { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  // A watcher, which the host's descriptor follows, is told the brief state as each change lands.
+  const briefs: unknown[] = []
+  host.access.watch(brief => briefs.push(brief))
+  await host.access.start()
+  expect(server.started).toHaveLength(1)
+  expect(host.access.get()).toMatchObject({ enabled: false, phase: 'on' })
+  expect(host.access.brief()).toEqual({ enabled: false, phase: 'on', address: `https://${DNS}:8443`, phones: 0 })
+  expect(briefs.at(-1)).toEqual(host.access.brief())
+  await host.access.close()
+})
+
 it('turns off: removes only its own Serve setting and closes the listener, so phones lose their sockets', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
