@@ -3,7 +3,7 @@ import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { startSocketServer } from '../../host/socketServer'
+import { startSocketServer, type SocketServerOptions, type TailnetAdmission } from '../../host/socketServer'
 import type { ClientIdentity, HostService } from '../agents/hostService'
 import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -60,7 +60,10 @@ export interface PhoneAccessOptions {
   /** The local host's service, or nothing when the local host is off. */
   readonly service: HostService | undefined
   readonly tailscale: PhoneAccessTailscale
-  /** `tailnetConnections` is a headless host's own (ADR-0053); the desktop's phone access never has it. */
+  /**
+   * `tailnetConnections` is a headless host's own (ADR-0053), and is honoured only with `listener.desktops`, which only
+   * the headless host gives: a desktop's settings file naming it never raises the desktop's own phone listener.
+   */
   readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string; readonly tailnetConnections?: boolean | undefined }
   readonly policy?: PhoneAccessPolicy | undefined
   readonly openExternal: (url: string) => Promise<void>
@@ -81,7 +84,8 @@ export interface PhoneAccessOptions {
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    */
-  readonly listener?: Pick<Parameters<typeof startSocketServer>[0], 'signIns' | 'clientUpdates' | 'desktops' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked'>
+  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked'>
+    & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
 const recordSchema = z.object({
@@ -170,7 +174,7 @@ export class PhoneAccess {
       // The listener stays up for desktops; the phones on it go now.
       this.listener?.dropRevoked()
     }
-    if (!this.wanted()) {
+    if (!this.listenerWanted()) {
       if (this.listener) { this.listener.stopServing(); this.listenerStopped = true }
     }
     this.enqueue(() => this.reconcile())
@@ -185,14 +189,14 @@ export class PhoneAccess {
   get(): PhonesState {
     const settings = this.options.settings()
     const defaultName = this.defaultName()
-    const connected = new Set(!this.listenerStopped && this.wanted() ? this.listener?.connectedClients() ?? [] : [])
+    const connected = new Set(!this.listenerStopped && this.listenerWanted() ? this.listener?.connectedClients() ?? [] : [])
     const phones = this.pairingReady ? this.paired().map(client => ({
       clientId: client.clientId, name: client.name, pairedAt: client.pairedAt, connected: connected.has(client.clientId),
       canAnswer: this.options.policy?.mayGrant({ clientId: client.clientId, user: '', transport: 'socket' }).allowed ?? false,
     })) : []
     return {
       enabled: settings.phoneAccess, localHostRunning: this.options.service !== undefined,
-      phase: this.listenerStopped && this.phase === 'on' && this.wanted() ? 'starting' : this.phase,
+      phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
       tailscale: this.tailscaleCheck, serve: this.serveCheck, address: this.listenerStopped ? null : this.address,
       computerName: this.computerName(), defaultName,
       code: this.code, phones, answersAvailable: this.options.policy !== undefined,
@@ -202,7 +206,7 @@ export class PhoneAccess {
   async command(command: PhonesCommand): Promise<PhonesState> {
     switch (command.type) {
       case 'retry':
-        this.enqueue(async () => { if (this.phase === 'cleanup-failed') await this.reconcile(); else if (this.wanted()) await this.turnOn() })
+        this.enqueue(async () => { if (this.phase === 'cleanup-failed') await this.reconcile(); else if (this.listenerWanted()) await this.turnOn() })
         await this.queue
         break
       case 'show-code': {
@@ -285,10 +289,14 @@ export class PhoneAccess {
     return this.pairingReady
   }
 
-  /** Whether the listener and the Serve setting are wanted: for phones, or on a headless host for desktops too. */
-  private wanted(): boolean {
+  /**
+   * Whether the listener and the Serve setting are wanted: for phones, or on a headless host, the only phone access told
+   * which clients are desktops, for desktops too.
+   */
+  private listenerWanted(): boolean {
     const settings = this.options.settings()
-    return !this.closed && (settings.phoneAccess || settings.tailnetConnections === true) && this.options.service !== undefined
+    const desktops = this.options.listener?.desktops !== undefined && settings.tailnetConnections === true
+    return !this.closed && (settings.phoneAccess || desktops) && this.options.service !== undefined
   }
 
   /** Whether phones may pair and connect: phone access itself is on. */
@@ -299,6 +307,19 @@ export class PhoneAccess {
   /** Waits for the changes in progress, so an answer can say how Serve came out. */
   settled(): Promise<void> { return this.queue }
 
+  /**
+   * The parts of `get()` health and hello read, without the per-phone policy lookups: whether phone access is on, the
+   * phase and address as `get()` reports them, and how many phones are paired.
+   */
+  brief(): Pick<PhonesState, 'enabled' | 'phase' | 'address'> & { readonly phones: number } {
+    return {
+      enabled: this.options.settings().phoneAccess,
+      phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
+      address: this.listenerStopped ? null : this.address,
+      phones: this.pairingReady ? this.paired().length : 0,
+    }
+  }
+
   /** How many paired clients hold an open socket on the listener now, phones and desktops alike. */
   peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
 
@@ -307,14 +328,14 @@ export class PhoneAccess {
       await this.turnOff()
       if (this.phase === 'cleanup-failed') return
     }
-    if (this.wanted()) { if (this.phase === 'off') await this.turnOn() }
+    if (this.listenerWanted()) { if (this.phase === 'off') await this.turnOn() }
     else if (this.phase !== 'off' || this.listener || this.record.mapped) await this.turnOff()
   }
 
   private async turnOn(): Promise<void> {
-    if (this.listenerStopped || !this.wanted()) {
+    if (this.listenerStopped || !this.listenerWanted()) {
       await this.turnOff()
-      if (this.phase === 'cleanup-failed' || !this.wanted()) return
+      if (this.phase === 'cleanup-failed' || !this.listenerWanted()) return
     }
     this.clearRetry()
     this.reset('starting')
@@ -335,17 +356,17 @@ export class PhoneAccess {
     catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
     if (owner === 'ours') this.record.mapped = true
     if (owner === 'taken') { await this.failServe('port-taken'); return }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     if (!this.listener) {
       // Paired phones that cannot be read are never replaced: the listener stays shut until they can be.
       if (!await this.loadPairing()) { await this.failServe('listener'); return }
       try { this.listener = await this.listen() }
       catch { this.options.log?.('phone-access-listener-failed'); await this.failServe('listener'); return }
     }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     const port = this.listener.descriptor.port
     if (!await this.save({ port, mapped: true })) { await this.failServe('record'); return }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     let result: ServeResult
     try { result = await this.options.tailscale.serve(PHONE_ACCESS_SERVE_PORT, port) } catch { result = { ok: false, reason: 'failed' } }
     if (!result.ok) {
@@ -356,7 +377,7 @@ export class PhoneAccess {
       await this.failServe(result.reason)
       return
     }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     this.serveCheck = { status: 'ok' }
     this.address = `https://${status.dnsName}:${PHONE_ACCESS_SERVE_PORT}`
     this.phase = 'on'
@@ -457,12 +478,13 @@ export class PhoneAccess {
 
   private async listen(): Promise<Listener> {
     const start = this.options.startServer ?? startSocketServer
+    const { desktops, ...listener } = this.options.listener ?? {}
     const base = {
-      ...this.options.listener,
+      ...listener,
+      ...(desktops ? { tailnet: { desktops, phonesAdmitted: () => this.phonesWanted() } } : {}),
       service: this.options.service!, pairing: this.pairing, admin: false,
       // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.
       observationKey: 'tailnet-observations',
-      phonesAdmitted: () => this.phonesWanted(),
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onPaired: (clientId: string) => {
@@ -509,7 +531,7 @@ export class PhoneAccess {
     this.clearRetry()
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined
-      this.enqueue(async () => { if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile(); else if (this.wanted() && this.phase === 'failed' && this.tailscaleCheck.status === 'failed') await this.turnOn() })
+      this.enqueue(async () => { if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile(); else if (this.listenerWanted() && this.phase === 'failed' && this.tailscaleCheck.status === 'failed') await this.turnOn() })
     }, this.options.retryMs ?? 30_000)
     this.retryTimer.unref?.()
   }

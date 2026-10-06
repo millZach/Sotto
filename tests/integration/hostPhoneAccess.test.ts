@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import type { PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
 import { standInTailscale } from '../fixtures/standInTailscale'
 import type { HostPhonesCommand, PhonesState } from '../../src/shared/phones'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { PHONES_OFF } from '../../src/host/socketServer'
+import { phonesOff } from '../../src/host/socketServer'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { rawPeer } from '../fixtures/rawHostPeer'
 
@@ -26,7 +26,7 @@ afterEach(async () => {
   if (dirname(root) === tmpdir() && root.includes('sotto-host-phones-')) await rm(root, { recursive: true, force: true })
 })
 
-async function start(tailscale: PhoneAccessTailscale, options: { startedBy?: 'launch-script' } = {}) {
+async function start(tailscale: PhoneAccessTailscale, options: { startedBy?: 'launch-script'; log?: (event: string) => void } = {}) {
   const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }
   const host = await startHeadlessHost({ dataDirectory: root, port: 0, providers, reasoner: e2eAgentReasoner, tailscale, ...options })
   hosts.push(host)
@@ -140,7 +140,7 @@ it('carries a recorded desktop on the tailnet listener with phone access off, an
   expect(port).not.toBe(host.descriptor!.port)
 
   // Health lists every feature the listener offers, and where the tailnet reaches it; the host records the address too.
-  const health = await (await fetch(`http://127.0.0.1:${port}/v1/health`)).json() as { features: string[]; tailnetAddress?: string; startedBy?: string }
+  const health = await (await fetch(`http://127.0.0.1:${port}/v1/health`)).json() as { features: string[]; tailnetAddress?: string; startedBy?: string; name?: string }
   expect(health.features).toEqual(expect.arrayContaining(['provider-sign-in', 'client-updates']))
   expect(health).toMatchObject({ tailnetAddress: `https://${DNS}:8443`, startedBy: 'launch-script' })
   await vi.waitFor(async () => expect(JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8'))).toMatchObject({ tailnetAddress: `https://${DNS}:8443`, startedBy: 'launch-script' }))
@@ -153,12 +153,31 @@ it('carries a recorded desktop on the tailnet listener with phone access off, an
   // A phone is refused a session, and nobody pairs here while phone access is off.
   const refused = await session(port, phone.token)
   expect(refused.status).toBe(403)
-  expect(await refused.json()).toMatchObject({ error: { code: 'forbidden', message: PHONES_OFF } })
+  // Named for the host as phones show it, saying the pairing is kept, since 403 is not 401's "pair again".
+  expect(health.name).toBeTruthy()
+  expect(await refused.json()).toMatchObject({ error: { code: 'forbidden', message: phonesOff(health.name) } })
+  expect(phonesOff(health.name)).toContain(`Phone access is off on ${health.name}. Your pairing is kept.`)
   const { code } = (await admin('pairing-code', {})).body as { code: string }
   const pairing = await fetch(`http://127.0.0.1:${port}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code, name: 'Another phone' }) })
   expect(pairing.status).toBe(403)
   // The code was not spent: it still pairs where pairing is allowed.
   await expect(SocketHostService.pair(`http://127.0.0.1:${host.descriptor!.port}`, code, 'Another desktop')).resolves.toMatchObject({ hostId: host.descriptor!.hostId })
+})
+
+it('writes the descriptor again after a write failed, so the launch script learns the tailnet address without a restart', async () => {
+  const stand = standInTailscale()
+  const events: string[] = []
+  const { tailnet, command } = await start(stand.tailscale, { log: event => events.push(event) })
+  const path = join(root, 'host-listener.json')
+  const saved = await readFile(path, 'utf8')
+  // A descriptor that cannot be replaced, standing in for a full disk or a denied write, as Serve comes up.
+  await rm(path); await mkdir(path)
+  await tailnet(true)
+  await vi.waitFor(() => expect(events).toContain('host-descriptor-write-failed'))
+  await rm(path, { recursive: true }); await writeFile(path, saved)
+  // The next change to phone access writes it, with the address: the failed write did not stop the ones after it.
+  await command({ type: 'set-enabled', enabled: true })
+  await vi.waitFor(async () => expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ tailnetAddress: `https://${DNS}:8443` }))
 })
 
 it('treats a client paired from the host’s own pairing code and recorded nowhere as a phone, until the launch script records it', async () => {

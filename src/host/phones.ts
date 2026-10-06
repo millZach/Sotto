@@ -47,8 +47,8 @@ export interface HostPhoneAccess {
   summary(): HostPhoneAccessSummary
   /** How many paired clients hold an open socket on the tailnet listener. */
   peers(): number
-  /** Told whenever phone access or the listener changed, so the host can record a new address. */
-  subscribe(listener: () => void): () => void
+  /** Told the tailnet address whenever phone access or the listener changed, so the host can record a new one. */
+  subscribe(listener: (address: string | undefined) => void): () => void
   /** Told after a client was revoked on either listener: a desktop leaves the record, and the last one turns `tailnetConnections` off. */
   revoked(clientId: string): void
   close(): Promise<void>
@@ -58,9 +58,12 @@ const NO_PAGE = 'Tailscale did not give a page to open. Open the Tailscale admin
 const NOT_SAVED = 'Phone access could not be saved on this host. Nothing was changed. Try again.'
 const TAILNET_NOT_SAVED = 'Tailnet connections could not be saved on this host. Nothing was changed. Try again.'
 
+/** The tailnet address in a phone access state: there only while Serve carries the listener. */
+const tailnetAddress = (state: Pick<PhonesState, 'phase' | 'address'>): string | undefined => state.phase === 'on' && state.address ? state.address : undefined
+
 /** A phone access state in the row's words: off, starting, on with its paired phones, or that it needs the owner. */
-export function phoneAccessSummary(state: PhonesState): HostPhoneAccessSummary {
-  const phones = state.phones.length
+export function phoneAccessSummary(state: Pick<PhonesState, 'enabled' | 'phase'> & { readonly phones: number }): HostPhoneAccessSummary {
+  const { phones } = state
   if (!state.enabled) return { status: 'off', phones }
   if (state.phase === 'failed' || state.phase === 'cleanup-failed') return { status: 'needs-you', phones }
   if (state.phase === 'starting') return { status: 'starting', phones }
@@ -86,7 +89,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     settings: () => current, policy: options.policy,
     // A host has no browser. The desktop asks for the page with `open-serve-setup` and opens it itself.
     openExternal: async () => { throw new Error(NO_PAGE) },
-    listener: { ...options.listener, desktops: options.desktops, phoneAccess: (): HostPhoneAccessSummary => phoneAccessSummary(access.get()), onRevoked: revoked },
+    listener: { ...options.listener, desktops: options.desktops, phoneAccess: (): HostPhoneAccessSummary => phoneAccessSummary(access.brief()), onRevoked: revoked },
     ...(options.log ? { log: options.log } : {}),
   })
   // Tailscale's checks take seconds, so they run beside the host's start rather than in front of it.
@@ -128,10 +131,11 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
   }
   return {
     administration: { get: () => access.get(), command, tailnet },
-    address: () => { const state = access.get(); return state.phase === 'on' && state.address ? state.address : undefined },
-    summary: () => phoneAccessSummary(access.get()),
+    // Health reads these on every request, unmetered, so they skip the per-phone policy lookups `get()` makes.
+    address: () => tailnetAddress(access.brief()),
+    summary: () => phoneAccessSummary(access.brief()),
     peers: () => access.peers(),
-    subscribe: listener => access.subscribe(() => listener()),
+    subscribe: listener => access.subscribe(state => listener(tailnetAddress(state))),
     revoked,
     close: async () => { await started; await revoking; await access.close() },
   }

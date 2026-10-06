@@ -1,4 +1,5 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink } from 'node:fs/promises'
+import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
@@ -127,19 +128,25 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
     let phones: HostPhoneAccess | undefined
     const descriptorPath = join(directory, 'host-listener.json')
-    /** The descriptor as last written, while the host may still write it: the launch script reads the tailnet address there. */
-    let written: { tailnetAddress: string | undefined } | undefined
+    // The launch script reads the descriptor on every connect, while the host may be writing it again for a new tailnet
+    // address, so it is written whole to a private temporary file and renamed into place: a reader never sees half of it.
+    const descriptorStore = new AtomicJsonStore<Record<string, unknown>>(descriptorPath, value => value as Record<string, unknown>, () => ({}))
+    /** Whether the host writes its descriptor: from its listener's start until it closes. */
+    let describing = false
+    /** The tailnet address the descriptor last recorded, set only once a write succeeded, so a failed one is tried again. */
+    let recordedAddress: string | undefined
     let descriptorWrites: Promise<void> = Promise.resolve()
     const writeDescriptor = (): Promise<void> => {
-      descriptorWrites = descriptorWrites.then(async () => {
-        if (!listener || !written) return
+      // Each write starts after the last one settles either way, so one that failed never stops the ones after it.
+      const write = descriptorWrites.catch(() => undefined).then(async () => {
+        if (!listener || !describing) return
         const tailnetAddress = phones?.address()
-        written = { tailnetAddress }
-        await writeFile(descriptorPath, JSON.stringify({ ...listener.descriptor, adminToken: listener.adminToken,
-          ...(options.startedBy ? { startedBy: options.startedBy } : {}), ...(tailnetAddress ? { tailnetAddress } : {}) }) + '\n', { encoding: 'utf8', mode: 0o600 })
-        await chmod(descriptorPath, 0o600)
+        await descriptorStore.write({ ...listener.descriptor, adminToken: listener.adminToken,
+          ...(options.startedBy ? { startedBy: options.startedBy } : {}), ...(tailnetAddress ? { tailnetAddress } : {}) })
+        recordedAddress = tailnetAddress
       })
-      return descriptorWrites
+      descriptorWrites = write
+      return write
     }
     const about = () => ({ tailnetAddress: phones?.address(), startedBy: options.startedBy })
     try {
@@ -167,10 +174,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const { peers } = listener
         // A desktop or phone on the tailnet listener is a window in front as much as one through SSH is.
         peersConnected = () => peers() > 0 || tailnet.peers() > 0
-        written = { tailnetAddress: undefined }
+        describing = true
         await writeDescriptor()
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
-        tailnet.subscribe(() => { if (written && written.tailnetAddress !== tailnet.address()) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
+        tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
     } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
@@ -184,7 +191,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
           // The descriptor is no longer written from here on, so the one removed below stays removed.
           try { await phones?.close() } catch { options.log?.('phone-access-close-failed') }
-          written = undefined
+          describing = false
           await descriptorWrites.catch(() => undefined)
           try { await listener?.close() } finally {
             try { await runtime.close() } finally {

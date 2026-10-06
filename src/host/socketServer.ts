@@ -18,7 +18,7 @@ import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal } from './remoteCommand
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
-import { CommandReceipts, type CommandReceipt, type CommandReceiptOptions } from './commandReceipts'
+import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -29,8 +29,14 @@ const errors: Record<HostErrorCode, string> = {
   busy: 'The host has too many pending requests. Wait for them to finish and try again.',
   too_large: 'A thread on this host is too large to send to this device. Nothing on the host was lost, and the thread keeps working there. Your other threads still load here.',
 }
-/** A phone's pairing or session on a host's tailnet listener while the host's phone access is off (ADR-0053). */
-export const PHONES_OFF = 'Phone access is off on this computer. Turn it on in Sotto, then try again.'
+/**
+ * A phone's pairing, session or hello on a host's tailnet listener while the host's phone access is off (ADR-0053),
+ * naming the host as phones show it. The pairing is kept: this is 403 `forbidden`, not 401's "pair again".
+ */
+export const phonesOff = (name: string | undefined): string => {
+  const host = name?.trim() || 'this computer'
+  return `Phone access is off on ${host}. Your pairing is kept. In Sotto on your main computer, open Settings > Hosts, press Phones… on ${host}'s row and turn on Let phones reach ${host}, then try again.`
+}
 /**
  * An oversize message is named by what it carried: one thread's detail, an attachment preview, or the
  * thread list (a shell push, the hello, an event page, or the shell a command answers with). The headless
@@ -68,27 +74,20 @@ export interface SocketServerOptions {
   setAnswers?: (clientId: string, allowed: boolean) => void
   /**
    * The command receipts this listener answers retries from. A headless host's two listeners share one, so a command
-   * retried after a move between them is not run twice (ADR-0053). Without one the listener keeps its own, with these
-   * options, with which tests shorten the replay window and the cap; the host keeps the defaults.
+   * retried after a move between them is not run twice (ADR-0053). Without one the listener keeps its own.
    */
-  receipts?: CommandReceipts | CommandReceiptOptions
+  receipts?: CommandReceipts
   /**
    * The key this listener's observed threads are kept under in the host service. Two listeners over one service each
    * need their own, or one's observations would replace the other's.
    */
   observationKey?: string
   /**
-   * Which paired clients are desktops, on a headless host's tailnet listener (ADR-0053): read again before a session and
-   * a hello, answered from the last read in between. A client that is not one is a phone, offered no desktop-only feature.
-   * Absent, every client counts as a desktop: the listener with the administrative routes is reached only on the host
-   * machine and through SSH, and the desktop's own phone listener offers no desktop-only feature anyway.
+   * Who a headless host's tailnet listener admits (ADR-0053). Absent, every client counts as a desktop and is always
+   * admitted: the listener with the administrative routes is reached only on the host machine and through SSH, and the
+   * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
    */
-  desktops?: { refresh(): Promise<unknown>; has(clientId: string): boolean }
-  /**
-   * Whether phones may use this listener now. While it says no, the listener redeems no pairing code and opens no session
-   * or socket for a client that is not a desktop, and closes a phone's socket within a second. Absent, phones always may.
-   */
-  phonesAdmitted?: () => boolean
+  tailnet?: TailnetAdmission
   /** The host's tailnet address and who started it, read for each health and hello answer. */
   about?: () => HostAbout
   /** The host's phone access in its row's words, read for each hello to a desktop. */
@@ -123,6 +122,16 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+}
+/**
+ * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
+ * and answered from the last read in between; a client not in it is a phone, offered no desktop-only feature. While
+ * `phonesAdmitted` says no, the listener redeems no pairing code, opens no session, hello or socket for a phone, and
+ * closes a phone's socket within a second.
+ */
+export interface TailnetAdmission {
+  readonly desktops: { refresh(): Promise<unknown>; has(clientId: string): boolean }
+  readonly phonesAdmitted: () => boolean
 }
 /** What the administrative phone routes answer: the state after the command, and Tailscale's page or a refusal when it gave one. */
 export interface HostPhonesAnswer { readonly state: PhonesState; readonly url?: string | undefined; readonly error?: string | undefined }
@@ -165,9 +174,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
-  const isDesktop = (clientId: string): boolean => !options.desktops || options.desktops.has(clientId)
+  const { tailnet } = options
+  const isDesktop = (clientId: string): boolean => !tailnet || tailnet.desktops.has(clientId)
   /** A client the listener serves now: any desktop, and a phone only while phones are admitted. */
-  const admits = (clientId: string): boolean => isDesktop(clientId) || (options.phonesAdmitted?.() ?? true)
+  const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
+  const phonesOffMessage = (): string => phonesOff(options.name?.())
   const { signIns } = options
   /** A sign-in's own refusal keeps its sentence; anything else is the host's failure to run it. */
   const signingIn = async <T>(peer: Peer, op: HostRequest['op'], run: () => T | Promise<T>): Promise<T> => {
@@ -176,7 +187,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const adminToken = randomBytes(32).toString('base64url')
   const peers = new Set<Peer>(), operations = new Set<Promise<unknown>>()
-  const receipts = options.receipts instanceof CommandReceipts ? options.receipts : new CommandReceipts(options.receipts)
+  const receipts = options.receipts ?? new CommandReceipts()
   const observationKey = options.observationKey ?? 'socket-observations'
   let closing = false
   const httpBudgets = new Map<string, { window: number; count: number }>()
@@ -413,10 +424,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     switch (request.op) {
       case 'hello': {
         // Whether this client is a desktop is read afresh: the launch script may have recorded it since the socket opened.
-        if (options.desktops) {
-          await options.desktops.refresh().catch(() => undefined)
+        if (tailnet) {
+          await tailnet.desktops.refresh().catch(() => undefined)
           peer.desktop = isDesktop(peer.client.clientId)
-          if (!admits(peer.client.clientId)) throw new Refusal('unauthenticated')
+          if (!admits(peer.client.clientId)) throw new Refusal('forbidden', phonesOffMessage())
         }
         peer.frames.setClientLiveness(request.accepts?.includes('client-liveness') ?? false)
         peer.messageAliases = request.accepts?.includes('message-aliases') ?? false
@@ -612,7 +623,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         }
         if (request.url === '/v1/pair') {
           // A desktop never pairs here (ADR-0053), so with phones off nobody may.
-          if (options.phonesAdmitted?.() === false) throw new Refusal('forbidden', PHONES_OFF)
+          if (tailnet && !tailnet.phonesAdmitted()) throw new Refusal('forbidden', phonesOffMessage())
           const input = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict().parse(await body(request))
           // This listener binds only loopback. Serve replaces this header with the device address;
           // direct connections use loopback's budget. Neither address grants client authority.
@@ -636,9 +647,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           const clientId = pairing.verifyToken(bearer(request))
           if (!clientId) throw new Refusal('unauthenticated')
           spend('client:' + clientId, HTTP_BUDGETS.client)
-          if (options.desktops && options.phonesAdmitted?.() === false) {
-            await options.desktops.refresh().catch(() => undefined)
-            if (!admits(clientId)) throw new Refusal('forbidden', PHONES_OFF)
+          if (tailnet && !tailnet.phonesAdmitted()) {
+            await tailnet.desktops.refresh().catch(() => undefined)
+            if (!admits(clientId)) throw new Refusal('forbidden', phonesOffMessage())
           }
           const at = Date.now()
           respond(response, 200, { v: 1, hostId, clientId, session: pairing.signSession(clientId, at), expiresAt: new Date(at + SESSION_LIFETIME_MS).toISOString() }); return
@@ -672,9 +683,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const key = request.headers['sec-websocket-key']
     if (request.url !== '/v1/socket' || !clientId || request.headers['sec-websocket-version'] !== '13' || typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (request.headers.origin && !originAllowed(request.headers.origin, options.origins))) { refuse(stream, '401 Unauthorized'); return }
     if (admits(clientId)) { open(stream, head, session, clientId, key); return }
-    if (!options.desktops) { refuse(stream, '403 Forbidden'); return }
+    if (!tailnet) { refuse(stream, '403 Forbidden'); return }
     // A desktop the launch script recorded since this listener last read the record is let in; anyone else is not.
-    void options.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key); else refuse(stream, '403 Forbidden') })
+    void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key); else refuse(stream, '403 Forbidden') })
   })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', () => { server.removeListener('error', reject); resolve() }) })
   server.on('error', () => { console.error('host_listener_error') })
@@ -695,8 +706,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     server.removeAllListeners('connection')
     server.on('connection', socket => socket.destroy())
     server.unref()
+    // A closing peer no longer clears its threads from this listener's observations, so they are cleared here, or the
+    // host would keep them loaded and shown with nobody watching (ADR-0046).
+    const observing = [...peers].some(peer => peer.observed.size > 0)
     for (const peer of peers) peer.frames.close()
     server.closeAllConnections()
+    if (observing) track(service.command({ type: 'observe-threads', threadIds: [] }, { clientId: observationKey, user: '', transport: 'socket' }).catch(() => undefined))
   }
   return {
     descriptor, adminToken,

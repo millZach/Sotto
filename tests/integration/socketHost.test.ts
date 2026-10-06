@@ -6,6 +6,7 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
+import { CommandReceipts } from '../../src/host/commandReceipts'
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -672,7 +673,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
     command: async (command, identity) => { if (command.type === 'interrupt') await new Promise<void>(resolve => release.push(resolve)); return host.service.command(command, identity) },
     events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit), subscribe: listener => host.service.subscribe(listener),
   }
-  const server = await startSocketServer({ service, pairing: host.pairing, receipts: { lifetimeMs: 1000, limit: 2, now: () => now } })
+  const server = await startSocketServer({ service, pairing: host.pairing, receipts: new CommandReceipts({ lifetimeMs: 1000, limit: 2, now: () => now }) })
   const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Receipts')
   const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(client)
   try {

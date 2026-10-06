@@ -17,7 +17,7 @@ vi.mock('node:http', async importOriginal => {
   } }
 })
 import { SocketFrames } from '../../../src/host/socketFrames'
-import { PHONES_OFF, startSocketServer } from '../../../src/host/socketServer'
+import { phonesOff, startSocketServer } from '../../../src/host/socketServer'
 import { CommandReceipts } from '../../../src/host/commandReceipts'
 import type { AgentCommand } from '../../../src/shared/agents'
 import { rawPeer } from '../../fixtures/rawHostPeer'
@@ -162,12 +162,25 @@ it('keeps each listener’s observed threads under its own key, so one listener 
   expect(observed.map(item => [item.clientId, (item.command as Extract<AgentCommand, { type: 'observe-threads' }>).threadIds])).toEqual([['socket-observations', ['a']], ['tailnet-observations', ['b']]])
 })
 
+it('clears the threads its peers observed when it stops, so the host keeps nothing shown with nobody watching', async () => {
+  const { pairing, paired } = await pairedClient('Zach’s iPhone')
+  const { service, commands } = recordingService()
+  const tailnet = await startSocketServer({ service, pairing, observationKey: 'tailnet-observations' })
+  listener = tailnet
+  const phone = await connected(tailnet.descriptor.port, pairing.signSession(paired.clientId))
+  await phone.call('observe', { op: 'observe', threadIds: ['a'] })
+  await tailnet.close()
+  listener = undefined
+  const observed = commands.filter(item => item.command.type === 'observe-threads' && item.clientId === 'tailnet-observations')
+  expect(observed.map(item => (item.command as Extract<AgentCommand, { type: 'observe-threads' }>).threadIds)).toEqual([['a'], []])
+})
+
 it('offers a phone on a listener that tells desktops apart everything but the desktop-only features, and refuses it a sign-in', async () => {
   const { pairing, paired } = await pairedClient('Zach’s iPhone')
   const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
   const { service } = recordingService()
   const desktops = new Set([desktop.clientId])
-  listener = await startSocketServer({ service, pairing, clientUpdates: true, desktops: { refresh: async () => undefined, has: id => desktops.has(id) },
+  listener = await startSocketServer({ service, pairing, clientUpdates: true, tailnet: { desktops: { refresh: async () => undefined, has: id => desktops.has(id) }, phonesAdmitted: () => true },
     signIns: { start: async () => { throw new Error('A phone never reaches this.') }, read: () => null, code: async () => null, cancel: () => undefined } as never,
     about: () => ({ tailnetAddress: 'https://forge.tail5728ca.ts.net:8443', startedBy: 'launch-script' }), phoneAccess: () => ({ status: 'on', phones: 1 }) })
   const health = await (await fetch(`http://127.0.0.1:${listener.descriptor.port}/v1/health`)).json() as { features: string[] }
@@ -181,7 +194,8 @@ it('offers a phone on a listener that tells desktops apart everything but the de
   expect(hello.phoneAccess).toBeUndefined()
   expect(hello.tailnetAddress).toBe('https://forge.tail5728ca.ts.net:8443')
   expect(await phone.call('sign-in', { op: 'sign-in-start', provider: 'codex' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
-  expect(await phone.call('updates', { op: 'command', command: { type: 'queue-client-updates', providers: ['codex'] } })).toMatchObject({ ok: false })
+  expect(await phone.call('updates', { op: 'command', command: { type: 'queue-client-updates', providers: ['codex'] } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await phone.call('cancel-updates', { op: 'command', command: { type: 'cancel-client-updates', providers: ['codex'] } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 
   const computer = await connected(listener.descriptor.port, pairing.signSession(desktop.clientId))
   const desktopHello = (await computer.call('hello', { op: 'hello' })).result as { features: string[]; phoneAccess?: unknown }
@@ -194,13 +208,18 @@ it('opens nothing for a phone while phones are not admitted, closes one already 
   const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
   const { service } = recordingService()
   let phonesOn = true
-  listener = await startSocketServer({ service, pairing, desktops: { refresh: async () => undefined, has: id => id === desktop.clientId }, phonesAdmitted: () => phonesOn })
+  // Phone access turning off while a phone's hello reads the record: the hello is refused as the session would be.
+  let offAtNextRead = false
+  listener = await startSocketServer({ service, pairing, name: () => 'forge', tailnet: {
+    desktops: { refresh: async () => { if (offAtNextRead) { phonesOn = false; offAtNextRead = false } }, has: id => id === desktop.clientId },
+    phonesAdmitted: () => phonesOn } })
   const url = `http://127.0.0.1:${listener.descriptor.port}`
   const phone = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
   const computer = await connected(listener.descriptor.port, pairing.signSession(desktop.clientId))
   expect(listener.peers()).toBe(2)
 
-  phonesOn = false
+  offAtNextRead = true
+  expect(await phone.call('hello', { op: 'hello' })).toMatchObject({ ok: false, error: { code: 'forbidden', message: phonesOff('forge') } })
   listener.dropRevoked()
   await vi.waitFor(() => expect(phone.frames.isClosed).toBe(true))
   expect(computer.frames.isClosed).toBe(false)
@@ -208,7 +227,7 @@ it('opens nothing for a phone while phones are not admitted, closes one already 
 
   const session = await fetch(`${url}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${(await pairing.redeem(pairing.issuePairingCode().code, 'Another phone')).token}` } })
   expect(session.status).toBe(403)
-  expect(await session.json()).toEqual({ v: 1, error: { code: 'forbidden', message: PHONES_OFF } })
+  expect(await session.json()).toEqual({ v: 1, error: { code: 'forbidden', message: phonesOff('forge') } })
   const pair = await fetch(`${url}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: pairing.issuePairingCode().code, name: 'Phone' }) })
   expect(pair.status).toBe(403)
   expect(await upgradeStatus(listener.descriptor.port, pairing.signSession(paired.clientId))).toBe(403)
