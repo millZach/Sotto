@@ -26,6 +26,11 @@ const READ_CONCURRENCY = 8
 const RACY_NS = 3_000_000_000n
 /** Folders whose last snapshot is remembered; the oldest is forgotten first. */
 const REMEMBERED_FOLDERS = 32
+/**
+ * Files whose hashes are remembered across every folder, about 0.5 KB each in the main process (measured on
+ * Node 24 with 40-character paths): some 25 MB at most. The oldest folders' files are forgotten first.
+ */
+const REMEMBERED_FILES = 50_000
 /** Paths a verdict watches beyond Git's state and the top-level listing; a verdict that needs more watches none. */
 const WATCH_LIMIT = 1_000
 
@@ -125,6 +130,16 @@ export class CheckpointCapture {
     return folder
   }
 
+  /** Keep `REMEMBERED_FILES` across every folder, forgetting the files of the folders used longest ago. */
+  private trimFiles(): void {
+    let total = 0
+    for (const folder of this.folders.values()) total += folder.files?.size ?? 0
+    for (const folder of this.folders.values()) {
+      if (total <= REMEMBERED_FILES) break
+      if (folder.files) { total -= folder.files.size; delete folder.files }
+    }
+  }
+
   /** The checkout a canonical folder belongs to, asked of Git once per folder while its Git directory stands. */
   async checkout(root: string): Promise<string> {
     const folder = this.folder(root)
@@ -192,7 +207,7 @@ export class CheckpointCapture {
     let outcome: Snapshot | Refusal
     try { outcome = await this.walk(root, folder, reuse, started) }
     catch (error) { delete folder.verdict; throw error }
-    if (!(outcome instanceof Refusal)) { delete folder.verdict; return outcome }
+    if (!(outcome instanceof Refusal)) { delete folder.verdict; this.trimFiles(); return outcome }
     // Read after the walk: a watched path changed since it started is too recent to hold the verdict over.
     const watched = await this.fingerprints(outcome.watch, started)
     if (signature !== undefined && !watched.recent) folder.verdict = { error: outcome.error, signature, watched: outcome.watch, fingerprints: watched.text }
