@@ -4,7 +4,7 @@ import type { DesktopHostRouter } from '../hosts/desktopHostRouter'
 export interface RemoteHostE2EConnection { url: string; token: string; hostId: string; holdReceipts?: boolean }
 export interface RemoteHostE2E {
   connect(input: RemoteHostE2EConnection): Promise<void>
-  disconnect(hostId: string): Promise<void>
+  disconnect(hostId: string, keepThreads?: boolean): Promise<void>
   receiptReads(hostId: string): number
   completedIdleReceiptReads(hostId: string): number
   releaseReceipts(hostId: string): void
@@ -32,7 +32,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
         const wait = input.holdReceipts ? new Promise<void>(resolve => { release = resolve }) : Promise.resolve()
         const gate = { wait, release, reads: 0, completedIdle: 0 }
         gates.set(hello.hostId, gate)
-        router.add({ hostId: hello.hostId, name: 'Forge', kind: 'remote', service: socket,
+        router.replace({ hostId: hello.hostId, name: 'Forge', kind: 'remote', service: socket,
           refreshRequestAnswer: async (id, target) => {
             const state = socket.shell()
             const idle = !state.busyThreadIds?.includes(target.threadId)
@@ -46,12 +46,13 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
         sockets.set(hello.hostId, socket)
       } catch (error) { await socket.close(); throw error }
     },
-    async disconnect(hostId) {
+    async disconnect(hostId, keepThreads = false) {
       const socket = sockets.get(hostId)
       sockets.delete(hostId)
       gates.get(hostId)?.release()
       gates.delete(hostId)
-      router.remove(hostId)
+      if (keepThreads) router.setReconnecting(hostId, true)
+      else router.remove(hostId)
       await socket?.close()
     },
     receiptReads: hostId => gates.get(hostId)?.reads ?? 0,

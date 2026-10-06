@@ -176,6 +176,45 @@ test('a late exact receipt after remote reconnect removes the mounted unconfirme
   } finally { f.host.service.requestAnswerRecovery = originalRecovery; await f.close() }
 })
 
+test('acceptance recovered by a receipt reply after reconnect clears the existing banner without another shell read', async () => {
+  test.setTimeout(120_000)
+  let finishNative: (accepted: boolean) => void = () => undefined
+  const completion = new Promise<boolean>(resolve => { finishNative = resolve })
+  const f = await fixture('claude', true, completion)
+  try {
+    const { page } = f.launched
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    const live = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    await live.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(live).toHaveAttribute('data-save', 'saved')
+    await live.getByRole('button', { name: 'Send answer', exact: true }).click()
+    const retained = page.getByRole('region', { name: 'Unconfirmed answer', exact: true })
+    await expect(retained).toBeVisible()
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.completedIdleReceiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    // Keep the selected thread and its command notice, as the production reconnect path does.
+    await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
+    finishNative(true)
+    const remoteThread = f.host.service.shell().host.threads.find(thread => thread.title === 'Forge question fixture')!
+    await expect.poll(() => f.host.service.requestAnswerRecovery(remoteThread.id, 'claude').completed.length).toBe(1)
+    await f.launched.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect({ ...connection, holdReceipts: true }), f.connection)
+    await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.receiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    await expect(retained).toBeVisible()
+    await expect(page.getByRole('alert')).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('receipt-reply-awaiting-proof.png'), animations: 'disabled' })
+    // Acceptance happened offline. Only this reply can reveal it; never poll agents.get(),
+    // change selection or cause another shell read to clear the notice on the test's behalf.
+    await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.releaseReceipts(id), f.connection.hostId)
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    await expect(retained).toHaveCount(0)
+    await page.screenshot({ path: test.info().outputPath('receipt-reply-draft-retired.png'), animations: 'disabled' })
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await page.screenshot({ path: test.info().outputPath('receipt-reply-confirmed.png'), animations: 'disabled' })
+    expect(f.native.answers).toHaveLength(1)
+    expect(f.errors).toEqual([])
+  } finally { finishNative(false); await f.close() }
+})
+
 test('Check again refreshes the exact saved remote answer through desktop wiring and unlocks an unsent hold without submitting it', async () => {
   test.setTimeout(120_000)
   const f = await fixture('codex')

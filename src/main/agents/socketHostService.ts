@@ -403,7 +403,8 @@ export class SocketHostService implements HostService {
     const generation = this.generation
     const receipt = await this.receipt(commandId, answer)
     this.sameGeneration(generation)
-    if (receipt.status === 'completed' && receipt.acceptedAnswer?.decisionId === commandId) this.cacheAcceptedAnswer(receipt.acceptedAnswer)
+    if (receipt.status === 'completed' && receipt.acceptedAnswer?.decisionId === commandId
+      && this.cacheAcceptedAnswer(receipt.acceptedAnswer) && this.cached) this.notifyState()
   }
   /** Replies and opted-in pushes prove the same exact attempt. A negative reply can never undo proof. */
   private cacheAcceptedAnswer(accepted: NonNullable<HostReceipt['acceptedAnswer']>): boolean {

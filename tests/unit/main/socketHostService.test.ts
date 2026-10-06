@@ -216,6 +216,34 @@ describe('SocketHostService on a tailnet connection (ADR-0053)', () => {
 })
 
 describe('SocketHostService exact acceptance pushes', () => {
+  it('notifies subscribers once when a receipt read recovers acceptance after reconnect, retaining an unrelated shell error', async () => {
+    const onPushError = vi.fn(), onPushErrorCleared = vi.fn()
+    const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused', onPushError, onPushErrorCleared })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
+    const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
+    const proof = { ...target, decisionId: 'decision' }
+    const receipt = vi.spyOn(client, 'receipt').mockResolvedValue({ status: 'pending' })
+    await client.refreshRequestAnswer('decision', target)
+    await client.close()
+    // The new connection's shell arrives before its background read obtains the missing proof.
+    receive({ v: 1, event: 'shell', state: emptyDesktopState() })
+    receive({ v: 1, event: 'error', error: { code: 'too_large', message: 'The thread list on this host is too large to send.' } })
+    const notify = vi.fn(() => client.requestAnswerRecovery('thread', 'claude').completed)
+    client.subscribe(notify)
+    receipt.mockResolvedValue({ status: 'completed', acceptedAnswer: proof })
+    await client.refreshRequestAnswer('decision', target)
+    expect(notify).toHaveBeenCalledOnce()
+    expect(notify.mock.results[0]?.value).toEqual([{ requestId: 'question', questionsDigest: target.questionsDigest, decisionId: 'decision' }])
+    expect(onPushError).toHaveBeenCalledOnce()
+    expect(onPushErrorCleared).not.toHaveBeenCalled()
+    // Repeated reads and a duplicate push carry no new evidence and do not publish again.
+    await client.refreshRequestAnswer('decision', target)
+    receive({ v: 1, event: 'answer-receipt', acceptedAnswer: proof })
+    expect(notify).toHaveBeenCalledOnce()
+    receive({ v: 1, event: 'shell', state: emptyDesktopState() })
+    expect(onPushErrorCleared).toHaveBeenCalledOnce()
+  })
   it('keeps an oversized shell error through a matching acceptance push until a fresh shell arrives', async () => {
     const onPushError = vi.fn(), onPushErrorCleared = vi.fn()
     const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused', onPushError, onPushErrorCleared })
