@@ -123,7 +123,28 @@ it('shows an admin connection’s Tailscale approval at the top of the dialog wh
   const user = userEvent.setup()
   const { sent } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true, url: 'https://login.tailscale.com/a/l1fixture2b3c' } }))
   const dialog = await open(user)
-  expect(within(dialog).getByText(/^Waiting for your approval in Tailscale\./u)).toBeTruthy()
+  expect(within(dialog).getByText('Waiting for your approval in Tailscale. forge uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.')).toBeTruthy()
   await user.click(within(dialog).getByRole('button', { name: 'Open the Tailscale approval page for forge' }))
   expect(sent()).toContainEqual({ type: 'open-approval', id: REMOTE })
+  expect(within(dialog).getByRole('button', { name: 'Why Tailscale asks' })).toBeTruthy()
+})
+
+it('shows phone access as not read yet until the host is read, with no switch to mislead (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { push } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))
+  const dialog = await open(user)
+  // Nothing is known yet: no switch reading off, and each check waits for the first.
+  expect(within(dialog).queryByRole('switch')).toBeNull()
+  const checks = within(dialog).getByRole('list', { name: 'Phone access on forge' })
+  expect(within(checks).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+    'Let phones reach forgeNot read yet. The switch shows once Sotto reaches forge over SSH.',
+    'Tailscale on forgeWaits for the step above.',
+    'Tailscale Serve on port 8443Waits for the step above.',
+    'Paired phonesWaits for the step above.',
+  ])
+  expect(within(checks).getAllByRole('img', { name: 'Not yet' })).toHaveLength(4)
+  // Read: the switch shows as the host has it.
+  push({ state: phones() })
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toHaveAttribute('aria-checked', 'true')
+  expect(within(dialog).queryByText('Waits for the step above.')).toBeNull()
 })

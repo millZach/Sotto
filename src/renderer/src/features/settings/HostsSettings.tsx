@@ -9,7 +9,8 @@ import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { HostDialog, HostsModal, type HostDialogMode } from './HostDialog'
 import { TailscaleRow, useTailscale } from './TailscaleConnect'
 import { HostProviders, connectedProvidersLabel } from './HostProviders'
-import { HostPhonesDialog, hostPhonesLabel, phoneWords, TAILSCALE_OPERATOR_COMMAND } from './HostPhonesDialog'
+import { HostPhonesDialog, hostPhonesLabel, phoneWords } from './HostPhonesDialog'
+import { TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -116,7 +117,7 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
     <span className="hosts-row__icon" aria-hidden="true"><Server size={18} /></span>
     <div className="hosts-row__info">
       <h4>{host.name}</h4>
-      <p className="hosts-row__meta">{line.connection ? `${line.connection} · ` : ''}<span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
+      <p className="hosts-row__meta">{line.connection ? <><span className="hosts-row__via" data-via={line.connection === 'Tailnet' ? 'tailnet' : 'ssh'}>{line.connection}</span> · </> : ''}<span data-phase={host.phase}>{waitingForAnswer ? 'Waiting for your answer' : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}</p>
       {line.note ? <p className="hosts-row__note">{host.tailnetNote === 'operator'
         ? <>{host.name}’s Tailscale Serve needs <code className="phones-mono">{TAILSCALE_OPERATOR_COMMAND}</code>, run on {host.name}. Sotto stays on SSH until it can, and tries again every 5 minutes.</>
         : host.tailnetNote === 'no-tailscale' ? `Tailscale isn’t running on ${host.name}, so Sotto connects over SSH. It tries the tailnet again every 5 minutes.`
@@ -172,7 +173,7 @@ function RenameDialog({ host, onRename, onClose }: { readonly host: HostStatus; 
       <label className="tt-field__label" htmlFor={inputId}>Host name</label>
       <input id={inputId} className="tt-input tt-focusable" value={name} maxLength={80} aria-describedby={hintId} onChange={event => setName(event.target.value)}
         onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void save() } }} />
-      <p className="tt-field__description" id={hintId}>Shown on this row and beside the host's projects and threads. The SSH connection does not change.</p>
+      <p className="tt-field__description" id={hintId}>Shown on this row and beside the host's projects and threads. How Sotto connects to it does not change.</p>
     </div></div>
     {error ? <div className="hosts-notice hosts-notice--error" role="alert"><p>{error}</p></div> : null}
   </HostsModal>
@@ -305,7 +306,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p>Restart Sotto to apply the local host setting.</p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>Restart Sotto</Button></div>}
     <p>Dictation and automatic paste always use this computer. They do not paste into a remote host.</p>
     <div className="hosts-heading"><h3>Remote hosts</h3><Button ref={addButton} variant="secondary" disabled={!bridge} onClick={() => setDialog({ kind: 'add' })}><Plus size={16} aria-hidden="true" />Add host</Button></div>
-    <p>Connect to machines you reach over SSH. Sotto signs in with your SSH setup, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, and a host Sotto started keeps running until you stop it.</p>
+    <p>Connect to machines on your tailnet or over SSH. Sotto signs in with your SSH setup to add one, starts the host if needed and pairs this computer. Hosts that are on reconnect when Sotto starts, over your tailnet when they can, and a host Sotto started keeps running until you stop it.</p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
     {state?.setup && !dialog ? <HostSetupLine setup={state.setup} onShow={() => setDialog({ kind: 'setup' })} onDismiss={() => void run({ type: 'dismiss-setup', id: state.setup!.id })} /> : null}
     {state?.forgotten?.map(forgotten => <ForgottenNotice key={forgotten.id} forgotten={forgotten}

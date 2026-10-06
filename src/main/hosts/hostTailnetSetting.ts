@@ -25,6 +25,18 @@ export async function hostTailnetSetting(connection: PressConnection, hostId: st
   return { enabled: answer.enabled, state: answer.state, ...(answer.error ? { error: answer.error } : {}) }
 }
 
+const phonesAnswerSchema = z.object({ v: z.literal(1), hostId: z.uuid(), state: phonesStateSchema, url: z.string().max(2100).optional(), error: z.string().max(1000).optional() })
+
+/**
+ * Asks the host to set up its Tailscale Serve again, as the Phones dialog's Try again does, then reads the setting: for a
+ * Serve that failed because Tailscale was not running or the SSH account was not Tailscale's operator, which the host does
+ * not try again by itself.
+ */
+export async function retryTailnetServe(connection: PressConnection, hostId: string): Promise<HostTailnetSetting> {
+  await hostAdminRequest(connection, 'phones-command', { command: { type: 'retry' } }, phonesAnswerSchema, hostId, HOST_ADMIN_COMMAND_TIMEOUT_MS)
+  return hostTailnetSetting(connection, hostId)
+}
+
 /** The tailnet address a setting's answer carries: there only while Serve carries the host's tailnet listener. */
 export function settingAddress(setting: HostTailnetSetting): string | undefined {
   const address = setting.state.phase === 'on' ? setting.state.address : null

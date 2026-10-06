@@ -8,11 +8,12 @@ import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
 import { HostsModal } from './HostDialog'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
+import { TAILSCALE_GUIDE_URL } from './HostSetupChecklist'
+import { TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
 import './hosts.css'
 import './phones.css'
 
-/** What Tailscale needs on Linux before an account that is not root may change Serve. Shown for the owner to run; Sotto never runs it. */
-export const TAILSCALE_OPERATOR_COMMAND = 'sudo tailscale set --operator=$USER'
+export { TAILSCALE_OPERATOR_COMMAND }
 /** How often an open dialog tells main it is still open, well inside main's minute (HOST_PHONES_WATCH_MS). */
 const RENEW_WATCH_MS = 30_000
 
@@ -119,6 +120,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
   }
 
   const live = connected && state !== undefined
+  const approving = host.adminSignIn === true && host.tailscale?.waiting === true
   const busy = view?.busy === true
   const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
@@ -162,20 +164,31 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
     <div className="hosts-settings phones-settings host-phones">
       <p className="host-phones__intro">Reach {name}’s threads from Sotto on your iPhone, over Tailscale.</p>
       {/* On a tailnet connection the dialog reads and changes phone access over an admin connection, whose sign-in Tailscale may hold (ADR-0053). */}
-      {host.adminSignIn && host.tailscale?.waiting ? <div className="hosts-notice phones-needs-host" role="status">
+      {approving ? <div className="hosts-notice host-phones-approval" role="status">
         <Info size={16} aria-hidden="true" />
-        <p>Waiting for your approval in Tailscale. Sotto signs in to {name} over SSH to read and change its phone access.</p>
-        {host.tailscale.url ? <Button variant="secondary" aria-label={`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>Open approval page</Button> : null}
+        <div className="host-phones-approval__copy">
+          <p>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</p>
+          <span className="host-phones-approval__actions">
+            {host.tailscale?.url ? <Button aria-label={`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>Open approval page</Button> : null}
+            <button type="button" className="host-setup__link tt-focusable" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>Why Tailscale asks</button>
+          </span>
+        </div>
       </div> : null}
-      <div className="phones-switch">
+      {/* Until the host is read, nothing here is known: the switch shows once it is, rather than reading off. */}
+      {connected && !state ? <ol className="phones-steps host-phones-steps host-phones-unread" aria-label={`Phone access on ${name}`} aria-busy={!view?.error || undefined}>
+        <li data-step="waiting"><StepMark step="waiting" /><div className="phones-step__copy"><b>Let phones reach {name}</b>
+          <p role="status">{view?.error ? 'Not read.' : approving ? `Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : `Reading phone access on ${name}…`}</p></div></li>
+        {[`Tailscale on ${name}`, `Tailscale Serve on port ${PHONE_ACCESS_SERVE_PORT}`, 'Paired phones'].map(title => <li key={title} data-step="waiting"><StepMark step="waiting" />
+          <div className="phones-step__copy"><b>{title}</b><p>Waits for the step above.</p></div></li>)}
+      </ol> : <div className="phones-switch">
         <Toggle label={`Let phones reach ${name}`} checked={state?.enabled ?? false} disabled={!live || busy}
           onCheckedChange={enabled => void run({ type: 'set-enabled', enabled })}
           description={`Sotto runs Tailscale Serve on ${name}, port ${PHONE_ACCESS_SERVE_PORT}, so Sotto on your iPhone can reach ${name}’s threads over your tailnet. Only phones you pair can connect. Phones reach ${name} while its host runs. Turning this off removes the setting and disconnects them.`} />
-      </div>
+      </div>}
       {!connected ? <div className="hosts-notice">
         <Info size={16} aria-hidden="true" />
         <p>Connect to {name} to change phone access or pair a phone. Phones already paired keep reaching it while its host runs.</p>
-      </div> : !state ? <p className="host-phones__reading" role="status">{view?.error ? '' : `Reading phone access on ${name}…`}</p> : null}
+      </div> : null}
       {view?.error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{view.error}</p></div> : null}
       {live && state.enabled ? <ol className="phones-steps host-phones-steps" aria-label={`Phone access on ${name}`} aria-busy={starting || undefined}>
         <li data-step={tailscaleStep}>

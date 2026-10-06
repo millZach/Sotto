@@ -41,6 +41,8 @@ let returnMs = 60_000
 let retryMs = 0
 /** Whether Tailscale is installed on the host's machine; the stand-in's Serve is used only while it is. */
 let tailscaleInstalled = true
+/** Whether the host's Serve is refused until the SSH account is Tailscale's operator, as Linux asks. */
+let serveDenied = false
 /** The desktop's clock, which a test moves on to pass a boot host's first minute of retries. */
 let clock = 0
 /** A token the fixture's connections hand out instead of the host's, as a host that will not take it would see. */
@@ -80,13 +82,14 @@ class FixtureSsh extends SshHostLauncher {
 function startHost(startedBy: HostStartedBy) {
   const standIn = hostTailscale.tailscale
   return startHeadlessHost({ dataDirectory: data, port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() },
-    reasoner: e2eAgentReasoner, tailscale: { ...standIn, status: async () => tailscaleInstalled ? standIn.status() : { state: 'missing' } }, startedBy })
+    reasoner: e2eAgentReasoner, tailscale: { ...standIn, status: async () => tailscaleInstalled ? standIn.status() : { state: 'missing' },
+      serve: async (port, loopback) => serveDenied ? { ok: false, reason: 'denied' } : standIn.serve(port, loopback) }, startedBy })
 }
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-desktop-tailnet-'))
   data = join(root, 'remote')
   hostTailscale = standInTailscale({ ok: true }, DNS)
-  tailscaleInstalled = true; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined
+  tailscaleInstalled = true; serveDenied = false; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined
   host = await startHost('launch-script')
   stand = await serveStandIn(() => hostTailscale.proxied())
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
@@ -141,6 +144,10 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(await saved()).toEqual([expect.objectContaining({ id: remote.id, prefer: 'tailnet', address: ADDRESS })])
     expect(await admin('tailnet', {})).toMatchObject({ enabled: true })
     expect(hostTailscale.proxied()).toBeDefined()
+    // Add host's checklist ends with its tailnet step, done.
+    expect(first().addTailnet).toEqual({ state: 'done' })
+    // Edit connection shows the address and when this computer last reached the host there.
+    expect(first()).toMatchObject({ tailnetAddress: ADDRESS, tailnetSeen: clock })
     // The threads are the host's, on the Threads page, over the tailnet.
     const thread = await remoteThread()
     expect(row(thread)).toMatchObject({ clientConnected: true })
@@ -155,6 +162,41 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(await saved()).toEqual([])
     expect(await admin('tailnet', {})).toMatchObject({ enabled: false })
     expect(hostTailscale.proxied()).toBeUndefined()
+    // Add host's tailnet step says why the host stayed on SSH.
+    expect(first().addTailnet).toEqual({ state: 'ssh', why: 'no-tailscale' })
+  })
+
+  it('shows Add host’s tailnet step under way from the moment the host is saved, until the socket is on the tailnet', async () => {
+    const seen: string[] = []
+    manager.subscribe(state => { const saved = state.hosts[0]; if (saved) seen.push(`${saved.phase} ${saved.addTailnet?.state ?? 'none'}`) })
+    await add()
+    // The host never reads as added and done before its tailnet step has run.
+    expect(seen[0]).toBe('connected active')
+    expect(seen).not.toContain('connected none')
+    expect(seen.at(-1)).toBe('connected done')
+  })
+
+  it('says at Add host that the host’s Serve needs its operator, and tries that Serve again when the tailnet is chosen again', async () => {
+    serveDenied = true
+    const remote = await add()
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', prefer: 'tailnet', tailnetNote: 'operator', addTailnet: { state: 'ssh', why: 'operator' } })
+    // The owner runs the command on the host, then presses Try again, which chooses the tailnet again.
+    serveDenied = false
+    await manager.command({ type: 'set-connection', id: remote.id, prefer: 'tailnet' })
+    await onTailnet()
+    expect((await saved())[0]).toMatchObject({ prefer: 'tailnet', address: ADDRESS })
+  })
+
+  it('tries a Serve that needed its operator again at the 5-minute check, over the SSH connection it is on', async () => {
+    returnMs = 300
+    await relaunch()
+    serveDenied = true
+    await add()
+    expect(first()).toMatchObject({ via: 'ssh', tailnetNote: 'operator' })
+    serveDenied = false
+    await onTailnet()
+    // The check signed in nothing: the only SSH connection is Add host's.
+    expect(launchers).toHaveLength(1)
   })
 
   it('leaves the host’s tailnet connections on at Add host when another desktop turned them on, even with no Tailscale running', async () => {
@@ -167,9 +209,17 @@ describe('a tailnet connection (ADR-0053)', () => {
 
   it('reconnects over the tailnet at launch with no SSH at all', async () => {
     await add()
-    await relaunch()
+    await manager.close(); router.dispose(); router = new DesktopHostRouter(emptyDesktopState)
+    launchers.length = 0
+    clock += 60_000
+    manager = newManager()
+    // What the window was last told: Edit connection says when this computer last reached the host on its tailnet.
+    let told: number | undefined
+    manager.subscribe(state => { told = state.hosts[0]?.tailnetSeen })
+    await manager.start()
     await onTailnet()
     expect(launchers).toEqual([])
+    await vi.waitFor(() => expect(told).toBe(clock))
   })
 
   it('keeps the threads on the page through a drop, and reconnects over the tailnet without SSH', async () => {

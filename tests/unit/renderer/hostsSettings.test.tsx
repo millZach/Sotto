@@ -71,6 +71,10 @@ async function typeAHost(user: ReturnType<typeof userEvent.setup>, dialog: HTMLE
   await user.click(within(dialog).getByRole('option', { name: /^Another SSH host/ }))
   return within(dialog).getByRole('textbox', { name: 'SSH host' })
 }
+/** A saved host this computer has never paired with: it has no host ID yet. */
+const neverPaired = (status: HostStatus): HostStatus => { const copy = { ...status }; delete copy.hostId; return copy }
+/** A row's line saying how the host is connected and how it is, read whole: the connection is its own span. */
+const rowMeta = (row: HTMLElement): string | null | undefined => row.querySelector('.hosts-row__meta')?.textContent
 const settings = (bridge: HostsBridge) => render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
 
 it('keeps the local host switch, and no longer offers Save, Connect, Disconnect or Use this host', async () => {
@@ -86,19 +90,19 @@ it('reads a row the way the prototype does and switches a host off and on', asyn
   const { bridge, command, push } = fixture([host({ target: 'forge', name: 'forge' })]), user = userEvent.setup()
   settings(bridge)
   const row = await screen.findByRole('region', { name: 'forge' })
-  expect(within(row).getByText(/SSH forge ·/).textContent).toBe('SSH forge · Connected')
+  expect(rowMeta(row)).toBe('SSH forge · Connected')
   const toggle = within(row).getByRole('switch', { name: 'Keep forge connected, now and when Sotto starts' })
   expect(toggle.getAttribute('aria-checked')).toBe('true')
   expect(within(row).getByText('On')).toBeTruthy()
   await user.click(toggle)
   expect(command).toHaveBeenCalledWith({ type: 'set-enabled', id: REMOTE, enabled: false })
   push({ hosts: [host({ target: 'forge', name: 'forge', phase: 'disconnected', enabled: false })] })
-  expect(within(row).getByText(/SSH forge ·/).textContent).toBe('SSH forge · Switched off')
+  expect(rowMeta(row)).toBe('SSH forge · Switched off')
   expect(within(row).getByRole('switch').getAttribute('aria-checked')).toBe('false')
   await user.click(within(row).getByRole('switch'))
   expect(command).toHaveBeenLastCalledWith({ type: 'set-enabled', id: REMOTE, enabled: true })
   push({ hosts: [host({ target: 'forge', name: 'forge', phase: 'connecting', reconnecting: true, sshPort: 2222 })] })
-  expect(within(row).getByText(/SSH forge/).textContent).toBe('SSH forge, port 2222 · Reconnecting…')
+  expect(rowMeta(row)).toBe('SSH forge, port 2222 · Reconnecting…')
 })
 
 it('begins the row with how the host is connected, and says when the tailnet did not answer (ADR-0053)', async () => {
@@ -135,6 +139,147 @@ it('says before Add host is pressed that it turns on Tailscale Serve on the host
   const sentence = within(dialog).getByText(/^Sotto turns on Tailscale Serve on the host, on your tailnet only/u)
   // A keyboard or screen reader user meets it on the press itself.
   expect(within(dialog).getByRole('button', { name: 'Add host' })).toHaveAccessibleDescription(sentence.textContent!)
+})
+
+it('sets the row’s connection apart from how the host is, and says so for a host on the tailnet', async () => {
+  const { bridge } = fixture([host({ target: 'forge', name: 'forge', prefer: 'tailnet', via: 'tailnet' })])
+  settings(bridge)
+  const row = await screen.findByRole('region', { name: 'forge' })
+  expect(row.querySelector('.hosts-row__via')?.getAttribute('data-via')).toBe('tailnet')
+  expect(row.querySelector('.hosts-row__via')?.textContent).toBe('Tailnet')
+})
+
+/** Adds forge from the form, and hands back the dialog, the add's ID and the press that ends the add. */
+async function addForge(user: ReturnType<typeof userEvent.setup>, answer?: (command: HostsCommand, state: HostsState) => HostsState | Promise<HostsState>) {
+  let resolveAdd: ((state: HostsState) => void) | undefined
+  const made = fixture([], (input, current) => input.type === 'add' ? new Promise<HostsState>(resolve => { resolveAdd = resolve }) : answer ? answer(input, current) : current)
+  settings(made.bridge)
+  const { dialog } = await openAddHost(user)
+  await user.click(within(dialog).getByRole('option', { name: /^forge/ }))
+  await user.click(within(dialog).getByRole('button', { name: 'Add host' }))
+  const id = (made.command.mock.calls[0]![0] as Extract<HostsCommand, { type: 'add' }>).host.id
+  const forge = (patch: Partial<HostStatus>) => host({ id, name: 'forge', target: 'forge', phase: 'connected', step: 'pair', ...patch })
+  const steps = (): string[] => within(within(dialog).getByRole('list', { name: 'Connection steps' })).getAllByRole('listitem')
+    .map(item => `${item.querySelector('[role="img"]')?.getAttribute('aria-label')}: ${item.querySelector('.host-setup__title')?.textContent}`)
+  const finish = (): void => { delete made.state().adding; resolveAdd!(made.state()) }
+  return { ...made, dialog, id, forge, steps, finish }
+}
+
+it('ends Add host with its tailnet step after Paired, and says the host is connected over the tailnet once it is (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { dialog, forge, steps, push, finish } = await addForge(user)
+  // Saved and paired, with the tailnet step under way: every step before it is done, and the add is not over yet.
+  push({ hosts: [forge({ prefer: 'tailnet', via: 'ssh', addTailnet: { state: 'active' } })] })
+  expect(steps()).toEqual(['Done: Reached forge', 'Done: Signed in', 'Done: Host installed', 'Done: Host started', 'Done: Paired', 'In progress: Reaching forge over your tailnet…'])
+  expect(screen.getByRole('dialog', { name: 'Connecting to forge' })).toBe(dialog)
+  expect(within(dialog).getAllByRole('status')[0]!.textContent).toBe('Reaching forge over your tailnet…')
+  expect(within(dialog).getByText(/^Sotto turns on Tailscale Serve on forge, on your tailnet only, and tries the address forge reports\./u)).toBeTruthy()
+  expect(within(dialog).queryByRole('button', { name: /^Change/u })).toBeNull()
+  // On the tailnet: the step is done with the address it reached, and the card says how the host is connected.
+  push({ hosts: [forge({ prefer: 'tailnet', via: 'tailnet', tailnetAddress: 'https://forge.tail5728ca.ts.net:8443', addTailnet: { state: 'done' } })] })
+  finish()
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'forge is connected' })).toBe(dialog))
+  expect(steps().at(-1)).toBe('Done: Reached forge over your tailnet')
+  expect(within(dialog).getByText('https://forge.tail5728ca.ts.net:8443')).toBeTruthy()
+  expect(within(dialog).getByText(/^forge is added and connected over your tailnet\./u)).toBeTruthy()
+  expect(within(dialog).getAllByRole('button').map(button => button.textContent)).toEqual(['Done'])
+})
+
+it('says why Add host kept a host on SSH, and Try again chooses the tailnet again, which reaches it (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { dialog, forge, steps, push, finish, command, state } = await addForge(user, (input, current) => input.type === 'set-connection'
+    ? { ...current, hosts: [{ ...current.hosts[0]!, via: 'tailnet', tailnetNote: undefined }] } : current)
+  push({ hosts: [forge({ prefer: 'tailnet', via: 'ssh', tailnetNote: 'operator', addTailnet: { state: 'ssh', why: 'operator' } })] })
+  finish()
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'forge is connected over SSH' })).toBe(dialog))
+  expect(steps().at(-1)).toBe('Failed: forge did not answer over your tailnet')
+  expect(within(dialog).getByText(/^forge’s Tailscale Serve needs your SSH account to be Tailscale’s operator there, so forge is connected over SSH\. Run this on forge, then press Try again\.$/u)).toBeTruthy()
+  expect(within(dialog).getByText('sudo tailscale set --operator=$USER')).toBeTruthy()
+  expect(within(dialog).getByText(/^forge is added and connected over SSH\./u)).toBeTruthy()
+  // Done stays where Enter lands; Try again and Use SSH only sit beside it.
+  const done = within(dialog).getByRole('button', { name: 'Done' })
+  expect(document.activeElement).toBe(done)
+  expect([...dialog.querySelectorAll('.tt-dialog__actions button')].map(button => button.textContent)).toEqual(['Use SSH only', 'Try again', 'Done'])
+  await user.click(within(dialog).getByRole('button', { name: 'Try again' }))
+  expect(command).toHaveBeenCalledWith({ type: 'set-connection', id: state().hosts[0]!.id, prefer: 'tailnet' })
+  push({})
+  await waitFor(() => expect(steps().at(-1)).toBe('Done: Reached forge over your tailnet'))
+  expect(screen.getByRole('dialog', { name: 'forge is connected' })).toBe(dialog)
+})
+
+it('chooses SSH from Add host’s tailnet step with Use SSH only, and says what went wrong when Try again could not change it', async () => {
+  const user = userEvent.setup()
+  const refusal = 'The host on forge refused the change. Nothing was changed. Check the host on forge, then try again.'
+  let refuse = true
+  const { dialog, forge, steps, push, finish, command, state } = await addForge(user, (input, current) => {
+    if (input.type === 'set-connection' && input.prefer === 'tailnet' && refuse) throw new Error(refusal)
+    return current
+  })
+  push({ hosts: [forge({ prefer: 'tailnet', via: 'ssh', tailnetNote: 'unreachable', tailnetAddress: 'https://forge.tail5728ca.ts.net:8443', addTailnet: { state: 'ssh', why: 'unreachable' } })] })
+  finish()
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'forge is connected over SSH' })).toBe(dialog))
+  expect(within(dialog).getByText('forge didn’t answer at https://forge.tail5728ca.ts.net:8443, so forge is connected over SSH. Sotto tries the tailnet again every 5 minutes.')).toBeTruthy()
+  await user.click(within(dialog).getByRole('button', { name: 'Try again' }))
+  await waitFor(() => expect(within(dialog).getByText(refusal)).toBeTruthy())
+  expect(steps().at(-1)).toBe('Failed: forge did not answer over your tailnet')
+  refuse = false
+  await user.click(within(dialog).getByRole('button', { name: 'Use SSH only' }))
+  expect(command).toHaveBeenLastCalledWith({ type: 'set-connection', id: state().hosts[0]!.id, prefer: 'ssh' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('chooses how Sotto connects in Edit connection, with the arrow keys, and writes the choice before anything else (ADR-0053)', async () => {
+  const seen = new Date(2026, 9, 6, 9, 41).getTime()
+  const { bridge, command } = fixture([host({ target: 'forge', name: 'forge', prefer: 'ssh', tailnetAddress: 'https://forge.tail5728ca.ts.net:8443', tailnetSeen: seen })])
+  const user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Edit connection' }))
+  const dialog = screen.getByRole('dialog', { name: 'Edit connection to forge' })
+  const group = within(dialog).getByRole('group', { name: 'How Sotto connects' })
+  const tailnet = within(group).getByRole('radio', { name: 'Over your tailnet, SSH when it can’t' })
+  const ssh = within(group).getByRole('radio', { name: 'SSH only' })
+  expect(ssh).toBeChecked()
+  // The tailnet choice says, before it is chosen, that it turns on Tailscale Serve on the host.
+  expect(tailnet).toHaveAccessibleDescription(/^At https:\/\/forge\.tail5728ca\.ts\.net:8443, last reached at .+\. Sotto turns on Tailscale Serve on forge for this, on your tailnet only\./u)
+  expect(within(dialog).getByRole('group', { name: 'SSH (for setup, updates and phones)' })).toContainElement(within(dialog).getByRole('textbox', { name: 'SSH host' }))
+  ssh.focus()
+  await user.keyboard('{ArrowUp}')
+  expect(tailnet).toBeChecked()
+  await user.click(within(dialog).getByRole('button', { name: 'Save connection' }))
+  // Only the choice changed: it is written, and the route is not saved again.
+  expect(command.mock.calls.map(([input]) => input)).toEqual([{ type: 'set-connection', id: REMOTE, prefer: 'tailnet' }])
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('writes the choice before saving a changed route, and has nothing to choose for a host never paired', async () => {
+  const { bridge, command } = fixture([host({ target: 'forge', name: 'forge', prefer: 'tailnet' }), neverPaired(host({ id: LOCAL, target: 'spark', name: 'spark' }))])
+  const user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for forge' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Edit connection' }))
+  let dialog = screen.getByRole('dialog', { name: 'Edit connection to forge' })
+  expect(within(dialog).getByRole('radio', { name: 'Over your tailnet, SSH when it can’t' })).toHaveAccessibleDescription(/^forge says where your tailnet reaches it once Serve is on\./u)
+  await user.click(within(dialog).getByRole('radio', { name: 'SSH only' }))
+  await user.type(within(dialog).getByRole('textbox', { name: 'Port (optional)' }), '2222')
+  await user.click(within(dialog).getByRole('button', { name: 'Save connection' }))
+  expect(command.mock.calls.map(([input]) => input.type)).toEqual(['set-connection', 'save'])
+  expect(command.mock.calls[0]![0]).toEqual({ type: 'set-connection', id: REMOTE, prefer: 'ssh' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.click(screen.getByRole('button', { name: 'More for spark' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Edit connection' }))
+  dialog = screen.getByRole('dialog', { name: 'Edit connection to spark' })
+  for (const radio of within(dialog).getAllByRole('radio')) expect(radio).toBeDisabled()
+  expect(within(dialog).getByText('Connect to spark once before choosing how Sotto connects.')).toBeTruthy()
+})
+
+it('says on Rename that how Sotto connects does not change', async () => {
+  const { bridge } = fixture(), user = userEvent.setup()
+  settings(bridge)
+  await user.click(await screen.findByRole('button', { name: 'More for Build box' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+  expect(screen.getByRole('textbox', { name: 'Host name' })).toHaveAccessibleDescription('Shown on this row and beside the host\'s projects and threads. How Sotto connects to it does not change.')
 })
 
 it('opens the row menu from the keyboard, moves with the arrows and gives focus back on Escape', async () => {
@@ -176,7 +321,7 @@ it('keeps Stop host beside the sentence that asks for it, and offers Connect aga
   const { bridge, command } = fixture([host({ phase: 'error', owned: true, error: mismatch })]), user = userEvent.setup()
   settings(bridge)
   expect((await screen.findByRole('alert')).textContent).toBe(mismatch)
-  expect(screen.getByText(/SSH build ·/).textContent).toBe('SSH build · Needs attention')
+  expect(rowMeta(screen.getByRole('region', { name: 'Build box' }))).toBe('SSH build · Needs attention')
   await user.click(screen.getByRole('button', { name: 'Stop host' }))
   await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stop host' }))
   await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'stop-host', id: REMOTE }))
@@ -552,7 +697,7 @@ it('says in words when Tailscale does not connect, and offers Get Tailscale when
   const missing = fixture([], undefined, { tailscale: { state: 'missing' } })
   settings(missing.bridge)
   const missingRow = await screen.findByRole('region', { name: 'Tailscale' })
-  await waitFor(() => expect(missingRow.textContent).toContain('Not installed. Any machine you reach over SSH works without it.'))
+  await waitFor(() => expect(missingRow.textContent).toContain('Not installed. Any machine you reach over SSH works without it, and Sotto connects to it over SSH each time.'))
   await user.click(within(missingRow).getByRole('button', { name: 'Get Tailscale' }))
   expect(missing.openTailscaleDownload).toHaveBeenCalledTimes(1)
   const { dialog } = await openAddHost(user)
@@ -582,7 +727,7 @@ it('turns Add host into the setup checklist once pressed, asks SSH questions on 
   const adding = host({ id: sent.host.id, name: 'forge', target: 'zach@forge', phase: 'connecting', step: 'reach' })
   push({ adding })
   const steps = (): string[] => within(within(dialog).getByRole('list', { name: 'Connection steps' })).getAllByRole('listitem').map(item => `${item.querySelector('[role="img"]')?.getAttribute('aria-label')}: ${item.querySelector('.host-setup__title')?.textContent}`)
-  expect(steps()).toEqual(['In progress: Reaching forge…', 'Not started: Sign in', 'Not started: Check the host installation', 'Not started: Start the host', 'Not started: Pair this computer'])
+  expect(steps()).toEqual(['In progress: Reaching forge…', 'Not started: Sign in', 'Not started: Check the host installation', 'Not started: Start the host', 'Not started: Pair this computer', 'Not started: Reach forge over your tailnet'])
   // A screen reader hears the connect move on, step by step.
   const progress = () => within(dialog).getAllByRole('status')[0]!.textContent
   expect(progress()).toBe('Reaching forge…')
@@ -672,9 +817,9 @@ it('shows an approval Tailscale asks of the port forward on the Tailscale step, 
   push({ adding: host({ id, name: 'forge', target: 'forge', phase: 'connecting', step: 'start', tailscale: { waiting: true, url: 'https://login.tailscale.com/a/l1ab2c3' } }) })
   const items = within(dialog).getAllByRole('listitem')
   expect(items.map(item => `${item.getAttribute('data-state')}: ${item.querySelector('.host-setup__title')?.textContent}`))
-    .toEqual(['done: Reached forge', 'waiting: Waiting for your approval in Tailscale', 'done: Signed in', 'done: Host installed', 'active: Starting the host…', 'todo: Pair this computer'])
+    .toEqual(['done: Reached forge', 'waiting: Waiting for your approval in Tailscale', 'done: Signed in', 'done: Host installed', 'active: Starting the host…', 'todo: Pair this computer', 'todo: Reach forge over your tailnet'])
   // Where the user is: the approval, not the step the connect is on.
-  expect(items.map(item => item.getAttribute('aria-current'))).toEqual([null, 'step', null, null, null, null])
+  expect(items.map(item => item.getAttribute('aria-current'))).toEqual([null, 'step', null, null, null, null, null])
   expect(within(items[1]!).getByRole('status').textContent).toContain('forge uses Tailscale SSH, which asks you to approve the port forward as well. Approve it in your browser within 30 seconds and Sotto carries on.')
   expect(document.activeElement).toBe(within(items[1]!).getByRole('button', { name: 'Open approval page' }))
 })
@@ -743,7 +888,7 @@ it('shows a failure on its own step with its fix to copy, and Try again and Chan
   expect(within(alert).getByRole('button', { name: 'Copy the command' }).textContent).toBe('Copied')
   expect(within(alert).getByRole('status').textContent).toBe('Copied the command')
   // The steps after the failure never started.
-  expect(within(dialog).getAllByRole('listitem').slice(2).map(item => item.getAttribute('data-state'))).toEqual(['todo', 'todo', 'todo'])
+  expect(within(dialog).getAllByRole('listitem').slice(2).map(item => item.getAttribute('data-state'))).toEqual(['todo', 'todo', 'todo', 'todo'])
   expect(screen.getByText('No remote hosts yet.')).toBeTruthy()
   // Try again adds it again as a new attempt.
   await user.click(within(dialog).getByRole('button', { name: 'Try again' }))
@@ -778,7 +923,7 @@ it("says on a saved host's row that Tailscale is waiting for approval, and opens
   const user = userEvent.setup()
   settings(bridge)
   const row = await screen.findByRole('region', { name: 'forge' })
-  expect(within(row).getByText(/SSH forge ·/).textContent).toBe('SSH forge · Waiting for your approval in Tailscale')
+  expect(rowMeta(row)).toBe('SSH forge · Waiting for your approval in Tailscale')
   await user.click(within(row).getByRole('button', { name: 'Open the Tailscale approval page for forge' }))
   expect(command).toHaveBeenCalledWith({ type: 'open-approval', id: REMOTE })
 })
