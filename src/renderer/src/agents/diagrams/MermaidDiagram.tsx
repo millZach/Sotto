@@ -4,7 +4,7 @@ import { useTransientFlag, writeClipboard } from '../richActions'
 import { DiagramViewer } from './DiagramViewer'
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
-import { inspectDiagramSource } from '../../../../shared/diagramSource'
+import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
 import './diagrams.css'
 
 export interface MermaidDiagramProps {
@@ -14,7 +14,7 @@ export interface MermaidDiagramProps {
   readonly complete: boolean
 }
 
-type Drawing = Extract<DiagramRenderResult, { ok: true }>
+export type MermaidDrawn = Extract<DiagramRenderResult, { ok: true }>
 interface Settled { readonly code: string; readonly result: DiagramRenderResult }
 
 // Mermaid is a large module; it loads the first time an answer holds a drawable diagram.
@@ -26,7 +26,7 @@ const loadDiagramRenderer = (): Promise<{ renderDiagram: (code: string, palette:
  * "Drawing…" for a commit before the image, on every thread switch and remount, and the transcript
  * would lay out twice. Only drawings are kept: a failure or a slow render still asks the renderer again.
  */
-const drawn = new Map<string, Drawing>()
+const drawn = new Map<string, MermaidDrawn>()
 const MAX_DRAWN = 24
 const drawnKey = (palette: DiagramPalette, code: string): string => `${JSON.stringify(palette)}\n${code}`
 function rememberDrawing(key: string, result: DiagramRenderResult): void {
@@ -36,8 +36,25 @@ function rememberDrawing(key: string, result: DiagramRenderResult): void {
   if (drawn.size > MAX_DRAWN) drawn.delete(drawn.keys().next().value!)
 }
 
-/** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
-export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
+/** One Mermaid source as a reader sees it: what it is, its drawing once made, and what to say while there is none. */
+export interface MermaidDrawing {
+  readonly inspection: DiagramSourceInspection
+  /** The drawing for the current appearance, or null while it is drawing, cannot be drawn or failed. */
+  readonly drawing: MermaidDrawn | null
+  /** The kind and title as the image's accessible name, e.g. "Flowchart: Login". */
+  readonly name: string
+  /** Why there is no drawing yet, or null when there is one. */
+  readonly notice: string | null
+  /** True when the source cannot be drawn: the checks refused it or Mermaid failed on it. */
+  readonly failed: boolean
+}
+
+/**
+ * Draws one Mermaid source in the current appearance through the safe renderer, the way an answer's diagram is
+ * drawn: checked first, drawn once per source and palette, and redrawn without dropping the old drawing when the
+ * appearance changes. The visual card (ADR-0055) draws with this too.
+ */
+export function useMermaidDrawing(source: string, complete: boolean): MermaidDrawing {
   const inspection = useMemo(() => inspectDiagramSource(source), [source])
   const palette = useDiagramPalette()
   const drawable = complete && !inspection.problem
@@ -45,12 +62,6 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }:
     const hit = drawable ? drawn.get(drawnKey(palette, inspection.code)) : undefined
     return hit === undefined ? null : { code: inspection.code, result: hit }
   })
-  const [showSource, setShowSource] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const [feedback, showFeedback] = useTransientFlag()
-  const expandButton = useRef<HTMLButtonElement>(null)
-  const noticeId = useId()
-  const descriptionId = useId()
 
   useEffect(() => {
     if (!drawable) return
@@ -68,11 +79,23 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }:
 
   // A redraw for a new appearance keeps the previous drawing on screen until the new one is ready.
   const current = drawable && settled?.code === inspection.code ? settled.result : null
-  const drawing: Drawing | null = current?.ok ? current : null
+  const drawing: MermaidDrawn | null = current?.ok ? current : null
   const name = [inspection.label, drawing?.title ?? inspection.title].filter(Boolean).join(': ')
   const notice = !complete ? 'Draws when the block is complete.'
     : inspection.problem ?? (current && !current.ok ? `Couldn't draw this diagram. ${current.reason}` : !current ? 'Drawing…' : null)
   const failed = !!inspection.problem || (current !== null && !current.ok)
+  return { inspection, drawing, name, notice, failed }
+}
+
+/** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
+export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
+  const { inspection, drawing, name, notice, failed } = useMermaidDrawing(source, complete)
+  const [showSource, setShowSource] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [feedback, showFeedback] = useTransientFlag()
+  const expandButton = useRef<HTMLButtonElement>(null)
+  const noticeId = useId()
+  const descriptionId = useId()
 
   useEffect(() => { if (!drawing) { setExpanded(false); setShowSource(false) } }, [drawing])
 

@@ -1,5 +1,5 @@
 import type { AgentActivity } from '../../../shared/agentActivity'
-import type { AgentMessage, AgentThread } from '../../../shared/agents'
+import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 
 /**
@@ -74,6 +74,27 @@ export function placeActivities(
     const anchor = anchors.get(record)
     if (anchor) nextByTurn.set(record.turnId, anchor)
     else anchors.set(record, nextByTurn.get(record.turnId) ?? (known.has(record.turnId) ? record.turnId : null))
+  }
+  // A visual an agent drew sits right after the message it was drawn under, which is also the message the work after
+  // it names (ADR-0055). Work that started once the visual was drawn follows the visual rather than sitting above it.
+  const visualsAfter = new Map<string, AgentMessage[]>()
+  for (const [index, message] of messages.entries()) {
+    if (!isVisualMessage(message)) continue
+    let host = index - 1
+    while (host >= 0 && isVisualMessage(messages[host]!)) host--
+    if (host < 0) continue
+    const id = messages[host]!.id
+    visualsAfter.set(id, [...visualsAfter.get(id) ?? [], message])
+  }
+  if (visualsAfter.size) {
+    for (const record of sorted) {
+      const anchor = anchors.get(record)
+      const chain = anchor ? visualsAfter.get(anchor) : undefined
+      const started = record.startedAt ? Date.parse(record.startedAt) : Number.NaN
+      if (!chain || !Number.isFinite(started)) continue
+      const after = chain.findLast(visual => Date.parse(visual.createdAt) <= started)
+      if (after) anchors.set(record, after.id)
+    }
   }
 
   // When each turn began, and the earliest beginning among the turns the messages give a place. With no
