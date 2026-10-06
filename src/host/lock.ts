@@ -4,6 +4,15 @@ import { link, open, readFile, rename, unlink } from 'node:fs/promises'
 
 /** Refused startup because another host holds, or may hold, the data folder. The message is safe to print. */
 export class HostLockError extends Error {}
+/**
+ * The one refusal waiting cannot end on its own while the other host runs: a live host holds the folder's lock. A host
+ * refused this way exits with HOST_LOCK_HELD_EXIT_CODE, which a start at boot unit lists in `RestartPreventExitStatus=`
+ * so it stops instead of retrying (ADR-0054). Every other lock refusal, a moment's contention included, stays a plain
+ * HostLockError and exits with 1, which the unit retries.
+ */
+export class HostLockHeldError extends HostLockError {}
+/** A host refused because another live host holds its data folder exits with this code: EX_TEMPFAIL. */
+export const HOST_LOCK_HELD_EXIT_CODE = 75
 
 /**
  * What a host writes into `host-listener.lock`: its process, a nonce so two leases for one pid differ, and
@@ -182,7 +191,7 @@ export async function acquireHostLock(path: string, lease: HostLease, options: H
       if (code(error) === 'ENOENT') { misses++; continue }
       throw new HostLockError(`The host-listener.lock in this data folder could not be read, so this host did not start. ${unchanged(reclaimed)} If no host uses the folder, remove that file and start again.`, { cause: error })
     }
-    if (leaseHolderAlive(holder, options.boot)) throw new HostLockError(heldMessage(holder.pid, reclaimed))
+    if (leaseHolderAlive(holder, options.boot)) throw new HostLockHeldError(heldMessage(holder.pid, reclaimed))
     await options.beforeReclaim?.()
     await takeReclaimTurn(turn, content, options.boot, reclaimed, options.log)
     let removal: Removal

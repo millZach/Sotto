@@ -7,6 +7,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '../../../src/main/agents/reasoning'
 import { TurnRecorder, turnRecordSchema } from '../../../src/main/agents/turns'
+import { markSendStage, SEND_STAGE_FIELDS } from '../../../src/main/agents/sendStages'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { TrayController } from '../../../src/main/tray/trayController'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
@@ -643,6 +644,122 @@ describe('coordinator turn records', () => {
     const items = setMenu.mock.calls[0]![0] as { label?: string; click?: () => void }[]
     items.find(item => item.label === 'Show recent turn records')?.click?.()
     expect(showTurnRecords).toHaveBeenCalledOnce()
+  })
+
+  describe('send stages', () => {
+    const TIMING_FIELDS = ['speechEndedAt', 'voicePhase', 'speechEndBasis', 'feedbackBasis', 'retrievalCount',
+      'speechToIntentMs', 'speechToFirstFeedbackMs', 'intentMs', 'retrievalMs', 'delegationMs', 'totalMs']
+    const PROMPT = 'Synthetic prompt for stage timings'
+    const REPLY = 'Synthetic first words'
+    /** A host whose layers mark their steps as the workspace and the adapters do, and whose client confirms the prompt. */
+    function marking(f: Awaited<ReturnType<typeof fixture>>): void {
+      const execute = f.host.execute.bind(f.host)
+      vi.spyOn(f.host, 'execute').mockImplementation(async command => {
+        if (command.type !== 'send') return execute(command)
+        markSendStage(command.commandId, 'prepared')
+        markSendStage(command.commandId, 'written')
+        const result = await execute(command)
+        markSendStage(command.commandId, 'acknowledged')
+        return result
+      })
+    }
+
+    it('times each step of a typed send down to its first words, and adds durations and nothing else', async () => {
+      const f = await fixture()
+      marking(f)
+      const before = (await f.recorder.recent(100)).length
+      const state = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      expect(state.error).toBeNull()
+      // The command is answered once the client confirms the prompt; its record waits for the reply.
+      expect(await f.recorder.recent(100)).toHaveLength(before)
+      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: REPLY, status: 'running' })
+      await vi.waitFor(async () => expect(await f.recorder.recent(100)).toHaveLength(before + 1), { timeout: 5_000 })
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      const record = turnRecordSchema.parse(JSON.parse(raw))
+      expect(record).toMatchObject({ commandType: 'manual-send', threadId: 'workshop', outcome: 'completed' })
+      // The whole set of timings, so a text-bearing field cannot be added to it unnoticed.
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual([...TIMING_FIELDS, ...SEND_STAGE_FIELDS])
+      for (const field of SEND_STAGE_FIELDS) expect(Number.isInteger(record.timings[field]) && record.timings[field]! >= 0).toBe(true)
+      expect(raw).not.toContain(PROMPT)
+      expect(raw).not.toContain(REPLY)
+      expect(raw).not.toContain(f.root.replace(/\\/gu, '\\\\'))
+    })
+
+    it('keeps the finish and totalMs at the command finishing, however long the first words take', async () => {
+      const f = await fixture()
+      marking(f)
+      let now = 1_000_000
+      vi.spyOn(Date, 'now').mockImplementation(() => now)
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      // The first words arrive a minute after the command finished.
+      now += 60_000
+      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: REPLY, status: 'running' })
+      await vi.waitFor(async () => expect((await lastRawRecord(f.root)).commandType).toBe('manual-send'), { timeout: 5_000 })
+      const record = await lastRawRecord(f.root)
+      expect(record.timings.totalMs).toBe(1)
+      expect(Date.parse(record.finishedAt) - Date.parse(record.startedAt)).toBe(0)
+      expect(record.timings.firstOutputMs).toEqual(expect.any(Number))
+    })
+
+    it('writes a send at once, without later steps, when its host confirms nothing', async () => {
+      const f = await fixture()
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      const record = await lastRawRecord(f.root)
+      expect(record.commandType).toBe('manual-send')
+      expect(record.timings.admissionMs).toEqual(expect.any(Number))
+      expect(record.timings.readBeforeSendMs).toEqual(expect.any(Number))
+      expect(record.timings).toMatchObject({ preparationMs: null, adapterMs: null, acknowledgementMs: null, firstOutputMs: null })
+    })
+
+    it('times the admission and the read of a saved draft sent with Send', async () => {
+      const f = await fixture()
+      await f.control.command({ type: 'assign', threadId: 'workshop' })
+      await f.control.command({ type: 'compose', text: PROMPT })
+      expect((await f.control.command({ type: 'send' })).error).toBeNull()
+      const record = await lastRawRecord(f.root)
+      expect(record.commandType).toBe('send')
+      expect(record.timings.admissionMs).toEqual(expect.any(Number))
+      expect(record.timings.readBeforeSendMs).toEqual(expect.any(Number))
+    })
+
+    it('leaves the send stages out of a turn that sends nothing', async () => {
+      const f = await fixture()
+      await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      expect(JSON.parse(raw)).toMatchObject({ commandType: 'select-thread' })
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual(TIMING_FIELDS)
+    })
+
+    it('leaves the send stages out of a send refused after its read, before it reached its host', async () => {
+      const f = await fixture()
+      const snapshot = f.host.snapshot.bind(f.host)
+      vi.spyOn(f.host, 'snapshot').mockImplementation(async () => {
+        const read = await snapshot()
+        return { ...read, threads: read.threads.map(thread => thread.id === 'workshop' ? { ...thread, status: 'running' as const } : thread) }
+      })
+      const state = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      expect(state.error).toMatch(/still working/u)
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      expect(JSON.parse(raw)).toMatchObject({ commandType: 'manual-send', outcome: 'failed' })
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual(TIMING_FIELDS)
+    })
+
+    it('writes a send without first words when its turn ends having shown none, or Sotto stops first', async () => {
+      const f = await fixture()
+      marking(f)
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      const messages = f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages
+      f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: structuredClone(messages), status: 'idle' })
+      await vi.waitFor(async () => expect((await lastRawRecord(f.root)).commandType).toBe('manual-send'), { timeout: 5_000 })
+      expect((await lastRawRecord(f.root)).timings).toMatchObject({ acknowledgementMs: expect.any(Number), firstOutputMs: null })
+
+      // Closing alone, without dispose, writes a record still waiting rather than waiting out the limit.
+      const before = (await f.recorder.recent(100)).length
+      await f.control.command({ type: 'manual-send', threadId: 'docs', text: PROMPT })
+      await f.control.closed()
+      expect(await f.recorder.recent(100)).toHaveLength(before + 1)
+      expect((await lastRawRecord(f.root)).timings.firstOutputMs).toBeNull()
+    })
   })
 
   it('does not print transcript-bearing turn records to the console', async () => {

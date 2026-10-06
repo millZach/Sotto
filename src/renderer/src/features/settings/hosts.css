@@ -21,6 +21,7 @@
 .hosts-row__info { flex: 1 1 220px; min-width: 0; }
 .hosts-settings .hosts-row__meta { margin-top: 2px; font-size: 13px; overflow-wrap: anywhere; }
 .hosts-row__meta [data-phase='connected'] { color: var(--tt-text); }
+.hosts-settings .hosts-row__note { margin-top: 2px; font-size: 13px; overflow-wrap: anywhere; }
 .hosts-settings .hosts-row__error { margin-top: 4px; color: var(--tt-error-text); font-size: 13px; overflow-wrap: anywhere; }
 .hosts-row__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .hosts-empty { padding: 16px 0; border-block: 1px solid var(--tt-hairline); }

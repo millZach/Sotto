@@ -101,6 +101,42 @@ it('reads a row the way the prototype does and switches a host off and on', asyn
   expect(within(row).getByText(/SSH forge/).textContent).toBe('SSH forge, port 2222 · Reconnecting…')
 })
 
+it('begins the row with how the host is connected, and says when the tailnet did not answer (ADR-0053)', async () => {
+  const forge = (patch: Partial<HostStatus>) => host({ target: 'forge', name: 'forge', prefer: 'tailnet', ...patch })
+  const { bridge, push } = fixture([forge({ via: 'tailnet', phoneAccess: { status: 'on', phones: 1 } })])
+  settings(bridge)
+  const row = await screen.findByRole('region', { name: 'forge' })
+  const meta = () => row.querySelector('.hosts-row__meta')!.textContent
+  // On a tailnet connection the phone words come from the host's hello until the Phones dialog reads them.
+  expect(meta()).toBe('Tailnet · Connected · Phones on, 1 paired')
+  push({ hosts: [forge({ via: 'ssh', tailnetNote: 'unreachable' })] })
+  expect(meta()).toBe('SSH forge · Connected · Tailnet did not answer')
+  expect(within(row).getByText('Sotto tries it again every 5 minutes.')).toBeTruthy()
+  push({ hosts: [forge({ via: 'ssh', tailnetNote: 'operator' })] })
+  expect(row.querySelector('.hosts-row__note')!.textContent).toBe('forge’s Tailscale Serve needs sudo tailscale set --operator=$USER, run on forge. Sotto stays on SSH until it can, and tries again every 5 minutes.')
+  push({ hosts: [forge({ phase: 'connecting', via: 'tailnet' })] })
+  expect(meta()).toBe('Connecting over your tailnet…')
+  push({ hosts: [forge({ phase: 'connecting', via: 'ssh' })] })
+  expect(meta()).toBe('Connecting over SSH…')
+  // A reconnect names the connection it is trying, and a host the owner keeps on SSH reads as it did.
+  push({ hosts: [forge({ phase: 'connecting', via: 'tailnet', reconnecting: true })] })
+  expect(meta()).toBe('Tailnet · Reconnecting…')
+  push({ hosts: [forge({ phase: 'connecting', via: 'ssh', reconnecting: true })] })
+  expect(meta()).toBe('SSH forge · Reconnecting…')
+  push({ hosts: [forge({ prefer: 'ssh', via: 'ssh', tailnetNote: undefined })] })
+  expect(meta()).toBe('SSH forge · Connected')
+  expect(row.querySelector('.hosts-row__note')).toBeNull()
+})
+
+it('says before Add host is pressed that it turns on Tailscale Serve on the host, on the tailnet only', async () => {
+  const { bridge } = fixture([]), user = userEvent.setup()
+  settings(bridge)
+  const { dialog } = await openAddHost(user)
+  const sentence = within(dialog).getByText(/^Sotto turns on Tailscale Serve on the host, on your tailnet only/u)
+  // A keyboard or screen reader user meets it on the press itself.
+  expect(within(dialog).getByRole('button', { name: 'Add host' })).toHaveAccessibleDescription(sentence.textContent!)
+})
+
 it('opens the row menu from the keyboard, moves with the arrows and gives focus back on Escape', async () => {
   const { bridge } = fixture([host({ owned: true })]), user = userEvent.setup()
   settings(bridge)
@@ -162,7 +198,7 @@ it('says Forget signs in to a host it is not connected to, to revoke this comput
   await user.click(await screen.findByRole('button', { name: 'More for Build box' }))
   await user.click(screen.getByRole('menuitem', { name: 'Forget Build box…' }))
   expect(within(screen.getByRole('dialog', { name: 'Forget Build box?' })).getByText("Sotto signs in to Build box over SSH to revoke this computer's access there, stops the host if Sotto started it, and removes the saved connection. "
-    + "If Build box can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.")).toBeTruthy()
+    + "If its host starts at boot, Sotto removes that too, so it does not start again when Build box restarts. If Build box can't be reached, it is still removed here, and Sotto shows the command that revokes this computer there. Threads stay on the host.")).toBeTruthy()
 })
 
 it('shows Tailscale’s approval inside Forget while its sign-in waits for it, and opens the page on a press', async () => {
@@ -194,7 +230,7 @@ it('says a forgotten host still trusts this computer, offers the command that re
   const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
-  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command }] })
+  push({ forgotten: [{ id: REMOTE, name: 'forge', revoke: { cause: 'unreachable', command } }] })
   const notice = await screen.findByRole('status', { name: 'forge still trusts this computer' })
   expect(notice.textContent).toContain('SSH could not reach forge, so Sotto removed it from this computer without revoking this computer’s access there. forge still trusts this computer until it is removed there. To remove it, run this on forge while its host is running:')
   expect(within(notice).getByRole('region', { name: 'Command to run on forge' }).textContent).toBe(command)
@@ -215,8 +251,8 @@ it('says why each forgotten host was not revoked, one notice for each', async ()
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
   push({ forgotten: [
-    { id: REMOTE, name: 'forge', cause: 'refused', command: 'revoke forge' },
-    { id: LOCAL, name: 'spark', cause: 'not-running', command: 'revoke spark' },
+    { id: REMOTE, name: 'forge', revoke: { cause: 'refused', command: 'revoke forge' } },
+    { id: LOCAL, name: 'spark', revoke: { cause: 'not-running', command: 'revoke spark' } },
   ] })
   expect(screen.getByRole('status', { name: 'forge still trusts this computer' }).textContent).toContain('The host on forge did not revoke this computer’s access, so Sotto removed forge from this computer and left its host running. forge still trusts this computer until it is removed there. To remove it, run this on forge:')
   expect(screen.getByRole('status', { name: 'spark still trusts this computer' }).textContent).toContain('The host on spark was not running, so Sotto removed spark from this computer without revoking this computer’s access there. spark still trusts this computer until it is removed there. To remove it, start the host on spark, then run this there:')
@@ -228,7 +264,7 @@ it('selects the command from the keyboard when it cannot be copied, so the copy 
   vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
   settings(bridge)
   await screen.findByText('No remote hosts yet.')
-  push({ forgotten: [{ id: REMOTE, name: 'forge', cause: 'unreachable', command: 'revoke forge' }] })
+  push({ forgotten: [{ id: REMOTE, name: 'forge', revoke: { cause: 'unreachable', command: 'revoke forge' } }] })
   const notice = screen.getByRole('status', { name: 'forge still trusts this computer' })
   await user.click(within(notice).getByRole('button', { name: 'Copy the command to run on forge' }))
   expect(within(notice).getByRole('alert').textContent).toBe('The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut.')
