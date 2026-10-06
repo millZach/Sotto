@@ -152,11 +152,11 @@ type WatchedThread = Pick<AgentThread, 'id' | 'messages' | 'activities' | 'statu
  * showed when the send went out. The coordinator hands it every snapshot it accepts.
  */
 export class FirstOutputWatches {
-  private readonly watches = new Map<string, { clock: SendStageClock; baseline: FirstOutputBaseline; sawRunning: boolean }>()
+  private readonly watches = new Map<string, { clock: SendStageClock; baseline: FirstOutputBaseline; sawRunning: boolean; turnAtSend: string | undefined }>()
 
   /** Watch `thread`, as it is now, for the first output of the reply to the send `clock` times. A newer send replaces an older one. */
-  watch(threadId: string, clock: SendStageClock, thread: Pick<AgentThread, 'messages' | 'activities'> | undefined): void {
-    const watch = { clock, baseline: firstOutputBaseline(thread), sawRunning: false }
+  watch(threadId: string, clock: SendStageClock, thread: Pick<AgentThread, 'messages' | 'activities' | 'lastTurn'> | undefined): void {
+    const watch = { clock, baseline: firstOutputBaseline(thread), sawRunning: false, turnAtSend: thread?.lastTurn?.id }
     this.watches.get(threadId)?.clock.close()
     this.watches.set(threadId, watch)
     clock.onClosed(() => { if (this.watches.get(threadId) === watch) this.watches.delete(threadId) })
@@ -171,8 +171,10 @@ export class FirstOutputWatches {
       if (showsFirstOutput(thread, watch.baseline)) { watch.clock.mark('firstOutput'); continue }
       const running = thread.status === 'running' || thread.lastTurn?.status === 'running'
       watch.sawRunning ||= running
-      // The reply's turn ended having shown nothing, so there is no first output to wait for.
-      if (watch.sawRunning && !running && watch.clock.has('acknowledged')) watch.clock.close()
+      // The reply's turn ended having shown nothing, so there is no first output to wait for. A turn that ended
+      // before any snapshot showed it running is known by a finished turn the thread did not have at the send.
+      const ended = watch.sawRunning || (thread.lastTurn !== undefined && thread.lastTurn.id !== watch.turnAtSend)
+      if (ended && !running && watch.clock.has('acknowledged')) watch.clock.close()
     }
   }
 

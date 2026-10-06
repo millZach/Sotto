@@ -2864,8 +2864,10 @@ export class AgentControl {
     this.canAct()
     this.observe()
     const readStartedAt = performance.now()
-    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true }))
+    const read = await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true })
+    // The read alone, as a typed send times it; taking in its snapshot is not part of it.
     const readMs = performance.now() - readStartedAt
+    this.acceptSnapshot(read)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
@@ -3254,7 +3256,10 @@ export class AgentControl {
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()
       // Refresh immediately before dispatch, so a direct host send revokes this queued reply.
-      this.acceptSnapshot(await this.readThread(thread.id, undefined, { beforeSend: true }))
+      const readStartedAt = performance.now()
+      const read = await this.readThread(thread.id, undefined, { beforeSend: true })
+      const readMs = performance.now() - readStartedAt
+      this.acceptSnapshot(read)
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
@@ -3278,6 +3283,7 @@ export class AgentControl {
         assignment.handledRequestIds.push(requestId)
       } else {
         const messageId = randomUUID(); assignment.ownMessageIds.push(messageId)
+        this.sendStages(turn)?.addRead(readMs)
         await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text: decision.text, expectedLastUserMessageId: lastUserMessageIdOf(latest) }, turn, validate)
       }
     } catch (error) {

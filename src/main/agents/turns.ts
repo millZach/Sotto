@@ -158,6 +158,8 @@ export class TurnRecorder {
       const finishedAtMs = Date.now()
       const stages = turn.stages
       if (stages && outcome !== 'failed' && stages.awaitsFirstOutput()) {
+        // The record holds no text; the prompt need not stay in memory while it waits for the first output.
+        turn.text = ''
         const pending: Promise<void> = stages.untilFirstOutput().then(() => this.write(turn, outcome, finishedAtMs))
           .catch(() => undefined).finally(() => { this.pending.delete(pending) })
         this.pending.add(pending)

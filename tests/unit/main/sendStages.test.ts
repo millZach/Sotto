@@ -159,4 +159,17 @@ describe('first output', () => {
     watches.closeAll()
     expect(newer.awaitsFirstOutput()).toBe(false)
   })
+
+  it('is given up when the reply\'s turn has already ended by the first snapshot after the acknowledgement', () => {
+    const watches = new FirstOutputWatches()
+    const earlier = { id: 'earlier-turn', status: 'completed' as const }
+    const { clock: fast } = clock(0); fast.mark('acknowledged')
+    watches.watch('fast', fast, { ...thread, lastTurn: earlier })
+    // Idle with the turn the thread already had: nothing says the reply's turn ran yet, so the wait goes on.
+    watches.observe([{ id: 'fast', status: 'idle', messages: thread.messages, activities: thread.activities, lastTurn: earlier }])
+    expect(fast.awaitsFirstOutput()).toBe(true)
+    // Idle with a finished turn it did not have at the send, never seen running: the reply ended without output.
+    watches.observe([{ id: 'fast', status: 'idle', messages: thread.messages, activities: thread.activities, lastTurn: { id: 'reply-turn', status: 'failed' } }])
+    expect([fast.has('firstOutput'), fast.awaitsFirstOutput()]).toEqual([false, false])
+  })
 })
