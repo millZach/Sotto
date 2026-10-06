@@ -1870,6 +1870,8 @@ export class AgentControl {
           this.canAct(threadId)
           await this.followupStore.claim(first.id); claimed = true
           this.syncFollowups(); this.publish()
+          // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history.
+          this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true }))
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
           const validate = (): void => {
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and explicitly resume queued follow-ups.')

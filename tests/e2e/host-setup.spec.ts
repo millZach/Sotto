@@ -127,7 +127,7 @@ test('Add host shows each step, waits for Tailscale approval, shows a failure on
     const failed = page.getByRole('dialog', { name: 'forge could not be added' })
     await expect(failed).toBeVisible({ timeout: 60_000 })
     await expect(failed.getByText('forge · user and port from your SSH configuration')).toBeVisible()
-    await expect(titles(page)).toHaveText(['Reached forge', 'Signed in', 'The host cannot run on forge yet', 'Start the host', 'Pair this computer'])
+    await expect(titles(page)).toHaveText(['Reached forge', 'Signed in', 'The host cannot run on forge yet', 'Start the host', 'Pair this computer', 'Reach forge over your tailnet'])
     await expect(steps(page).nth(2).getByRole('alert')).toHaveText('The SSH host runs Node 26.1.0, which is newer than this host release supports. Nothing was saved. Install Node 24 for that SSH account, then add the host again.')
     await expect(failed.getByRole('button', { name: 'Try again', exact: true })).toBeEnabled()
     await capture(launched, 'host-setup-failed')
@@ -158,10 +158,12 @@ test('Add host shows each step, waits for Tailscale approval, shows a failure on
 
     // Approved in the browser: the checklist carries on to Paired without another press.
     await writeFile(join(root, 'approved'), '')
-    const connected = page.getByRole('dialog', { name: 'forge is connected' })
+    // forge's Tailscale is not running, so the tailnet step keeps it on SSH and says why (ADR-0053).
+    const connected = page.getByRole('dialog', { name: 'forge is connected over SSH' })
     await expect(connected).toBeVisible({ timeout: 90_000 })
-    await expect(titles(page)).toHaveText(['Reached forge', 'Approved in Tailscale', 'Signed in', 'Host installed', 'Host started', 'Paired'])
-    await expect(connected.getByRole('status').filter({ hasText: 'forge is added and connected.' })).toBeVisible()
+    await expect(titles(page)).toHaveText(['Reached forge', 'Approved in Tailscale', 'Signed in', 'Host installed', 'Host started', 'Paired', 'Could not reach forge over your tailnet'])
+    await expect(connected.getByText('Tailscale isn’t running on forge, so forge is connected over SSH and nothing was lost. Start Tailscale there, then press Try the tailnet again.')).toBeVisible()
+    await expect(connected.getByRole('status').filter({ hasText: 'forge is added and connected over SSH.' })).toBeVisible()
     await expect(connected.getByRole('button', { name: 'Done' })).toBeFocused()
     await capture(launched, 'host-setup-connected')
     await page.keyboard.press('Enter')
