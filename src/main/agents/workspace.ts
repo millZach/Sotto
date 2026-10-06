@@ -33,6 +33,7 @@ import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitCh
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { markSendStage } from './sendStages'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -2267,6 +2268,7 @@ export class WorkspaceHost implements AgentHost {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
       const dispatched = command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills }
         : command.type === 'configure-thread' ? this.hostRead(command) : command
+      if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       const result = await this.inner.execute(dispatched)
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
       if (command.type === 'configure-thread') {
