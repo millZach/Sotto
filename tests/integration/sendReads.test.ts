@@ -4,8 +4,8 @@
  * host stack against its fake client (`tests/fixtures/sendStack.ts`), and a send from the Threads page is counted
  * at each boundary it crosses. On the success path the coordinator's read before the send is the only read that
  * reaches the adapter, and it stands for the adapter's own read at the start of the send. Codex then makes one
- * history read in all. Claude and Grok make two before the prompt, that read and the recheck at the point the send
- * is about to go out, after their last await, which the issue keeps; Grok also reads its echo once after the prompt.
+ * history read in all. Claude and Grok make two before the prompt, that read and the recheck just before the send
+ * goes out, which the issue keeps; Grok also reads its echo once after the prompt.
  * Codex's equivalent of the recheck is its session-log poll, in process. So a reply written against an old last
  * message is still refused when someone typed into the session in between. Counts only; the times are the
  * benchmark's (`tests/perf/sendReads.perf.test.ts`).
