@@ -220,31 +220,37 @@ describe('sameSnapshot', () => {
 describe('ReadsBeforeSend', () => {
   const send = (messageId: string) => ({ type: 'send' as const, commandId: 'command', threadId: 'thread', messageId, text: 'Prompt' })
   it('stands for the send it was read for, once, and only while the thread is as it was read', () => {
-    let state = '1:4'
-    const marks = new ReadsBeforeSend(() => state)
+    let progress = '1:4'
+    const marks = new ReadsBeforeSend(() => progress)
     const read = { beforeSend: true, sendMessageId: 'own-2' }
     marks.mark('thread', read)
-    expect(marks.covers('thread', send('own-2'))).toBe(true)
-    expect(marks.covers('thread', send('own-2'))).toBe(false)
-    marks.mark('thread', read); state = '1:5'
-    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    expect(marks.take('thread', send('own-2'))()).toBe(true)
+    expect(marks.take('thread', send('own-2'))()).toBe(false)
+    marks.mark('thread', read); progress = '1:5'
+    expect(marks.take('thread', send('own-2'))()).toBe(false)
+    // The send asks where it would read, so a thread that moves after the mark was taken is read again too.
+    marks.mark('thread', read)
+    const stands = marks.take('thread', send('own-2'))
+    expect(stands()).toBe(true)
+    progress = '1:6'
+    expect(stands()).toBe(false)
     marks.mark('thread', read); marks.clear()
-    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    expect(marks.take('thread', send('own-2'))()).toBe(false)
   })
 
   it('stands for no other send, and leaves nothing behind for one', () => {
     const marks = new ReadsBeforeSend(() => '1:4')
     // A send refused after the read leaves its mark; the next send on the thread is another message, and reads.
     marks.mark('thread', { beforeSend: true, sendMessageId: 'refused' })
-    expect(marks.covers('thread', send('queued'))).toBe(false)
-    expect(marks.covers('thread', send('refused'))).toBe(false)
+    expect(marks.take('thread', send('queued'))()).toBe(false)
+    expect(marks.take('thread', send('refused'))()).toBe(false)
     // Any other command clears it too.
     marks.mark('thread', { beforeSend: true, sendMessageId: 'own-2' })
-    expect(marks.covers('thread', { type: 'interrupt', commandId: 'command', threadId: 'thread' })).toBe(false)
-    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    expect(marks.take('thread', { type: 'interrupt', commandId: 'command', threadId: 'thread' })()).toBe(false)
+    expect(marks.take('thread', send('own-2'))()).toBe(false)
     // A read for no named send, or any other read, marks nothing.
     marks.mark('thread', { beforeSend: true })
     marks.mark('thread', undefined)
-    expect(marks.covers('thread', send('own-2'))).toBe(false)
+    expect(marks.take('thread', send('own-2'))()).toBe(false)
   })
 })

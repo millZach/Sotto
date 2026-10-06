@@ -869,7 +869,7 @@ export class GrokAcpHost implements AgentHost {
       } else {
         const alias = this.aliases[command.threadId]; if (!alias?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session. Do not repeat its creation automatically.')
         // The coordinator's read before this send stands for its first read (#765).
-        const readForSend = this.readsBeforeSend.covers(command.threadId, command)
+        const readForSend = this.readsBeforeSend.take(command.threadId, command)
         // Lazy sessions: an action on a thread whose session is not loaded loads it before the command runs.
         this.reaper.touch(command.threadId); await this.loadSession(command.threadId)
         if (command.type === 'configure-thread') {
@@ -900,7 +900,7 @@ export class GrokAcpHost implements AgentHost {
           if (alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s permission mode. Reconnect to check before sending.')
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
-          try { if (!readForSend) await this.sync(command.threadId) }
+          try { if (!readForSend()) await this.sync(command.threadId) }
           catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error }
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')

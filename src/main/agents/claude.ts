@@ -632,7 +632,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
     // The coordinator's read before this send stands for its first read (#765).
-    const readForSend = this.readsBeforeSend.covers(id, command)
+    const readForSend = this.readsBeforeSend.take(id, command)
     this.reaper.touch(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
@@ -663,7 +663,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const checkLatestUserMessage = (): void => {
         if (command.expectedLastUserMessageId !== undefined && (this.messageLog.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
       }
-      if (!readForSend) await this.sync(id)
+      if (!readForSend()) await this.sync(id)
       checkLatestUserMessage()
       if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
       if (this.dispatching.has(id) || thread.status === 'running') throw new Error('Claude is already running a turn.')

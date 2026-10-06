@@ -1214,7 +1214,7 @@ export class CodexAppServerHost implements AgentHost {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
         // The coordinator's read before this send stands for the send's own (#765).
-        const readForSend = this.readsBeforeSend.covers(id, command), readState = this.readState(id)
+        const readForSend = this.readsBeforeSend.take(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
@@ -1343,10 +1343,10 @@ export class CodexAppServerHost implements AgentHost {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
           // would have queued behind, so no read applies the thread across turn/start. It reads after all when the
-          // thread moved since it was handed the send, by that read or the resume above, or when that read failed,
-          // so a thread Codex cannot read is refused as it was before #765.
-          const readInFlightFailed = readForSend && await this.threadReads.get(id)?.then(() => false, () => true) === true
-          try { if (!readForSend || readInFlightFailed || this.readState(id) !== readState) await this.sync(id, { beforeSend: true }) }
+          // thread moved since that read, by a read in flight or the resume above, or when the read in flight
+          // failed, so a thread Codex cannot read is refused as it was before #765.
+          const covered = readForSend() && await (this.threadReads.get(id)?.then(() => true, () => false) ?? true) && readForSend()
+          try { if (!covered) await this.sync(id, { beforeSend: true }) }
           catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
