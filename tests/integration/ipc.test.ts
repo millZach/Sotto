@@ -1334,7 +1334,9 @@ describe('IPC validation and lifecycle', () => {
   it.each([
     ['hotkey', { hotkey: 'Alt+Space' }],
     ['startup', { launchAtStartup: true }],
-  ] as const)('rejects native-managed %s in a generic settings payload', async (_name, patch) => {
+    // A headless host's own setting (ADR-0053): refused here rather than dropped, so nothing snaps back unseen.
+    ['tailnet connections', { tailnetConnections: true }],
+  ] as const)('rejects native-managed or host-only %s in a generic settings payload', async (_name, patch) => {
     const { ipc, settings } = createIpcHarness()
 
     await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toMatchObject({
