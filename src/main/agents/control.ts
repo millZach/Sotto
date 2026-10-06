@@ -3440,9 +3440,11 @@ export interface CoalescedThreadDetailPublisher {
  * goes at once, with whatever was waiting ahead of it, and opens a fresh window. The echo of a prompt opens
  * a window just before the reply's first words, and those words are what the person is waiting to see.
  * Later chunks of a message already sent coalesce as before, so the window still updates at a bounded rate.
+ * `beforeOpening` runs just before such a send: the desktop delivers the shell held in its own window there,
+ * so the window receives the two together and paints them in one commit rather than two.
  */
 export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDetailUpdate) => void,
-  options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedThreadDetailPublisher {
+  options: { intervalMs?: number; schedule?: PublishScheduler; beforeOpening?: () => void } = {}): CoalescedThreadDetailPublisher {
   const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
   const schedule = options.schedule ?? realPublishScheduler
   // `sending` holds back an update published while the lane is sending, such as the change a whole read
@@ -3459,6 +3461,7 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
     try {
       // An opening that arrives while this lane is sending goes out in the same flush, after what was ahead of it.
       do {
+        if (lane.opening) options.beforeOpening?.()
         lane.opening = false
         const queued = lane.pending
         lane.pending = []
@@ -3478,8 +3481,8 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
         if (merged === null) lane.pending.push(update)
         else lane.pending[lane.pending.length - 1] = merged
         if (opens(lane, update)) {
-          if (lane.sending) lane.opening = true
-          else flushLane(update.threadId)
+          lane.opening = true
+          if (!lane.sending) flushLane(update.threadId)
         }
         return
       }
