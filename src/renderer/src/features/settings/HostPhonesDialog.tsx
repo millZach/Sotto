@@ -13,7 +13,6 @@ import { TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
 import './hosts.css'
 import './phones.css'
 
-export { TAILSCALE_OPERATOR_COMMAND }
 /** How often an open dialog tells main it is still open, well inside main's minute (HOST_PHONES_WATCH_MS). */
 const RENEW_WATCH_MS = 30_000
 

@@ -3,7 +3,8 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
-import { hostPhonesFailure, hostPhonesLabel, TAILSCALE_OPERATOR_COMMAND } from '../../../src/renderer/src/features/settings/HostPhonesDialog'
+import { hostPhonesFailure, hostPhonesLabel } from '../../../src/renderer/src/features/settings/HostPhonesDialog'
+import { TAILSCALE_OPERATOR_COMMAND } from '../../../src/renderer/src/features/settings/hostTailnetWords'
 import type { HostPhonesView, HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../src/shared/hosts'
 import type { PhonesState } from '../../../src/shared/phones'
 
