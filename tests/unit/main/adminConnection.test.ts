@@ -15,7 +15,7 @@ function fixture() {
     opened++
     drops.push(dropped)
     return { url: `http://127.0.0.1:${4500 + opened}`, hostId: 'host', owned: true, route: { hostname: 'forge', identityFiles: [] }, close: async () => undefined,
-      showHostPairingCode: vi.fn(), ensureDesktopAnswers: vi.fn(), updateHost: vi.fn(),
+      showHostPairingCode: vi.fn(), ensureDesktopAnswers: vi.fn(), updateHost: vi.fn(), boot: vi.fn(),
       revokeClient: vi.fn(wait(true)), hostAdminToken: vi.fn(async () => `token-${opened}`), stopHost: vi.fn(async () => true) }
   })
   const admin = new AdminConnection({ open, close: async () => { closed++ } })

@@ -118,3 +118,12 @@ it('words the row and every failure for the host it is on', () => {
     expect(hostPhonesFailure(phones({ phase: 'failed', serve: { status: 'failed', reason } }), 'forge')).toMatch(/[Nn]othing was changed|wasn’t started/u)
   }
 })
+
+it('shows an admin connection’s Tailscale approval at the top of the dialog while it waits, and opens the page on a press (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { sent } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true, url: 'https://login.tailscale.com/a/l1fixture2b3c' } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByText(/^Waiting for your approval in Tailscale\./u)).toBeTruthy()
+  await user.click(within(dialog).getByRole('button', { name: 'Open the Tailscale approval page for forge' }))
+  expect(sent()).toContainEqual({ type: 'open-approval', id: REMOTE })
+})

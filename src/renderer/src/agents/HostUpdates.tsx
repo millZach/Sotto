@@ -60,7 +60,8 @@ function Steps({ update }: { readonly update: HostUpdateState }): ReactNode {
     download: { title: `Download ${update.to}`, detail: update.route === 'desktop' ? `${update.name} could not reach GitHub, so this computer is copying it over SSH.` : 'From Sotto’s releases on GitHub.' },
     check: { title: 'Check the download', detail: at > 1 ? 'The checksum matches.' : 'Its checksum has to match the release’s.' },
     install: { title: `Install beside ${update.from}`, detail: `${update.from} stays in place until ${update.to} is running.` },
-    restart: { title: `Restart ${update.name}’s host`, detail: `${update.name}’s threads are unavailable for a few seconds.` },
+    // A host that starts at boot is restarted by its systemd unit, and still starts at boot after (ADR-0054).
+    restart: { title: `Restart ${update.name}’s host`, detail: update.boot ? `Its systemd unit starts ${update.to}, so it still starts at boot. ${update.name}’s threads are unavailable for a few seconds.` : `${update.name}’s threads are unavailable for a few seconds.` },
   }
   return <ol className="host-update__steps" aria-label={`Steps to update ${update.name}`}>
     {HOST_UPDATE_STEPS.map((step, index) => {
@@ -107,7 +108,7 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
     body = <><p>{name} runs Sotto host {from}. This computer runs {to}.</p><p className="host-update__muted">Sotto did not start this host, so it cannot restart it. Update it on {name} with these commands.</p></>
     actions = <>{commandsButtons}{notNow}</>
   } else if (update.phase === 'needs') {
-    body = <p className="host-update__muted">{name}’s threads keep working until you update. Updating restarts its host, so they are unavailable for a few seconds.</p>
+    body = <p className="host-update__muted">{name}’s threads keep working until you update. Updating restarts its host{update.boot ? ' through its systemd unit' : ''}, so they are unavailable for a few seconds.{update.boot ? ' It still starts at boot after.' : ''}</p>
     actions = <>{button('update', `Update ${name}`, 'primary', `Update ${name}’s host to ${to}`, key('when-idle'))}{notNow}</>
   } else if (update.phase === 'confirm') {
     body = <><p>{threads} on {name} {working === 1 ? 'is' : 'are'} working. Updating restarts {name}’s host, which stops {working === 1 ? 'it' : 'them'}.</p>

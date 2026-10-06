@@ -133,6 +133,12 @@ private final class FollowBox {
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
     var atBottom = true
+    /// The user is dragging the page or letting a flick run out, so it never moves under them.
+    var userScrolling = false
+    /// The page was asked to follow while the user moved it, and owes that once they let go.
+    var missedFollow = false
+    /// Counts requests to follow, so requests made in the same moment scroll once.
+    var followRequests = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -203,6 +209,8 @@ private struct Tail: Equatable {
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so each new revision of the thread redraws the conversation; it is read through `model.detail(for:)`.
+    @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     @Binding var stuck: Bool
     @Binding var titled: Bool
@@ -231,9 +239,19 @@ private struct Conversation: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onUserScrolling { scrolling in
+                follow.userScrolling = scrolling
+                guard !scrolling, follow.missedFollow else { return }
+                follow.missedFollow = false
+                // What arrived while they moved the page is followed once they let go at the bottom. A page that
+                // only moved is left where they put it.
+                follow.settle()
+                if follow.atBottom { toBottom(proxy) }
+            }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)
+                    .equatable()
                     .background(dockReader(proxy))
             }
             .onChange(of: tail) { _, _ in
@@ -254,6 +272,7 @@ private struct Conversation: View {
             ThreadHero(ref: ref, thread: thread,
                        topMoved: { top in follow.heroTop = top; refreshBar() },
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
+                .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
         }
@@ -320,6 +339,7 @@ private struct Conversation: View {
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
+                .equatable()
         }
     }
 
@@ -398,13 +418,33 @@ private struct Conversation: View {
     }
 
     /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
+    /// Requests made in the same moment scroll once, and only the latest looks again. None scrolls while the user moves
+    /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
+        guard !box.userScrolling else { box.missedFollow = true; return }
+        box.followRequests += 1
+        let request = box.followRequests
         Task { @MainActor in
             await Task.yield()
+            guard box.followRequests == request else { return }
+            guard !box.userScrolling else { box.missedFollow = true; return }
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            if box.atBottom { scroll.scrollTo(Self.end, anchor: .bottom) }
+            if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+        }
+    }
+}
+
+private extension View {
+    /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
+    /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
+    /// page follows as it did before.
+    @ViewBuilder func onUserScrolling(_ changed: @escaping (Bool) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollPhaseChange { _, phase in changed(phase == .interacting || phase == .decelerating) }
+        } else {
+            self
         }
     }
 }
@@ -412,12 +452,15 @@ private struct Conversation: View {
 // MARK: - Title block
 
 /// The big title, where the thread runs, and its branch chips, at the top of the conversation.
-private struct ThreadHero: View {
+private struct ThreadHero: View, Equatable {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let thread: ThreadSummary?
     let topMoved: (CGFloat) -> Void
     let titleMoved: (CGFloat) -> Void
+    /// Drawn again only when its thread changes, not for each new revision of the conversation under it; its readers
+    /// report to the same page every time.
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.thread == b.thread }
     var body: some View {
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
@@ -789,7 +832,7 @@ private enum InlineStyle {
 /// A run of steps between two messages, folded into one line (ADR-0051, October 5 amendment). While the thread works
 /// through it, the line shows the step running now in the accent; once it has ended, how many steps it had and how
 /// long they took, quietly. A press opens the steps in place under their guide, and another folds them.
-private struct FoldedRun: View {
+private struct FoldedRun: View, Equatable {
     let runID: String
     let steps: [Activity]
     let seconds: TimeInterval?
@@ -798,6 +841,11 @@ private struct FoldedRun: View {
     /// The conversation ends on this run, so the line's reach stays inside the page's end.
     let last: Bool
     let toggle: () -> Void
+    /// Drawn again only when what it shows changes; a press does the same for its run every time.
+    static func == (a: Self, b: Self) -> Bool {
+        a.runID == b.runID && a.steps == b.steps && a.seconds == b.seconds && a.working == b.working && a.open == b.open
+            && a.last == b.last
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1146,6 +1194,8 @@ private struct UnconfirmedRow: View {
 /// A reply the computer refused, with a way to put it back in the reply box.
 private struct FailedReplyCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so Put it back follows what the reply box holds; typing publishes here, not on the model.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let text: String
     var body: some View {
@@ -1170,10 +1220,15 @@ private struct FailedReplyCard: View {
 
 /// The reply box in glass over the bottom of the page, with what the computer or the thread needs said above it.
 /// While a request waits, the box offers it instead of the field.
-private struct ReplyDock: View {
+private struct ReplyDock: View, Equatable {
     @EnvironmentObject var model: AppModel
+    /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let openRequest: (AgentRequest) -> Void
+    /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
+    /// offers opens the same way every time.
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

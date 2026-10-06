@@ -32,10 +32,11 @@ async function main(): Promise<void> {
   if (args.some(argument => ADMIN.has(argument))) { await runHeadlessCommandLine(); return }
   const options = parseHostArguments(args)
   delete process.env.SOTTO_HOST_STARTED_BY
-  // With SOTTO_E2E_HOST_TAILSCALE_DIR, the host's phone access reads e2e-tailscale.json there in place of this machine's
-  // Tailscale (src/main/e2e/tailscale.ts), so a spec can turn phones on for forge and see each failure (ADR-0050).
-  const tailscaleDirectory = process.env.SOTTO_E2E_HOST_TAILSCALE_DIR
-  if (tailscaleDirectory) options.tailscale = e2eTailscale(tailscaleDirectory)
+  // The host's phone access reads e2e-tailscale.json in SOTTO_E2E_HOST_TAILSCALE_DIR in place of this machine's Tailscale
+  // (src/main/e2e/tailscale.ts), so a spec can turn phones on for forge and see each failure (ADR-0050). Without it, the host
+  // reads Tailscale as not installed: Add host turns on its tailnet connections (ADR-0053), and a spec must never change
+  // the Serve settings of the machine it runs on.
+  options.tailscale = e2eTailscale(process.env.SOTTO_E2E_HOST_TAILSCALE_DIR ?? options.dataDirectory)
   // With SOTTO_E2E_SIGN_IN_DIR, each provider is signed out until its fake client's sign-in (tests/fixtures/fakeSignInCli.mjs,
   // at SOTTO_E2E_SIGN_IN_SCRIPT) writes its mark there, and the host runs that fake client for Sign in (#460).
   const signInDirectory = process.env.SOTTO_E2E_SIGN_IN_DIR, signInScript = process.env.SOTTO_E2E_SIGN_IN_SCRIPT

@@ -4,6 +4,9 @@ import { providerIdSchema } from './agents'
 import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
+import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
+import type { HostPhoneAccessSummary } from './hostProtocol'
+import { HOST_CONNECTIONS, type HostConnectionName } from './hostConnection'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -67,6 +70,26 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   checked?: boolean | undefined
   /** The Sotto version the host said it runs, once it has answered on this connection (ADR-0040). */
   version?: string | undefined
+  /**
+   * Which connection the owner prefers (ADR-0053): the tailnet, with SSH when it does not answer, or SSH only. A host saved
+   * before tailnet connections prefers SSH until the owner chooses otherwise; Add host prefers the tailnet. Absent reads as SSH.
+   */
+  prefer?: HostConnectionName | undefined
+  /**
+   * The connection the socket is on while connected, or the one a connect is trying while connecting: the host's
+   * **tailnet connection** or its **SSH connection**.
+   */
+  via?: HostConnectionName | undefined
+  /**
+   * Why a host whose owner prefers the tailnet is on its SSH connection: the tailnet did not answer, the host has not
+   * reported a tailnet address, Tailscale is not running on the host, or its Tailscale Serve needs the SSH account to be
+   * Tailscale's operator first. Sotto tries the tailnet again every 5 minutes.
+   */
+  tailnetNote?: 'unreachable' | 'no-address' | 'no-tailscale' | 'operator' | undefined
+  /** The host's phone access as its hello reported it on a tailnet connection, where nothing reads it over SSH. */
+  phoneAccess?: HostPhoneAccessSummary | undefined
+  /** Start at boot on the host, as this connection last found it (ADR-0054). */
+  bootStart?: BootStatus | undefined
 }
 /** A model the host setup thread can run on: one of this computer's ready models. */
 export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string }
@@ -125,24 +148,30 @@ export interface HostsState {
   /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
   phones?: HostPhonesView[]
   /**
-   * Each not-revoked notice (ADR-0053): a host Forget removed without revoking this computer there, oldest first, until the
-   * user dismisses it. A second Forget adds its own and leaves the others alone.
+   * Each Forget notice (ADR-0053, ADR-0054): a host Forget removed here without finishing there, because it did not revoke
+   * this computer or could not take the host's start at boot unit away, oldest first, until the user dismisses it. A
+   * second Forget adds its own and leaves the others alone.
    */
   forgotten?: HostForgotten[]
+  /** Each saved host's start at boot change, from its press until its result is put away (ADR-0054), in the order they were pressed. */
+  boot?: HostBootState[]
 }
 /** Why Forget could not revoke this computer on a host: SSH could not reach it, its host was not running, or the host refused. */
 export type HostForgottenCause = 'unreachable' | 'not-running' | 'refused'
 /**
- * A host Forget removed from this computer without revoking this computer's pairing there. The host still trusts this
- * computer until the command, run on the host while its host is running, removes it. Kept in memory only.
+ * A Forget notice: a host Forget removed from this computer without finishing there. Without revoking this computer's
+ * pairing (`revoke`), so the host still trusts this computer until its command, run on the host while its host is running,
+ * removes it; or without removing its start at boot unit (`bootCommand`), so its host still starts when its machine does
+ * until that command removes it (ADR-0054). At least one of the two is set. Kept in memory only.
  */
 export interface HostForgotten {
   /** The forgotten saved host's ID, which Dismiss names. */
   readonly id: string
   readonly name: string
-  readonly cause: HostForgottenCause
-  /** The one line to run on the host. Sotto never runs it. */
-  readonly command: string
+  /** Why this computer was not revoked there, and the one line to run on the host that revokes it. Sotto never runs it. */
+  readonly revoke?: { readonly cause: HostForgottenCause; readonly command: string } | undefined
+  /** The one line that removes the host's start at boot unit, when Forget could not. Sotto never runs it. */
+  readonly bootCommand?: string | undefined
 }
 /**
  * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
@@ -169,6 +198,12 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('disconnect'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('stop-host'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('forget'), id: z.uuid() }).strict(),
+  /**
+   * How Sotto connects to a saved host (ADR-0053): over its tailnet with SSH when it can't, or SSH only. The host's own
+   * `tailnetConnections` setting follows, over the SSH connection or an admin connection, so the press is the owner's
+   * consent to the Tailscale Serve setting it turns on there.
+   */
+  z.object({ type: z.literal('set-connection'), id: z.uuid(), prefer: z.enum(HOST_CONNECTIONS) }).strict(),
   /** Puts away what Forget said about a host it could not revoke this computer on. */
   z.object({ type: z.literal('dismiss-forgotten'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),
@@ -200,6 +235,8 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('host-phones'), id: z.uuid(), command: hostPhonesCommandSchema }).strict(),
   /** A host's Phones dialog is open, said again every half minute, or closed: while open, the host is read every couple of seconds. */
   z.object({ type: z.literal('watch-host-phones'), id: z.uuid(), watching: z.boolean() }).strict(),
+  /** One press of Start at boot, Stop starting at boot or their busy-host question, for one saved host (ADR-0054). */
+  hostBootCommandSchema,
 ])
 export type HostsCommand = z.infer<typeof hostsCommandSchema>
 
