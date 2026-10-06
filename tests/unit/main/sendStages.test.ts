@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { firstOutputBaseline, lendSendStages, markSendStage, NO_SEND_STAGES, SendStageClock, showsFirstOutput } from '../../../src/main/agents/sendStages'
+import { firstOutputBaseline, FirstOutputWatches, lendSendStages, markSendStage, SEND_STAGE_FIELDS, SendStageClock, showsFirstOutput } from '../../../src/main/agents/sendStages'
+import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
 
@@ -30,14 +31,14 @@ describe('send stage clock', () => {
     time.at = 40; stages.mark('dispatched'); stages.mark('prepared')
     time.at = 90; stages.mark('firstOutput')
     // No receipt, no read, no adapter: the first output counts from the last step that was marked.
-    expect(stages.durations()).toEqual({ ...NO_SEND_STAGES, preparationMs: 30, firstOutputMs: 50 })
+    expect(stages.durations()).toEqual({ ...Object.fromEntries(SEND_STAGE_FIELDS.map(field => [field, null])), preparationMs: 30, firstOutputMs: 50 })
   })
 
   it('waits for the first output only once the client confirmed the prompt', async () => {
     const { clock: unconfirmed } = clock(0)
     unconfirmed.mark('dispatched'); unconfirmed.mark('written')
     expect(unconfirmed.awaitsFirstOutput()).toBe(false)
-    await unconfirmed.firstOutput()
+    await unconfirmed.untilFirstOutput()
     // Watching stopped with the record, so later output is not counted.
     unconfirmed.mark('firstOutput')
     expect(unconfirmed.durations().firstOutputMs).toBeNull()
@@ -46,7 +47,7 @@ describe('send stage clock', () => {
     confirmed.mark('written'); confirmed.mark('acknowledged')
     expect(confirmed.awaitsFirstOutput()).toBe(true)
     let settled = false
-    const waiting = confirmed.firstOutput().then(() => { settled = true })
+    const waiting = confirmed.untilFirstOutput().then(() => { settled = true })
     await Promise.resolve()
     expect(settled).toBe(false)
     time.at = 25; confirmed.mark('firstOutput')
@@ -60,7 +61,7 @@ describe('send stage clock', () => {
     closed.mark('acknowledged')
     const closedListener = vi.fn()
     closed.onClosed(closedListener)
-    const waiting = closed.firstOutput()
+    const waiting = closed.untilFirstOutput()
     closed.close()
     await waiting
     expect(closedListener).toHaveBeenCalledOnce()
@@ -68,7 +69,7 @@ describe('send stage clock', () => {
 
     const { clock: limited } = clock(0)
     limited.mark('acknowledged')
-    const limit = limited.firstOutput(1_000)
+    const limit = limited.untilFirstOutput(1_000)
     await vi.advanceTimersByTimeAsync(1_000)
     await limit
     expect(limited.durations().firstOutputMs).toBeNull()
@@ -82,6 +83,33 @@ describe('send stage clock', () => {
     giveBack()
     time.at = 20; markSendStage('command', 'written')
     expect(stages.durations()).toMatchObject({ preparationMs: 4, adapterMs: null })
+  })
+
+  it('never throws into the send that marks it', () => {
+    const stages = new SendStageClock(0, () => { throw new Error('Synthetic clock failure') })
+    const giveBack = lendSendStages('command', stages)
+    try { expect(() => markSendStage('command', 'acknowledged')).not.toThrow() } finally { giveBack() }
+  })
+
+  it('is marked prepared by the workspace before the provider stack is handed the send', async () => {
+    const f = await workspaceFixture()
+    try {
+      const snapshot = await f.host.connect()
+      const project = snapshot.projects.find(item => item.providerId === 'codex')!
+      const model = snapshot.models.find(item => item.providerId === 'codex')!
+      await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'timed', projectId: project.id, title: 'Timed', modelId: model.id })
+      const stages = new SendStageClock()
+      const preparedWhenSent: boolean[] = []
+      const execute = f.adapters.codex.execute.bind(f.adapters.codex)
+      vi.spyOn(f.adapters.codex, 'execute').mockImplementation(async command => {
+        if (command.type === 'send') preparedWhenSent.push(stages.has('prepared'))
+        return execute(command)
+      })
+      const giveBack = lendSendStages('timed-send', stages)
+      try { expect(await f.host.execute({ type: 'send', commandId: 'timed-send', threadId: 'timed', messageId: 'timed-message', text: 'Filler' })).toMatchObject({ accepted: true }) }
+      finally { giveBack() }
+      expect(preparedWhenSent).toEqual([true])
+    } finally { vi.restoreAllMocks(); await f.stop(); await f.remove() }
   })
 })
 
@@ -105,5 +133,30 @@ describe('first output', () => {
     }
     expect(showsFirstOutput({ ...thread, activities: [{ ...activity('earlier-tool', 'tool'), status: 'completed' }] }, baseline)).toBe(false)
     expect(showsFirstOutput({ messages: [], activities: undefined }, firstOutputBaseline(undefined))).toBe(false)
+  })
+
+  it('is watched for per thread: marked when it shows, or given up when the reply ends without it', () => {
+    const watches = new FirstOutputWatches()
+    const shown = (id: string, extra: Partial<{ status: 'running' | 'idle'; messages: AgentMessage[] }> = {}) =>
+      ({ id, status: extra.status ?? 'running' as const, messages: extra.messages ?? thread.messages, activities: thread.activities })
+    const { clock: answered } = clock(0)
+    answered.mark('acknowledged')
+    watches.watch('answered', answered, thread)
+    const { clock: silent } = clock(0)
+    silent.mark('acknowledged')
+    watches.watch('silent', silent, thread)
+    watches.observe([shown('answered'), shown('silent')])
+    expect([answered.has('firstOutput'), answered.awaitsFirstOutput(), silent.awaitsFirstOutput()]).toEqual([false, true, true])
+    watches.observe([shown('answered', { messages: [...thread.messages, message('reply', 'assistant')] }), shown('silent', { status: 'idle' })])
+    expect(answered.has('firstOutput')).toBe(true)
+    expect([silent.has('firstOutput'), silent.awaitsFirstOutput()]).toEqual([false, false])
+
+    // A newer send to the same thread replaces the older one, and closing them all stops every wait.
+    const { clock: older } = clock(0); older.mark('acknowledged')
+    const { clock: newer } = clock(0); newer.mark('acknowledged')
+    watches.watch('thread', older, thread); watches.watch('thread', newer, thread)
+    expect([older.awaitsFirstOutput(), newer.awaitsFirstOutput()]).toEqual([false, true])
+    watches.closeAll()
+    expect(newer.awaitsFirstOutput()).toBe(false)
   })
 })

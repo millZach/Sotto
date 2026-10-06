@@ -647,6 +647,8 @@ describe('coordinator turn records', () => {
   })
 
   describe('send stages', () => {
+    const TIMING_FIELDS = ['speechEndedAt', 'voicePhase', 'speechEndBasis', 'feedbackBasis', 'retrievalCount',
+      'speechToIntentMs', 'speechToFirstFeedbackMs', 'intentMs', 'retrievalMs', 'delegationMs', 'totalMs']
     const PROMPT = 'Synthetic prompt for stage timings'
     const REPLY = 'Synthetic first words'
     /** A host whose layers mark their steps as the workspace and the adapters do, and whose client confirms the prompt. */
@@ -671,19 +673,32 @@ describe('coordinator turn records', () => {
       // The command is answered once the client confirms the prompt; its record waits for the reply.
       expect(await f.recorder.recent(100)).toHaveLength(before)
       f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: REPLY, status: 'running' })
-      await vi.waitFor(async () => expect(await f.recorder.recent(100)).toHaveLength(before + 1))
+      await vi.waitFor(async () => expect(await f.recorder.recent(100)).toHaveLength(before + 1), { timeout: 5_000 })
       const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
       const record = turnRecordSchema.parse(JSON.parse(raw))
       expect(record).toMatchObject({ commandType: 'manual-send', threadId: 'workshop', outcome: 'completed' })
       // The whole set of timings, so a text-bearing field cannot be added to it unnoticed.
-      expect(Object.keys(JSON.parse(raw).timings)).toEqual(['speechEndedAt', 'voicePhase', 'speechEndBasis', 'feedbackBasis', 'retrievalCount',
-        'speechToIntentMs', 'speechToFirstFeedbackMs', 'intentMs', 'retrievalMs', 'delegationMs', 'totalMs', ...SEND_STAGE_FIELDS])
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual([...TIMING_FIELDS, ...SEND_STAGE_FIELDS])
       for (const field of SEND_STAGE_FIELDS) expect(Number.isInteger(record.timings[field]) && record.timings[field]! >= 0).toBe(true)
       expect(raw).not.toContain(PROMPT)
       expect(raw).not.toContain(REPLY)
       expect(raw).not.toContain(f.root.replace(/\\/gu, '\\\\'))
-      // `totalMs` still ends when the command finished, not when the first words arrived.
-      expect(record.timings.totalMs).toBeGreaterThanOrEqual(record.timings.delegationMs)
+    })
+
+    it('keeps the finish and totalMs at the command finishing, however long the first words take', async () => {
+      const f = await fixture()
+      marking(f)
+      let now = 1_000_000
+      vi.spyOn(Date, 'now').mockImplementation(() => now)
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      // The first words arrive a minute after the command finished.
+      now += 60_000
+      f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: REPLY, status: 'running' })
+      await vi.waitFor(async () => expect((await lastRawRecord(f.root)).commandType).toBe('manual-send'), { timeout: 5_000 })
+      const record = await lastRawRecord(f.root)
+      expect(record.timings.totalMs).toBe(1)
+      expect(Date.parse(record.finishedAt) - Date.parse(record.startedAt)).toBe(0)
+      expect(record.timings.firstOutputMs).toEqual(expect.any(Number))
     })
 
     it('writes a send at once, without later steps, when its host confirms nothing', async () => {
@@ -696,18 +711,37 @@ describe('coordinator turn records', () => {
       expect(record.timings).toMatchObject({ preparationMs: null, adapterMs: null, acknowledgementMs: null, firstOutputMs: null })
     })
 
+    it('times the admission and the read of a saved draft sent with Send', async () => {
+      const f = await fixture()
+      await f.control.command({ type: 'assign', threadId: 'workshop' })
+      await f.control.command({ type: 'compose', text: PROMPT })
+      expect((await f.control.command({ type: 'send' })).error).toBeNull()
+      const record = await lastRawRecord(f.root)
+      expect(record.commandType).toBe('send')
+      expect(record.timings.admissionMs).toEqual(expect.any(Number))
+      expect(record.timings.readBeforeSendMs).toEqual(expect.any(Number))
+    })
+
+    it('leaves the send stages out of a turn that sends nothing', async () => {
+      const f = await fixture()
+      await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      expect(JSON.parse(raw)).toMatchObject({ commandType: 'select-thread' })
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual(TIMING_FIELDS)
+    })
+
     it('writes a send without first words when its turn ends having shown none, or Sotto stops first', async () => {
       const f = await fixture()
       marking(f)
       await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
       const messages = f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages
       f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: structuredClone(messages), status: 'idle' })
-      await vi.waitFor(async () => expect((await lastRawRecord(f.root)).commandType).toBe('manual-send'))
+      await vi.waitFor(async () => expect((await lastRawRecord(f.root)).commandType).toBe('manual-send'), { timeout: 5_000 })
       expect((await lastRawRecord(f.root)).timings).toMatchObject({ acknowledgementMs: expect.any(Number), firstOutputMs: null })
 
+      // Closing alone, without dispose, writes a record still waiting rather than waiting out the limit.
       const before = (await f.recorder.recent(100)).length
       await f.control.command({ type: 'manual-send', threadId: 'docs', text: PROMPT })
-      f.control.dispose()
       await f.control.closed()
       expect(await f.recorder.recent(100)).toHaveLength(before + 1)
       expect((await lastRawRecord(f.root)).timings.firstOutputMs).toBeNull()

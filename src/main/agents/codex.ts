@@ -1363,11 +1363,12 @@ export class CodexAppServerHost implements AgentHost {
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
               ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
               const { turn } = z.object({ turn: turnSchema }).parse(value)
-              markSendStage(command.commandId, 'acknowledged')
               origin.turnId = turn.id
               this.applyTurn(id, turn)
               if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id); this.emit()
+              this.unconfirmedDispatchSessionIds.delete(id)
+              markSendStage(command.commandId, 'acknowledged')
+              this.emit()
               return this.persist()
             }, () => {
               alias.origins = alias.origins.filter(o => o !== origin)
