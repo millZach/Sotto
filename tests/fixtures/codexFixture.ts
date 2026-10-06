@@ -16,7 +16,7 @@ async function oneShots(root: string): Promise<Record<string, unknown>[]> {
 }
 const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 /** The fake's own number for a request Sotto holds: Sotto's key also names the app-server that asked it. */
-export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:\d+:/u, '')) as string | number
+export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:[^:]+:/u, '')) as string | number
 /** What the fake recorded of the app-servers Sotto started: each one's introduction, and each thread start or resume on it. */
 export interface ServedRecord { pid: number; method: 'initialize' | 'thread/start' | 'thread/resume'; threadId?: string }
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
