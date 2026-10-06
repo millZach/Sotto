@@ -3448,11 +3448,11 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
   // `sending` holds back an update published while the lane is sending, such as the change a whole read
   // made inside `send` flushes first: sent at once it would reach later listeners ahead of the one being sent.
   // `sent` is every message and activity record this lane has sent, which is what makes a later one new.
-  type Lane = { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean; opening?: boolean; sent: Set<string> }
+  type Lane = { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean; opening?: boolean; sent: SentDetail }
   const lanes = new Map<string, Lane>()
   let disposed = false
   const flushLane = (threadId: string): void => {
-    const lane = lanes.get(threadId) ?? { cancel: null, pending: [], sent: new Set<string>() }
+    const lane = lanes.get(threadId) ?? { cancel: null, pending: [], sent: { messages: new Set<string>(), records: new Set<string>() } }
     lanes.set(threadId, lane)
     lane.cancel?.()
     lane.sending = true
@@ -3483,7 +3483,7 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
         }
         return
       }
-      const open = lane ?? { cancel: null, pending: [], sent: new Set<string>() }
+      const open = lane ?? { cancel: null, pending: [], sent: { messages: new Set<string>(), records: new Set<string>() } }
       lanes.set(update.threadId, open)
       open.pending.push(update)
       flushLane(update.threadId)
@@ -3491,18 +3491,21 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
     dispose: () => { disposed = true; for (const lane of lanes.values()) lane.cancel?.(); lanes.clear() },
   }
 }
+/** The messages and activity records one detail lane has sent, by ID. */
+interface SentDetail { readonly messages: Set<string>; readonly records: Set<string> }
 /** Whether a delta brings a message or an activity record this lane has not sent. A whole detail never opens. */
-function opens(lane: { sent: ReadonlySet<string> }, update: AgentThreadDetailUpdate): boolean {
+function opens(lane: { sent: SentDetail }, update: AgentThreadDetailUpdate): boolean {
   if (!isAgentThreadDetailDelta(update)) return false
-  return update.messageDeltas.some(item => 'message' in item && !lane.sent.has(`m:${item.message.id}`))
-    || update.activityDeltas.some(item => 'record' in item && !lane.sent.has(`a:${item.record.id}`))
+  return update.messageDeltas.some(item => 'message' in item && !lane.sent.messages.has(item.message.id))
+    || update.activityDeltas.some(item => 'record' in item && !lane.sent.records.has(item.record.id))
 }
-function remember(lane: { sent: Set<string> }, update: AgentThreadDetailUpdate): void {
+function remember(lane: { sent: SentDetail }, update: AgentThreadDetailUpdate): void {
+  const { messages, records } = lane.sent
   if (isAgentThreadDetailDelta(update)) {
-    for (const item of update.messageDeltas) lane.sent.add(`m:${'message' in item ? item.message.id : item.id}`)
-    for (const item of update.activityDeltas) lane.sent.add(`a:${'record' in item ? item.record.id : item.id}`)
+    for (const item of update.messageDeltas) messages.add('message' in item ? item.message.id : item.id)
+    for (const item of update.activityDeltas) records.add('record' in item ? item.record.id : item.id)
     return
   }
-  for (const message of update.messages) lane.sent.add(`m:${message.id}`)
-  for (const record of update.activities ?? []) lane.sent.add(`a:${record.id}`)
+  for (const message of update.messages) messages.add(message.id)
+  for (const record of update.activities ?? []) records.add(record.id)
 }
