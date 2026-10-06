@@ -427,7 +427,7 @@ private struct NewThreadBackground: View {
     var body: some View {
         ZStack(alignment: .top) {
             Rectangle().fill(scheme == .dark ? Palette.raised : Palette.surface)
-            Wash(height: 300)
+            Wash(height: 300, drifts: false)
         }
         .ignoresSafeArea()
     }

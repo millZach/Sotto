@@ -253,19 +253,8 @@ import XCTest
     }
 
     func testCreateThreadByBrowsingANewFolder() { browseANewFolder() }
-    /// The same journey with every looping animation stopped, to tell whether a running loop keeps Return from closing
-    /// the folder filter's keyboard.
-    func testCreateThreadByBrowsingANewFolderWithoutLoops() {
-        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-still"])
-        browseANewFolder()
-    }
-    /// Return closes search's keyboard on Threads, with the page's loops running and with them stopped.
-    func testSearchClosesOnReturn() { searchReturns() }
-    func testSearchClosesOnReturnWithoutLoops() {
-        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-still"])
-        searchReturns()
-    }
-    private func searchReturns() {
+    /// Return closes search's keyboard on Threads, where the page's looping lights and wash run in Core Animation.
+    func testSearchClosesOnReturn() {
         let search = app.textFields["thread-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
@@ -672,7 +661,9 @@ import XCTest
 
     /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
-    private func idleCPU(_ arguments: [String], openThread: Bool) {
+    private func idleCPU(_ arguments: [String], openThread: Bool) throws {
+        // A timing benchmark, run by hand: TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh (docs/ci.md).
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SOTTO_IOS_PERF"] == "1", "Idle CPU is measured by hand")
         if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
         if openThread {
             let thread = row("iphone")
@@ -688,10 +679,10 @@ import XCTest
             Thread.sleep(forTimeInterval: 3)
         }
     }
-    func testIdleCPUOnThreads() { idleCPU([], openThread: false) }
-    func testIdleCPUOnThreadsWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: false) }
-    func testIdleCPUInAThread() { idleCPU([], openThread: true) }
-    func testIdleCPUInAThreadWithoutLoopingAnimations() { idleCPU(["--ui-still"], openThread: true) }
+    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
+    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
+    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
+    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {

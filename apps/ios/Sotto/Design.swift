@@ -327,9 +327,9 @@ struct Light: View {
                 Circle().fill(color)
                     .background(
                         Circle()
-                            .fill(RadialGradient(colors: [color.opacity(0.55), color.opacity(0)], center: .center,
-                                                 startRadius: size * 0.3, endRadius: size * 1.4))
-                            .frame(width: size * 2.8, height: size * 2.8)
+                            .fill(RadialGradient(colors: [color.opacity(Light.haloStrength), color.opacity(0)], center: .center,
+                                                 startRadius: size * 0.3, endRadius: Light.haloRadius(size)))
+                            .frame(width: Light.haloRadius(size) * 2, height: Light.haloRadius(size) * 2)
                     )
             }
         }
@@ -337,6 +337,10 @@ struct Light: View {
         .accessibilityHidden(true)
     }
     private var moving: Bool { breathing && !reduceMotion && tone != .off && !DebugFlags.still }
+    /// The halo reaches as far past the dot as the shadow it replaced did (about 13 points, whatever the dot's size),
+    /// starting a little softer than the dot so the core stays the dot itself.
+    static let haloStrength = 0.45
+    static func haloRadius(_ size: CGFloat) -> CGFloat { size / 2 + 13 }
     private var role: ThemeRoleName {
         switch tone {
         case .accent: return .accent
@@ -358,8 +362,8 @@ private struct BreathingLight: UIViewRepresentable {
     }
 }
 
-/// `Light`'s dot and halo as layers. The halo is the same radial fade, from 0.55 of the colour at 0.3 of the dot's
-/// size out to clear at 1.4 of it, so a breathing light looks like a still one.
+/// `Light`'s dot and halo as layers. The halo is the same radial fade as a still light's (`Light.haloStrength` of the
+/// colour at 0.3 of the dot's size out to clear at `Light.haloRadius`), so a breathing light looks like a still one.
 final class LightLoopView: LoopingView {
     private let halo = CAGradientLayer()
     private let dot = CALayer()
@@ -368,7 +372,6 @@ final class LightLoopView: LoopingView {
         halo.type = .radial
         halo.startPoint = CGPoint(x: 0.5, y: 0.5)
         halo.endPoint = CGPoint(x: 1, y: 1)
-        halo.locations = [NSNumber(value: 0.3 / 1.4), NSNumber(value: 1.0)]
         stage.layer.addSublayer(halo)
         stage.layer.addSublayer(dot)
     }
@@ -377,15 +380,16 @@ final class LightLoopView: LoopingView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
-        halo.colors = [color.uiColor(0.55).cgColor, color.uiColor(0).cgColor]
+        halo.colors = [color.uiColor(Light.haloStrength).cgColor, color.uiColor(0).cgColor]
         CATransaction.commit()
     }
     override func layoutStage() {
         let side = min(bounds.width, bounds.height)
         dot.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
         dot.cornerRadius = side / 2
-        let reach = side * 2.8
-        halo.frame = CGRect(x: bounds.midX - reach / 2, y: bounds.midY - reach / 2, width: reach, height: reach)
+        let radius = Light.haloRadius(side)
+        halo.frame = CGRect(x: bounds.midX - radius, y: bounds.midY - radius, width: radius * 2, height: radius * 2)
+        halo.locations = [NSNumber(value: Double(side * 0.3 / radius)), NSNumber(value: 1.0)]
     }
     override func makeLoops() -> [String: CAAnimation] {
         [
@@ -459,6 +463,9 @@ struct Wash: View {
     var warm = false
     var tone: Tone = .normal
     var height: CGFloat = 520
+    /// Whether it drifts. A sheet's wash holds still: drifting behind the New thread sheet's folder filter, Return failed
+    /// to close the filter's keyboard in four of five CI runs, and never with the loops stopped.
+    var drifts = true
     @Environment(\.sottoTheme) private var theme
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -470,7 +477,7 @@ struct Wash: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
-    private var drifting: Bool { !reduceMotion && !DebugFlags.still }
+    private var drifting: Bool { drifts && !reduceMotion && !DebugFlags.still }
     private var dark: Bool { scheme == .dark }
     private var primary: UIColor {
         switch tone {
@@ -869,9 +876,9 @@ private struct BreathingGlow: UIViewRepresentable {
 }
 
 /// `GlowImage` as one layer: the card's shape filled with the surface, and the glow as its shadow. The shadow has an
-/// explicit path, so Core Animation draws it without an offscreen pass. Its shadow radius of 9 stands in for the still
-/// glow's blur of 18: the two radii are not the same measure, and half is the nearest match. The loop fades the whole
-/// of it between 0.55 and full, `breath` seconds each way.
+/// explicit path, so Core Animation draws it without an offscreen pass. Its shadow radius is the still glow's blur of
+/// 18: compared against CI captures, Core Animation's shadow radius and SwiftUI's blur radius spread the same distance.
+/// The loop fades the whole of it between 0.55 and full, `breath` seconds each way.
 final class GlowLoopView: LoopingView {
     private let card = CALayer()
     /// Seconds each way.
@@ -886,7 +893,7 @@ final class GlowLoopView: LoopingView {
         card.masksToBounds = false
         card.cornerCurve = .continuous
         card.shadowOffset = CGSize(width: 0, height: 10)
-        card.shadowRadius = 9
+        card.shadowRadius = 18
         stage.layer.addSublayer(card)
     }
     required init?(coder: NSCoder) { fatalError("GlowLoopView is made in code") }
@@ -1327,7 +1334,7 @@ private struct GlassCircleBody: View {
             .frame(width: 44, height: 44)
             .glass(in: Circle())
             .overlay(Circle().strokeBorder(theme.color(.accent).opacity(0.28), lineWidth: 1))
-            .softShadow(Circle(), color: theme.color(.accent).opacity(0.45), radius: 12, y: 6)
+            .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 12, y: 6)
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)

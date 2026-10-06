@@ -1726,7 +1726,7 @@ private struct SheetBackdrop: View {
                 Rectangle().fill(.ultraThinMaterial)
                 fill.opacity(0.86)
             }
-            if wash { Wash(warm: true, height: 300) }
+            if wash { Wash(warm: true, height: 300, drifts: false) }
         }
         .ignoresSafeArea()
     }
