@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -190,6 +191,13 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
     await expect.poll(() => control.get().assignments[0]?.followups).toBe(1)
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.status).toBe('running')
+    expect(host.reads[0]).toEqual(beforeSend(host))
+  })
+
+  it('a queued follow-up, which its checkpoint is taken from', async () => {
+    const { host, control } = await coordinator()
+    expect((await control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Queued prompt' })).error).toBeNull()
+    await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.messages.some(message => message.role === 'user' && message.text === 'Queued prompt')).toBe(true)
     expect(host.reads[0]).toEqual(beforeSend(host))
   })
 

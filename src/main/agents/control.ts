@@ -1876,6 +1876,12 @@ export class AgentControl {
           await this.followupStore.claim(first.id); claimed = true
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
+          // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
+          // and naming the send lets the adapter take this read for its own.
+          const readStartedAt = performance.now()
+          const read = await this.readThread(threadId, undefined, readBeforeSend(item.messageId))
+          const readMs = performance.now() - readStartedAt
+          this.acceptSnapshot(read)
           const validate = (): void => {
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and explicitly resume queued follow-ups.')
             const latest = this.thread(threadId)
@@ -1886,6 +1892,7 @@ export class AgentControl {
             validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
           }
           validate()
+          this.sendStages(turn)?.addRead(readMs)
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)) }, turn, validate, item.draftId)
