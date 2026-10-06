@@ -15,6 +15,8 @@ const TOTAL_BYTE_LIMIT = 64 * MIB
 const FILE_BYTE_LIMIT = 8 * MIB
 const COUNT_MESSAGE = `This working copy exceeds the ${FILE_LIMIT.toLocaleString('en-US')}-file checkpoint limit.`
 const SIZE_MESSAGE = `This working copy exceeds the checkpoint size limit (${TOTAL_BYTE_LIMIT / MIB} MiB total, ${FILE_BYTE_LIMIT / MIB} MiB per file).`
+/** Git refused to list the folder: it is not in a repository, or Git does not trust the repository's owner. */
+const UNLISTED_MESSAGE = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
 export const LINK_MESSAGE = 'Checkpoint paths cannot follow symbolic links or directory junctions.'
 /** `lstat` and directory checks are cheap and many; reads hold up to 8 MiB each, so fewer run at once. */
 const STAT_CONCURRENCY = 32
@@ -254,7 +256,8 @@ export class CheckpointCapture {
     catch (error) {
       if (!refusedByGit(error)) throw error
       // An outgrown list is usually fixed in an ignore file. A folder Git refused is watched by its signature.
-      return new Refusal(new Error(error instanceof Error ? error.message : 'Git could not list this working copy.', { cause: error }), folder.ignoreFiles ?? [])
+      const outgrown = (error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+      return new Refusal(outgrown ? new ToolFailure('too-large', COUNT_MESSAGE) : new ToolFailure('not-repository', UNLISTED_MESSAGE), folder.ignoreFiles ?? [])
     }
     const paths = [...new Set(listing.split('\0').filter(Boolean))].sort()
     const valid = (path: string): boolean => checkpointPathSchema.safeParse(path).success && isInside(root, join(root, path))

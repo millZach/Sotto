@@ -157,11 +157,11 @@ describe('checkpoint capture', () => {
     const home = join(f.root, 'home'); await mkdir(home)
     vi.stubEnv('HOME', home); vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'))
     cleanup.push(async () => { vi.unstubAllEnvs() })
-    const unlisted = /not a git repository/i
+    const unlisted = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
     f.commands.length = 0
-    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
     expect(f.commands).toEqual([])
     git(f.repo, 'init', '-q')
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
@@ -169,14 +169,14 @@ describe('checkpoint capture', () => {
 
     // A repository made in a folder above it.
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
     git(f.root, 'init', '-q')
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
     await rm(join(f.root, '.git'), { recursive: true, force: true })
 
     // Git told to trust it, as `git config --global --add safe.directory` does.
     await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow(unlisted)
-    expect(await f.capture.heldVerdict(f.repo)).toMatch(unlisted)
+    expect(await f.capture.heldVerdict(f.repo)).toBe(unlisted)
     await writeFile(join(home, '.gitconfig'), `[safe]\n\tdirectory = ${f.repo.replaceAll('\\', '/')}\n`)
     expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
   })
@@ -193,20 +193,20 @@ describe('checkpoint capture', () => {
     }
   })
 
-  it('holds a listing that outgrew Git\'s buffer only until an ignore file changes', async () => {
+  it('holds a listing that outgrew Git\'s buffer, in the file count\'s words, only until an ignore file changes', async () => {
     const f = await fixture({ files: { 'a.txt': 'small\n', '.gitignore': 'ignored/\n' } })
     const overflow = Object.assign(new Error('stdout maxBuffer length exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' })
     const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
       git: (cwd, args) => args[0] === 'ls-files' && args[1] === '-c' ? Promise.reject(overflow)
         : new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' }, (error, output) => error ? reject(error) : done(output))) })
-    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('maxBuffer')
-    expect(await capture.heldVerdict(f.repo)).toMatch('maxBuffer')
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('This working copy exceeds the 10,000-file checkpoint limit.')
+    expect(await capture.heldVerdict(f.repo)).toMatch('10,000-file')
     // Saved in place, as an editor does: nothing in Git's state or the top-level listing moves.
     await writeFile(join(f.repo, '.gitignore'), 'ignored/\nnode_modules/\n')
     expect(await capture.heldVerdict(f.repo)).toBeUndefined()
 
-    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('maxBuffer')
-    expect(await capture.heldVerdict(f.repo)).toMatch('maxBuffer')
+    await expect(capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('10,000-file')
+    expect(await capture.heldVerdict(f.repo)).toMatch('10,000-file')
     await writeFile(join(f.repo, '.git', 'info', 'exclude'), 'build/\n')
     expect(await capture.heldVerdict(f.repo)).toBeUndefined()
   })
