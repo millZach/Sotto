@@ -56,7 +56,10 @@ export function isTranscriptionErrorCode(code: string): code is TranscriptionErr
 }
 
 /**
- * What went wrong reaching OpenRouter, in the one wording every surface uses.
+ * What went wrong reaching OpenRouter when nothing was kept, in the one wording
+ * every surface uses. The controller keeps the recording for every
+ * transcription failure today, so TRANSCRIPTION_KEPT_DETAIL is what users read;
+ * these stay for a failure that keeps nothing.
  * The dictate room, the widget and the controller's error state all say the
  * same sentence, so a failure reads the same wherever the user happens to see
  * it, and the recovery it names is only ever changed in one place. Each one

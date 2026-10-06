@@ -185,6 +185,8 @@ export function DictateRoom({
     action = onRetry
   }
   const dismiss = dictation.status === 'error' && onDismiss !== undefined ? onDismiss : undefined
+  const keyProblem = !configured || (dictation.status === 'error'
+    && (dictation.code === 'TRANSCRIPTION_UNCONFIGURED' || dictation.code === 'TRANSCRIPTION_UNAUTHORIZED'))
 
   const liveProps = said.tone === 'error'
     ? { role: 'alert' as const, 'aria-live': 'assertive' as const }
@@ -222,8 +224,9 @@ export function DictateRoom({
             </Button>
           )}
           {/* The shortcut starts a new dictation, which lets a kept recording go,
-              so it is not offered as another way to press Try again. */}
-          {kept ? null : configured && !microphoneSkipped ? (
+              so it is not offered as another way to press Try again. A kept
+              recording that failed on the key still points at Settings. */}
+          {kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}
             </span>

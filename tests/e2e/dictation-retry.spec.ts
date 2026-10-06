@@ -24,7 +24,7 @@ async function withTurnedAwayDictation(
   settings: Partial<AppSettings> = {},
 ): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-dictation-retry-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, successDisplayMs: 500, ...settings }), 'utf8')
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('transcription-turned-away-once', profile)
@@ -48,10 +48,6 @@ test('keeps a turned-away dictation and delivers it when the widget pill is pres
     await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
     await page.screenshot({ path: resolve(evidenceRoot, 'dictate-kept.png') })
     await widget.screenshot({ path: resolve(evidenceRoot, 'widget-kept.png'), animations: 'disabled' })
-
-    // The error outlasts the 500 ms the profile shows a success for, where it used to clear.
-    await page.waitForTimeout(1_000)
-    await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
 
     await widget.locator('.widget-capsule').click({ position: { x: 60, y: 20 } })
     await expect(widget.locator('.widget-shell[data-status="success"]')).toBeVisible({ timeout: 15_000 })

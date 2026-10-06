@@ -203,6 +203,16 @@ describe('DictateRoom', () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
+  it('still points at Settings when a kept recording failed on the key', async () => {
+    const user = userEvent.setup()
+    const onOpenSettings = vi.fn()
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)} onOpenSettings={onOpenSettings}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_UNAUTHORIZED', message: 'internal', kept: true }} />)
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Open Settings' }))
+    expect(onOpenSettings).toHaveBeenCalledOnce()
+  })
+
   it('offers Dismiss for an error that keeps nothing, and keeps Start dictation', async () => {
     const user = userEvent.setup()
     const onDismiss = vi.fn(async () => undefined)

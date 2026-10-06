@@ -119,7 +119,8 @@ interface RecordingPart {
   audio: Float32Array | null
   readonly rms: number
   result?: Promise<TranscriptionResult>
-  text?: TranscriptionResult
+  /** What came back for this part, once it has. */
+  transcript?: TranscriptionResult
 }
 
 /** Diagnostics-only precision: three decimals distinguish silence from speech. */
@@ -373,18 +374,9 @@ export class DictationController {
     session.processingStage = 'transcribing'
     session.progress = 0
     this.dispatch({ type: 'RETRIED', sessionId: session.id, startedAt: session.startedAt }, session)
-    const waiting = session.parts.filter((part) => part.text === undefined && part.audio !== null)
+    const waiting = session.parts.filter((part) => part.transcript === undefined && part.audio !== null)
     waiting.forEach((part, index) => {
-      const result = this.dependencies.transcriber.transcribe({
-        sessionId: session.id,
-        audio: part.audio!,
-        language: session.settings.language,
-        ...(index === waiting.length - 1
-          ? { onProgress: (progress: TranscriptionProgress) => this.handleProgress(session, progress) }
-          : {}),
-      })
-      part.result = result
-      void result.catch(() => undefined)
+      part.result = this.sendPart(session, part.audio!, index === waiting.length - 1)
     })
     const processing = this.finishRecording(session)
     session.processing = processing
@@ -504,14 +496,23 @@ export class DictationController {
 
   private handleSegment(session: ActiveSession, segment: AudioRecordingResult): void {
     if (!this.isCurrent(session) || session.stopClaimed || segment.samples.length === 0) return
+    const result = this.sendPart(session, segment.samples, false)
+    session.parts.push({ audio: segment.samples, rms: roundRms(calculateRms(segment.samples)), result })
+  }
+
+  /** Sends one part for transcription; the last part sent reports progress. */
+  private sendPart(session: ActiveSession, audio: Float32Array, reportsProgress: boolean): Promise<TranscriptionResult> {
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
-      audio: segment.samples,
+      audio,
       language: session.settings.language,
+      ...(reportsProgress
+        ? { onProgress: (progress: TranscriptionProgress) => this.handleProgress(session, progress) }
+        : {}),
     })
-    session.parts.push({ audio: segment.samples, rms: roundRms(calculateRms(segment.samples)), result })
     // Rejections are re-observed when finishRecording awaits the parts.
     void result.catch(() => undefined)
+    return result
   }
 
   private async processRecording(
@@ -526,14 +527,8 @@ export class DictationController {
 
     session.durationMs = recording.durationMs
     if (recording.samples.length > 0) {
-      const result = this.dependencies.transcriber.transcribe({
-        sessionId: session.id,
-        audio: recording.samples,
-        language: session.settings.language,
-        onProgress: (progress) => this.handleProgress(session, progress),
-      })
+      const result = this.sendPart(session, recording.samples, true)
       session.parts.push({ audio: recording.samples, rms: roundRms(calculateRms(recording.samples)), result })
-      void result.catch(() => undefined)
     }
     await this.finishRecording(session)
   }
@@ -545,7 +540,7 @@ export class DictationController {
   private async finishRecording(session: ActiveSession): Promise<void> {
     const parts = session.parts
     const outcomes = await Promise.allSettled(
-      parts.map((part) => part.result ?? Promise.resolve(part.text!)),
+      parts.map((part) => part.result ?? Promise.resolve(part.transcript!)),
     )
     if (!this.isCurrent(session)) return
     let failure: { readonly reason: unknown } | undefined
@@ -553,7 +548,7 @@ export class DictationController {
       const part = parts[index]!
       delete part.result
       if (outcome.status === 'fulfilled') {
-        part.text = outcome.value
+        part.transcript = outcome.value
         part.audio = null
       } else {
         failure ??= { reason: outcome.reason }
@@ -566,7 +561,7 @@ export class DictationController {
       return
     }
 
-    const results = parts.map((part) => part.text!)
+    const results = parts.map((part) => part.transcript!)
     const segmentWords = results.map((partial) => countWords(partial.text))
     const segmentRms = parts.map((part) => part.rms)
     parts.length = 0

@@ -21,9 +21,9 @@ A throwaway Electron script read the key the way Sotto does, kept it in memory, 
 
 ## What the change does, in the built app
 
-`tests/e2e/dictation-retry.spec.ts` runs the built app with the `transcription-turned-away-once` scenario, whose first transcription is turned away as rate limited and whose next is accepted. The profile shows a success for 500 ms, as the owner's does.
+`tests/e2e/dictation-retry.spec.ts` runs the built app with the `transcription-turned-away-once` scenario, whose first transcription is turned away as rate limited and whose next is accepted.
 
-- After Stop, Dictate says what happened and that the recording is kept, with **Try again** and **Discard recording** (`artifacts/dictation-retry/dictate-kept.png`). The widget reads **Click to try again** with a **×** (`artifacts/dictation-retry/widget-kept.png`). Both are still there a second later.
+- After Stop, Dictate says what happened and that the recording is kept, with **Try again** and **Discard recording** (`artifacts/dictation-retry/dictate-kept.png`). The widget reads **Click to try again** with a **×** (`artifacts/dictation-retry/widget-kept.png`). Neither clears on a timer; `tests/unit/renderer/dictationController.test.ts` checks that a failure sets none.
 - Pressing the widget's pill transcribes the kept recording, pastes it and saves it to history (`artifacts/dictation-retry/dictate-recovered.png`).
 - At the 820×560 minimum, in the light appearance, Try again and Discard recording sit on one row without overflow (`artifacts/dictation-retry/dictate-kept-minimum-light.png`). **Discard recording** returns Dictate and the widget to idle with nothing saved.
 
