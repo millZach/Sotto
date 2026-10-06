@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { createServer, request, type IncomingMessage } from 'node:http'
+import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http'
 import { connect, type Socket } from 'node:net'
 
 /**
@@ -10,7 +10,8 @@ import { connect, type Socket } from 'node:net'
  * `upstream` is read for each request, so the stand-in follows a host that starts again on its remembered port. With no
  * upstream, or while `answering` is `502`, it answers 502 the way Serve does with nothing behind it; `cut()` ends every
  * connection it carries, the way a lost network does. `cut-upgrade` carries everything but ends each socket as soon as the
- * host has accepted it, and `impostor` answers health as another host. `requests` lists every path it was asked for.
+ * host has accepted it, and `impostor` answers health as another host. `hold()` keeps each health request waiting until its
+ * promise settles, so a connect stays under way. `requests` lists every path it was asked for.
  */
 export async function serveStandIn(upstream: () => number | undefined, peer = '100.101.102.103') {
   let answering: 'proxy' | 502 | 'cut-upgrade' | 'impostor' = 'proxy'
@@ -18,8 +19,13 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
   const requests: string[] = []
   const target = (): number | undefined => answering === 502 ? undefined : upstream()
   const headers = (incoming: IncomingMessage) => ({ ...incoming.headers, 'x-forwarded-for': peer })
+  let held: Promise<void> | undefined
   const server = createServer((incoming, response) => {
     requests.push(`${incoming.method ?? ''} ${incoming.url ?? ''}`)
+    const gate = incoming.url === '/v1/health' ? held : undefined
+    if (gate) void gate.then(() => carry(incoming, response)); else carry(incoming, response)
+  })
+  const carry = (incoming: IncomingMessage, response: ServerResponse): void => {
     const port = target()
     if (!port) { response.statusCode = 502; response.end(); return }
     const impostor = answering === 'impostor' && incoming.url === '/v1/health'
@@ -35,7 +41,7 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
     })
     outgoing.on('error', () => { if (!response.headersSent) response.statusCode = 502; response.end() })
     incoming.pipe(outgoing)
-  })
+  }
   server.on('connection', socket => { open.add(socket); socket.on('close', () => open.delete(socket)) })
   server.on('upgrade', (incoming: IncomingMessage, client: Socket, head: Buffer) => {
     requests.push(`UPGRADE ${incoming.url ?? ''}`)
@@ -62,6 +68,8 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
     requests,
     /** 502 for everything from now on, as Serve answers with nothing behind it, or carry requests again, or one of the faults above. */
     answer(value: 'proxy' | 502 | 'cut-upgrade' | 'impostor'): void { answering = value },
+    /** Keeps health requests from now on waiting until `gate` settles, or none with no gate. */
+    hold(gate: Promise<void> | undefined): void { held = gate },
     /** Ends every connection it carries now. */
     cut(): void { for (const socket of open) socket.destroy() },
     close: async (): Promise<void> => {

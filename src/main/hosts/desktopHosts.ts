@@ -84,6 +84,8 @@ const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsComm
 interface LiveHost { via: HostVia; launcher?: SshHostLauncher; ssh?: SshHostConnection; sshClosed?: boolean; socket?: SocketHostService; up?: boolean; registeredHostId?: string; generation: number; closing?: boolean
   /** While the socket moves to the tailnet: the connect it is leaving, which keeps its threads and presses until the move ends. */
   from?: LiveHost
+  /** The move itself, set with `from`: a restart pressed meanwhile waits for it, so it holds the threads of the connect that has them. */
+  moving?: Promise<boolean>
   /** Presses running over this connect's SSH connection now. A move to the tailnet closes that connection only once none is. */
   presses?: number
   /** Set when a move to the tailnet left this connect while a press still ran on its SSH connection, which closes after it. */
@@ -110,6 +112,8 @@ const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(
   'boot-start-refused', 'boot-unit-failed'])
 /** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
 class FinalHostError extends Error {}
+/** A move to the tailnet that gave way to an update before it took the threads' place: the host stays on SSH, as it was. */
+class MoveWaits extends Error {}
 /** Why a connect went to SSH past the tailnet: what the row says, and the address that just failed, which waits for the 5-minute check. */
 interface TailnetMiss { readonly note?: HostStatus['tailnetNote']; readonly failed?: string | undefined }
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
@@ -375,7 +379,10 @@ export class DesktopHosts {
    */
   private async restartOnPurpose<T>(host: SavedHost, operation: () => Promise<T>, untouched: (result: T) => boolean): Promise<T> {
     const id = host.id
-    const active = this.live.get(id)
+    // A move to the tailnet under way ends first, here or back on SSH, so the restart holds the threads of the connect that
+    // has them on the page and its drop is the one restart it expects. The press itself stays on the SSH connection it began on.
+    let active = this.live.get(id)
+    while (active?.moving) { await active.moving.catch(() => false); active = this.live.get(id) }
     if (!active) throw new SshFailure('not-connected', `${host.name} is not connected. Nothing was changed.`)
     active.closing = true
     this.clearRetry(id)
@@ -1127,6 +1134,8 @@ export class DesktopHosts {
     await this.learnAddress(host, hello)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     if (!connected) throw new Error('The host disconnected while connecting. Try connecting again.')
+    // A move to the tailnet gives way to an update that began while it ran, before it takes the threads' place on the page.
+    if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
@@ -1233,22 +1242,32 @@ export class DesktopHosts {
   /**
    * Moves a connected host's socket from its SSH connection to its tailnet connection: the tailnet socket opens beside the
    * SSH one, takes its place on the Threads page, and the SSH connection closes, taking the administrative token with it,
-   * once no press is running on it. False when the tailnet did not answer, and the host stays where it was.
+   * once no press is running on it. False when the tailnet did not answer, and the host stays where it was. A restart pressed
+   * meanwhile waits for the move (`moving`), and an update that began meanwhile keeps the host on SSH until the 5-minute check.
    */
-  private async moveToTailnet(host: SavedHost, from: LiveHost, address: string): Promise<boolean> {
-    if (this.live.get(host.id) !== from || from.closing || !host.hostId) return false
+  private moveToTailnet(host: SavedHost, from: LiveHost, address: string): Promise<boolean> {
+    if (this.live.get(host.id) !== from || from.closing || !host.hostId) return Promise.resolve(false)
     const next: LiveHost = { via: 'tailnet', generation: ++this.generation, from }
     this.live.set(host.id, next)
-    try { await this.openSocket(host, next, { url: this.resolveTailnet(address), expectedHostId: host.hostId, healthTimeoutMs: TAILNET_HEALTH_MS }, from) }
-    catch {
+    next.moving = this.move(host, from, next, address, host.hostId)
+    return next.moving
+  }
+  private async move(host: SavedHost, from: LiveHost, next: LiveHost, address: string, hostId: string): Promise<boolean> {
+    try { await this.openSocket(host, next, { url: this.resolveTailnet(address), expectedHostId: hostId, healthTimeoutMs: TAILNET_HEALTH_MS }, from) }
+    catch (error) {
       await next.socket?.close().catch(() => undefined)
+      delete next.moving
       if (this.live.get(host.id) === next) {
         this.live.set(host.id, from)
         // The SSH connection or its socket went while the move ran: that is the drop it would have been.
         if (!from.up || from.sshClosed) this.dropped(host, from)
+        // An update began while the tailnet answered: it needs the SSH connection between its steps, so the move waits for
+        // the 5-minute check, and the row says nothing of the tailnet failing.
+        else if (error instanceof MoveWaits) { this.scheduleReturn(host); return true }
       }
       return false
     }
+    delete next.moving
     // Disconnected, switched off or replaced while the move ran: whatever did that closed both.
     if (this.live.get(host.id) !== next) return true
     delete next.from

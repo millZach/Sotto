@@ -11,7 +11,7 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import { SshHostLauncher, type SshConnectOptions, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
+import { SshHostLauncher, type SshBootResult, type SshConnectOptions, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import { TAILNET_STORE_FILE } from '../../src/main/hosts/tailnetStore'
 import { hostTailnetSetting } from '../../src/main/hosts/hostTailnetSetting'
 import { BOOT_TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
@@ -47,6 +47,9 @@ let clock = 0
 let adminTokenOverride: string | undefined
 /** Holds every administrative token request until released, so a press stays running while something else happens. */
 let tokenGate: Promise<void> | undefined
+/** What a start at boot change on the fixture's connections answers; none has one unless a test gives it. */
+let bootChange: (() => Promise<SshBootResult>) | undefined
+const bootOn = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } as const
 
 const descriptor = async () => JSON.parse(await readFile(join(data, 'host-listener.json'), 'utf8')) as { adminToken: string; hostId: string; tailnetAddress?: string; startedBy?: string }
 async function admin(route: string, body: unknown): Promise<Record<string, unknown>> {
@@ -71,7 +74,7 @@ class FixtureSsh extends SshHostLauncher {
       hostAdminToken: async () => { await tokenGate; return adminTokenOverride ?? (await descriptor()).adminToken },
       stopHost: async () => { operations.push(`${which} stop-host`); return true },
       updateHost: async () => { throw new Error('This fixture host has no update.') },
-      boot: async () => { throw new Error('This fixture host has no start at boot.') },
+      boot: async () => { if (!bootChange) throw new Error('This fixture host has no start at boot.'); return bootChange() },
     }
   }
   override async disconnect(): Promise<void> { this.disconnected = true }
@@ -86,7 +89,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-desktop-tailnet-'))
   data = join(root, 'remote')
   hostTailscale = standInTailscale({ ok: true }, DNS)
-  tailscaleInstalled = true; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined
+  tailscaleInstalled = true; clock = Date.now(); adminTokenOverride = undefined; tokenGate = undefined; bootChange = undefined
   host = await startHost('launch-script')
   stand = await serveStandIn(() => hostTailscale.proxied())
   credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key')); await credentials.load()
@@ -303,6 +306,64 @@ describe('a tailnet connection (ADR-0053)', () => {
     release(); tokenGate = undefined
     await expect(pressing).resolves.toMatchObject({ enabled: true })
     await vi.waitFor(() => expect(launchers[0]!.disconnected).toBe(true), { timeout: 20_000 })
+  })
+
+  it('lets a move to the tailnet under way end before a start at boot restart, so the threads read Reconnecting through it', async () => {
+    returnMs = 200
+    await relaunch()
+    stand.answer(502)
+    const remote = await add()
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' })
+    const thread = await remoteThread()
+    // The 5-minute check (shortened here) finds the tailnet answering, and its health waits: the move is under way.
+    let answerHealth!: () => void
+    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    const asked = stand.requests.length
+    stand.answer('proxy')
+    await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })
+    bootChange = async () => {
+      // The unit takes the host over: the host Sotto started stops, and the threads the restart holds read Reconnecting.
+      // They are the tailnet connection's by now, since the move ended before the restart began.
+      expect(first().via).toBe('tailnet')
+      await host.close()
+      await vi.waitFor(() => expect(row(thread)).toMatchObject({ clientConnected: false, clientReconnecting: true }))
+      host = await startHost('launch-script')
+      return { type: 'boot-installed', installed: true, stopped: true, pid: process.pid, bootStart: bootOn }
+    }
+    const installing = manager.setBootStart(remote.id, 'install')
+    stand.hold(undefined); answerHealth()
+    await expect(installing).resolves.toMatchObject({ stopped: true })
+    await onTailnet()
+    expect(router.shell().host.threads.filter(item => item.id === thread)).toHaveLength(1)
+    expect(row(thread)).toMatchObject({ clientConnected: true })
+    expect(row(thread)?.clientReconnecting).toBeUndefined()
+    // The SSH connection the press began on closed once it ended.
+    expect(launchers[0]!.disconnected).toBe(true)
+  })
+
+  it('keeps a host on its SSH connection when an update begins while a move to the tailnet is under way, and moves after it', async () => {
+    returnMs = 200
+    await relaunch()
+    stand.answer(502)
+    await add()
+    let updating: string | undefined, asks = 0
+    manager.useUpdates({ state: () => [], command: async () => undefined, subscribe: () => () => undefined, busy: () => { asks += 1; return updating } })
+    let answerHealth!: () => void
+    stand.hold(new Promise(resolve => { answerHealth = resolve }))
+    const asked = stand.requests.length
+    stand.answer('proxy')
+    await vi.waitFor(() => expect(stand.requests.slice(asked)).toContain('GET /v1/health'), { timeout: 20_000 })
+    updating = 'forge is being updated.'
+    const before = asks
+    stand.hold(undefined); answerHealth()
+    // The tailnet answered, but the update needs the SSH connection between its steps: the move asks once more before it
+    // takes the threads' place, gives way, and the next 5-minute check (shortened here) asks again and waits too.
+    await vi.waitFor(() => expect(asks).toBeGreaterThanOrEqual(before + 2), { timeout: 20_000 })
+    expect(first()).toMatchObject({ phase: 'connected', via: 'ssh', tailnetNote: 'unreachable' })
+    expect(launchers[0]!.disconnected).toBe(false)
+    updating = undefined
+    await onTailnet()
+    expect(launchers[0]!.disconnected).toBe(true)
   })
 
   it('tries only the tailnet for the first minute of retries of a host that starts at boot, and SSH after it', async () => {
