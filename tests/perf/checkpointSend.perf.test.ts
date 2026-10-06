@@ -14,7 +14,7 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
  * this work started from; "after" is the working tree. Each run is a fresh process that sends `SENDS` turns into
  * one working copy and times the checkpoint taken before each send and the one taken when its turn completes.
  * The copies: a synthetic one under the limits, a synthetic one over them (once more with a saved checkpoint file
- * the size of the development machine's), a folder Git does not know, and this repository's own checkout
+ * the size of the development machine's, and once with a commit each turn, which turns a held verdict around), a folder Git does not know, and this repository's own checkout
  * (`SOTTO_PERF_CHECKPOINT_REPO` names another). `SOTTO_PERF_CHECKPOINT_ONLY` runs the copies whose names contain it.
  */
 const BASE = process.env.SOTTO_PERF_CHECKPOINT_BASE ?? 'e8a82a034c42cc3eb9b8fb3c711726353192ade9'
@@ -22,12 +22,12 @@ const SENDS = 6
 const RUNS = 3
 const exec = promisify(execFile)
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeReadBytes: number; afterReads: number; rewrote: boolean }
+interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeReadBytes: number; beforeListings: number; afterReads: number; rewrote: boolean }
 
 describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
   let root: string
   const bundles: Record<string, string> = {}
-  const copies: Record<string, { path: string; mode: 'unchanged' | 'edit'; seeded?: boolean }> = {}
+  const copies: Record<string, { path: string; mode: 'unchanged' | 'edit' | 'commit'; seeded?: boolean }> = {}
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-send-'))
     for (const label of ['before', 'after']) {
@@ -61,6 +61,8 @@ describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
     copies['under the limits, one file edited a turn'] = { path: copies['under the limits, unchanged']!.path, mode: 'edit' }
     copies['over the limits'] = { path: await synthetic('over', 3_000, 32 * 1024), mode: 'unchanged' }
     copies['over the limits, 1.5 MB of saved checkpoints'] = { path: copies['over the limits']!.path, mode: 'unchanged', seeded: true }
+    // Its own copy, since each turn commits to it.
+    copies['over the limits, a commit each turn'] = { path: await synthetic('over-committed', 3_000, 32 * 1024), mode: 'commit' }
     copies['not a Git repository'] = { path: await synthetic('plain', 200, 1024, false), mode: 'unchanged' }
     copies['this repository'] = { path: resolve(process.env.SOTTO_PERF_CHECKPOINT_REPO ?? '.'), mode: 'unchanged' }
     // A file written in the last few seconds is read again whatever its lstat says, so the copies settle first.
@@ -90,6 +92,8 @@ describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
           laterSendReads: median(later.map(row => row.beforeReads)),
           laterSendReadMiB: round(median(later.map(row => row.beforeReadBytes)) / 1024 / 1024, 2),
           turnEndMs: round(median(later.map(row => row.afterMs))),
+          laterSendListings: later.reduce((sum, row) => sum + row.beforeListings, 0),
+          laterSends: later.length,
           turnEndReads: median(later.map(row => row.afterReads)),
           fileRewritesPerSend: round(later.filter(row => row.rewrote).length / later.length, 2),
         }
