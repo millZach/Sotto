@@ -85,6 +85,12 @@ final class StepRunTests: XCTestCase {
         XCTAssertNil(StepRun.running([try step("done")]))
     }
 
+    func testBetweenStepsTheWorkingLineSaysThinking() throws {
+        XCTAssertEqual(StepRun.now([try step("done")]).words, "Thinking", "A provider reports tool calls, not the thinking between them")
+        XCTAssertEqual(StepRun.spokenWorking(StepRun.now([try step("done")]), count: 1), "Working: Thinking, 1 step so far")
+        XCTAssertEqual(StepRun.now([try step("now", status: "running", command: "npm test")]).verb, "Running")
+    }
+
     func testTheRunningStepReadsAsAVerbAndWhatItWorksOn() throws {
         let command = try step("test", status: "running",
                                command: #""C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Command 'npm test'"#)

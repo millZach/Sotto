@@ -21,6 +21,9 @@ public enum StepRun {
 
     /// The step a working run's line shows: the latest one still running, or nil when none is.
     public static func running(_ steps: [Activity]) -> Activity? { steps.last(where: { $0.status == "running" }) }
+    /// What the working line says now: the step running, or Thinking between steps (a provider reports its tool calls,
+    /// not the thinking between them, so a working thread often has no step running).
+    public static func now(_ steps: [Activity]) -> Live { running(steps).map(live) ?? Live(verb: "Thinking", subject: nil) }
 
     /// What a press on the line does: "Show 14 steps", or "Hide steps" once they are open.
     public static func press(count steps: Int, open: Bool) -> String { open ? "Hide steps" : "Show " + count(steps) }

@@ -323,16 +323,11 @@ private struct Conversation: View {
         }
     }
 
-    /// The run the thread is working through now: the conversation's last run, while the thread works and one of its
-    /// steps is running.
+    /// The run the thread is working through now: the run the conversation ends on, while the thread works, whether or
+    /// not one of its steps is running at this moment (between tool calls it is thinking).
     private func workingRun(_ rows: [ConversationRow], _ state: ThreadState) -> String? {
-        guard state.workInProgress else { return nil }
-        for row in rows.reversed() {
-            if case .steps(let steps) = row.item {
-                return StepRun.running(steps) != nil ? row.id : nil
-            }
-        }
-        return nil
+        guard state.workInProgress, let last = rows.last, case .steps = last.item else { return nil }
+        return last.id
     }
 
     /// Opens or folds a run in place with a spring. A reader at the bottom stays at the bottom; one who has scrolled up
@@ -806,23 +801,22 @@ private struct FoldedRun: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let running = working ? StepRun.running(steps) : nil
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
-                if let running {
-                    WorkingLine(step: running, count: steps.count, open: open)
+                if working {
+                    WorkingLine(step: StepRun.running(steps), live: StepRun.now(steps), count: steps.count, open: open)
                 } else {
                     summaryLine
                 }
             }
             .buttonStyle(FoldLineStyle())
             .accessibilityLabel(StepRun.press(count: steps.count, open: open))
-            .accessibilityValue(spoken(running))
+            .accessibilityValue(spoken)
             .accessibilityAddTraits(open ? .isSelected : [])
             .accessibilityIdentifier("steps-run-\(runID)")
             if open {
                 StepTrail(steps: steps)
-                    .padding(.top, running == nil ? Space.s1 : Space.s2)
+                    .padding(.top, working ? Space.s2 : Space.s1)
                     .padding(.bottom, Space.s3 + Space.s1)
                     .transition(trailTransition)
             }
@@ -834,9 +828,9 @@ private struct FoldedRun: View {
     }
 
     /// What the line says to VoiceOver: "Working: Running npm test, 12 steps so far", or "14 steps, 1 minute 32 seconds".
-    private func spoken(_ running: Activity?) -> String {
-        guard let running else { return StepRun.spokenSummary(count: steps.count, seconds: seconds) }
-        return StepRun.spokenWorking(StepRun.live(running), count: steps.count)
+    private var spoken: String {
+        guard working else { return StepRun.spokenSummary(count: steps.count, seconds: seconds) }
+        return StepRun.spokenWorking(StepRun.now(steps), count: steps.count)
     }
 
     /// "14 steps · 1m 32s", muted, and in ink while its steps are open.
@@ -863,7 +857,9 @@ private struct FoldedRun: View {
 /// how long it has run and how many steps so far. Each new step rolls up into place like a ticker and the count ticks
 /// with it; under Reduce Motion the light holds still and the words crossfade.
 private struct WorkingLine: View {
-    let step: Activity
+    /// The step running now; nil between steps, when the line reads Thinking.
+    let step: Activity?
+    let live: StepRun.Live
     let count: Int
     let open: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -873,14 +869,14 @@ private struct WorkingLine: View {
             Light(tone: .accent, size: 7, breathing: true)
                 .frame(width: 16, height: 16)
             ZStack(alignment: .leading) {
-                LiveStepWords(live: StepRun.live(step))
-                    .id(step.id)
+                LiveStepWords(live: live)
+                    .id(step?.id ?? "thinking")
                     .transition(roll)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .clipped()
-            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.46), value: step.id)
-            if let since = Words.date(step.startedAt) {
+            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.46), value: step?.id)
+            if let since = Words.date(step?.startedAt) {
                 ElapsedText(since: since)
                     .font(.sotto(.small).monospacedDigit())
                     .foregroundStyle(Palette.accentText)
