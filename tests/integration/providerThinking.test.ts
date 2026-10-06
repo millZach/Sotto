@@ -190,3 +190,18 @@ it.each([
     expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
   } finally { await f.cleanup() }
 })
+
+it('Devin settles a thought its failed turn cut off as interrupted, not as an unknown outcome', async () => {
+  const f = await devinFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Think first' })
+    await f.action(id, { type: 'thought', text: 'Half of a thought.' })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    await f.action(id, { type: 'malformed' })
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('error')
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+  } finally { await f.cleanup() }
+})

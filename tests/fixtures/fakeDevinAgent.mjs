@@ -196,6 +196,7 @@ const control = setInterval(() => {
   seen.add(command.id)
   if (command.type === 'malformed') process.stdout.write('{invalid json}\n')
   if (command.type === 'complete') complete(sessionId, command.text, command.reason, command.thought)
+  if (command.type === 'thought') update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: command.text } })
   if (command.type === 'mode') update(sessionId, { sessionUpdate: 'current_mode_update', currentModeId: command.mode })
   if (command.type === 'changed-permission') {
    const prior = [...pending].find(([, value]) => value.kind === 'permission' && value.sessionId === sessionId)

@@ -291,7 +291,10 @@ export class DevinAcpHost implements AgentHost {
     const thread = this.thread(id)
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.origin.messageId, status }
-    thread.activities = markTurnActivity(thread.activities?.map(activity => activity.status === 'running' && activity.kind !== 'turn'
+    // A thought the turn ended on was cut off, which is known; the work it left running has an outcome nobody saw.
+    const thoughts = settledThinking(DEVIN_THINKING_ID_PREFIX, thread.activities ?? [], thinkingSettledAs(status), true)
+    const settled = thoughts.length ? mergeAgentActivities(thread.activities, thoughts) : thread.activities
+    thread.activities = markTurnActivity(settled?.map(activity => activity.status === 'running' && activity.kind !== 'turn'
       ? { ...activity, status: status === 'failed' ? 'unknown' : 'interrupted' } : activity), { provider: 'devin', turnId: turn.origin.messageId, status })
   }
   private unsupported(rpc: DevinRpc, frame: DevinFrame): void {
