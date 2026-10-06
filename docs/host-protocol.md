@@ -147,3 +147,20 @@ Every `message` is plain copy for the user. None is logged with a prompt, a tran
 A client that includes `message-aliases` in hello's `accepts` may receive `message-aliased` events in hello, event pages and shell pushes. Each carries `at`, `messageId` and `canonicalId`; only the duplicate projection row is removed, after comparing the saved content. Original events remain. Without this opt-in the host omits these events and advances `latestSeq` over them, even when a page becomes empty. Such clients read the corrected history from thread detail; the original version 1 event union is unchanged for them.
 
 The active iPhone reconnects with exponential delays starting at about one second, a 0.8–1.2 random multiplier and a thirty-second cap. Only a successful liveness round resets the delay. Reconnecting reads fresh state and reconciles receipts without resending commands; backgrounding cancels retries. Compose, send and draft controls use the receiving peer’s selected Sotto thread ID. They preserve drafts for other threads, and question answers still require the remote-answer policy.
+
+## The launch script
+
+The desktop runs the launch script over SSH (`src/main/hosts/launchScript.ts`), one operation per `ssh`. It is not part of the socket protocol, but what it reports is how a desktop finds a host and what it may do with it.
+
+A host the launch script started records `startedBy: "launch-script"` in its `host-listener.json`, and a host its start at boot unit started records `startedBy: "boot"` (ADR-0054). Either counts as started by Sotto, as does any host this installation's unit runs, so Stop host, Forget's stop and Update apply to it. A host refused because another live host holds its data folder exits with code 75, which the unit does not retry; every other refusal exits with 1.
+
+Every result that starts or finds a host, a launch's and an update's restart's, carries `bootStart`, start at boot as the host's machine has it: `{ supported, reason?, installed, enabled, active, linger, nodeDrift, fix? }`. `reason` is `macos` or `no-user-manager` when it is not supported, and `fix` is `sudo loginctl enable-linger <user>` when it is supported and the account does not linger; an unsupported host never carries one. `boot-status` answers the same fields with `type: "boot-status"`. `boot-install` answers `{ type: "boot-installed", installed, stopped, pid?, bootStart }`, with `installed: false` and the `fix` when linger could not be turned on, and `boot-remove`, given `restart`, answers `{ type: "boot-removed", stopped, pid?, bootStart }`. `stopped` says whether the host the desktop reached was stopped, so the desktop knows to connect again. A failure is `{ type: "error", reason }`, the reasons being the launch script's own codes:
+
+- `boot-unit-taken`: another installation's unit holds the name, and nothing was changed.
+- `boot-install-failed`: the user manager would not reload or enable the unit, which was taken away again, or a folder's name holds a control character a unit cannot carry; the host is untouched.
+- `boot-stop-failed`: the host Sotto started would not stop, so the unit was taken away again; the host keeps running.
+- `boot-start-failed`, with `restarted` and `cause`: the unit did not bring the host back after the install stopped it, so the unit was taken away again and the host was started the way a launch starts it. `restarted` says whether that worked, and `cause` is the first start's own code, such as `boot-start-refused`.
+- `boot-remove-failed`: the unit's files could not be removed.
+- `update-busy`: an update or another change to start at boot holds the installation folder.
+- `archive-missing`, `descriptor-invalid`, `port-taken`, `host-busy`, `host-timeout`, `host-start-failed`, `boot-start-refused` and `boot-unit-failed`: a start the operation asked for failed as a launch's would. The last two mean the unit would not start the host or would not keep it running.
+- `boot-failed`: anything else.
