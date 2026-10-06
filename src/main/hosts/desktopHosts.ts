@@ -820,12 +820,18 @@ export class DesktopHosts {
     if (!choosing) return this.saveConnection(existing, input)
     if (sameConnection(existing, input)) { await this.setConnection(existing, prefer); return this.get() }
     // New SSH settings with a new choice: the settings are saved and connected with first, so the choice is pressed over the
-    // route the owner just corrected, on the SSH connection that connect opens, and choosing SSH only signs in once.
-    await this.saveConnection(existing, input, true)
+    // route the owner just corrected, on the SSH connection that connect opens, and choosing SSH only signs in once. The
+    // choice is written before that connect, so the connect follows it rather than the choice it replaces.
+    const before = this.tailnet.get(existing.id).prefer
+    const putBack = async (): Promise<void> => { await this.tailnet.set(existing.id, { prefer: before }).catch(() => undefined); this.emit() }
+    await this.tailnet.set(existing.id, { prefer })
+    try { await this.saveConnection(existing, input, true) }
+    catch (error) { await putBack(); throw error }
     const saved = this.saved.find(item => item.id === existing.id)
     if (!saved) return this.get()
     try { await this.setConnection(saved, prefer) }
     catch (error) {
+      await putBack()
       if (error instanceof SignInStopped) throw error
       throw new Error(`The SSH settings for ${existing.name} are saved, but how Sotto connects did not change. Check that ${existing.name} is reachable with them, then choose again in Edit connection.`, { cause: error })
     }
