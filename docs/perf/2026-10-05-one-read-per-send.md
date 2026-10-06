@@ -24,7 +24,9 @@ other provider is the in-memory end-to-end host. A thread that has had one excha
 prompts from the Threads page, one after another, each after the last one's turn has finished. Each send is timed
 from the press to the coordinator's answer and counts:
 
-- **Adapter reads**: calls of the adapter's own `refreshThread`, from outside it or inside it. Each built a snapshot.
+- **Reads reaching the adapter**: calls of the adapter's own `refreshThread`, which is how the hosts above it read a
+  thread. Before this change the adapter's own reads inside a send were calls of it too, and each built a snapshot.
+  After it they call `sync`, which builds none, so they are not in this count; the history reads below count them.
 - **History reads**: reads of the thread's history from the provider. For Codex, `thread/turns/list` and whole
   `thread/read` requests, before `turn/start` and after it; for Grok, `_x.ai/session/updates` pages, before
   `session/prompt` and after it; for Claude, polls of the transcript file, which Sotto reads in process, counted
@@ -38,18 +40,27 @@ in every run unless a range is given. "Before" is the benchmark's own commit on 
 (`e8a82a03`) for everything it measures: six runs at no earlier exchanges, three at 1,000. "After" is this change:
 four runs.
 
-| | Send, before | Send, after | Adapter reads | History reads before the prompt | History reads after it |
+| | Send, before | Send, after | Reads reaching the adapter | History reads before the prompt | History reads after it |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Claude | 107-116 ms | 77-87 ms | 4 → 1 | 4 → 2 transcript polls, whole send | — |
-| Claude, 1,000 earlier exchanges | 121-123 ms | 74-92 ms | 4 → 1 | 4 → 2 transcript polls, whole send | — |
+| Claude | 107-116 ms | 77-87 ms | 4 → 1 | 3 → 2 transcript polls | 1 → 0 |
+| Claude, 1,000 earlier exchanges | 121-123 ms | 74-92 ms | 4 → 1 | 3 → 2 transcript polls | 1 → 0 |
 | Codex | 109-143 ms | 86-100 ms | 3 → 1 | 2 → 1 newest-turn check | 1 whole read → 0 |
 | Grok | 98-131 ms | 87-89 ms | 4-5 → 1 | 4 → 2 | 2-3 → 1 |
+
+The benchmark counts Claude's transcript polls over the whole send, 4 → 2, since the transcript is a file read in
+process. The table splits them by where each read sat: before the change the fourth was the reconciliation read
+after the provider accepted.
 
 | | Adapter publishes | `workspace.json` writes | Workspace publishes |
 | --- | ---: | ---: | ---: |
 | Claude | 4 → 3 | 2 → 0 | 4 → 2 |
 | Codex | 4 → 4 | 2 → 0-1 | 5 → 1-2 |
 | Grok | 7-8 → 5 | 1-2 → 0 | 5 → 2-3 |
+
+Codex's write is 0 or 1 across runs, and its median was 1 in a later run of the head of this branch. It is not traced
+to a cause here. A read before or after a send that changed nothing writes nothing (`readsAroundSend.test.ts`), so
+it is either the workspace's write window, set going by what Codex publishes as the turn starts, or the read before
+the send taking in the end of the previous turn. The writes a send makes on purpose are #767's.
 
 Where the reads were. Before, each send's adapter reads were the coordinator's read before the send, the adapter's
 own read at the start of the send, Claude's and Grok's recheck before the prompt, and, in all three, the coordinator's
@@ -73,7 +84,12 @@ It now also counts the newest-turn checks before `turn/start`. One run each.
 | 2,000 | 247 ms | 208 ms | 2 → 1 | 0 → 0 |
 
 The `refreshThread` stage in that benchmark's output is now the coordinator's read alone: the adapter's own read
-inside a send no longer calls `refreshThread`.
+inside a send no longer calls `refreshThread`. Each row is a single run, so the times are sizes, not a measured
+difference. One more run on the branch's head after review gave 41, 81 and 237 ms with the same counts.
+
+After review, the read before a send names the send it is for, and the stack without a workspace answers the read
+after a send from the adapter. Neither reaches this benchmark's path differently: one run on the branch's head gave
+the same counts in every column above, with times 10-40 ms higher while another build ran on the machine.
 
 ## What these numbers are not
 
