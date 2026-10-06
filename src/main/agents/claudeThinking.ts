@@ -20,7 +20,8 @@ export function claudeThinkingRow(place: ThinkingPlace, id: string, status: Agen
   return { ...place, id, kind: 'reasoning', title: THINKING_TITLE, status, ...thinkingText(words), ...extra }
 }
 
-type OpenBlock = { readonly id: string; readonly stream: string; words: string; readonly place: ThinkingPlace }
+/** `restarted` marks a block started again over its own row, at the same place in the same reply. */
+type OpenBlock = { readonly id: string; readonly stream: string; words: string; readonly place: ThinkingPlace; readonly restarted: boolean }
 
 /**
  * Claude's thinking blocks as they stream. A stream is the thread's own (`main`) or a subagent's, by its tool call.
@@ -53,13 +54,16 @@ export class ClaudeThinking {
   /** A thinking block starts: its row shows now, before any of its words, and with whatever words it opened on. */
   started(stream: string, index: number, opening: unknown, place: ThinkingPlace): AgentActivity[] {
     const reply = this.replies.get(stream); if (!reply) return []
-    const key = `${stream}:${index}`
-    const rows = this.settle(open => open === key, 'interrupted', place.startedAt)
-    const block: OpenBlock = { id: claudeThinkingId(reply, index), stream, words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', place }
+    const key = `${stream}:${index}`; const id = claudeThinkingId(reply, index)
+    // The same place started again in the same reply keeps its row, since that row's id is the one the transcript
+    // gives the block that finished there. Any other block left open at this place gets nothing more.
+    const prior = this.open.get(key); const restarted = prior?.id === id
+    const rows = restarted ? [] : this.settle(open => open === key, 'interrupted', place.startedAt)
+    const block: OpenBlock = { id, stream, words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', place: restarted ? prior.place : place, restarted }
     this.open.set(key, block); this.streamed.add(reply)
     for (const old of this.streamed) { if (this.streamed.size <= MAX_REMEMBERED) break; this.streamed.delete(old) }
     for (const old of this.open.keys()) { if (this.open.size <= MAX_REMEMBERED) break; rows.push(...this.settle(open => open === old, 'interrupted', place.startedAt)) }
-    rows.push(claudeThinkingRow(block.place, block.id, 'running', block.words))
+    rows.push(this.row(block, 'running'))
     return rows
   }
 
@@ -67,7 +71,7 @@ export class ClaudeThinking {
   grew(stream: string, index: number, words: string): AgentActivity[] {
     const block = this.open.get(`${stream}:${index}`); if (!block) return []
     block.words = (block.words + words).slice(0, MAX_ACTIVITY_TEXT + 1)
-    return [claudeThinkingRow(block.place, block.id, 'running', block.words)]
+    return [this.row(block, 'running')]
   }
 
   /** A block stops. Only a thinking block has a row to settle. */
@@ -108,8 +112,14 @@ export class ClaudeThinking {
     for (const [key, block] of this.open) {
       if (!which(key, block)) continue
       this.open.delete(key)
-      rows.push(claudeThinkingRow(block.place, block.id, status, block.words, at ? { completedAt: at } : {}))
+      rows.push(this.row(block, status, at ? { completedAt: at } : {}))
     }
     return rows
+  }
+
+  /** A restarted block says outright what its words are now, so the first attempt's words do not stay on its row. */
+  private row(block: OpenBlock, status: AgentActivity['status'], extra: Partial<AgentActivity> = {}): AgentActivity {
+    const words = block.restarted ? { text: block.words.slice(0, MAX_ACTIVITY_TEXT), truncated: block.words.length > MAX_ACTIVITY_TEXT } : {}
+    return claudeThinkingRow(block.place, block.id, status, block.words, { ...words, ...extra })
   }
 }

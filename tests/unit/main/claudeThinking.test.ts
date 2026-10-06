@@ -148,6 +148,18 @@ describe('Claude thinking as it streams', () => {
     expect(reasoning(rows)[0]!.status).toBe('interrupted')
   })
 
+  it('keeps one row for a block started again at the same place in the same reply, the row the transcript names', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('msg_1'), blockStart(0, { type: 'thinking', thinking: '' }), delta(0, { type: 'thinking_delta', thinking: 'First try' })])
+    rows = run(projector, [blockStart(0, { type: 'thinking', thinking: '' })], true, rows)
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ id: 'claude-thinking-msg_1-0', status: 'running' })])
+    expect(reasoning(rows)[0]!.text ?? '').toBe('')
+    rows = run(projector, [delta(0, { type: 'thinking_delta', thinking: 'Second try' })], true, rows)
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ status: 'running', text: 'Second try' })])
+    rows = run(projector, [stop(0), thinkingFrame('msg_1', 'Second try', { apiBlockIndex: 0 })], true, rows)
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ id: 'claude-thinking-msg_1-0', status: 'completed', text: 'Second try' })])
+  })
+
   it('cuts long thinking at the record’s detail budget and says so', () => {
     const projector = new ClaudeActivity()
     const half = 'x'.repeat(MAX_ACTIVITY_TEXT / 2 + 10)
