@@ -228,8 +228,8 @@ export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number;
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
  * Tailscale Serve carries its tailnet listener at, `https://<MagicDNS name>:<port>`, while Serve runs for it. `startedBy`
- * is who started it, as its listener descriptor records: `launch-script`, and absent for a host its owner started by
- * hand. A value this build does not know reads as absent. Neither is evidence of identity: the host's ID, its certificate and the pairing are.
+ * is who started it, as its listener descriptor records: `launch-script` or `boot` (its start at boot unit), and absent
+ * for a host its owner started by hand. A value this build does not know reads as absent. Neither is evidence of identity: the host's ID, its certificate and the pairing are.
  */
 export interface HostAbout { tailnetAddress?: string | undefined; startedBy?: string | undefined }
 /** A host's phone access in the words its row uses, as hello reports it to a desktop (ADR-0053): off, starting, on with how many phones are paired, or needs the owner. */
