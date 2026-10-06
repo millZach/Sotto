@@ -730,6 +730,20 @@ describe('coordinator turn records', () => {
       expect(Object.keys(JSON.parse(raw).timings)).toEqual(TIMING_FIELDS)
     })
 
+    it('leaves the send stages out of a send refused after its read, before it reached its host', async () => {
+      const f = await fixture()
+      const snapshot = f.host.snapshot.bind(f.host)
+      vi.spyOn(f.host, 'snapshot').mockImplementation(async () => {
+        const read = await snapshot()
+        return { ...read, threads: read.threads.map(thread => thread.id === 'workshop' ? { ...thread, status: 'running' as const } : thread) }
+      })
+      const state = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: PROMPT })
+      expect(state.error).toMatch(/still working/u)
+      const raw = (await readFile(join(f.root, 'turns.jsonl'), 'utf8')).trim().split('\n').at(-1)!
+      expect(JSON.parse(raw)).toMatchObject({ commandType: 'manual-send', outcome: 'failed' })
+      expect(Object.keys(JSON.parse(raw).timings)).toEqual(TIMING_FIELDS)
+    })
+
     it('writes a send without first words when its turn ends having shown none, or Sotto stops first', async () => {
       const f = await fixture()
       marking(f)

@@ -196,8 +196,8 @@ export class TurnRecorder {
         retrievalMs: turn.retrievalMs,
         delegationMs: turn.delegationMs,
         totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
-        // Only a turn that sent a prompt has send stages.
-        ...turn.stages?.durations(),
+        // Only a turn whose prompt reached its host has send stages; one refused before then carries none.
+        ...(turn.stages?.has('dispatched') ? turn.stages.durations() : {}),
       },
       retrievedMemoryIds: turn.retrievedMemoryIds,
       contextTokenEstimate: turn.contextTokenEstimate,
