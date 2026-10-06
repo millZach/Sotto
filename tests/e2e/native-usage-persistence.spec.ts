@@ -115,12 +115,16 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
         sessionId: string; cwd: string; modelId: string; origins: { uuid: string }[]
       }>
       expect(Object.values(aliases)).toHaveLength(1)
-      const alias = Object.values(aliases)[0]!
+      const [aliasId, alias] = Object.entries(aliases)[0]!
       expect(alias.sessionId).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu)
       expect(alias.cwd).toBe(project)
       expect(alias.modelId).toBe(NATIVE_MODEL)
-      expect(alias.origins).toHaveLength(1)
-      expect(alias.origins[0]!.uuid).toEqual(expect.any(String))
+      // A new origin is a line of the origin journal until the thread store is next written whole (#767).
+      const journaled = (await readFile(join(profile, 'claude-origins.jsonl'), 'utf8').catch(() => '')).split('\n').filter(line => line.trim())
+        .map(line => JSON.parse(line) as { threadId: string; origin: { uuid: string } }).filter(entry => entry.threadId === aliasId).map(entry => entry.origin)
+      const origins = [...alias.origins, ...journaled.filter(origin => !alias.origins.some(known => known.uuid === origin.uuid))]
+      expect(origins).toHaveLength(1)
+      expect(origins[0]!.uuid).toEqual(expect.any(String))
       const requests = (await readFile(join(client, 'requests.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
       expect(requests).toContainEqual(expect.objectContaining({ method: 'user', params: expect.objectContaining({
         frame: expect.objectContaining({ type: 'user', session_id: alias.sessionId, uuid: alias.origins[0]!.uuid }),

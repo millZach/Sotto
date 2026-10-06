@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { access, readFile, writeFile } from 'node:fs/promises'
+import { access, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { claudeFixture } from '../fixtures/claudeFixture'
+import { claudeFixture, storedClaudeOrigins } from '../fixtures/claudeFixture'
 
 const fixtures: Awaited<ReturnType<typeof claudeFixture>>[] = []
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
@@ -166,7 +166,7 @@ it('goes straight on to a prompt that waited behind a turn Claude Code gave itse
   await writeFile(join(f.root, 'script.json'), JSON.stringify({ delay: 1000 }))
   const sent = f.host.execute({ type: 'send', commandId: 'send', messageId: 'prompt', threadId: 'thread', text: 'Anything new?' })
   await expect.poll(async () => (await thread(f)).status).toBe('running')
-  const origin = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')).thread.origins.at(-1).uuid as string
+  const origin = (await storedClaudeOrigins(f.root, 'thread')).at(-1)!.uuid
   // The held prompt's own turn opens a query and makes a request before the prompt comes back; the agent marks them read.
   await f.action('thread', { type: 'raw-burst', frames: [reported, query, { ...reporting, uuid: '9d2e6a40-3c1b-4f7e-8a55-6b0e1f2d3c4a' }, agent] })
   await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)

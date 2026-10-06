@@ -8,11 +8,11 @@ import { claudeAnswer, claudePending } from '../../src/main/agents/claudeRequest
 import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
+import { ClaudeOriginJournal } from '../../src/main/agents/claudeOriginJournal'
 import { PersonalChatService } from '../../src/main/agents/personalChats'
 import { personalRequestDraftState } from '../../src/main/agents/requestDrafts'
 import { personalAnswerHeld } from '../../src/shared/personalChats'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
-import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
@@ -98,11 +98,11 @@ describe('Claude recovery and safety', () => {
     let release!: () => void; let entered!: () => void
     const blocked = new Promise<void>(resolve => { release = resolve })
     const reached = new Promise<void>(resolve => { entered = resolve })
-    const write = AtomicJsonStore.prototype.write
-    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
-      await write.call(this, value)
-      const aliases = value as Record<string, { origins?: { messageId: string }[] }>
-      if (aliases[id]?.origins?.some(origin => origin.messageId === 'stale-persist')) { entered(); await blocked }
+    // The origin is made durable as one synced line of the origin journal (#767).
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementation(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      if ((entry.origin as { messageId: string }).messageId === 'stale-persist') { entered(); await blocked }
     })
     const command = { type: 'send' as const, commandId: 'stale-persist', messageId: 'stale-persist', threadId: id, text: 'Must not send', expectedLastUserMessageId: null }
     const sending = f.host.execute(command).then(result => ({ result }), error => ({ error: error as Error }))
@@ -112,6 +112,8 @@ describe('Claude recovery and safety', () => {
     expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
     const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
     expect(aliases[id].origins).toEqual([])
+    // Writing the store whole cleared the journal, so the removed origin cannot come back on the next connect.
+    expect(await readFile(join(f.root, 'claude-origins.jsonl'), 'utf8').catch(() => '')).not.toContain('stale-persist')
     vi.restoreAllMocks()
     const latest = (await thread()).messages.filter(message => message.role === 'user').at(-1)!.id
     expect(await f.host.execute({ ...command, expectedLastUserMessageId: latest })).toEqual({ accepted: true })
