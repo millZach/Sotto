@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/disabled-coordinator-voice/**',
       'artifacts/hidden-player-typing/**',
       'artifacts/computer-use-guidance/**',
       'artifacts/pkg-17-hostconnection/**',

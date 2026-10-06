@@ -260,6 +260,11 @@ export class AgentVoiceSession {
     void this.releaseCapture()
   }
 
+  /** Input mute survives an off session, whose display status hides this bit. */
+  isMuted(): boolean {
+    return this.muted
+  }
+
   getState(): AgentVoiceState {
     let status: AgentVoiceStatus
     if (!this.enabled) status = 'off'
