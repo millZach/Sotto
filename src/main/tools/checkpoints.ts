@@ -1,61 +1,23 @@
-import { constants } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { z } from 'zod'
 import { checkpointInspectionSchema, checkpointRequestSchema, checkpointRevertSchema, type Checkpoint } from '../../shared/checkpoints'
 import { fileRelativePathSchema, type FileWorkspace } from '../../shared/files'
 import { toolListRequestSchema } from '../../shared/tools'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { checkoutIdentity } from '../agents/threadWorktrees'
 import { CheckpointCapture } from './checkpointCapture'
+import { CheckpointStore, type CheckpointRecord as Record, type Snapshot } from './checkpointStore'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 
-const fileSchema = z.object({ hash: z.string().regex(/^[a-f0-9]{64}$/), mode: z.number() }).strict()
-const snapshotSchema = z.object({ files: z.record(fileRelativePathSchema, fileSchema), index: z.string(), head: z.string() }).strict()
-const recordSchema = z.object({ id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), cwd: z.string(), checkout: z.string().optional(), providerId: z.string(), bindingId: z.string(), createdAt: z.string().datetime(),
-  beforeUsers: z.array(z.string()), afterUsers: z.array(z.string()).optional(), before: snapshotSchema, after: snapshotSchema.optional(),
-  status: z.enum(['capturing', 'ready', 'reverting', 'uncertain', 'reverted', 'unavailable']), reason: z.string().optional(),
-}).strict()
-/** `generation` names this write of the file; journal lines written against another one are already in it, or stale. */
-const storageSchema = z.object({ version: z.literal(1), generation: z.string().uuid().optional(), records: z.array(recordSchema) }).strict()
-const journalLineSchema = z.object({ generation: z.string().uuid(), record: z.unknown() }).strict()
-/** The journal is folded into `checkpoints.json` once it outgrows the file, and never before this much. */
-const JOURNAL_FOLD_BYTES = 64 * 1024
-
-/** Recover complete objects even when a later JSON record was cut short. */
-function readableRecords(text: string): unknown[] {
-  const records: unknown[] = [], starts: number[] = []
-  let quoted = false, escaped = false
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue }
-    if (char === '"') { quoted = true; continue }
-    if (char === '{') starts.push(i)
-    if (char === '}' && starts.length) {
-      const start = starts.pop()!
-      try {
-        const record = recordSchema.safeParse(JSON.parse(text.slice(start, i + 1)))
-        if (record.success) records.push(record.data)
-      } catch { /* Keep scanning other complete records, even inside an unclosed object. */ }
-    }
-  }
-  return records
-}
-
-type Record = z.infer<typeof recordSchema>
-type Snapshot = z.infer<typeof snapshotSchema>
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 const digest = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
-/** A record's bytes inside the stored array, where each is indented four spaces and followed by a separator. */
-const storedBytes = (record: Record): number => Buffer.byteLength(JSON.stringify(record, null, 2).split('\n').map(line => `    ${line}`).join('\n')) + 2
 
 /** Durable per-turn file associations. Native effects are never retried after an uncertain delivery. */
 export class CheckpointService extends ToolOperations {
-  private readonly store: AtomicJsonStore<z.infer<typeof storageSchema>>
+  private readonly store: CheckpointStore
   private readonly records = new Map<string, Record>()
   private initialized = false
   private recoveryNotice: string | undefined
@@ -66,75 +28,16 @@ export class CheckpointService extends ToolOperations {
   private readonly maintenance: ReturnType<typeof setInterval>
   private readonly locks = new Set<string>()
   private readonly capture: CheckpointCapture
-  /** The generation `checkpoints.json` was last written with; journal lines carry it. */
-  private generation: string | undefined
-  /** Each record's bytes as `checkpoints.json` stores it, kept from when it was last written. */
-  private readonly recordBytes = new Map<string, number>()
-  private storedFileBytes = 0
-  private journalBytes = 0
-  private readonly journal: string
   constructor(private readonly dependencies: CheckpointDependencies) {
     super()
-    this.store = new AtomicJsonStore(join(dependencies.directory, 'checkpoints.json'), storageSchema.parse, () => ({ version: 1, records: [] }))
-    this.journal = join(dependencies.directory, 'checkpoints.journal')
+    this.store = new CheckpointStore(dependencies.directory, event => dependencies.report?.(event))
     this.capture = new CheckpointCapture({ blobDirectory: join(dependencies.directory, 'blobs'), blobSizes: this.blobSizes, git: (cwd, args) => this.git(cwd, args) })
     this.maintenance = setInterval(() => { void this.privacyChanged().catch(() => this.dependencies.report?.('Expired checkpoints could not be removed. Check access to local storage.')) }, 60 * 60 * 1000)
     this.maintenance.unref()
   }
   private load(): Promise<void> {
-    return this.loaded ??= readFile(join(this.dependencies.directory, 'checkpoints.json'), 'utf8').then(async text => {
-      let candidates: unknown[], damaged = false, generation: string | undefined
-      try {
-        const value: unknown = JSON.parse(text)
-        if (Array.isArray(value)) candidates = value
-        else {
-          const parsed = storageSchema.safeParse(value)
-          if (parsed.success) { candidates = parsed.data.records; generation = parsed.data.generation }
-          else {
-            damaged = true; candidates = typeof value === 'object' && value !== null && 'records' in value && Array.isArray(value.records) ? value.records : []
-            if (typeof value === 'object' && value !== null && 'generation' in value && typeof value.generation === 'string') generation = value.generation
-          }
-        }
-      } catch {
-        damaged = true
-        candidates = readableRecords(text)
-      }
-      const records: Record[] = [], ids = new Set<string>()
-      for (const candidate of candidates) {
-        const parsed = recordSchema.safeParse(candidate)
-        if (parsed.success && !ids.has(parsed.data.id)) { records.push(parsed.data); ids.add(parsed.data.id) }
-        else damaged = true
-      }
-      // Sends since the file was last written are in the journal, newest last.
-      const journal = await this.readJournal(generation)
-      for (const record of journal.records) {
-        const at = records.findIndex(item => item.id === record.id)
-        if (at < 0) records.push(record); else records[at] = record
-      }
-      const source = join(this.dependencies.directory, 'checkpoints.json')
-      if (damaged) {
-        const backup = `${source}.corrupt-${randomUUID()}`
-        try { await copyFile(source, backup, constants.COPYFILE_EXCL) }
-        catch { throw new Error(`Checkpoint storage at ${source} could not be repaired. No checkpoints were discarded. Restore access and try again; the backup could not be saved at ${backup}.`) }
-        // Without the file's generation the journal cannot be matched to it, so it is kept beside the backup.
-        const unmatched = journal.text && generation === undefined ? `${source}.corrupt-${randomUUID()}` : undefined
-        if (unmatched) {
-          try { await writeFile(unmatched, journal.text, { flag: 'wx', mode: 0o600 }) }
-          catch { throw new Error(`Checkpoint storage at ${this.journal} could not be repaired. No checkpoints were discarded. Restore access and try again; the backup could not be saved at ${unmatched}.`) }
-        }
-        try { await this.writeStore(records) }
-        catch { throw new Error(`Checkpoint storage at ${source} could not be repaired. The original file is backed up at ${backup}. Restore access to local storage and try again.`) }
-        this.setAside(backup)
-      } else if (journal.text) {
-        const backup = journal.damaged ? `${source}.corrupt-${randomUUID()}` : undefined
-        if (backup) {
-          try { await writeFile(backup, journal.text, { flag: 'wx', mode: 0o600 }) }
-          catch { throw new Error(`Checkpoint storage at ${this.journal} could not be repaired. No checkpoints were discarded. Restore access and try again; the backup could not be saved at ${backup}.`) }
-        }
-        try { await this.writeStore(records) }
-        catch { throw new Error(`Checkpoint storage at ${source} could not be updated from ${this.journal}. No checkpoints were discarded. Restore access to local storage and try again.`) }
-        if (backup) this.setAside(backup)
-      } else this.generation = generation
+    return this.loaded ??= this.store.load().then(({ records, setAside }) => {
+      if (setAside) this.setAside(setAside)
       for (const record of records) {
         if (record.status === 'capturing') {
           record.status = 'unavailable'
@@ -142,45 +45,12 @@ export class CheckpointService extends ToolOperations {
         }
         this.records.set(record.id, record)
       }
-    }).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { this.loaded = undefined; if (error instanceof Error && error.message.startsWith('Checkpoint storage at ')) throw error; throw new Error(`Checkpoint storage at ${join(this.dependencies.directory, 'checkpoints.json')} could not be read. No checkpoints were discarded. Restore access to the file and try again.`, { cause: error }) } })
-  }
-  /** Read the journal's complete lines written against `generation`. A line cut short at the end is an append that never finished, before its send went. */
-  private async readJournal(generation: string | undefined): Promise<{ text: string; records: Record[]; damaged: boolean }> {
-    const text = await readFile(this.journal, 'utf8').catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error })
-    const records: Record[] = [], lines = text.split('\n')
-    let damaged = false
-    lines.pop()
-    for (const line of lines) {
-      if (!line) continue
-      let entry: z.infer<typeof journalLineSchema>
-      try { const parsed = journalLineSchema.safeParse(JSON.parse(line)); if (!parsed.success) { damaged = true; continue } entry = parsed.data }
-      catch { damaged = true; continue }
-      if (entry.generation !== generation) continue
-      const record = recordSchema.safeParse(entry.record)
-      if (record.success) records.push(record.data); else damaged = true
-    }
-    return { text, records, damaged }
+    }, error => { this.loaded = undefined; throw error })
   }
   private setAside(backup: string): void {
     this.recoveryBackup = backup
     this.recoveryNotice = `Sotto set aside a checkpoint file it could not read as ${basename(backup)} and kept the rest.`
     try { this.dependencies.report?.(this.recoveryNotice) } catch { /* Reporting cannot prevent recovery. */ }
-  }
-  /** Write every record to `checkpoints.json` under a new generation, which retires the journal's lines. */
-  private async writeStore(records: Record[]): Promise<void> {
-    const generation = randomUUID()
-    await this.store.write({ version: 1, generation, records })
-    this.generation = generation
-    this.journalBytes = 0
-    await this.removeBackup(this.journal)
-  }
-  /** Add records to the journal and wait until they are on disk. */
-  private async append(records: readonly Record[]): Promise<void> {
-    const text = records.map(record => `${JSON.stringify({ generation: this.generation, record })}\n`).join('')
-    const handle = await open(this.journal, 'a', 0o600)
-    try { await handle.writeFile(text, 'utf8'); await handle.sync() }
-    finally { await handle.close() }
-    this.journalBytes += Buffer.byteLength(text)
   }
   initialize(): Promise<void> { if (this.initialized) return Promise.resolve(); return this.serial(async () => { await this.load(); if (!this.initialized) { await this.save(); this.initialized = true } }) }
   private async refreshRecoveryNotice(): Promise<void> {
@@ -224,13 +94,7 @@ export class CheckpointService extends ToolOperations {
     const hashes = (record: Record): Set<string> => new Set([record.before, record.after].flatMap(snapshot => snapshot ? Object.values(snapshot.files).map(file => file.hash) : []))
     const counts = new Map<string, number>()
     // The stored file's size, from each record's own: a journal save measures only the records it writes.
-    if (changed) for (const record of changed) this.recordBytes.set(record.id, storedBytes(record))
-    let stored = Buffer.byteLength(JSON.stringify({ version: 1, generation: randomUUID(), records: [] }, null, 2) + '\n') + (this.records.size ? 2 : 0)
-    for (const record of this.records.values()) {
-      const bytes = (changed ? this.recordBytes.get(record.id) : undefined) ?? storedBytes(record)
-      this.recordBytes.set(record.id, bytes); stored += bytes
-    }
-    let total = stored + (changed ? this.journalBytes : 0)
+    let total = this.store.measure([...this.records.values()], changed) + (changed ? this.store.journalBytes : 0)
     for (const record of this.records.values()) {
       for (const hash of hashes(record)) { if (!counts.has(hash)) total += this.blobSizes.get(hash) ?? 0; counts.set(hash, (counts.get(hash) ?? 0) + 1) }
     }
@@ -252,9 +116,7 @@ export class CheckpointService extends ToolOperations {
       if (item.recordId) {
         const record = this.records.get(item.recordId)!
         this.records.delete(item.recordId); removed = true
-        const bytes = this.recordBytes.get(item.recordId) ?? 0
-        total -= bytes; stored -= bytes
-        if (!this.records.size) { total -= 2; stored -= 2 }
+        total -= this.store.sizeOf(item.recordId)
         for (const hash of hashes(record)) {
           const remaining = counts.get(hash)! - 1
           if (remaining) counts.set(hash, remaining)
@@ -263,13 +125,12 @@ export class CheckpointService extends ToolOperations {
       }
       if (item.backup) { total -= backups.get(item.backup)!.size; backups.delete(item.backup); removedBackups.add(item.backup) }
     }
-    for (const id of this.recordBytes.keys()) if (!this.records.has(id)) this.recordBytes.delete(id)
+    this.store.retain(new Set(this.records.keys()))
     // Commit references before deleting any file backups. A removal cannot be journaled, and a journal that
     // has outgrown the file is folded into it.
-    if (!changed || removed || !this.generation || this.journalBytes > Math.max(JOURNAL_FOLD_BYTES, this.storedFileBytes)) {
-      await this.writeStore([...this.records.values()])
-      this.storedFileBytes = stored
-    } else await this.append(changed.filter(record => this.records.has(record.id)))
+    const all = [...this.records.values()], stored = this.store.measure(all, [])
+    if (!changed || removed || this.store.mustRewrite()) await this.store.write(all, stored)
+    else await this.store.append(changed.filter(record => this.records.has(record.id)), all, stored)
     for (const name of regular) if (!counts.has(name)) {
       const info = await lstat(join(directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
       if (info?.isFile() && !info.isSymbolicLink()) await this.removeBackup(join(directory, name))
