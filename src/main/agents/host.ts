@@ -216,7 +216,9 @@ export interface AgentHost {
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>
   snapshot(provider?: ProviderId): Promise<AgentHostSnapshot>
   /** Refresh only this thread's authoritative history/status, returning the full cached snapshot, with every
-   * thread's messages unless `purpose.historyFromEvents` says the caller reads none from it. A result without
+   * thread's messages unless `purpose.historyFromEvents` says the caller reads none from it. A read with
+   * `purpose.afterSend` may be answered from what a host above the adapter already holds, without asking the
+   * provider (#765). A result without
    * messages may share frozen activity trees, as an activity snapshot does; the provider switch copies it.
    * Native adapters must not join a refresh blocked on another thread or model discovery. */
   refreshThread?(threadId: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot>
