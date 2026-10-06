@@ -8,7 +8,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
 import { validateSshHost } from './sshConfiguration'
-import { SshFailure, SshHostLauncher, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
+import { SshFailure, SshHostLauncher, type SshBootResult, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
 import { failureStep } from './sshFailure'
 import { isTailscaleApprovalUrl } from './tailscaleApproval'
 import type { DesktopHostConnection, DesktopHostRouter } from './desktopHostRouter'
@@ -46,6 +46,8 @@ export interface HostUpdateSource {
 }
 /** The launch script's answers to a restart that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'update-stop-failed', 'update-busy', 'update-missing', 'update-invalid'])
+/** The launch script's answers to a start at boot change that it gave before stopping anything, so the host runs as it did. */
+const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'update-busy', 'archive-missing'])
 /** The commands that act on one saved host's connection, which wait while that host is being updated. */
 const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
@@ -66,7 +68,9 @@ interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: num
  * decides, never the message.
  */
 const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(['ssh-missing', 'ssh-too-old', 'auth-failed', 'host-key-changed', 'host-key-rejected',
-  'identity-file-unreadable', 'prompt-unanswered', 'tailscale-unapproved', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid', 'permission-setup-failed'])
+  'identity-file-unreadable', 'prompt-unanswered', 'tailscale-unapproved', 'node-missing', 'node-too-old', 'node-too-new', 'archive-missing', 'descriptor-invalid', 'permission-setup-failed',
+  // A boot unit that would not start the host, or kept failing, needs its journal read on the host; retrying only starts it again (ADR-0054).
+  'boot-start-refused', 'boot-unit-failed'])
 /** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
 class FinalHostError extends Error {}
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
@@ -248,6 +252,42 @@ export class DesktopHosts {
       } else this.releaseHeld(id)
     }
   }
+  /**
+   * Start at boot for a saved host (ADR-0054): installs its unit, or removes it. Removing starts the host again only when
+   * the saved host is switched on, so a host that is switched off stays stopped. Either may stop the host this computer is
+   * connected to on purpose, so its drop is not a lost connection: its threads stay on the Threads page reading
+   * Reconnecting, and this computer connects again, as after an update's restart. A failure the host reports comes back
+   * as its `error` result.
+   */
+  async setBootStart(id: string, action: 'install' | 'remove'): Promise<SshBootResult> {
+    const host = this.saved.find(item => item.id === id)
+    if (!host) throw new Error('This host is no longer saved. Nothing was changed.')
+    const busy = this.updates?.busy(id)
+    if (busy) throw new Error(busy)
+    const active = this.live.get(id)
+    if (!active?.tunnel || this.status.get(id)?.phase !== 'connected') throw new Error(`Connect to ${host.name} before changing whether its host starts at boot. Nothing was changed.`)
+    active.closing = true
+    this.clearRetry(id)
+    const registered = active.registeredHostId
+    if (registered) { this.held.set(id, registered); delete active.registeredHostId; this.options.router.setReconnecting(registered, true) }
+    let result: SshBootResult | undefined, unsent = false
+    try {
+      result = await active.tunnel.boot(action === 'install' ? { op: 'boot-install' } : { op: 'boot-remove', restart: host.enabled !== false })
+      if (result.type !== 'error') this.update(id, { bootStart: result.bootStart })
+      return result
+    } catch (error) { unsent = error instanceof SshFailure && (error.code === 'request-busy' || error.code === 'not-connected'); throw error }
+    finally {
+      // Nothing was stopped: the same connection carries on, and the threads read as they did.
+      const untouched = unsent || (result !== undefined && (result.type === 'error' ? UNTOUCHED_BOOT_CHANGES.has(result.reason) : result.type === 'boot-status' || !result.stopped))
+      if (untouched && this.live.get(id) === active && this.status.get(id)?.phase === 'connected') {
+        active.closing = false
+        if (registered) { this.held.delete(id); active.registeredHostId = registered; this.options.router.setReconnecting(registered, false) }
+      } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
+        this.retries.set(id, { timer: undefined, attempt: 0, active: undefined })
+        await this.open(host).catch(() => undefined)
+      } else this.releaseHeld(id)
+    }
+  }
   /** Takes a host held through its update's restart off the Threads page, once no connection will take its place. */
   private releaseHeld(id: string): void {
     const held = this.held.get(id)
@@ -407,6 +447,9 @@ export class DesktopHosts {
         active.closing = true
         try { if (host.clientId) await active.tunnel.revokeClient(host.clientId) }
         catch (error) { await this.disconnect(host.id); throw error }
+        // Then its boot unit, so a forgotten host does not come back at the next boot (ADR-0054). Removing it starts
+        // nothing and stops a host the unit runs; a unit that could not be removed stays on the host.
+        if (this.status.get(host.id)?.bootStart?.installed) await active.tunnel.boot({ op: 'boot-remove', restart: false }).catch(() => undefined)
         if (active.tunnel.owned && !(await this.stopOwnedHost(active))) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
       }
       await this.disconnect(host.id)
@@ -622,7 +665,7 @@ export class DesktopHosts {
           this.clearRetry(host.id)
           this.releaseHeld(host.id)
           // Its version, when it said one, is what lets the Threads page offer to update it (ADR-0040).
-          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message, version })
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message, version, bootStart: active.tunnel.bootStart })
           return
         }
       }
@@ -829,7 +872,7 @@ export class DesktopHosts {
     else { if (held) this.options.router.remove(held); this.options.router.add(connection) }
     active.registeredHostId = hello.hostId
     this.clearRetry(host.id)
-    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.tunnel!.owned })
+    this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned: active.tunnel!.owned, bootStart: active.tunnel!.bootStart })
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
   private requireOwnedConnection(host: SavedHost, active: LiveHost | undefined): void {
@@ -855,7 +898,7 @@ export class DesktopHosts {
     await active?.socket?.close()
     await active?.launcher.disconnect()
     const status = this.status.get(id)
-    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version; status.phase = 'disconnected'; this.emit() }
+    if (status) { delete status.prompt; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version; delete status.bootStart; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer

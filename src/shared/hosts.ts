@@ -4,6 +4,7 @@ import { providerIdSchema } from './agents'
 import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
+import type { BootStatus } from './bootStart'
 
 export const HOSTS_GET = 'hosts:get'
 export const HOSTS_COMMAND = 'hosts:command'
@@ -62,6 +63,8 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   checked?: boolean | undefined
   /** The Sotto version the host said it runs, once it has answered on this connection (ADR-0040). */
   version?: string | undefined
+  /** Start at boot on the host, as this connection last found it (ADR-0054). */
+  bootStart?: BootStatus | undefined
 }
 /** A model the host setup thread can run on: one of this computer's ready models. */
 export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string }

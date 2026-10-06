@@ -114,6 +114,46 @@ it('says Tailscale is not running, changes nothing, and looks again later', asyn
   } finally { vi.useRealTimers() }
 })
 
+// A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+it('looks again at a Tailscale that is missing during a start window, and leaves it to Try again after the window', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: 5 * 60_000 })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+    // Without a window, as on the desktop, a missing Tailscale waits for Try again.
+    const later = fakeTailscale({ status: { state: 'missing' } })
+    const { access: desktop } = create({ tailscale: later.tailscale, startServer: fakeServer().startServer })
+    await desktop.start()
+    later.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(desktop.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await desktop.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('looks again at a Serve setting that failed during a start window, every retry, until it works', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: 5 * 60_000 })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(vi.mocked(fake.tailscale.serve).mock.calls.length).toBe(2))
+    await vi.waitFor(() => expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } }))
+    vi.mocked(fake.tailscale.serve).mockImplementation(async () => ({ ok: true }))
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
 it('shows the consent page when the tailnet has not turned Serve on, closes the listener, and opens the page only when asked', async () => {
   const enableUrl = 'https://login.tailscale.com/f/serve?node=abc'
   const fake = fakeTailscale({ serve: { ok: false, reason: 'not-enabled', enableUrl } }), server = fakeServer()

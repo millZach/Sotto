@@ -4,7 +4,7 @@ import { connect, createServer, Server } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { parseHostArguments, startHeadlessHost } from '../../src/host'
+import { parseHostArguments, startHeadlessHost, type HostStartedBy } from '../../src/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 
 let root: string | undefined, host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
@@ -13,7 +13,7 @@ afterEach(async () => {
   if (root && dirname(root) === tmpdir()) await rm(root, { recursive: true, force: true })
   root = undefined
 })
-async function start(options: { startedBy?: 'launch-script' } = {}) {
+async function start(options: { startedBy?: HostStartedBy } = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-host-listener-'))
   host = await startHeadlessHost({ dataDirectory: root, port: 0, ...options, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
@@ -59,4 +59,9 @@ it('records in its descriptor that the launch script started it, and only then',
 it('reads the launch script mark from SOTTO_HOST_STARTED_BY and nothing else', () => {
   expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'launch-script' })).toEqual({ dataDirectory: resolve('data'), port: 0, startedBy: 'launch-script' })
   expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'someone' })).toEqual({ dataDirectory: resolve('data'), port: 0 })
+})
+it('reads the mark its start at boot unit sets too, and records it in its descriptor as a start by Sotto (ADR-0054)', async () => {
+  expect(parseHostArguments(['--data', './data'], { SOTTO_HOST_STARTED_BY: 'boot' })).toEqual({ dataDirectory: resolve('data'), port: 0, startedBy: 'boot' })
+  await start({ startedBy: 'boot' })
+  expect(JSON.parse(await readFile(join(root!, 'host-listener.json'), 'utf8'))).toMatchObject({ startedBy: 'boot', pid: process.pid })
 })

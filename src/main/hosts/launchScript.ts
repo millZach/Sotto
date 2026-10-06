@@ -26,6 +26,13 @@ import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
  * the new one, and when that one does not start, points `current` back and starts the old one again. When
  * the host cannot download, the desktop downloads the archive and copies it into place with the receive
  * script below before `update-install`.
+ *
+ * Start at boot (ADR-0054) is the account's systemd user unit, `sotto-host`, and `boot-start.sh` in the installation
+ * folder, which the unit runs. `boot-status` reports it; `boot-install` turns linger on first and writes, enables and
+ * hands the host over to the unit; `boot-remove` takes it away again. Every start that would spawn a host reads the unit
+ * and the account's linger first: with the unit enabled and linger on, the unit starts the host and no launch ever
+ * spawns a second, and with linger off the unit is disabled and the launch spawns as it always has. Every unit start and
+ * restart clears the unit's failed state first, since its start limit refuses a start by hand while it holds.
  */
 export const LAUNCH_SCRIPT_SOURCE = String.raw`'use strict';
 const fs = require('node:fs/promises');
@@ -50,9 +57,11 @@ const incomingPath = path.join(versionsPath, '.incoming');
 const pointerPath = path.join(install, 'current');
 const updateLockPath = path.join(versionsPath, '.update-lock');
 const updating = typeof cfg.op === 'string' && cfg.op.startsWith('update-');
+const booting = cfg.op === 'boot-install' || cfg.op === 'boot-remove';
 // Unpacking and restarting carry on when the desktop's connection drops partway, so a host a restart stopped is always
-// started again. A download ends with the connection, as Cancel update expects.
-const finishesAlone = cfg.op === 'update-install' || cfg.op === 'update-restart';
+// started again. Installing and removing the boot unit do too, for the same reason. A download ends with the connection,
+// as Cancel update expects.
+const finishesAlone = cfg.op === 'update-install' || cfg.op === 'update-restart' || booting;
 process.stdout.on('error', () => { if (!finishesAlone) process.exit(0); });
 if (finishesAlone) process.on('SIGHUP', () => undefined);
 const say = event => new Promise(resolve => { if (process.stdout.destroyed) { resolve(); return; } process.stdout.write(JSON.stringify(event) + '\n', () => resolve()); });
@@ -103,7 +112,8 @@ const discover = async () => {
   catch (error) { if (error.code === 'ECONNREFUSED') return null; throw new Error('port-taken'); }
   if (live.hostId !== descriptor.hostId || live.pid !== descriptor.pid) throw new Error('port-taken');
   const legacy = await readLegacyLauncher();
-  const owned = descriptor.startedBy === 'launch-script' || (!!legacy && legacy.pid === live.pid);
+  // A host its start at boot unit started is Sotto's as much as one this script started (ADR-0054).
+  const owned = descriptor.startedBy === 'launch-script' || descriptor.startedBy === 'boot' || (!!legacy && legacy.pid === live.pid);
   return { v: 1, status: 'ready', hostId: live.hostId, pid: live.pid, port: live.port, owned };
 };
 // Whether something already listens on the host's fixed port, which a host that could not start was asked to use.
@@ -123,22 +133,30 @@ const lockHolder = async () => {
   }
   catch { return null; }
 };
-// Finds the running host, or starts the one the installation folder names, and answers once it listens.
-const start = async () => {
+// A live process holds the folder but is not listening yet: another client may have started it a moment ago. Waits for it
+// rather than racing it, and answers null once it has gone without listening.
+const awaitHolder = async holder => {
+  await say({ type: 'starting' });
+  const deadline = Date.now() + cfg.readyTimeoutMs;
+  while (Date.now() < deadline && alive(holder)) {
+    const current = await discover();
+    if (current) return { type: 'ready', ...current };
+    await pause(100);
+  }
+  if (alive(holder)) throw new Error('host-busy');
+  return null;
+};
+// The host already running, or the one taking the folder's lock right now; null when there is neither.
+const running = async () => {
   const existing = await discover();
   if (existing) return { type: 'ready', ...existing };
-  // A live process holds the folder but is not listening yet: another client may have started it a moment ago. Wait for it rather than racing it.
   const holder = await lockHolder();
-  if (holder !== null) {
-    await say({ type: 'starting' });
-    const deadline = Date.now() + cfg.readyTimeoutMs;
-    while (Date.now() < deadline && alive(holder)) {
-      const current = await discover();
-      if (current) return { type: 'ready', ...current };
-      await pause(100);
-    }
-    if (alive(holder)) throw new Error('host-busy');
-  }
+  return holder === null ? null : awaitHolder(holder);
+};
+// Finds the running host, or starts the one the installation folder names as a detached process, and answers once it listens.
+const startDetached = async () => {
+  const found = await running();
+  if (found) return found;
   const entry = await hostEntry();
   if (!(await exists(entry))) throw new Error('archive-missing');
   await say({ type: 'starting' });
@@ -155,6 +173,141 @@ const start = async () => {
   }
   if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
   throw new Error('host-timeout');
+};
+// Start at boot (ADR-0054): the account's systemd user unit, and the script in the installation folder that it runs.
+const UNIT = 'sotto-host';
+const configHome = process.env.XDG_CONFIG_HOME && path.isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : path.join(os.homedir(), '.config');
+const unitPath = path.join(configHome, 'systemd', 'user', UNIT + '.service');
+const bootScriptPath = path.join(install, 'boot-start.sh');
+const account = (() => { try { return os.userInfo().username; } catch { return process.env.USER || ''; } })();
+// systemctl or loginctl on this machine, with the user manager's address when the SSH session did not set it. Answers the
+// exit code and output, and never throws. On Windows, where only Sotto's tests run this script, each is a command script.
+const system = (name, args, timeout = 15000) => new Promise(resolve => {
+  const windows = process.platform === 'win32';
+  const env = { ...process.env, LC_ALL: 'C', SYSTEMD_PAGER: '', SYSTEMD_COLORS: '0' };
+  if (!env.XDG_RUNTIME_DIR && typeof process.getuid === 'function') env.XDG_RUNTIME_DIR = '/run/user/' + process.getuid();
+  execFile(windows ? process.env.ComSpec || 'cmd.exe' : name, windows ? ['/d', '/s', '/c', [name, ...args].join(' ')] : args,
+    { timeout, windowsHide: true, encoding: 'utf8', env, maxBuffer: 65536 },
+    (error, stdout) => resolve({ code: error ? (Number.isInteger(error.code) ? error.code : -1) : 0, stdout: String(stdout || '') }));
+});
+const systemctl = (args, timeout) => system('systemctl', ['--user', ...args], timeout);
+const shellQuote = value => "'" + String(value).split("'").join("'\\''") + "'";
+// A path the way systemd reads it in ExecStart=: double-quoted, with its specifiers and variables taken literally.
+const unitQuote = value => '"' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%').replace(/\$/g, '$$$$') + '"';
+const execStart = 'ExecStart=/bin/sh ' + unitQuote(bootScriptPath);
+const unitText = () => ['# Written by Sotto. It starts the Sotto host when this machine starts; Sotto rewrites and removes it.',
+  '[Unit]', 'Description=Sotto host', 'StartLimitIntervalSec=120', 'StartLimitBurst=5',
+  '[Service]', execStart, 'Environment=SOTTO_HOST_STARTED_BY=boot', 'KillMode=mixed', 'TimeoutStopSec=25',
+  'Restart=on-failure', 'RestartSec=5', 'RestartPreventExitStatus=75',
+  '[Install]', 'WantedBy=default.target', ''].join('\n');
+// Resolves current the way this script does, then runs the host under the Node this script runs under, with no key file.
+const bootScriptText = () => ['#!/bin/sh',
+  '# Written by Sotto. The sotto-host user unit runs it to start the host in this folder; Sotto rewrites it.',
+  'node=' + shellQuote(process.execPath), 'install=' + shellQuote(install), 'data=' + shellQuote(data), 'port=' + shellQuote(String(cfg.remotePort)),
+  'entry="$install/host/index.js"',
+  'version=$(cat "$install/current" 2>/dev/null)',
+  'case $version in',
+  "  ''|*[!0-9.]*) ;;",
+  '  *) if [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi ;;',
+  'esac',
+  'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');
+const writeBootScript = async () => { await writeAtomically(bootScriptPath, bootScriptText()); await fs.chmod(bootScriptPath, 0o700).catch(() => undefined); };
+// The Node the unit's script runs, or null without one.
+const pinnedNode = async () => {
+  try { const match = /^node='((?:[^']|'\\'')*)'$/m.exec(await fs.readFile(bootScriptPath, 'utf8')); return match ? match[1].split("'\\''").join("'") : null; }
+  catch { return null; }
+};
+// Whether the account's unit is this installation's: another installation's unit is never started, changed or removed.
+const unitOurs = async () => { try { return (await fs.readFile(unitPath, 'utf8')).split(/\r?\n/).includes(execStart); } catch { return false; } };
+const removeBootFiles = async () => { await fs.rm(unitPath, { force: true }); await fs.rm(bootScriptPath, { force: true }); };
+// The unit's state from the user manager, or null where there is none to ask: macOS, or Linux without a systemd user manager.
+const unitProperties = async () => {
+  if (process.platform === 'darwin') return null;
+  const result = await systemctl(['show', UNIT, '-p', 'LoadState,UnitFileState,ActiveState,SubState,Result,NRestarts,ExecMainStatus,MainPID']);
+  if (result.code !== 0) return null;
+  const properties = {};
+  for (const line of result.stdout.split(/\r?\n/)) { const at = line.indexOf('='); if (at > 0) properties[line.slice(0, at)] = line.slice(at + 1).trim(); }
+  return properties;
+};
+// Whether the account lingers, from logind, or from its linger file where logind does not say.
+const readLinger = async () => {
+  if (!account || /[\/\s]/.test(account)) return false;
+  const result = await system('loginctl', ['show-user', account, '-p', 'Linger']);
+  const match = result.code === 0 ? /^Linger=(yes|no)\s*$/m.exec(result.stdout) : null;
+  if (match) return match[1] === 'yes';
+  return process.platform === 'linux' && exists('/var/lib/systemd/linger/' + account);
+};
+const lingerFix = () => 'sudo loginctl enable-linger ' + (/^[A-Za-z0-9._-]+$/.test(account) ? account : shellQuote(account));
+// What boot-status reports, and what a launch, boot-install and boot-remove report beside their own result. Pass the
+// unit's properties when they were just read, or null when there is no user manager to ask.
+const bootStatus = async known => {
+  const properties = known === undefined ? await unitProperties() : known;
+  const off = { installed: false, enabled: false, active: false, linger: false, nodeDrift: false };
+  if (process.platform === 'darwin') return { supported: false, reason: 'macos', ...off };
+  if (!properties) return { supported: false, reason: 'no-user-manager', ...off };
+  const installed = await unitOurs(), linger = await readLinger(), pinned = installed ? await pinnedNode() : null;
+  return { supported: true, installed, enabled: installed && properties.UnitFileState === 'enabled', active: installed && properties.ActiveState === 'active', linger,
+    nodeDrift: installed && (pinned !== process.execPath || !(await exists(pinned))), ...(linger ? {} : { fix: lingerFix() }) };
+};
+// Read before anything spawns, so a launch and the unit never race for the lock: whether this installation's enabled unit
+// starts the host. With linger off the unit would stop the host at sign-out, so start at boot goes off here: disable
+// --now stops a host the unit runs and keeps Restart= from bringing it back, and the launch then spawns as it always has.
+const bootPlan = async () => {
+  const properties = await unitProperties();
+  if (!properties || properties.UnitFileState !== 'enabled' || !(await unitOurs())) return { unit: false, properties };
+  if (await readLinger()) return { unit: true, properties };
+  await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
+  return { unit: false, properties: await unitProperties() };
+};
+// A unit that has failed, stopped on the exit code of a host that lost the lock to another (75), or keeps failing: more
+// than one restart with its last run failed. A single retry, such as a moment's lock contention, still goes through.
+const unitGaveUp = properties => properties.ActiveState === 'failed' || properties.ExecMainStatus === '75'
+  || (properties.SubState === 'auto-restart' && properties.Result !== 'success' && Number(properties.NRestarts) > 1);
+// Waits for the host the unit runs. A unit that gave up is reported at once rather than waited out, but first a host that
+// took the lock meanwhile, which is why the unit's host gave up, is waited for and used.
+const awaitUnit = async () => {
+  const deadline = Date.now() + cfg.readyTimeoutMs;
+  let looked = 0;
+  while (Date.now() < deadline) {
+    const current = await discover();
+    if (current) return { type: 'ready', ...current };
+    if (Date.now() - looked >= 500) {
+      looked = Date.now();
+      if (unitGaveUp((await unitProperties()) || {})) {
+        const found = await running();
+        if (found) return found;
+        throw new Error('boot-unit-failed');
+      }
+    }
+    await pause(100);
+  }
+  throw new Error('host-timeout');
+};
+// The unit starts the host, unless it runs one already or another host runs: a host Sotto did not start, which boot-install
+// leaves running beside the unit, is used as it is. The unit's script is rewritten first when its Node has drifted.
+const startByUnit = async properties => {
+  if (properties.ActiveState !== 'active') {
+    const found = await running();
+    if (found) return found;
+    if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+    await say({ type: 'starting' });
+    if ((await pinnedNode()) !== process.execPath) await writeBootScript();
+    await systemctl(['reset-failed', UNIT]);
+    if ((await systemctl(['start', UNIT], 40000)).code !== 0) throw new Error('boot-start-refused');
+  }
+  return awaitUnit();
+};
+// Finds the running host, or starts it: through the unit when start at boot is on, and as a detached process otherwise.
+// The answer carries start at boot's status, as boot-status reports it.
+const start = async () => {
+  const plan = await bootPlan();
+  const ready = plan.unit ? await startByUnit(plan.properties) : await startDetached();
+  return { ...ready, bootStart: await bootStatus(plan.properties ? undefined : null) };
+};
+// Whether the unit runs this process now, so stopping it goes through the user manager.
+const unitRuns = async pid => {
+  const properties = await unitProperties();
+  return !!properties && Number(properties.MainPID) === pid && properties.ActiveState !== 'inactive' && properties.ActiveState !== 'failed' && (await unitOurs());
 };
 // A launch also hands back the host's administrative token, for the desktop on the other end of this session to
 // administer the host's phone access through the port it forwards (ADR-0050), without signing in over SSH again.
@@ -221,12 +374,21 @@ const stopProcess = async pid => {
   if (alive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch {} await pause(200); }
   return !alive(pid);
 };
+// Stops a host the way Stop host does. One the unit runs is stopped through the user manager, so Restart= does not bring it
+// back; the unit stays enabled and starts it again at the next boot.
+const stopRunning = async pid => {
+  if (!(await unitRuns(pid))) return stopProcess(pid);
+  await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
+  const deadline = Date.now() + 2000;
+  while (alive(pid) && Date.now() < deadline) await pause(100);
+  return !alive(pid);
+};
 const stopHost = async () => {
   const current = await discover().catch(() => null);
   if (!current) return finish({ type: 'host-stopped', stopped: true, hostId: null });
   if (current.hostId !== cfg.hostId || !current.owned) return finish({ type: 'host-stopped', stopped: false, hostId: current.hostId });
   const pid = current.pid;
-  const stopped = await stopProcess(pid);
+  const stopped = await stopRunning(pid);
   const legacy = await readLegacyLauncher();
   if (stopped && legacy && legacy.pid === pid) await fs.rm(legacyLauncherPath, { force: true }).catch(() => undefined);
   return finish({ type: 'host-stopped', stopped, hostId: current.hostId });
@@ -343,7 +505,8 @@ const restartForUpdate = async () => {
   const previous = await currentVersion();
   await say({ type: 'update-step', step: 'restart' });
   await writePointer(version);
-  if (!(await stopProcess(running.pid))) { await writePointer(previous); return { type: 'error', reason: 'update-stop-failed' }; }
+  // A host the unit runs is stopped through it, and start() below has the unit start the new version (ADR-0054).
+  if (!(await stopRunning(running.pid))) { await writePointer(previous); return { type: 'error', reason: 'update-stop-failed' }; }
   try {
     const ready = await start();
     await prune([version, previous]);
@@ -355,6 +518,68 @@ const restartForUpdate = async () => {
     try { await start(); return { type: 'error', reason: 'update-start-failed', restarted: true, cause }; }
     catch { return { type: 'error', reason: 'update-start-failed', restarted: false, cause }; }
   }
+};
+// boot-install (ADR-0054): linger first, and nothing written while it is off; then the unit and its script, enabled; then
+// the host handed over. One Sotto started is stopped the way Stop host stops it and started again by the unit, so it
+// restarts once; one Sotto did not start keeps running, and the unit takes over at the next boot.
+const bootInstall = async () => {
+  const properties = await unitProperties();
+  if (!properties) return { type: 'boot-installed', installed: false, stopped: false, bootStart: await bootStatus(null) };
+  if (/[\u0000-\u001f\u007f]/.test(install + data)) throw new Error('boot-install-failed');
+  if (!(await unitOurs()) && await exists(unitPath)) return { type: 'error', reason: 'boot-unit-taken' };
+  let linger = await readLinger();
+  if (!linger) linger = (await system('loginctl', ['--no-ask-password', 'enable-linger'], 30000)).code === 0 && await readLinger();
+  // Polkit wants an administrator: the result carries the command for the owner, and the running host is untouched.
+  if (!linger) return { type: 'boot-installed', installed: false, stopped: false, bootStart: await bootStatus(properties) };
+  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+  const current = await discover().catch(() => null);
+  try {
+    await writeBootScript();
+    await fs.mkdir(path.dirname(unitPath), { recursive: true });
+    await writeAtomically(unitPath, unitText());
+    if ((await systemctl(['daemon-reload'], 30000)).code !== 0 || (await systemctl(['enable', UNIT], 30000)).code !== 0) throw new Error('boot-install-failed');
+  } catch {
+    await removeBootFiles().catch(() => undefined);
+    await systemctl(['daemon-reload'], 30000);
+    throw new Error('boot-install-failed');
+  }
+  if (!current || !current.owned || current.hostId !== cfg.hostId || await unitRuns(current.pid)) return { type: 'boot-installed', installed: true, stopped: false, bootStart: await bootStatus() };
+  if (!(await stopProcess(current.pid))) return { type: 'error', reason: 'boot-stop-failed' };
+  try {
+    const ready = await start();
+    return { type: 'boot-installed', installed: true, stopped: true, pid: ready.pid, bootStart: ready.bootStart };
+  } catch (error) {
+    // The unit would not run the host: start at boot comes off again, and the host starts the way a launch starts it.
+    const cause = error && typeof error.message === 'string' && error.message.length <= 64 ? error.message : 'host-start-failed';
+    await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
+    await removeBootFiles().catch(() => undefined);
+    await systemctl(['daemon-reload'], 30000);
+    await systemctl(['reset-failed', UNIT]);
+    try { await start(); return { type: 'error', reason: 'boot-start-failed', restarted: true, cause }; }
+    catch { return { type: 'error', reason: 'boot-start-failed', restarted: false, cause }; }
+  }
+};
+// boot-remove (ADR-0054): disables the unit, which stops a host it runs, removes the unit and its script, and clears a
+// failed unit's leftover entry once its files are gone. Only when the desktop says the host is switched on does it start
+// the host again, the way a launch does, so it keeps running; a host that is switched off stays stopped.
+const bootRemove = async () => {
+  const before = await discover().catch(() => null);
+  const properties = await unitProperties();
+  if (await unitOurs()) {
+    if (properties) await systemctl(['disable', '--now', UNIT], cfg.stopDrainMs + 30000);
+    try { await removeBootFiles(); } catch { throw new Error('boot-remove-failed'); }
+    if (properties) { await systemctl(['daemon-reload'], 30000); await systemctl(['reset-failed', UNIT]); }
+  }
+  const after = cfg.restart === true ? await start() : await discover().catch(() => null);
+  return { type: 'boot-removed', stopped: !!before && (!after || after.pid !== before.pid), ...(after ? { pid: after.pid } : {}),
+    bootStart: await bootStatus(properties ? undefined : null) };
+};
+// One change to the boot unit at a time, under the folder's update lock, so an update and a boot change never restart the host together.
+const runBoot = async () => {
+  if (cfg.op === 'boot-install' && typeof cfg.hostId !== 'string') return { type: 'failed' };
+  await takeUpdateLock();
+  try { return cfg.op === 'boot-install' ? await bootInstall() : await bootRemove(); }
+  finally { await releaseUpdateLock(); }
 };
 const runUpdate = async () => {
   // A download writes only its own file, so it runs without the lock: a cancelled one still finishing never holds up the next.
@@ -372,12 +597,15 @@ const runUpdate = async () => {
     else if (cfg.op === 'pairing-code' || cfg.op === 'revoke-client') await admin();
     else if (cfg.op === 'desktop-answers') await desktopAnswers();
     else if (cfg.op === 'stop-host') await stopHost();
+    else if (cfg.op === 'boot-status') await finish({ type: 'boot-status', ...(await bootStatus()) });
+    else if (booting) await finish(await runBoot());
     else if (updating) await finish(await runUpdate());
     else await finish({ type: 'failed' });
   } catch (error) {
     const allowed = ['archive-missing', 'descriptor-invalid', 'port-taken', 'host-busy', 'host-start-failed', 'host-timeout',
+      'boot-start-refused', 'boot-unit-failed', 'boot-install-failed', 'boot-remove-failed',
       'update-busy', 'update-invalid', 'update-missing', 'unpack-failed', 'archive-invalid'];
-    await finish({ type: 'error', reason: allowed.includes(error && error.message) ? error.message : updating ? 'update-failed' : 'host-start-failed' });
+    await finish({ type: 'error', reason: allowed.includes(error && error.message) ? error.message : updating ? 'update-failed' : booting ? 'boot-failed' : 'host-start-failed' });
   }
 })();
 `
@@ -511,6 +739,12 @@ export type LaunchOperation =
   | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string }
   /** Start `version` in place of the running host, or start the running one again when it does not start. */
   | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string }
+  /** What start at boot looks like on the host (ADR-0054). */
+  | { readonly op: 'boot-status' }
+  /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */
+  | { readonly op: 'boot-install'; readonly hostId: string }
+  /** Disable and remove the boot unit; `restart` starts the host again as a launch does, for a host that is switched on. */
+  | { readonly op: 'boot-remove'; readonly restart: boolean }
 
 /** The configuration the launch script reads from its argument. It carries paths, IDs and a release URL, never a secret. */
 export function launchConfiguration(configuration: ValidatedSshHostConfiguration, operation: LaunchOperation, readyTimeoutMs: number): string {
