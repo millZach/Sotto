@@ -40,7 +40,9 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     await expect(async () => expect(await page.evaluate(() => window.sotto!.agents!.get())).toHaveProperty('host')).toPass(wait)
     const size = async (width: number, height: number) => {
       await app!.evaluate(({ BrowserWindow }, [width, height]) => {
-        BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
+        // The window's own minimum is its outer size, which rounds above 820x560 content at some display scales.
+        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+        window.setMinimumSize(800, 540); window.setContentSize(width, height)
       }, [width, height] as const)
       await expect.poll(() => page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
     }
