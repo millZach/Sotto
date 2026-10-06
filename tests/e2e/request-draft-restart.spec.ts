@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { hostKeys } from './support/hostKeys'
 
 const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native restart fixture', options: [], questions: [
   { id: 'place', question: 'Where should we go?', multiSelect: false, allowFreeText: true, options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] },
@@ -103,9 +104,10 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
     await expect(card(page).getByRole('checkbox', { name: 'Type checks' })).toBeChecked()
     await expect(page.getByRole('radio', { name: 'Separate hills' })).toBeChecked()
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+    const composerOwnerId = owner === 'thread' ? (await hostKeys(page))(id) : id
     const composer = await page.evaluate(async ({ owner, id }) => owner === 'personal'
       ? (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)!.draft.text
-      : (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, { owner, id })
+      : (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, { owner, id: composerOwnerId })
     expect(composer).toBe(`Independent ${owner === 'thread' ? 'threaded' : 'personal'} composer`)
     await mkdir('artifacts/request-drafts', { recursive: true })
     await card(page).getByRole('textbox', { name: 'Travel notes' }).scrollIntoViewIfNeeded()
@@ -291,15 +293,16 @@ test('legacy option choices survive a full restart, stay bound to the original q
 
     await live(page, original).getByRole('button', { name: 'Send answer', exact: true }).click()
     await expect(live(page, original)).toHaveCount(0)
+    const threadId = (await hostKeys(page))('workshop')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([
-      { type: 'answer', threadId: 'workshop', requestId: original.id, answer: original.options[0]!.id },
+      { type: 'answer', threadId, requestId: original.id, answer: original.options[0]!.id },
     ])
     await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['legacy-reused'])
     // Successful delivery leaves no orphaned saved answer; the unrelated changed question remains recoverable.
     await expect(recovery).toHaveCount(1)
     await expect(recovery).not.toContainText(original.text)
     await expect(recovery).toContainText(reused.text)
-    const composer = await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === 'workshop')!.text)
+    const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, threadId)
     expect(composer).toBe('Independent legacy follow-up draft')
   } finally { await closeSotto(launched) }
 })

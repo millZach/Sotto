@@ -29,7 +29,7 @@ import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService, personalRequestDraftState } from './agents/requestDrafts'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
 import { isThreadProviderConnected, type ProviderId } from '../shared/agents'
-import { requestDraftProvider } from '../shared/requestDrafts'
+import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
 import { registerPersonalChatIpc } from './agents/personalChatIpc'
 import { PERSONAL_CHAT_STATE } from '../shared/personalChats'
 import { version as appVersion } from '../../package.json'
@@ -193,6 +193,7 @@ import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { E2EPersonalChatHost } from './e2e/personalChatHost'
+import { installRemoteHostE2E } from './e2e/remoteHost'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -655,7 +656,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0019). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+    bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+  })
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
@@ -711,6 +714,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       subscribe: listener => hostRouter.subscribe(() => listener()),
     } })
   desktopHosts.useUpdates(hostUpdates)
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter) : undefined
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
   const phoneAccess = new PhoneAccess({ directory: userDataPath,
@@ -751,20 +755,27 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
     const key = parseHostEntityKey(owner.ownerId)
     const remote = key !== null && key.hostId !== agentControl.get().hostId
-    const state = remote ? hostRouter.shell() : agentControl.shell()
-    const id = remote ? owner.ownerId : key?.id ?? owner.ownerId
+    if (remote) return hostRouter.requestDraftState(owner)
+    const state = agentControl.shell()
+    const id = key?.id ?? owner.ownerId
     const thread = state.host.threads.find(item => item.id === id
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    const recovery = remote ? { completed: [], uncertainRequestIds: thread?.requests.filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [] } : agentControl.requestAnswerRecovery(id, owner.providerId)
+    const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }, async owner => {
     if (owner.kind === 'personal') await personalChats.refresh(owner.ownerId)
-    else { const key = parseHostEntityKey(owner.ownerId); if (key && key.hostId !== agentControl.get().hostId) await hostRouter.threadDetail(owner.ownerId); else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId) }
+    else {
+      const key = parseHostEntityKey(owner.ownerId)
+      if (key && key.hostId !== agentControl.get().hostId) {
+        for (const draft of await requestDrafts.list(owner)) await hostRouter.refreshRequestDraft(draft.target, draft.decisionId)
+      } else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId)
+    }
   })
   await requestDrafts.start()
-  await requestDrafts.reconcile().catch(() => undefined)
-  const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
+  const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
+  await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
+  const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
   const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
@@ -783,7 +794,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
   registerQuitDrain(app, async () => {
-    unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
+    unsubscribeRequestDrafts(); unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
     // Closing the local runtime drains a worktree cleanup sweep in progress before its host closes (ADR-0019).
     // Phones go first: the listener closes and Sotto's Serve setting is removed before the host it serves closes.
@@ -793,6 +804,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     providerJobs.close()
     hostUpdates.dispose()
     const results = await Promise.allSettled([desktopHosts.close(), localRuntime.close(), personalChats.close(), hostSetupTools.close()])
+    await remoteHostE2E?.close()
     hostRouter.dispose()
     const failure = results.find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason

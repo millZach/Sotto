@@ -49,6 +49,8 @@ Model questions with choices appear above the thread's message bar. Pick an answ
 
 Sotto enables Codex's clarification tool during normal work and asks it to use that tool for questions that need your answer. A question can appear while Codex continues independent work. Only **Send answer** submits your choice. Questions written only as ordinary chat text remain in the conversation.
 
+When a thread runs on another computer, its saved answer clears after that host confirms receiving the exact submission. Losing the connection or seeing the question disappear does not count as confirmation. An unconfirmed answer stays saved and is never sent again automatically. Checking delivery looks up the original submission, including after a restart while the host still retains its receipt. Update both the desktop and the host for this confirmation support. Older saved answers without a submission identity remain available to copy or discard.
+
 When Codex asks you to open a link, for example to sign in to an app, the question shows the link with **Continue** and **Decline**. Open the link yourself, then press **Continue**.
 
 ### Codex's Computer Use

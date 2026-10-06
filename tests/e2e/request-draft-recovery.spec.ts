@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { hostKeys } from './support/hostKeys'
 
 /**
  * A native client may close pending questions when it shuts down. After a full process restart the provider does NOT
@@ -107,9 +108,12 @@ async function setUp(page: Page, owner: Owner): Promise<string> {
   }
   return id
 }
-const composerText = (page: Page, owner: Owner, id: string): Promise<string | undefined> => page.evaluate(async ({ owner, id }) => owner === 'personal'
-  ? (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)?.draft.text
-  : (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, { owner, id })
+const composerText = async (page: Page, owner: Owner, id: string): Promise<string | undefined> => {
+  const ownerId = owner === 'thread' ? (await hostKeys(page))(id) : id
+  return page.evaluate(async ({ owner, id }) => owner === 'personal'
+    ? (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)?.draft.text
+    : (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, { owner, id: ownerId })
+}
 
 /** The personal fixture persists native requests; remove them as Codex does when it declines pending questions on shutdown. */
 async function nativeClosesQuestions(profile: string, owner: Owner): Promise<void> {

@@ -33,7 +33,7 @@ export const HOST_PROTOCOL_VERSION = 1 as const
  * `queue-client-updates` command, which updates its clients one at a time (ADR-0021, #480). Only a headless host offers
  * it, and a client shows a host's client updates only when the host lists it.
  */
-export const HOST_FEATURES = ['message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates'] as const
+export const HOST_FEATURES = ['message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'answer-receipts'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
@@ -86,6 +86,10 @@ export function hostVersionMismatch(clientVersion: string, hostVersion: string |
 export const HOST_MAX_FRAME_BYTES = 16 * 1024 * 1024
 export const HOST_EVENT_PAGE_SIZE = 256
 const id = z.string().min(1).max(512)
+/** Evidence of acceptance of one exact answer attempt; never the question or answer text. */
+export const hostAnswerTargetSchema = z.object({ threadId: id, providerId: providerIdSchema, requestId: id,
+  questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
+export type HostAnswerTarget = z.infer<typeof hostAnswerTargetSchema>
 /** Feature names are read leniently, so a name this build does not know is ignored rather than refused. */
 const featureList = z.array(z.string().min(1).max(64)).max(64)
 const sottoVersion = z.string().min(1).max(64)
@@ -105,7 +109,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
-  z.object({ ...base, op: z.literal('receipt'), commandId: id }).strict(),
+  z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
   /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */
@@ -141,7 +145,8 @@ export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number;
 export interface HostHello extends HostEventPage { hostId: string; clientId: string; shell: AgentState; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[] }
 export interface HostSession { v: 1; hostId: string; clientId: string; session: string; expiresAt: string }
 export interface HostPairing { v: 1; hostId: string; clientId: string; token: string }
-export interface HostReceipt { status: 'pending' | 'completed' | 'unknown'; error?: HostProtocolError | undefined }
+export interface HostReceipt { status: 'pending' | 'completed' | 'unknown'; error?: HostProtocolError | undefined;
+  acceptedAnswer?: (HostAnswerTarget & { decisionId: string }) | undefined }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
 export interface HostDescriptor { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
 export interface HostHealth extends HostDescriptor {
@@ -179,4 +184,5 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
 ])
-export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional() })
+export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
+  acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional() })

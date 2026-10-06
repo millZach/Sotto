@@ -1,6 +1,6 @@
 import { userInfo } from 'node:os'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -39,7 +39,8 @@ export interface HostService {
   shell(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell: no thread's history rides on the answer. */
-  command(command: AgentCommand, client: ClientIdentity): Promise<AgentState>
+  command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
+  requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -54,6 +55,11 @@ export interface HostService {
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
+}
+
+export interface RequestAnswerRecovery {
+  uncertainRequestIds: string[]
+  completed: { requestId: string; questionsDigest: string; decisionId?: string }[]
 }
 
 /** The part of the event store a client is allowed to read through the host. */
@@ -89,7 +95,8 @@ export interface LocalHostControl {
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
-  commandShell(command: AgentCommand, client?: ClientIdentity): Promise<AgentState>
+  commandShell(command: AgentCommand, client?: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
+  requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
@@ -147,12 +154,15 @@ export class LocalHostService implements HostService {
   // The folder browser reads this machine, not the coordinator, so it goes straight to the filesystem
   // rather than through `LocalHostControl`.
   hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> { return listHostFolders(request) }
-  command(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
+  requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
+    return this.control.requestAnswerRecovery?.(threadId, providerId) ?? { uncertainRequestIds: [], completed: [] }
+  }
+  command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
     if (command.type === 'observe-threads') {
       if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
       else this.observations.delete(client.clientId)
       command = { type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }
     }
-    return this.control.commandShell(command, client)
+    return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
   }
 }

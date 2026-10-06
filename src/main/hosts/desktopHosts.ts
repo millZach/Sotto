@@ -762,6 +762,7 @@ export class DesktopHosts {
     if (this.saved.includes(host)) await this.save()
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
+      refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),

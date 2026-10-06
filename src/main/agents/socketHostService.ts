@@ -13,8 +13,10 @@ import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResul
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { ProviderId } from '../../shared/agents'
 import { HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
-import type { HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
-import type { HostService, ClientIdentity } from './hostService'
+import type { HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
+import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
+import { requestQuestionsDigest } from './requestDrafts'
 import { version as clientVersion } from '../../../package.json'
 
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
@@ -50,6 +52,7 @@ export class SocketHostService implements HostService {
   private cached?: AgentState
   private readonly details = new Map<string, AgentThreadDetail | null>()
   private readonly storedEvents = new Map<number, StoredThreadEvent>()
+  private readonly acceptedAnswers = new Map<string, NonNullable<HostReceipt['acceptedAnswer']>>()
   private latestSeq = 0
   private catchup: Promise<void> | undefined
   /** The thread the last push error named, null for the shell, undefined when none is outstanding. */
@@ -304,13 +307,53 @@ export class SocketHostService implements HostService {
   async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
+    commandId ??= randomUUID()
+    const before = this.shell()
+    const thread = command.type === 'answer' ? before.host.threads.find(item => item.id === command.threadId) : undefined
+    const request = command.type === 'answer' ? thread?.requests.find(item => item.id === command.requestId) : undefined
+    const questions = request ? requestDraftQuestions(request) : []
+    const answer: HostAnswerTarget | undefined = thread && request && questions.length ? { threadId: thread.id,
+      providerId: requestDraftProvider(before.host, thread, before.configuration.provider), requestId: request.id,
+      questionsDigest: requestQuestionsDigest(questions) } : undefined
     const generation = this.generation
     const state = this.read(agentStateSchema, await this.call({ op: 'command', command }, commandId)); this.sameGeneration(generation); this.publish(state)
-    if ('threadId' in command && command.threadId) await this.readThreadDetail(command.threadId)
-    if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
-    return this.state()
+    if (answer) await this.refreshRequestAnswer(commandId, answer)
+    const receipt = this.acceptedAnswers.get(commandId)
+    const accepted = answer !== undefined && receipt !== undefined && receipt.threadId === answer.threadId
+      && receipt.providerId === answer.providerId && receipt.requestId === answer.requestId
+      && receipt.questionsDigest === answer.questionsDigest
+    try {
+      if ('threadId' in command && command.threadId) await this.readThreadDetail(command.threadId)
+      if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
+    } catch (error) {
+      // History is refreshed after delivery. An exact positive receipt already settled this answer,
+      // so a later read failure cannot turn it back into an unconfirmed send.
+      if (!accepted) throw error
+    }
+    return accepted ? { ...this.state(), error: null } : this.state()
   }
-  async receipt(commandId: string): Promise<HostReceipt> { return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId })) }
+  async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
+    return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))
+  }
+  /** Reads an existing attempt's receipt; this never sends the answer again. */
+  async refreshRequestAnswer(commandId: string, answer: HostAnswerTarget): Promise<void> {
+    if (!this.features.includes('answer-receipts')) return
+    const generation = this.generation
+    const receipt = await this.receipt(commandId, answer)
+    this.sameGeneration(generation)
+    const accepted = receipt.acceptedAnswer
+    if (receipt.status !== 'completed' || !accepted || accepted.decisionId !== commandId
+      || accepted.threadId !== answer.threadId || accepted.providerId !== answer.providerId
+      || accepted.requestId !== answer.requestId || accepted.questionsDigest !== answer.questionsDigest) return
+    this.acceptedAnswers.set(commandId, accepted)
+    while (this.acceptedAnswers.size > 512) this.acceptedAnswers.delete(this.acceptedAnswers.keys().next().value!)
+  }
+  requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
+    return { uncertainRequestIds: this.cached?.host.threads.find(thread => thread.id === threadId)?.requests
+      .filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [],
+    completed: [...this.acceptedAnswers.values()].filter(item => item.threadId === threadId && item.providerId === providerId)
+      .map(({ requestId, questionsDigest, decisionId }) => ({ requestId, questionsDigest, decisionId })) }
+  }
   attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const result = this.previewTail.then(async () => this.read(agentAttachmentPreviewResultSchema, await this.call({ op: 'preview', request })))
     this.previewTail = result.catch(() => undefined); return result

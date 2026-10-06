@@ -1455,7 +1455,7 @@ export class AgentControl {
    * copying every history into an answer the window strips again held up main on every command,
    * a draft save included (issue #313).
    */
-  commandShell(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
+  commandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     if (this.disposed) return Promise.resolve({ ...this.shell(), error: 'Sotto is stopping. Restart it before sending another command.' })
     // A handle is the window's claim; the store is what it is checked against, before the command does anything.
     // A draft save is the exception: it keeps the text and drops what is gone (saveThreadDraft), so typing is never lost.
@@ -1466,13 +1466,13 @@ export class AgentControl {
       this.publish()
       return Promise.resolve(this.shell())
     }
-    const pending = this.commandWhileRunning(command, client)
+    const pending = this.commandWhileRunning(command, client, answerDecisionId)
     this.activeCommands.add(pending)
     void pending.then(() => this.activeCommands.delete(pending), () => this.activeCommands.delete(pending))
     return pending
   }
-  private commandWhileRunning(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
-    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client)
+  private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
+    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
     const { threadId, draftId } = prompt
     const key = JSON.stringify([threadId, draftId])
@@ -1503,7 +1503,7 @@ export class AgentControl {
     void task.finally(() => this.promptAdmissions.delete(key)).catch(() => undefined)
     return task
   }
-  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
+  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.shell()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -1599,7 +1599,7 @@ export class AgentControl {
       try {
         const admissionError = admission ? await admission : undefined
         if (admissionError instanceof Error) throw admissionError
-        await this.execute(command, turn, manualRetryId, selectionRevision, client)
+        await this.execute(command, turn, manualRetryId, selectionRevision, client, answerDecisionId)
       } catch (error) {
         failure = error instanceof Error ? error.message : 'Sotto could not complete this action.'
         this.state.error = failure
@@ -1889,7 +1889,7 @@ export class AgentControl {
     this.state.pendingRequest = ''
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
-    client: ClientIdentity = this.localClient): Promise<void> {
+    client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<void> {
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     // Explicit targets survive host observations and queue-driven selection changes.
     if (turn && 'threadId' in command) {
@@ -2302,7 +2302,7 @@ export class AgentControl {
           this.presentQueue(true, selectionRevision)
           return
         }
-        await this.dispatch({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, undefined, undefined, client)
+        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, undefined, undefined, client)
         assignment?.handledRequestIds.push(command.requestId)
         this.state.queue = this.state.queue.filter(q => q.requestId !== command.requestId)
         if (answerDraft) {
@@ -2542,7 +2542,15 @@ export class AgentControl {
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
     await this.persist()
     if (!result.accepted && !result.uncertain) throw new Error(PROVIDER_REJECTED_ACTION)
-    this.acceptSnapshot(await this.readThread(threadId, provider))
+    try { this.acceptSnapshot(await this.readThread(threadId, provider)) }
+    catch (error) {
+      // The exact answer receipt was persisted before this display read. A failed refresh cannot
+      // undo its positive acceptance; every action without that evidence keeps its failure.
+      const answered = command.type === 'answer' && this.answeredRequests.some(item => item.decisionId === command.commandId
+        && item.threadId === command.threadId && item.provider === provider && item.requestId === command.requestId
+        && item.questionsDigest === answerIntent?.questionsDigest)
+      if (!answered) throw error
+    }
   }
   /**
    * Keeps the images of a prompt the provider has taken, without holding the send on the disk write. A failed

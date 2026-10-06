@@ -79,6 +79,9 @@ export interface SocketServerOptions {
  */
 const RECEIPT_LIFETIME_MS = 5 * 60_000
 const RECEIPT_LIMIT = 10_000
+/** An internal native attempt ID, isolated from other paired clients and local provider attempts. */
+const answerDecisionId = (clientId: string, commandId: string): string =>
+  'socket-answer:' + createHash('sha256').update(JSON.stringify([clientId, commandId])).digest('hex')
 /**
  * A peer sending more than this many messages in a second is closed, except for event pages, which are
  * paced instead: a page past its own budget waits for the next second. A client reading a long log one
@@ -238,7 +241,8 @@ export async function startSocketServer(options: SocketServerOptions) {
           peer.selectedProjectId = input.projectId; peer.selectedThreadId = null
         } else if (input.type === 'observe-threads') {
           peer.observed = new Set(input.threadIds); await observe()
-        } else await service.command(input, peer.client)
+        } else if (input.type === 'answer') await service.command(input, peer.client, answerDecisionId(peer.client.clientId, request.id))
+        else await service.command(input, peer.client)
         receipt.status = 'completed'
       } catch { receipt.status = 'completed'; receipt.error = { code: 'unavailable', message: errors.unavailable }; throw new Refusal('unavailable') }
     })()
@@ -263,7 +267,19 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'shell': return shell(peer)
       case 'detail': return service.threadDetail(request.threadId)
       case 'events': return events(peer, request.afterSeq, request.threadId)
-      case 'receipt': return receipts.get(peer.client.clientId + ':' + request.commandId)?.receipt ?? { status: 'unknown' }
+      case 'receipt': {
+        const receipt = receipts.get(peer.client.clientId + ':' + request.commandId)?.receipt ?? { status: 'unknown' as const }
+        // The coordinator's receipt survives a host restart. Only acceptance of this authenticated
+        // client's exact native attempt and original questions can complete its retained answer.
+        if (request.answer) {
+          const target = request.answer
+          const accepted = service.requestAnswerRecovery?.(target.threadId, target.providerId).completed.some(item =>
+            item.requestId === target.requestId && item.questionsDigest === target.questionsDigest
+            && item.decisionId === answerDecisionId(peer.client.clientId, request.commandId))
+          if (accepted) return { status: 'completed', acceptedAnswer: { ...target, decisionId: request.commandId } }
+        }
+        return receipt
+      }
       case 'observe': peer.observed = new Set(request.threadIds); await observe(); for (const id of peer.observed) detail(peer, id); return null
       case 'command': return command(peer, request)
       case 'git-refs':

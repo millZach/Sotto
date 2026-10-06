@@ -22,6 +22,67 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-request
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 const disk = async (): Promise<{ drafts: RequestDraft[] }> => JSON.parse(await readFile(join(directory, 'request-drafts.json'), 'utf8'))
 
+it('publishes only owner identities after a durable write, never failed writes or unsubscribed listeners', async () => {
+  let releaseWrite: () => void = () => undefined
+  let startedWrite: () => void = () => undefined
+  const started = new Promise<void>(resolve => { startedWrite = resolve })
+  const gate = new Promise<void>(resolve => { releaseWrite = resolve })
+  const write = vi.fn(async (value: unknown) => {
+    startedWrite()
+    await gate
+    await writeFile(join(directory, 'request-drafts.json'), JSON.stringify(value))
+  })
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), async () => {}, { write })
+  await service.start()
+  const changed = vi.fn()
+  const off = service.onChanged(changed)
+  const saving = service.save(draft())
+  await started
+  expect(changed).not.toHaveBeenCalled()
+  releaseWrite()
+  await saving
+  expect((await disk()).drafts).toEqual([draft()])
+  expect(changed).toHaveBeenCalledExactlyOnceWith(owner)
+  expect(JSON.stringify(changed.mock.calls)).not.toContain('A quiet beach')
+  expect(JSON.stringify(changed.mock.calls)).not.toContain('questions')
+  changed.mockClear()
+  await service.save(draft())
+  await service.reconcile()
+  expect(changed).not.toHaveBeenCalled()
+  write.mockRejectedValueOnce(new Error('Synthetic disk write refused'))
+  await expect(service.save(draft({ revision: 2 }))).rejects.toThrow('Could not save')
+  expect(changed).not.toHaveBeenCalled()
+  expect((await disk()).drafts).toEqual([draft()])
+  off()
+  await service.save(draft({ revision: 2 }))
+  expect(changed).not.toHaveBeenCalled()
+  expect((await disk()).drafts[0]?.revision).toBe(2)
+})
+
+it('publishes each changed owner once when accepted holds are retired and ignores untouched owners', async () => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {})
+  await service.start()
+  const otherTarget = { ...target, ownerId: 'other-owner' }
+  const untouchedTarget = { ...target, ownerId: 'untouched-owner' }
+  await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'first-attempt', submittedAnswers)
+  await service.save(draft({ target: otherTarget, held: true }))
+  await service.bindDecision(otherTarget, 'other-attempt', submittedAnswers)
+  await service.save(draft({ target: untouchedTarget }))
+  const changed = vi.fn()
+  service.onChanged(changed)
+  state = { ...state, requests: [], completed: ['first-attempt', 'other-attempt'].map(decisionId => ({
+    decisionId, requestId: target.requestId, questionsDigest: requestQuestionsDigest(questions),
+  })) }
+  await service.reconcile()
+  expect(changed.mock.calls.map(([value]) => value)).toEqual([owner, { ...owner, ownerId: otherTarget.ownerId }])
+  expect((await disk()).drafts).toEqual([draft({ target: untouchedTarget })])
+  changed.mockClear()
+  await service.reconcile()
+  expect(changed).not.toHaveBeenCalled()
+})
+
 it('retains the first queued edit when the provider closes the question before its first save', async () => {
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
   const service = new RequestDraftService(directory, () => state, async () => {})

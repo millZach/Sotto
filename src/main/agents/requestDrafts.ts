@@ -46,6 +46,7 @@ export class RequestDraftService {
   private readonly path: string
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
+  private readonly listeners = new Set<(owner: RequestDraftOwner) => void>()
 
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
     private readonly refresh: (owner: RequestDraftOwner) => Promise<void>,
@@ -78,10 +79,29 @@ export class RequestDraftService {
     return work
   }
 
+  onChanged(listener: (owner: RequestDraftOwner) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
   private async commit(drafts: RequestDraft[]): Promise<void> {
     const next = savedSchema.parse({ version: 1, drafts })
+    const before = new Map(this.saved.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
+    const after = new Map(next.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
+    const changed = new Map<string, RequestDraftOwner>()
+    for (const draft of [...this.saved.drafts, ...next.drafts]) {
+      const key = requestDraftKey(draft.target)
+      if (before.get(key) === after.get(key)) continue
+      const { kind, ownerId, providerId } = draft.target
+      const owner = { kind, ownerId, providerId }
+      changed.set(requestDraftOwnerKey(owner), owner)
+    }
     try { await this.store.write(next) } catch { throw new Error(saveFailed) }
     this.saved = next
+    for (const owner of changed.values()) for (const listener of this.listeners) {
+      // A failed window notification cannot turn a successful durable write into a failed save.
+      try { listener(owner) } catch { /* the window lists again when it mounts */ }
+    }
   }
 
   private current(target: RequestDraftTarget): RequestDraft | undefined {
@@ -104,6 +124,12 @@ export class RequestDraftService {
           && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
       if (drafts.length !== this.saved.drafts.length) await this.commit(drafts)
     })
+  }
+
+  /** Main's read-only recovery work, bounded by saved drafts rather than the host's thread archive. */
+  heldThreadAnswers(): Promise<RequestDraft[]> {
+    return this.serial(async () => structuredClone(this.saved.drafts.filter(draft => draft.target.kind === 'thread'
+      && draft.held && draft.decisionId)))
   }
 
   list(input: RequestDraftOwner): Promise<RequestDraft[]> {
@@ -182,8 +208,14 @@ export class RequestDraftService {
     // The read can publish snapshots, so it must run outside the disk-write lane.
     await this.refresh(target)
     return this.serial(async () => {
-      if (!this.offered(target)) throw new Error('This answer is still unconfirmed. Reconnect and check the original request.')
       const previous = this.current(target)
+      if (previous?.held && previous.decisionId && sameRequestQuestions(previous.target.questions, target.questions)
+        && this.lookup(target)?.completed?.some(item => item.requestId === target.requestId
+          && item.decisionId === previous.decisionId && item.questionsDigest === requestQuestionsDigest(target.questions))) {
+        await this.commit(this.saved.drafts.filter(item => item !== previous))
+        return null
+      }
+      if (!this.offered(target)) throw new Error('This answer is still unconfirmed. Reconnect and check the original request.')
       if (!previous || !sameRequestQuestions(previous.target.questions, target.questions)) return null
       if (!previous.held) return structuredClone(previous)
       const { decisionId, ...editable } = previous

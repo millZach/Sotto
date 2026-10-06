@@ -2,7 +2,24 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
+
+it('validates identity-only draft change events and removes their listener on unsubscribe', () => {
+  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
+  const changed = vi.fn()
+  const off = bridge.onChanged!(changed)
+  expect(ipc.on).toHaveBeenCalledWith(REQUEST_DRAFT_CHANGED, expect.any(Function))
+  const listener = ipc.on.mock.calls.find(([channel]) => channel === REQUEST_DRAFT_CHANGED)![1] as (event: unknown, value: unknown) => void
+  const owner = { kind: 'thread', ownerId: 'thread', providerId: 'codex' }
+  for (const invalid of [null, {}, { ...owner, kind: 'unknown' }, { ...owner, providerId: 'unknown' },
+    { ...owner, answer: 'Synthetic private answer' }, { ...owner, questions: [] }]) listener({}, invalid)
+  expect(changed).not.toHaveBeenCalled()
+  listener({}, owner)
+  expect(changed).toHaveBeenCalledExactlyOnceWith(owner)
+  off()
+  expect(ipc.removeListener).toHaveBeenCalledExactlyOnceWith(REQUEST_DRAFT_CHANGED, listener)
+})
 
 it('exposes validated request draft persistence only to the main renderer', async () => {
   const ipc = { invoke: vi.fn().mockResolvedValue(null), on: vi.fn(), removeListener: vi.fn() }

@@ -1,6 +1,10 @@
-import { agentCommandSchema, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { randomUUID } from 'node:crypto'
+import { agentCommandSchema, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
-import type { ClientIdentity, HostService } from '../agents/hostService'
+import type { ClientIdentity, HostService, RequestAnswerRecovery } from '../agents/hostService'
+import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
+import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
+import type { HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -10,7 +14,8 @@ export interface DesktopHostConnection {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe'>
+  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery'>
+  refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
@@ -54,8 +59,13 @@ export class DesktopHostRouter {
   private readonly reconnecting = new Set<string>()
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
+  /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
+  private readonly answerChecks = new WeakMap<DesktopHostConnection, Map<string, Promise<void>>>()
+  private answerReceiptLane: Promise<void> = Promise.resolve()
+  private answerReceiptWindow = 0
+  private answerReceiptReads = 0
 
-  constructor(private readonly empty: () => AgentState) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
 
   add(connection: DesktopHostConnection): void {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
@@ -170,6 +180,78 @@ export class DesktopHostRouter {
     const detail = await connection.detail(id!)
     return detail ? mapHostReferences(detail, value => hostEntityKey(connection.hostId, value)) : null
   }
+  requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
+    const { connection, id } = this.target(threadId)
+    return connection.service.requestAnswerRecovery?.(id!, providerId) ?? { uncertainRequestIds: [], completed: [] }
+  }
+  /** The same owning-host projection is used for remote draft saves and recovery. */
+  requestDraftState(owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
+    const key = parseHostEntityKey(owner.ownerId)
+    if (!key || !this.hosts.has(key.hostId)) return undefined
+    const state = this.shell()
+    const recovery = this.requestAnswerRecovery(owner.ownerId, owner.providerId)
+    const thread = state.host.threads.find(item => item.id === owner.ownerId
+      && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
+    return thread ? { connected: isThreadProviderConnected(state.host, thread),
+      ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error', requests: thread.requests, ...recovery }
+      : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
+  }
+  async reconcileRequestDrafts(drafts: Pick<RequestDraftService, 'heldThreadAnswers' | 'reconcile'>): Promise<void> {
+    const state = this.shell()
+    for (const draft of await drafts.heldThreadAnswers()) {
+      const owner = draft.target
+      const identity = parseHostEntityKey(owner.ownerId)
+      const connection = identity ? this.hosts.get(identity.hostId)?.connection : undefined
+      if (!identity || !connection || connection.kind !== 'remote' || connection.available?.() === false
+        || !connection.refreshRequestAnswer || !draft.decisionId) continue
+      let checks = this.answerChecks.get(connection)
+      if (!checks) { checks = new Map(); this.answerChecks.set(connection, checks) }
+      const decisionId = draft.decisionId
+      const questionsDigest = requestQuestionsDigest(owner.questions)
+      const completed = connection.service.requestAnswerRecovery?.(identity.id, owner.providerId).completed
+      if (completed?.some(item => item.decisionId === decisionId && item.requestId === owner.requestId
+        && item.questionsDigest === questionsDigest)) continue
+      const thread = state.host.threads.find(item => item.id === owner.ownerId)
+      const request = thread?.requests.find(item => item.id === owner.requestId)
+      // A negative receipt is checked again when its provider reconnects or the original request
+      // changes delivery/liveness or its answer lane finishes. Unrelated streaming updates keep the same read.
+      const key = JSON.stringify([owner.ownerId, owner.providerId, owner.requestId, questionsDigest, decisionId,
+        thread?.clientConnected, thread?.historyStatus, request?.id ?? null, request?.delivery ?? null,
+        state.busyThreadIds?.includes(owner.ownerId) ?? false])
+      let check = checks.get(key)
+      if (!check) {
+        const heldChecks = checks
+        check = this.answerReceiptLane.then(async () => {
+          // Background recovery leaves room in the socket's message budget for the user's commands.
+          const elapsed = Date.now() - this.answerReceiptWindow
+          if (elapsed >= 1000) { this.answerReceiptWindow = Date.now(); this.answerReceiptReads = 0 }
+          if (this.answerReceiptReads >= 16) {
+            await new Promise(resolve => setTimeout(resolve, Math.max(0, 1000 - elapsed)))
+            this.answerReceiptWindow = Date.now(); this.answerReceiptReads = 0
+          }
+          this.answerReceiptReads++
+          await connection.refreshRequestAnswer!(decisionId, { threadId: identity.id,
+            providerId: owner.providerId, requestId: owner.requestId, questionsDigest })
+          while (heldChecks.size > 512) heldChecks.delete(heldChecks.keys().next().value!)
+        }).catch(() => { heldChecks.delete(key) })
+        this.answerReceiptLane = check
+        checks.set(key, check)
+      }
+      await check
+    }
+    await drafts.reconcile()
+  }
+  async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
+    const { connection, id } = this.target(target.ownerId)
+    const questionsDigest = requestQuestionsDigest(target.questions)
+    if (decisionId) {
+      await connection.refreshRequestAnswer?.(decisionId, { threadId: id!, providerId: target.providerId,
+        requestId: target.requestId, questionsDigest })
+      if (connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
+        item.decisionId === decisionId && item.requestId === target.requestId && item.questionsDigest === questionsDigest)) return
+    }
+    await this.threadDetail(target.ownerId)
+  }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
@@ -256,7 +338,21 @@ export class DesktopHostRouter {
     const { activeThreadId, activeProjectId } = connection.service.shell()
     const selections = this.selections
     try {
-      const result = await connection.service.command(command as AgentCommand, client)
+      let decisionId: string | undefined
+      if (connection.kind === 'remote' && command.type === 'answer') {
+        const state = this.shell()
+        const thread = state.host.threads.find(item => item.id === hostEntityKey(connection.hostId, command.threadId))
+        const request = thread?.requests.find(item => item.id === command.requestId)
+        const questions = request ? requestDraftQuestions(request) : []
+        if (thread && request && questions.length) {
+          decisionId = randomUUID()
+          await this.options.bindRequestDraftDecision?.({ kind: 'thread', ownerId: thread.id,
+            providerId: requestDraftProvider(state.host, thread, state.configuration.provider), requestId: request.id, questions }, decisionId,
+          request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
+        }
+      }
+      const result = await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
+        : connection.service.command(command as AgentCommand, client))
       if (result.error) this.notice = this.refusal(connection, result.error)
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })

@@ -38,7 +38,10 @@ export const REQUEST_DRAFT_DISCARD = 'request-draft:discard'
 export const REQUEST_DRAFT_GET = 'request-draft:get'
 export const REQUEST_DRAFT_SAVE = 'request-draft:save'
 export const REQUEST_DRAFT_CHECK = 'request-draft:check'
+export const REQUEST_DRAFT_CHANGED = 'request-draft:changed'
 export interface RequestDraftBridge {
+  /** Main has committed a changed saved answer for this owner; no answer content rides on the event. */
+  onChanged?(listener: (owner: RequestDraftOwner) => void): () => void
   /** Read retained forms without requiring or recreating a native request. */
   list(owner: RequestDraftOwner): Promise<RequestDraft[]>
   discard(input: RequestDraftDiscard): Promise<boolean>
