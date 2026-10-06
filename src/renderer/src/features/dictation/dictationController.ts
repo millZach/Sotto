@@ -113,6 +113,8 @@ interface ActiveSession {
   retried: boolean
   /** Why the recording was kept, so a cancelled Try again can return to it. */
   keptCode?: TranscriptionErrorCode
+  /** Whether the kept error being shown came from a Try again, so a cancelled one says the same. */
+  keptAfterRetry: boolean
   /** Counts each wait for the parts, so a cancelled Try again's late answers are ignored. */
   attempt: number
 }
@@ -316,6 +318,7 @@ export class DictationController {
       durationMs: 0,
       kept: false,
       retried: false,
+      keptAfterRetry: false,
       attempt: 0,
     }
     this.session = session
@@ -438,7 +441,7 @@ export class DictationController {
       }
       for (const part of session.parts) delete part.result
       session.kept = true
-      session.retried = false
+      session.retried = session.keptAfterRetry
       this.fail(session, session.keptCode)
       return
     }
@@ -616,7 +619,6 @@ export class DictationController {
     const results = parts.map((part) => part.transcript!)
     const segmentWords = results.map((partial) => countWords(partial.text))
     const segmentRms = parts.map((part) => part.rms)
-    parts.length = 0
     const single = results.length === 1 ? results[0] : undefined
     const result: TranscriptionResult =
       single !== undefined
@@ -657,10 +659,13 @@ export class DictationController {
       } catch {
         // The raw transcript is always deliverable without the cleanup pass.
       }
-      if (!this.isCurrent(session)) return
+      // A Try again cancelled during cleanup has already returned to its kept recording.
+      if (!this.isCurrent(session) || session.attempt !== attempt) return
     }
     const text = session.settings.formatWhitespace ? normalized : rawText
 
+    // Delivery cannot be cancelled, so the recording's parts are let go only here.
+    parts.length = 0
     session.cancellable = false
     session.processingStage = 'delivering-output'
     session.progress = 1
@@ -744,6 +749,7 @@ export class DictationController {
     const kept = session.kept && isTranscriptionErrorCode(code)
     if (kept) {
       session.keptCode = code
+      session.keptAfterRetry = session.retried
     } else {
       session.kept = false
       delete session.keptCode

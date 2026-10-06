@@ -1266,8 +1266,62 @@ describe('kept recordings', () => {
     expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'kept words' }))
   })
 
+  it('returns to the kept recording when a Try again is cancelled during cleanup, and delivers nothing late', async () => {
+    const cleanup = deferred<{ text: string; applied: boolean }>()
+    let polishes = 0
+    let call = 0
+    const harness = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => {
+        call += 1
+        if (call === 1) throw new TranscriptionError('rate-limited')
+        return { text: 'kept words', language: 'en' }
+      },
+      polishTranscript: async (text) => {
+        polishes += 1
+        return polishes === 1 ? cleanup.promise : { text, applied: false }
+      },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    const retry = harness.controller.retry()
+    await vi.waitFor(() => expect(polishes).toBe(1))
+
+    await harness.controller.cancel()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })
+    cleanup.resolve({ text: 'too late', applied: true })
+    await retry
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
+
+    // The text that came back is kept, so the next Try again sends nothing.
+    await harness.controller.retry()
+    expect(call).toBe(2)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'kept words' }))
+  })
+
+  it('still says Try again failed when a later Try again is cancelled', async () => {
+    const pending = deferred<TranscriptionResult>()
+    let call = 0
+    const harness = createHarness({
+      transcribe: async () => {
+        call += 1
+        if (call <= 2) throw new TranscriptionError('rate-limited')
+        return pending.promise
+      },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    await harness.controller.retry()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true, retried: true })
+    void harness.controller.retry()
+    await harness.controller.cancel()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true, retried: true })
+  })
+
   it('announces idle for a new controller, and not over a session', async () => {
-    const harness = createHarness()
+    const harness = createHarness({ currentSettings: settings({ onboardingComplete: true }) })
     harness.controller.announceIdle()
     expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle', cancellable: false })
     expect(widgetSnapshotSchema.safeParse(snapshots(harness).at(-1)).success).toBe(true)
