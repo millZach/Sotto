@@ -135,6 +135,18 @@ describe('the read after an accepted send', () => {
     expect(snapshot.threads.some(thread => thread.id === id)).toBe(true)
   })
 
+  it('is answered from what the adapter holds by a thread host with no workspace above it', async () => {
+    const adapter = new ReadRecordingHost()
+    const registry = new ThreadRegistry(await directory())
+    const host = new SottoThreadHost('codex', adapter, registry)
+    cleanup.push(async () => { host.disconnect(); await registry.flush() })
+    const id = (await host.connect()).threads.find(thread => thread.title === 'Workshop')!.id
+    adapter.reads.length = 0
+    const snapshot = await host.refreshThread(id, { afterSend: true })
+    expect(adapter.reads).toEqual([])
+    expect(snapshot.threads.some(thread => thread.id === id)).toBe(true)
+  })
+
   async function coordinator(): Promise<{ host: ReadRecordingHost; control: AgentControl }> {
     const root = await directory()
     const host = new ReadRecordingHost()
