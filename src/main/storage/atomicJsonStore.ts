@@ -83,14 +83,6 @@ export class AtomicJsonStore<T> {
     return queued
   }
 
-  /**
-   * Runs `operation` in this store's queue, after every read and write before it and before any after it. A
-   * companion file that must be ordered against this one's writes uses it.
-   */
-  exclusive<Result>(operation: () => Promise<Result>): Promise<Result> {
-    return this.enqueueOperation(operation)
-  }
-
   exists(): Promise<boolean> {
     return this.enqueueOperation(() => this.pathExists(this.filePath))
   }

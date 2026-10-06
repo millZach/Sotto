@@ -498,32 +498,17 @@ describe('AtomicJsonStore', () => {
     const filePath = join(await createRoot(), 'store.json')
     const store = createStore(filePath)
     let current = 'one'
-    let release!: () => void
-    const held = new Promise<void>(done => { release = done })
     const reads: string[] = []
-    const first = store.writeLatest(() => { reads.push(current); return { value: current } })
-    // Still queued when the first latest write starts reading.
-    const blocker = store.exclusive(() => held)
-    await new Promise(done => setImmediate(done))
+    const latest = (): Example => { reads.push(current); return { value: current } }
+    const first = store.writeLatest(latest)
+    // The first latest write has read its value and is writing it.
+    while (reads.length === 0) await new Promise(done => setImmediate(done))
     current = 'two'
-    const second = store.writeLatest(() => { reads.push(current); return { value: current } })
+    const second = store.writeLatest(latest)
 
     expect(second).not.toBe(first)
-    release()
-    await Promise.all([first, blocker, second])
+    await Promise.all([first, second])
     expect(reads).toEqual(['one', 'two'])
     await expect(store.read()).resolves.toEqual({ value: 'two' })
-  })
-
-  it('runs an exclusive operation in order with reads and writes', async () => {
-    const filePath = join(await createRoot(), 'store.json')
-    const store = createStore(filePath)
-    const order: string[] = []
-
-    const write = store.write({ value: 'saved' }).then(() => order.push('write'))
-    const exclusive = store.exclusive(async () => { order.push(`exclusive saw ${(await readFile(filePath, 'utf8')).trim()}`) })
-    await Promise.all([write, exclusive])
-
-    expect(order).toEqual(['write', 'exclusive saw {\n  "value": "saved"\n}'])
   })
 })
