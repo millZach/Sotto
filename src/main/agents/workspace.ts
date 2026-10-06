@@ -171,6 +171,8 @@ export class WorkspaceHost implements AgentHost {
   private readonly statusLanes = new Map<string, Promise<unknown>>()
   /** Per thread, the last Git status read begun and the newest one on the record, so an older answer never replaces a newer one. */
   private readonly gitStatusTickets = new Map<string, { issued: number; written: number }>()
+  /** Threads whose folder an inspection after a send or a turn could not confirm: their next send asks Git before the prompt. */
+  private readonly fullCheckDue = new Set<string>()
   /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
   private readonly preparations = new Map<string, Promise<void>>()
   private readonly worktrees: ThreadWorktrees
@@ -1690,18 +1692,23 @@ export class WorkspaceHost implements AgentHost {
       await this.readGitStatus(threadId, false, 'status')
     })
   }
+  /** A send that checked its folder from the files on disk owes the folder Git's own inspection, made once the prompt is out. */
+  private inspectAfterSend(threadId: string): void {
+    void this.onStatusLane(threadId, () => this.reinspect(threadId)).catch(() => undefined)
+  }
   /**
    * Inspects a ready folder with Git, from the thread's status lane, and takes a changed branch or uncommitted-changes
    * flag onto the record, keeping its sent branch and Git status. A record anything else wrote while Git ran is newer and
-   * stays. A folder Git will not confirm is left for the next send to report. False when there was nothing to read or
-   * Git refused it.
+   * stays. A folder Git will not confirm is left as it is, and its next send asks Git first. False when there was
+   * nothing to read or Git refused it.
    */
   private async reinspect(threadId: string): Promise<boolean> {
     const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
     if (!worktree || worktree.status !== 'ready' || this.stopping) return false
     let inspected: AgentWorktree
     try { inspected = await this.worktrees.inspect(worktree) }
-    catch { return false }
+    catch { this.fullCheckDue.add(threadId); return false }
+    this.fullCheckDue.delete(threadId)
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
     if (this.stopping || !current || current.worktree !== worktree) return true
     if (inspected.branch !== worktree.branch || inspected.dirty !== worktree.dirty) {
@@ -2051,6 +2058,7 @@ export class WorkspaceHost implements AgentHost {
     catch (error) { next = worktree.reclaimedAt ? worktree : { ...worktree, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
     if (this.stopping || !current || current.worktree !== worktree) return
+    if (next.status === 'ready') this.fullCheckDue.delete(threadId)
     // A send may have recorded its branch on this same record while Git ran.
     next = { ...next, ...(worktree.sentBranch !== undefined ? { sentBranch: worktree.sentBranch } : {}) }
     if (isDeepStrictEqual(next, worktree)) return
@@ -2121,7 +2129,42 @@ export class WorkspaceHost implements AgentHost {
       }
     }
     const current = this.thread(threadId)
-    return existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
+    const folder = await existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
+    this.fullCheckDue.delete(threadId)
+    return folder
+  }
+  /**
+   * The folder a send's prompt goes to, with `threadWorkingDirectory`'s guarantee: never a deleted or failed working
+   * copy, and a branch switched inside it is adopted (ADR-0014). For a ready folder that is there, the common case,
+   * the check reads the checkout's own files rather than starting Git (issue #766), and `inspect` says Git's own
+   * inspection is still owed once the prompt is out. Anything the files do not settle (a missing, reclaimed or
+   * failed folder, one never verified, one an earlier inspection could not confirm, or files only Git can read)
+   * takes `threadWorkingDirectory`'s path, which puts a missing folder back and inspects with Git.
+   */
+  private async sendWorkingDirectory(threadId: string): Promise<{ folder: string; inspect: boolean }> {
+    await this.initialize()
+    await this.preparations.get(threadId)
+    await this.discoverWorkingCopy(threadId)
+    const thread = this.thread(threadId)
+    const worktree = thread.worktree
+    if (worktree?.path && worktree.status === 'ready' && !worktree.reclaimedAt && thread.workingDirectory !== undefined && !this.fullCheckDue.has(threadId)) {
+      const seen = await this.worktrees.readyOnDisk(worktree)
+      if (seen && this.thread(threadId).worktree === worktree) {
+        if (seen.branch !== worktree.branch) {
+          // The folder's own branch is the one this send goes to, as `inspect` would have recorded it.
+          this.thread(threadId).worktree = { ...worktree, branch: seen.branch, ...(worktree.temporaryBranch ? { temporaryBranch: false } : {}) }
+          this.dirty = true
+          // The folder was just verified; a cache write that fails must not refuse the send.
+          try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+          this.publish()
+        }
+        const current = this.thread(threadId)
+        const folder = await existingWorkingDirectory(resolveThreadWorkingDirectory(current, this.state.snapshot.projects.find(project => project.id === current.projectId)))
+        // A project folder outside any repository has nothing for Git to add.
+        return { folder, inspect: worktree.mode !== 'shared' || worktree.repositoryRoot !== undefined }
+      }
+    }
+    return { folder: await this.threadWorkingDirectory(threadId), inspect: false }
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
     // Cancellation passes a held prompt, but remains tracked so shutdown drains its final publication.
@@ -2311,8 +2354,9 @@ export class WorkspaceHost implements AgentHost {
     // history read after dispatch that could turn unknown delivery into a rejection.
     // Never send into a deleted/failed working copy, even if the native client is still live.
     let dispatchFolder: string | undefined
+    let inspectAfter = false
     if (command.type === 'send' || command.type === 'steer') {
-      dispatchFolder = await this.threadWorkingDirectory(thread.id)
+      ({ folder: dispatchFolder, inspect: inspectAfter } = await this.sendWorkingDirectory(thread.id))
       // The folder was just read, so this is the branch the prompt goes to; the pane compares against it afterwards.
       await this.recordSentBranch(thread.id)
     }
@@ -2332,7 +2376,10 @@ export class WorkspaceHost implements AgentHost {
         return { ...confirmed, snapshot: this.workspaceSnapshot() }
       }
       return result
-    } finally { releaseSend?.() }
+    } finally {
+      releaseSend?.()
+      if (inspectAfter) this.inspectAfterSend(thread.id)
+    }
   }
   private requireCreation(provider?: ProviderId): void {
     const status = this.state.snapshot.providers?.find(item => item.id === provider)
