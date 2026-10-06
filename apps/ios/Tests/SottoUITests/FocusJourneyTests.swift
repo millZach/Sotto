@@ -252,7 +252,31 @@ import XCTest
         capture("new-thread-conversation-dark")
     }
 
-    func testCreateThreadByBrowsingANewFolder() {
+    func testCreateThreadByBrowsingANewFolder() { browseANewFolder() }
+    /// The same journey with every looping animation stopped, to tell whether a running loop keeps Return from closing
+    /// the folder filter's keyboard.
+    func testCreateThreadByBrowsingANewFolderWithoutLoops() {
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-still"])
+        browseANewFolder()
+    }
+    /// Return closes search's keyboard on Threads, with the page's loops running and with them stopped.
+    func testSearchClosesOnReturn() { searchReturns() }
+    func testSearchClosesOnReturnWithoutLoops() {
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-still"])
+        searchReturns()
+    }
+    private func searchReturns() {
+        let search = app.textFields["thread-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
+        search.typeText("Sim")
+        search.typeText("\n")
+        XCTAssertTrue(waitUntilGone(keyboard), "Return closes search's keyboard")
+    }
+
+    private func browseANewFolder() {
         app.tabBars.buttons["Settings"].tap()
         app.buttons["setting-light"].tap()
         app.tabBars.buttons["Threads"].tap()
