@@ -31,6 +31,25 @@ Inspected captures:
 - [Genuine uncertainty at the minimum size, dark](../../artifacts/forge-question-ack/form-unconfirmed-820-dark.png): the answer remains readable and recoverable.
 - [Delayed confirmation after reconnect](../../artifacts/forge-question-ack/late-receipt-cleared.png): the mounted warning clears without navigating away or waiting for another provider update.
 
+## Interactive follow-up, 6 October 2026
+
+At the user's request, the committed build at `56fe5e16` received a separate screenshot-guided walkthrough in visible Electron windows. The native Windows computer-use runtime could not initialize: first it reported `apply deny-read ACLs`, then `trusted Node process exited unexpectedly` after reset. The fallback used Playwright mouse coordinates and keyboard input chosen from a fresh screenshot after each action. Fixture setup, receipt delay, socket reconnect and renderer reload used the existing test harness. No answer was submitted through a direct bridge call.
+
+The walkthrough checked four flows at 1280×800, dark appearance and reduced motion:
+
+| Flow | Observed result |
+| --- | --- |
+| Codex fixture, legacy choice | Selecting Coast saved the answer. Send answer showed its sending state, then the question disappeared with no warning. One submission. |
+| Codex fixture, typed answer | Typed a custom answer, used Tab to focus Send answer and Enter to submit. The exact text arrived once and its saved answer cleared. |
+| Claude fixture, delayed receipt | The accepted answer remained visibly unconfirmed while evidence was withheld. After socket reconnect, releasing only the receipt cleared the mounted warning without another click, reload or provider update. One submission. |
+| Grok fixture, genuine uncertainty | The answer and recovery controls remained visible after renderer reload. The saved hold remained and the provider still had one submission. |
+
+There were no renderer page errors. One screenshot session stalled while opening a second test window; restarting that isolated runner and explicitly showing its window before capture restored screenshots. The temporary controller, app windows, profiles and test hosts were closed or removed after verification. Production source was unchanged.
+
+Evidence: [typed answer with keyboard focus on Send](../../artifacts/forge-question-ack/interactive-typed-answer.png), [warning awaiting the delayed receipt](../../artifacts/forge-question-ack/interactive-delayed-warning.png), [warning cleared after the receipt](../../artifacts/forge-question-ack/interactive-delayed-cleared.png), [genuine uncertainty retained after reload](../../artifacts/forge-question-ack/interactive-uncertain-reload.png), and [recorded counts and exact-text check](../../artifacts/forge-question-ack/interactive-summary.json).
+
+These are real desktop and host/socket flows with scripted provider results. They do not establish live Forge or native provider compatibility. The installed laptop app and active Forge host were not changed.
+
 ## Limits and delivery
 
 Both desktop and host need the optional `answer-receipts` capability. Older hosts still accept authorized answers but cannot supply this evidence. Previously saved drafts without a submission identity, and receipts evicted from the host's bounded history of 128 accepted answers, remain recoverable instead of being guessed delivered.
