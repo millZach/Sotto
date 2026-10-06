@@ -8,7 +8,8 @@ export interface CheckpointThread {
   /** A stable opaque native binding token; never renderer-visible. */
   bindingId: string
   userMessageIds: string[]
-  busy: boolean
+  /** Whether thread work or a checkout change is active or pending. Absent when not checked, which counts as busy. */
+  busy?: boolean
   running?: boolean
   rollbackSupported: boolean
   unsupportedReason?: string
@@ -20,7 +21,8 @@ export interface CheckpointDependencies {
   maxBytes?: number
   files: FilesService
   directory: string
-  resolveThread(threadId: string, options?: { mutationHeld: boolean }): Promise<CheckpointThread | null>
+  /** `historyOnly` asks for the thread's identity, history and running state alone, without `busy`. */
+  resolveThread(threadId: string, options?: { mutationHeld?: boolean; historyOnly?: boolean }): Promise<CheckpointThread | null>
   /** Holds the checkout stable while reading a turn snapshot. */
   acquireRead?(threadId: string): Promise<() => void>
   /** Reserves the checkout across native rollback and file restoration, including recovery. */
