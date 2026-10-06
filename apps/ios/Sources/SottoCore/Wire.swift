@@ -33,6 +33,9 @@ public enum JSONValue: Codable, Equatable, Sendable {
 public enum ClientError: Error, LocalizedError, Equatable {
     case invalidHost, invalidProtocol, invalidIdentity, invalidRequest, disconnected, uncertain, connectionTimedOut, readTimedOut, rateLimited, rejected(String)
     case hostNotFound(String), hostUnreachable(String), notASottoHost(String), sottoNotRunning(String), invalidCode
+    /// A computer that keeps this iPhone's pairing refused it for now, in its own words, such as a host with phone
+    /// access off. Unlike `rejected`, the pairing stays and the iPhone keeps trying.
+    case hostRefused(String)
     public var errorDescription: String? {
         switch self {
         case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
@@ -50,6 +53,7 @@ public enum ClientError: Error, LocalizedError, Equatable {
         case .rateLimited: return "Too many connection attempts. Wait a minute and try again."
         case .uncertain: return "Delivery is unconfirmed. Check the thread before sending again."
         case .rejected(let message): return message
+        case .hostRefused(let message): return message
         }
     }
 }
