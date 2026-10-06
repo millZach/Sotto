@@ -1843,14 +1843,18 @@ export class WorkspaceHost implements AgentHost {
     // echo is not in it (#765).
     if (purpose?.afterSend) return this.workspaceSnapshot()
     const creation = this.state.creations.find(item => item.threadId === threadId)
-    // `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
+    const read = await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
+      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
+    // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
+    // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
     const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty }
-    this.accept(await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
-      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId)))
+    this.accept(read)
     // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
     if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot) && sameSnapshot(before.organization, [this.state.projectAliases, this.state.creations])) {
       // `accept` marks the workspace for writing whatever it was handed; nothing changed, so that mark is taken back.
+      // A mark something else left is written in the usual window rather than on the way to the send.
       this.dirty = before.dirty
+      if (this.dirty) this.writeSoon()
       return this.workspaceSnapshot()
     }
     await this.flush(); this.publish(); return this.workspaceSnapshot()

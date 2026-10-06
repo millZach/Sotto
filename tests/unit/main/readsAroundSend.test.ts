@@ -12,6 +12,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
+import type { GitActionProgress } from '../../../src/shared/gitActions'
 import { providerIdSchema, type AgentHostSnapshot, type ProviderId } from '../../../src/shared/agents'
 import { manualSendCoordinator } from '../../fixtures/manualSendCoordinator'
 
@@ -115,6 +116,25 @@ describe('a read before a send', () => {
     expect(snapshot.threads.find(thread => thread.id === id)?.title).toBe('Workshop again')
     expect(seen.published()).toBeGreaterThan(0)
     await vi.waitFor(() => expect(seen.written()).toBeGreaterThan(0))
+  })
+
+  it('still writes what something else marked for writing while it was reading', async () => {
+    const { host, adapter, id } = await composed()
+    await host.refreshThread(id, { beforeSend: true })
+    const seen = await watch(host)
+    // A Git action's progress lands on the thread record while the read is awaited, marked for writing and published
+    // but not written, as `setGitActionProgress` leaves it.
+    const read = adapter.refreshThread.bind(adapter)
+    vi.spyOn(adapter, 'refreshThread').mockImplementation(async (threadId, purpose) => {
+      const snapshot = await read(threadId, purpose)
+      ;(host as unknown as { setGitActionProgress(threadId: string, progress: GitActionProgress): void }).setGitActionProgress(id, {
+        actionId: 'action', action: 'commit', status: 'running', phases: [], phase: null, stage: null, hook: null,
+        startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null })
+      return snapshot
+    })
+    await host.refreshThread(id, { beforeSend: true })
+    await settled(host)
+    expect(seen.written()).toBe(1)
   })
 
   it('is any other read\'s to write and publish as it always did', async () => {
