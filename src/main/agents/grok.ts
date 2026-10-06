@@ -22,7 +22,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { grokActivities } from './grokActivity'
+import { grokActivities, keepStreamedThoughts } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -103,9 +103,11 @@ function assistantKey(id: string, params: z.infer<typeof updateSchema>, userId: 
   return `grok-assistant-${digest(JSON.stringify([id, params._meta?.promptId ?? userId, params._meta?.streamStartMs ?? lastActivityId ?? 'start']))}`
 }
 // A stream's identity is the work that preceded it, as Grok reported it. Sotto's own turn records are
-// not Grok's work, so they must not shift that identity between the live rail and durable history.
+// not Grok's work, so they must not shift that identity between the live rail and durable history. A thought
+// belongs to the stream it opens rather than preceding it, and leaving it out keeps the identities replies
+// had before thoughts were shown.
 const lastReportedId = (rows: readonly AgentActivity[] | undefined): string | undefined =>
-  rows?.filter(row => row.kind !== 'turn').at(-1)?.id
+  rows?.filter(row => row.kind !== 'turn' && row.kind !== 'reasoning').at(-1)?.id
 function messageOrigin(alias: Alias, key: string, text: string, timestampMs: number) {
   const hash = digest(text)
   return alias.origins.find(origin => origin.entryKey === key && origin.digest === hash)
@@ -694,7 +696,7 @@ export class GrokAcpHost implements AgentHost {
           const update = parsed.data.update; const content = object(update.content)
           this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
-          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities))
+          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
@@ -719,7 +721,7 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (!current()) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThoughts(history.activities, thread.activities))
     let status = history.status; let lastTurn = history.lastTurn
     // A turn whose process ended before it finished never records its end in Grok's history, which would
     // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how.
@@ -998,7 +1000,7 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
