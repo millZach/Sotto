@@ -20,8 +20,17 @@ export interface AtomicJsonRecoveryEvent {
   readonly kind: 'corrupt-json-recovered'
 }
 
+/**
+ * How a store lays its JSON out. `pretty` indents it for a person reading the file; `compact` is for the large
+ * stores rewritten around a send and while a reply streams, where indentation only adds bytes to serialize and
+ * write. Every reader parses either.
+ */
+export type AtomicJsonFormat = 'pretty' | 'compact'
+
 export class AtomicJsonStore<T> {
   private operationTail: Promise<void> = Promise.resolve()
+  /** The `writeLatest` write that is queued and has not started yet, which later calls share. */
+  private queuedLatest: Promise<void> | undefined
 
   constructor(
     private readonly filePath: string,
@@ -30,6 +39,7 @@ export class AtomicJsonStore<T> {
     private readonly now: () => number = Date.now,
     private readonly createId: () => string = randomUUID,
     private readonly onRecovery?: (event: AtomicJsonRecoveryEvent) => void,
+    private readonly format: AtomicJsonFormat = 'pretty',
   ) {}
 
   read(): Promise<T> {
@@ -40,8 +50,45 @@ export class AtomicJsonStore<T> {
     return this.enqueueOperation(() => this.readInternal(false))
   }
 
+  /**
+   * Writes `value` as it is now: it is serialized before this returns, so the caller may change it at once
+   * and need not hand over a copy.
+   */
   write(value: T): Promise<void> {
-    return this.enqueueOperation(() => this.writeImmediately(value))
+    let serialized: string
+    try { serialized = this.serialize(value) } catch (error) { return Promise.reject(error) }
+    return this.enqueueOperation(() => this.writeImmediately(serialized))
+  }
+
+  /**
+   * Writes JSON the caller already serialized from a `T`, as it is. A caller that compares serialized states to
+   * decide whether to write at all hands that same text here rather than serializing it twice.
+   */
+  writeSerialized(serialized: string): Promise<void> {
+    return this.enqueueOperation(() => this.writeImmediately(serialized))
+  }
+
+  /**
+   * Writes whatever `latest` returns when the write starts, sharing one write among every call made before it
+   * does. A call made while a write is running queues one more, so the file always ends at a state no older than
+   * the newest call, and a burst of calls costs at most the write in flight and one more.
+   */
+  writeLatest(latest: () => T): Promise<void> {
+    if (this.queuedLatest) return this.queuedLatest
+    const queued = this.enqueueOperation(async () => {
+      if (this.queuedLatest === queued) this.queuedLatest = undefined
+      await this.writeImmediately(this.serialize(latest()))
+    })
+    this.queuedLatest = queued
+    return queued
+  }
+
+  /**
+   * Runs `operation` in this store's queue, after every read and write before it and before any after it. A
+   * companion file that must be ordered against this one's writes uses it.
+   */
+  exclusive<Result>(operation: () => Promise<Result>): Promise<Result> {
+    return this.enqueueOperation(operation)
   }
 
   exists(): Promise<boolean> {
@@ -86,7 +133,11 @@ export class AtomicJsonStore<T> {
     }
   }
 
-  private async writeImmediately(value: T): Promise<void> {
+  private serialize(value: T): string {
+    return this.format === 'compact' ? JSON.stringify(value) : JSON.stringify(value, null, 2)
+  }
+
+  private async writeImmediately(serialized: string): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true })
 
     let temporaryPath: string | undefined
@@ -96,7 +147,7 @@ export class AtomicJsonStore<T> {
       const temporaryFile = await this.openUniqueTemporaryFile()
       temporaryPath = temporaryFile.path
       handle = temporaryFile.handle
-      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
+      await handle.writeFile(`${serialized}\n`, 'utf8')
       await handle.sync()
       await handle.close()
       handle = undefined
