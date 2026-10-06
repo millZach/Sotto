@@ -1253,6 +1253,25 @@ describe('admin connections and Forget (ADR-0053)', () => {
       } finally { phones.close() }
     })
 
+    it('opens the next admin connection without Forget’s boot removal once the user stops Forget’s sign-in', async () => {
+      const remote = await add()
+      offSsh(remote.id)
+      askOnConnect = 'passphrase'
+      const forgetting = manager.command({ type: 'forget', id: remote.id })
+      await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ adminSignIn: true, prompt: { id: 'prompt-1' } }), { timeout: 20_000 })
+      await manager.command({ type: 'stop-admin-sign-in', id: remote.id })
+      expect((await forgetting).hosts).toEqual([expect.objectContaining({ id: remote.id })])
+      await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ phase: 'connected' }), { timeout: 20_000 })
+      offSsh(remote.id)
+      const signIns = launchers.length
+      updateHost = async () => ({ type: 'update-fetched', file: 'Sotto-host-0.1.31-linux-x64.tar.gz', sha256: 'a'.repeat(64) })
+      await manager.runUpdate(remote.id, { op: 'update-fetch', version: packageVersion, releasesUrl: 'https://releases.example/download' })
+      // A connection of its own, which would take a stopped host's boot unit away only for a Forget.
+      expect(launchers).toHaveLength(signIns + 1)
+      expect(launchers.at(-1)!.options).toEqual({ start: false })
+      expect(operations).toEqual(['admin update-fetch'])
+    })
+
     it('says an update’s restart never went when the admin connection cannot open, and keeps the threads as they were', async () => {
       const remote = await add()
       const thread = await remoteThread()

@@ -521,7 +521,9 @@ export class DesktopHosts {
         if (connection.owned) stopFailed = !(await this.stopOwnedHost(connection))
       }, { removeBoot: true })
     } catch (error) {
-      if (error instanceof SignInStopped) return this.keepAfterForget(host, active)
+      // Forget's admin connection goes with its stopped sign-in: it signs in to take a stopped host's boot unit away, and
+      // the next press, which wants no such thing, opens one of its own.
+      if (error instanceof SignInStopped) { await this.admins.close(host.id); return this.keepAfterForget(host, active) }
       cause = error instanceof SshFailure && error.code === 'host-not-running' ? 'not-running' : 'unreachable'
     }
     if (stopFailed) { await this.disconnect(host.id); throw new Error(this.notStopped(host)) }
