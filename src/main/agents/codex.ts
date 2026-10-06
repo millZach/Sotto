@@ -218,7 +218,9 @@ export class CodexAppServerHost implements AgentHost {
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'codex')
-    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}))
+    // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
+    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), aliasesSchema.parse, () => ({}),
+      undefined, undefined, undefined, 'compact')
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
@@ -695,8 +697,12 @@ export class CodexAppServerHost implements AgentHost {
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
+  /**
+   * Writes every thread's record as it is when the write starts. Calls made before a queued write starts share it,
+   * so a stream of frames costs the write in flight and one more, and each call is durable when its promise is.
+   */
   private persist(): Promise<void> {
-    this.writing = this.aliasStore.write(structuredClone(this.aliases))
+    this.writing = this.aliasStore.writeLatest(() => this.aliases)
     return this.writing
   }
   async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
@@ -1491,9 +1497,12 @@ export class CodexAppServerHost implements AgentHost {
       }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(heldKey(server, params.requestId))
-    if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') await this.persist()
     this.emit(frame.method !== 'turn/started' && frame.method !== 'turn/completed'
       && frame.method !== 'error' && frame.method !== 'serverRequest/resolved')
+    // Saved after the frame's effect is shown, and never waited for here: the next frame is not held behind a
+    // rewrite of every thread's record. The saves share one write while one is running. What makes a send safe
+    // was saved before `turn/start` (its origin); this keeps the identities and turn states that follow it.
+    if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') void this.persist().catch(() => undefined)
   }
   /**
    * Send a request to the app-server it belongs to: `target` when given, else the thread's own for a request
