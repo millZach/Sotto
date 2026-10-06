@@ -16,7 +16,7 @@ export interface AcpThinking {
 }
 
 /** Where a thought chunk goes. `key` is what the provider's stream names the thought by, when it names one. */
-export interface ThoughtPlace {
+interface ThoughtPlace {
   readonly turnId: string
   readonly afterMessageId?: string | undefined
   readonly key?: string | undefined

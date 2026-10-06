@@ -13,7 +13,7 @@ const MAX_REMEMBERED = 64
  * Where a Thinking row sits and when it started: its turn, the message before it, its parent agent and its clock.
  * It is fixed when the block starts, so a block settled later stays on the turn it belongs to.
  */
-export type ThinkingPlace = Pick<AgentActivity, 'turnId' | 'sequence' | 'afterMessageId' | 'startedAt' | 'timingSource' | 'parentId'>
+type ThinkingPlace = Pick<AgentActivity, 'turnId' | 'sequence' | 'afterMessageId' | 'startedAt' | 'timingSource' | 'parentId'>
 
 /** A Thinking row. Thinking is the model's own, so it names no folder. */
 export function claudeThinkingRow(place: ThinkingPlace, id: string, status: AgentActivity['status'], words: string, extra: Partial<AgentActivity> = {}): AgentActivity {
