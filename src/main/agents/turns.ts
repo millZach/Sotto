@@ -4,6 +4,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentVoiceTiming } from '../../shared/agents'
+import { NO_SEND_STAGES, type SendStageClock } from './sendStages'
+
+/** A send's stage duration (`SendStageTimings`): absent from older records and from every turn that sent nothing. */
+const stageMs = z.number().int().nonnegative().nullable().default(null)
 
 export const turnRecordSchema = z.object({
   id: z.string(),
@@ -26,6 +30,12 @@ export const turnRecordSchema = z.object({
     retrievalMs: z.number().int().nonnegative(),
     delegationMs: z.number().int().nonnegative(),
     totalMs: z.number().int().nonnegative(),
+    admissionMs: stageMs,
+    readBeforeSendMs: stageMs,
+    preparationMs: stageMs,
+    adapterMs: stageMs,
+    acknowledgementMs: stageMs,
+    firstOutputMs: stageMs,
   }),
   retrievedMemoryIds: z.array(z.string()),
   contextTokenEstimate: z.number().int().nonnegative(),
@@ -48,6 +58,8 @@ export interface ActiveTurn {
   retrievalMs: number
   retrievedMemoryIds: string[]
   delegationMs: number
+  /** A send's stopwatch, from Send to the reply's first output. Only turns that send a prompt carry one. */
+  stages?: SendStageClock
   contextTokenEstimate: number
   contextCharacters: number
   threadId: string | null | undefined
@@ -136,10 +148,18 @@ export class TurnRecorder {
     }
   }
 
+  /**
+   * Append the turn's record. A send whose client confirmed the prompt is written once the reply's first output
+   * arrives, or once watching for it stops (`SendStageClock.firstOutput`); its finish time is still when it finished.
+   */
   async finish(turn: ActiveTurn | undefined, outcome: TurnRecord['outcome']): Promise<void> {
     if (!turn) return
     try {
       const finishedAtMs = Date.now()
+      if (turn.stages) {
+        if (outcome === 'failed') turn.stages.close()
+        await turn.stages.firstOutput()
+      }
       const threadId = turn.threadId ?? null
       const record: TurnRecord = {
         id: randomUUID(),
@@ -162,6 +182,7 @@ export class TurnRecorder {
           retrievalMs: turn.retrievalMs,
           delegationMs: turn.delegationMs,
           totalMs: Math.max(1, finishedAtMs - turn.startedAtMs),
+          ...(turn.stages?.durations() ?? NO_SEND_STAGES),
         },
         retrievedMemoryIds: turn.retrievedMemoryIds,
         contextTokenEstimate: turn.contextTokenEstimate,

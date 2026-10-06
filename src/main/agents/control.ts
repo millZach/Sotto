@@ -23,6 +23,7 @@ import { desktopWindowClient, supervisionClient, type ClientIdentity } from './h
 import type { AgentHost, AgentHostCommand, PromptImage, ThreadReadPurpose } from './host'
 import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
+import { firstOutputBaseline, lendSendStages, SendStageClock, showsFirstOutput, type FirstOutputBaseline } from './sendStages'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
@@ -273,6 +274,10 @@ export class AgentControl {
   private finishedUnread = new FinishedUnread()
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
   private readonly feedbackReady = new Set<ActiveTurn>()
+  /** Per thread, the send whose reply's first output the coordinator is watching for, and what the thread showed before it. */
+  private readonly firstOutputWatches = new Map<string, { clock: SendStageClock; baseline: FirstOutputBaseline; sawRunning: boolean }>()
+  /** Turn records waiting for their send's first output; closing waits for them. */
+  private readonly turnRecordings = new Set<Promise<void>>()
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
@@ -1709,6 +1714,8 @@ export class AgentControl {
           text: command.type === 'utterance' ? command.text
             : (command.type === 'manual-send' || command.type === 'steer') ? command.text : command.type === 'send' ? this.state.draft : command.type === 'answer' ? command.answer : '',
         }) : undefined
+      // A typed send is timed from the moment it was received, before its admission write and its lane.
+      if (turn && command.type === 'manual-send') turn.stages = new SendStageClock(receivedAt)
       let failure: string | undefined
       let unconfirmedAnswer: AnswerDeliveryUnconfirmed | undefined
       try {
@@ -1858,6 +1865,7 @@ export class AgentControl {
         if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
         let claimed = false
         const turn = this.beginTurn({ source: 'command', commandType: 'manual-send', text: first.text })
+        if (turn) turn.stages = new SendStageClock(performance.now())
         let failure: string | undefined
         try {
           this.canAct(threadId)
@@ -2002,8 +2010,34 @@ export class AgentControl {
   private async finishTurn(turn: ActiveTurn | undefined, error?: string): Promise<void> {
     if (!turn) return
     try {
-      await this.dependencies.turns?.finish(turn, error !== undefined ? 'failed' : turn.clarified ? 'clarified' : 'completed')
+      const recording = this.dependencies.turns?.finish(turn, error !== undefined ? 'failed' : turn.clarified ? 'clarified' : 'completed')
+      // A send's record waits for the reply's first output (`TurnRecorder.finish`); the command does not wait for it.
+      if (recording && turn.stages?.awaitsFirstOutput()) {
+        const tracked: Promise<void> = recording.catch(() => undefined).finally(() => { this.turnRecordings.delete(tracked) })
+        this.turnRecordings.add(tracked)
+        return
+      }
+      await recording
     } catch { /* recording must never throw into the command path */ }
+  }
+  /** Watch the thread for the first output of the reply to the send `clock` times. */
+  private watchFirstOutput(threadId: string, clock: SendStageClock): void {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    const watch = { clock, baseline: firstOutputBaseline(thread), sawRunning: false }
+    this.firstOutputWatches.get(threadId)?.clock.close()
+    this.firstOutputWatches.set(threadId, watch)
+    clock.onClosed(() => { if (this.firstOutputWatches.get(threadId) === watch) this.firstOutputWatches.delete(threadId) })
+  }
+  private observeFirstOutput(snapshot: AgentHostSnapshot): void {
+    for (const [threadId, watch] of [...this.firstOutputWatches]) {
+      const thread = snapshot.threads.find(item => item.id === threadId)
+      if (!thread) continue
+      if (showsFirstOutput(thread, watch.baseline)) { watch.clock.mark('firstOutput'); continue }
+      const running = thread.status === 'running' || thread.lastTurn?.status === 'running'
+      watch.sawRunning ||= running
+      // The reply's turn ended having shown nothing, so there is no first output to wait for.
+      if (watch.sawRunning && !running && watch.clock.has('acknowledged')) watch.clock.close()
+    }
   }
   private async navigate(threadId: string): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: 'select-thread', text: '' })
@@ -2639,6 +2673,10 @@ export class AgentControl {
     let result
     if (prompt) addTurnContext(turn, prompt.text)
     else if (command.type === 'answer') addTurnContext(turn, command.answer)
+    // A prompt sent as a new turn is timed step by step down to its reply's first output; a steer joins a running turn.
+    if (turn && prompt && command.type === 'send') turn.stages ??= new SendStageClock()
+    const stages = turn?.stages && prompt && command.type === 'send' && !turn.stages.has('dispatched') ? turn.stages : undefined
+    let returnStages: (() => void) | undefined
     let providerLatencyMs: number | undefined
     let previewAttachments: AgentAttachmentHandle[] = []
     try {
@@ -2661,12 +2699,18 @@ export class AgentControl {
         ? { ...prompt, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
       try {
         this.canAct(undefined, draftKept)
+        if (stages && prompt) { stages.mark('dispatched'); this.watchFirstOutput(prompt.threadId, stages); returnStages = lendSendStages(command.commandId, stages) }
         result = await this.dependencies.host.execute(hostCommand).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
           throw error
         })
       }
-      finally { providerLatencyMs = Math.max(0, Date.now() - providerStartedAt) }
+      finally {
+        providerLatencyMs = Math.max(0, Date.now() - providerStartedAt)
+        returnStages?.()
+        // A prompt the provider did not take has no reply to watch for.
+        if (!result?.accepted) stages?.close()
+      }
     } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if (prompt && draftId) this.setDelivery(prompt.threadId, draftId, 'failed')
@@ -2786,7 +2830,10 @@ export class AgentControl {
     }
     this.canAct()
     this.observe(threadId)
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true }))
+    const readStartedAt = performance.now()
+    const read = await this.readThread(threadId, undefined, { beforeSend: true })
+    turn?.stages?.addRead(performance.now() - readStartedAt)
+    this.acceptSnapshot(read)
     const validate = (): void => {
       this.canAct()
       const latest = this.thread(threadId)
@@ -3013,6 +3060,7 @@ export class AgentControl {
 
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return
+    if (this.firstOutputWatches.size) this.observeFirstOutput(incoming)
     const connecting = this.state.connection === 'connecting'
     // Sotto's own requests join the provider's before anything below reads the threads, so the attention queue
     // takes and keeps them the same way (ADR-0035).
@@ -3321,9 +3369,12 @@ export class AgentControl {
   async closed(): Promise<void> {
     await Promise.allSettled([...this.activeCommands, this.serial, ...this.threadActions.values(), ...this.titleWrites])
     await this.persist(true)
+    await Promise.allSettled([...this.turnRecordings])
   }
   dispose(): void {
     this.disposed = true
+    // A send's record waiting for its reply is written now, without a first output.
+    for (const { clock } of [...this.firstOutputWatches.values()]) clock.close()
     // A held broadcast dies with the control: its listeners are going away, and a run that
     // escapes the cancel still finds `disposed` and does nothing.
     this.broadcastCancel?.()
