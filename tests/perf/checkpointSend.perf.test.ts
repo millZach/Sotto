@@ -14,7 +14,8 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
  * this work started from; "after" is the working tree. Each run is a fresh process that sends `SENDS` turns into
  * one working copy and times the checkpoint taken before each send and the one taken when its turn completes.
  * The copies: a synthetic one under the limits, a synthetic one over them (once more with a saved checkpoint file
- * the size of the development machine's, and once with a commit each turn, which turns a held verdict around), a folder Git does not know, and this repository's own checkout
+ * the size of the development machine's, once with a long history of completed checkpoints, and once with a commit
+ * each turn, which turns a held verdict around), a folder Git does not know, and this repository's own checkout
  * (`SOTTO_PERF_CHECKPOINT_REPO` names another). `SOTTO_PERF_CHECKPOINT_ONLY` runs the copies whose names contain it.
  */
 const BASE = process.env.SOTTO_PERF_CHECKPOINT_BASE ?? 'e8a82a034c42cc3eb9b8fb3c711726353192ade9'
@@ -27,7 +28,7 @@ interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeRe
 describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
   let root: string
   const bundles: Record<string, string> = {}
-  const copies: Record<string, { path: string; mode: 'unchanged' | 'edit' | 'commit'; seeded?: boolean }> = {}
+  const copies: Record<string, { path: string; mode: 'unchanged' | 'edit' | 'commit'; seeded?: 'seeded' | 'history' }> = {}
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-send-'))
     for (const label of ['before', 'after']) {
@@ -60,7 +61,8 @@ describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
     copies['under the limits, unchanged'] = { path: await synthetic('under', 2_000, 4 * 1024), mode: 'unchanged' }
     copies['under the limits, one file edited a turn'] = { path: copies['under the limits, unchanged']!.path, mode: 'edit' }
     copies['over the limits'] = { path: await synthetic('over', 3_000, 32 * 1024), mode: 'unchanged' }
-    copies['over the limits, 1.5 MB of saved checkpoints'] = { path: copies['over the limits']!.path, mode: 'unchanged', seeded: true }
+    copies['over the limits, 1.5 MB of saved checkpoints'] = { path: copies['over the limits']!.path, mode: 'unchanged', seeded: 'seeded' }
+    copies['over the limits, 40 saved checkpoints of 2,000 files'] = { path: copies['over the limits']!.path, mode: 'unchanged', seeded: 'history' }
     // Its own copy, since each turn commits to it.
     copies['over the limits, a commit each turn'] = { path: await synthetic('over-committed', 3_000, 32 * 1024), mode: 'commit' }
     copies['not a Git repository'] = { path: await synthetic('plain', 200, 1024, false), mode: 'unchanged' }
@@ -76,7 +78,7 @@ describe.skipIf(!PERF_BENCH)('the checkpoint step of a send', () => {
       const runs: Record<string, Row[][]> = { before: [], after: [] }
       for (let run = 0; run < RUNS; run++) {
         for (const label of run % 2 ? ['after', 'before'] : ['before', 'after']) {
-          const { stdout } = await exec(process.execPath, [bundles[label]!, copy.path, String(SENDS), copy.mode, copy.seeded ? 'seeded' : ''], { maxBuffer: 16 * 1024 * 1024 })
+          const { stdout } = await exec(process.execPath, [bundles[label]!, copy.path, String(SENDS), copy.mode, copy.seeded ?? ''], { maxBuffer: 16 * 1024 * 1024 })
           runs[label]!.push((JSON.parse(stdout.trim()) as { rows: Row[] }).rows)
         }
       }

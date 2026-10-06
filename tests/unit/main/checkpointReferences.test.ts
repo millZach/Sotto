@@ -15,7 +15,7 @@ const record = (before: Snapshot, after?: Snapshot): CheckpointRecord => ({ id: 
 
 describe('checkpoint backup references', () => {
   it('lists only the files of records added or given a new snapshot since the last count', () => {
-    const references = new CheckpointReferences()
+    const references = new CheckpointReferences(() => 1)
     const saved = Array.from({ length: 40 }, (_, n) => record(snapshot(n, 1000), snapshot(n, 1001)))
     references.sync(saved)
     expect(listed).toBe(80)
@@ -30,15 +30,19 @@ describe('checkpoint backup references', () => {
     expect(references.has(hash(5001))).toBe(true)
   })
 
-  it('counts a backup until no kept record refers to it', () => {
-    const references = new CheckpointReferences()
+  it('counts a backup and its bytes until no kept record refers to it', () => {
+    const sizes = new Map([1, 2, 3, 4].map(n => [hash(n), n * 100]))
+    const references = new CheckpointReferences(key => sizes.get(key) ?? 0)
     const first = record(snapshot(1, 2), snapshot(2, 3)), second = record(snapshot(3, 4))
     references.sync([first, second])
-    expect([...references.hashes()].sort()).toEqual([1, 2, 3, 4].map(hash))
-    expect(references.remove(first.id)).toEqual([1, 2].map(hash))
-    expect(references.has(hash(3))).toBe(true)
+    expect(references.bytes).toBe(1_000)
+    references.remove(first.id)
+    expect([1, 2, 3, 4].map(n => references.has(hash(n)))).toEqual([false, false, true, true])
+    expect(references.bytes).toBe(700)
+    // A size learned after a backup was counted does not change what releasing it takes off.
+    sizes.set(hash(3), 9_999)
     references.sync([])
-    expect([...references.hashes()]).toEqual([])
-    expect(references.remove(second.id)).toEqual([])
+    expect(references.bytes).toBe(0)
+    expect([3, 4].map(n => references.has(hash(n)))).toEqual([false, false])
   })
 })

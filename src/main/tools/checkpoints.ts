@@ -31,7 +31,7 @@ export class CheckpointService extends ToolOperations {
   private readonly maintenance: ReturnType<typeof setInterval>
   private readonly locks = new Set<string>()
   private readonly capture: CheckpointCapture
-  private readonly references = new CheckpointReferences()
+  private readonly references = new CheckpointReferences(hash => this.blobSizes.get(hash) ?? 0)
   constructor(private readonly dependencies: CheckpointDependencies) {
     super()
     this.store = new CheckpointStore(dependencies.directory, event => dependencies.report?.(event))
@@ -98,8 +98,7 @@ export class CheckpointService extends ToolOperations {
     // Only records added or changed since the last save are counted again, so a send's save does not scan every
     // saved checkpoint's files. The stored size comes from each record's own: a journal save measures only its own.
     this.references.sync(this.records.values())
-    let total = this.store.measure([...this.records.values()], changed)
-    for (const hash of this.references.hashes()) total += this.blobSizes.get(hash) ?? 0
+    let total = this.store.measure([...this.records.values()], changed) + this.references.bytes
     const backupNames = (await readdir(this.dependencies.directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return [] })).filter(name => name.startsWith('checkpoints.json.corrupt-'))
     const backups = new Map<string, { size: number; createdAt: number }>()
     const removedBackups = new Set<string>()
@@ -117,8 +116,9 @@ export class CheckpointService extends ToolOperations {
       if (total <= (this.dependencies.maxBytes ?? 500_000_000)) break
       if (item.recordId) {
         this.records.delete(item.recordId); removed = true
-        total -= this.store.sizeOf(item.recordId)
-        for (const hash of this.references.remove(item.recordId)) total -= this.blobSizes.get(hash) ?? 0
+        const referenced = this.references.bytes
+        this.references.remove(item.recordId)
+        total -= this.store.sizeOf(item.recordId) + referenced - this.references.bytes
       }
       if (item.backup) { total -= backups.get(item.backup)!.size; backups.delete(item.backup); removedBackups.add(item.backup) }
     }

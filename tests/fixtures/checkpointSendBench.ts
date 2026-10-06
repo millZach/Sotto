@@ -2,11 +2,12 @@
  * One process of `tests/perf/checkpointSend.perf.test.ts`: takes a thread's checkpoints across several sends into
  * one working copy, the way the send hook and the completed-turn hook do, and prints what each cost as JSON.
  *
- * Usage: node <bundle> <working copy> <sends> <unchanged|edit|commit> [seeded]
+ * Usage: node <bundle> <working copy> <sends> <unchanged|edit|commit> [seeded|history]
  * Under `edit`, each turn rewrites one file, `bench-edit.txt`, which the benchmark adds to its own synthetic copies.
  * Under `commit`, each turn ends with an empty commit, which moves `HEAD` and so turns any held verdict around.
  * `seeded` starts from a synthetic `checkpoints.json` of about 1.5 MB: 1,000 unavailable checkpoints and five
- * completed ones of 1,000 files each, the shape and size of the file on the development machine.
+ * completed ones of 1,000 files each, the shape and size of the file on the development machine. `history` starts
+ * from 40 completed checkpoints of 2,000 files before and after, every file's backup a different one: a long history.
  */
 import fs from 'node:fs'
 import childProcess, { execFileSync } from 'node:child_process'
@@ -41,13 +42,14 @@ childProcess.execFile = ((...args: Parameters<typeof execFile>) => {
 syncBuiltinESMExports()
 
 const directory = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-bench-'))
-if (seeded === 'seeded') {
+if (seeded === 'seeded' || seeded === 'history') {
   const createdAt = new Date().toISOString(), empty = { files: {}, index: '', head: '' }
   const base = { threadId: 'seed', workspaceId: 'f'.repeat(64), cwd: join(directory, 'seed'), checkout: join(directory, 'seed'), providerId: 'codex', bindingId: 'codex:seed', createdAt, beforeUsers: [] }
-  const files = (salt: string) => Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => [`area-${index % 40}/file-${index}.txt`, { hash: (salt + index.toString(16)).padStart(64, '0'), mode: 33206 }]))
-  const records = [
+  const files = (salt: string, count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`area-${index % 40}/file-${index}.txt`, { hash: (salt + index.toString(16)).padStart(64, '0'), mode: 33206 }]))
+  const completed = (salt: string, count: number) => ({ ...base, id: randomUUID(), before: { files: files(`${salt}a`, count), index: '', head: '' }, after: { files: files(`${salt}b`, count), index: '', head: '' }, afterUsers: ['seed-user'], status: 'ready' })
+  const records = seeded === 'history' ? Array.from({ length: 40 }, (_, index) => completed(index.toString(16).padStart(2, '0'), 2_000)) : [
     ...Array.from({ length: 1_000 }, () => ({ ...base, id: randomUUID(), before: empty, status: 'unavailable', reason: 'This working copy exceeds the checkpoint size limit (64 MiB total, 8 MiB per file).' })),
-    ...Array.from({ length: 5 }, () => ({ ...base, id: randomUUID(), before: { files: files('a'), index: '', head: '' }, after: { files: files('b'), index: '', head: '' }, afterUsers: ['seed-user'], status: 'ready' })),
+    ...Array.from({ length: 5 }, () => completed('', 1_000)),
   ]
   await mkdir(directory, { recursive: true })
   await writeFile(join(directory, 'checkpoints.json'), `${JSON.stringify({ version: 1, records }, null, 2)}\n`)
