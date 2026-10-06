@@ -210,7 +210,6 @@ export class CheckpointService extends ToolOperations {
     const cutoff = (this.dependencies.now?.() ?? Date.now()) - 30 * 24 * 60 * 60 * 1000
     let removed = false
     for (const record of this.records.values()) if (!this.unresolved(record) && (this.dependencies.historyEnabled?.() === false || Date.parse(record.createdAt) < cutoff)) { this.records.delete(record.id); removed = true }
-    if (this.dependencies.historyEnabled?.() === false) this.capture.forget()
     const directory = join(this.dependencies.directory, 'blobs')
     const blobInfo = await lstat(directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
     const safeDirectory = blobInfo?.isDirectory() && !blobInfo.isSymbolicLink()
@@ -293,7 +292,13 @@ export class CheckpointService extends ToolOperations {
       if (mentionsThread) await this.removeBackup(path)
     }
   }) }
-  async privacyChanged(): Promise<void> { return this.serial(async () => { await this.load(); await this.save() }) }
+  async privacyChanged(): Promise<void> { return this.serial(async () => { await this.load(); this.forgetFoldersWithoutHistory(); await this.save() }) }
+  /** With Keep local history off, nothing about a working folder is kept either: its remembered files and verdict. */
+  private forgetFoldersWithoutHistory(): boolean {
+    if (this.dependencies.historyEnabled?.() !== false) return false
+    this.capture.forget()
+    return true
+  }
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.tail.then(operation, operation)
     this.tail = next.catch(() => undefined)
@@ -357,7 +362,7 @@ export class CheckpointService extends ToolOperations {
     return this.serial(async () => {
     await this.load()
     if (await this.isWorkspaceBlocked(threadId)) return fail('blocked', 'Resolve the interrupted checkpoint revert before sending more work.')
-    if (this.dependencies.historyEnabled?.() === false) { await this.save(); return }
+    if (this.forgetFoldersWithoutHistory()) { await this.save(); return }
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })
     if (!thread) return
     const pending = [...this.records.values()].find(record => record.threadId === threadId && record.status === 'capturing')
@@ -390,7 +395,7 @@ export class CheckpointService extends ToolOperations {
   }) }
   async afterTurn(threadId: string): Promise<void> { return this.serial(async () => {
     await this.load()
-    if (this.dependencies.historyEnabled?.() === false) { await this.save(); return }
+    if (this.forgetFoldersWithoutHistory()) { await this.save(); return }
     const record = [...this.records.values()].find(record => record.threadId === threadId && record.status === 'capturing')
     if (!record) return
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })

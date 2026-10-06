@@ -71,6 +71,27 @@ describe('what a send pays for its checkpoint', () => {
     for (const checkpoint of checkpoints) expect(checkpoint).toMatchObject({ status: 'unavailable', reason: 'This working copy exceeds the checkpoint size limit (64 MiB total, 8 MiB per file).' })
   })
 
+  it.each([
+    ['Keep local history is turned off', (service: CheckpointService) => service.privacyChanged()],
+    ['a send finds Keep local history off', (service: CheckpointService) => service.beforeTurn('thread-a')],
+  ])('forgets what it held about a working copy when %s', async (_name, notice) => {
+    const f = await fixture({ 'app.txt': 'before\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) })
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000)
+    let enabled = true
+    f.dependencies.historyEnabled = () => enabled
+    await f.service.initialize()
+    await f.turn(f.service)
+    const commands = vi.spyOn(f.service as unknown as { git(cwd: string, args: string[]): Promise<string> }, 'git')
+    await f.turn(f.service)
+    expect(commands).not.toHaveBeenCalled()
+    enabled = false
+    await notice(f.service)
+    enabled = true
+    await f.turn(f.service)
+    // The verdict went with history, so the working copy is listed again.
+    expect(commands).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['ls-files']))
+  })
+
   it('reads no file contents for a send into a working copy unchanged since its last snapshot', async () => {
     const f = await fixture()
     // Every file is older than the snapshots, so none is too recent to trust.

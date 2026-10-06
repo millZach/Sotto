@@ -176,6 +176,21 @@ describe('checkpoint capture', () => {
     }
   })
 
+  it('forgets every folder\'s verdict and remembered files', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) } })
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    await rm(join(f.repo, 'big.bin'))
+    await f.capture.snapshot(f.repo, { reuse: true })
+    await writeFile(join(f.repo, 'big.bin'), Buffer.alloc(8 * 1024 * 1024 + 1))
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    expect(await f.capture.heldVerdict(f.repo)).toMatch('size limit')
+    f.capture.forget()
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    await rm(join(f.repo, 'big.bin')); f.reads.mockClear()
+    await f.capture.snapshot(f.repo, { reuse: true })
+    expect(f.readsInRepo()).toEqual([join(f.repo, 'a.txt')])
+  })
+
   it('does not hold a verdict for a failure that may pass, such as a file that could not be read', async () => {
     const f = await fixture()
     vi.spyOn(fsPromises, 'readFile').mockImplementationOnce((...args) => typeof args[0] === 'string' && args[0].startsWith(f.repo)
