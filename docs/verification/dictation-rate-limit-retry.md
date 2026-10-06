@@ -32,4 +32,5 @@ The widget's own light and dark captures are the `kept` and `error` baselines in
 ## Not verified here
 
 - A real Azure burst against the new retry. None came during the ten-minute watch, so the one-, two- and four-second backoff is covered by `tests/unit/main/openRouterTranscriptionService.test.ts` rather than seen live. The diagnostics file now records each request that went through after a rate limit, marked `recovered`, so the owner's next bad window will show whether the waits are long enough.
+- Cancelling a Try again while it runs, including during cleanup, and a main-window reload clearing the widget are covered by `tests/unit/renderer/dictationController.test.ts` and `tests/unit/renderer/app.test.tsx`, not by the built app.
 - macOS. The change is renderer and main-process code with no platform branch.
