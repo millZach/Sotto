@@ -15,7 +15,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, StoredMessageIdentity, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -1241,12 +1241,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
    */
   private seedHistory(id: string, alias: Alias, restored: RestoredThreadHistory | undefined): void {
     const cursor = alias.transcriptCursor
-    if (!cursor || cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; return }
     const matching = restored?.historyEpoch === alias.historyEpoch ? restored : undefined
-    const stored = matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
+    const stored = (): readonly (StoredMessageIdentity | AgentMessage)[] => matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
+    if (!cursor) {
+      // No read of the transcript was recorded, as when Sotto stopped after a first send and before any read
+      // reached its echo. The transcript is read from the first byte, and what the store already holds, which the
+      // stream recorded, is not said a second time (#765).
+      this.messageLog.seed(id, stored())
+      return
+    }
+    if (cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; return }
     const activities = matching?.activities ?? this.history?.activities?.(id, alias.historyEpoch)
-    if (!stored.length || activities === undefined) { delete alias.transcriptCursor; return }
-    this.messageLog.seed(id, stored)
+    const held = stored()
+    if (!held.length || activities === undefined) { delete alias.transcriptCursor; return }
+    this.messageLog.seed(id, held)
     this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
     // A later block of an assistant message already projected must add to its text, not replace it.
     for (const message of matching?.messages ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
