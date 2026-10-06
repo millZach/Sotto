@@ -92,8 +92,8 @@ export class CheckpointService extends ToolOperations {
     }
     const hashes = (record: Record): Set<string> => new Set([record.before, record.after].flatMap(snapshot => snapshot ? Object.values(snapshot.files).map(file => file.hash) : []))
     const counts = new Map<string, number>()
-    // The stored file's size, from each record's own: a journal save measures only the records it writes.
-    let total = this.store.measure([...this.records.values()], changed) + (changed ? this.store.journalBytes : 0)
+    // The stored size, from each record's own: a journal save measures only the records it writes.
+    let total = this.store.measure([...this.records.values()], changed)
     for (const record of this.records.values()) {
       for (const hash of hashes(record)) { if (!counts.has(hash)) total += this.blobSizes.get(hash) ?? 0; counts.set(hash, (counts.get(hash) ?? 0) + 1) }
     }
@@ -125,11 +125,8 @@ export class CheckpointService extends ToolOperations {
       if (item.backup) { total -= backups.get(item.backup)!.size; backups.delete(item.backup); removedBackups.add(item.backup) }
     }
     this.store.retain(new Set(this.records.keys()))
-    // Commit references before deleting any file backups. A removal cannot be journaled, and a journal that
-    // has outgrown the file is folded into it.
-    const all = [...this.records.values()], stored = this.store.measure(all, [])
-    if (!changed || removed || this.store.mustRewrite()) await this.store.write(all, stored)
-    else await this.store.append(changed.filter(record => this.records.has(record.id)), all, stored)
+    // Commit references before deleting any file backups. A removal cannot be journaled.
+    await this.store.commit([...this.records.values()], removed ? undefined : changed?.filter(record => this.records.has(record.id)))
     for (const name of regular) if (!counts.has(name)) {
       const info = await lstat(join(directory, name)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.dependencies.report?.('checkpoint-cleanup-failed'); return null })
       if (info?.isFile() && !info.isSymbolicLink()) await this.removeBackup(join(directory, name))

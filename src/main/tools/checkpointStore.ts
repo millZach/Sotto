@@ -64,6 +64,8 @@ export class CheckpointStore {
   /** The journal's bytes as this generation's appends left them. Anything past them is stale. */
   private appended = 0
   private fileBytes = 0
+  /** A save failed since the file was last written. */
+  private behind = false
   private readonly sizes = new Map<string, number>()
 
   constructor(directory: string, private readonly report?: (event: string) => void) {
@@ -167,17 +169,24 @@ export class CheckpointStore {
   }
 
   /**
-   * The file's size holding `records`, from each record's own. A record in `changed` is measured again, and the
-   * others keep the size last measured; with no `changed`, as before a whole write, every record is measured,
-   * since any may have changed in place.
+   * What saving `records` stores: the file's size, from each record's own, and with `changed` the journal's too.
+   * A record in `changed` is measured again and the others keep the size last measured; with no `changed`, as
+   * before a whole write, every record is measured, since any may have changed in place.
    */
   measure(records: readonly CheckpointRecord[], changed?: readonly CheckpointRecord[]): number {
     if (changed) for (const record of changed) this.sizes.set(record.id, recordBytes(record))
+    else for (const record of records) this.sizes.set(record.id, recordBytes(record))
+    return this.fileSize(records) + (changed ? this.appended : 0)
+  }
+
+  /** The file's size holding `records`, from the sizes last measured. */
+  private fileSize(records: readonly CheckpointRecord[]): number {
     // A non-empty array also opens and closes its own lines.
     let bytes = ENVELOPE_BYTES + (records.length ? 2 : 0)
     for (const record of records) {
-      const size = (changed ? this.sizes.get(record.id) : undefined) ?? recordBytes(record)
-      this.sizes.set(record.id, size); bytes += size
+      let size = this.sizes.get(record.id)
+      if (size === undefined) { size = recordBytes(record); this.sizes.set(record.id, size) }
+      bytes += size
     }
     return bytes
   }
@@ -188,8 +197,23 @@ export class CheckpointStore {
   /** Forget the sizes of records no longer kept. */
   retain(ids: ReadonlySet<string>): void { for (const id of this.sizes.keys()) if (!ids.has(id)) this.sizes.delete(id) }
 
-  /** Whether the next save has to rewrite the file: there is none of this format yet, or the journal has outgrown it. */
-  mustRewrite(): boolean { return !this.generation || this.appended > Math.max(JOURNAL_FOLD_BYTES, this.fileBytes) }
+  /**
+   * Whether the next save has to rewrite the file: there is none of this format yet, the journal has outgrown it,
+   * or a save failed, which may have left changes in memory that neither the file nor the journal holds.
+   */
+  mustRewrite(): boolean { return !this.generation || this.behind || this.appended > Math.max(JOURNAL_FOLD_BYTES, this.fileBytes) }
+
+  /**
+   * Save `records`, every record kept. With `changed`, the records a send added or updated and nothing removed,
+   * they are appended to the journal unless the file has to be rewritten; otherwise the file is rewritten.
+   */
+  async commit(records: readonly CheckpointRecord[], changed?: readonly CheckpointRecord[]): Promise<void> {
+    const bytes = this.fileSize(records)
+    try {
+      if (!changed || this.mustRewrite()) await this.write(records, bytes)
+      else await this.append(changed, records, bytes)
+    } catch (error) { this.behind = true; throw error }
+  }
 
   /** Write every record to the file under a new generation, which retires the journal's lines. `bytes` is its size from `measure`. */
   async write(records: readonly CheckpointRecord[], bytes?: number): Promise<void> {
@@ -197,6 +221,7 @@ export class CheckpointStore {
     await this.file.write({ version: STORAGE_VERSION, generation, records: [...records] })
     this.generation = generation
     this.appended = 0
+    this.behind = false
     this.fileBytes = bytes ?? this.measure(records)
     await retryWindowsFileOperation(() => unlink(this.journal)).catch(error => {
       // A journal left behind holds only an older generation's lines, which are ignored and cut off by the next append.
@@ -210,7 +235,7 @@ export class CheckpointStore {
    * on a torn one. An append that cannot be completed rewrites the file with `all` instead, which retires the journal.
    */
   async append(records: readonly CheckpointRecord[], all: readonly CheckpointRecord[], bytes?: number): Promise<void> {
-    if (!this.generation) return this.write(all, bytes)
+    if (!this.generation || this.behind) return this.write(all, bytes)
     const data = Buffer.from(records.map(record => `${JSON.stringify({ generation: this.generation, record })}\n`).join(''))
     try {
       await retryWindowsFileOperation(async () => {

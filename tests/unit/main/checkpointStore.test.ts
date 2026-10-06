@@ -127,6 +127,25 @@ describe('checkpoint storage and its journal', () => {
     expect(ids((await f.open().load()).records)).toEqual(ids(all))
   })
 
+  it('rewrites the file on the save after one that failed, so a change only the failed save held is kept', async () => {
+    const f = await fixture()
+    const first = record(), second = record()
+    await f.store.commit([first])
+    // A turn's completion changes a record in memory, and its save fails.
+    first.reason = 'The native conversation binding changed during this turn.'
+    vi.spyOn(fsPromises, 'rename').mockRejectedValueOnce(Object.assign(new Error('device busy'), { code: 'EIO' }))
+    await expect(f.store.commit([first])).rejects.toThrow()
+    // The next send's save names only its own record, and still writes the other change.
+    await f.store.commit([first, second], [second])
+    const saved = (JSON.parse(await readFile(f.store.path, 'utf8')) as { records: CheckpointRecord[] }).records
+    expect(saved).toEqual([first, second])
+    // Once rewritten, a send's save goes to the journal again.
+    const file = await readFile(f.store.path, 'utf8'), third = record()
+    await f.store.commit([first, second, third], [third])
+    expect(await readFile(f.store.path, 'utf8')).toBe(file)
+    expect(ids((await f.open().load()).records)).toEqual(ids([first, second, third]))
+  })
+
   it('measures the file it writes', async () => {
     const f = await fixture()
     const records = [record(), record('thread-b')]
