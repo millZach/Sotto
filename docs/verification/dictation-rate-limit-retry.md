@@ -1,6 +1,6 @@
 # Dictation rate-limit retry verification
 
-October 5, 2026, on `fix/transcription-rate-limit-retry` from `main` at 7453a2e5. The decision is ADR-0053; the glossary term is **Kept recording**. The owner picked variant C, the pill is the button, from `docs/prototypes/dictation-retry-prototype.html`.
+October 5, 2026, on `fix/transcription-rate-limit-retry` from `main` at 7453a2e5. The decision is ADR-0055; the glossary term is **Kept recording**. The owner picked variant C, the pill is the button, from `docs/prototypes/dictation-retry-prototype.html`.
 
 ## What was failing
 
