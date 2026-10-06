@@ -56,7 +56,7 @@ from mixed suites. Current docs change; historical verification stays history.
 ## Delivery state
 
 Zach subsequently requested computer use, a PR and merge after all checks
-are green. Current main at `febe51a6` is integrated, including its host-lock
+are green. Current main through `3bc5efa1` is integrated, including its host-lock
 PID-reuse fix. The original `13c6da89` checkout contained unrelated launch-video
 and Claude-label commits; those are excluded from the final product branch.
 The originals remain on `backup/remove-chats-inherited-base`, and the video
@@ -66,7 +66,7 @@ working files are retained in `.cache/inherited-launch-video`.
 - All 16 affected Electron journeys pass together on the integrated build.
 - Separate GPT-6.1 Sol reviews find no remaining standards or scope issues.
 - Design capture and verification each pass 10 journeys and 146 tuples.
-- The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. Targeted diagnosis and final CI remain.
+- The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. The artifact deadline fix passes; 57 boot checks pass without reproducing the original failures. Final CI remains the merge gate.
 - Native and browser computer-use runtimes still fail at startup with
   `apply deny-read ACLs`, including after the permission change and reset.
   Native inspection is not claimed; Zach selected the verified Electron checks and screenshots as the fallback.

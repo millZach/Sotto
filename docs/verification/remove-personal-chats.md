@@ -69,7 +69,9 @@ accepted fallback before PR delivery and merge.
   artifact-ignore configuration-load deadline. The latter now has a documented
   60-second deadline with its assertions unchanged and passes in isolation.
   The complete boot suite passes separately (33 passed, one platform skip);
-  its loaded-run startup failure is being diagnosed before final CI.
+  both previously failing cases also passed 12 repetitions each. Their loaded-
+  run startup failures remain unreproduced; no boot code or deadline changed.
+  Final GitHub CI must pass before merge.
 
 The earlier host-lock gate failure came from the starting checkout. Current
 main already fixes Windows reuse of the synthetic dead PID; that fix is
@@ -93,3 +95,8 @@ checkout are excluded from the PR; the original commits remain on a backup
 branch and the launch-video working files remain under `.cache`.
 
 No live provider account, macOS build or release was exercised. Final CI and merge evidence is recorded in the pull request.
+
+After this verification, main at `3bc5efa1` merged cleanly. Its host connection
+changes overlap only separate documentation hunks; the product removal and
+design baseline changes are preserved. Typecheck, lint, notices, build and the
+removal journey passed again on that integrated revision before publishing.
