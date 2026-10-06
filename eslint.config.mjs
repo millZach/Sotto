@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
       'artifacts/hidden-player-typing/**',
       'artifacts/computer-use-guidance/**',

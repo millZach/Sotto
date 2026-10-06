@@ -841,10 +841,11 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('tab', { name: 'Threads' })).toBeVisible()
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     // The sidebar's foot carries the other pages as icon links; Threads is the switch's own tab.
-    for (const destination of ['Chats', 'History', 'Settings', 'Help']) {
+    for (const destination of ['History', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name: destination })).toBeVisible()
     }
-    await user.click(screen.getByRole('link', { name: 'Chats' }))
+    expect(screen.queryByRole('link', { name: 'Chats' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Threads' }))
     expect(screen.queryByRole('heading', { name: /check your microphone/i })).not.toBeInTheDocument()
   })
 

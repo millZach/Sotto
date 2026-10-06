@@ -329,15 +329,13 @@ describe('NativeSettingsCoordinator', () => {
   })
 })
 
-it('retries failed personal-chat privacy cleanup on the next unrelated Settings save', async () => {
+it('retries failed thread privacy cleanup on the next unrelated Settings save', async () => {
   const harness = createHarness()
-  const agentControl = { privacyChanged: vi.fn(async () => undefined) }
-  const personalChats = { privacyChanged: vi.fn(async () => undefined).mockRejectedValueOnce(new Error('storage unavailable')) }
-  harness.settingsChanged.mockImplementation(() => cleanSettingsHistory(agentControl, personalChats))
+  const agentControl = { privacyChanged: vi.fn(async () => undefined).mockRejectedValueOnce(new Error('storage unavailable')) }
+  harness.settingsChanged.mockImplementation(() => cleanSettingsHistory(agentControl))
   await harness.coordinator.updateSettings({ historyEnabled: false })
-  expect(personalChats.privacyChanged).toHaveBeenCalledTimes(1)
+  expect(agentControl.privacyChanged).toHaveBeenCalledTimes(1)
   await harness.coordinator.updateSettings({ autoPaste: false })
   expect(harness.persisted.historyEnabled).toBe(false)
-  expect(personalChats.privacyChanged).toHaveBeenCalledTimes(2)
   expect(agentControl.privacyChanged).toHaveBeenCalledTimes(2)
 })

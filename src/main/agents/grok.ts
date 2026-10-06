@@ -1,7 +1,7 @@
+import { preserveLegacyAliases } from './legacyAliases'
 import { ProviderUnavailable } from './providerProblem'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
-import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { NativeUsage } from './nativeUsage'
@@ -33,12 +33,6 @@ import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION
 import { SessionReaper } from './sessionReaper'
 import { markSendStage } from './sendStages'
 
-// Only strip our suffix after durable origin/digest matching; foreign native
-// messages remain untouched and no extra plaintext prompt is stored in aliases.
-function personalAuthoredText(text: string): string {
-  const boundary = text.lastIndexOf('\n\n<SottoPersonalContext>\n')
-  return boundary >= 0 && text.endsWith('\n</SottoPersonalContext>') ? text.slice(0, boundary) : text
-}
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 // Grok 1.0.5 applies session _meta when a session starts or loads while not resident in its leader.
 // A resident session can gain always-approve from session/load but never loses it, so mode changes
@@ -179,8 +173,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
-  private readonly threads = new Map<string, NativeConversation>()
-  private readonly personalContexts = new Map<string, string>()
+  private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
   private readonly answeredRequests = new Set<string>()
   private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
@@ -231,12 +224,12 @@ export class GrokAcpHost implements AgentHost {
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
     this.usage = new NativeUsage(userDataDirectory, 'grok')
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'grok-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
-      isWatched: id => this.observed.has(id) || this.aliases[id]?.kind === 'personal',
+      isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
       isReading: id => this.historyReads.has(id),
       stop: id => this.stopSession(id),
@@ -458,9 +451,9 @@ export class GrokAcpHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
-  private thread(id: string): NativeConversation {
+  private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
-    if (!this.threads.has(id)) this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
+    if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
     const thread = this.threads.get(id)!; thread.usage = this.usage.get(id); return thread
   }
   /** Applies a native load that carried the alias's pending (or committed) mode policy. */
@@ -505,19 +498,19 @@ export class GrokAcpHost implements AgentHost {
         catch (error) { throw error instanceof GrokRejected ? new ProviderUnavailable('signed-out', 'Sign in to Grok Build on this machine, then connect it again.', client._meta.agentVersion) : error }
       } finally { probe.close() }
       // Lazy sessions: a known thread is in the snapshot from its alias, idle, and loads when it is
-      // watched or acted on. Personal chats own their own native request channel, so they load here.
+      // watched or acted on.
       // A fresh connection reads each session from its start again, so what the store already holds is
       // recognised here: the same message read twice is not a second message.
       this.log.forgetAll()
       for (const [id, alias] of Object.entries(this.aliases)) {
+        if (alias.kind === 'personal') continue
         this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
-        if (alias.kind === 'personal') this.observed.add(id)
       }
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
       this.state.connected = true; delete this.state.error
       // Each watched session loads in a new process of its own, where it is not yet resident, so a pending
       // mode change is applied by the load itself: nothing is left over to close first.
-      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true)))
+      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.kind !== 'personal' && alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true)))
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
       this.reaper.start()
       await this.pollHistory()
@@ -573,8 +566,7 @@ export class GrokAcpHost implements AgentHost {
    * set keeps its session until the reaper finds it idle. Foreign sessions are never discovered.
    */
   observeThreads(ids: readonly string[]): void {
-    const watched = new Set(ids)
-    for (const [id, alias] of Object.entries(this.aliases)) if (alias.kind === 'personal') watched.add(id)
+    const watched = new Set(ids.filter(id => this.aliases[id]?.kind !== 'personal'))
     this.observed.clear(); for (const id of watched) this.observed.add(id)
     this.log.observe([...this.observed])
     if (!this.state.connected) return
@@ -587,6 +579,7 @@ export class GrokAcpHost implements AgentHost {
   }
   async snapshot(): Promise<AgentHostSnapshot> { if (this.state.connected) await this.pollHistory(); return this.current() }
   async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // inspect is a fresh native read for this directory on every request.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'grok' ? scope.workingDirectory : undefined)
     if (!this.state.connected || !cwd) throw new Error('Reconnect this Grok thread before browsing skills.')
@@ -605,6 +598,7 @@ export class GrokAcpHost implements AgentHost {
    * thread's session is never loaded for it and this adapter's alias store never learns of it.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias?.grokSessionId) return null
     const writer = new GrokSubscriptionClient(join(this.userDataDirectory, 'writing', 'grok'), {
@@ -613,6 +607,7 @@ export class GrokAcpHost implements AgentHost {
     return writer.write({ ...prompt, model: alias.nativeModelId ?? alias.modelId, workingDirectory: await existingWorkingDirectory(alias.cwd), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
+    if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.aliases[id]?.grokSessionId) throw new Error('This Grok thread has no confirmed provider session.')
     // Reading a thread is opening it, so a session that is not loaded on this connection loads here.
     await this.loadSession(id)
@@ -704,7 +699,7 @@ export class GrokAcpHost implements AgentHost {
               const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
               history.lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: origin && alias.kind === 'personal' ? personalAuthoredText(text) : text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
               const assistantId = assistantKey(id, parsed.data, history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(history.activities))
@@ -771,21 +766,9 @@ export class GrokAcpHost implements AgentHost {
     }
     this.log.set(id, messages)
   }
-  personalSnapshot(): PersonalConversation[] {
-    return structuredClone([...this.threads.values()].filter((thread): thread is PersonalConversation => 'kind' in thread && thread.kind === 'personal')
-      .map(thread => this.log.publishedThread(thread)))
-  }
-  async createPersonalConversation(command: PersonalCreateCommand, memories: readonly PersonalMemory[] = []): Promise<AgentHostResult> {
-    this.personalContexts.set(command.threadId, personalContext(memories))
-    return this.executeNative({ ...command, type: 'create-personal' })
-  }
-  async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>, memories: readonly PersonalMemory[]): Promise<AgentHostResult> {
-    if (this.aliases[command.threadId]?.kind !== 'personal') throw new Error('This is not an owned personal conversation.')
-    this.personalContexts.set(command.threadId, personalContext(memories))
-    return this.execute(command)
-  }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
-  private async executeNative(command: AgentHostCommand | (PersonalCreateCommand & { type: 'create-personal' })): Promise<AgentHostResult> {
+  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
+    if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (command.type === 'compact-thread') throw new Error('Grok does not expose supported native manual compaction.')
     if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected) throw new Error('Connect Grok before managing threads.')
@@ -799,15 +782,15 @@ export class GrokAcpHost implements AgentHost {
       if (command.type === 'create-project') {
         if (!isAbsolute(command.path)) throw new Error('Grok projects require an absolute working directory.')
         if (!this.state.projects.some(project => project.id === command.projectId)) { this.state.projects.push({ id: command.projectId, title: command.title, path: command.path }); await this.projectStore.write(this.state.projects) }
-      } else if (command.type === 'create-thread' || command.type === 'create-personal') {
+      } else if (command.type === 'create-thread') {
         if (this.aliases[command.threadId]) return this.aliases[command.threadId]!.settingsConfirmed ? { accepted: true } : { accepted: false, uncertain: true }
         validateThreadOptions(this.state, command)
-        const project = command.type === 'create-thread' ? this.state.projects.find(project => project.id === command.projectId) : undefined; if (command.type === 'create-thread' && !project) throw new Error('Choose a Grok project first.')
+        const project = this.state.projects.find(project => project.id === command.projectId); if (!project) throw new Error('Choose a Grok project first.')
         // A create that names no level (the Agents view's new-thread form, a coordinator dispatch) starts on
         // the model's default and says so to Grok. Left unsent, Grok would run at the level in the user's
         // own Grok settings while the chip fell back to the flagged default and named a level it is not on.
         const reasoningEffort = command.reasoningEffort ?? this.state.models.find(model => model.id === command.modelId)?.defaultReasoningEffort
-        const alias: Alias = { ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(reasoningEffort ? { reasoningEffort } : {}), ...(command.runtimeMode ? { runtimeMode: grokRuntimeMode(command.runtimeMode) } : {}) }
+        const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId, settingsConfirmed: false, createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [], ...(reasoningEffort ? { reasoningEffort } : {}), ...(command.runtimeMode ? { runtimeMode: grokRuntimeMode(command.runtimeMode) } : {}) }
         // The thread's own process starts before anything is saved for it, so a client that cannot start
         // leaves no thread behind. Its session is created there and stays resident there, and the process is
         // held until the create is done: a client update meanwhile must not stop it halfway.
@@ -883,9 +866,7 @@ export class GrokAcpHost implements AgentHost {
           if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
           const skillText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
-          // ACP has no per-turn developer-instruction field. Append context after the
-          // leading native slash command so skills still expand; preserve authored text by origin.
-          const nativeText = alias.kind === 'personal' ? `${skillText}\n\n<SottoPersonalContext>\n${this.personalContexts.get(command.threadId) ?? personalContext()}\n</SottoPersonalContext>` : skillText
+          const nativeText = skillText
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
           if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
           const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
@@ -1009,7 +990,7 @@ export class GrokAcpHost implements AgentHost {
         const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
         const messageId = origin?.messageId ?? key
         if (messageId && !this.authored.has(messageId) && !this.log.has(id, messageId)) {
-          const message: AgentMessage = { id: messageId, role: 'user', text: origin && this.aliases[id]!.kind === 'personal' ? personalAuthoredText(content.text) : content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
+          const message: AgentMessage = { id: messageId, role: 'user', text: content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
           this.authored.set(messageId, { threadId: id, message })
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()

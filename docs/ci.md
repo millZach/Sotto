@@ -189,7 +189,6 @@ renderer tests for memoization and identical final markup run in CI.
 | Budget | Test | What it measures |
 | --- | --- | --- |
 | 100 ms | `tests/unit/renderer/threadQueueSkills.test.tsx` — *queues with Enter while a turn runs…* | Enter to the queue row being on screen. |
-| 100 ms | `tests/integration/personalChats.test.ts` — *durably acknowledges send before native completion…* | `send()` returning while the provider is held for 350 ms. |
 | 100 ms | `tests/unit/main/threadDrafts.test.ts` — *publishes local queued feedback before provider latency…* | The first published `queued` delivery after a send. |
 | 250 ms | `tests/integration/codexStreamingResponsiveness.test.ts`, `tests/integration/nativeStreamingResponsiveness.test.ts` | The longest main-process heartbeat gap while three threads stream 600 output updates, tested for Codex, Claude and Grok. Snapshot coalescing and lossless output are checked regardless of the budget switch. |
 | Less than half of structuredClone | `tests/unit/main/cloneHostSnapshot.test.ts` | Median internal snapshot copy with 24 MiB of retained output; container isolation and the incremental-storage work bound are always checked. |
@@ -200,14 +199,14 @@ Run them by hand on an idle machine:
 
 ```powershell
 $env:SOTTO_PERF_ASSERT = '1'
-npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 $env:SOTTO_PERF_BENCH = '1'
 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
 
 ```sh
-SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```

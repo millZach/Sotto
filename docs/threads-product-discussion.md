@@ -4,6 +4,8 @@ Status: requirements and final behavior defaults approved by Zach on 2026-09-12.
 
 Amended September 24, 2026: the live token, cost and context figures near the composer asked for below were built and then removed. The owner took them out from under the composer on Threads and Chats while picking the Git layout for #127 (PR #301). Usage is still recorded, and the compaction recommendation still reads it.
 
+Amended October 6, 2026: Zach retired standalone Chats, including personal voice and Generate prompt, under ADR-0010. The personal conversation requirements below are historical. Project-bound Threads remain the workspace; existing personal-chat files are retained without being opened, connected or migrated.
+
 ## Confirmed direction
 
 - The target is a custom T3-like daily workspace, with Sotto branding, voice, memory and an independent coordinator. Existing provider/coordinator separation remains.

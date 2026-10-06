@@ -34,7 +34,6 @@ import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
-import { PersonalChatsView } from './agents/personal/PersonalChatsView'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
@@ -102,7 +101,6 @@ function FooterStatus({ navigation, settings, historyKept }: {
 }): ReactNode {
   switch (navigation) {
     case 'agents': return <AgentAppearance />
-    case 'chats': return 'Chats are saved on this computer.'
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
@@ -384,13 +382,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         break
       case 'threads':
         view = threadWorkspace
-        break
-      case 'chats':
-        view = <PersonalChatsView statusText={statusText} onOpenCoordinatorSettings={() => {
-          if (!voiceCoordinator) { app.actions.navigate('settings'); return }
-          setAgentSheet('settings')
-          app.actions.navigate('agents')
-        }} />
         break
       case 'history':
         view = <HistoryView

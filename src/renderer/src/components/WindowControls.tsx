@@ -36,7 +36,7 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
 
 /**
  * The window's own controls, seated once at the top-right corner of a page that owns the window (Threads,
- * Settings, Chats) rather than in any pane's header: such a page has no app strip above it. macOS paints its
+ * Settings) rather than in any pane's header: such a page has no app strip above it. macOS paints its
  * traffic lights itself and gets none.
  */
 export function PageWindowControls(): ReactNode {
