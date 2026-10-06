@@ -285,7 +285,7 @@ describe('desktop remote host management over a real socket', () => {
     await credentials.set('remote-host:' + remote.id, paired.token)
     // A saved connection can omit the client ID; setup must use the host's authenticated hello.
     await relaunch([{ ...remote, hostId: reportedHostId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
     try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
     expect(host.pairing.list()).toHaveLength(1)
@@ -301,7 +301,7 @@ describe('desktop remote host management over a real socket', () => {
     const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
     try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     expect(JSON.parse(await readFile(join(root, 'remote', 'desktop-clients.json'), 'utf8'))).toEqual([paired.clientId])
   })
 
@@ -313,7 +313,7 @@ describe('desktop remote host management over a real socket', () => {
     // The step that used to be skipped for this desktop fails the way a failed SSH request does, which would be final.
     desktopAnswersFailure = new SshFailure('permission-setup-failed')
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     expect(scheduled).toEqual([])
   })
 
@@ -323,7 +323,7 @@ describe('desktop remote host management over a real socket', () => {
     await credentials.set('remote-host:' + remote.id, paired.token)
     desktopAnswersFailure = new SshFailure('permission-setup-failed')
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('error'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('error')
     expect(scheduled).toEqual([])
   })
 
