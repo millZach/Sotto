@@ -180,6 +180,11 @@ import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/g
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
+/**
+ * The read immediately before a send, naming the message it is for so the adapter's own first read can be skipped
+ * (#765). An answer to a request is not a send, so its read names none and stands for nothing.
+ */
+const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose => ({ beforeSend: true, ...(sendMessageId ? { sendMessageId } : {}) })
 
 export class AgentControl {
   private readonly followupStore: FollowupStore
@@ -2797,7 +2802,7 @@ export class AgentControl {
     this.canAct()
     this.observe(threadId)
     const messageId = randomUUID()
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true, sendMessageId: messageId }))
+    this.acceptSnapshot(await this.readThread(threadId, undefined, readBeforeSend(messageId)))
     const validate = (): void => {
       this.canAct()
       const latest = this.thread(threadId)
@@ -2843,7 +2848,7 @@ export class AgentControl {
     this.canAct()
     this.observe()
     const messageId = randomUUID()
-    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true, ...(draftRequestId ? {} : { sendMessageId: messageId }) }))
+    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId)))
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
@@ -3230,7 +3235,7 @@ export class AgentControl {
       await this.persist()
       // Refresh immediately before dispatch, so a direct host send revokes this queued reply.
       const messageId = randomUUID()
-      this.acceptSnapshot(await this.readThread(thread.id, undefined, { beforeSend: true, ...(requestId ? {} : { sendMessageId: messageId }) }))
+      this.acceptSnapshot(await this.readThread(thread.id, undefined, readBeforeSend(requestId ? undefined : messageId)))
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
