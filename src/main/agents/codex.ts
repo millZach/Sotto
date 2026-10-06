@@ -705,6 +705,21 @@ export class CodexAppServerHost implements AgentHost {
     this.writing = this.aliasStore.writeLatest(() => this.aliases)
     return this.writing
   }
+  /**
+   * A save a response to `turn/start` or `turn/steer` starts, which the sender waits for once the frame queue has
+   * moved on: frames behind the response are not held behind a rewrite of every thread's record. A failed save
+   * leaves the send uncertain, as a response that could not be applied does.
+   */
+  private saveBehindResponse(): { start(): void; settled(): Promise<void> } {
+    let saving: Promise<void> | undefined
+    return {
+      start: () => { saving = this.persist(); saving.catch(() => undefined) },
+      settled: async () => {
+        if (saving === undefined) return
+        try { await saving } catch { throw new Uncertain('Codex response could not be saved.') }
+      },
+    }
+  }
   async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
   async snapshot(): Promise<AgentHostSnapshot> {
     await this.pollSessionLogs()
@@ -1299,15 +1314,18 @@ export class CodexAppServerHost implements AgentHost {
             try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
             catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
             this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
-            await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, async value => {
-              const response = z.object({ turnId: z.string() }).parse(value)
-              if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id); this.emit(); await this.persist()
-            }, async () => {
-              alias.origins = alias.origins.filter(o => o !== origin)
-              this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); await this.persist()
-            })
+            const save = this.saveBehindResponse()
+            try {
+              await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, value => {
+                const response = z.object({ turnId: z.string() }).parse(value)
+                if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
+                if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+                this.unconfirmedDispatchSessionIds.delete(id); this.emit(); save.start()
+              }, () => {
+                alias.origins = alias.origins.filter(o => o !== origin)
+                this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); save.start()
+              })
+            } finally { await save.settled() }
           } catch (error) {
             if (error instanceof Uncertain) this.unconfirmedDispatchSessionIds.add(id)
             throw error
@@ -1361,26 +1379,29 @@ export class CodexAppServerHost implements AgentHost {
             await this.persist(); throw error
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+          const save = this.saveBehindResponse()
           try {
             markSendStage(command.commandId, 'written')
-            await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-              input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
-              approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
-              ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
-              const { turn } = z.object({ turn: turnSchema }).parse(value)
-              origin.turnId = turn.id
-              this.applyTurn(id, turn)
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id)
-              markSendStage(command.commandId, 'acknowledged')
-              this.emit()
-              return this.persist()
-            }, () => {
-              alias.origins = alias.origins.filter(o => o !== origin)
-              this.watcher?.forget(alias.codexThreadId, origin.messageId)
-              this.unconfirmedDispatchSessionIds.delete(id)
-              return this.persist()
-            })
+            try {
+              await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
+                input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+                approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
+                ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
+                const { turn } = z.object({ turn: turnSchema }).parse(value)
+                origin.turnId = turn.id
+                this.applyTurn(id, turn)
+                if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+                this.unconfirmedDispatchSessionIds.delete(id)
+                markSendStage(command.commandId, 'acknowledged')
+                this.emit()
+                save.start()
+              }, () => {
+                alias.origins = alias.origins.filter(o => o !== origin)
+                this.watcher?.forget(alias.codexThreadId, origin.messageId)
+                this.unconfirmedDispatchSessionIds.delete(id)
+                save.start()
+              })
+            } finally { await save.settled() }
           } catch (error) {
             if (!(error instanceof Rejected)) this.unconfirmedDispatchSessionIds.add(id)
             throw error
