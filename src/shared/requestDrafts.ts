@@ -42,6 +42,7 @@ export type RequestDraftCheckResult = z.infer<typeof requestDraftCheckResultSche
 /** Read-only saved status; missing content alone is never proof of acceptance. */
 export const requestDraftStatusSchema = z.discriminatedUnion('status', [
   acceptedDraftResultSchema,
+  z.object({ status: z.literal('unconfirmed'), revision: acceptedDraftResultSchema.shape.revision }).strict(),
   z.object({ status: z.literal('draft'), draft: requestDraftSchema }).strict(),
   z.object({ status: z.literal('missing') }).strict(),
 ])

@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService, HostConnectionError } from '../../src/main/agents/socketHostService'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
+import type { ThreadReadPurpose } from '../../src/main/agents/host'
 import { RequestDraftService, requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -212,7 +213,7 @@ it('acknowledges a positively accepted answer even if the host then fails to rer
   expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
 })
 
-it.each(['accepted', 'unknown'] as const)('checks a saved answer when its receipt is %s and the subsequent detail read fails', async outcome => {
+it.each(['accepted', 'unknown'] as const)('checks a saved answer when its receipt is %s and the fresh native Check fails', async outcome => {
   const f = await fixture('codex')
   const execute = vi.spyOn(f.native, 'execute')
   const receipt = vi.spyOn(f.client, 'receipt').mockResolvedValueOnce({ status: 'unknown' })
@@ -221,14 +222,15 @@ it.each(['accepted', 'unknown'] as const)('checks a saved answer when its receip
   const held = await f.drafts.get(f.target)
   expect(held).toMatchObject({ held: true })
   if (outcome === 'unknown') receipt.mockResolvedValueOnce({ status: 'unknown' })
-  vi.spyOn(f.client, 'readThreadDetail').mockRejectedValueOnce(new Error('Synthetic check detail failure'))
+  const check = vi.spyOn(f.client, 'checkRequestAnswer').mockRejectedValueOnce(new Error('Synthetic native Check failure'))
   if (outcome === 'accepted') {
     await expect(f.drafts.check(f.target)).resolves.toEqual({ status: 'accepted', decisionId: held!.decisionId, revision: held!.revision })
     expect(await f.drafts.list(f.owner)).toEqual([])
   } else {
-    await expect(f.drafts.check(f.target)).rejects.toThrow('Synthetic check detail failure')
+    await expect(f.drafts.check(f.target)).rejects.toThrow('Synthetic native Check failure')
     expect(await f.drafts.list(f.owner)).toHaveLength(1)
   }
+  expect(check).toHaveBeenCalledTimes(outcome === 'accepted' ? 0 : 1)
   expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
 })
 
@@ -350,15 +352,16 @@ it.each([true, false])('settles a late native answer completion %s after a negat
 })
 
 
-it('restores accepted remote status while its live native card stays uncertain, without receipt reads or replay', async () => {
+it('restores accepted remote status while its original native card remains, without receipt reads or replay', async () => {
   const f = await fixture('claude')
   const execute = vi.spyOn(f.native, 'execute')
   await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
     answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
   const held = await f.drafts.get(f.target)
   expect(held).toMatchObject({ held: true, decisionId: expect.any(String) })
-  f.native.event({ type: 'question', threadId: 'workshop', text: '', request: { ...question, delivery: 'uncertain' } })
-  await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)?.delivery).toBe('uncertain')
+  f.native.event({ type: 'question', threadId: 'workshop', text: '', request: question })
+  await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)).toMatchObject({ id: question.id })
+  expect(f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)?.delivery).toBeUndefined()
   await f.router.reconcileRequestDrafts(f.drafts)
   const accepted = { status: 'accepted', decisionId: held!.decisionId, revision: held!.revision }
   const receipt = vi.spyOn(f.client, 'refreshRequestAnswer'), detail = vi.spyOn(f.client, 'readThreadDetail')
@@ -375,7 +378,42 @@ it('restores accepted remote status while its live native card stays uncertain, 
   expect(refresh).not.toHaveBeenCalled()
   expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
   const saved = JSON.parse(await readFile(join(f.desktop, 'request-drafts.json'), 'utf8'))
+  expect(saved.version).toBe(2)
   expect(saved.drafts).toEqual([])
   expect(saved.retirements).toEqual([{ owner: f.owner, requestId: f.target.requestId,
     questionsDigest: requestQuestionsDigest(f.target.questions), decisionId: held!.decisionId, revision: held!.revision }])
+})
+
+it.each(['claude', 'grok'] as const)('freshly checks a retired same-ID %s re-offer over the paired socket without replaying its old answer', async provider => {
+  const f = await fixture(provider)
+  const execute = vi.spyOn(f.native, 'execute')
+  await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+  const held = await f.drafts.get(f.target)
+  await f.router.reconcileRequestDrafts(f.drafts)
+  expect(await f.drafts.status(f.target)).toEqual({ status: 'accepted', decisionId: held!.decisionId, revision: 1 })
+  f.native.event({ type: 'question', threadId: 'workshop', text: '', request: { ...question, delivery: 'uncertain' } })
+  await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)?.delivery).toBe('uncertain')
+  const restarted = await f.restartDrafts()
+  expect(await restarted.status(f.target)).toEqual({ status: 'unconfirmed', revision: 1 })
+  const refresh = vi.fn(async (threadId: string, purpose?: ThreadReadPurpose) => {
+    expect(threadId).toBe('workshop')
+    expect(purpose).toMatchObject({ retryUncertainAnswers: true, retryUncertainAnswerId: question.id })
+    const snapshot = await f.native.snapshot()
+    snapshot.threads.find(thread => thread.id === threadId)!.requests = [{ ...question, answerRetryReady: true }]
+    return snapshot
+  })
+  Object.assign(f.native, { refreshThread: refresh })
+  const historicalReceipt = vi.spyOn(f.client, 'refreshRequestAnswer')
+  const blank = { target: f.target, revision: 2, selections: {}, held: false }
+  expect(await restarted.check(f.target)).toEqual({ status: 'editable', draft: blank })
+  expect(refresh).toHaveBeenCalledTimes(1)
+  expect(historicalReceipt).not.toHaveBeenCalled()
+  expect(await restarted.status(f.target)).toEqual({ status: 'draft', draft: blank })
+  await expect(restarted.save({ ...held!, held: false })).rejects.toThrow('already accepted')
+  expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+  const persisted = JSON.parse(await readFile(join(f.desktop, 'request-drafts.json'), 'utf8'))
+  expect(persisted.drafts).toEqual([blank])
+  expect(persisted.retirements).toEqual([{ owner: f.owner, requestId: f.target.requestId,
+    questionsDigest: requestQuestionsDigest(f.target.questions), decisionId: held!.decisionId, revision: 1 }])
 })

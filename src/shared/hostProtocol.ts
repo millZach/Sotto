@@ -70,8 +70,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * changed files as Git's status lists them and `thread-changes-review` with its Working tree or Branch changes comparison, for
  * Changes. `subagents`: the host answers `subagent-page` and `subagent-assignments` with a thread's agents, for Agents.
  * All six are reads, bounded as the desktop's own are (ADR-0025, October 5 amendment).
+ * `answer-check`: an authorized client's `check-answer` freshly reads an exact native question and may
+ * release its restart re-offer for a new user choice. Receipt reads and background publications never do this.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -178,6 +180,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
+  z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
   /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
-import type { ClientIdentity, HostService, RequestAnswerRecovery } from '../agents/hostService'
+import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
 import type { HostAnswerTarget } from '../../shared/hostProtocol'
@@ -21,7 +21,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery'>
+  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -313,13 +313,20 @@ export class DesktopHostRouter {
   async refreshRequestDraft(target: RequestDraftTarget, decisionId?: string): Promise<void> {
     const { connection, id } = this.target(target.ownerId)
     const questionsDigest = requestQuestionsDigest(target.questions)
-    if (decisionId) {
+    const reoffered = () => {
+      const state = connection.service.shell(), thread = state.host.threads.find(item => item.id === id)
+      const request = thread?.requests.find(item => item.id === target.requestId)
+      return !!(thread && request && requestDraftProvider(state.host, thread, state.configuration.provider) === target.providerId
+        && requestQuestionsDigest(requestDraftQuestions(request)) === questionsDigest && (request.delivery === 'uncertain' || request.answerRetryReady))
+    }
+    if (decisionId && !reoffered()) {
       await connection.refreshRequestAnswer?.(decisionId, { threadId: id!, providerId: target.providerId,
         requestId: target.requestId, questionsDigest })
-      if (connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
+      if (!reoffered() && connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
         item.decisionId === decisionId && item.requestId === target.requestId && item.questionsDigest === questionsDigest)) return
     }
-    await this.threadDetail(target.ownerId)
+    if (!connection.service.checkRequestAnswer) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
+    await connection.service.checkRequestAnswer({ threadId: id!, providerId: target.providerId, requestId: target.requestId, questionsDigest }, desktopWindowClient())
   }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)

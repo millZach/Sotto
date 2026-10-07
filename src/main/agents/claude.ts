@@ -449,7 +449,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
     if (purpose?.retryUncertainAnswers) {
       const runtime = this.runtimes.get(id)
-      for (const pending of runtime?.requests.values() ?? []) if (pending.request.delivery === 'uncertain' && runtime!.answerWrites.get(pending.id) !== 'pending') {
+      for (const pending of runtime?.requests.values() ?? []) if ((!purpose.retryUncertainAnswerId || pending.request.id === purpose.retryUncertainAnswerId) && pending.request.delivery === 'uncertain' && runtime!.answerWrites.get(pending.id) !== 'pending') {
         delete pending.request.delivery
         pending.request.answerRetryReady = true
         runtime!.answered.delete(pending.id)

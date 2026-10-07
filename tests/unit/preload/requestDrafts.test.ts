@@ -4,7 +4,7 @@ vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcR
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 
-it('validates read-only accepted, draft and missing status without invoking Check', async () => {
+it('validates read-only accepted, native unconfirmed, draft and missing status without invoking Check', async () => {
   const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
   const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
   const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'claude', requestId: 'request', questions: [
@@ -12,13 +12,15 @@ it('validates read-only accepted, draft and missing status without invoking Chec
   ] }
   const draft = requestDraftSchema.parse({ target, revision: 3, held: true, selections: {} })
   const accepted = { status: 'accepted', decisionId: 'exact-attempt', revision: 3 }
-  for (const result of [accepted, { status: 'draft', draft }, { status: 'missing' }]) {
+  for (const result of [accepted, { status: 'unconfirmed', revision: 3 }, { status: 'draft', draft }, { status: 'missing' }]) {
     ipc.invoke.mockResolvedValue(result)
     expect(await bridge.status(target)).toEqual(result)
     expect(ipc.invoke).toHaveBeenLastCalledWith(REQUEST_DRAFT_STATUS, target)
   }
   for (const invalid of [null, draft, { status: 'missing', draft }, { ...accepted, revision: 0 },
-    { ...accepted, answer: 'Private words' }, { status: 'draft', draft: { ...draft, held: 'true' } }]) {
+    { ...accepted, answer: 'Private words' }, { status: 'unconfirmed', revision: 0 },
+    { status: 'unconfirmed', revision: 3, decisionId: 'old-attempt' }, { status: 'unconfirmed', revision: 3, draft },
+    { status: 'draft', draft: { ...draft, held: 'true' } }]) {
     ipc.invoke.mockResolvedValue(invalid)
     await expect(bridge.status(target)).rejects.toThrow()
   }

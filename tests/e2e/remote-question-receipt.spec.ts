@@ -5,7 +5,7 @@ import { expect, test, type Locator } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import type { AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
+import type { AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
 import type { AgentRequest, ProviderId } from '../../src/shared/agents'
@@ -17,15 +17,44 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
 class AnswerProvider extends E2EAgentHost {
   readonly answers: Extract<AgentHostCommand, { type: 'answer' }>[] = []
+  private readonly pendingAnswerIds = new Set<string>()
+  checkReads = 0
   constructor(private readonly uncertainAnswer = false, private readonly answerCompletion?: Promise<boolean>, private readonly keepQuestion = false) { super() }
+  async refreshThread(threadId: string, purpose?: ThreadReadPurpose) {
+    if (purpose?.retryUncertainAnswers) {
+      this.checkReads++
+      const thread = (await this.snapshot()).threads.find(item => item.id === threadId)!
+      // Model the provider's explicit recovery read. Ordinary snapshot reads never release a re-ask.
+      this.event({ type: 'history', threadId, text: '', messages: thread.messages })
+      for (const request of thread.requests) {
+        const next = structuredClone(request)
+        if (next.delivery === 'uncertain' && !this.pendingAnswerIds.has(next.id)
+          && (!purpose.retryUncertainAnswerId || purpose.retryUncertainAnswerId === next.id)) {
+          delete next.delivery; next.answerRetryReady = true
+        }
+        this.event({ type: 'question', threadId, text: next.text, request: next })
+      }
+    }
+    return this.snapshot()
+  }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'answer') this.answers.push(structuredClone(command))
     const retainedRequest = command.type === 'answer' && this.keepQuestion
       ? (await this.snapshot()).threads.find(thread => thread.id === command.threadId)?.requests.find(request => request.id === command.requestId) : undefined
     const result = await super.execute(command)
-    // A provider can retain its question in a stale snapshot after accepting the native answer.
-    if (command.type === 'answer' && retainedRequest) this.event({ type: 'question', threadId: command.threadId,
-      text: retainedRequest.text, request: { ...retainedRequest, delivery: 'uncertain' } })
+    if (command.type === 'answer' && retainedRequest) {
+      // A pending native write remains uncertain even during an explicit recovery read.
+      // Once it completes, retain only the ordinary stale snapshot, without re-ask flags.
+      if (this.uncertainAnswer) this.pendingAnswerIds.add(command.requestId)
+      this.event({ type: 'question', threadId: command.threadId, text: retainedRequest.text,
+        request: this.uncertainAnswer ? { ...retainedRequest, delivery: 'uncertain' } : retainedRequest })
+      void this.answerCompletion?.then(accepted => {
+        if (!accepted) return
+        this.pendingAnswerIds.delete(command.requestId)
+        this.event({ type: 'history', threadId: command.threadId, text: '', messages: [] })
+        this.event({ type: 'question', threadId: command.threadId, text: retainedRequest.text, request: retainedRequest })
+      })
+    }
     // The request disappearing is deliberately insufficient evidence of acceptance.
     return command.type === 'answer' && this.uncertainAnswer
       ? { accepted: false, uncertain: true, ...(this.answerCompletion ? { answerCompletion: this.answerCompletion } : {}) }
@@ -242,7 +271,7 @@ test('background acceptance marks a still-visible native question sent without a
     await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
     await expect(page.getByRole('alert')).toHaveCount(0)
     await page.screenshot({ path: test.info().outputPath('background-accepted-sent.png'), animations: 'disabled' })
-    // The native snapshot is still uncertain. A new renderer must recover the accepted
+    // The ordinary native snapshot is still stale. A new renderer must recover the accepted
     // revision from metadata after its answer text has already been removed.
     await page.reload()
     await openThreads(page)
@@ -255,6 +284,54 @@ test('background acceptance marks a still-visible native question sent without a
     expect(f.native.answers).toHaveLength(1)
     expect(f.errors).toEqual([])
   } finally { finishNative(false); await f.close() }
+})
+
+for (const provider of ['claude', 'grok'] as const) test(`${provider}: a provider re-ask requires Check and a fresh explicit answer, including after renderer reload`, async () => {
+  test.setTimeout(120_000)
+  const f = await fixture(provider)
+  try {
+    const { page } = f.launched
+    const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
+    f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
+    await card.getByRole('radio', { name: 'Coast', exact: true }).click()
+    await expect(card).toHaveAttribute('data-save', 'saved')
+    await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+    await expect(card).toHaveCount(0)
+    await expect.poll(() => drafts(f.profile)).toEqual([])
+    expect(f.native.answers).toHaveLength(1)
+    for (const [index, reload] of [false, true].entries()) {
+      const floor = JSON.parse(await readFile(join(f.profile, 'request-drafts.json'), 'utf8')).retirements[0].revision as number
+      f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: { ...structured, delivery: 'uncertain' } })
+      await expect(card).toBeVisible()
+      if (reload) { await page.reload(); await openThreads(page) }
+      await expect(card).toHaveAttribute('data-phase', 'unconfirmed')
+      await expect(card.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
+      await expect(card.getByText('Answer sent.', { exact: true })).toHaveCount(0)
+      await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
+      expect(f.native.checkReads).toBe(index)
+      expect(f.native.answers).toHaveLength(index + 1)
+      if (index === 0) await page.screenshot({ path: test.info().outputPath('reasked-awaiting-check.png'), animations: 'disabled' })
+      await card.getByRole('button', { name: 'Check again', exact: true }).click()
+      await expect(card).toHaveAttribute('data-phase', 'idle')
+      await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
+      await expect(card.getByRole('radio', { name: 'Coast', exact: true })).not.toBeChecked()
+      await expect(card.getByRole('radio', { name: 'Hills', exact: true })).not.toBeChecked()
+      await expect.poll(async () => (await drafts(f.profile)).map(draft => ({ held: draft.held, newer: draft.revision > floor, selections: draft.selections })))
+        .toEqual([{ held: false, newer: true, selections: {} }])
+      expect(f.native.checkReads).toBe(index + 1)
+      expect(f.native.answers).toHaveLength(index + 1)
+      if (index === 0) await page.screenshot({ path: test.info().outputPath('reasked-checked-blank.png'), animations: 'disabled' })
+      await card.getByRole('radio', { name: 'Hills', exact: true }).click()
+      await expect(card).toHaveAttribute('data-save', 'saved')
+      await card.getByRole('button', { name: 'Send answer', exact: true }).click()
+      await expect(card).toHaveCount(0)
+      await expect.poll(() => drafts(f.profile)).toEqual([])
+      expect(f.native.answers).toHaveLength(index + 2)
+      expect(f.native.answers.at(-1)?.questionAnswers).toEqual({ route: { optionIds: ['hills'] } })
+      await expect(page.getByRole('alert')).toHaveCount(0)
+    }
+    expect(f.errors).toEqual([])
+  } finally { await f.close() }
 })
 
 test('Check confirming an accepted answer keeps its visible card sent and never recreates a saved draft', async () => {
@@ -280,7 +357,7 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
       finishNative(true)
       await expect.poll(() => acceptancePublished).toBe(true)
     } finally { stop() }
-    // Its original question remains uncertain in the stale snapshot until a later native update.
+    // Its original question remains in the stale snapshot until a later native update.
     await expect.poll(async () => (await drafts(f.profile)).map(draft => draft.held)).toEqual([true])
     f.host.service.requestAnswerRecovery = originalRecovery
     await card.getByRole('button', { name: 'Check again', exact: true }).click()

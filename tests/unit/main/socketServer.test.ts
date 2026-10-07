@@ -266,3 +266,24 @@ it('pushes late exact acceptance once only to an authenticated client that watch
   expect(older.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
   expect(other.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
 })
+
+it('runs an explicit answer Check only with current authority and returns the freshly read shell', async () => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service } = recordingService()
+  let allowed = false
+  const check = vi.fn(async () => undefined)
+  Object.assign(service, { checkRequestAnswer: check })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => allowed })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect(hello).toMatchObject({ result: { features: expect.arrayContaining(['answer-check']) } })
+  const answer = { threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: 'a'.repeat(64) }
+  expect(await desktop.call('denied', { op: 'check-answer', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(check).not.toHaveBeenCalled()
+  allowed = true
+  expect(await desktop.call('checked', { op: 'check-answer', answer })).toMatchObject({ ok: true, result: { hostId: 'host' } })
+  expect(check).toHaveBeenCalledWith(answer, expect.objectContaining({ clientId: paired.clientId, transport: 'socket' }))
+  allowed = false
+  expect(await desktop.call('revoked', { op: 'check-answer', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(check).toHaveBeenCalledTimes(1)
+})

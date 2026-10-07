@@ -452,11 +452,11 @@ export class PersonalChatService {
     if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before browsing skills.`)
     return this.host(chatId).listThreadSkills(chatId, forceReload, { providerId: chat.providerId, workingDirectory: this.cwd })
   }
-  async refresh(chatId: string): Promise<PersonalChatState> {
+  async refresh(chatId: string, requestId?: string): Promise<PersonalChatState> {
     const chat = this.chat(chatId)
     if (!this.connections.has(chat.providerId)) throw new Error(`Connect ${chat.providerId} before refreshing this conversation.`)
     if (chat.nativeState !== 'unstarted' && chat.nativeState !== 'error') {
-      const host = this.host(chatId), snapshot = await host.refreshThread(chatId, { retryUncertainAnswers: true }); await this.accept(chat.providerId, snapshot, host.personalSnapshot())
+      const host = this.host(chatId), snapshot = await host.refreshThread(chatId, { retryUncertainAnswers: true, ...(requestId ? { retryUncertainAnswerId: requestId } : {}) }); await this.accept(chat.providerId, snapshot, host.personalSnapshot())
     }
     return this.get()
   }

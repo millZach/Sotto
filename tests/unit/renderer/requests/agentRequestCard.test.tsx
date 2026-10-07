@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
-import type { RequestDraft, RequestDraftBridge, RequestDraftOwner } from '../../../../src/shared/requestDrafts'
+import type { RequestDraft, RequestDraftBridge, RequestDraftOwner, RequestDraftStatus } from '../../../../src/shared/requestDrafts'
 import { AgentRequestCard, requestExplanation } from '../../../../src/renderer/src/agents/requests/AgentRequestCard'
 import { claudePending } from '../../../../src/main/agents/claudeRequests'
 import { pendingRequest } from '../../../../src/main/agents/codexRequests'
@@ -40,7 +40,7 @@ function setup(request: AgentRequest, options: { outcome?: SubmitOutcome | 'thro
 describe('request answers', () => {
   it.each(['thread', 'personal'] as const)('lets main check a bound %s answer before any extra refresh and keeps accepted stale requests closed', async kind => {
     const owner: RequestDraftOwner = { kind, ownerId: 'thread-a', providerId: 'claude' }
-    const request = { ...structured([single]), delivery: 'uncertain' as const }
+    const request = structured([single])
     const saved: RequestDraft = { target: { ...owner, requestId: request.id, questions: request.questions! },
       revision: 4, held: true, decisionId: 'exact-attempt', selections: { 'q-db': { optionIds: ['pg'], other: false, text: '' } } }
     const bridge: RequestDraftBridge = { get: vi.fn(async () => saved), status: vi.fn(async () => ({ status: 'draft' as const, draft: saved })),
@@ -59,6 +59,70 @@ describe('request answers', () => {
     expect(screen.getByRole('radio', { name: /Postgres/u })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it.each(['uncertain', 'retry-ready'] as const)('re-reads an accepted same-ID native %s offer and exposes only explicit Check before new editing', async flag => {
+    const owner: RequestDraftOwner = { kind: 'thread', ownerId: 'thread-a', providerId: 'claude' }, request = structured([single])
+    let status: RequestDraftStatus = { status: 'accepted', decisionId: 'old-attempt', revision: 3 }
+    const blank: RequestDraft = { target: { ...owner, requestId: request.id, questions: request.questions! },
+      revision: 4, held: false, selections: {} }
+    const bridge: RequestDraftBridge = { get: vi.fn(async () => null), status: vi.fn(async () => status),
+      save: vi.fn(async draft => draft), list: vi.fn(async () => []), discard: vi.fn(async () => false),
+      check: vi.fn(async () => ({ status: 'editable' as const, draft: blank })), onChanged: vi.fn(() => vi.fn()) }
+    const onCheck = vi.fn(async () => true), onSubmit = vi.fn(async () => ({ error: null })), store = new RequestAnswerStore(() => bridge)
+    const props = { ownerId: owner.ownerId, ownerTitle: 'Workshop', draftOwner: owner, blocked: null, onSubmit, onCheck, store }
+    const view = render(<AgentRequestCard {...props} request={request} />)
+    await screen.findByText('Answer sent.')
+    status = { status: 'unconfirmed', revision: 3 }
+    const reoffered = flag === 'uncertain' ? { ...request, delivery: 'uncertain' as const } : { ...request, answerRetryReady: true as const }
+    view.rerender(<AgentRequestCard {...props} request={reoffered} />)
+    await waitFor(() => expect(view.container.querySelector('.agent-request')).toHaveAttribute('data-phase', 'unconfirmed'))
+    expect(bridge.status).toHaveBeenCalledTimes(2)
+    expect(bridge.onChanged).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('Answer sent.')).toBeNull()
+    expect(screen.getByRole('radio', { name: /Postgres/u })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: /Postgres/u })).toBeDisabled()
+    expect(bridge.check).not.toHaveBeenCalled()
+    expect(bridge.save).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(view.container.querySelector('.agent-request')).toHaveAttribute('data-phase', 'idle'))
+    expect(bridge.check).toHaveBeenCalledExactlyOnceWith(blank.target)
+    expect(onCheck).not.toHaveBeenCalled()
+    expect(bridge.save).not.toHaveBeenCalled()
+    status = { status: 'draft', draft: blank }
+    view.rerender(<AgentRequestCard {...props} request={{ ...request, answerRetryReady: true }} />)
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Postgres/u })).toBeEnabled())
+    expect(screen.getByRole('radio', { name: /Postgres/u })).not.toBeChecked()
+    expect(onSubmit).not.toHaveBeenCalled()
+    await userEvent.setup().click(screen.getByRole('radio', { name: /SQLite/u }))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Send answer' }))
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: '', questionAnswers: { 'q-db': { optionIds: ['lite'] } } })
+    await screen.findByText('Answer sent.')
+    // Retry-ready and uncertain are distinct native transitions, even though both
+    // need a status read. A later uncertain offer must not reuse the loaded sent entry.
+    status = { status: 'unconfirmed', revision: 6 }
+    view.rerender(<AgentRequestCard {...props} request={{ ...request, delivery: 'uncertain' }} />)
+    await waitFor(() => expect(view.container.querySelector('.agent-request')).toHaveAttribute('data-phase', 'unconfirmed'))
+    expect(screen.getByRole('radio', { name: /SQLite/u })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
+    expect(bridge.check).toHaveBeenCalledOnce()
+    expect(onSubmit).toHaveBeenCalledOnce()
+  })
+
+  it('keeps native delivery uncertainty visible even if an older accepted read still arrives', async () => {
+    const owner: RequestDraftOwner = { kind: 'thread', ownerId: 'thread-a', providerId: 'grok' }
+    const bridge: RequestDraftBridge = { get: vi.fn(async () => null), status: vi.fn(async () => ({ status: 'accepted' as const, revision: 3, decisionId: 'old-attempt' })),
+      save: vi.fn(async draft => draft), list: vi.fn(async () => []), discard: vi.fn(async () => false),
+      check: vi.fn(async () => ({ status: 'editable' as const, draft: null })) }
+    const view = render(<AgentRequestCard ownerId={owner.ownerId} ownerTitle="Workshop" draftOwner={owner}
+      request={{ ...structured([single]), delivery: 'uncertain' }} blocked={null} onCheck={async () => true}
+      onSubmit={async () => ({ error: null })} store={new RequestAnswerStore(() => bridge)} />)
+    await waitFor(() => expect(view.container.querySelector('.agent-request')).toHaveAttribute('data-phase', 'sent'))
+    expect(screen.queryByText('Answer sent.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
+    expect(bridge.check).not.toHaveBeenCalled()
   })
 
   it('keeps multiselect choices in native order and single choices exclusive with Other', () => {

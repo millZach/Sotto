@@ -168,7 +168,9 @@ interface DraftBinding {
   writing: Promise<boolean>
   loaded: boolean
   statusRead: number
+  generation: number
   offChanged: (() => void) | null
+  reofferedRevision?: number
   accepted?: Extract<RequestDraftStatus, { status: 'accepted' }>
 }
 
@@ -223,26 +225,32 @@ export class RequestAnswerStore {
     }))
   }
 
-  connect(ownerId: string, requestId: string, target: RequestDraftTarget): Promise<void> {
+  connect(ownerId: string, requestId: string, target: RequestDraftTarget, reoffered = false): Promise<void> {
     const key = RequestAnswerStore.key(ownerId, requestId), bridge = this.bridge()
     if (!bridge) return Promise.resolve()
     const existing = this.bindings.get(key)
-    if (existing?.retiring) return existing.retiring.then(() => this.connect(ownerId, requestId, target))
-    if (existing?.loaded) return Promise.resolve()
-    if (existing?.loading) return existing.loading
+    if (existing?.retiring) return existing.retiring.then(() => this.connect(ownerId, requestId, target, reoffered))
+    if (existing?.loaded && !reoffered) return Promise.resolve()
+    if (existing?.loading && !reoffered) return existing.loading
     const binding: DraftBinding = existing ?? { target, bridge, loading: null, retiring: null, writing: Promise.resolve(true), loaded: false,
-      statusRead: 0, offChanged: null }
+      statusRead: 0, generation: 0, offChanged: null }
     this.bindings.set(key, binding)
     const before = this.get(ownerId, requestId)
-    this.set(ownerId, requestId, { ...before, save: 'loading', saveError: null })
-    if (!existing) binding.offChanged = bridge.onChanged?.(owner => {
+    if (!binding.loaded) this.set(ownerId, requestId, { ...before, save: 'loading', saveError: null })
+    this.watch(ownerId, requestId, binding)
+    const load = this.readStatus(ownerId, requestId, binding).finally(() => { if (binding.loading === load) binding.loading = null })
+    binding.loading = load
+    return load
+  }
+
+  private watch(ownerId: string, requestId: string, binding: DraftBinding): void {
+    if (binding.offChanged) return
+    const key = RequestAnswerStore.key(ownerId, requestId)
+    binding.offChanged = binding.bridge.onChanged?.(owner => {
       if (requestDraftOwnerKey(owner) === requestDraftOwnerKey(binding.target) && this.bindings.get(key) === binding) {
         void this.readStatus(ownerId, requestId, binding)
       }
     }) ?? null
-    const load = this.readStatus(ownerId, requestId, binding).finally(() => { if (binding.loading === load) binding.loading = null })
-    binding.loading = load
-    return load
   }
 
   /** Owner changes read durable status only; Check is reserved for an explicit release. */
@@ -256,7 +264,27 @@ export class RequestAnswerStore {
       if (status.status === 'draft' && requestDraftKey(status.draft.target) !== requestDraftKey(binding.target)) {
         throw new Error('The saved answer belongs to a different question. Reload the original answer before editing.')
       }
+      if (status.status === 'unconfirmed') {
+        // A native re-offer starts a new delivery boundary even when the provider reuses
+        // the form and request ID. Delivered selections belong to the older attempt.
+        binding.loaded = true
+        if (current.revision > status.revision) {
+          if (restoring) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: SAVE_ERROR })
+          return
+        }
+        if (binding.reofferedRevision !== status.revision) {
+          binding.reofferedRevision = status.revision
+          binding.generation++
+        }
+        const edited = (current.phase === 'idle' || current.phase === 'failed') && current.revision > 0
+        this.set(ownerId, requestId, { ...current, selections: edited ? current.selections : {},
+          revision: status.revision + Number(edited), phase: edited ? current.phase : 'unconfirmed',
+          error: null, choice: null, save: edited ? 'unsaved' : 'saved', saveError: null })
+        this.watch(ownerId, requestId, binding)
+        return
+      }
       if (status.status === 'accepted') {
+        if (status.revision <= (binding.reofferedRevision ?? 0)) return
         const pristine = !binding.loaded && current.revision === 0 && current.phase === 'idle' && Object.keys(current.selections).length === 0
         if (pristine || current.revision === status.revision && (current.phase === 'sending' || current.phase === 'sent' || current.phase === 'unconfirmed')) {
           this.accepted(ownerId, requestId, binding, status)
@@ -264,6 +292,13 @@ export class RequestAnswerStore {
           return
         }
         if (!binding.accepted || status.revision > binding.accepted.revision) binding.accepted = status
+      }
+      if (status.status === 'draft' && this.isAccepted(ownerId, requestId, binding) && status.draft.revision > current.revision) {
+        binding.generation++
+        this.set(ownerId, requestId, { ...current, selections: status.draft.selections, revision: status.draft.revision,
+          phase: status.draft.held ? 'unconfirmed' : 'idle', error: null, choice: null, save: 'saved', saveError: null })
+        this.watch(ownerId, requestId, binding)
+        return
       }
       if (!restoring || binding.loaded) return
       const draft = status.status === 'draft' ? status.draft : null
@@ -289,7 +324,7 @@ export class RequestAnswerStore {
   }
 
   private accepted(ownerId: string, requestId: string, binding: DraftBinding, proof: Extract<RequestDraftStatus, { status: 'accepted' }>): void {
-    if (binding.accepted && binding.accepted.revision > proof.revision) return
+    if (proof.revision <= (binding.reofferedRevision ?? 0) || binding.accepted && binding.accepted.revision > proof.revision) return
     binding.accepted = proof
     binding.offChanged?.()
     binding.offChanged = null
@@ -324,16 +359,20 @@ export class RequestAnswerStore {
       return false
     }
     const draft = parsed.data
+    const generation = binding.generation
     this.set(ownerId, requestId, { ...entry, revision: draft.revision, save: 'saving', saveError: null })
     const work = binding.writing.then(async () => {
+      if (generation !== binding.generation) return true
       if (this.isAccepted(ownerId, requestId, binding) && draft.revision <= binding.accepted!.revision) return true
       try {
         const saved = await binding.bridge.save(draft)
+        if (generation !== binding.generation) return true
         if (saved.revision !== draft.revision || JSON.stringify(saved) !== JSON.stringify(draft)) throw new Error(SAVE_ERROR)
         const current = this.get(ownerId, requestId)
         if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'saved', saveError: null })
         return true
       } catch (error) {
+        if (generation !== binding.generation) return true
         const current = this.get(ownerId, requestId)
         if (this.isAccepted(ownerId, requestId, binding) && draft.revision <= current.revision) return true
         if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: draftError(error) })
@@ -348,37 +387,39 @@ export class RequestAnswerStore {
   async submit(ownerId: string, requestId: string, choice: string | null, send: () => Promise<SubmitOutcome>): Promise<void> {
     const entry = this.get(ownerId, requestId)
     const submittedBinding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+    const submittedGeneration = submittedBinding?.generation
     if (entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed') return
     const sending: RequestEntry = { ...entry, revision: entry.revision + 1, phase: 'sending', error: null, choice }
     this.set(ownerId, requestId, sending)
     if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
       // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
-      if (submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
+      if (submittedBinding && (submittedBinding.generation !== submittedGeneration || this.isAccepted(ownerId, requestId, submittedBinding))) return
       this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: 'This answer was not sent because its draft could not be saved. Check again after storage is available.' })
       return
     }
-    if (submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
+    if (submittedBinding && (submittedBinding.generation !== submittedGeneration || this.isAccepted(ownerId, requestId, submittedBinding))) return
     const submittedRevision = this.get(ownerId, requestId).revision
     let outcome: SubmitOutcome
     try { outcome = await send() } catch { outcome = null }
     const current = this.get(ownerId, requestId)
     // A departed unbound request may already have been pruned or its ID reused while this reply waited.
     if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== submittedBinding || (!submittedBinding && current !== sending)
-      || current.revision !== submittedRevision || submittedBinding && this.isAccepted(ownerId, requestId, submittedBinding)) return
+      || current.revision !== submittedRevision || submittedBinding && (submittedBinding.generation !== submittedGeneration || this.isAccepted(ownerId, requestId, submittedBinding))) return
     if (outcome === null) this.set(ownerId, requestId, { ...current, phase: 'unconfirmed', error: null })
     else if (outcome.error !== null) {
       const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
       if (binding) {
         // A command error alone is not evidence of nondelivery. Main checks the original request/intent.
         const checkedRevision = this.get(ownerId, requestId).revision
+        const checkedGeneration = binding.generation
         try {
           const draft = await binding.bridge.check(binding.target)
           if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
-            || this.get(ownerId, requestId).revision !== checkedRevision || this.isAccepted(ownerId, requestId, binding)) return
+            || binding.generation !== checkedGeneration || this.get(ownerId, requestId).revision !== checkedRevision || this.isAccepted(ownerId, requestId, binding)) return
           await this.checked(ownerId, requestId, draft, 'failed', outcome.error)
         } catch {
           if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
-            && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: outcome.error })
+            && binding.generation === checkedGeneration && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: outcome.error })
         }
       } else this.set(ownerId, requestId, { ...current, phase: 'failed', error: outcome.error, choice: null })
     }
@@ -399,17 +440,22 @@ export class RequestAnswerStore {
       && !(binding && reread && (entry.phase === 'idle' || entry.phase === 'failed'))) return
     if (binding) {
       let checkedRevision = entry.revision
+      let checkedGeneration = binding.generation
       try {
         await binding.loading
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding) return
         checkedRevision = this.get(ownerId, requestId).revision
+        checkedGeneration = binding.generation
+        const priorAcceptance = this.isAccepted(ownerId, requestId, binding) ? binding.accepted : undefined
         const draft = await binding.bridge.check(binding.target)
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) !== binding
-          || this.get(ownerId, requestId).revision !== checkedRevision || this.isAccepted(ownerId, requestId, binding)) return
+          || binding.generation !== checkedGeneration || this.get(ownerId, requestId).revision !== checkedRevision
+          || this.isAccepted(ownerId, requestId, binding) && !(priorAcceptance && binding.accepted === priorAcceptance
+            && draft.status === 'editable' && draft.draft && draft.draft.revision > checkedRevision)) return
         await this.checked(ownerId, requestId, draft, 'idle', null)
       } catch (error) {
         if (this.bindings.get(RequestAnswerStore.key(ownerId, requestId)) === binding
-          && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), saveError: draftError(error) })
+          && binding.generation === checkedGeneration && this.get(ownerId, requestId).revision === checkedRevision && !this.isAccepted(ownerId, requestId, binding)) this.set(ownerId, requestId, { ...this.get(ownerId, requestId), saveError: draftError(error) })
       }
       return
     }
@@ -429,12 +475,22 @@ export class RequestAnswerStore {
       return
     }
     const draft = result.draft
+    const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
+    if (draft && requestDraftKey(draft.target) !== requestDraftKey(binding?.target ?? draft.target)) throw new Error('The saved answer belongs to a different question. Reload the original answer before editing.')
+    if (draft && binding && this.isAccepted(ownerId, requestId, binding) && draft.revision > current.revision) {
+      binding.generation++
+      this.set(ownerId, requestId, { ...current, selections: draft.selections, revision: draft.revision,
+        phase, error, choice: null, save: 'saved', saveError: null })
+      this.watch(ownerId, requestId, binding)
+      return
+    }
     // Checking delivery is not proof that newer local content was saved. A failed preflight can leave
     // only an older revision (or nothing) in main; retain the local edit and persist it after release.
     const needsSave = !draft || draft.revision < current.revision || JSON.stringify(draft.selections) !== JSON.stringify(current.selections)
     this.set(ownerId, requestId, { ...current, phase, error, choice: null,
       revision: needsSave ? Math.max(current.revision, draft?.revision ?? 0) + 1 : draft.revision,
       save: needsSave ? 'saving' : 'saved', saveError: null })
+    if (binding) this.watch(ownerId, requestId, binding)
     if (needsSave) await this.flush(ownerId, requestId)
   }
 
@@ -463,7 +519,7 @@ export class RequestAnswerStore {
     try {
       const status = await binding.bridge.status(binding.target)
       const current = this.entries.get(key)
-      if (status.status === 'draft' || current?.save !== 'saved' || current.revision !== entry.revision || this.bindings.get(key) !== binding) return
+      if (status.status === 'draft' || status.status === 'unconfirmed' || current?.save !== 'saved' || current.revision !== entry.revision || this.bindings.get(key) !== binding) return
       binding.offChanged?.()
       binding.statusRead++
       this.entries.delete(key)
@@ -484,8 +540,9 @@ export class RequestAnswerStore {
 
 export const requestAnswerStore = new RequestAnswerStore()
 
-export function useRequestEntry(ownerId: string, requestId: string, store: RequestAnswerStore = requestAnswerStore, target?: RequestDraftTarget): RequestEntry {
+export function useRequestEntry(ownerId: string, requestId: string, store: RequestAnswerStore = requestAnswerStore, target?: RequestDraftTarget,
+  nativeOffer?: 'uncertain' | 'retry-ready'): RequestEntry {
   const targetKey = target ? JSON.stringify(target) : ''
-  useEffect(() => { if (targetKey) void store.connect(ownerId, requestId, JSON.parse(targetKey) as RequestDraftTarget) }, [ownerId, requestId, store, targetKey])
+  useEffect(() => { if (targetKey) void store.connect(ownerId, requestId, JSON.parse(targetKey) as RequestDraftTarget, nativeOffer !== undefined) }, [ownerId, requestId, store, targetKey, nativeOffer])
   return useSyncExternalStore(store.subscribe, () => store.get(ownerId, requestId))
 }

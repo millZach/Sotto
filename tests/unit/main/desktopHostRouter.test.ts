@@ -486,3 +486,31 @@ describe('exact answer notice ownership', () => {
     f.router.dispose()
   })
 })
+
+describe('explicit native answer checks', () => {
+  it.each(['uncertain', 'retry-ready'] as const)('does not let an old receipt shortcut a %s native re-offer', async boundary => {
+    const remote = fixture(REMOTE, 'remote'), router = new DesktopHostRouter(emptyDesktopState)
+    const questions = [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }]
+    remote.state.host.threads[0]!.providerId = 'grok'
+    remote.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Question', options: [], questions,
+      ...(boundary === 'uncertain' ? { delivery: 'uncertain' as const } : { answerRetryReady: true }) }]
+    const target = { kind: 'thread' as const, ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'grok' as const, requestId: 'question', questions }
+    const digest = requestQuestionsDigest(questions)
+    remote.connection.service.requestAnswerRecovery = () => ({ uncertainRequestIds: [], completed: [{ requestId: 'question', decisionId: 'old-answer', questionsDigest: digest }] })
+    const receipt = vi.fn(async () => undefined), check = vi.fn(async () => undefined)
+    remote.connection.refreshRequestAnswer = receipt
+    Object.assign(remote.connection.service, { checkRequestAnswer: check })
+    router.add(remote.connection)
+    await router.refreshRequestDraft(target, 'old-answer')
+    expect(check).toHaveBeenCalledWith({ threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: digest }, desktopWindowClient())
+    expect(receipt).not.toHaveBeenCalled(); expect(remote.detail).not.toHaveBeenCalled()
+    router.dispose()
+  })
+  it('refuses an older host instead of treating cached detail as a fresh native Check', async () => {
+    const remote = fixture(REMOTE, 'remote'), router = new DesktopHostRouter(emptyDesktopState)
+    router.add(remote.connection)
+    await expect(router.refreshRequestDraft({ kind: 'thread', ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'claude', requestId: 'question',
+      questions: [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }] })).rejects.toThrow('Update')
+    expect(remote.detail).not.toHaveBeenCalled(); router.dispose()
+  })
+})

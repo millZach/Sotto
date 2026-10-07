@@ -345,6 +345,13 @@ export class SocketHostService implements HostService {
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeThreadDetail(listener: (detail: AgentThreadDetailUpdate) => void): () => void { this.detailListeners.add(listener); return () => this.detailListeners.delete(listener) }
   async readShell(): Promise<AgentState> { const generation = this.generation; const state = this.read(protocolAgentStateSchema, await this.call({ op: 'shell' })); this.sameGeneration(generation); this.publish(state); return this.shell() }
+  async checkRequestAnswer(answer: HostAnswerTarget, _client?: ClientIdentity): Promise<void> {
+    void _client // The socket's authenticated pairing supplies authority on the host.
+    if (!this.features.includes('answer-check')) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
+    const generation = this.generation
+    const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
+    this.sameGeneration(generation); this.publish(state)
+  }
   async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */

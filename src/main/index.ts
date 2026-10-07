@@ -845,12 +845,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }, async (target, decisionId) => {
-    if (target.kind === 'personal') await personalChats.refresh(target.ownerId)
+    if (target.kind === 'personal') await personalChats.refresh(target.ownerId, target.requestId)
     else {
       const key = parseHostEntityKey(target.ownerId)
       if (key && key.hostId !== agentControl.get().hostId) {
         await hostRouter.refreshRequestDraft(target, decisionId)
-      } else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId)
+      } else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
     }
   })
   await requestDrafts.start()

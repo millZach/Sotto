@@ -12,6 +12,7 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
+import type { HostAnswerTarget } from '../../shared/hostProtocol'
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -48,6 +49,8 @@ export interface HostService {
    * error is its own command outcome; it is independent of the published shell's shared error. */
   command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
   requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
+  /** A user's explicit native read of this exact answer, never a send or a background receipt read. */
+  checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -116,6 +119,7 @@ export interface LocalHostControl {
   /** Runs one client's command and answers with the shell, without copying any history. */
   commandShell(command: AgentCommand, client?: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
   requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
+  checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
@@ -162,6 +166,10 @@ export class LocalHostService implements HostService {
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
+  async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
+    if (!this.control.checkRequestAnswer) throw new Error('Update this host before checking an unconfirmed answer.')
+    await this.control.checkRequestAnswer(target, client)
+  }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {

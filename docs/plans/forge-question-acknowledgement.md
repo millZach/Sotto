@@ -27,6 +27,8 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Distinguish accepted Check results from missing editable drafts, preserve captured acceptance through reconciliation, and ignore stale renderer replies without re-saving delivered answers.
 - [x] Preserve bounded acceptance metadata after background retirement and update mounted question panels without another Check; protect Codex request identity across restart and detach confirmed listeners.
 - [x] Integrate current `main` at `3bc5efa1` and replace four one-second host-connection polls with the repository's standard polling deadline after reproducing their CI failures.
+- [x] Preserve Check for actual Claude/Grok re-asks, reach the provider through explicit remote recovery, protect pending writes, and version the saved-answer format; repeat both review axes and all 27 Electron journeys.
+- [ ] Finish the complete local two-worker gate on frozen source; record the result on PR #796.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `3bc5efa1`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.

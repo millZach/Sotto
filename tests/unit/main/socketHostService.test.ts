@@ -34,6 +34,28 @@ afterEach(async () => { await new Promise<void>(resolve => server ? server.close
 const hostId = randomUUID()
 const frozen = { v: 1, status: 'ready', hostId, pid: 4242, port: 4319, sottoVersion: '0.1.16', features: ['detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'host-folders'] }
 
+describe('explicit socket answer checks', () => {
+  const answer = { threadId: 'thread', providerId: 'grok' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
+  it('refuses an older host without making a cached detail or receipt read', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
+    Object.assign(client, { features: ['answer-receipts'], call })
+    await expect(client.checkRequestAnswer(answer)).rejects.toThrow('Update the host')
+    expect(call).not.toHaveBeenCalled()
+  })
+  it('publishes only a fresh native Check shell on the same connection generation', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' })
+    const before = emptyDesktopState(), fresh = { ...before, error: 'Fresh check state' }, call = vi.fn(async () => fresh), listener = vi.fn()
+    Object.assign(client, { features: ['answer-check'], cached: before, call })
+    client.subscribe(listener)
+    await client.checkRequestAnswer(answer)
+    expect(call).toHaveBeenCalledWith({ op: 'check-answer', answer })
+    expect(client.shell().error).toBe('Fresh check state'); expect(listener).toHaveBeenCalledTimes(1)
+    call.mockImplementationOnce(async () => { Object.assign(client, { generation: 1 }); return { ...fresh, error: 'Old connection response' } })
+    await expect(client.checkRequestAnswer(answer)).rejects.toMatchObject({ code: 'disconnected' })
+    expect(client.shell().error).toBe('Fresh check state'); expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('SocketHostService version check', () => {
   it('names a host from before protocol v1 froze and says how to start the new version, before sending it anything', async () => {
     // What a 0.1.15 host answers: protocol version 1, but no Sotto version and no features.

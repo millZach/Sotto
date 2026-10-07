@@ -42,6 +42,7 @@ import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
 import { FinishedUnread } from './finishedUnread'
+import type { HostAnswerTarget } from '../../shared/hostProtocol'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -1213,15 +1214,43 @@ export class AgentControl {
     }
   }
 
-  async refreshRequestDraft(threadId: string): Promise<void> {
+  async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
+    const validate = () => {
+      this.guardClientGrant(client)
+      const thread = this.thread(target.threadId)
+      const request = thread.requests.find(item => item.id === target.requestId)
+      const questions = request ? requestDraftQuestions(request) : []
+      if (isThreadClosed(thread) || requestDraftProvider(this.state.host, thread, this.state.configuration.provider) !== target.providerId
+        || !request || !questions.length || requestQuestionsDigest(questions) !== target.questionsDigest) {
+        throw new Error('The original question changed or is no longer pending. Your saved answer is kept.')
+      }
+    }
+    validate()
+    await this.refreshRequestDraft(target.threadId, target.requestId, validate)
+  }
+
+  async refreshRequestDraft(threadId: string, requestId?: string, validate?: () => void): Promise<void> {
+    // Direct answers own the thread lane; composer and voice answers own the global lane.
+    // Reserve both before waiting, so neither can overtake Check or lose a new reservation.
+    const task = Promise.all([this.threadActions.get(threadId), this.serial].map(pending => Promise.resolve(pending).catch(() => undefined)))
+      .then(() => this.readRequestDraft(threadId, requestId, validate))
+    this.threadActions.set(threadId, task)
+    this.serial = task.catch(() => undefined)
+    try { await task }
+    finally { if (this.threadActions.get(threadId) === task) this.threadActions.delete(threadId) }
+  }
+
+  private async readRequestDraft(threadId: string, requestId?: string, validate?: () => void): Promise<void> {
+    validate?.()
     const thread = this.thread(threadId)
     if (!isThreadProviderConnected(this.state.host, thread)) throw new Error('Reconnect the original provider before checking this answer.')
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { retryUncertainAnswers: true }))
+    this.acceptSnapshot(await this.readThread(threadId, undefined, { retryUncertainAnswers: true, ...(requestId ? { retryUncertainAnswerId: requestId } : {}) }))
+    validate?.()
     const checked = this.thread(threadId)
-    if (requestDraftProvider(this.state.host, checked, this.state.configuration.provider) === 'claude') {
-      const retryable = new Set(checked.requests.filter(request => request.answerRetryReady).map(request => request.id))
+    if (['claude', 'grok'].includes(requestDraftProvider(this.state.host, checked, this.state.configuration.provider))) {
+      const retryable = new Set(checked.requests.filter(request => request.answerRetryReady && (!requestId || request.id === requestId)).map(request => request.id))
       // This user check releases only the old answer reservation. It dispatches nothing;
-      // Claude keeps its durable uncertain-answer evidence until the user chooses again.
+      // The adapter keeps its durable uncertain-answer evidence until the user chooses again.
       this.outbox = this.outbox.filter(item => item.type !== 'answer' || item.threadId !== threadId || !item.requestId || !retryable.has(item.requestId))
     }
     await this.persist()

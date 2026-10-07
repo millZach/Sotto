@@ -177,6 +177,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'client-updates' || options.clientUpdates === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
@@ -477,6 +478,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'shell': return shell(peer)
       case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
+      case 'check-answer': {
+        if (!offers(peer, 'answer-check') || !service.checkRequestAnswer) throw new Refusal('invalid_request')
+        if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+        await service.checkRequestAnswer(request.answer, peer.client)
+        if (!authenticated(peer)) throw new Refusal('unauthenticated')
+        if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+        return shell(peer)
+      }
       case 'events': return events(peer, request.afterSeq, request.threadId)
       case 'receipt': {
         const receipt = receipts.get(peer.client.clientId, request.commandId)?.receipt ?? { status: 'unknown' as const }

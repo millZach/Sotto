@@ -25,10 +25,11 @@ it('authorizes main-frame draft access only, validates identity/selections, and 
   expect(service.save).not.toHaveBeenCalled()
   handlers.get(REQUEST_DRAFT_GET)!(event, target)
   expect(service.get).toHaveBeenCalledWith(target)
-  const accepted = { status: 'accepted', decisionId: 'read-only-attempt', revision: 2 }
-  service.status.mockResolvedValue(accepted)
-  expect(await handlers.get(REQUEST_DRAFT_STATUS)!(event, target)).toEqual(accepted)
-  expect(service.status).toHaveBeenCalledExactlyOnceWith(target)
+  for (const status of [{ status: 'accepted', decisionId: 'read-only-attempt', revision: 2 }, { status: 'unconfirmed', revision: 2 }]) {
+    service.status.mockResolvedValue(status)
+    expect(await handlers.get(REQUEST_DRAFT_STATUS)!(event, target)).toEqual(status)
+    expect(service.status).toHaveBeenLastCalledWith(target)
+  }
   expect(service.check).not.toHaveBeenCalled()
   for (const result of [{ status: 'accepted', decisionId: 'exact-attempt', revision: 1 }, { status: 'editable', draft: null }]) {
     service.check.mockResolvedValue(result)
