@@ -58,6 +58,8 @@ export interface ClientIdentity {
  * rewrite. Threads are addressed by Sotto thread ID either way (ADR-0002).
  */
 export interface HostService {
+  /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
+  readonly supportsAtomicSend?: boolean
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -160,6 +162,7 @@ export interface LocalHostControl {
  * boundary is the same one a socket would cross.
  */
 export class LocalHostService implements HostService {
+  readonly supportsAtomicSend = true
   private readonly observations = new Map<string, string[]>()
   /**
    * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a

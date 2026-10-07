@@ -287,3 +287,68 @@ it('runs an explicit answer Check only with current authority and returns the fr
   expect(await desktop.call('revoked', { op: 'check-answer', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(check).toHaveBeenCalledTimes(1)
 })
+
+it.each([false, true])('offers atomic Send only when the service implements it and keeps legacy Send (supported: %s)', async supported => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  Object.assign(service, { supportsAtomicSend: supported, shell: () => ({ hostId: 'host', host: { threads: [
+    { id: 'thread', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false }) })
+  listener = await startSocketServer({ service, pairing })
+  expect(listener.descriptor.features.includes('atomic-send')).toBe(supported)
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect((hello.result as { features: string[] }).features.includes('atomic-send')).toBe(supported)
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const command = { type: 'send', draft: { threadId: 'thread', text: 'Prompt', attachments: [] } }
+  expect(await desktop.call('atomic', { op: 'command', command })).toMatchObject(supported ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  expect(commands.filter(item => item.command.type === 'send')).toEqual(supported ? [{ command, clientId: paired.clientId }] : [])
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'send' } })).toMatchObject({ ok: true })
+  const save = { type: 'compose', threadId: 'thread', text: 'A targeted edit', attachments: [] }
+  expect(await desktop.call('targeted-save', { op: 'command', command: save })).toMatchObject(supported ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  expect(commands.filter(item => item.command.type === 'compose')).toEqual(supported ? [{ command: save, clientId: paired.clientId }] : [])
+  expect(await desktop.call('legacy-save', { op: 'command', command: { type: 'compose', text: 'Legacy draft' } })).toMatchObject({ ok: true })
+})
+
+it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compose'].map(type => ({ delivery, type }))))('takes targeted $type authority from the selected native $delivery question before any saved draft exists and refuses selection drift', async ({ delivery, type }) => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  let allowed = false
+  Object.assign(service, { supportsAtomicSend: true, shell: () => ({ hostId: 'host', host: { threads: [
+    { id: 'thread', projectId: 'project', requests: [{ id: 'native-question', kind: 'question', text: 'Choose', options: [],
+      ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) }] },
+    { id: 'other', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false, threadDrafts: [] }) })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => allowed })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  const draft = { threadId: 'thread', text: 'Blue', attachments: [] }
+  const command = type === 'send' ? { type, draft } : { type, ...draft }
+  expect(await desktop.call('unselected', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  expect(await desktop.call('denied', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(commands).toEqual([])
+  allowed = true
+  expect(await desktop.call('allowed', { op: 'command', command })).toMatchObject({ ok: true })
+  expect(commands).toEqual([{ command, clientId: paired.clientId }])
+  allowed = false
+  expect(await desktop.call('revoked', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  await desktop.call('switch', { op: 'command', command: { type: 'select-thread', threadId: 'other' } })
+  allowed = true
+  expect(await desktop.call('drifted', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(commands).toHaveLength(1)
+})
+
+it('returns a targeted Compose refusal as its own outcome when the shared shell has another error', async () => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service } = recordingService()
+  const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
+    queue: [], draft: '', composing: false, error: 'A different command changed the shared error.' }
+  Object.assign(service, { supportsAtomicSend: true, shell: () => state,
+    command: async () => ({ ...state, error: 'The draft could not be saved. Your earlier draft is kept.' }) })
+  listener = await startSocketServer({ service, pairing })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  expect(await desktop.call('save', { op: 'command', command: { type: 'compose', threadId: 'thread', text: 'Edit' } }))
+    .toMatchObject({ ok: true, result: { error: 'The draft could not be saved. Your earlier draft is kept.' } })
+  expect(service.shell().error).toBe('A different command changed the shared error.')
+})

@@ -34,6 +34,58 @@ afterEach(async () => { await new Promise<void>(resolve => server ? server.close
 const hostId = randomUUID()
 const frozen = { v: 1, status: 'ready', hostId, pid: 4242, port: 4319, sottoVersion: '0.1.16', features: ['detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'host-folders'] }
 
+describe('atomic socket Send', () => {
+  const command = { type: 'send' as const, draft: { threadId: 'thread', text: 'A new prompt', attachments: [] } }
+  it('keeps the draft and sends no packet or Compose fallback when the host lacks atomic-send', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
+    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(), call })
+    expect(client.supportsAtomicSend).toBe(false)
+    await expect(client.command(command)).resolves.toMatchObject({ error: 'Update the host before sending this draft. Your draft is kept.' })
+    expect(client.state().error).toBeNull()
+    expect(call).not.toHaveBeenCalled()
+  })
+  it.each([false, true])('sends one packet and preserves legacy Send (atomic feature: %s)', async atomic => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const state = emptyDesktopState(), call = vi.fn(async () => state)
+    Object.assign(client, { features: atomic ? ['atomic-send'] : [], cached: state, call })
+    const input = atomic ? command : { type: 'send' as const }
+    expect(client.supportsAtomicSend).toBe(atomic)
+    await client.command(input, undefined, 'selected-send')
+    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command: input }, 'selected-send')
+  })
+})
+
+describe('targeted socket Compose', () => {
+  const command = { type: 'compose' as const, threadId: 'thread', text: 'An edit while Send was running', attachments: [] }
+  it('keeps the draft and sends no ownerless Compose fallback when the host lacks atomic-send', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
+    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(), call })
+    await expect(client.command(command)).resolves.toMatchObject({ error: 'Update the host before saving this draft. Your draft is kept.' })
+    expect(client.state().error).toBeNull()
+    expect(call).not.toHaveBeenCalled()
+  })
+  it('preserves ownerless Compose on an older host', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const state = emptyDesktopState(), call = vi.fn(async () => state)
+    Object.assign(client, { features: [], cached: state, call })
+    const legacy = { type: 'compose' as const, text: 'Legacy draft' }
+    await client.command(legacy, undefined, 'legacy-save')
+    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command: legacy }, 'legacy-save')
+  })
+  it.each([null, 'The draft could not be saved. Your earlier draft is kept.'])('preserves its own acknowledged outcome through a later detail refresh: %s', async outcome => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const state = emptyDesktopState(), call = vi.fn(async () => ({ ...state, error: outcome }))
+    Object.assign(client, { features: ['atomic-send'], cached: state, call })
+    const detail = vi.spyOn(client, 'readThreadDetail').mockImplementation(async () => {
+      Object.assign(client, { cached: { ...state, error: 'A different command changed the shared error.' } })
+      return null
+    })
+    await expect(client.command(command, undefined, 'targeted-save')).resolves.toMatchObject({ error: outcome })
+    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command }, 'targeted-save')
+    expect(detail).toHaveBeenCalledExactlyOnceWith('thread')
+  })
+})
+
 describe('explicit socket answer checks', () => {
   const answer = { threadId: 'thread', providerId: 'grok' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
   it('refuses an older host without making a cached detail or receipt read', async () => {

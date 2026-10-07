@@ -9,7 +9,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
-import { HostConnectionError } from '../../../src/main/agents/socketHostService'
+import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
 
@@ -28,6 +28,30 @@ function fixture(hostId: string, kind: 'local' | 'remote') {
   return { state, command, detail, observe, connection }
 }
 describe('desktop host routing', () => {
+  it.each(['send', 'compose'] as const)('returns fixed update guidance for targeted %s to an older host without sending or losing its draft', async type => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    remote.state.activeThreadId = 'thread'
+    remote.state.draft = 'The retained prompt'
+    remote.state.draftThreadId = 'thread'
+    remote.state.composing = true
+    const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const call = vi.fn()
+    Object.assign(service, { cached: remote.state, features: ['answer-check'], call })
+    router.add({ ...remote.connection, service })
+    router.select(REMOTE)
+    const draft = { threadId: hostEntityKey(REMOTE, 'thread'), text: 'The retained prompt', attachments: [] }
+    const result = await router.command(type === 'send' ? { type, draft } : { type, ...draft }, desktopWindowClient())
+    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your draft is kept.'
+      : 'Update the host before saving this draft. Your draft is kept.')
+    expect(result.draft).toBe('The retained prompt')
+    expect(result.draftThreadId).toBe(hostEntityKey(REMOTE, 'thread'))
+    expect(result.composing).toBe(true)
+    expect(call).not.toHaveBeenCalled()
+    expect(service.state()).toEqual(remote.state)
+    expect(router.shell().error).toBe(result.error)
+    router.dispose()
+  })
+
   it.each(['disconnected', 'unavailable', 'version_mismatch'] as const)('keeps %s failures on the uncertain command path', async code => {
     const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
     router.add(remote.connection)

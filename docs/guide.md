@@ -75,6 +75,8 @@ A provider can ask the same question again after its process restarts. Sotto kee
 
 If an answer is queued or still being sent, wait for it to finish before checking again. Check keeps saved answers when the question changes, the provider disconnects or permission to answer is removed, and explains what happened. If a queued Send would use a different thread than the one you sent from, Sotto keeps the draft and asks you to review it before sending again.
 
+The composer's **Send** carries its text and images as one action for the selected thread. Checking an earlier answer cannot make that waiting action send the answer again. If the remote host needs an update to support this, Sotto keeps the draft and says so.
+
 Saved answers use version 2 of `request-drafts.json`. Current Sotto reads earlier version 1 files and upgrades them on the next successful save. Older builds cannot read version 2. If an older build reports unreadable answer storage after a downgrade, return to the updated build; keep the file intact so saved answers remain recoverable.
 
 When Codex asks you to open a link, for example to sign in to an app, the question shows the link with **Continue** and **Decline**. Open the link yourself, then press **Continue**.

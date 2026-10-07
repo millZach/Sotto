@@ -15,7 +15,7 @@ type Fields<T extends CommandType> = readonly Exclude<keyof Extract<AgentCommand
  */
 export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   configure: ['patch'],
-  compose: ['text', 'attachments'], send: [], 'cancel-draft': [], 'pause-draft': [], 'cancel-request': [],
+  compose: ['text', 'attachments', 'threadId'], send: ['draft'], 'cancel-draft': [], 'pause-draft': [], 'cancel-request': [],
   connect: ['provider'], disconnect: ['provider'], refresh: ['provider'],
   'refresh-thread-skills': ['threadId', 'forceReload'],
   'check-client-updates': [], 'dismiss-client-updates': [],
@@ -101,6 +101,8 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
 /** Why a paired client may not send this command, or null when it may. */
 export function remoteCommandRefusal(command: AgentCommand, context: { readonly mayAnswer: boolean; readonly askingProviderModes?: readonly string[] | undefined
   readonly draftRequestId?: string | null | undefined
+  /** Selection belongs to this authenticated socket, never to the command payload. */
+  readonly selectedThreadId?: string | null | undefined
   /** Whether this listener offers `client-updates`: the headless host does, the desktop's phone listener does not. */
   readonly clientUpdates?: boolean | undefined }): 'forbidden' | null {
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
@@ -108,6 +110,9 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
+  if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'
+  if (command.type === 'send' && command.draft && (command.draft.threadId !== context.selectedThreadId
+    || Object.keys(command.draft).some(key => !['threadId', 'text', 'attachments'].includes(key)))) return 'forbidden'
   if (!context.mayAnswer && remoteCommandNeedsAnswerPolicy(command, context.askingProviderModes ?? [], context.draftRequestId)) return 'forbidden'
   return null
 }

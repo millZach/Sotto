@@ -72,8 +72,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * All six are reads, bounded as the desktop's own are (ADR-0025, October 5 amendment).
  * `answer-check`: an authorized client's `check-answer` freshly reads an exact native question and may
  * release its restart re-offer for a new user choice. Receipt reads and background publications never do this.
+ * `atomic-send`: `send` may carry its selected thread's text and staged attachment handles in `draft`.
+ * The host admits and sends that draft together, without a separate Compose request. A Compose save may also
+ * carry `threadId` to retain its exact selected owner after Send. Neither field grants authority.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop

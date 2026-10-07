@@ -178,6 +178,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
+    && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'client-updates' || options.clientUpdates === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
@@ -389,16 +390,21 @@ export async function startSocketServer(options: SocketServerOptions) {
       return shell(peer)
     }
     const input = request.command
+    if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
+      && !offers(peer, 'atomic-send')) throw new Refusal('invalid_request')
     const state = service.shell()
     const targetThreadId = peer.selectedThreadId
     const savedDraft = state.draftThreadId !== targetThreadId || !state.composing && !state.draft.trim() && !state.draftAttachments?.length
       ? state.threadDrafts?.find(draft => draft.threadId === targetThreadId) : undefined
-    const draftRequestId = state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
+    // A native question needs current answer authority even before any client has saved its draft.
+    const nativeQuestion = state.host.threads.find(thread => thread.id === targetThreadId)?.requests
+      .find(item => item.kind === 'question')
+    const draftRequestId = nativeQuestion?.id ?? (state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
       : savedDraft ? savedDraft.requestId
-        : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId
+        : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId)
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
       draftRequestId: input.type === 'send' || input.type === 'compose' ? draftRequestId : undefined,
-      clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
+      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {
       const result = await service.command(input, peer.client)
@@ -431,7 +437,7 @@ export async function startSocketServer(options: SocketServerOptions) {
             : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['pause-draft', 'cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          if (input.type === 'answer' || input.type === 'send') privateError = result.error
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }

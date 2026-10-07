@@ -457,3 +457,49 @@ it.each(['claude', 'grok'] as const)('freshly checks a retired same-ID %s re-off
   expect(persisted.retirements).toEqual([{ owner: f.owner, requestId: f.target.requestId,
     questionsDigest: requestQuestionsDigest(f.target.questions), decisionId: held!.decisionId, revision: 1 }])
 })
+
+it.each(['claude', 'grok'] as const)('keeps a native %s re-offer retry-ready across Check publication and a second recovered offer', async provider => {
+  const f = await fixture(provider)
+  const execute = vi.spyOn(f.native, 'execute')
+  await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+  await f.router.reconcileRequestDrafts(f.drafts)
+  const refresh = vi.fn(async (threadId: string, purpose?: ThreadReadPurpose) => {
+    if (!purpose?.retryUncertainAnswers) return f.native.snapshot()
+    expect(purpose).toMatchObject({ retryUncertainAnswers: true, retryUncertainAnswerId: question.id })
+    const thread = (await f.native.snapshot()).threads.find(item => item.id === threadId)!
+    f.native.event({ type: 'history', threadId, text: '', messages: thread.messages })
+    for (const request of thread.requests) {
+      const next = structuredClone(request)
+      delete next.delivery; next.answerRetryReady = true
+      f.native.event({ type: 'question', threadId, text: next.text, request: next })
+    }
+    return f.native.snapshot()
+  })
+  Object.assign(f.native, { refreshThread: refresh })
+  for (let offer = 0; offer < 2; offer++) {
+    f.native.event({ type: 'question', threadId: 'workshop', text: '', request: { ...question, delivery: 'uncertain' } })
+    await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)?.delivery).toBe('uncertain')
+    const currentDrafts = offer ? await f.restartDrafts() : f.drafts
+    const checked = await currentDrafts.check(f.target)
+    expect(checked).toMatchObject({ status: 'editable', draft: { held: false, selections: {} } })
+    const requests = () => f.router.requestDraftState(f.owner)?.requests.filter(item => item.id === question.id)
+    expect(requests()).toEqual([expect.objectContaining({ answerRetryReady: true })])
+    expect(requests()?.[0]?.delivery).toBeUndefined()
+    // Follow-up shell/observation reads traverse the actual paired stack and must not
+    // restore an uncertain provider snapshot after the draft has become editable.
+    await f.client.observe([f.threadId])
+    await f.client.readShell()
+    expect(requests()).toEqual([expect.objectContaining({ answerRetryReady: true })])
+    expect(requests()?.[0]?.delivery).toBeUndefined()
+    if (checked.status !== 'editable' || !checked.draft) throw new Error('The checked re-offer has no fresh draft.')
+    const draft = checked.draft
+    await currentDrafts.save({ ...draft, revision: draft.revision + 1, held: true, selections: { q: { optionIds: ['a'], other: false, text: '' } } })
+    await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+      answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+    await f.router.reconcileRequestDrafts(currentDrafts)
+    expect(await currentDrafts.list(f.owner)).toEqual([])
+  }
+  expect(refresh.mock.calls.filter(([, purpose]) => purpose?.retryUncertainAnswers)).toHaveLength(2)
+  expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(3)
+})

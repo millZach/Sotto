@@ -65,6 +65,14 @@ type WithHandles<C> = Omit<C, 'attachments'> & { readonly attachments?: readonly
 type PromptWithHandles = WithHandles<Extract<AgentHostCommand, { type: 'send' }>> | WithHandles<Extract<AgentHostCommand, { type: 'steer' }>>
 /** What `dispatch` is handed: any host command, with a send's or steer's images as handles. */
 type DispatchCommand = Exclude<AgentHostCommand, { type: 'send' | 'steer' }> | PromptWithHandles
+/** An explicit composer packet owns this thread, question and revision before waiting for main's lane. */
+type ComposerContext = {
+  composition: Extract<AgentCommand, { type: 'save-thread-draft' }>
+  order: number
+  previousDraftId?: string
+  questionsDigest?: string
+  retryId?: string
+}
 /** The send or steer a command is, or null for any other: what `dispatch` asks, once, of every command. */
 function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
@@ -206,6 +214,8 @@ export class AgentControl {
   private persistedDrafts = new Map<string, string>()
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
   private readonly emptyDraftRevisions = new Map<string, string>()
+  private nextDraftAdmission = 0
+  private readonly draftWriteOrders = new Map<string, number>()
   private publishedDraftPersistence = ''
   /**
    * The newest write handed to the store, finished or not. The store writes in order, so this is what the disk
@@ -1353,15 +1363,27 @@ export class AgentControl {
     const settled = [...others, delivery].filter(item => item.status === 'accepted' || item.status === 'failed').slice(-MAX_DELIVERED_DRAFTS)
     this.state.deliveries = [...others, delivery].filter(item => item.status !== 'accepted' && item.status !== 'failed' || settled.includes(item))
   }
-  private async saveThreadDraft(command: Extract<AgentCommand, { type: 'save-thread-draft' }>): Promise<AgentState> {
-    try {
+  private async saveThreadDraft(command: Extract<AgentCommand, { type: 'save-thread-draft' }>, order?: number): Promise<AgentState> {
+    try { await this.stageThreadDraft(command, order) }
+    catch (error) { this.setCommandError(error, error instanceof z.ZodError ? 'Choose valid draft text and images before saving.' : error instanceof Error ? error.message : 'Could not save this thread draft.') }
+    this.publish()
+    // Saving text needs exact revision/durability evidence, not a copy of every loaded history.
+    // The desktop router discards those histories anyway; copying them here blocks native input.
+    return this.shell()
+  }
+  private async stageThreadDraft(command: Extract<AgentCommand, { type: 'save-thread-draft' }>, order?: number, requireImages = false): Promise<AgentThreadDraft> {
       // An image no longer kept (a refused prompt restored after its hour, say) is left out, and the text saved.
       const attachments = (command.attachments ?? []).filter(handle => this.attachments.keeps(handle))
       const lostImage = attachments.length !== (command.attachments ?? []).length
       const draft = agentThreadDraftSchema.parse({ ...command, attachments,
         requestId: command.requestId ?? null, updatedAt: new Date().toISOString() })
+      // A newer save owns the visible draft, including a deliberate empty revision.
+      if (order !== undefined && (this.draftWriteOrders.get(draft.threadId) ?? 0) > order) {
+        await this.persist().catch(() => { throw new Error('Could not save this thread draft. Keep your text and images and retry when storage is available.') })
+        return draft
+      }
       if (!this.state.threadDrafts?.some(item => item.threadId === draft.threadId)) this.thread(draft.threadId)
-      if (this.state.followupReceipts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId) || this.state.deliveredDrafts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId)) return this.shell()
+      if (this.state.followupReceipts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId) || this.state.deliveredDrafts?.some(item => item.threadId === draft.threadId && item.draftId === draft.draftId)) return draft
       const submitted = this.state.deliveries?.find(item => item.threadId === draft.threadId && item.draftId === draft.draftId)
       if (submitted && submitted.status !== 'failed') throw new Error('Use a new draft revision when editing a submitted prompt.')
       const previous = this.state.threadDrafts?.find(item => item.threadId === draft.threadId)
@@ -1375,17 +1397,18 @@ export class AgentControl {
         throw new Error('Clear the existing answer before starting a different draft.')
       }
       this.putThreadDraft(draft)
+      if (order !== undefined) this.draftWriteOrders.set(draft.threadId, order)
       if (this.state.draftThreadId === draft.threadId) {
         this.state.draft = draft.text; this.state.draftAttachments = draft.attachments
         this.state.draftRequestId = draft.requestId; this.manualDraftId = draft.draftId
       }
       this.state.error = lostImage ? DRAFT_IMAGE_NOT_SAVED : null
       await this.persist().catch(() => { throw new Error('Could not save this thread draft. Keep your text and images and retry when storage is available.') })
-    } catch (error) { this.setCommandError(error, error instanceof z.ZodError ? 'Choose valid draft text and images before saving.' : error instanceof Error ? error.message : 'Could not save this thread draft.') }
-    this.publish()
-    // Saving text needs exact revision/durability evidence, not a copy of every loaded history.
-    // The desktop router discards those histories anyway; copying them here blocks native input.
-    return this.shell()
+      // An autosave may recover text without a vanished image; an explicit Send must keep its whole packet.
+      if (requireImages && (lostImage || (command.attachments ?? []).some(handle => !this.attachments.keeps(handle)))) {
+        throw new Error('The prompt was not sent. An image is no longer kept. Your text was saved. Attach it again before sending.')
+      }
+      return draft
   }
   private readonly skillReads = new Map<string, number>()
   private async refreshThreadSkills(threadId: string, forceReload = false): Promise<AgentState> {
@@ -1615,7 +1638,8 @@ export class AgentControl {
     if (this.disposed) return Promise.resolve({ ...this.shell(), error: 'Sotto is stopping. Restart it before sending another command.' })
     // A handle is the window's claim; the store is what it is checked against, before the command does anything.
     // A draft save is the exception: it keeps the text and drops what is gone (saveThreadDraft), so typing is never lost.
-    try { if (command.type !== 'save-thread-draft') this.attachments.verify('attachments' in command ? command.attachments : undefined) }
+    try { if (command.type !== 'save-thread-draft') this.attachments.verify(command.type === 'send' && command.draft
+      ? command.draft.attachments : 'attachments' in command ? command.attachments : undefined) }
     catch (error) {
       this.setCommandError(error, error instanceof Error ? error.message : this.attachments.missing)
       if ((command.type === 'manual-send' || command.type === 'steer' || command.type === 'queue-followup') && command.draftId) this.setDelivery(command.threadId, command.draftId, 'failed')
@@ -1627,22 +1651,46 @@ export class AgentControl {
     const draftOwner = () => command.type === 'send' && client.transport === 'socket'
       ? client.selectedThreadId ?? null : this.state.draftThreadId ?? this.state.activeThreadId
     const answerThreadId = command.type === 'answer' ? command.threadId
+      : command.type === 'send' && command.draft ? command.draft.threadId
       : sendsDraft ? draftOwner() : null
+    let composer: ComposerContext | undefined
+    try {
+      if (command.type === 'save-thread-draft') {
+        composer = { composition: command, order: ++this.nextDraftAdmission }
+      } else if (command.type === 'send' && command.draft || command.type === 'compose' && command.threadId) {
+        const packet = command.type === 'send' ? command.draft! : command
+        const thread = this.thread(packet.threadId!)
+        if (client.transport === 'socket' && client.selectedThreadId !== thread.id) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
+        const saved = this.state.threadDrafts?.find(item => item.threadId === thread.id)
+        const question = thread.requests.find(item => item.kind === 'question')
+        const requestId = saved?.requestId ?? question?.id ?? null
+        if (requestId) this.guardClientGrant(client)
+        composer = { order: ++this.nextDraftAdmission, composition: { type: 'save-thread-draft', threadId: thread.id,
+          draftId: randomUUID(), text: packet.text, attachments: structuredClone(packet.attachments ?? saved?.attachments ?? []),
+          skills: saved?.skills, files: saved?.files, requestId },
+        ...(saved ? { previousDraftId: saved.draftId } : {}),
+        ...(question && question.id === requestId ? { questionsDigest: requestQuestionsDigest(requestDraftQuestions(question)) } : {}),
+        ...(this.outbox.find(item => item.threadId === thread.id)?.id ? { retryId: this.outbox.find(item => item.threadId === thread.id)!.id } : {}) }
+      }
+    } catch (error) {
+      this.setCommandError(error, error instanceof Error ? error.message : 'This draft could not be saved. Your draft is kept.')
+      this.publish(); return Promise.resolve(this.shell())
+    }
     const validateDraftOwner = sendsDraft ? () => {
       if (draftOwner() !== answerThreadId) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
     } : undefined
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
     let pending: Promise<AgentState>
-    try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner) }
+    try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner, composer) }
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
     const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
     void pending.then(settled, settled)
     return pending
   }
-  private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string, validateDraftOwner?: () => void): Promise<AgentState> {
-    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId, validateDraftOwner)
+  private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string, validateDraftOwner?: () => void, composer?: ComposerContext): Promise<AgentState> {
+    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId, validateDraftOwner, composer)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
     const { threadId, draftId } = prompt
     const key = JSON.stringify([threadId, draftId])
@@ -1673,7 +1721,7 @@ export class AgentControl {
     void task.finally(() => this.promptAdmissions.delete(key)).catch(() => undefined)
     return task
   }
-  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string, validateDraftOwner?: () => void): Promise<AgentState> {
+  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string, validateDraftOwner?: () => void, composer?: ComposerContext): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.shell()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -1696,7 +1744,7 @@ export class AgentControl {
       this.broadcastDetail()
       return Promise.resolve(this.shell())
     }
-    if (command.type === 'save-thread-draft') return this.saveThreadDraft(command)
+    if (command.type === 'save-thread-draft') return this.saveThreadDraft(command, composer?.order)
     // A Git action runs as long as its hooks and its push take, on the thread's own lane in the host, never on the global one.
     if (isGitCommand(command)) return this.gitCommand(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
@@ -1705,7 +1753,7 @@ export class AgentControl {
     if (command.type === 'regenerate-thread-title') return this.regenerateThreadTitle(command.threadId)
     if (command.type === 'queue-followup' || command.type === 'edit-followup' || command.type === 'remove-followup' || command.type === 'reorder-followups' || command.type === 'resume-followups') return this.followupCommand(command)
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
-    const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId : ''
+    const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId ?? '' : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
     if (command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
@@ -1769,7 +1817,7 @@ export class AgentControl {
           commandType: command.type,
           ...(command.type === 'utterance' && command.voiceTiming ? { voiceTiming: command.voiceTiming } : {}),
           text: command.type === 'utterance' ? command.text
-            : (command.type === 'manual-send' || command.type === 'steer') ? command.text : command.type === 'send' ? this.state.draft : command.type === 'answer' ? command.answer : '',
+            : (command.type === 'manual-send' || command.type === 'steer') ? command.text : command.type === 'send' ? command.draft?.text ?? this.state.draft : command.type === 'answer' ? command.answer : '',
         }) : undefined
       // A send this command makes is timed from the moment it was received, before its admission write and its lane.
       if (turn) turn.receivedAt = receivedAt
@@ -1779,7 +1827,7 @@ export class AgentControl {
         const admissionError = admission ? await admission : undefined
         if (admissionError instanceof Error) throw admissionError
         validateDraftOwner?.()
-        await this.execute(command, turn, manualRetryId, selectionRevision, client, answerDecisionId)
+        await this.execute(command, turn, manualRetryId, selectionRevision, client, answerDecisionId, composer)
       } catch (error) {
         if (error instanceof AnswerDeliveryUnconfirmed) unconfirmedAnswer = error
         failure = error instanceof AnswerDeliveryUnconfirmed && error.delivered ? undefined
@@ -2119,16 +2167,40 @@ export class AgentControl {
     this.state.pendingRequest = ''
   }
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
-    client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<void> {
+    client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
+    if (command.type === 'send' && command.draft) {
+      // One user Send owns staging and dispatch. A Check can never reopen an old reservation between them.
+      if (!composer) throw new Error('Review this draft and send again. Your draft is kept.')
+      if ((this.draftWriteOrders.get(composer.composition.threadId) ?? 0) > composer.order) {
+        throw new Error('This draft changed while Send was waiting. Your newer draft is kept. Review it and send again.')
+      }
+      if (!composer.retryId) {
+        try { this.validateComposerQuestion(composer) }
+        catch (error) {
+          const current = this.state.threadDrafts?.find(item => item.threadId === composer.composition.threadId)
+          if (!current || current.draftId === composer.previousDraftId || !current.text.length && !current.attachments.length) {
+            this.activateComposition(composer, client)
+            await this.stageThreadDraft(composer.composition, composer.order, true)
+          }
+          throw error
+        }
+      }
+      this.activateComposition(composer, client)
+      const staged = await this.stageThreadDraft(composer.composition, composer.order, true)
+      await this.sendDraft(turn, composer.retryId, selectionRevision, client,
+        client.transport === 'socket' ? command.draft.threadId : undefined, staged, composer)
+      return
+    }
+    if (command.type === 'compose' && composer) {
+      this.activateComposition(composer, client)
+      await this.stageThreadDraft(composer.composition, composer.order)
+      return
+    }
     if (client.transport === 'socket' && ['compose', 'send', 'cancel-draft', 'pause-draft', 'cancel-request'].includes(command.type)) {
       const thread = this.thread(client.selectedThreadId ?? null)
-      const saved = this.state.threadDrafts?.find(draft => draft.threadId === thread.id)
       if (command.type === 'compose') {
-        const requestId = saved ? saved.requestId : this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question')?.requestId ?? null
-        if (requestId) this.guardClientGrant(client)
-        await this.saveThreadDraft({ type: 'save-thread-draft', threadId: thread.id, draftId: randomUUID(), text: command.text,
-          attachments: command.attachments ?? saved?.attachments ?? [], skills: saved?.skills, files: saved?.files, requestId })
+        await this.saveThreadDraft(this.scopedComposition(command, client))
       } else if (command.type === 'send') {
         await this.sendDraft(turn, undefined, selectionRevision, client, thread.id)
       } else if (command.type === 'cancel-draft') {
@@ -2142,7 +2214,7 @@ export class AgentControl {
       return
     }
     // Explicit targets survive host observations and queue-driven selection changes.
-    if (turn && 'threadId' in command) {
+    if (turn && 'threadId' in command && command.threadId !== undefined) {
       turn.threadId = command.threadId
       turn.projectId = this.state.host.threads.find(thread => thread.id === command.threadId)?.projectId ?? null
     } else if (turn && 'projectId' in command) {
@@ -2537,7 +2609,7 @@ export class AgentControl {
         const request = thread.requests.find(r => r.id === command.requestId)
         if (!request) throw new Error('This request is no longer pending. Refresh the thread.')
         if (request.kind === 'permission' && command.approved === undefined) throw new Error('Choose Allow or Deny for this permission request.')
-        const answerDraft = this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
+        const answerDraft = sentDraft ?? this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
           && draft.text.trim() === command.answer.trim() && !draft.attachments.length)
         if (request.delivery === 'uncertain') throw new Error('This answer may already have arrived. Refresh the original request; it will not be resent.')
         if (isSottoRequest(request.id)) {
@@ -2552,7 +2624,7 @@ export class AgentControl {
           this.presentQueue(true, selectionRevision)
           return
         }
-        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, undefined, undefined, client)
+        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, undefined, client)
         assignment?.handledRequestIds.push(command.requestId)
         this.state.queue = this.state.queue.filter(q => q.requestId !== command.requestId)
         if (answerDraft) {
@@ -2565,6 +2637,33 @@ export class AgentControl {
         return
       }
     }
+  }
+  private validateComposerQuestion(context: ComposerContext): void {
+    const requestId = context.composition.requestId
+    if (!requestId) return
+    const question = this.thread(context.composition.threadId).requests.find(item => item.id === requestId && item.kind === 'question')
+    if (!question || context.questionsDigest !== undefined && requestQuestionsDigest(requestDraftQuestions(question)) !== context.questionsDigest) {
+      throw new Error('This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt.')
+    }
+  }
+  private activateComposition(context: ComposerContext, client: ClientIdentity): void {
+    const { threadId, requestId } = context.composition
+    if (requestId) this.guardClientGrant(client)
+    if ((this.draftWriteOrders.get(threadId) ?? 0) > context.order) return
+    // A newer edit keeps its original owner even when the preceding Send presented another thread.
+    if (client.transport !== 'socket' && (this.state.draftThreadId === threadId
+      || this.state.draftThreadId === null && this.state.activeThreadId === threadId)) {
+      this.coordinatorConversation = false
+      this.state.composing = true; this.state.draftThreadId = threadId; this.state.draftRequestId = requestId ?? null
+    }
+  }
+  private scopedComposition(command: Extract<AgentCommand, { type: 'compose' }>, client: ClientIdentity): Extract<AgentCommand, { type: 'save-thread-draft' }> {
+    const thread = this.thread(client.selectedThreadId ?? null)
+    const saved = this.state.threadDrafts?.find(draft => draft.threadId === thread.id)
+    const requestId = saved ? saved.requestId : this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question')?.requestId ?? null
+    if (requestId) this.guardClientGrant(client)
+    return { type: 'save-thread-draft', threadId: thread.id, draftId: randomUUID(), text: command.text,
+      attachments: command.attachments ?? saved?.attachments ?? [], skills: saved?.skills, files: saved?.files, requestId }
   }
   private assign(threadId: string, instruction: string, selectionRevision: number): void {
     if (!supportsAgentSupervision(capabilitiesForThread(this.state.host, this.thread(threadId)))) throw new Error('This connection cannot safely supervise threads. Its available controls remain visible.')
@@ -2932,15 +3031,16 @@ export class AgentControl {
     this.say(`Sent to ${thread.title}.`)
     this.observe()
   }
-  private async sendDraft(turn?: ActiveTurn, retryId?: string, selectionRevision = this.selectionRevision, client = this.localClient, selectedThreadId?: string): Promise<void> {
+  private async sendDraft(turn?: ActiveTurn, retryId?: string, selectionRevision = this.selectionRevision, client = this.localClient, selectedThreadId?: string,
+    staged?: AgentThreadDraft, composer?: ComposerContext): Promise<void> {
     const scoped = selectedThreadId !== undefined
-    const draftThreadId = selectedThreadId ?? this.state.draftThreadId
-    if (!scoped || this.state.draftThreadId === draftThreadId) this.syncLegacyDraft()
-    const pickedDraft = this.state.threadDrafts?.find(draft => draft.threadId === draftThreadId)
-    const draftText = scoped ? pickedDraft?.text ?? '' : this.state.draft
-    const draftAttachments = scoped ? pickedDraft?.attachments ?? [] : this.state.draftAttachments
-    const draftRequestId = scoped ? pickedDraft?.requestId : this.state.draftRequestId
-    const pickedDraftId = scoped ? pickedDraft?.draftId : this.manualDraftId ?? undefined
+    const draftThreadId = staged?.threadId ?? selectedThreadId ?? this.state.draftThreadId
+    if (!staged && (!scoped || this.state.draftThreadId === draftThreadId)) this.syncLegacyDraft()
+    const pickedDraft = staged ?? this.state.threadDrafts?.find(draft => draft.threadId === draftThreadId)
+    const draftText = staged ? staged.text : scoped ? pickedDraft?.text ?? '' : this.state.draft
+    const draftAttachments = staged ? staged.attachments : scoped ? pickedDraft?.attachments ?? [] : this.state.draftAttachments
+    const draftRequestId = staged ? staged.requestId : scoped ? pickedDraft?.requestId : this.state.draftRequestId
+    const pickedDraftId = staged ? staged.draftId : scoped ? pickedDraft?.draftId : this.manualDraftId ?? undefined
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === draftThreadId)?.id
     if (pendingId) {
       this.canAct()
@@ -2961,20 +3061,21 @@ export class AgentControl {
     // The read alone, as a typed send times it; taking in its snapshot is not part of it.
     const readMs = performance.now() - readStartedAt
     this.acceptSnapshot(read)
+    if (composer) this.validateComposerQuestion(composer)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
     const assignment = this.assignment(thread.id)
     const text = draftText.trim()
     const draftId = pickedDraftId
-    const savedDraft = this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
+    const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
     const skills = savedDraft?.skills
     const files = savedDraft?.files
     if (draftRequestId) {
       if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
       const requestId = draftRequestId
       if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
-      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client)
+      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client, undefined, composer, staged)
       return
     }
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')

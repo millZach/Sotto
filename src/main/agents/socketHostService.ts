@@ -356,7 +356,12 @@ export class SocketHostService implements HostService {
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
   async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
+  get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    if (!this.supportsAtomicSend) {
+      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept.' }
+      if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: 'Update the host before saving this draft. Your draft is kept.' }
+    }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
     commandId ??= randomUUID()
     const before = this.shell()
@@ -392,9 +397,10 @@ export class SocketHostService implements HostService {
       }
     }
     const refreshed = generation === this.generation ? this.state() : acknowledged
-    // State refreshes cannot settle this command's private answer outcome.
+    // State refreshes cannot replace this command's own answer or targeted draft outcome.
     return accepted ? { ...refreshed, error: null }
-      : command.type === 'answer' || command.type === 'send' ? { ...refreshed, error: state.error } : refreshed
+      : command.type === 'answer' || command.type === 'send' || command.type === 'compose' && command.threadId !== undefined
+        ? { ...refreshed, error: state.error } : refreshed
   }
   async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
     return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))

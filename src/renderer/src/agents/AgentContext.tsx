@@ -206,15 +206,18 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // checks busy state, provider locks and authority before dispatch.
     const speechPreference = request.type === 'configure' && typeof request.patch.speak === 'boolean' && Object.keys(request.patch).length === 1
     const providerOperation = request.type === 'connect' || request.type === 'disconnect' || request.type === 'refresh'
+    const composerOperation = request.type === 'compose' || request.type === 'send' || request.type === 'utterance'
+      && request.text.trim().toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim() === 'send it'
     // A command main runs in one thread's own lane goes straight to main: waiting here for another
     // thread's reply would undo that lane. Main orders a thread's commands in the order they arrive, so
     // sending at once keeps them in user order. A thread's commands that never enter a lane in main (Stop,
     // selection, its saved draft, its follow-up queue and its skills catalog) go at once too, and telling
     // main which panes are open grants nothing, so it does not wait either. What main keeps global
     // (assignment moves, a new thread, settling or restoring a project, the single composer draft) still
-    // waits for the reply before it.
+    // waits for the reply before it. Composer saves and Send reach main at once in invocation order;
+    // their execution still shares main's global lane, so older saves cannot land after a Send.
     const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
-    if (threadCommand || request.type === 'observe-threads' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
+    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'voice' || request.type === 'voice-state' || speechPreference || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
