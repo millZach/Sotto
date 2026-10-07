@@ -9,6 +9,7 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { TerminalService } from './terminal'
 import type { BrowserService } from './browser'
 import type { GitChangesService } from './gitChanges'
+import { INVALID_REQUEST } from './common'
 
 /**
  * Changes for a thread on a paired host, read on that host through the router (ADR-0025, October 5 amendment): the
@@ -28,7 +29,6 @@ const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], string>> =
   watch: 'Changes reads this thread again when its host says its files changed, so there is nothing to watch here. Nothing was changed.',
 }
 const NO_CHECKPOINTS = 'Turn checkpoints are kept only for threads on this computer. Nothing was changed.'
-const INVALID = 'This tool request is invalid. Refresh the tools panel.'
 
 export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
@@ -44,7 +44,7 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
   const onHost = async (method: typeof GIT_CHANGES_METHODS[number], payload: unknown): Promise<ToolsResult<unknown>> => {
     const hosted = services.hostedGitChanges
     if (!hosted) return { ok: false, error: { code: 'unavailable', message: 'Changes cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.' } }
-    const invalid = { ok: false, error: { code: 'invalid-request', message: INVALID } } as const
+    const invalid = { ok: false, error: { code: 'invalid-request', message: INVALID_REQUEST } } as const
     if (method === 'list') { const parsed = toolListRequestSchema.safeParse(payload); return parsed.success ? hosted.list(parsed.data) : invalid }
     if (method === 'review') { const parsed = gitReviewRequestSchema.safeParse(payload); return parsed.success ? hosted.review(parsed.data) : invalid }
     if (method === 'copyPath') { const parsed = gitPathRequestSchema.safeParse(payload); return parsed.success ? hosted.copyPath(parsed.data) : invalid }

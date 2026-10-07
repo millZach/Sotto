@@ -114,8 +114,15 @@ function update(sessionId, update, extension = false, notify = true, meta = {}) 
  hold(sessionId).updates.push(entry); save()
  if (notify) send(entry)
 }
-function complete(sessionId, text, reason = 'end_turn') {
- if (text) update(sessionId, { sessionUpdate: 'agent_message_chunk', content: {type:'text',text} })
+// With `thought`, the reply opens on thought chunks the way Grok's own history keeps them: the thought and the reply
+// that follows share one prompt and one stream start in `_meta`.
+function complete(sessionId, text, reason = 'end_turn', thought) {
+ const stream = typeof thought === 'string' ? { promptId: `prompt-${sessionId}`, streamStartMs: Date.now() } : {}
+ if (typeof thought === 'string') {
+  const middle = Math.ceil(thought.length / 2)
+  for (const part of thought ? [thought.slice(0, middle), thought.slice(middle)] : ['']) update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: {type:'text',text:part} }, false, true, stream)
+ }
+ if (text) update(sessionId, { sessionUpdate: 'agent_message_chunk', content: {type:'text',text} }, false, true, stream)
  update(sessionId, {sessionUpdate:'turn_completed',prompt_id:sessionId,stop_reason:reason},true)
  const id = sessions[sessionId].promptId; if (id) send({id,result:{stopReason:reason}})
  delete sessions[sessionId].promptId; save()
@@ -233,12 +240,13 @@ function check() {
 const control = setInterval(check, 10)
 function run(command) {
  if (command.type === 'release-create') { const reply = heldCreate; heldCreate = undefined; reply?.() }
- if (command.type === 'complete') complete(command.sessionId,command.text,command.reason)
+ if (command.type === 'complete') complete(command.sessionId,command.text,command.reason,command.thought)
+ if (command.type === 'thought') update(command.sessionId,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)
  if (command.type === 'chunk') update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
  if (command.type === 'raw-burst') process.stdout.write(command.frames.map(frame => JSON.stringify({jsonrpc:'2.0',...frame})+'\n').join(''))
  if (command.type === 'coalesce') {
-  const entries = sessions[command.sessionId].updates.filter(entry => entry.params.update.sessionUpdate === 'agent_message_chunk' && entry.params._meta.streamStartMs === command.streamStartMs)
+  const entries = sessions[command.sessionId].updates.filter(entry => entry.params.update.sessionUpdate === (command.update ?? 'agent_message_chunk') && entry.params._meta.streamStartMs === command.streamStartMs)
   const text = entries.map(entry => entry.params.update.content.text).join('')
   const last = entries.at(-1)
   if (last) { sessions[command.sessionId].updates = sessions[command.sessionId].updates.filter(entry => !entries.includes(entry) || entry === last); last.params.update.content.text = text; save() }

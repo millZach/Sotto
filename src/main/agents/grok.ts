@@ -22,7 +22,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { grokActivities } from './grokActivity'
+import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -32,6 +32,7 @@ import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
 import { OpenSessions } from './openSessions'
+import { markSendStage } from './sendStages'
 
 // Only strip our suffix after durable origin/digest matching; foreign native
 // messages remain untouched and no extra plaintext prompt is stored in aliases.
@@ -104,9 +105,11 @@ function assistantKey(id: string, params: z.infer<typeof updateSchema>, userId: 
   return `grok-assistant-${digest(JSON.stringify([id, params._meta?.promptId ?? userId, params._meta?.streamStartMs ?? lastActivityId ?? 'start']))}`
 }
 // A stream's identity is the work that preceded it, as Grok reported it. Sotto's own turn records are
-// not Grok's work, so they must not shift that identity between the live rail and durable history.
+// not Grok's work, so they must not shift that identity between the live rail and durable history. A thought
+// belongs to the stream it opens rather than preceding it, and leaving it out keeps the identities replies
+// had before thoughts were shown.
 const lastReportedId = (rows: readonly AgentActivity[] | undefined): string | undefined =>
-  rows?.filter(row => row.kind !== 'turn').at(-1)?.id
+  rows?.filter(row => row.kind !== 'turn' && row.kind !== 'reasoning').at(-1)?.id
 function messageOrigin(alias: Alias, key: string, text: string, timestampMs: number) {
   const hash = digest(text)
   return alias.origins.find(origin => origin.entryKey === key && origin.digest === hash)
@@ -399,7 +402,7 @@ export class GrokAcpHost implements AgentHost {
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
     const thread = this.threads.get(id)
     if (thread) {
-      thread.requests = []
+      thread.requests = []; this.cutThoughts(id)
       if (this.endTurn(id, 'failed')) void this.persist().catch(() => undefined)
       // A Sotto prompt fails through its own request; a turn Sotto only watched fails here.
       if (thread.status === 'running' && !this.activePrompts.has(id)) { thread.status = 'error'; this.liveStatus.delete(id); this.markTurn(id, 'failed', undefined, THREAD_PROCESS_LOST) }
@@ -707,7 +710,9 @@ export class GrokAcpHost implements AgentHost {
           const update = parsed.data.update; const content = object(update.content)
           this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
-          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities))
+          // A prompt after a turn with no recorded end follows a turn its process cut off, and that cut off its thought too.
+          if (update.sessionUpdate === 'user_message_chunk' && history.lastTurn?.status === 'running') history.activities = cutThinking(history.activities, false)
+          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
@@ -732,13 +737,15 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (!current()) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, history.activities)
     let status = history.status; let lastTurn = history.lastTurn
     // A turn whose process ended before it finished never records its end in Grok's history, which would
-    // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how.
+    // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how; a
+    // thought the turn was still on was cut off with it.
     if (status === 'running' && lastTurn && alias.endedTurn?.id === lastTurn.id && !this.activePrompts.has(id)) {
       status = alias.endedTurn.outcome === 'failed' ? 'error' : 'idle'; lastTurn = { id: lastTurn.id, status: alias.endedTurn.outcome }
+      history.activities = cutThinking(history.activities, false)
     }
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThinking(history.activities, thread.activities))
     // A live native turn may belong to the CLI, not activePrompts. Older durable
     // status cannot supersede it until its event has entered the persisted timeline.
     const liveStatus = this.liveStatus.get(id)
@@ -924,6 +931,7 @@ export class GrokAcpHost implements AgentHost {
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
+          markSendStage(command.commandId, 'written')
           void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
@@ -934,10 +942,12 @@ export class GrokAcpHost implements AgentHost {
             this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error)
             this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed' }
             // A process that ended mid-turn failed this thread alone, and the next send starts a new one.
+            this.cutThoughts(command.threadId)
             this.markTurn(command.threadId, 'failed', command.messageId, entry.lost ? THREAD_PROCESS_LOST : error instanceof Error ? error.message : undefined)
             this.emit()
           }).catch(() => this.disconnect())
           try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
+          markSendStage(command.commandId, 'acknowledged')
           await this.refreshThread(command.threadId)
         } else if (command.type === 'answer') {
           const pending = this.pending.get(command.requestId)
@@ -1011,7 +1021,7 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
@@ -1049,6 +1059,13 @@ export class GrokAcpHost implements AgentHost {
     }
   }
   /**
+   * A thought still running when its process ended or its prompt failed was cut off. Grok's history never records
+   * that turn's end, so nothing else would settle it until the next prompt, and then as completed.
+   */
+  private cutThoughts(id: string): void {
+    const thread = this.threads.get(id); if (thread?.activities) thread.activities = cutThinking(thread.activities, true)
+  }
+  /**
    * Grok reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
    * its user message, the same identity the projected activity rows already carry.
    */
@@ -1071,7 +1088,7 @@ export class GrokAcpHost implements AgentHost {
     this.deliveries.clear()
     // Each thread's turn ends with its process, and Grok's history will never say so.
     let ended = false
-    for (const id of this.processes.keys()) ended = this.endTurn(id, 'interrupted') || ended
+    for (const id of this.processes.keys()) { this.cutThoughts(id); ended = this.endTurn(id, 'interrupted') || ended }
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) this.closeProcess(entry)
     this.processes.clear(); this.outdated.clear(); this.state.connected = false; this.emit()

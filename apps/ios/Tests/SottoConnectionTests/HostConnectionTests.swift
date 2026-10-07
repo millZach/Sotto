@@ -99,8 +99,28 @@ private final class HostResponses: URLProtocol {
         }
         XCTAssertEqual(HostConnection.refusal(route: "/v1/pair", status: 401, name: "forge"), .rejected("That code didn't work. Codes work once and last five minutes; get a new one on that computer."))
         XCTAssertEqual(HostConnection.refusal(route: "/v1/session", status: 503, name: "forge"), .sottoNotRunning("forge"))
+        XCTAssertEqual(HostConnection.refusal(route: "/v1/session", status: 403, name: "forge"), .rejected("This iPhone is no longer paired with forge. Remove it in Computers and add it again."))
         XCTAssertEqual(ClientError.connectionTimedOut.errorDescription, "The computer didn't finish connecting. Work carries on there. Try connecting again.")
         XCTAssertEqual(ClientError.rateLimited.errorDescription, "Too many connection attempts. Wait a minute and try again.")
+    }
+    func testSessionRefusedWhilePhoneAccessIsOffKeepsThePairingAndSaysWhy() async throws {
+        let endpoint = try HostEndpoint("https://forge.example.ts.net")
+        let pairing = try JSONDecoder().decode(Pairing.self, from: Data("{\"v\":1,\"hostId\":\"\(hostID)\",\"clientId\":\"phone\",\"token\":\"fixture\"}".utf8))
+        let expected = hostID
+        let message = "Phone access is off on forge. Your pairing is kept."
+        for route in ["/v1/session", "/v1/pair"] {
+            HostResponses.handler = { request in
+                if request.url!.path == "/v1/health" { return (200, "{\"v\":1,\"status\":\"ready\",\"hostId\":\"\(expected)\"}") }
+                return (403, "{\"v\":1,\"error\":{\"code\":\"forbidden\",\"message\":\"\(message)\"}}")
+            }
+            let connection = connection(); defer { connection.close(); HostResponses.handler = nil }
+            do {
+                if route == "/v1/pair" { _ = try await connection.pair(endpoint: endpoint, expectedHostID: expected, code: "ABCD2345") }
+                else { _ = try await connection.connect(endpoint: endpoint, pairing: pairing) }
+                XCTFail("Expected a refusal")
+            } catch { XCTAssertEqual(error as? ClientError, .hostRefused(message)) }
+        }
+        XCTAssertEqual(ClientError.hostRefused(message).errorDescription, message)
     }
     func testHealthRateLimitIsReported() async throws {
         HostResponses.handler = { _ in (429, "{}") }

@@ -51,7 +51,13 @@ async function run(configuration: Configuration, operation: LaunchOperation | Re
   if (typeof result.pid === 'number') pids.push(result.pid)
   return { messages, result }
 }
-const descriptor = async (configuration: Configuration) => JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as { pid: number; startedBy?: string }
+const descriptor = async (configuration: Configuration) => JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as { pid: number; startedBy?: string; instance: string }
+/**
+ * Whether the host first started has gone and another took its place. Windows can hand the new host the old one's PID
+ * straight back, so a PID still alive counts as gone when the host there now is another start of it.
+ */
+const replaced = (first: { pid: number; instance: string }, now: { pid: number; instance: string }): boolean =>
+  now.instance !== first.instance && (now.pid === first.pid || !alive(first.pid))
 /** A host the owner started by hand in the same folder: Sotto did not start it. */
 async function startedByHand(configuration: Configuration, env: NodeJS.ProcessEnv = {}): Promise<ChildProcess> {
   const child = spawn(process.execPath, [join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true, env: { ...process.env, ...env } })
@@ -133,14 +139,15 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
 
   it('undoes the install and starts the host the way a launch does when the unit will not start it', async () => {
     const configuration = await fixture({ linger: true, startExit: 1 })
-    const launched = await run(configuration, { op: 'launch' })
+    await run(configuration, { op: 'launch' })
+    const first = await descriptor(configuration)
     const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
     expect(install.result).toEqual({ type: 'error', reason: 'boot-start-failed', restarted: true, cause: 'boot-start-refused' })
-    expect(alive(launched.result.pid as number)).toBe(false)
     await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
     expect((await systemd!.state()).enabled).toBe(false)
     const restarted = await descriptor(configuration)
     pids.push(restarted.pid)
+    expect(replaced(first, restarted)).toBe(true)
     expect(restarted).toMatchObject({ startedBy: 'launch-script' })
     expect(alive(restarted.pid)).toBe(true)
   })
@@ -166,11 +173,13 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
     const configuration = await fixture({ linger: true })
     const launched = await run(configuration, { op: 'launch' })
     expect(launched.result).toMatchObject({ type: 'ready', owned: true, bootStart: { supported: true, installed: false, enabled: false, linger: true, nodeDrift: false } })
+    const first = await descriptor(configuration)
     const before = (await systemd!.calls()).length
     const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID })
     expect(install.result).toMatchObject({ type: 'boot-installed', installed: true, stopped: true, bootStart: { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } })
-    expect(alive(launched.result.pid as number)).toBe(false)
-    expect(await descriptor(configuration)).toMatchObject({ pid: install.result.pid, startedBy: 'boot' })
+    const handed = await descriptor(configuration)
+    expect(handed).toMatchObject({ pid: install.result.pid, startedBy: 'boot' })
+    expect(replaced(first, handed)).toBe(true)
     expect(await changes(before)).toEqual(['systemctl daemon-reload', 'systemctl enable sotto-host', 'systemctl reset-failed sotto-host', 'systemctl start sotto-host'])
     const unit = (await readFile(configuration.systemd.unitPath, 'utf8')).split('\n')
     // The start limit belongs to [Unit]: systemd ignores it under [Service].
@@ -375,6 +384,16 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
       await expect(readFile(join(configuration.installPath, 'boot-start.sh'))).rejects.toMatchObject({ code: 'ENOENT' })
       expect(await systemd!.spawned()).toHaveLength(hosts)
+    })
+
+    it('says so when Forget’s admin connection finds the host stopped and cannot take the unit away', async () => {
+      const configuration = await installed()
+      await run(configuration, { op: 'stop-host', hostId: HOST_ID })
+      // Another update or change holds the installation, so the unit cannot be taken away now.
+      await mkdir(join(configuration.installPath, 'versions', '.update-lock'), { recursive: true })
+      await writeFile(join(configuration.installPath, 'versions', '.update-lock', 'pid'), String(process.pid))
+      expect((await run(configuration, { op: 'launch', start: false, removeBoot: true })).result).toEqual({ type: 'error', reason: 'host-not-running', bootLeft: true })
+      expect(await readFile(configuration.systemd.unitPath, 'utf8')).toContain('boot-start.sh')
     })
   })
 

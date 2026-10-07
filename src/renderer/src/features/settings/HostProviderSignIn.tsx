@@ -6,7 +6,7 @@ import { PROVIDER_LABELS, type ProviderId } from '../../../../shared/agents'
 import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { PASTED_CODE_MAX, type ProviderSignInView } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
-import { HostsModal } from './HostDialog'
+import { HostsModal } from './HostsModal'
 
 /** How often the dialog asks the host where a sign-in stands while it waits for the user or the client. */
 const READ_EVERY_MS = 1500

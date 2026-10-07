@@ -58,7 +58,14 @@
 .host-phones-dialog { width: min(620px, 100%); max-height: calc(100% - 40px); overflow: auto; }
 .host-phones { gap: 14px; }
 .hosts-settings .host-phones__intro { margin: 0; }
-.hosts-settings .host-phones__reading { margin: 0; font-size: 13px; }
+/* An admin connection waiting for Tailscale's approval (ADR-0053): the sentence, then the page and why it asks. */
+.host-phones-approval { align-items: flex-start; }
+.host-phones-approval__copy { display: grid; flex: 1; gap: 10px; min-width: 0; }
+.host-phones-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.host-phones-approval__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
+/* Before the host is read, every check waits, and the switch is not shown. */
+.host-phones-unread { border-top: 1px solid var(--tt-hairline); }
+.hosts-settings .host-phones-unread .phones-step__copy > p { margin: 2px 0 0; font-size: 13px; }
 .host-phones .phones-switch { padding: 12px 0; border-block: 1px solid var(--tt-hairline); }
 .host-phones-steps { border-top: 0; }
 .host-phones-steps > li { gap: 6px 12px; padding: 10px 0; }
