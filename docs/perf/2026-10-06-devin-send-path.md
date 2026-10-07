@@ -21,9 +21,10 @@ ran the integration lists twice more besides: 19 processes. After the prompt it 
 the dispatch identity appeared, kept the streamed reply hidden until then, and read again every 1.5 s while the
 turn ran.
 
-Now the read before a send starts nothing, a read of a session Sotto holds reads the replay only to confirm a
-dispatch no replay has confirmed yet, the profile and integrations are checked once with the lists and the config
-read side by side, and the send is accepted from the owner's own stream, which shows the reply as it arrives.
+Now a send to a thread whose session Sotto holds reads no replay unless an earlier dispatch is still unconfirmed,
+and neither does any other read of it but the poll. The profile and integrations are checked once, with the lists and
+the config read side by side, and the send is accepted from the thread's own stream, which shows the reply as it
+arrives.
 
 ## Against the fake ACP peer
 
@@ -39,12 +40,18 @@ prompt. Each figure is the median of the five sends in a run, and each range is 
 | Send to accepted | 2,068-2,219 ms | 135-155 ms |
 | Processes started before `session/prompt` | 19 | 2 |
 | Observer reads per send, through the reconciliation read | 5 | 1 |
-| Observer reads in 4 s of a running, streaming turn, at the production poll pace | 2-3 | 0 |
+| Observer reads in 4 s of a running, streaming turn, at the production poll pace, from acceptance | 1-2 | 0 |
 
 The two processes left are `plugins list` and `mcp list`, run together. The one observer read left is the
 coordinator's reconciliation read after acceptance, which confirms the dispatch against the replay; it comes after
 the prompt and the first words. `tests/integration/devinSendPath.test.ts` pins the count of 2 and shows reply text
 reaching the message log with no observer read at all.
+
+The running-turn row is counted from once the send was accepted, over three runs each, its "before" against
+`devin.ts` and `devinPolicy.ts` from `origin/main` at `7d071b62`. An earlier version of this
+note gave 2-3 for "before", counted from before the send, which took in the old send's own acceptance read. The 0
+also rests on the poll's fifteen seconds starting when a thread is opened or created, since that has just read it;
+before, the first poll after opening read it again at once.
 
 ## Against Devin CLI 3000.10.31
 
