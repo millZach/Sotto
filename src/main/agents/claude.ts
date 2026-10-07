@@ -97,7 +97,7 @@ type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
  * by starting the CLI again, refused by the CLI (a restart or a refusal follows), or left unconfirmed. Event
  * names only; a model, a level or a mode never reaches the log.
  */
-export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
+export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-origin-journal-fold-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
 /** What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required. */
 const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode'>): ClaudeSettings =>
   ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required' })
@@ -1451,8 +1451,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       alias.origins.push(origin); merged = true
     }
     // Folded into the store and cleared at once, so this connection's appends never follow a line a crash cut short.
-    if (merged) await this.inAliasOrder(() => this.writeWhole(aliases))
-    else if (journal.present) {
+    // A fold that cannot be written still connects: the journal keeps its lines for the next whole write.
+    if (merged) {
+      try { await this.inAliasOrder(() => this.writeWhole(aliases)) }
+      catch { this.options.logEvent?.('claude-origin-journal-fold-failed') }
+    } else if (journal.present) {
       // As in a whole write, a journal that cannot be cleared is harmless: every origin in it is already in the store.
       try { await this.inAliasOrder(() => this.originJournal.clear()) }
       catch { this.options.logEvent?.('claude-origin-journal-clear-failed') }

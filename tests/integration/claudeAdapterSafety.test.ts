@@ -9,6 +9,7 @@ import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
 import { ClaudeOriginJournal } from '../../src/main/agents/claudeOriginJournal'
+import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { PersonalChatService } from '../../src/main/agents/personalChats'
 import { personalRequestDraftState } from '../../src/main/agents/requestDrafts'
 import { personalAnswerHeld } from '../../src/shared/personalChats'
@@ -209,6 +210,32 @@ describe('Claude recovery and safety', () => {
     f.host.disconnect(); await f.adapter.closed()
     f = await claudeFixture(f.root); await f.host.connect()
     expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Synthetic prompt after the failure' })).toEqual({ accepted: true })
+  })
+  it('connects with the journal’s origins when folding them into the thread store fails, and keeps the journal', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[] }>
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins).toEqual([])
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value, compact) {
+      if ((this as unknown as { filePath: string }).filePath === storePath) return Promise.reject(Object.assign(new Error('Synthetic full disk'), { code: 'ENOSPC' }))
+      return write.call(this, value, compact)
+    })
+    const events: string[] = []
+    f = await claudeFixture(f.root, undefined, undefined, { logEvent: event => events.push(event) })
+    await f.host.connect()
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect(events).toContain('claude-origin-journal-fold-failed')
+    expect(await readFile(journalPath, 'utf8')).toContain('journaled')
+    // The thread still knows it sent that prompt, so asking again does not send it twice.
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+    vi.restoreAllMocks()
+    // The next whole write folds them in for good and clears the journal.
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, title: 'Other', modelId: f.modelId })
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins.map(origin => origin.messageId)).toContain('journaled')
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('reconciles image-only native frames over 1 MiB and restores references without persisting image bytes', async () => {
     const image = Buffer.alloc(1024 * 1024); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(image)
