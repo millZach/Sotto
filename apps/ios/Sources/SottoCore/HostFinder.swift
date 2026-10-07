@@ -85,14 +85,15 @@ public enum HostFinder {
     public static let phoneAccessPorts = [8443, 10000]
 
     /// Reaches a saved computer: at its saved address, then, when that address is on a phone access port
-    /// and nothing there is Sotto, at the other phone access port on the same full name. `check` must
+    /// and no running Sotto answers there, at the other phone access port on the same full name. A 502 or 503
+    /// counts, since another app's Serve setting whose own server is stopped answers that way. `check` must
     /// confirm the pairing's host ID, so another computer answering there is never used. When the other
     /// port fails too, for any reason, the saved address's error is the one thrown.
     public static func reconnect<Found>(_ saved: HostEndpoint, check: (HostEndpoint) async throws -> Found) async throws -> (endpoint: HostEndpoint, found: Found) {
         do { return (saved, try await check(saved)) }
         catch {
             switch error as? ClientError {
-            case .hostUnreachable?, .notASottoHost?: break
+            case .hostUnreachable?, .notASottoHost?, .sottoNotRunning?: break
             default: throw error
             }
             guard phoneAccessPorts.contains(saved.port) else { throw error }

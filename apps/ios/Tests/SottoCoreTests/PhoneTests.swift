@@ -95,17 +95,20 @@ final class PhoneTests: XCTestCase {
     }
     func testASavedComputerIsLookedForOnItsOtherPhoneAccessPortOnly() async throws {
         XCTAssertEqual(HostFinder.phoneAccessPorts, [8443, 10000])
-        for (saved, other) in [(8443, 10000), (10000, 8443)] {
-            var asked: [Int] = []
-            let hit = try await HostFinder.reconnect(try HostEndpoint("https://forge.tail5c2e.ts.net:\(saved)")) { endpoint -> Int in
-                asked.append(endpoint.port)
-                if endpoint.port == saved { throw ClientError.hostUnreachable("forge") }
-                return endpoint.port
+        let misses: [ClientError] = [.hostUnreachable("forge"), .notASottoHost("forge"), .sottoNotRunning("forge")]
+        for miss in misses {
+            for (saved, other) in [(8443, 10000), (10000, 8443)] {
+                var asked: [Int] = []
+                let hit = try await HostFinder.reconnect(try HostEndpoint("https://forge.tail5c2e.ts.net:\(saved)")) { endpoint -> Int in
+                    asked.append(endpoint.port)
+                    if endpoint.port == saved { throw miss }
+                    return endpoint.port
+                }
+                XCTAssertEqual(hit.endpoint.port, other); XCTAssertEqual(asked, [saved, other])
             }
-            XCTAssertEqual(hit.endpoint.port, other); XCTAssertEqual(asked, [saved, other])
         }
-        // Any answer from Sotto at the saved address ends it there, and so does an address that is not phone access.
-        let ends: [(String, ClientError)] = [("https://forge.tail5c2e.ts.net:8443", .sottoNotRunning("forge")), ("https://forge.tail5c2e.ts.net:8443", .invalidIdentity), ("https://forge.tail5c2e.ts.net", .hostUnreachable("forge"))]
+        // Another Sotto at the saved address ends it there, and so does an address that is not phone access.
+        let ends: [(String, ClientError)] = [("https://forge.tail5c2e.ts.net:8443", .invalidIdentity), ("https://forge.tail5c2e.ts.net", .hostUnreachable("forge"))]
         for (address, refusal) in ends {
             var asked: [Int] = []
             do {

@@ -76,6 +76,21 @@ private final class HostResponses: URLProtocol {
         catch { XCTAssertEqual(error as? ClientError, .sottoNotRunning("forge")) }
         XCTAssertEqual(routes.values, ["8443 /v1/health", "10000 /v1/health", "10000 /v1/session"])
     }
+    func testRemoveFindsPhoneAccessOnItsOtherServePort() async throws {
+        let pairing = try JSONDecoder().decode(Pairing.self, from: Data("{\"v\":1,\"hostId\":\"\(hostID)\",\"clientId\":\"phone\",\"token\":\"fixture\"}".utf8))
+        let routes = RecordedRoutes()
+        let expected = hostID
+        HostResponses.handler = { request in
+            routes.append("\(request.url!.port ?? 443) \(request.url!.path)")
+            // Another app's Serve setting on 10000 whose own server is stopped answers 502.
+            if request.url!.port == 10000 { return (502, "{}") }
+            if request.url!.path == "/v1/health" { return (200, "{\"v\":1,\"status\":\"ready\",\"hostId\":\"\(expected)\"}") }
+            return (200, #"{"v":1,"revoked":true}"#)
+        }
+        let connection = connection(); defer { connection.close(); HostResponses.handler = nil }
+        try await connection.revoke(endpoint: HostEndpoint("https://forge.example.ts.net:10000"), pairing: pairing)
+        XCTAssertEqual(routes.values, ["10000 /v1/health", "8443 /v1/health", "8443 /v1/revoke"])
+    }
     func testConnectNeverUsesAnotherHostOnTheOtherServePort() async throws {
         let pairing = try JSONDecoder().decode(Pairing.self, from: Data("{\"v\":1,\"hostId\":\"\(hostID)\",\"clientId\":\"phone\",\"token\":\"fixture\"}".utf8))
         let routes = RecordedRoutes()
