@@ -69,19 +69,19 @@ export function useDiagramFrame(source: string, rendering: MermaidRendering): Di
 }
 
 /** How the last copy went, read out once. */
-export function DiagramCopyStatus({ frame }: { readonly frame: Pick<FrameControls, 'feedback'> }): ReactNode {
+export function VisualCopyStatus({ frame }: { readonly frame: Pick<FrameControls, 'feedback'> }): ReactNode {
   return <span className="rich-code__status" role="status" aria-live="polite">{frame.feedback}</span>
 }
 
 /**
- * Show source and Expand while there is something to show, and Copy source always, each named for what a press does.
- * A diagram's frame has something to show once it is drawn; any other frame always does. `shownTitle` is the tooltip
- * that takes Show source back to what the frame shows.
+ * A visual's frame actions, each named for what a press does: Show source and Expand while there is something to show
+ * (`showing`: a diagram once it is drawn, a page always), and Copy source always. `shownTitle` is the tooltip that takes
+ * Show source back to what the frame shows: "Show diagram", "Show page".
  */
-export function DiagramActions({ frame, copyLabel, expandLabel, shownTitle = 'Show diagram' }: {
-  readonly frame: FrameControls & { readonly rendering?: MermaidRendering }; readonly copyLabel: string; readonly expandLabel: string; readonly shownTitle?: string
+export function VisualActions({ frame, showing, shownTitle, copyLabel, expandLabel }: {
+  readonly frame: FrameControls; readonly showing: boolean; readonly shownTitle: string; readonly copyLabel: string; readonly expandLabel: string
 }): ReactNode {
-  const drawn = frame.rendering ? Boolean(frame.rendering.drawing) : true
+  const drawn = showing
   return <>
     {drawn && <button type="button" className="rich-code__copy tt-focusable" aria-pressed={frame.showSource} aria-label="Show source" title={frame.showSource ? shownTitle : 'Show source'}
       onClick={frame.toggleSource}><CodeXml size={16} aria-hidden="true" /></button>}

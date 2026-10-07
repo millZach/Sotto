@@ -1,6 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { keepRecent, readRecent } from '../../../shared/recentMap'
 import type { AgentVisual } from '../../../shared/visuals'
+import { READ_ALL_STEP, type VisualStepPlace } from '../../../shared/visualGuest'
 import { clampStep } from './VisualStepper'
 
 /**
@@ -33,6 +34,16 @@ export function walkthroughView(steps: NonNullable<AgentVisual['steps']>, place:
   const walking = steps.length > 0 && !place.readAll
   const current = clampStep(place.step, steps.length)
   return { walking, current, highlight: walking ? steps[current]?.highlight : undefined }
+}
+
+/**
+ * What an interactive page is told of a place: the step shown, counted from 1 where the place counts its index from 0,
+ * with the names that step lists; or, while Read all shows every step (and for a visual with none), `READ_ALL_STEP`
+ * with nothing named.
+ */
+export function pageStepFor(steps: NonNullable<AgentVisual['steps']>, place: WalkthroughPlace): VisualStepPlace {
+  const { walking, current, highlight } = walkthroughView(steps, place)
+  return walking ? { step: current + 1, total: steps.length, highlight: [...highlight ?? []] } : { step: READ_ALL_STEP, total: steps.length, highlight: [] }
 }
 
 /** Read all, named for what a press does: it shows every step, and reads Step through while it does. */

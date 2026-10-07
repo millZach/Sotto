@@ -33,18 +33,31 @@ export interface VisualTheme {
   readonly reducedMotion: boolean
 }
 
-/** Sent when the walkthrough moves: `step` counts from 1, and 0 means Read all shows every step at once. */
-export interface VisualStepMessage {
-  readonly type: typeof VISUAL_STEP_MESSAGE
+/** The step a page is told while Read all shows every step at once, with no names. Shown steps count from 1. */
+export const READ_ALL_STEP = 0
+
+/**
+ * Where the walkthrough stands, as a page is told it: `step` counts from 1, or is `READ_ALL_STEP`; `total` is the
+ * number of steps; `highlight` is the names the step lists. The walkthrough's own place counts its index from 0
+ * (`WalkthroughPlace` in the renderer); `pageStepFor` turns one into the other.
+ */
+export interface VisualStepPlace {
   readonly step: number
   readonly total: number
   readonly highlight: readonly string[]
 }
-/** Where the walkthrough stands, as the card holds it: a step message without its type. */
-export type VisualStepPlace = Omit<VisualStepMessage, 'type'>
-export interface VisualThemeMessage extends VisualTheme {
-  readonly type: typeof VISUAL_THEME_MESSAGE
+/** A step as the page receives it in a window message. */
+export interface VisualStepMessage extends VisualStepPlace {
+  readonly type: typeof VISUAL_STEP_MESSAGE
 }
+
+/**
+ * The most a kept visual may hold: `agentVisualSchema`'s steps, names per step and characters per name in visuals.ts.
+ * Written out here because this file may import nothing a window's preload also imports; a test holds them equal.
+ */
+export const GUEST_STEPS_MAX = 24
+export const GUEST_HIGHLIGHTS_MAX = 24
+export const GUEST_HIGHLIGHT_MAX = 240
 
 /** The height Sotto gives a page, whatever the page measures: at least 160 pixels, at most 640, whole pixels. */
 export const VISUAL_PAGE_HEIGHT_MIN = 160
@@ -85,13 +98,13 @@ export function readVisualTheme(value: unknown): VisualTheme | null {
   return { tokens: tokens as Record<VisualThemeToken, string>, mode: value.mode, reducedMotion: value.reducedMotion }
 }
 
-/** A step as the guest takes it, or null. Highlight names are kept as the agent wrote them, at most 12 of 120 characters. */
+/** A step as the guest takes it, or null, within what a kept visual may hold. Highlight names are kept as written. */
 export function readVisualStep(value: unknown): VisualStepMessage | null {
   if (!isRecord(value)) return null
   const { step, total, highlight } = value
   if (typeof step !== 'number' || typeof total !== 'number' || !Number.isInteger(step) || !Number.isInteger(total)) return null
-  if (total < 0 || total > 12 || step < 0 || step > total) return null
-  if (!Array.isArray(highlight) || highlight.length > 12 || !highlight.every(name => typeof name === 'string' && name.length <= 120)) return null
+  if (total < 0 || total > GUEST_STEPS_MAX || step < READ_ALL_STEP || step > total) return null
+  if (!Array.isArray(highlight) || highlight.length > GUEST_HIGHLIGHTS_MAX || !highlight.every(name => typeof name === 'string' && name.length <= GUEST_HIGHLIGHT_MAX)) return null
   return { type: VISUAL_STEP_MESSAGE, step, total, highlight: [...highlight as string[]] }
 }
 

@@ -19,18 +19,21 @@
 .interactive-visual__page:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 
 .interactive-visual__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   align-self: center;
+  gap: 10px;
   width: 100%;
-  margin: 0;
   padding: 16px;
   color: var(--tt-text-muted);
   font-size: 14px;
   line-height: 1.45;
   text-align: center;
 }
+.interactive-visual__placeholder p { margin: 0; }
 
 .interactive-visual[data-fill] { flex: 1; height: 100%; }
-.interactive-visual[data-state='expanded'] { min-height: 160px; }
 
 /* Expand: the viewer's frame from diagrams.css, with the page filling the room under its bar. */
 .interactive-visual-viewer__body { display: flex; flex: 1; min-height: 0; }

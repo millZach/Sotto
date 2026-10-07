@@ -1,13 +1,12 @@
 import React, { memo, useMemo, type ReactNode } from 'react'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
-import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
+import { DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
 import { useMermaidRendering } from './diagrams/MermaidDiagram'
 import { stepImage } from './diagrams/diagramSteps'
-import { VisualStepper } from './VisualStepper'
 import { InteractiveVisualCard } from './InteractiveVisualCard'
-import { VisualReadAll } from './VisualReadAll'
-import { ReadAllToggle, useWalkthroughPlace, walkthroughView } from './VisualWalkthrough'
+import { VisualCardShell } from './VisualCardShell'
+import { useWalkthroughPlace, walkthroughView } from './VisualWalkthrough'
 import './visualCard.css'
 
 /**
@@ -21,8 +20,8 @@ export function isDrawableVisual(message: AgentMessage): message is AgentMessage
 /**
  * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Read all (Step through while it
  * shows every step) when it has steps, Show source, Copy source and Expand; the diagram, drawn by the same safe
- * renderer and frame as a diagram in an answer; and its explanation. A visual with steps is a walkthrough (#793): one step at a time, its part of the diagram lit and
- * the rest dimmed, in the card and in Expand. Read all swaps the walkthrough for the intro and the numbered steps, with
+ * renderer and frame as a diagram in an answer; and its explanation. A visual with steps is a walkthrough (#793): one
+ * step at a time, its part of the diagram lit and the rest dimmed, in the card and in Expand. Read all swaps the walkthrough for the intro and the numbered steps, with
  * the whole diagram lit. When the diagram cannot be drawn, its source and the reason take its place and the steps stay
  * readable.
  */
@@ -39,29 +38,13 @@ function DiagramVisualCard({ visual }: { readonly visual: AgentVisual }): ReactN
   const kind = rendering.inspection.label
   const name = `${kind}: ${visual.title}`
   const steps = visual.steps ?? []
-  const { walking, current, highlight } = walkthroughView(steps, place)
+  const { highlight } = walkthroughView(steps, place)
   const drawn = rendering.drawing
   // The step's picture, lit for it and cross-fading in from the last, in the card and in Expand.
   const stepPicture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
 
-  return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(rendering)}>
-    <header className="visual-card__bar">
-      <div className="visual-card__heading">
-        <h3 className="visual-card__title" title={visual.title}>{visual.title}</h3>
-        <span className="visual-card__kind">{kind}</span>
-      </div>
-      <DiagramCopyStatus frame={frame} />
-      <div className="visual-card__actions">
-        {/* Named for what a press does: Read all shows every step, Step through goes back to the walkthrough. */}
-        {steps.length > 0 && <ReadAllToggle readAll={place.readAll} onToggle={() => movePlace({ readAll: !place.readAll })} />}
-        <DiagramActions frame={frame} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} />
-      </div>
-    </header>
-    <DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage"
-      picture={stepPicture} />
-    {walking
-      ? <VisualStepper steps={steps} index={current} onStep={index => movePlace({ step: index })} />
-      : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
-    <DiagramExpanded frame={frame} name={name} picture={stepPicture} />
-  </section>
+  return <VisualCardShell visual={visual} kind={kind} state={diagramFrameState(rendering)} frame={frame} showing={Boolean(drawn)} shownTitle="Show diagram"
+    place={place} movePlace={movePlace}
+    stage={<DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage" picture={stepPicture} />}
+    expandedView={<DiagramExpanded frame={frame} name={name} picture={stepPicture} />} />
 }

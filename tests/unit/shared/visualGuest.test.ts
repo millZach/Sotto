@@ -5,9 +5,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  clampVisualPageHeight, measuredPageHeight, readVisualStep, readVisualTheme, VISUAL_PAGE_HEIGHT_MAX, VISUAL_PAGE_HEIGHT_MIN, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme,
+  clampVisualPageHeight, GUEST_HIGHLIGHT_MAX, GUEST_HIGHLIGHTS_MAX, GUEST_STEPS_MAX, measuredPageHeight, readVisualStep, readVisualTheme, VISUAL_PAGE_HEIGHT_MAX,
+  VISUAL_PAGE_HEIGHT_MIN, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme,
 } from '../../../src/shared/visualGuest'
 import { visualPageRequestSchema, visualPageResultSchema } from '../../../src/shared/visualPages'
+import { VISUAL_KEPT_HIGHLIGHT_MAX, VISUAL_KEPT_HIGHLIGHTS_MAX, VISUAL_KEPT_STEPS_MAX } from '../../../src/shared/visuals'
 
 const theme: VisualTheme = { mode: 'light', reducedMotion: true, tokens: Object.fromEntries(VISUAL_THEME_TOKENS.map(name => [name, '#336699'])) as VisualTheme['tokens'] }
 
@@ -29,14 +31,19 @@ describe('the height Sotto gives a page', () => {
 })
 
 describe('the messages a page is sent', () => {
+  it("takes a step from any visual Sotto keeps: its bounds are the kept visual's", () => {
+    expect([GUEST_STEPS_MAX, GUEST_HIGHLIGHTS_MAX, GUEST_HIGHLIGHT_MAX]).toEqual([VISUAL_KEPT_STEPS_MAX, VISUAL_KEPT_HIGHLIGHTS_MAX, VISUAL_KEPT_HIGHLIGHT_MAX])
+    expect(readVisualStep({ step: 24, total: 24, highlight: Array.from({ length: 24 }, () => 'x'.repeat(240)) })).not.toBeNull()
+  })
+
   it('passes a step on as the page reads it', () => {
     expect(readVisualStep({ step: 2, total: 4, highlight: ['queue', 'A->B'] })).toEqual({ type: 'sotto-visual-step', step: 2, total: 4, highlight: ['queue', 'A->B'] })
     expect(readVisualStep({ step: 0, total: 0, highlight: [] })).toEqual({ type: 'sotto-visual-step', step: 0, total: 0, highlight: [] })
   })
 
-  it.each([null, 'step', { step: 5, total: 4, highlight: [] }, { step: 1.5, total: 4, highlight: [] }, { step: 1, total: 13, highlight: [] },
-    { step: 1, total: 2, highlight: 'queue' }, { step: 1, total: 2, highlight: [1] }, { step: 1, total: 2, highlight: Array.from({ length: 13 }, () => 'a') },
-    { step: 1, total: 2, highlight: ['x'.repeat(121)] }])('drops a step shaped %j', value => {
+  it.each([null, 'step', { step: 5, total: 4, highlight: [] }, { step: 1.5, total: 4, highlight: [] }, { step: 1, total: 25, highlight: [] },
+    { step: 1, total: 2, highlight: 'queue' }, { step: 1, total: 2, highlight: [1] }, { step: 1, total: 2, highlight: Array.from({ length: 25 }, () => 'a') },
+    { step: 1, total: 2, highlight: ['x'.repeat(241)] }])('drops a step shaped %j', value => {
     expect(readVisualStep(value)).toBeNull()
   })
 
