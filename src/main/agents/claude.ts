@@ -1444,7 +1444,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Moved on before the write rather than after it succeeds: lines appended after a write that failed are then
     // newer than the store whichever way it failed, so a connect folds them.
     const generation = ++this.journalGeneration
-    for (const alias of Object.values(aliases)) alias.journalGeneration = generation
+    // A retired personal record is kept on disk exactly as it was read, so it never takes a generation.
+    for (const alias of Object.values(aliases)) if (alias.kind !== 'personal') alias.journalGeneration = generation
     await this.aliasStore.write(aliases)
     try { await this.originJournal.clear() }
     catch { this.options.logEvent?.('claude-origin-journal-clear-failed') }
