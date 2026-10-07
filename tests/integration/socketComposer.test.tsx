@@ -63,6 +63,90 @@ async function remoteDraftFixture() {
     close: async () => { await Promise.all(clients.map(client => client.close())); await Promise.all(stores.map(store => store.close())); await host.close(); await rm(root, { recursive: true, force: true }) } }
 }
 
+it('does not recover a delivered prompt after both its Compose and Send replies are lost', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  let release!: () => void, sent!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve }), delivered = new Promise<void>(resolve => { sent = resolve })
+  const original = f.host.service.command.bind(f.host.service)
+  const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
+    const result = await original(...args)
+    if (args[0].type === 'send') { expect(result.error).toBeNull(); sent(); await gate }
+    if (args[0].type === 'compose') await gate
+    return result
+  })
+  try {
+    const save = f.client.command({ type: 'compose', threadId: f.a.id, text: 'Deploy synthetic prompt' })
+    const send = f.client.command({ type: 'send', draft: { threadId: f.a.id, text: 'Deploy synthetic prompt', attachments: [] } })
+    const settled = Promise.allSettled([save, send])
+    await delivered
+    await f.client.close(); await settled; await f.store.close(); release(); held.mockRestore()
+    const replacement = await f.open(f.a.id)
+    expect(replacement.store.get(f.hostId, f.a.id)).toBeUndefined()
+    expect(replacement.client.shell().draft).not.toBe('Deploy synthetic prompt')
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send')).toHaveLength(1)
+  } finally { release(); held.mockRestore(); writes.mockRestore(); await f.close() }
+})
+
+it('keeps an offline laptop edit local when another client has saved a newer host revision', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  try {
+    await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Earlier shared draft' })
+    const previous = f.store.get(f.hostId, f.a.id)!
+    f.store.put({ ...previous, draft: { ...previous.draft, draftId: randomUUID(), text: 'Offline laptop text' }, saved: false, recovery: true })
+    await f.client.close(); await f.store.close()
+    await f.host.service.command({ type: 'save-thread-draft', threadId: f.a.id, draftId: randomUUID(), text: 'Newer host text', attachments: [], requestId: null }, desktopWindowClient())
+    const original = f.host.service.command.bind(f.host.service)
+    let completed!: () => void
+    const recovery = new Promise<void>(resolve => { completed = resolve })
+    const observed = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
+      const result = await original(...args)
+      if (args[0].type === 'save-thread-draft') completed()
+      return result
+    })
+    try {
+      const replacement = await f.open(f.a.id)
+      await recovery
+      expect(f.host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: f.a.id, text: 'Newer host text' }))
+      expect(replacement.client.shell().draft).toBe('Offline laptop text')
+      expect(replacement.store.get(f.hostId, f.a.id)?.saved).toBe(false)
+      expect(writes.mock.calls.filter(([command]) => command.type === 'send' || command.type === 'answer')).toEqual([])
+    } finally { observed.mockRestore() }
+  } finally { writes.mockRestore(); await f.close() }
+})
+
+it('adopts the authoritative ordinary Compose binding when the native question push was delayed', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  const receiver = f.client as unknown as { receive(text: string): void }, receive = receiver.receive.bind(receiver)
+  const held = vi.spyOn(receiver, 'receive').mockImplementation(text => {
+    const message = JSON.parse(text)
+    if (message.event !== 'shell') receive(text)
+  })
+  try {
+    await f.policy(true); await f.question(f.a.id, 'fresh-q')
+    await expect.poll(() => f.host.service.shell().host.threads.find(thread => thread.id === f.a.id)?.requests[0]?.id).toBe('fresh-q')
+    expect(f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests).toEqual([])
+    expect((await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Exact answer' })).error).toBeNull()
+    expect(f.store.get(f.hostId, f.a.id)).toMatchObject({ saved: true, draft: { requestId: 'fresh-q' } })
+    expect((await f.client.command({ type: 'send' })).error).toBeNull()
+    expect(writes.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+  } finally { held.mockRestore(); writes.mockRestore(); await f.close() }
+})
+
+it('retires a saved laptop copy from fresh host state after its exact obsolete proof ages out', async () => {
+  const f = await remoteDraftFixture()
+  try {
+    await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Old saved laptop text' })
+    const previous = f.store.get(f.hostId, f.a.id)!
+    await f.client.close(); await f.store.close()
+    for (let index = 0; index < 130; index++) await f.host.service.command({ type: 'save-thread-draft', threadId: f.a.id,
+      draftId: randomUUID(), text: `Authoritative host revision ${index}`, attachments: [], requestId: null }, desktopWindowClient())
+    expect(f.host.service.shell().obsoleteDrafts?.some(item => item.draftId === previous.hostDraftId)).toBe(false)
+    const replacement = await f.open(f.a.id)
+    expect(replacement.store.get(f.hostId, f.a.id)).toBeUndefined()
+    expect(replacement.client.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: f.a.id, text: 'Authoritative host revision 129' }))
+  } finally { await f.close() }
+})
+
 it('recovers the full latest edit and explicit image removal through a fresh desktop store without replaying Send', async () => {
   const f = await remoteDraftFixture()
   let release!: () => void

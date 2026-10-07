@@ -247,6 +247,7 @@ export class DesktopHosts {
    */
   async start(): Promise<void> {
     this.saved = await this.store.read()
+    this.retainedDrafts.setSavedHosts(this.saved.flatMap(host => host.hostId ? [{ hostId: host.hostId, registrationId: host.id }] : []))
     await this.tailnet.load()
     for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
     for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host, true)
@@ -614,7 +615,6 @@ export class DesktopHosts {
    * sign-in the user stopped, which changes nothing.
    */
   private async forget(host: SavedHost): Promise<HostsState> {
-    if (host.hostId) await this.retainedDrafts.forgetHost(host.hostId)
     this.clearRetry(host.id)
     const active = this.live.get(host.id)
     // The revoke drops this computer's socket, and the stop closes the host under it: neither may reconnect or pair again.
@@ -658,6 +658,7 @@ export class DesktopHosts {
     await this.options.credentials.set(`remote-host:${host.id}`, '')
     this.saved = this.saved.filter(item => item.id !== host.id)
     await this.save()
+    if (host.hostId) await this.retainedDrafts.forgetHost(host.hostId)
     await this.forgetTailnet(host.id)
     this.status.delete(host.id)
     const revoke = cause && host.clientId ? { cause, command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
@@ -809,6 +810,7 @@ export class DesktopHosts {
     delete host.enabled
     this.saved = [...this.saved, host]
     await this.save()
+    if (host.hostId) this.retainedDrafts.allowHost(host.hostId, host.id)
     this.emit()
   }
   /**
@@ -1101,7 +1103,7 @@ export class DesktopHosts {
       throw error
     }
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
-    if (this.saved.includes(host)) await this.save()
+    if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
   }
   /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
   private final(error: Error): boolean {
@@ -1150,7 +1152,7 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ retainedDrafts: this.retainedDrafts, getSelectedThreadId: () => {
+    const socket = new SocketHostService({ retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1179,7 +1181,7 @@ export class DesktopHosts {
     if (!active.ssh) { if (hello.capabilities.mayAnswer) this.grantPending.delete(host.id); else this.grantPending.add(host.id) }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId
-    if (this.saved.includes(host)) await this.save()
+    if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
     await this.learnAddress(host, hello)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     if (!connected) throw new Error('The host disconnected while connecting. Try connecting again.')

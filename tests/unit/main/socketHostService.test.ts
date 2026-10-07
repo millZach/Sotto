@@ -48,7 +48,7 @@ describe('atomic socket Send', () => {
   it.each([false, true])('sends one packet and preserves legacy Send (atomic feature: %s)', async atomic => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
     const state = emptyDesktopState(hostId), call = vi.fn(async () => state)
-    Object.assign(client, { features: atomic ? ['atomic-send'] : [], cached: state, call })
+    Object.assign(client, { features: atomic ? ['draft-revisions', 'atomic-send'] : [], cached: state, call })
     const input = atomic ? command : { type: 'send' as const }
     expect(client.supportsAtomicSend).toBe(atomic)
     await client.command(input, undefined, 'selected-send')
@@ -58,6 +58,25 @@ describe('atomic socket Send', () => {
 
 describe('targeted socket Compose', () => {
   const command = { type: 'compose' as const, threadId: 'thread', text: 'An edit while Send was running', attachments: [] }
+  it('keeps revision fields off an older atomic-send host and preserves the full local copy', async () => {
+    const retainedDrafts = new RetainedDraftStore(), call = vi.fn()
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', expectedHostId: hostId, retainedDrafts })
+    Object.assign(client, { features: ['atomic-send'], cached: emptyDesktopState(hostId), call })
+    expect((await client.command(command)).error).toContain('Update the host.')
+    expect(retainedDrafts.get(hostId, 'thread')?.draft.text).toBe(command.text)
+    expect((await client.command({ type: 'send', draft: { threadId: 'thread', text: command.text, attachments: [] } })).error).toContain('Update the host')
+    expect(call).not.toHaveBeenCalled()
+  })
+  it('captures the saved registration once and never adopts a replacement registration', async () => {
+    const retainedDrafts = new RetainedDraftStore(), original = randomUUID(), replacement = randomUUID()
+    const registration = vi.spyOn(retainedDrafts, 'registrationForHost').mockReturnValue(original)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', expectedHostId: hostId, retainedDrafts })
+    registration.mockReturnValue(replacement)
+    Object.assign(client, { features: [], cached: emptyDesktopState(hostId) })
+    await client.command(command)
+    expect(retainedDrafts.get(hostId, 'thread')?.registrationId).toBe(original)
+    expect(registration).toHaveBeenCalledExactlyOnceWith(hostId)
+  })
   it('keeps the draft and sends no ownerless Compose fallback when the host lacks atomic-send', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
     Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(hostId), call })
@@ -77,12 +96,25 @@ describe('targeted socket Compose', () => {
     const onPushError = vi.fn()
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', onPushError })
     const state = emptyDesktopState(hostId), call = vi.fn(async () => ({ ...state, error: outcome }))
-    Object.assign(client, { features: ['atomic-send'], cached: state, call })
+    Object.assign(client, { features: ['draft-revisions', 'atomic-send'], cached: state, call })
     const detail = vi.spyOn(client, 'readThreadDetail').mockRejectedValue(new Error('History should not delay typing.'))
     const events = vi.spyOn(client, 'readEvents').mockRejectedValue(new Error('Events should not delay typing.'))
     await expect(client.command(command, undefined, 'targeted-save')).resolves.toMatchObject({ error: outcome })
-    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command }, 'targeted-save')
+    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command: { ...command, draftId: expect.any(String) } }, 'targeted-save')
     expect(detail).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled(); expect(onPushError).not.toHaveBeenCalled()
+  })
+  it.each([null, 'The draft image was not saved. Re-attach it before sending.'])('preserves an ordinary direct save outcome without substituting a later shared error: %s', async outcome => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' })
+    const state = emptyDesktopState(hostId)
+    Object.assign(client, { features: ['draft-revisions', 'atomic-send'], cached: state,
+      call: vi.fn(async () => ({ ...state, error: outcome })) })
+    const detail = vi.spyOn(client, 'readThreadDetail').mockImplementation(async () => {
+      Object.assign(client, { cached: { ...state, error: 'An unrelated later host error.' } }); return null
+    })
+    const events = vi.spyOn(client, 'readEvents')
+    expect((await client.command({ type: 'save-thread-draft', threadId: 'thread', draftId: randomUUID(),
+      text: 'Direct caller edit', requestId: null, attachments: [] })).error).toBe(outcome)
+    expect(detail).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled()
   })
 })
 
@@ -91,14 +123,169 @@ describe('bounded targeted autosaves', () => {
     const retainedDrafts = new RetainedDraftStore()
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false, retainedDrafts })
     const state = emptyDesktopState(hostId), frames: HostRequest[] = []
+    state.host.threads = [{ id: 'thread', projectId: 'project', modelId: '', title: 'Thread', status: 'idle', messages: [], requests: [] }]
     const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
     const socket = { send: (frame: HostRequest) => { frames.push(structuredClone(frame)); return true },
       close: () => (client as unknown as { disconnected(frames: unknown): void }).disconnected(socket) }
-    Object.assign(client, { features: ['atomic-send', 'answer-check'], cached: state, frames: socket, session: { session: 'session', hostId: state.hostId } })
+    Object.assign(client, { features: ['draft-revisions', 'atomic-send', 'answer-check'], cached: state, frames: socket, session: { session: 'session', hostId: state.hostId } })
     const reply = (frame: HostRequest, error: string | null = null) => receive({ v: 1, id: frame.id, ok: true,
       result: frame.op === 'detail' ? null : frame.op === 'receipt' ? { status: 'completed' } : { ...state, error } })
     return { client, state, frames, socket, reply, receive, retainedDrafts }
   }
+  it('releases an inherited Send hold only on the original exact terminal failed packet proof', async () => {
+    const f = heldSocket(), draftId = randomUUID(), sentId = randomUUID(), packetDigest = 'b'.repeat(64), now = new Date().toISOString()
+    f.state.activeThreadId = 'thread'
+    const edit = { hostId, draft: { threadId: 'thread', draftId, text: 'Newer local edit', attachments: [],
+      requestId: null, updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: true,
+      sendAttempt: { commandId: 'original-send', draftId: sentId, requestId: null, packetDigest } }
+    f.retainedDrafts.put(edit)
+    try {
+      for (const proof of [undefined, 'a'.repeat(64)]) {
+        f.receive({ v: 1, event: 'shell', state: { ...f.state, deliveries: [{ threadId: 'thread', draftId: sentId,
+          status: 'failed', createdAt: now, updatedAt: now, ...(proof ? { packetDigest: proof } : {}) }] } })
+        expect(f.retainedDrafts.get(hostId, 'thread')?.sendAttempt).toEqual(edit.sendAttempt)
+        expect((await f.client.command({ type: 'send' })).error).toContain('may already have been sent')
+      }
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, deliveries: [{ threadId: 'thread', draftId: sentId,
+        status: 'failed', createdAt: now, updatedAt: now, packetDigest }] } })
+      expect(f.retainedDrafts.get(hostId, 'thread')).toMatchObject({ draft: edit.draft })
+      expect(f.retainedDrafts.get(hostId, 'thread')?.sendAttempt).toBeUndefined()
+      expect(f.frames).toHaveLength(0)
+    } finally { await f.client.close() }
+  })
+  it('does not retain a Send hold when the full request budget refuses it before any frame attempt', async () => {
+    const f = heldSocket()
+    f.state.activeThreadId = 'thread'
+    const draft = { threadId: 'thread', draftId: randomUUID(), text: 'Still ready to send', attachments: [],
+      requestId: null, updatedAt: new Date().toISOString() }
+    f.retainedDrafts.put({ hostId, draft, questionsDigest: null, saved: false, recovery: false })
+    const reads = Array.from({ length: 32 }, (_, index) => f.client.receipt(`held-${index}`))
+    const settled = Promise.allSettled(reads)
+    try {
+      await expect(f.client.command({ type: 'send' })).rejects.toMatchObject({ code: 'busy', commandId: undefined })
+      expect(f.retainedDrafts.get(hostId, 'thread')?.sendAttempt).toBeUndefined()
+      expect(f.retainedDrafts.get(hostId, 'thread')?.draft).toEqual(draft)
+      expect(f.frames).toHaveLength(32)
+    } finally { await f.client.close(); await settled }
+  })
+  it('keeps an unresolved sent copy through obsolescence until exact positive delivery arrives', async () => {
+    const f = heldSocket(), draftId = randomUUID()
+    const edit = { hostId, draft: { threadId: 'thread', draftId, text: 'Possibly sent', attachments: [], requestId: null,
+      updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: true,
+      sendAttempt: { commandId: 'unknown-send', draftId, requestId: null, packetDigest: 'c'.repeat(64) } }
+    f.retainedDrafts.put(edit)
+    try {
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, obsoleteDrafts: [{ threadId: 'thread', draftId }] } })
+      expect(f.retainedDrafts.get(hostId, 'thread')).toEqual(edit)
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, deliveredDrafts: [{ threadId: 'thread', draftId }] } })
+      expect(f.retainedDrafts.get(hostId, 'thread')).toBeUndefined()
+      expect(f.frames).toHaveLength(0)
+    } finally { await f.client.close() }
+  })
+  it('does not let an earlier independent shell read retire a newer exactly saved local revision', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    f.state.activeThreadId = threadId
+    const old = { threadId, draftId: randomUUID(), text: 'Earlier host draft', attachments: [], requestId: null, updatedAt: new Date().toISOString() }
+    f.state.threadDrafts = [old]
+    let settled: Promise<unknown> = Promise.resolve()
+    try {
+      const reading = f.client.readShell()
+      const save = f.client.command({ type: 'compose', threadId, text: 'Newly saved draft' })
+      settled = Promise.allSettled([reading, save])
+      const latest = f.retainedDrafts.get(hostId, threadId)!.draft
+      f.receive({ v: 1, id: f.frames[1]!.id, ok: true, result: { ...f.state, threadDrafts: [latest],
+        threadDraftPersistence: [{ threadId, draftId: latest.draftId, status: 'saved' }] } })
+      await save
+      f.receive({ v: 1, id: f.frames[0]!.id, ok: true, result: f.state })
+      await reading
+      expect(f.retainedDrafts.get(hostId, threadId)).toMatchObject({ saved: true, draft: { text: 'Newly saved draft' } })
+      expect(f.client.shell().draft).toBe('Newly saved draft')
+    } finally { await f.client.close(); await settled }
+  })
+  it('retires a saved copy whose thread is absent from an authoritative live shell', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    try {
+      const save = f.client.command({ type: 'compose', threadId, text: 'Previously saved' })
+      const latest = f.retainedDrafts.get(hostId, threadId)!.draft
+      f.receive({ v: 1, id: f.frames[0]!.id, ok: true, result: { ...f.state, threadDrafts: [latest],
+        threadDraftPersistence: [{ threadId, draftId: latest.draftId, status: 'saved' }] } })
+      await save
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, host: { ...f.state.host, threads: [] } } })
+      expect(f.retainedDrafts.get(hostId, threadId)).toBeUndefined()
+    } finally { await f.client.close() }
+  })
+  it('retires a late successful save against newer authority even after an unrelated old command reply', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    let settled: Promise<unknown> = Promise.resolve()
+    try {
+      const unrelated = f.client.command({ type: 'configure', patch: {} })
+      const save = f.client.command({ type: 'compose', threadId, text: 'Saved B with a held acknowledgement' })
+      settled = Promise.allSettled([unrelated, save])
+      const own = f.retainedDrafts.get(hostId, threadId)!.draft
+      const newer = { ...own, draftId: randomUUID(), text: 'Newer host C' }
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, threadDrafts: [newer],
+        threadDraftPersistence: [{ threadId, draftId: newer.draftId, status: 'saved' }] } })
+      expect(f.retainedDrafts.get(hostId, threadId)?.saved).toBe(false)
+      f.reply(f.frames[0]!)
+      await unrelated
+      f.receive({ v: 1, id: f.frames[1]!.id, ok: true, result: { ...f.state, threadDrafts: [own],
+        threadDraftPersistence: [{ threadId, draftId: own.draftId, status: 'saved' }] } })
+      await save
+      expect(f.retainedDrafts.get(hostId, threadId)?.saved).toBe(true)
+      expect(f.frames[2]).toMatchObject({ op: 'shell' })
+      f.receive({ v: 1, id: f.frames[2]!.id, ok: true, result: { ...f.state, threadDrafts: [newer],
+        threadDraftPersistence: [{ threadId, draftId: newer.draftId, status: 'saved' }] } })
+      await vi.waitFor(() => expect(f.retainedDrafts.get(hostId, threadId)).toBeUndefined())
+      expect(f.retainedDrafts.get(hostId, threadId)).toBeUndefined()
+      expect(f.client.shell().threadDrafts).toContainEqual(newer)
+    } finally { await f.client.close(); await settled }
+  })
+  it('keeps a queued save when the intervening live push preceded its execution', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    try {
+      const save = f.client.command({ type: 'compose', threadId, text: 'B saved after the earlier A push' })
+      const own = f.retainedDrafts.get(hostId, threadId)!.draft
+      const earlier = { ...own, draftId: randomUUID(), text: 'A before queued B executes' }
+      f.receive({ v: 1, event: 'shell', state: { ...f.state, threadDrafts: [earlier],
+        threadDraftPersistence: [{ threadId, draftId: earlier.draftId, status: 'saved' }] } })
+      const current = { ...f.state, threadDrafts: [own], threadDraftPersistence: [{ threadId, draftId: own.draftId, status: 'saved' as const }] }
+      f.receive({ v: 1, id: f.frames[0]!.id, ok: true, result: current })
+      await save
+      expect(f.retainedDrafts.get(hostId, threadId)).toMatchObject({ saved: true, draft: { draftId: own.draftId,
+        text: own.text, attachments: own.attachments, requestId: own.requestId } })
+      expect(f.frames[1]).toMatchObject({ op: 'shell' })
+      f.receive({ v: 1, id: f.frames[1]!.id, ok: true, result: current })
+      await vi.waitFor(() => expect(f.client.shell().threadDraftPersistence?.[0]?.draftId).toBe(own.draftId))
+      expect(f.retainedDrafts.get(hostId, threadId)).toMatchObject({ saved: true, draft: { draftId: own.draftId,
+        text: own.text, attachments: own.attachments, requestId: own.requestId } })
+    } finally { await f.client.close() }
+  })
+  it('follows one shared refresh with a new observation when a second save was acknowledged during that read', async () => {
+    const f = heldSocket(), otherId = 'other'
+    f.state.host.threads.push({ ...f.state.host.threads[0]!, id: otherId })
+    const a = f.client.command({ type: 'compose', threadId: 'thread', text: 'A saved' }, undefined, 'save-a')
+    const b = f.client.command({ type: 'compose', threadId: otherId, text: 'B saved' }, undefined, 'save-b')
+    const check = f.client.checkRequestAnswer({ threadId: 'thread', providerId: 'codex', requestId: 'question', questionsDigest: 'a'.repeat(64) })
+    const settled = Promise.allSettled([a, b, check])
+    try {
+      const draftA = f.retainedDrafts.get(hostId, 'thread')!.draft, draftB = f.retainedDrafts.get(hostId, otherId)!.draft
+      const stateA = { ...f.state, threadDrafts: [draftA], threadDraftPersistence: [{ threadId: 'thread', draftId: draftA.draftId, status: 'saved' as const }] }
+      const stateAB = { ...stateA, threadDrafts: [draftA, draftB], threadDraftPersistence: [...stateA.threadDraftPersistence,
+        { threadId: otherId, draftId: draftB.draftId, status: 'saved' as const }] }
+      f.receive({ v: 1, event: 'shell', state: f.state })
+      f.receive({ v: 1, id: f.frames[0]!.id, ok: true, result: stateA }); await a
+      expect(f.frames[3]).toMatchObject({ op: 'shell' })
+      f.receive({ v: 1, id: f.frames[1]!.id, ok: true, result: stateAB }); await b
+      expect(f.frames.filter(frame => frame.op === 'shell')).toHaveLength(1)
+      f.receive({ v: 1, id: f.frames[3]!.id, ok: true, result: stateA })
+      await vi.waitFor(() => expect(f.frames[4]).toMatchObject({ op: 'shell' }))
+      expect(f.retainedDrafts.get(hostId, otherId)?.saved).toBe(true)
+      f.receive({ v: 1, id: f.frames[4]!.id, ok: true, result: stateAB })
+      f.reply(f.frames[2]!); await settled
+      expect(f.retainedDrafts.get(hostId, otherId)?.saved).toBe(true)
+      expect(f.frames.filter(frame => frame.op === 'shell')).toHaveLength(2)
+    } finally { await f.client.close(); await settled }
+  })
   it.each(['skills', 'files'] as const)('retains the full unsaved edit when a durable Compose acknowledgement changes its %s', async field => {
     const f = heldSocket(), threadId = 'thread'
     const skills = [{ name: 'Chosen skill', path: 'skills/chosen' }], files = [{ path: 'chosen.ts' }]
@@ -186,8 +373,8 @@ describe('bounded targeted autosaves', () => {
       const all = Promise.allSettled([...saves, detail, receipt, check, send])
       packet.draft.text = 'A later local edit'
       const commands = f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)
-      expect(commands).toEqual([{ type: 'compose', threadId: 'thread', text: 'Edit 0', attachments: [] },
-        { type: 'compose', threadId: 'thread', text: 'Edit 39', attachments: [] }, { type: 'send', draft: { threadId: 'thread', text: 'Immutable Send', attachments: [], binding: { requestId: null, questionsDigest: null } } }])
+      expect(commands).toEqual([{ type: 'compose', threadId: 'thread', text: 'Edit 0', attachments: [], draftId: expect.any(String) },
+        { type: 'compose', threadId: 'thread', text: 'Edit 39', attachments: [], draftId: expect.any(String) }, { type: 'send', draft: { threadId: 'thread', text: 'Immutable Send', attachments: [], draftId: expect.any(String), binding: { requestId: null, questionsDigest: null } } }])
       expect(f.frames.filter(frame => ['detail', 'receipt', 'check-answer'].includes(frame.op))).toHaveLength(3)
       for (const frame of f.frames) f.reply(frame)
       expect((await Promise.all(saves)).every(state => state.error === null)).toBe(true)
@@ -226,7 +413,7 @@ describe('bounded targeted autosaves', () => {
       const selectA = f.client.command({ type: 'select-thread', threadId: 'A' })
       expect((await b).error).toContain('Your draft is kept on this computer')
       expect(f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)).toEqual([
-        { type: 'compose', threadId: 'A', text: 'First A', attachments: [] }, { type: 'compose', threadId: 'A', text: 'Latest A', attachments: [] },
+        { type: 'compose', threadId: 'A', text: 'First A', attachments: [], draftId: expect.any(String) }, { type: 'compose', threadId: 'A', text: 'Latest A', attachments: [], draftId: expect.any(String) },
         { type: 'select-thread', threadId: 'B' }, { type: 'select-thread', threadId: 'A' },
       ])
       for (const frame of f.frames) f.reply(frame)
@@ -261,6 +448,35 @@ describe('bounded targeted autosaves', () => {
       expect((await Promise.all(edits)).map(state => state.error)).toEqual(['The latest save failed.', 'The latest save failed.'])
     } finally { await f.client.close() }
   })
+  it.each([{ earlierId: true, incomingId: false }, { earlierId: false, incomingId: true }])('captures the queued predecessor that an explicit receipt identity seals (%j)', async ({ earlierId, incomingId }) => {
+    const f = heldSocket()
+    const first = f.client.command({ type: 'compose', threadId: 'thread', text: 'First' })
+    const earlier = f.client.command({ type: 'compose', threadId: 'thread', text: 'Sealed predecessor' }, undefined, earlierId ? 'earlier-id' : undefined)
+    const predecessorId = f.retainedDrafts.get(hostId, 'thread')!.draft.draftId
+    const latest = f.client.command({ type: 'compose', threadId: 'thread', text: 'Latest removal', attachments: [] }, undefined, incomingId ? 'incoming-id' : undefined)
+    const settled = Promise.allSettled([first, earlier, latest])
+    try {
+      expect(f.frames[1]).toMatchObject({ op: 'command', command: { type: 'compose', draftId: predecessorId, text: 'Sealed predecessor' } })
+      expect(f.retainedDrafts.get(hostId, 'thread')).toMatchObject({ baseDraftId: predecessorId,
+        draft: { text: 'Latest removal', attachments: [] } })
+    } finally { await f.client.close(); await settled }
+  })
+  it('keeps the actual predecessor base when a sealed pending save is refused by both occupied slots', async () => {
+    const f = heldSocket()
+    const first = f.client.command({ type: 'compose', threadId: 'thread', text: 'First' }, undefined, 'first-id')
+    const second = f.client.command({ type: 'compose', threadId: 'thread', text: 'Second' }, undefined, 'second-id')
+    const secondId = f.retainedDrafts.get(hostId, 'thread')!.draft.draftId
+    const refused = f.client.command({ type: 'compose', threadId: 'thread', text: 'Unsent third' }, undefined, 'third-id')
+    const latest = f.client.command({ type: 'compose', threadId: 'thread', text: 'Latest removal', attachments: [] })
+    const settled = Promise.allSettled([first, second, refused, latest])
+    try {
+      expect((await refused).error).toContain('still saving earlier edits')
+      expect(f.frames).toHaveLength(2)
+      expect(f.frames[1]).toMatchObject({ op: 'command', command: { draftId: secondId } })
+      expect(f.retainedDrafts.get(hostId, 'thread')).toMatchObject({ baseDraftId: secondId,
+        draft: { text: 'Latest removal', attachments: [] } })
+    } finally { await f.client.close(); await settled }
+  })
   it('settles unsent callers on disconnect and never replays them on a replacement connection', async () => {
     const f = heldSocket()
     const promises = ['First', 'Latest one', 'Latest two'].map(text => f.client.command({ type: 'compose', threadId: 'thread', text }))
@@ -271,7 +487,9 @@ describe('bounded targeted autosaves', () => {
     Object.assign(f.client, { frames: f.socket })
     const next = f.client.command({ type: 'compose', threadId: 'thread', text: 'New connection edit' })
     expect(f.frames).toHaveLength(2)
-    f.reply(f.frames[1]!)
+    const latest = f.retainedDrafts.get(hostId, 'thread')!.draft
+    f.receive({ v: 1, id: f.frames[1]!.id, ok: true, result: { ...f.state, threadDrafts: [latest],
+      threadDraftPersistence: [{ threadId: 'thread', draftId: latest.draftId, status: 'saved' }] } })
     expect((await next).error).toBeNull()
     expect(f.frames.map(frame => frame.op === 'command' && frame.command.type === 'compose' ? frame.command.text : null)).toEqual(['First', 'New connection edit'])
     await f.client.close()
@@ -295,6 +513,8 @@ describe('bounded targeted autosaves', () => {
       await settled
       const next = f.client.command({ type: 'compose', threadId: 'thread', text: 'Text after removal', attachments: undefined })
       latestSettled = next.catch(() => null)
+      for (const frame of f.frames.filter(frame => frame.op === 'command' && frame.command.type === 'save-thread-draft')) f.reply(frame)
+      await vi.waitFor(() => expect(f.frames.some(frame => frame.op === 'command' && frame.command.type === 'compose' && frame.command.text === 'Text after removal')).toBe(true))
       const latest = f.frames.at(-1)!
       expect(latest).toMatchObject({ op: 'command', command: { threadId: 'thread', text: 'Text after removal', attachments: [] } })
       f.reply(latest)

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Duplex } from 'node:stream'
 import { request as httpRequest, type Server } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -307,6 +307,29 @@ it.each([false, true])('offers atomic Send only when the service implements it a
   expect(await desktop.call('targeted-save', { op: 'command', command: save })).toMatchObject(supported ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
   expect(commands.filter(item => item.command.type === 'compose')).toEqual(supported ? [{ command: save, clientId: paired.clientId }] : [])
   expect(await desktop.call('legacy-save', { op: 'command', command: { type: 'compose', text: 'Legacy draft' } })).toMatchObject({ ok: true })
+})
+
+it.each([false, true])('offers stable draft revisions only when implemented and refuses their fields otherwise (%s)', async supported => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  Object.assign(service, { supportsAtomicSend: true, supportsDraftRevisions: supported,
+    shell: () => ({ hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
+      queue: [], draft: '', composing: false }) })
+  listener = await startSocketServer({ service, pairing })
+  expect(listener.descriptor.features.includes('draft-revisions')).toBe(supported)
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect((hello.result as { features: string[] }).features.includes('draft-revisions')).toBe(supported)
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const draftId = randomUUID()
+  for (const command of [{ type: 'compose', threadId: 'thread', draftId, text: 'Edit', attachments: [] },
+    { type: 'send', draft: { threadId: 'thread', draftId, text: 'Edit', attachments: [] } },
+    { type: 'save-thread-draft', threadId: 'thread', draftId, expectedDraftId: null, text: 'Edit', attachments: [], requestId: null }]) {
+    expect(await desktop.call(`revision-${command.type}`, { op: 'command', command })).toMatchObject(supported
+      ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  }
+  expect(commands).toHaveLength(supported ? 3 : 0)
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', threadId: 'thread', text: 'Legacy targeted edit' } })).toMatchObject({ ok: true })
 })
 
 it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compose'].map(type => ({ delivery, type }))))('keeps targeted $type selection exact during a native $delivery question and delegates Compose authority to execution', async ({ delivery, type }) => {

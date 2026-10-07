@@ -38,11 +38,15 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Expire empty prompt intent for fresh questions without reopening queued Send races; keep targeted remote Compose refusals private to the caller.
 - [x] Preserve unsent remote text and explicit image changes through saturated saves, thread switches, disconnect and restart, honoring exact question binding and Keep local history.
 - [x] Repeat both independent review axes and all 37 Electron journeys on the final correction.
+- [x] Resolve seven new review findings: uncertain Send recovery, concurrent draft conflicts, expired saved-copy proof, authoritative question binding, failed-storage Forget and late edits, and private socket save outcomes.
+- [x] Repeat independent reviews, focused regressions and all 39 affected Electron journeys after these corrections; freeze source before the complete local gate.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `7d071b62`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.
 
 The throwaway state demonstration is preserved on `prototype/forge-answer-receipt` at `4f81c4b4`, in `docs/prototypes/forge-answer-receipt-prototype.html`. It illustrates the existing question panel: only a receipt for the exact submission clears its saved answer. It makes no visual change to the shipped interface. The user clarified that the bug affects multiple providers; no new design choice was needed.
+
+The additional recovery demonstration is on the same throwaway branch at `34c911b7`, in `docs/prototypes/forge-draft-recovery-prototype.html`. A browser walkthrough at 1280x1000 kept newer host text intact, held an uncertain Send even after its old confirmation expired, and cleared the exact confirmed copy without another submission. The working assumption keeps the laptop copy visible with a conflict notice; the optional question received no answer. This prototype is separate from production and changes no layout.
 
 The regression first failed for accepted Codex, Claude and Grok answers. Additional red cases covered checking after both processes restart, a desktop detail-read failure after acceptance, a host provider-read failure after acceptance, and recovery after reconnect when the question is absent and the UI has no Check button. The fix preserves exact identity and digest matching throughout, including read-only background recovery. Older unbound drafts remain recoverable; they cannot be proved delivered retroactively.
 

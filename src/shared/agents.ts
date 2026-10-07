@@ -609,6 +609,8 @@ export const agentDeliverySchema = z.object({
   status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   commandId: id.optional(), messageId: id.optional(),
+  /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
+  packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -846,13 +848,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
-  z.object({ type: z.literal('compose'), threadId: id.optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
-  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
+  z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
+  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
     attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
     questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(), composer: z.literal('manual').optional() }).strict()
     .refine(value => value.questionsDigest === undefined || Boolean(value.requestId), 'Use the original question ID with its form digest.'),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
-  z.object({ type: z.literal('send'), draft: z.object({ threadId: id, text,
+  z.object({ type: z.literal('send'), draft: z.object({ threadId: id, draftId: z.uuid().optional(), text,
     attachments: agentAttachmentHandlesSchema.optional(),
     binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
       .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),

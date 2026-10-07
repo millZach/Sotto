@@ -21,7 +21,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend'>
+  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -444,7 +444,7 @@ export class DesktopHostRouter {
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
-    if (command.type === 'compose' && command.threadId !== undefined && connection.service.supportsAtomicSend === false
+    if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
       && priorNotice === this.publishedNotice && priorNotice?.unsupportedCompose === connection) this.notice = priorNotice
     if (command.type === 'select-thread' || command.type === 'select-project') {
       this.selectedHostId = connection.hostId; this.selections++
@@ -500,7 +500,7 @@ export class DesktopHostRouter {
       if (result.error) {
         refused = true
         const unsupportedCompose = command.type === 'compose' && command.threadId !== undefined
-          && connection.kind === 'remote' && connection.service.supportsAtomicSend === false && result.error === REMOTE_COMPOSE_UNSAVED
+          && connection.kind === 'remote' && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false) && result.error === REMOTE_COMPOSE_UNSAVED
         const message = this.refusal(connection, result.error)
         // Compare what is visible now, after the reply. An intervening error or connection change wins.
         repeatedUnsupportedCompose = unsupportedCompose && this.publishedNotice?.unsupportedCompose === connection

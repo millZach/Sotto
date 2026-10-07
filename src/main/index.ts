@@ -720,8 +720,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  // The store reports read failures; the privacy cleanup below reports failed removals.
-  await retainedDrafts.load().catch(() => undefined)
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
@@ -731,6 +729,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
+  await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
   // runs. The thread reaches the device through this computer's SSH setup, so it needs the local host.
   // Have my agent install it, update it or fix it on a host's provider tile runs the same way, in the same project, and

@@ -112,6 +112,8 @@ While **Keep local history** is on, the desktop keeps a startup copy of your thr
 
 The same setting controls the laptop's recovery copy of unsent remote managed drafts in `remote-drafts.json`. It contains text, image handles and the original question binding, not image bytes. With history off, that copy stays in memory and does not survive quitting. Turning history off clears its disk copies. If a remote image is no longer available, Sotto keeps the text and asks you to attach the image again before sending.
 
+Recovery keeps a conflicting laptop edit for review instead of replacing newer host text. A Send whose result is unknown stays held until exact confirmation; reconnecting never sends it again. Unreadable local draft storage leaves remote connections available and preserves the original file while history is on. Forget still revokes and removes a host if optional draft cleanup fails; adding it again does not recover its forgotten drafts.
+
 Diagnostic turn records keep event names, IDs, outcomes, fixed failure codes and timings only. They never keep prompt, answer or error text. On upgrade, Sotto removes text from existing turn records before starting the coordinator. If that rewrite cannot finish, Sotto deletes the diagnostic file; if deletion also fails, it asks you to close apps using the file and restart.
 
 If thread messages cannot be saved, Sotto keeps them in memory and retries while it is open. The warning stays until they are saved. Restore storage access before quitting; unsaved messages cannot survive a restart.

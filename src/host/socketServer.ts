@@ -179,6 +179,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
+    && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
@@ -392,6 +393,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     const input = request.command
     if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
       && !offers(peer, 'atomic-send')) throw new Refusal('invalid_request')
+    if ((input.type === 'compose' && input.draftId !== undefined || input.type === 'send' && input.draft?.draftId !== undefined
+      || input.type === 'save-thread-draft' && input.expectedDraftId !== undefined) && !offers(peer, 'draft-revisions')) throw new Refusal('invalid_request')
     const state = service.shell()
     const targetThreadId = peer.selectedThreadId
     const savedDraft = state.draftThreadId !== targetThreadId || !state.composing && !state.draft.trim() && !state.draftAttachments?.length

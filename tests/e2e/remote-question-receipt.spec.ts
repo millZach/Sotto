@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
@@ -17,6 +19,7 @@ import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSott
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
 class AnswerProvider extends E2EAgentHost {
   readonly answers: Extract<AgentHostCommand, { type: 'answer' }>[] = []
+  readonly prompts: Extract<AgentHostCommand, { type: 'send' }>[] = []
   private readonly pendingAnswerIds = new Set<string>()
   checkReads = 0
   constructor(private readonly uncertainAnswer = false, private readonly answerCompletion?: Promise<boolean>, private readonly keepQuestion = false) { super() }
@@ -39,6 +42,7 @@ class AnswerProvider extends E2EAgentHost {
   }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'answer') this.answers.push(structuredClone(command))
+    if (command.type === 'send') this.prompts.push(structuredClone(command))
     const retainedRequest = command.type === 'answer' && this.keepQuestion
       ? (await this.snapshot()).threads.find(thread => thread.id === command.threadId)?.requests.find(request => request.id === command.requestId) : undefined
     const result = await super.execute(command)
@@ -81,11 +85,16 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
       localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false,
       voiceCoordinatorEnabled: options.managed ?? false }))
     const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider() }
+    await Promise.all(Object.entries(providers).map(([id, provider]) => provider.initializeWorkingFolders(join(profile, 'working-folders', id))))
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
       providers, reasoner: e2eAgentReasoner })
     const url = `http://127.0.0.1:${host.descriptor!.port}`
     const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic laptop')
+    // The harness bypasses SSH, not the saved identity that admits restart recovery.
+    await writeFile(join(profile, 'remote-hosts.json'), JSON.stringify([{ id: randomUUID(), name: 'Forge fixture',
+      target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data/sotto', enabled: false,
+      hostId: paired.hostId, clientId: paired.clientId }]))
     const descriptor = JSON.parse(await readFile(join(profile, 'remote-host', 'host-listener.json'), 'utf8')) as { adminToken: string }
     const grant = await fetch(`${url}/v1/admin/allow-answers`, { method: 'POST', headers: {
       Authorization: `Bearer ${descriptor.adminToken}`, 'Content-Type': 'application/json',
@@ -202,6 +211,102 @@ for (const recovery of ['reconnect', 'restart'] as const) test(`managed remote e
     release()
     f.host.service.command = originalCommand
     if (restarted) await closeSotto(restarted)
+    await f.close()
+  }
+})
+
+test('a lost managed Send reply is confirmed after restart without restoring delivered text', async () => {
+  test.setTimeout(120_000)
+  const f = await fixture('codex', false, undefined, false, { managed: true, historyEnabled: true })
+  let restarted: LaunchedSotto | undefined
+  let release!: () => void
+  const acknowledgement = new Promise<void>(resolve => { release = resolve })
+  const originalCommand = f.host.service.command.bind(f.host.service)
+  const originalShell = f.host.service.shell.bind(f.host.service)
+  let composeCalls = 0
+  let sendResultError: string | null | undefined
+  f.host.service.command = async (...args) => {
+    const result = await originalCommand(...args)
+    if (args[0].type === 'compose') composeCalls++
+    if (args[0].type === 'send') sendResultError = result.error
+    if (args[0].type === 'compose' || args[0].type === 'send') await acknowledgement
+    return result
+  }
+  // Withhold acceptance frames as well as command replies until the old desktop has quit.
+  f.host.service.shell = () => ({ ...originalShell(), deliveredDrafts: [], followupReceipts: [], obsoleteDrafts: [], deliveries: [] })
+  const text = 'Fix the remote confirmation once.'
+  try {
+    await f.launched.page.getByLabel('Prompt', { exact: true }).fill(text)
+    await expect.poll(() => composeCalls).toBe(1)
+    await f.launched.page.getByRole('button', { name: 'Send it', exact: true }).click()
+    await expect.poll(() => sendResultError).toBeNull()
+    await expect.poll(() => f.native.prompts.map(prompt => prompt.text)).toEqual([text])
+    const nativeThreadId = originalShell().host.threads.find(thread => thread.title === 'Forge question fixture')!.id
+    await expect.poll(() => originalShell().deliveredDrafts?.some(item => item.threadId === nativeThreadId)).toBe(true)
+    await closeSotto(f.launched)
+    const kept = JSON.parse(await readFile(join(f.profile, 'remote-drafts.json'), 'utf8')) as Array<{ sendAttempt?: unknown }>
+    expect(kept.some(edit => edit.sendAttempt)).toBe(true)
+    release()
+    f.host.service.command = originalCommand
+    f.host.service.shell = originalShell
+    restarted = await launchSotto('success', f.profile)
+    restarted.page.on('pageerror', error => f.errors.push(error.message))
+    await restarted.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
+    await openThreads(restarted.page)
+    await restarted.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
+    await expect(restarted.page.getByLabel('Prompt', { exact: true })).toHaveValue('')
+    expect(f.native.prompts.map(prompt => prompt.text)).toEqual([text])
+    expect(originalShell().threadDrafts?.some(draft => draft.text === text)).toBe(false)
+    await capture(restarted, 'lost-send-confirmed')
+    expect(f.errors).toEqual([])
+  } finally {
+    release()
+    f.host.service.command = originalCommand
+    f.host.service.shell = originalShell
+    if (restarted) await closeSotto(restarted)
+    await f.close()
+  }
+})
+
+test('reconnecting an unsaved laptop edit preserves a newer draft on Forge', async () => {
+  test.setTimeout(120_000)
+  const f = await fixture('codex', false, undefined, false, { managed: true })
+  let release!: () => void
+  const acknowledgement = new Promise<void>(resolve => { release = resolve })
+  const originalCommand = f.host.service.command.bind(f.host.service)
+  let composeCalls = 0
+  f.host.service.command = async (...args) => {
+    const result = await originalCommand(...args)
+    if (args[0].type === 'compose') { composeCalls++; await acknowledgement }
+    return result
+  }
+  const laptopText = 'Keep the latest laptop edit for review.'
+  const hostText = 'Review the newer text saved on Forge.'
+  try {
+    const input = f.launched.page.getByLabel('Prompt', { exact: true })
+    await input.fill('Keep')
+    await expect.poll(() => composeCalls).toBe(1)
+    for (const text of ['Keep the', 'Keep the latest', laptopText]) await input.fill(text)
+    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(laptopText)
+    expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === laptopText)).toBe(false)
+    await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
+    release()
+    f.host.service.command = originalCommand
+    const nativeThreadId = f.host.service.shell().host.threads.find(thread => thread.title === 'Forge question fixture')!.id
+    const newerDraftId = randomUUID()
+    await originalCommand({ type: 'save-thread-draft', threadId: nativeThreadId, draftId: newerDraftId, text: hostText,
+      attachments: [], skills: [], files: [], requestId: null }, desktopWindowClient('Synthetic host user'))
+    await f.launched.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
+    await expect(input).toHaveValue(laptopText)
+    await expect(f.launched.page.getByText('This thread draft changed on the host. Your edit is kept on this computer. Review the host draft before saving again.', { exact: true })).toBeVisible()
+    expect(f.host.service.shell().threadDrafts?.find(draft => draft.threadId === nativeThreadId)?.text).toBe(hostText)
+    expect(f.native.prompts).toHaveLength(0)
+    expect(f.native.answers).toHaveLength(0)
+    await capture(f.launched, 'recovered-draft-conflict')
+    expect(f.errors).toEqual([])
+  } finally {
+    release()
+    f.host.service.command = originalCommand
     await f.close()
   }
 })
