@@ -135,7 +135,7 @@ repeated writes, including after restart, while still removing unknown retained
 content. Exact abandoned temporary copies are removed when the primary is
 missing without creating a replacement. Shared answer-store failures have
 their own notice. Chat cleanup and failed answer writes can retry on Settings
-saves; an answer store that was unreadable at startup stays read-only for the
+saves; an answer store that was unreadable at startup stays unavailable for the
 session, so its notice directs the user to repair storage and restart.
 The recovery notices describe the failed attempt and remain available for the
 session, like the app's existing recovery notices. The final focused checks
@@ -149,7 +149,7 @@ can then retry through Settings or restart, while an unreadable answer store
 requires restart.
 
 The answer-store recovery journey also repairs a malformed file, confirms that
-a Settings save commits without reopening the read-only store, and restarts
+a Settings save commits without reopening the unavailable store, and restarts
 Electron against the same profile. Startup then clears the submitted personal
 form while retaining unsent and thread forms. The answer notice therefore says
 to repair storage and restart. All five journeys and the 51 renderer tests pass
