@@ -21,7 +21,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'check-client-updates': [], 'dismiss-client-updates': [],
   // The two update-line commands, only on a listener that offers `client-updates`: see remoteCommandRefusal.
   'queue-client-updates': ['providers'], 'cancel-client-updates': ['providers'],
-  'save-thread-draft': ['threadId', 'draftId', 'text', 'attachments', 'skills', 'files', 'requestId', 'composer'],
+  'save-thread-draft': ['threadId', 'draftId', 'text', 'attachments', 'skills', 'files', 'requestId', 'questionsDigest', 'composer'],
   'recover-draft': ['threadId'],
   'manual-send': ['threadId', 'text', 'attachments', 'skills', 'files', 'draftId'],
   'queue-followup': ['threadId', 'draftId', 'text', 'attachments', 'skills', 'files'],
@@ -112,7 +112,8 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
   if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'
   if (command.type === 'send' && command.draft && (command.draft.threadId !== context.selectedThreadId
-    || Object.keys(command.draft).some(key => !['threadId', 'text', 'attachments'].includes(key)))) return 'forbidden'
+    || Object.keys(command.draft).some(key => !['threadId', 'text', 'attachments', 'binding'].includes(key))
+    || command.draft.binding && Object.keys(command.draft.binding).some(key => !['requestId', 'questionsDigest'].includes(key)))) return 'forbidden'
   if (!context.mayAnswer && remoteCommandNeedsAnswerPolicy(command, context.askingProviderModes ?? [], context.draftRequestId)) return 'forbidden'
   return null
 }

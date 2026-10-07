@@ -31,6 +31,7 @@ import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
+import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
 import { isThreadProviderConnected } from '../shared/agents'
 import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
@@ -716,7 +717,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+    onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
+    onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
+  // The store reports read failures; the privacy cleanup below reports failed removals.
+  await retainedDrafts.load().catch(() => undefined)
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -778,10 +784,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
-  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter) : undefined
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts) : undefined
   if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
     try { await desktopHosts.close() }
-    finally { await remoteHostE2E.close() }
+    finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
   } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
@@ -815,14 +821,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await requestDrafts.start()
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   const cleanRetiredHistory = async (): Promise<void> => {
-    const [chats, answers] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
+      Promise.resolve().then(() => retainedDrafts.privacyChanged()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
+    if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
+    if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.

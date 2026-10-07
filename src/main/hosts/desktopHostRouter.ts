@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -203,6 +203,8 @@ export class DesktopHostRouter {
       assignments: entries.flatMap(item => item.state.assignments), queue: entries.flatMap(item => item.state.queue),
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
       threadDraftPersistence: entries.flatMap(item => item.state.threadDraftPersistence ?? []),
+      obsoleteDrafts: entries.flatMap(item => item.state.obsoleteDrafts ?? []).slice(-MAX_DELIVERED_DRAFTS),
+      deliveredDrafts: entries.flatMap(item => item.state.deliveredDrafts ?? []).slice(-MAX_DELIVERED_DRAFTS),
       deliveries: entries.flatMap(item => item.state.deliveries ?? []), followups: entries.flatMap(item => item.state.followups ?? []),
       busyThreadIds: entries.flatMap(item => item.state.busyThreadIds ?? []),
       ...(entries.some(item => item.state.unconfirmedSettings?.length) ? { unconfirmedSettings: entries.flatMap(item => item.state.unconfirmedSettings ?? []) } : {}),
@@ -420,6 +422,7 @@ export class DesktopHostRouter {
     return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
   }
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
+    const priorNotice = this.notice
     this.notice = undefined
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
@@ -440,6 +443,9 @@ export class DesktopHostRouter {
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+    // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
+    if (command.type === 'compose' && command.threadId !== undefined && connection.service.supportsAtomicSend === false
+      && priorNotice === this.publishedNotice && priorNotice?.unsupportedCompose === connection) this.notice = priorNotice
     if (command.type === 'select-thread' || command.type === 'select-project') {
       this.selectedHostId = connection.hostId; this.selections++
       if (command.type === 'select-thread') {
@@ -498,8 +504,8 @@ export class DesktopHostRouter {
         const message = this.refusal(connection, result.error)
         // Compare what is visible now, after the reply. An intervening error or connection change wins.
         repeatedUnsupportedCompose = unsupportedCompose && this.publishedNotice?.unsupportedCompose === connection
-          && this.publishedNotice.message === message
-        this.notice = { message, ...(unsupportedCompose ? { unsupportedCompose: connection } : {}), ...(decisionId && answerTarget
+          && this.hosts.get(connection.hostId)?.connection === connection && this.publishedNotice.message === message
+        this.notice = repeatedUnsupportedCompose ? this.publishedNotice : { message, ...(unsupportedCompose ? { unsupportedCompose: connection } : {}), ...(decisionId && answerTarget
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {

@@ -1,4 +1,5 @@
 import { SocketHostService } from '../agents/socketHostService'
+import type { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { DesktopHostRouter } from '../hosts/desktopHostRouter'
 
 export interface RemoteHostE2EConnection { url: string; token: string; hostId: string; holdReceipts?: boolean }
@@ -18,7 +19,7 @@ declare global { var sottoRemoteHostE2E: RemoteHostE2E | undefined }
  * Unpackaged E2E main-process harness only. Bypasses SSH discovery/launch, while retaining the real
  * paired socket, router, request drafts, preload and renderer. Never installed in a normal session.
  */
-export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
+export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: RetainedDraftStore): RemoteHostE2E {
   const sockets = new Map<string, SocketHostService>()
   const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completed: number; completedIdle: number }>()
   const harness: RemoteHostE2E = {
@@ -26,7 +27,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter): RemoteHostE2E {
       const url = new URL(input.url)
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The remote host test requires a loopback listener.')
       if (sockets.has(input.hostId)) throw new Error('The remote host test is already connected.')
-      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false })
+      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts })
       try {
         const hello = await socket.connect()
         let release = (): void => {}

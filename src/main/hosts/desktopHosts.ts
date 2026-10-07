@@ -5,6 +5,7 @@ import { remoteHostSchema, type HostAddTailnet, type HostForgotten, type HostFor
 import type { HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
 import { afterTailnetFailure, classifyTailnetFailure, connectOrder, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
@@ -149,6 +150,7 @@ function validateConnection(host: Connection): void {
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
+  private readonly retainedDrafts: RetainedDraftStore
   private readonly store: AtomicJsonStore<SavedHost[]>
   private saved: SavedHost[] = []
   private readonly status = new Map<string, HostStatus>()
@@ -216,6 +218,7 @@ export class DesktopHosts {
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
+    retainedDrafts?: RetainedDraftStore;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
@@ -231,6 +234,7 @@ export class DesktopHosts {
     /** The clock that times a boot host's tailnet-only first minute of retries; the system clock unless a test moves it. */
     now?: () => number;
   }) {
+    this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore()
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
@@ -610,6 +614,7 @@ export class DesktopHosts {
    * sign-in the user stopped, which changes nothing.
    */
   private async forget(host: SavedHost): Promise<HostsState> {
+    if (host.hostId) await this.retainedDrafts.forgetHost(host.hostId)
     this.clearRetry(host.id)
     const active = this.live.get(host.id)
     // The revoke drops this computer's socket, and the stop closes the host under it: neither may reconnect or pair again.
@@ -1145,7 +1150,7 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ getSelectedThreadId: () => {
+    const socket = new SocketHostService({ retainedDrafts: this.retainedDrafts, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1551,17 +1556,19 @@ export class DesktopHosts {
    * live: a retry that fired during the quit drain would spawn ssh and register with a disposed router.
    */
   async close(): Promise<void> {
-    this.closed = true
-    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
-    for (const id of [...this.retries.keys()]) this.clearRetry(id)
-    for (const id of [...this.returns.keys()]) this.clearReturn(id)
-    // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
-    // the quit drain does not end before its credential is cleared and its pairing revoked.
-    if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
-    if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
-    await Promise.all([this.pendingAdd, this.pendingSetup])
-    await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
-    await Promise.allSettled([...this.leaving].map(item => item.launcher?.disconnect())); this.leaving.clear()
-    await this.admins.closeAll(); await this.writing; await this.tailnet.flush()
+    try {
+      this.closed = true
+      this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
+      for (const id of [...this.retries.keys()]) this.clearRetry(id)
+      for (const id of [...this.returns.keys()]) this.clearReturn(id)
+      // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
+      // the quit drain does not end before its credential is cleared and its pairing revoked.
+      if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
+      if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
+      await Promise.all([this.pendingAdd, this.pendingSetup])
+      await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
+      await Promise.allSettled([...this.leaving].map(item => item.launcher?.disconnect())); this.leaving.clear()
+      await this.admins.closeAll(); await this.writing; await this.tailnet.flush()
+    } finally { await this.retainedDrafts.close() }
   }
 }

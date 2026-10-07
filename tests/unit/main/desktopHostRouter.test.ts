@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { serialize } from 'node:v8'
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import type { FileListRequest, FileRequest } from '../../../src/shared/files'
@@ -11,7 +12,7 @@ import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
@@ -40,13 +41,28 @@ function unsupportedComposer() {
   }
   const first = socket()
   router.add(first.connection); router.select(REMOTE)
-  const notifications: { error: string | null; title: string }[] = []
-  router.subscribe(state => notifications.push({ error: state.error, title: state.host.threads[0]?.title ?? '' }))
+  const notifications: { error: string | null; title: string; draft: string }[] = []
+  router.subscribe(state => notifications.push({ error: state.error, title: state.host.threads[0]?.title ?? '', draft: state.draft }))
   const save = (text: string) => router.command({ type: 'compose', threadId: hostEntityKey(REMOTE, 'thread'), text }, desktopWindowClient())
   return { router, remote, ...first, notifications, save, socket, onPushError }
 }
 
 describe('desktop host routing', () => {
+  it('qualifies and bounds exact retirement and delivery proof across two full host ledgers', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) {
+      f.state.obsoleteDrafts = Array.from({ length: MAX_DELIVERED_DRAFTS }, () => ({ threadId: 'thread', draftId: randomUUID() }))
+      f.state.deliveredDrafts = Array.from({ length: MAX_DELIVERED_DRAFTS }, () => ({ threadId: 'thread', draftId: randomUUID() }))
+      router.add(f.connection)
+    }
+    try {
+      const result = agentStateSchema.parse(router.shell())
+      expect(result.obsoleteDrafts).toHaveLength(MAX_DELIVERED_DRAFTS)
+      expect(result.deliveredDrafts).toHaveLength(MAX_DELIVERED_DRAFTS)
+      expect(result.obsoleteDrafts?.every(item => item.threadId === hostEntityKey(REMOTE, 'thread'))).toBe(true)
+      expect(result.deliveredDrafts?.every(item => item.threadId === hostEntityKey(REMOTE, 'thread'))).toBe(true)
+    } finally { router.dispose() }
+  })
   it.each(['send', 'compose'] as const)('returns fixed update guidance for targeted %s to an older host without sending or losing its draft', async type => {
     const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
     remote.state.activeThreadId = 'thread'
@@ -60,13 +76,14 @@ describe('desktop host routing', () => {
     router.select(REMOTE)
     const draft = { threadId: hostEntityKey(REMOTE, 'thread'), text: 'The retained prompt', attachments: [] }
     const result = await router.command(type === 'send' ? { type, draft } : { type, ...draft }, desktopWindowClient())
-    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your text is only in this window.'
-      : 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.')
+    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your draft is kept on this computer.'
+      : 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.')
     expect(result.draft).toBe('The retained prompt')
     expect(result.draftThreadId).toBe(hostEntityKey(REMOTE, 'thread'))
     expect(result.composing).toBe(true)
     expect(call).not.toHaveBeenCalled()
-    expect(service.state()).toEqual(remote.state)
+    expect(service.state()).toMatchObject(remote.state)
+    expect((service as unknown as { cached: unknown }).cached).toEqual(remote.state)
     expect(router.shell().error).toBe(result.error)
     router.dispose()
   })
@@ -76,12 +93,14 @@ describe('desktop host routing', () => {
     try {
       for (const text of ['New edit', 'New edit two', 'New edit three']) {
         const result = await f.save(text)
-        expect(result.error).toBe('This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.')
+        expect(result.error).toBe('This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.')
       }
-      expect(f.notifications).toHaveLength(1)
-      expect(f.notifications[0]!.error).toBe(f.router.shell().error)
+      expect(f.notifications).toHaveLength(4)
+      expect(f.notifications.map(item => item.draft)).toEqual(['New edit', 'New edit', 'New edit two', 'New edit three'])
+      expect(f.notifications.slice(1).every(item => item.error === f.router.shell().error)).toBe(true)
       expect(f.call).not.toHaveBeenCalled(); expect(f.onPushError).not.toHaveBeenCalled()
-      expect(f.service.state().draft).toBe('Previously saved text')
+      expect(f.service.state().draft).toBe('New edit three')
+      expect((f.service as unknown as { cached: { draft: string } }).cached.draft).toBe('Previously saved text')
     } finally { f.router.dispose() }
   })
 
@@ -118,13 +137,15 @@ describe('desktop host routing', () => {
       const before = f.notifications.length
       release()
       expect((await running).error).toBe(first.error)
-      expect(f.notifications).toHaveLength(before + 1)
+      expect(f.notifications).toHaveLength(before + (intervening === 'shell' ? 0 : 1))
       expect(f.notifications.at(-1)!.error).toBe(first.error)
+      if (intervening === 'shell') expect(f.notifications.at(-1)!.title).toBe('Changed while the save reply was held')
       held.mockRestore()
       if (intervening === 'reconnect') {
         const reconnected = f.notifications.length
         expect((await f.save('Edit on the reconnected host')).error).toBe(first.error)
-        expect(f.notifications).toHaveLength(reconnected + 1)
+        expect(f.notifications).toHaveLength(reconnected + 2)
+        expect(f.notifications.at(-1)!.draft).toBe('Edit on the reconnected host')
       }
       expect(f.call.mock.calls.every(([operation]) => operation.op !== 'command' || operation.command.type !== 'compose')).toBe(true)
       expect(f.onPushError).not.toHaveBeenCalled()

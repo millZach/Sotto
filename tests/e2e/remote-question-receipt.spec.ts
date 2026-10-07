@@ -11,7 +11,7 @@ import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
 import type { AgentRequest, ProviderId } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, paneMenuAction, type LaunchedSotto } from './support/sottoLaunch'
 
 // Real paired headless host -> socket -> desktop router -> IPC -> question panel. The main-only,
 // unpackaged harness bypasses SSH launch, never the remote protocol or answer/draft handling.
@@ -70,14 +70,16 @@ const structured: AgentRequest = { id: 'remote-form', kind: 'question', text: 'F
 ] }
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 
-async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false) {
+async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
+  options: { managed?: boolean; historyEnabled?: boolean } = {}) {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
   let launched: LaunchedSotto | undefined
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
-      localHostEnabled: false, reducedMotion: 'on', historyEnabled: false }))
+      localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false,
+      voiceCoordinatorEnabled: options.managed ?? false }))
     const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider() }
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,
@@ -106,6 +108,10 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
     }, connection)
     await openThreads(launched.page)
     await launched.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
+    if (options.managed) {
+      await paneMenuAction(launched.page, 'Manage')
+      await expect(launched.page.locator('#agent-prompt')).toBeVisible()
+    }
     const threadId = await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.title === 'Forge question fixture')!.id)
     const ownedHost = host
     const ownedApp = launched
@@ -141,6 +147,64 @@ async function capture(launched: LaunchedSotto, name: string, subject?: Locator)
     }
   }
 }
+
+for (const recovery of ['reconnect', 'restart'] as const) test(`managed remote edits survive ${recovery} while save replies are held and never answer a new question`, async () => {
+  test.setTimeout(120_000)
+  const f = await fixture('codex', false, undefined, false, { managed: true, historyEnabled: recovery === 'restart' })
+  let restarted: LaunchedSotto | undefined
+  let release!: () => void
+  const acknowledgement = new Promise<void>(resolve => { release = resolve })
+  const originalCommand = f.host.service.command.bind(f.host.service)
+  let composeCalls = 0
+  f.host.service.command = async (...args) => {
+    const result = await originalCommand(...args)
+    if (args[0].type === 'compose') { composeCalls++; await acknowledgement }
+    return result
+  }
+  const latest = 'Fix the parser and add tests before making the requested change.'
+  try {
+    const input = f.launched.page.getByLabel('Prompt', { exact: true })
+    await input.fill('Fix')
+    await expect.poll(() => composeCalls).toBe(1)
+    for (const text of ['Fix the parser', 'Fix the parser and add', 'Fix the parser and add tests', latest]) await input.fill(text)
+    await expect(input).toHaveValue(latest)
+    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(latest)
+    // The final edit is held off the wire: a host-only copy cannot make this test pass.
+    expect(composeCalls).toBeLessThanOrEqual(2)
+    expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === latest)).toBe(false)
+    if (recovery === 'restart') {
+      await closeSotto(f.launched)
+      const kept = JSON.parse(await readFile(join(f.profile, 'remote-drafts.json'), 'utf8')) as Array<{ draft: { text: string } }>
+      expect(kept.some(edit => edit.draft.text === latest)).toBe(true)
+    } else {
+      await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
+    }
+    release()
+    f.host.service.command = originalCommand
+    const newQuestion = { ...legacy, id: 'question-after-lost-save' }
+    f.native.event({ type: 'question', threadId: 'workshop', text: newQuestion.text, request: newQuestion })
+    if (recovery === 'restart') restarted = await launchSotto('success', f.profile)
+    const active = restarted ?? f.launched
+    if (restarted) active.page.on('pageerror', error => f.errors.push(error.message))
+    await active.app.evaluate((_, connection) => globalThis.sottoRemoteHostE2E!.connect(connection), f.connection)
+    await openThreads(active.page)
+    await active.page.getByRole('button', { name: 'Forge question fixture', exact: true }).click()
+    await expect(active.page.getByLabel('Prompt', { exact: true })).toHaveValue(latest)
+    await expect.poll(() => f.host.service.shell().threadDrafts?.find(draft => draft.text === latest)?.requestId).toBeNull()
+    expect(f.native.answers).toHaveLength(0)
+    await active.page.getByRole('button', { name: 'Send it', exact: true }).click()
+    await expect(active.page.getByText('Answer the pending question or permission explicitly before sending a new prompt.', { exact: true })).toBeVisible()
+    await expect(active.page.getByLabel('Prompt', { exact: true })).toHaveValue(latest)
+    expect(f.native.answers).toHaveLength(0)
+    await capture(active, `retained-${recovery}`)
+    expect(f.errors).toEqual([])
+  } finally {
+    release()
+    f.host.service.command = originalCommand
+    if (restarted) await closeSotto(restarted)
+    await f.close()
+  }
+})
 
 for (const provider of ['codex', 'claude', 'grok'] as const) test(`${provider}: Forge accepts choice and structured answers once and the laptop retires their saved holds`, async () => {
   test.setTimeout(120_000)

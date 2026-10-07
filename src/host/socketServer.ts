@@ -440,7 +440,7 @@ export async function startSocketServer(options: SocketServerOptions) {
             : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['pause-draft', 'cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          if (input.type === 'answer' || input.type === 'send' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }

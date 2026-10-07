@@ -22,12 +22,13 @@ import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostS
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as clientVersion } from '../../../package.json'
+import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 
-export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.'
+export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 
 const COMPOSE_WIRE_LIMIT = 2
 type TargetedCompose = Extract<AgentCommand, { type: 'compose' }> & { threadId: string }
-type ComposeBatch = { command: TargetedCompose; commandId?: string; result: Promise<AgentState>;
+type ComposeBatch = { command: TargetedCompose; draftId: string; commandId?: string; result: Promise<AgentState>;
   resolve(state: AgentState): void; reject(error: unknown): void }
 
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
@@ -40,6 +41,7 @@ export class WrongHostError extends HostConnectionError {
 }
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
+  retainedDrafts?: RetainedDraftStore
   /**
    * How long the health check may take. A tailnet connection allows 5 seconds before it counts the tailnet as not
    * answering (ADR-0053); everything else allows 15.
@@ -105,7 +107,15 @@ export class SocketHostService implements HostService {
   private opening: AbortController | undefined
   private previewTail: Promise<unknown> = Promise.resolve()
   private composeBudget: { active: number; queued?: ComposeBatch } = { active: 0 }
-  constructor(private readonly options: SocketHostServiceOptions) { this.endpoint('/v1/health') }
+  private readonly retainedDrafts: RetainedDraftStore
+  private readonly recovering = new Map<string, number>()
+  private readonly recoveryAttempts = new Map<string, string>()
+  private readonly activeComposeDrafts = new Set<string>()
+  private readonly delivering = new Map<string, number>()
+  private recoveryError: { threadId: string; draftId: string; message: string } | undefined
+  constructor(private readonly options: SocketHostServiceOptions) {
+    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore()
+  }
   private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
   /**
    * Redeems a pairing code. A desktop pairs only through the SSH connection's forward, on this computer, so a code is never
@@ -132,6 +142,7 @@ export class SocketHostService implements HostService {
     return task
   }
   private async open(): Promise<HostHello> {
+    await this.retainedDrafts.load()
     this.resetComposeQueue()
     const selectedThreadId = this.cached?.activeThreadId
     const generation = ++this.generation
@@ -201,6 +212,7 @@ export class SocketHostService implements HostService {
         this.publish(selected)
       }
       this.options.onConnectionChange?.(true)
+      this.recoverDrafts()
       return hello
     } catch (error) { this.frames?.close(); throw error }
   }
@@ -325,6 +337,13 @@ export class SocketHostService implements HostService {
   private publish(state: AgentState): void {
     this.validateState(state)
     delete state.clientScoped; delete state.connections
+    for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
+      if ([...(state.deliveredDrafts ?? []), ...(state.obsoleteDrafts ?? []), ...(state.followupReceipts ?? [])]
+        .some(delivery => delivery.threadId === edit.draft.threadId && (delivery.draftId === edit.draft.draftId
+          || edit.saved && delivery.draftId === edit.hostDraftId))) {
+        this.retainedDrafts.remove(edit.hostId, edit.draft.threadId, edit.draft.draftId)
+      }
+    }
     this.cached = state; this.notifyState()
     if (this.pushErrorThread === null) this.clearPushError()
   }
@@ -349,7 +368,26 @@ export class SocketHostService implements HostService {
     const shell = this.shell()
     return { ...shell, host: { ...shell.host, threads: shell.host.threads.map(thread => { const detail = this.details.get(thread.id); return detail ? { ...thread, messages: detail.messages, activities: detail.activities } : thread }) } }
   }
-  shell(): AgentState { if (!this.cached) throw new Error('Connect to the host before reading its state.'); return structuredClone(this.cached) }
+  shell(): AgentState {
+    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    const state = structuredClone(this.cached)
+    for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
+      const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
+      state.threadDrafts = [...(state.threadDrafts ?? []).filter(draft => draft.threadId !== edit.draft.threadId), draft]
+      if (edit.saved && edit.hostDraftId) state.threadDraftPersistence = [...(state.threadDraftPersistence ?? []).filter(item => item.threadId !== draft.threadId),
+        { threadId: draft.threadId, draftId: edit.hostDraftId, status: 'saved' }]
+      if ((state.draftThreadId ?? state.activeThreadId) === edit.draft.threadId && edit.editing !== false) {
+        state.composing = true; state.draftThreadId = edit.draft.threadId; state.draftRequestId = edit.draft.requestId
+        state.draft = edit.draft.text; state.draftAttachments = edit.draft.attachments
+      }
+    }
+    const refusal = this.recoveryError
+    if (refusal && !state.error) {
+      const edit = this.retainedDrafts.get(this.retainedHostId(), refusal.threadId)
+      if (edit && !edit.saved && edit.draft.draftId === refusal.draftId) state.error = refusal.message
+    }
+    return state
+  }
   threadDetail(threadId: string): AgentThreadDetail | null { return structuredClone(this.details.get(threadId) ?? null) }
   events(afterSeq: number, threadId?: string): StoredThreadEvent[] { return structuredClone([...this.storedEvents.values()].filter(event => event.seq > afterSeq && (!threadId || event.threadId === threadId)).sort((a, b) => a.seq - b.seq)) }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
@@ -369,39 +407,79 @@ export class SocketHostService implements HostService {
   async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    this.recoveryError = undefined
     const admitted = structuredClone(command)
-    if (admitted.type === 'compose' && admitted.threadId !== undefined && this.supportsAtomicSend) {
-      return this.queueCompose(admitted as TargetedCompose, commandId)
+    if (admitted.type === 'compose' && admitted.threadId !== undefined) {
+      const edit = this.retainCompose(admitted as TargetedCompose)
+      if (this.supportsAtomicSend) return this.queueCompose({ ...admitted, attachments: edit.draft.attachments } as TargetedCompose, edit.draft.draftId, commandId)
     }
     // Saves admitted before a command go onto the wire first. Send never waits for their replies.
     this.flushCompose()
-    return this.commandNow(admitted, _client, commandId)
+    const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? this.shell().draftThreadId ?? this.shell().activeThreadId
+      : admitted.type === 'cancel-draft' || admitted.type === 'pause-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
+    const edit = owner ? this.retainedDrafts.get(this.retainedHostId(), owner) : undefined
+    if (admitted.type === 'send' && edit) {
+      if (!this.supportsAtomicSend) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
+      if (edit.draft.requestId && !edit.questionsDigest) return { ...this.state(), error: 'This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt.' }
+      admitted.draft ??= { threadId: edit.draft.threadId, text: edit.draft.text, attachments: structuredClone(edit.draft.attachments) }
+      admitted.draft.binding = { requestId: edit.draft.requestId, questionsDigest: edit.questionsDigest }
+    }
+    const barrierOwner = owner && (admitted.type === 'send' || admitted.type === 'cancel-draft' || admitted.type === 'pause-draft') ? owner : undefined
+    if (barrierOwner) this.delivering.set(barrierOwner, (this.delivering.get(barrierOwner) ?? 0) + 1)
+    try {
+      const result = await this.commandNow(admitted, _client, commandId)
+      if (result.error === null && edit && (admitted.type === 'send' || admitted.type === 'cancel-draft')) {
+        const latest = this.retainedDrafts.get(this.retainedHostId(), edit.draft.threadId)
+        this.retainedDrafts.remove(this.retainedHostId(), edit.draft.threadId, edit.draft.draftId)
+        if (admitted.type === 'send' && latest && latest.draft.draftId !== edit.draft.draftId && latest.draft.requestId === edit.draft.requestId) {
+          this.retainedDrafts.put({ ...latest, draft: { ...latest.draft, requestId: null }, questionsDigest: null, saved: false, recovery: true })
+        }
+        this.notifyState()
+      }
+      if (result.error === null && (admitted.type === 'pause-draft' || admitted.type === 'resume-draft')) {
+        const threadId = admitted.type === 'resume-draft' ? admitted.threadId : owner
+        const retained = threadId ? this.retainedDrafts.get(this.retainedHostId(), threadId) : undefined
+        if (retained) this.retainedDrafts.put({ ...retained, editing: admitted.type === 'resume-draft' })
+      }
+      return { ...this.state(), error: result.error }
+    } finally {
+      if (barrierOwner) {
+        const remaining = this.delivering.get(barrierOwner)! - 1
+        if (remaining) this.delivering.set(barrierOwner, remaining)
+        else this.delivering.delete(barrierOwner)
+      }
+      this.recoverDrafts()
+    }
   }
-  private queueCompose(command: TargetedCompose, commandId?: string): Promise<AgentState> {
+  private queueCompose(command: TargetedCompose, draftId: string, commandId?: string): Promise<AgentState> {
     const budget = this.composeBudget, queued = budget.queued
     if (queued && queued.command.threadId === command.threadId && queued.commandId === undefined && commandId === undefined) {
       // Omission inherits the latest explicit image list; [] deliberately removes images.
       const { attachments, ...latest } = command
       queued.command = { ...queued.command, ...latest, ...(attachments !== undefined ? { attachments } : {}) }
+      queued.draftId = draftId
       return queued.result
     }
     // A new owner or an explicit receipt identity seals the older pending save.
     this.flushCompose()
     let resolve!: ComposeBatch['resolve'], reject!: ComposeBatch['reject']
     const result = new Promise<AgentState>((done, fail) => { resolve = done; reject = fail })
-    const batch: ComposeBatch = { command, ...(commandId ? { commandId } : {}), result, resolve, reject }
+    const batch: ComposeBatch = { command, draftId, ...(commandId ? { commandId } : {}), result, resolve, reject }
     if (budget.active === 0) this.dispatchCompose(batch, budget)
     else budget.queued = batch
     return result
   }
   private dispatchCompose(batch: ComposeBatch, budget = this.composeBudget): void {
     budget.active++
-    void this.commandNow(batch.command, undefined, batch.commandId).then(
+    this.activeComposeDrafts.add(batch.draftId)
+    void this.commandNow(batch.command, undefined, batch.commandId, batch.draftId).then(
       state => batch.resolve(state),
       error => batch.reject(error),
     ).finally(() => {
       budget.active--
+      this.activeComposeDrafts.delete(batch.draftId)
       if (budget === this.composeBudget && budget.active < COMPOSE_WIRE_LIMIT) this.flushCompose()
+      this.recoverDrafts()
     })
   }
   private flushCompose(): void {
@@ -409,19 +487,111 @@ export class SocketHostService implements HostService {
     if (!queued) return
     delete budget.queued
     if (budget.active >= COMPOSE_WIRE_LIMIT) {
-      const state = { ...this.state(), error: 'The host is still saving earlier edits. Your latest text is only in this window. Wait for saving to finish, then edit again.' }
+      this.retainedDrafts.recover(this.retainedHostId())
+      const state = { ...this.state(), error: 'The host is still saving earlier edits. Your draft is kept on this computer until it can be saved on the host.' }
       queued.resolve(state)
     } else this.dispatchCompose(queued, budget)
   }
   private resetComposeQueue(): void {
     const queued = this.composeBudget.queued
     this.composeBudget = { active: 0 }
+    this.recovering.clear(); this.recoveryAttempts.clear(); this.activeComposeDrafts.clear()
+    this.recoveryError = undefined
+    if (this.cached?.hostId) this.retainedDrafts.recover(this.cached.hostId)
     queued?.reject(new HostConnectionError(
-      'The connection closed before this draft was sent. Your latest text is only in this window. Reconnect and save it again.', 'disconnected'))
+      'The connection closed before this draft was sent. Your draft is kept on this computer. Reconnect to save it on the host.', 'disconnected'))
   }
-  private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+  private retainedHostId(): string {
+    const hostId = this.session?.hostId ?? this.cached?.hostId ?? this.options.expectedHostId
+    if (!hostId) throw new HostConnectionError('Connect to the host before saving this draft.', 'disconnected')
+    return hostId
+  }
+  private retainCompose(command: TargetedCompose): RetainedDraft {
+    const state = this.shell(), previous = this.retainedDrafts.get(this.retainedHostId(), command.threadId)
+    // A projected empty local edit is not evidence that a freshly visible question is a prompt.
+    const saved = this.cached?.threadDrafts?.find(draft => draft.threadId === command.threadId)
+    const thread = state.host.threads.find(item => item.id === command.threadId)
+    const question = thread?.requests.find(request => request.kind === 'question')
+    const inheritsPrevious = previous && (previous.draft.text.length > 0 || previous.draft.attachments.length > 0 || previous.draft.requestId !== null || !question)
+    const requestId = inheritsPrevious ? previous.draft.requestId : saved ? saved.requestId
+      : state.composing && state.draftThreadId === command.threadId && (state.draft.length > 0 || state.draftAttachments?.length || !question)
+        ? state.draftRequestId : question?.id ?? null
+    const boundQuestion = thread?.requests.find(request => request.kind === 'question' && request.id === requestId)
+    const edit: RetainedDraft = { hostId: this.retainedHostId(), draft: { threadId: command.threadId, draftId: randomUUID(),
+      text: command.text, attachments: command.attachments ?? previous?.draft.attachments ?? saved?.attachments
+        ?? (state.draftThreadId === command.threadId ? state.draftAttachments : undefined) ?? [],
+      skills: previous?.draft.skills ?? saved?.skills, files: previous?.draft.files ?? saved?.files,
+      requestId, updatedAt: new Date().toISOString() },
+    questionsDigest: inheritsPrevious ? previous.questionsDigest : requestId && boundQuestion ? requestQuestionsDigest(requestDraftQuestions(boundQuestion)) : null,
+    saved: false, recovery: previous?.recovery ?? false, editing: true }
+    this.retainedDrafts.put(edit)
+    this.notifyState()
+    return edit
+  }
+  private acknowledgeDraft(threadId: string, draftId: string, state: AgentState, recovery: boolean): void {
+    const edit = this.retainedDrafts.get(this.retainedHostId(), threadId)
+    if (!edit || edit.draft.draftId !== draftId || state.error) return
+    let acknowledged = state.threadDrafts?.find(draft => draft.threadId === threadId)
+    if (!acknowledged && edit.draft.text === '' && edit.draft.attachments.length === 0
+      && state.threadDraftPersistence?.some(item => item.threadId === threadId && item.status === 'saved')) {
+      this.retainedDrafts.remove(this.retainedHostId(), threadId, draftId)
+      return
+    }
+    if (!acknowledged && state.draftThreadId === threadId && state.composing) {
+      const revision = state.threadDraftPersistence?.find(item => item.threadId === threadId && item.status === 'saved')
+      if (revision) acknowledged = { ...edit.draft, draftId: revision.draftId, text: state.draft,
+        attachments: state.draftAttachments ?? [], requestId: state.draftRequestId }
+    }
+    if (!acknowledged || !state.threadDraftPersistence?.some(item => item.threadId === threadId && item.draftId === acknowledged.draftId && item.status === 'saved')
+      || acknowledged.text !== edit.draft.text
+      || JSON.stringify(acknowledged.attachments) !== JSON.stringify(edit.draft.attachments)
+      || JSON.stringify(acknowledged.skills ?? []) !== JSON.stringify(edit.draft.skills ?? [])
+      || JSON.stringify(acknowledged.files ?? []) !== JSON.stringify(edit.draft.files ?? [])) return
+    if (acknowledged.requestId !== edit.draft.requestId) {
+      // An ordinary save can resolve an earlier queued empty prompt. Recovery never changes its captured binding.
+      if (recovery || acknowledged.requestId !== null) return
+      this.retainedDrafts.put({ ...edit, draft: { ...edit.draft, requestId: null }, questionsDigest: null })
+    }
+    this.retainedDrafts.saved(this.retainedHostId(), threadId, draftId, acknowledged)
+  }
+  /** Only saved drafts are retried. They carry the original owner/binding and never deliver a prompt or answer. */
+  private recoverDrafts(): void {
+    if (!this.frames || !this.cached || !this.supportsAtomicSend || this.composeBudget.active >= COMPOSE_WIRE_LIMIT) return
+    const edit = this.retainedDrafts.list(this.retainedHostId()).find(item => {
+      if (!item.recovery || item.saved || this.recovering.has(item.draft.threadId) || this.delivering.has(item.draft.threadId)
+        || this.recoveryAttempts.get(item.draft.threadId) === item.draft.draftId || this.activeComposeDrafts.has(item.draft.draftId)
+        || this.composeBudget.queued?.draftId === item.draft.draftId) return false
+      const thread = this.cached!.host.threads.find(thread => thread.id === item.draft.threadId)
+      if (!thread) return false
+      if (!item.draft.requestId) return true
+      const question = thread.requests.find(request => request.kind === 'question' && request.id === item.draft.requestId)
+      return question !== undefined && requestQuestionsDigest(requestDraftQuestions(question)) === item.questionsDigest
+    })
+    if (!edit) return
+    const budget = this.composeBudget, generation = this.generation
+    budget.active++; this.recovering.set(edit.draft.threadId, generation); this.recoveryAttempts.set(edit.draft.threadId, edit.draft.draftId)
+    const { threadId, draftId, text, attachments, skills, files, requestId } = edit.draft
+    const refused = (message: string) => {
+        if (generation === this.generation && this.cached
+          && this.retainedDrafts.get(this.retainedHostId(), threadId)?.draft.draftId === draftId) {
+          this.recoveryError = { threadId, draftId, message }; this.notifyState()
+        }
+    }
+    void this.commandNow({ type: 'save-thread-draft', threadId, draftId, text, attachments, skills, files, requestId,
+      ...(requestId && edit.questionsDigest ? { questionsDigest: edit.questionsDigest } : {}) }, undefined, undefined, draftId)
+      .then(state => { if (state.error) refused(state.error) })
+      .catch((error: unknown) => { refused(error instanceof Error ? error.message : 'This draft could not be saved on the host. Reconnect and try again.') })
+      .finally(() => {
+        budget.active--
+        if (this.recovering.get(threadId) === generation) this.recovering.delete(threadId)
+        // A refused save remains retained for an explicit edit/reconnect; it is not an endless retry.
+        if (generation === this.generation) { this.flushCompose(); this.recoverDrafts() }
+      })
+    this.recoverDrafts()
+  }
+  private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string, retainedId?: string): Promise<AgentState> {
     if (!this.supportsAtomicSend) {
-      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your text is only in this window.' }
+      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
       if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
@@ -436,10 +606,19 @@ export class SocketHostService implements HostService {
     const generation = this.generation
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'command', command }, commandId)); this.sameGeneration(generation)
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
+    if (retainedId && 'threadId' in command && command.threadId
+      && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {
+      return { ...this.state(), error: state.error }
+    }
+    if (retainedId && 'threadId' in command && command.threadId) this.acknowledgeDraft(command.threadId, retainedId, state, command.type === 'save-thread-draft')
     this.publish(state)
     const acknowledged = this.state()
     // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
-    if (command.type === 'compose') return { ...acknowledged, error: state.error }
+    if (command.type === 'compose' || command.type === 'save-thread-draft' && retainedId) {
+      try { await this.retainedDrafts.flush() }
+      catch { return { ...acknowledged, error: 'This computer could not save your draft. Keep your text and images and try saving again.' } }
+      return { ...acknowledged, error: state.error }
+    }
     // Receipt evidence is optional after acknowledgement. A failed read preserves the command-local
     // outcome and leaves its saved answer held until an exact positive receipt is recovered later.
     if (answer) await this.refreshRequestAnswer(commandId, answer).catch(() => undefined)

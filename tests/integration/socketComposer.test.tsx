@@ -1,17 +1,311 @@
 import React from 'react'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AgentComposer } from '../../src/renderer/src/agents/AgentView'
 import type { AgentCommand } from '../../src/shared/agents'
+import { RetainedDraftStore } from '../../src/main/agents/retainedDraftStore'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
+import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import { requestDraftQuestions } from '../../src/shared/requestDrafts'
 
 afterEach(cleanup)
+
+async function remoteDraftFixture() {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-retained-composer-')), directory = join(root, 'desktop')
+  const native = new E2EAgentHost()
+  const host = await startHeadlessHost({ dataDirectory: join(root, 'host'), port: 0,
+    providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  const url = 'http://127.0.0.1:' + host.descriptor!.port
+  const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Retained composer')
+  const clients: SocketHostService[] = [], stores: RetainedDraftStore[] = []
+  const open = async (selected?: string) => {
+    const store = new RetainedDraftStore({ directory }); stores.push(store)
+    const client = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId, catchUpEvents: false,
+      retainedDrafts: store, ...(selected ? { getSelectedThreadId: () => selected } : {}) })
+    clients.push(client); await client.connect(); return { client, store }
+  }
+  const initial = await open()
+  await initial.client.command({ type: 'connect', provider: 'codex' })
+  const created = await initial.client.command({ type: 'create-project', provider: 'codex', title: 'Recovery project', path: root, useExisting: true })
+  const projectId = created.host.projects.find(project => project.path === root)!.id
+  const nativeIds = new Map<string, string>()
+  const create = async (title: string) => {
+    const before = new Set((await native.snapshot()).threads.map(thread => thread.id))
+    const state = await initial.client.command({ type: 'create-thread', projectId, title, titleSource: 'user', modelId: created.host.models[0]!.id, managed: true })
+    const thread = state.host.threads.find(thread => thread.title === title)!
+    await initial.client.command({ type: 'select-thread', threadId: thread.id })
+    expect((await initial.client.command({ type: 'send', draft: { threadId: thread.id, text: 'Initialize synthetic fixture', attachments: [] } })).error).toBeNull()
+    nativeIds.set(thread.id, (await native.snapshot()).threads.find(thread => !before.has(thread.id))!.id)
+    native.event({ type: 'ready', threadId: nativeIds.get(thread.id)!, text: 'Synthetic fixture ready' })
+    return thread
+  }
+  const a = await create('Retained A'), b = await create('Retained B')
+  await initial.client.command({ type: 'select-thread', threadId: a.id })
+  const policy = async (allowed: boolean) => {
+    const descriptor = JSON.parse(await readFile(join(root, 'host', 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const response = await fetch(url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: paired.clientId }) })
+    expect(response.status).toBe(200)
+  }
+  const question = async (threadId: string, id: string, text = id) => {
+    native.event({ type: 'question', threadId: nativeIds.get(threadId)!,
+      text, request: { id, kind: 'question', text, options: [{ id: 'blue', label: 'Blue' }] } })
+  }
+  return { root, directory, host, hostId: paired.hostId, native, nativeIds, open, a, b, policy, question, ...initial,
+    close: async () => { await Promise.all(clients.map(client => client.close())); await Promise.all(stores.map(store => store.close())); await host.close(); await rm(root, { recursive: true, force: true }) } }
+}
+
+it('recovers the full latest edit and explicit image removal through a fresh desktop store without replaying Send', async () => {
+  const f = await remoteDraftFixture()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const original = f.host.service.command.bind(f.host.service), writes = vi.spyOn(f.native, 'execute')
+  const commands: AgentCommand[] = []
+  const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
+    const state = await original(...args); commands.push(structuredClone(args[0]))
+    if (args[0].type === 'compose') await gate
+    return state
+  })
+  try {
+    const image = await f.client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const first = f.client.command({ type: 'compose', threadId: f.a.id, text: 'First', attachments: [image] })
+    const latest = f.client.command({ type: 'compose', threadId: f.a.id, text: 'Latest without image', attachments: [] })
+    const settled = Promise.allSettled([first, latest])
+    await expect.poll(() => commands.some(command => command.type === 'compose')).toBe(true)
+    await f.client.close(); await settled; await f.store.close()
+    release(); held.mockRestore()
+    const replacement = await f.open(f.a.id)
+    await expect.poll(() => replacement.store.get(f.hostId, f.a.id)?.saved).toBe(true)
+    expect(replacement.client.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: f.a.id, text: 'Latest without image', requestId: null, attachments: [] }))
+    expect(JSON.parse(await readFile(join(f.root, 'host', 'agents.json'), 'utf8')).threadDrafts).toContainEqual(expect.objectContaining({ threadId: f.a.id, text: 'Latest without image', attachments: [] }))
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { release(); held.mockRestore(); writes.mockRestore(); await f.close() }
+})
+
+it('skips a recovered stale answer while independently saving another owner and refuses Q1 text against Q2', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  try {
+    await f.policy(true); await f.question(f.a.id, 'q1')
+    await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests.length).toBe(1)
+    await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Answer to Q1' })
+    const saved = f.store.get(f.hostId, f.a.id)!
+    f.store.put({ ...saved, draft: { ...saved.draft, draftId: randomUUID(), text: 'Newest answer to Q1' }, saved: false, recovery: true })
+    f.store.put({ hostId: f.hostId, draft: { threadId: f.b.id, draftId: randomUUID(), text: 'Independent B', attachments: [], requestId: null, updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: true })
+    await f.client.close(); await f.store.close()
+    f.native.event({ type: 'history', threadId: f.nativeIds.get(f.a.id)!, text: '', messages: [] })
+    await f.question(f.a.id, 'q2')
+    const replacement = await f.open(f.a.id)
+    await expect.poll(() => replacement.store.get(f.hostId, f.b.id)?.saved).toBe(true)
+    expect(replacement.client.shell()).toMatchObject({ draft: 'Newest answer to Q1', draftRequestId: 'q1' })
+    const refused = await replacement.client.command({ type: 'send' })
+    expect(refused.error).not.toBeNull()
+    expect(replacement.store.get(f.hostId, f.a.id)?.draft).toMatchObject({ text: 'Newest answer to Q1', requestId: 'q1' })
+    expect(f.host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: f.b.id, text: 'Independent B', requestId: null }))
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { writes.mockRestore(); await f.close() }
+})
+
+it('keeps a missing recovered image visible and refuses to send the stripped host draft', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  try {
+    const image = { id: 'missing-image', digest: 'a'.repeat(64), name: 'Missing.png', mimeType: 'image/png' as const, sizeBytes: 1 }
+    f.store.put({ hostId: f.hostId, draft: { threadId: f.a.id, draftId: randomUUID(), text: 'Prompt with missing image', attachments: [image], requestId: null, updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: true })
+    await f.client.close(); await f.store.close()
+    const replacement = await f.open(f.a.id)
+    await expect.poll(() => f.host.service.shell().threadDrafts?.find(draft => draft.threadId === f.a.id)?.text).toBe('Prompt with missing image')
+    expect(replacement.store.get(f.hostId, f.a.id)).toMatchObject({ saved: false, draft: { attachments: [image] } })
+    expect(replacement.client.shell().draftAttachments).toEqual([image])
+    const refused = await replacement.client.command({ type: 'send', draft: { threadId: f.a.id, text: 'Prompt with missing image', attachments: [image] } })
+    expect(refused.error).not.toBeNull(); expect(replacement.client.shell().draftAttachments).toEqual([image])
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { writes.mockRestore(); await f.close() }
+})
+
+it('expires a confirmed empty managed revision before a new native question and sends the newly bound answer', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  try {
+    await f.policy(true)
+    expect((await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Discarded prompt' })).error).toBeNull()
+    expect((await f.client.command({ type: 'compose', threadId: f.a.id, text: '', attachments: [] })).error).toBeNull()
+    expect(f.store.get(f.hostId, f.a.id)).toBeUndefined()
+    await f.question(f.a.id, 'new-question')
+    await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests.length).toBe(1)
+    expect((await f.client.command({ type: 'compose', threadId: f.a.id, text: 'New answer' })).error).toBeNull()
+    expect(f.store.get(f.hostId, f.a.id)?.draft.requestId).toBe('new-question')
+    expect((await f.client.command({ type: 'send' })).error).toBeNull()
+    expect(writes.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send')).toEqual([])
+    expect(f.store.get(f.hostId, f.a.id)).toBeUndefined()
+  } finally { writes.mockRestore(); await f.close() }
+})
+
+it('binds a fresh edit to the visible question while an already saved empty Compose acknowledgement is held', async () => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+  const original = f.host.service.command.bind(f.host.service)
+  const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
+    const state = await original(...args)
+    if (args[0].type === 'compose' && args[0].text === '') { entered(); await gate }
+    return state
+  })
+  const pending: Promise<unknown>[] = []
+  try {
+    await f.policy(true)
+    const empty = f.client.command({ type: 'compose', threadId: f.a.id, text: '', attachments: [] }); pending.push(empty)
+    await started
+    await f.question(f.a.id, 'visible-after-empty')
+    await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests[0]?.id).toBe('visible-after-empty')
+    const fresh = f.client.command({ type: 'compose', threadId: f.a.id, text: 'Fresh answer' }); pending.push(fresh)
+    expect(f.store.get(f.hostId, f.a.id)?.draft.requestId).toBe('visible-after-empty')
+    const send = f.client.command({ type: 'send' }); pending.push(send)
+    release()
+    expect((await fresh).error).toBeNull()
+    expect((await send).error).toBeNull()
+    await empty
+    expect(writes.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send')).toEqual([])
+    expect(f.store.get(f.hostId, f.a.id)).toBeUndefined()
+  } finally { release(); await Promise.allSettled(pending); held.mockRestore(); writes.mockRestore(); await f.close() }
+})
+
+it.each(['revocation', 'same-id form change'] as const)('checks current recovery-save intent after interposed %s without changing the bound host draft', async boundary => {
+  const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+  const original = f.host.service.command.bind(f.host.service)
+  const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
+    if (args[0].type === 'save-thread-draft') { entered(); await gate }
+    return original(...args)
+  })
+  try {
+    await f.policy(true); await f.question(f.a.id, 'recovered-question')
+    await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests.length).toBe(1)
+    const question = f.client.shell().host.threads.find(thread => thread.id === f.a.id)!.requests[0]!
+    const retained = { hostId: f.hostId, draft: { threadId: f.a.id, draftId: randomUUID(), text: 'Unsent recovered answer', attachments: [], requestId: question.id, updatedAt: new Date().toISOString() },
+      questionsDigest: requestQuestionsDigest(requestDraftQuestions(question)), saved: false, recovery: true }
+    f.store.put(retained); await f.client.close(); await f.store.close()
+    const replacement = await f.open(f.a.id)
+    await started
+    if (boundary === 'revocation') await f.policy(false)
+    else {
+      const nativeThread = (await f.native.snapshot()).threads.find(thread => thread.id === f.nativeIds.get(f.a.id))!
+      f.native.event({ type: 'history', threadId: nativeThread.id, text: '', messages: nativeThread.messages })
+      await f.question(f.a.id, 'recovered-question', 'Changed original form')
+      await expect.poll(() => f.host.service.shell().host.threads.find(thread => thread.id === f.a.id)?.requests[0]?.text).toBe('Changed original form')
+    }
+    release()
+    await expect.poll(() => replacement.client.shell().error).toContain(boundary === 'revocation' ? 'permission' : 'question changed')
+    const refusal = replacement.client.shell().error
+    await f.host.service.command({ type: 'configure', patch: { speak: false } }, desktopWindowClient())
+    await replacement.client.readShell()
+    expect(replacement.client.shell().error).toBe(refusal)
+    expect(replacement.store.get(f.hostId, f.a.id)).toMatchObject({ saved: false, draft: retained.draft })
+    expect(f.host.service.shell().threadDrafts?.find(draft => draft.threadId === f.a.id)).toBeUndefined()
+    expect(writes.mock.calls.filter(([command]) => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { release(); held.mockRestore(); writes.mockRestore(); await f.close() }
+})
+
+it.each(['clear', 'replace', 'answer'] as const)('retires only the exact saved remote revision when another client performs %s', async action => {
+  const f = await remoteDraftFixture()
+  let other: SocketHostService | undefined
+  try {
+    await f.policy(true)
+    if (action === 'answer') {
+      await f.question(f.a.id, 'panel-question')
+      await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests.length).toBe(1)
+    }
+    expect((await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Exact saved revision' })).error).toBeNull()
+    const saved = f.store.get(f.hostId, f.a.id)!
+    expect(saved.saved).toBe(true)
+    const url = 'http://127.0.0.1:' + f.host.descriptor!.port
+    const paired = await SocketHostService.pair(url, f.host.pairing.issuePairingCode().code, 'Independent clear/answer client')
+    other = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId, catchUpEvents: false })
+    await other.connect(); await other.command({ type: 'select-thread', threadId: f.a.id })
+    if (action === 'answer') {
+      const descriptor = JSON.parse(await readFile(join(f.root, 'host', 'host-listener.json'), 'utf8')) as { adminToken: string }
+      expect((await fetch(url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: paired.clientId }) })).status).toBe(200)
+      expect((await other.command({ type: 'answer', threadId: f.a.id, requestId: 'panel-question', answer: saved.draft.text })).error).toBeNull()
+    } else if (action === 'clear') expect((await other.command({ type: 'cancel-draft' })).error).toBeNull()
+    else expect((await other.command({ type: 'compose', threadId: f.a.id, text: 'Independent replacement' })).error).toBeNull()
+    await expect.poll(() => f.store.get(f.hostId, f.a.id)).toBeUndefined()
+    expect(f.client.shell().draft).not.toBe('Exact saved revision')
+    const proof = action === 'answer' ? f.client.shell().deliveredDrafts : f.client.shell().obsoleteDrafts
+    expect(proof).toContainEqual({ threadId: f.a.id, draftId: saved.hostDraftId })
+  } finally { await other?.close(); await f.close() }
+})
+
+it('keeps a newer off-wire local revision when another client accepts the earlier saved answer', async () => {
+  const f = await remoteDraftFixture()
+  try {
+    await f.policy(true); await f.question(f.a.id, 'answer-question')
+    await expect.poll(() => f.client.shell().host.threads.find(thread => thread.id === f.a.id)?.requests.length).toBe(1)
+    await f.client.command({ type: 'compose', threadId: f.a.id, text: 'Earlier saved answer' })
+    const saved = f.store.get(f.hostId, f.a.id)!
+    const latest = { ...saved, draft: { ...saved.draft, draftId: randomUUID(), text: 'Newer unsent text' }, saved: false, recovery: false }
+    f.store.put(latest)
+    expect((await f.host.service.command({ type: 'answer', threadId: f.a.id, requestId: 'answer-question', answer: saved.draft.text }, desktopWindowClient())).error).toBeNull()
+    await expect.poll(() => f.client.shell().deliveredDrafts?.some(item => item.draftId === saved.hostDraftId)).toBe(true)
+    expect(f.store.get(f.hostId, f.a.id)?.draft).toEqual(latest.draft)
+    expect(f.client.shell().draft).toBe('Newer unsent text')
+  } finally { await f.close() }
+})
+
+it('retains the latest managed edit when a held autosave loses its connection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
+  const host = await startHeadlessHost({ dataDirectory: root, port: 0,
+    providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  let client: SocketHostService | undefined, release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  try {
+    const url = 'http://127.0.0.1:' + host.descriptor!.port
+    const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Composer client')
+    client = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId, catchUpEvents: false })
+    await client.connect()
+    await client.command({ type: 'connect', provider: 'codex' })
+    const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
+    const projectId = created.host.projects.find(project => project.path === root)!.id
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: true })
+    const thread = opened.host.threads.find(item => item.title === 'Remote thread')!
+    await client.command({ type: 'select-thread', threadId: thread.id })
+    const original = host.service.command.bind(host.service)
+    const received: AgentCommand[] = []
+    const spy = vi.spyOn(host.service, 'command').mockImplementation(async (...args) => {
+      const result = await original(...args)
+      if (args[0].type === 'compose') { received.push(args[0]); await held }
+      return result
+    })
+    const writes: Promise<unknown>[] = []
+    const command = (input: AgentCommand) => {
+      const task = client!.command(input).catch(() => null)
+      writes.push(task)
+      return task
+    }
+    const view = render(<AgentComposer state={client.shell()} command={command} />)
+    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={state} command={command} />) })
+    try {
+      await act(async () => {
+        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix' } })
+        await expect.poll(() => received.length).toBe(1)
+        fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix the parser and add tests' } })
+      })
+      expect(received).toEqual([expect.objectContaining({ type: 'compose', threadId: thread.id, text: 'Fix' })])
+      await act(async () => { await client!.close(); await Promise.all(writes) })
+      release(); spy.mockRestore()
+      await act(async () => { await client!.connect() })
+      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Fix the parser and add tests')
+      expect(host.service.threadDetail(thread.id)!.messages.filter(message => message.role === 'user')).toHaveLength(0)
+    } finally { unsubscribe(); view.unmount(); spy.mockRestore() }
+  } finally { release(); await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
+})
 
 it('keeps successive socket edits active in the managed composer and sends the picked draft', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
@@ -39,7 +333,8 @@ it('keeps successive socket edits active in the managed composer and sends the p
     try {
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'First edit' } })
-        await expect.poll(() => client!.shell().draft).toBe('First edit')
+        await expect.poll(() => calls.filter(call => call.type === 'compose').length).toBe(1)
+        expect(client!.shell().draft).toBe('First edit')
       })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).not.toHaveAttribute('readonly')
       expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument()
@@ -47,7 +342,8 @@ it('keeps successive socket edits active in the managed composer and sends the p
       await act(async () => { await host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient()) })
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Second edit' } })
-        await expect.poll(() => client!.shell().draft).toBe('Second edit')
+        await expect.poll(() => calls.filter(call => call.type === 'compose').length).toBe(2)
+        expect(client!.shell().draft).toBe('Second edit')
       })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Second edit')
       await act(async () => {

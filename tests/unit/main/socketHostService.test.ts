@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
+import { RetainedDraftStore } from '../../../src/main/agents/retainedDraftStore'
 import type { AgentRequest } from '../../../src/shared/agents'
 import type { HostOperation, HostRequest } from '../../../src/shared/hostProtocol'
 import type { RequestDraftTarget } from '../../../src/shared/requestDrafts'
@@ -38,15 +39,15 @@ describe('atomic socket Send', () => {
   const command = { type: 'send' as const, draft: { threadId: 'thread', text: 'A new prompt', attachments: [] } }
   it('keeps the draft and sends no packet or Compose fallback when the host lacks atomic-send', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
-    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(), call })
+    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(hostId), call })
     expect(client.supportsAtomicSend).toBe(false)
-    await expect(client.command(command)).resolves.toMatchObject({ error: 'Update the host before sending this draft. Your text is only in this window.' })
+    await expect(client.command(command)).resolves.toMatchObject({ error: 'Update the host before sending this draft. Your draft is kept on this computer.' })
     expect(client.state().error).toBeNull()
     expect(call).not.toHaveBeenCalled()
   })
   it.each([false, true])('sends one packet and preserves legacy Send (atomic feature: %s)', async atomic => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
-    const state = emptyDesktopState(), call = vi.fn(async () => state)
+    const state = emptyDesktopState(hostId), call = vi.fn(async () => state)
     Object.assign(client, { features: atomic ? ['atomic-send'] : [], cached: state, call })
     const input = atomic ? command : { type: 'send' as const }
     expect(client.supportsAtomicSend).toBe(atomic)
@@ -59,14 +60,14 @@ describe('targeted socket Compose', () => {
   const command = { type: 'compose' as const, threadId: 'thread', text: 'An edit while Send was running', attachments: [] }
   it('keeps the draft and sends no ownerless Compose fallback when the host lacks atomic-send', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' }), call = vi.fn()
-    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(), call })
-    await expect(client.command(command)).resolves.toMatchObject({ error: 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.' })
+    Object.assign(client, { features: ['answer-check'], cached: emptyDesktopState(hostId), call })
+    await expect(client.command(command)).resolves.toMatchObject({ error: 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.' })
     expect(client.state().error).toBeNull()
     expect(call).not.toHaveBeenCalled()
   })
   it('preserves ownerless Compose on an older host', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
-    const state = emptyDesktopState(), call = vi.fn(async () => state)
+    const state = emptyDesktopState(hostId), call = vi.fn(async () => state)
     Object.assign(client, { features: [], cached: state, call })
     const legacy = { type: 'compose' as const, text: 'Legacy draft' }
     await client.command(legacy, undefined, 'legacy-save')
@@ -75,7 +76,7 @@ describe('targeted socket Compose', () => {
   it.each([null, 'The draft could not be saved. Your earlier draft is kept.'])('settles its own acknowledged outcome without history reads: %s', async outcome => {
     const onPushError = vi.fn()
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', onPushError })
-    const state = emptyDesktopState(), call = vi.fn(async () => ({ ...state, error: outcome }))
+    const state = emptyDesktopState(hostId), call = vi.fn(async () => ({ ...state, error: outcome }))
     Object.assign(client, { features: ['atomic-send'], cached: state, call })
     const detail = vi.spyOn(client, 'readThreadDetail').mockRejectedValue(new Error('History should not delay typing.'))
     const events = vi.spyOn(client, 'readEvents').mockRejectedValue(new Error('Events should not delay typing.'))
@@ -87,29 +88,106 @@ describe('targeted socket Compose', () => {
 
 describe('bounded targeted autosaves', () => {
   function heldSocket() {
-    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
-    const state = emptyDesktopState(), frames: HostRequest[] = []
+    const retainedDrafts = new RetainedDraftStore()
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false, retainedDrafts })
+    const state = emptyDesktopState(hostId), frames: HostRequest[] = []
     const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
     const socket = { send: (frame: HostRequest) => { frames.push(structuredClone(frame)); return true },
       close: () => (client as unknown as { disconnected(frames: unknown): void }).disconnected(socket) }
     Object.assign(client, { features: ['atomic-send', 'answer-check'], cached: state, frames: socket, session: { session: 'session', hostId: state.hostId } })
     const reply = (frame: HostRequest, error: string | null = null) => receive({ v: 1, id: frame.id, ok: true,
       result: frame.op === 'detail' ? null : frame.op === 'receipt' ? { status: 'completed' } : { ...state, error } })
-    return { client, state, frames, socket, reply }
+    return { client, state, frames, socket, reply, receive, retainedDrafts }
   }
+  it.each(['skills', 'files'] as const)('retains the full unsaved edit when a durable Compose acknowledgement changes its %s', async field => {
+    const f = heldSocket(), threadId = 'thread'
+    const skills = [{ name: 'Chosen skill', path: 'skills/chosen' }], files = [{ path: 'chosen.ts' }]
+    const original = { threadId, draftId: randomUUID(), text: 'Full draft', attachments: [], requestId: null,
+      skills, files, updatedAt: new Date().toISOString() }
+    f.retainedDrafts.put({ hostId, draft: original, questionsDigest: null, saved: false, recovery: false })
+    try {
+      const save = f.client.command({ type: 'compose', threadId, text: original.text })
+      const current = f.retainedDrafts.get(hostId, threadId)!
+      const acknowledged = { ...current.draft, draftId: randomUUID(), [field]: [] }
+      f.receive({ v: 1, id: f.frames[0]!.id, ok: true, result: { ...f.state,
+        threadDrafts: [acknowledged], threadDraftPersistence: [{ threadId, draftId: acknowledged.draftId, status: 'saved' }] } })
+      await save
+      expect(f.retainedDrafts.get(hostId, threadId)).toEqual(current)
+      expect(f.client.shell().threadDrafts).toContainEqual(current.draft)
+    } finally { await f.client.close() }
+  })
+  it('upgrades an explicit legacy Send to the exact retained text, images and binding', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    const pending: Promise<unknown>[] = []
+    f.state.activeThreadId = threadId
+    try {
+      const save = f.client.command({ type: 'compose', threadId, text: 'Spoken send intent', attachments: [] })
+      f.reply(f.frames[0]!); await save
+      const send = f.client.command({ type: 'send' })
+      pending.push(send); void Promise.allSettled(pending)
+      expect(f.frames[1]).toMatchObject({ op: 'command', command: { type: 'send', draft: {
+        threadId, text: 'Spoken send intent', attachments: [], binding: { requestId: null, questionsDigest: null },
+      } } })
+      f.reply(f.frames[1]!); await send
+      expect(f.retainedDrafts.get(hostId, threadId)).toBeUndefined()
+    } finally { await f.client.close(); await Promise.allSettled(pending) }
+  })
+  it('holds recovery until every overlapping explicit Send and Clear has settled', async () => {
+    const f = heldSocket(), threadId = 'thread', recover = vi.spyOn(f.client as unknown as { recoverDrafts(): void }, 'recoverDrafts')
+    let settled: Promise<unknown> = Promise.resolve()
+    f.state.activeThreadId = threadId
+    try {
+      const first = f.client.command({ type: 'send', draft: { threadId, text: 'First', attachments: [] } })
+      const second = f.client.command({ type: 'send', draft: { threadId, text: 'Second', attachments: [] } })
+      const clear = f.client.command({ type: 'cancel-draft' })
+      settled = Promise.allSettled([first, second, clear])
+      const heldOwners = () => (f.client as unknown as { delivering: { has(owner: string): boolean } }).delivering.has(threadId)
+      expect(heldOwners()).toBe(true)
+      f.reply(f.frames[1]!, 'Synthetic refusal'); await second
+      expect(heldOwners()).toBe(true)
+      f.reply(f.frames[2]!, 'Synthetic refusal'); await clear
+      expect(heldOwners()).toBe(true)
+      f.reply(f.frames[0]!, 'Synthetic refusal'); await first
+      expect(heldOwners()).toBe(false)
+      expect(recover).toHaveBeenCalledTimes(3)
+    } finally { recover.mockRestore(); await f.client.close(); await settled }
+  })
+  it('keeps the exact latest saved revision when an older own Compose acknowledgement arrives last', async () => {
+    const f = heldSocket(), threadId = 'thread'
+    f.state.activeThreadId = threadId
+    const first = f.client.command({ type: 'compose', threadId, text: 'Older A' })
+    const latest = f.client.command({ type: 'compose', threadId, text: 'Saved B' })
+    const check = f.client.checkRequestAnswer({ threadId, providerId: 'codex', requestId: 'question', questionsDigest: 'b'.repeat(64) })
+    const settled = Promise.allSettled([first, latest, check])
+    const reply = (index: number, text: string, draftId: string) => f.receive({ v: 1, id: f.frames[index]!.id, ok: true, result: {
+      ...f.state, composing: true, draftThreadId: threadId, draft: text, draftAttachments: [],
+      threadDrafts: [{ threadId, draftId, text, attachments: [], requestId: null, updatedAt: new Date().toISOString() }],
+      threadDraftPersistence: [{ threadId, draftId, status: 'saved' }],
+    } })
+    const savedId = randomUUID()
+    try {
+      reply(1, 'Saved B', savedId); await latest
+      expect(f.retainedDrafts.get(hostId, threadId)).toMatchObject({ saved: true, hostDraftId: savedId })
+      reply(0, 'Older A', randomUUID()); await first
+      expect(f.client.shell().draft).toBe('Saved B')
+      expect(f.retainedDrafts.get(hostId, threadId)).toMatchObject({ saved: true, hostDraftId: savedId })
+      f.reply(f.frames[2]!); await check
+      expect(f.client.shell().draft).toBe('Saved B')
+    } finally { await f.client.close(); await settled }
+  })
   it('admits Send, detail, receipt and Check during forty held autosaves, with only the first and latest save on the wire', async () => {
     const f = heldSocket()
     try {
       const saves = Array.from({ length: 40 }, (_, index) => f.client.command({ type: 'compose', threadId: 'thread', text: `Edit ${index}` }))
       const detail = f.client.readThreadDetail('thread'), receipt = f.client.receipt('answer-attempt')
       const check = f.client.checkRequestAnswer({ threadId: 'thread', providerId: 'codex', requestId: 'question', questionsDigest: 'a'.repeat(64) })
-      const packet = { type: 'send' as const, draft: { threadId: 'thread', text: 'Immutable Send', attachments: [] } }
+      const packet = { type: 'send' as const, draft: { threadId: 'thread', text: 'Immutable Send', attachments: [], binding: { requestId: null, questionsDigest: null } } }
       const send = f.client.command(packet)
       const all = Promise.allSettled([...saves, detail, receipt, check, send])
       packet.draft.text = 'A later local edit'
       const commands = f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)
-      expect(commands).toEqual([{ type: 'compose', threadId: 'thread', text: 'Edit 0' },
-        { type: 'compose', threadId: 'thread', text: 'Edit 39' }, { type: 'send', draft: { threadId: 'thread', text: 'Immutable Send', attachments: [] } }])
+      expect(commands).toEqual([{ type: 'compose', threadId: 'thread', text: 'Edit 0', attachments: [] },
+        { type: 'compose', threadId: 'thread', text: 'Edit 39', attachments: [] }, { type: 'send', draft: { threadId: 'thread', text: 'Immutable Send', attachments: [], binding: { requestId: null, questionsDigest: null } } }])
       expect(f.frames.filter(frame => ['detail', 'receipt', 'check-answer'].includes(frame.op))).toHaveLength(3)
       for (const frame of f.frames) f.reply(frame)
       expect((await Promise.all(saves)).every(state => state.error === null)).toBe(true)
@@ -141,14 +219,14 @@ describe('bounded targeted autosaves', () => {
   it('seals owners before selection and refuses a pending save rather than flushing it after a full-budget barrier', async () => {
     const f = heldSocket()
     try {
-      const a = f.client.command({ type: 'compose', threadId: 'A', text: 'First A' })
-      const latestA = f.client.command({ type: 'compose', threadId: 'A', text: 'Latest A' })
+      const a = f.client.command({ type: 'compose', threadId: 'A', text: 'First A', attachments: [] })
+      const latestA = f.client.command({ type: 'compose', threadId: 'A', text: 'Latest A', attachments: [] })
       const selectB = f.client.command({ type: 'select-thread', threadId: 'B' })
       const b = f.client.command({ type: 'compose', threadId: 'B', text: 'Latest B' })
       const selectA = f.client.command({ type: 'select-thread', threadId: 'A' })
-      expect((await b).error).toContain('Your latest text is only in this window.')
+      expect((await b).error).toContain('Your draft is kept on this computer')
       expect(f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)).toEqual([
-        { type: 'compose', threadId: 'A', text: 'First A' }, { type: 'compose', threadId: 'A', text: 'Latest A' },
+        { type: 'compose', threadId: 'A', text: 'First A', attachments: [] }, { type: 'compose', threadId: 'A', text: 'Latest A', attachments: [] },
         { type: 'select-thread', threadId: 'B' }, { type: 'select-thread', threadId: 'A' },
       ])
       for (const frame of f.frames) f.reply(frame)
@@ -165,7 +243,7 @@ describe('bounded targeted autosaves', () => {
       const second = f.client.command({ type: 'compose', threadId: 'thread', text: 'Two' }, undefined, 'save-two')
       const third = f.client.command({ type: 'compose', threadId: 'thread', text: 'Three' }, undefined, 'save-three')
       const send = f.client.command({ type: 'send', draft: { threadId: 'thread', text: 'Three', attachments: [] } })
-      expect((await third).error).toContain('Your latest text is only in this window.')
+      expect((await third).error).toContain('Your draft is kept on this computer')
       expect(f.frames.slice(0, 2).map(frame => frame.id)).toEqual(['save-one', 'save-two'])
       f.reply(f.frames[0]!)
       f.reply(f.frames[1]!, 'The save failed.')
@@ -198,6 +276,31 @@ describe('bounded targeted autosaves', () => {
     expect(f.frames.map(frame => frame.op === 'command' && frame.command.type === 'compose' ? frame.command.text : null)).toEqual(['First', 'New connection edit'])
     await f.client.close()
   })
+  it('retains an explicit image removal after a full-budget barrier for the next text-only edit', async () => {
+    const f = heldSocket()
+    const image = { id: 'image', digest: 'a'.repeat(64), name: 'Image', mimeType: 'image/png' as const, sizeBytes: 1 }
+    f.state.draftAttachments = [image]
+    f.state.draftThreadId = 'thread'
+    f.state.activeThreadId = 'thread'
+    f.state.composing = true
+    const first = f.client.command({ type: 'compose', threadId: 'thread', text: 'First' }, undefined, 'first-save')
+    const second = f.client.command({ type: 'compose', threadId: 'thread', text: 'Second' }, undefined, 'second-save')
+    const removal = f.client.command({ type: 'compose', threadId: 'thread', text: 'Removed image', attachments: [] })
+    const check = f.client.checkRequestAnswer({ threadId: 'thread', providerId: 'codex', requestId: 'question', questionsDigest: 'b'.repeat(64) })
+    const settled = Promise.allSettled([first, second, removal, check])
+    let latestSettled: Promise<unknown> | undefined
+    try {
+      expect(f.frames.filter(frame => frame.op === 'command')).toHaveLength(2)
+      for (const frame of f.frames) f.reply(frame)
+      await settled
+      const next = f.client.command({ type: 'compose', threadId: 'thread', text: 'Text after removal', attachments: undefined })
+      latestSettled = next.catch(() => null)
+      const latest = f.frames.at(-1)!
+      expect(latest).toMatchObject({ op: 'command', command: { threadId: 'thread', text: 'Text after removal', attachments: [] } })
+      f.reply(latest)
+      await next
+    } finally { await f.client.close(); await settled; await latestSettled }
+  })
 })
 
 describe('explicit socket answer checks', () => {
@@ -210,7 +313,7 @@ describe('explicit socket answer checks', () => {
   })
   it('publishes only a fresh native Check shell on the same connection generation', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token' })
-    const before = emptyDesktopState(), fresh = { ...before, error: 'Fresh check state' }, call = vi.fn(async () => fresh), listener = vi.fn()
+    const before = emptyDesktopState(hostId), fresh = { ...before, error: 'Fresh check state' }, call = vi.fn(async () => fresh), listener = vi.fn()
     Object.assign(client, { features: ['answer-check'], cached: before, call })
     client.subscribe(listener)
     await client.checkRequestAnswer(answer)
@@ -407,7 +510,7 @@ describe('SocketHostService exact acceptance pushes', () => {
   it('notifies subscribers once when a receipt read recovers acceptance after reconnect, retaining an unrelated shell error', async () => {
     const onPushError = vi.fn(), onPushErrorCleared = vi.fn()
     const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused', onPushError, onPushErrorCleared })
-    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState(hostId) })
     const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
     const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
     const proof = { ...target, decisionId: 'decision' }
@@ -415,7 +518,7 @@ describe('SocketHostService exact acceptance pushes', () => {
     await client.refreshRequestAnswer('decision', target)
     await client.close()
     // The new connection's shell arrives before its background read obtains the missing proof.
-    receive({ v: 1, event: 'shell', state: emptyDesktopState() })
+    receive({ v: 1, event: 'shell', state: emptyDesktopState(hostId) })
     receive({ v: 1, event: 'error', error: { code: 'too_large', message: 'The thread list on this host is too large to send.' } })
     const notify = vi.fn(() => client.requestAnswerRecovery('thread', 'claude').completed)
     client.subscribe(notify)
@@ -429,13 +532,13 @@ describe('SocketHostService exact acceptance pushes', () => {
     await client.refreshRequestAnswer('decision', target)
     receive({ v: 1, event: 'answer-receipt', acceptedAnswer: proof })
     expect(notify).toHaveBeenCalledOnce()
-    receive({ v: 1, event: 'shell', state: emptyDesktopState() })
+    receive({ v: 1, event: 'shell', state: emptyDesktopState(hostId) })
     expect(onPushErrorCleared).toHaveBeenCalledOnce()
   })
   it('keeps an oversized shell error through a matching acceptance push until a fresh shell arrives', async () => {
     const onPushError = vi.fn(), onPushErrorCleared = vi.fn()
     const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused', onPushError, onPushErrorCleared })
-    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState(hostId) })
     const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
     const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
     vi.spyOn(client, 'receipt').mockResolvedValue({ status: 'pending' })
@@ -447,12 +550,12 @@ describe('SocketHostService exact acceptance pushes', () => {
     expect(notify).toHaveBeenCalledOnce()
     expect(onPushError).toHaveBeenCalledOnce()
     expect(onPushErrorCleared).not.toHaveBeenCalled()
-    receive({ v: 1, event: 'shell', state: emptyDesktopState() })
+    receive({ v: 1, event: 'shell', state: emptyDesktopState(hostId) })
     expect(onPushErrorCleared).toHaveBeenCalledOnce()
   })
   it('accepts proof that arrives before its negative receipt reply, without accepting unknown or mismatched targets', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused' })
-    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState(hostId) })
     const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
     const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
     const proof = { ...target, decisionId: 'decision' }
@@ -474,7 +577,7 @@ describe('SocketHostService exact acceptance pushes', () => {
   })
   it('bounds queried targets and refuses a decision being rebound to different questions', async () => {
     const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused' })
-    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState() })
+    Object.assign(client, { features: ['answer-receipts'], cached: emptyDesktopState(hostId) })
     const receipt = vi.spyOn(client, 'receipt').mockResolvedValue({ status: 'unknown' })
     const target = { threadId: 'thread', providerId: 'claude' as const, requestId: 'question', questionsDigest: 'a'.repeat(64) }
     for (let i = 0; i < 513; i++) await client.refreshRequestAnswer(String(i), target)
@@ -502,7 +605,7 @@ describe('SocketHostService acknowledged answer receipt failures', () => {
       const directory = await mkdtemp(join(tmpdir(), 'sotto-socket-answer-'))
       try {
         const client = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'unused', catchUpEvents: false })
-        const shell = emptyDesktopState()
+        const shell = emptyDesktopState(hostId)
         shell.host.threads = [{ id: target.ownerId, providerId: target.providerId, projectId: 'project', title: 'Thread',
           modelId: 'model', status: 'idle', messages: [], requests: [request] }]
         const acknowledged = { ...shell, error: outcome }

@@ -192,6 +192,7 @@ describe('authenticated host socket', () => {
 
   it.each(['live', 'uncertain', 'retry-ready'] as const)('checks current answer authority at real targeted Compose execution for %s, including revocation after admission', async delivery => {
     const { client, result } = await pair('Compose authority')
+    const second = (await pair('Other window')).client
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })
     const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
@@ -204,12 +205,28 @@ describe('authenticated host socket', () => {
       id: 'bound-question', kind: 'question', text: 'Question', options: [{ id: 'native:blue', label: 'Blue' }],
       ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) } })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
+    await host.service.command({ type: 'configure', patch: { speak: true } }, desktopWindowClient())
+    const sharedFeedback = () => {
+      const state = host.service.shell()
+      return structuredClone({ error: state.error, notice: state.notice, speech: state.speech })
+    }
+    const otherFeedback = () => {
+      const state = second.shell()
+      return structuredClone({ error: state.error, notice: state.notice, speech: state.speech })
+    }
+    await second.readShell()
+    const initialShared = sharedFeedback(), initialOther = otherFeedback()
     const writes = vi.spyOn(native, 'execute')
-    expect((await client.command({ type: 'compose', threadId, text: 'No policy' })).error).toBe(REMOTE_PERMISSION_DENIED)
+    for (const text of ['N', 'No', 'No policy']) expect((await client.command({ type: 'compose', threadId, text })).error).toBe(REMOTE_PERMISSION_DENIED)
+    expect(sharedFeedback()).toEqual(initialShared)
+    await second.readShell()
+    expect(otherFeedback()).toEqual(initialOther)
     expect(host.service.shell().threadDrafts).toEqual([])
     await policy(true)
     expect((await client.command({ type: 'compose', threadId, text: 'Authorized answer' })).error).toBeNull()
     const before = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts
+    await second.readShell()
+    const beforeShared = sharedFeedback(), beforeOther = otherFeedback()
     let release: () => void = () => undefined, entered: () => void = () => undefined
     const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
     const actual = host.service.command.bind(host.service)
@@ -218,6 +235,9 @@ describe('authenticated host socket', () => {
     try {
       await started; await policy(false); release()
       expect((await editing).error).toBe(REMOTE_PERMISSION_DENIED)
+      expect(sharedFeedback()).toEqual(beforeShared)
+      await second.readShell()
+      expect(otherFeedback()).toEqual(beforeOther)
       expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts).toEqual(before)
       native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
       await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(0)

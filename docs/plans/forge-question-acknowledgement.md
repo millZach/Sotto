@@ -35,6 +35,9 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Integrate main at `7d071b62`, preserving the removal of standalone Chats and the saved-answer format and privacy rules.
 - [x] Address the five subsequent composer findings: preserve null prompt bindings and the actual question form, inherit queued metadata only for the same draft binding, settle Compose without history reads, and report unsaved old-host text without repeated notices.
 - [x] Resolve queued prompt intent, closed empty bindings, edits after an accepted answer and missing question forms; bound remote autosaves while preserving command order, metadata and current answer authority, then repeat both review axes and focused gates.
+- [x] Expire empty prompt intent for fresh questions without reopening queued Send races; keep targeted remote Compose refusals private to the caller.
+- [x] Preserve unsent remote text and explicit image changes through saturated saves, thread switches, disconnect and restart, honoring exact question binding and Keep local history.
+- [x] Repeat both independent review axes and all 37 Electron journeys on the final correction.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `7d071b62`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.

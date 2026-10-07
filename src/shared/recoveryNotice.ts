@@ -12,6 +12,8 @@ export const recoveryNoticeSchema = z
       'OPENROUTER_KEY_UNREADABLE',
       'RETIRED_CHAT_HISTORY_NOT_CLEARED',
       'ANSWER_HISTORY_NOT_CLEARED',
+      'REMOTE_DRAFT_STORAGE_NOT_UPDATED',
+      'REMOTE_DRAFTS_UNREADABLE',
     ]),
   })
   .strict()
