@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { quietShot, scrollToCard, slowMotion, textContrasts, visualize } from './support/visualCards'
 
 // A visual's walkthrough (#793), in the running app: each kind of diagram the visualize tool draws is stepped through,
 // and the parts each step names are lit in the picture the real renderer made, with the rest dimmed.
@@ -54,8 +55,6 @@ const ENTITIES = {
   steps: [{ text: 'A thread has visuals.', highlight: ['THREAD', 'VISUAL'] }, { text: 'And messages.', highlight: ['MESSAGE'] }],
 }
 
-type ToolReply = { content: { type: string; text?: string }[]; isError?: boolean }
-const visualize = (page: Page, args: unknown): Promise<ToolReply> => page.evaluate(request => window.sottoE2E!.visualTool!(request), { threadId: 'workshop', arguments: args }) as Promise<ToolReply>
 
 async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   const { page } = launched
@@ -71,17 +70,6 @@ async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   const log = page.getByRole('log', { name: 'Thread transcript' })
   await expect(log).toBeVisible()
   return log
-}
-
-async function scrollTo(locator: Locator, offset = 60): Promise<void> {
-  await locator.evaluate((element, gap) => {
-    const transcript = element.closest('.thread-workspace__transcript')!
-    transcript.scrollTop += element.getBoundingClientRect().top - transcript.getBoundingClientRect().top - gap
-  }, offset)
-}
-async function shot(page: Page, name: string): Promise<void> {
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-  await page.screenshot({ path: join(SHOTS, name), animations: 'disabled' })
 }
 
 /**
@@ -107,33 +95,6 @@ const dimmed = (image: Locator): Promise<number> => image.evaluate(element => {
   return new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('.sotto-step-dim').length
 })
 
-/** The contrast of each element's text against the card it sits on, composited over the room. */
-async function contrasts(card: Locator, selectors: readonly string[]): Promise<number[]> {
-  return card.evaluate((element, list) => {
-    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const probe = document.createElement('div'); probe.style.backgroundColor = 'var(--tt-canvas)'; document.body.append(probe)
-    const room = getComputedStyle(probe).backgroundColor; probe.remove()
-    const luminance = (data: Uint8ClampedArray): number => [...data].slice(0, 3).map(value => value / 255)
-      .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    const paint = (...colours: string[]): number => {
-      for (const colour of colours) { context.fillStyle = colour; context.fillRect(0, 0, 1, 1) }
-      return luminance(context.getImageData(0, 0, 1, 1).data)
-    }
-    return list.map(selector => {
-      const target = element.querySelector(selector)!
-      const layers = [room, getComputedStyle(element).backgroundColor]
-      for (let node = target as Element | null; node && node !== element; node = node.parentElement) {
-        const colour = getComputedStyle(node).backgroundColor
-        if (colour && colour !== 'rgba(0, 0, 0, 0)') layers.splice(2, 0, colour)
-      }
-      const background = paint(...layers)
-      const foreground = paint(...layers, getComputedStyle(target).color)
-      return (Math.max(background, foreground) + .05) / (Math.min(background, foreground) + .05)
-    })
-  }, selectors)
-}
-
 test('a visual walks through its steps, lighting each step\'s part of the diagram', async () => {
   test.setTimeout(300_000)
   await mkdir(SHOTS, { recursive: true })
@@ -155,13 +116,13 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     // A flowchart: a node, an edge written A->B with its ends and label, a subgraph with what is inside it, and a step
     // that names nothing, which leaves the whole drawing lit.
     const flow = card(FLOW.title)
-    await scrollTo(flow)
+    await scrollToCard(flow, 60)
     await expect(stepper(FLOW.title)).toContainText('Step 1 of 4')
     await expect(stepper(FLOW.title)).toContainText(FLOW.steps[0]!.text)
     await expect(flow.getByRole('listitem')).toHaveCount(0)
     expect(await lit(image(FLOW.title))).toEqual(['flowchart-A-0'])
     expect(await dimmed(image(FLOW.title))).toBeGreaterThan(10)
-    await shot(page, 'flowchart-step-1280x800-dark.png')
+    await quietShot(page, join(SHOTS, 'flowchart-step-1280x800-dark.png'))
     const base = await flow.evaluate(element => (element.querySelector('.visual-card__layers img') as HTMLImageElement).naturalWidth)
 
     // The keyboard path: Tab goes from Expand past the dots, which are for the pointer, to Back; the arrow keys step
@@ -175,7 +136,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_B_C_0', 'edgeLabel:L_B_C_0', 'flowchart-B-1', 'flowchart-C-3'])
-    await shot(page, 'flowchart-edge-1280x800-dark.png')
+    await quietShot(page, join(SHOTS, 'flowchart-edge-1280x800-dark.png'))
     // The capture took the focus away; it goes back to Back.
     await back.focus()
     await page.keyboard.press('ArrowRight')
@@ -225,20 +186,20 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await expect(flow).toContainText(FLOW.intro)
     await expect.poll(() => lit(image(FLOW.title))).toEqual([])
     expect(await dimmed(image(FLOW.title))).toBe(0)
-    for (const ratio of await contrasts(flow, ['.visual-card__read-all', '.visual-card__intro', '.visual-card__steps li'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
-    await scrollTo(flow)
-    await shot(page, 'flowchart-read-all-1280x800-dark.png')
+    for (const ratio of await textContrasts(flow, ['.visual-card__read-all', '.visual-card__intro', '.visual-card__steps li'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
+    await scrollToCard(flow, 60)
+    await quietShot(page, join(SHOTS, 'flowchart-read-all-1280x800-dark.png'))
     await stepThrough.press('Space')
     await expect(readAll).toBeFocused()
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
 
     // A sequence diagram: participants by name, and arrows counted from 1 past the loop, each with its two participants.
     const sequence = card(SEQUENCE.title)
-    await scrollTo(sequence)
+    await scrollToCard(sequence, 60)
     expect(await lit(image(SEQUENCE.title))).toEqual(['life-line:Sotto', 'life-line:You', 'message:i0', 'messageText:Send prompt', 'participant:Sotto', 'participant:You'])
     await sequence.getByRole('button', { name: 'Next' }).click()
     await expect.poll(() => lit(image(SEQUENCE.title))).toEqual(['life-line:Codex', 'life-line:Sotto', 'message:i3', 'messageText:turn/start', 'participant:Codex', 'participant:Sotto'])
-    await shot(page, 'sequence-step-1280x800-dark.png')
+    await quietShot(page, join(SHOTS, 'sequence-step-1280x800-dark.png'))
     await sequence.getByRole('button', { name: 'Step 3' }).click()
     await expect.poll(() => lit(image(SEQUENCE.title))).toEqual(['life-line:Codex', 'life-line:You', 'message:i6', 'messageText:Streams the answer', 'participant:Codex', 'participant:You'])
 
@@ -255,20 +216,11 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
 
     // Reduced motion: the next picture replaces the last at once, and nothing in the card moves for longer than an instant.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await scrollTo(flow)
-    const moving = (locator: Locator): Promise<string[]> => locator.evaluate(element => {
-      const seconds = (value: string): number => Math.max(...value.split(',').map(part => part.trim().endsWith('ms') ? parseFloat(part) / 1000 : parseFloat(part)))
-      const slow: string[] = []
-      for (const node of [element, ...element.querySelectorAll('*')]) for (const pseudo of [null, '::before', '::after']) {
-        const style = getComputedStyle(node, pseudo)
-        if (seconds(style.transitionDuration) > 0.001 || seconds(style.animationDuration) > 0.001) slow.push(`${node.className}${pseudo ?? ''}`)
-      }
-      return slow
-    })
+    await scrollToCard(flow, 60)
     await flow.getByRole('button', { name: 'Next' }).click()
     expect(await flow.locator('.visual-card__layers img').evaluateAll(images => images.map(item => (item as HTMLElement).dataset.layer))).toEqual(['shown'])
-    expect(await moving(flow)).toEqual([])
-    await shot(page, 'flowchart-reduced-motion-1280x800-dark.png')
+    expect(await slowMotion(flow)).toEqual([])
+    await quietShot(page, join(SHOTS, 'flowchart-reduced-motion-1280x800-dark.png'))
     await page.emulateMedia({ reducedMotion: null })
 
     // Light and dark at every size, nothing clipped, the walkthrough's words at 4.5:1 on the card.
@@ -284,7 +236,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
         appearance = mode
         for (const visual of [FLOW, SEQUENCE]) {
           const target = card(visual.title)
-          await scrollTo(target)
+          await scrollToCard(target, 60)
           const fits = await target.evaluate(element => {
             const box = element.getBoundingClientRect()
             const inside = (selector: string): boolean => [...element.querySelectorAll(selector)].every(item => {
@@ -296,12 +248,12 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
               text: inside('.visual-stepper__text') }
           })
           expect(fits, `${visual.title} at ${width}x${height} ${mode}`).toEqual({ right: true, overflow: true, page: true, header: true, stepper: true, picture: true, text: true })
-          for (const ratio of await contrasts(target, ['.visual-stepper__count', '.visual-stepper__text', '.visual-card__read-all', '.visual-stepper__button'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
+          for (const ratio of await textContrasts(target, ['.visual-stepper__count', '.visual-stepper__text', '.visual-card__read-all', '.visual-stepper__button'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
         }
-        await scrollTo(flow)
-        if (width !== 1280 || mode === 'light') await shot(page, `flowchart-step-${width}x${height}-${mode}.png`)
+        await scrollToCard(flow, 60)
+        if (width !== 1280 || mode === 'light') await quietShot(page, join(SHOTS, `flowchart-step-${width}x${height}-${mode}.png`))
         // The sequence diagram is taller than the minimum window, so its capture shows the lit arrow and the stepper.
-        if (width === 820) { await scrollTo(sequence, -230); await shot(page, `sequence-step-${width}x${height}-${mode}.png`) }
+        if (width === 820) { await scrollToCard(sequence, -230); await quietShot(page, join(SHOTS, `sequence-step-${width}x${height}-${mode}.png`)) }
       }
     }
     expect(errors).toEqual([])
