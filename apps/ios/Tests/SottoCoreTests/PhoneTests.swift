@@ -93,6 +93,35 @@ final class PhoneTests: XCTestCase {
             XCTAssertEqual(asked, [8443])
         }
     }
+    func testASavedComputerIsLookedForOnItsOtherPhoneAccessPortOnly() async throws {
+        XCTAssertEqual(HostFinder.phoneAccessPorts, [8443, 10000])
+        for (saved, other) in [(8443, 10000), (10000, 8443)] {
+            var asked: [Int] = []
+            let hit = try await HostFinder.reconnect(try HostEndpoint("https://forge.tail5c2e.ts.net:\(saved)")) { endpoint -> Int in
+                asked.append(endpoint.port)
+                if endpoint.port == saved { throw ClientError.hostUnreachable("forge") }
+                return endpoint.port
+            }
+            XCTAssertEqual(hit.endpoint.port, other); XCTAssertEqual(asked, [saved, other])
+        }
+        // Any answer from Sotto at the saved address ends it there, and so does an address that is not phone access.
+        let ends: [(String, ClientError)] = [("https://forge.tail5c2e.ts.net:8443", .sottoNotRunning("forge")), ("https://forge.tail5c2e.ts.net:8443", .invalidIdentity), ("https://forge.tail5c2e.ts.net", .hostUnreachable("forge"))]
+        for (address, refusal) in ends {
+            var asked: [Int] = []
+            do {
+                _ = try await HostFinder.reconnect(try HostEndpoint(address)) { endpoint -> Int in asked.append(endpoint.port); throw refusal }
+                XCTFail("Nothing may be used")
+            } catch { XCTAssertEqual(error as? ClientError, refusal) }
+            XCTAssertEqual(asked.count, 1, address)
+        }
+        // When the other port fails too, for any reason, the saved address's error is said.
+        do {
+            _ = try await HostFinder.reconnect(try HostEndpoint("https://forge.tail5c2e.ts.net:8443")) { endpoint -> Int in
+                throw endpoint.port == 8443 ? ClientError.notASottoHost("forge") : ClientError.invalidIdentity
+            }
+            XCTFail("Nothing answered")
+        } catch { XCTAssertEqual(error as? ClientError, .notASottoHost("forge")) }
+    }
     func testOnlyTailscaleAddressesAreTrusted() {
         XCTAssertTrue(HostFinder.isTailnetAddress([100, 101, 102, 103]))
         XCTAssertTrue(HostFinder.isTailnetAddress([100, 127, 255, 1]))
