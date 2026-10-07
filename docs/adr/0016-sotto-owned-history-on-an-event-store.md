@@ -150,6 +150,10 @@ This extends the event kinds above. `messages-reset` remains reserved for replac
 Both the adapter log and the projection use the same content comparison. Seeded identities alone cannot prove equality: repair reads just the two indexed saved messages, and leaves both alone if either is unavailable. The host exposes these events only to clients accepting `message-aliases`; other clients receive the corrected thread detail and a cursor advanced past the internal repair.
 
 
+## Amendment: visuals beside the event store (October 6, 2026, #792)
+
+A visual an agent draws in its thread ([ADR-0055](0055-an-agent-can-draw-a-visual-in-its-thread.md)) is thread content, but it is not a thread event. It is a row in a `visuals` table in `threads.sqlite`, anchored to messages in the projection, because a `messages-reset` rebuilds the projection from the provider's history, which has no visuals in it. So a visual has no sequence number, and "everything after N" does not include it: a reader sees visuals only in a thread detail window, where the workspace slots them in as messages. The table follows the history's retention: in memory with Keep local history off, emptied when it is turned off, and deleted with a forgotten thread, a redaction or a confirmed rewind of its turn. Everything else here stands.
+
 ## Amendment: diagnostic turn records contain no text (September 30, 2026, #608)
 
 The owner chose the privacy rule in AGENTS.md over the glossary's former description of content-bearing diagnostic turn records. `turns.jsonl` is diagnostic evidence, separate from thread history: it keeps event names, identities, outcomes, timing and context counts, never prompt, answer or error text, even with Keep local history on.
