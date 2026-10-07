@@ -235,6 +235,15 @@ describe('DictateRoom', () => {
     await user.keyboard('{Escape}')
     expect(onDismiss).not.toHaveBeenCalled()
 
+    // Escape with focus in another part of the window is that part's.
+    rerender(<>
+      <button type="button">Put away update</button>
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    screen.getByRole('button', { name: 'Put away update' }).focus()
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
     rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />)
     now.mockReturnValue(9_000)
     screen.getByRole('button', { name: 'Try again' }).focus()
