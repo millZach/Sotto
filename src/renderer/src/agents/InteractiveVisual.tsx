@@ -48,6 +48,7 @@ type PageState =
   | { readonly phase: 'lost'; readonly reason: string }
 
 interface LoadFailure extends Event { readonly isMainFrame: boolean; readonly errorCode: number }
+interface LoadCommitted extends Event { readonly httpResponseCode: number }
 /** Chromium's code for a load that was aborted, as when the page is replaced; not a failure to report. */
 const LOAD_ABORTED = -3
 
@@ -110,13 +111,19 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
       setReady(false)
       setPage({ phase: 'lost', reason: 'The page could not be loaded.' })
     }
+    // An address that is spent or unknown is answered with Not found, which commits as a page rather than failing.
+    const onCommitted = (event: Event): void => {
+      if ((event as LoadCommitted).httpResponseCode < 400) return
+      setReady(false)
+      setPage({ phase: 'lost', reason: 'The page could not be loaded.' })
+    }
     const onMessage = (event: Event): void => {
       const { channel, args } = event as GuestIpcEvent
       if (channel === VISUAL_IPC_HEIGHT) setHeight(clampVisualPageHeight(args[0]))
       else if (channel === VISUAL_IPC_ESCAPE) latest.current.onEscape()
     }
     const onGone = (): void => { setReady(false); setPage({ phase: 'lost', reason: 'The page stopped.' }) }
-    const events: [string, (event: Event) => void][] = [['dom-ready', onReady], ['did-finish-load', onLoaded], ['did-fail-load', onFailed],
+    const events: [string, (event: Event) => void][] = [['dom-ready', onReady], ['did-finish-load', onLoaded], ['did-fail-load', onFailed], ['did-navigate', onCommitted],
       ['ipc-message', onMessage], ['render-process-gone', onGone]]
     for (const [name, listener] of events) element.addEventListener(name, listener)
     return () => { for (const [name, listener] of events) element.removeEventListener(name, listener) }

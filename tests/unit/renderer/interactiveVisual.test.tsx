@@ -93,8 +93,11 @@ describe('an interactive visual\'s card', () => {
     act(() => { second.dispatchEvent(new Event('render-process-gone')) })
     expect(await within(card).findByText('The page stopped. Try again to start it from the top. Its steps are below.')).toBeInTheDocument()
     act(() => { within(card).getByRole('button', { name: 'Try again' }).click() })
-    await guest()
+    const third = await guest()
     expect(opens).toHaveLength(3)
+    // An address main no longer holds is answered with Not found, which commits as a page rather than failing.
+    act(() => { third.dispatchEvent(Object.assign(new Event('did-navigate'), { httpResponseCode: 404 })) })
+    expect(await within(card).findByText('The page could not be loaded. Try again to start it from the top. Its steps are below.')).toBeInTheDocument()
   })
 
   it('takes the height the guest measured, held between 160 and 640 pixels', async () => {

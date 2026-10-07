@@ -223,11 +223,8 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     expect(sealing.proxy).toMatch(/^SOCKS5 127\.0\.0\.1:\d+$/u)
     expect(sealing.webrtc).toEqual(['disable_non_proxied_udp'])
 
-    // The page's address was good for one load: asked again, it is gone.
-    const again = await launched.app.evaluate(async ({ session }, target) => {
-      try { const response = await session.fromPartition('sotto-visual').fetch(target); return response.status } catch { return 'refused' }
-    }, url)
-    expect(again).not.toBe(200)
+    // The page shows in Figtree, carried with it: the face is loaded in the page, and nothing was fetched for it.
+    expect(await inGuest(launched, 'document.fonts.ready.then(() => [...document.fonts].some(face => face.family.replaceAll(\'"\', "") === "Figtree" && face.status === "loaded"))')).toBe(true)
 
     // An Escape the page makes itself moves nothing.
     await view.locator('.interactive-visual__page').focus()
@@ -295,6 +292,30 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await view.screenshot({ path: join(SHOTS, 'page-1280x800-dark-reduced-motion.png'), animations: 'disabled' })
     await view.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
     await expect.poll(async () => (await guestRecord(launched!)).reduced, { timeout: 15_000 }).toBe('false')
+
+    // The page's address was good for one load: the guest loading it a second time is refused, and the page it shows is
+    // still the first load's.
+    const spent = (await guestRecord(launched)).url!
+    const second = await launched.app.evaluate(async ({ webContents }, target) => {
+      const guest = webContents.getAllWebContents().find(contents => contents.getType() === 'webview' && !contents.isDestroyed())!
+      try { await guest.loadURL(target); return 'loaded' } catch (error) { return String((error as Error).message) }
+    }, spent)
+    expect(second).toMatch(/^ERR_(BLOCKED_BY_CLIENT|FAILED) /u)
+    await expect(frame).toHaveAttribute('data-state', 'running')
+    expect(await guestRecord(launched)).toMatchObject({ url: spent, script: 'ran' })
+
+    // With visuals turned off, a new call is refused and draws nothing, while this page, already in the thread, still
+    // opens: Show source and back asks main for a new address, and the page runs.
+    await view.evaluate(async () => window.sotto!.updateSettings({ visualsInThreads: false }))
+    const refused = await visualize(view, { title: 'Not drawn', kind: 'interactive', source: '<p>Not drawn</p>' })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]?.text).toBe("Visuals are turned off in Sotto's settings. Nothing was drawn. Explain in text instead.")
+    await expect(log.getByRole('region', { name: 'Visual: Not drawn' })).toHaveCount(0)
+    const toggle = card.getByRole('button', { name: 'Show source' })
+    await toggle.click(); await toggle.click()
+    await expect(frame).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
+    await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
+    await view.evaluate(async () => window.sotto!.updateSettings({ visualsInThreads: true }))
 
     // A page taller than 640 pixels is held to 640 and scrolls inside.
     expect((await visualize(view, { title: 'A tall page', kind: 'interactive', source: TALL })).isError).not.toBe(true)
