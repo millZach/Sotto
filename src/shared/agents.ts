@@ -489,6 +489,16 @@ export type AgentProject = z.infer<typeof agentProjectSchema>
 export type AgentRequest = z.infer<typeof agentRequestSchema>
 export type AgentMessage = z.infer<typeof agentMessageSchema>
 export type AgentThread = z.infer<typeof agentThreadSchema>
+/**
+ * What a thread says about its provider only while the host that said it is connected: its monitors, its background
+ * work and whether its provider session is open. Gone wherever a thread outlives that connection (a disconnect, a
+ * provider a snapshot no longer reaches, the window's startup cache), and never saved.
+ */
+export const NO_LIVE_THREAD_STATE = { monitoring: undefined, backgroundWork: undefined, providerSessionOpen: undefined } as const
+/** Drop a thread's live state in place: see `NO_LIVE_THREAD_STATE`. */
+export function dropLiveThreadState(thread: AgentThread): void {
+  delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen
+}
 export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>
 export function supportsAgentSupervision(capabilities: AgentCapabilities): boolean {
   return capabilities.observe && capabilities.questions && capabilities.permissions

@@ -11,7 +11,7 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -936,7 +936,7 @@ export class WorkspaceHost implements AgentHost {
       snapshot.models.forEach(model => { model.ready = false })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads) { delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen }
+      for (const thread of snapshot.threads) dropLiveThreadState(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads) {
@@ -1584,7 +1584,7 @@ export class WorkspaceHost implements AgentHost {
       }
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
-    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined, backgroundWork: undefined, providerSessionOpen: undefined } as AgentThread]))
+    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
       const connected = isThreadProviderConnected(snapshot, thread)
@@ -1631,7 +1631,7 @@ export class WorkspaceHost implements AgentHost {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) { delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen }
+    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
       const old = previousThreads.get(thread.id)
@@ -2365,7 +2365,7 @@ export class WorkspaceHost implements AgentHost {
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) {
-      delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen
+      dropLiveThreadState(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }
