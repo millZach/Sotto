@@ -4,7 +4,7 @@ import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
 export type McpReply = { result: { content: { type: string; text: string }[]; isError?: boolean } }
 
 /**
- * Calls `visualize` the way a provider does (ADR-0055): a JSON-RPC `tools/call` to the endpoint and headers the provider
+ * Calls `visualize` the way a provider does (ADR-0056): a JSON-RPC `tools/call` to the endpoint and headers the provider
  * was given at launch. Answers the tool's result.
  */
 export async function callVisualize(server: Pick<ThreadMcpServer, 'url' | 'headers'>, args: unknown): Promise<McpReply['result']> {

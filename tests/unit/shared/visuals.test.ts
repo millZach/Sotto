@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A visual's checks and words (ADR-0055): the strict input the visualize tool takes, the diagram source checks main
+ * A visual's checks and words (ADR-0056): the strict input the visualize tool takes, the diagram source checks main
  * shares with the renderer, the lenient shape a window reads, and the text a reader that cannot draw it is given.
  */
 import { describe, expect, it } from 'vitest'

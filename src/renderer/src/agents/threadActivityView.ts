@@ -76,7 +76,7 @@ export function placeActivities(
     else anchors.set(record, nextByTurn.get(record.turnId) ?? (known.has(record.turnId) ? record.turnId : null))
   }
   // A visual an agent drew sits right after the message it was drawn under, which is also the message the work after
-  // it names (ADR-0055). Work that started once the visual was drawn follows the visual rather than sitting above it.
+  // it names (ADR-0056). Work that started once the visual was drawn follows the visual rather than sitting above it.
   const visualsAfter = new Map<string, AgentMessage[]>()
   for (const [index, message] of messages.entries()) {
     if (!isVisualMessage(message)) continue

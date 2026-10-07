@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { inspectDiagramSource, MAX_DIAGRAM_SOURCE_LENGTH } from './diagramSource'
 
 /**
- * A visual an agent draws in its thread with the `visualize` tool (ADR-0055): what it may send, what Sotto keeps, and the
+ * A visual an agent draws in its thread with the `visualize` tool (ADR-0056): what it may send, what Sotto keeps, and the
  * words a reader that cannot draw it is given instead. Main and the renderer both read this file, so the checks that
  * refuse a call are the same ones the card trusts.
  */

@@ -1,5 +1,5 @@
 /**
- * A visual an agent drew, in the transcript (ADR-0055): the card's header, drawing and Read all explanation, its
+ * A visual an agent drew, in the transcript (ADR-0056): the card's header, drawing and Read all explanation, its
  * fallback when the diagram cannot be drawn, its keyboard path, and its place in a turn: out of the fold, never the
  * final reply, with the work that started after it drawn under it.
  */

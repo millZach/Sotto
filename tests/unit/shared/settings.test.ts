@@ -109,7 +109,7 @@ describe('settings', () => {
     expect(parseSettings({ browserWithoutAsking: false }).browserWithoutAsking).toBe(false)
     expect(parseSettings({ browserWithoutAsking: 'no' }).browserWithoutAsking).toBe(true)
   })
-  it('lets agents draw visuals for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0055)', () => {
+  it('lets agents draw visuals for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0056)', () => {
     expect(parseSettings({}).visualsInThreads).toBe(true)
     expect(parseSettings({ visualsInThreads: false }).visualsInThreads).toBe(false)
     expect(parseSettings({ visualsInThreads: 'no' }).visualsInThreads).toBe(true)

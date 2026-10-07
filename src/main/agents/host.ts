@@ -140,7 +140,7 @@ export interface AgentHost {
   useBrowserTools?(tools: BrowserAgentTools): void
   /**
    * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
-   * given (ADR-0035), and the visual tool (ADR-0055). Each launch offers every one that answers for its thread.
+   * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.
    */
   useThreadTools?(tools: readonly ScopedThreadTools[]): void
   rollbackCapability?(threadId: string): { supported: boolean; reason?: string }

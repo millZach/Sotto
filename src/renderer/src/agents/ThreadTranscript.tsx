@@ -164,7 +164,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
   readonly threadId: string | undefined
 }): ReactNode {
-  // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0055).
+  // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
   const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
@@ -173,7 +173,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   </React.Fragment>
   const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
   // A visual is Sotto's drawing, not a reply, so it is never the final reply and never folds: it stays in view where it
-  // was drawn, before or after the final reply (ADR-0055). One pass sorts the replies into the two.
+  // was drawn, before or after the final reply (ADR-0056). One pass sorts the replies into the two.
   const written: AgentMessage[] = []
   const visuals: { readonly message: AgentMessage; readonly at: number }[] = []
   for (const [at, message] of turn.replies.entries()) {

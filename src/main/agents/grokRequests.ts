@@ -23,7 +23,7 @@ function grokBrowserText(rawInput: unknown): string | undefined {
  * Grok asks before every call to one of Sotto's own tool servers in its default mode, and has no way to
  * allow one server for a session. That prompt only admits the agent to this thread's endpoint: browser page
  * actions still wait for the user in Tools (ADR-0020), adding a host asks in the thread (ADR-0035), and a
- * visual changes nothing outside the thread (ADR-0055). So a request for one of `tools` on `server` is
+ * visual changes nothing outside the thread (ADR-0056). So a request for one of `tools` on `server` is
  * answered with Grok's own one-time allow, and anything else, or a request with no one-time allow, is left
  * for the user. The answer is the reply to send, or undefined.
  */

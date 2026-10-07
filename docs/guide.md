@@ -134,7 +134,7 @@ An agent in a project thread can draw a visual to show how something works: a fl
 
 Claude Code, Codex and Grok Build can draw visuals; Devin cannot, and neither can a thread on another host. A visual changes nothing outside its thread, so drawing one asks you nothing. To stop agents drawing them, turn off **Let agents draw visuals in threads** in Settings under Application. Agents then explain in text, and visuals already in threads stay.
 
-A visual is kept with its thread: it is back after a restart, goes when **Keep local history** is turned off or a checkpoint rewinds the turn it was drawn in, and stays when a later turn is rewound. A turn can draw up to 6 visuals and a thread can hold 100. The iPhone app and paired devices show a visual's explanation, with a line saying the visual is in Sotto on your computer. Visuals are drawn on this computer and contact no one. See [ADR-0055](adr/0055-an-agent-can-draw-a-visual-in-its-thread.md).
+A visual is kept with its thread: it is back after a restart, goes when **Keep local history** is turned off or a checkpoint rewinds the turn it was drawn in, and stays when a later turn is rewound. A turn can draw up to 6 visuals and a thread can hold 100. The iPhone app and paired devices show a visual's explanation, with a line saying the visual is in Sotto on your computer. Visuals are drawn on this computer and contact no one. See [ADR-0056](adr/0056-an-agent-can-draw-a-visual-in-its-thread.md).
 
 ### Working indicators
 

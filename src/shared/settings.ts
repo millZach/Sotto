@@ -125,7 +125,7 @@ export interface AppSettings {
   showBrowserPreviews: boolean
   /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
   browserWithoutAsking: boolean
-  /** On by default (ADR-0055): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
+  /** On by default (ADR-0056): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
   visualsInThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'

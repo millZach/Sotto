@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The visualize tool's answers (ADR-0055): what it says when a visual is shown, and a refusal for each reason that
+ * The visualize tool's answers (ADR-0056): what it says when a visual is shown, and a refusal for each reason that
  * says nothing was drawn. Calls go through the server's own dispatch, as a provider's would.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'

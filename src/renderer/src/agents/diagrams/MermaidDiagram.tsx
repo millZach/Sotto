@@ -50,7 +50,7 @@ export interface MermaidDrawing {
 /**
  * Draws one Mermaid source in the current appearance through the safe renderer, the way an answer's diagram is
  * drawn: checked first, drawn once per source and palette, and redrawn without dropping the old drawing when the
- * appearance changes. The visual card (ADR-0055) draws with this too.
+ * appearance changes. The visual card (ADR-0056) draws with this too.
  */
 export function useMermaidDrawing(source: string, complete: boolean): MermaidDrawing {
   const inspection = useMemo(() => inspectDiagramSource(source), [source])

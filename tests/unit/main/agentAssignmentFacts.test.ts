@@ -189,7 +189,7 @@ describe('assignment facts', () => {
     await expect.poll(() => f.savedAssignment()).toEqual(stopped)
   })
 
-  // A visual is Sotto's drawing, not the agent's words (ADR-0055): supervision reads past it to what was written.
+  // A visual is Sotto's drawing, not the agent's words (ADR-0056): supervision reads past it to what was written.
   const drawnAfter = (text: string): AgentMessage[] => [
     { id: `reply-${text.length}-${Math.random()}`, role: 'assistant', text, createdAt: new Date().toISOString() },
     { id: visualMessageId(`v-${Math.random()}`), role: 'assistant', text: 'A flow\n\nThe visual is in Sotto on your computer.', createdAt: new Date().toISOString(),

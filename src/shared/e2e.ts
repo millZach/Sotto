@@ -22,7 +22,7 @@ export const e2eBrowserAgentSchema = z.object({ threadId: z.string().min(1).max(
 /** Calls one of the running host setup's tools as its thread would (ADR-0035); main supplies the thread. */
 export const E2E_HOST_SETUP_TOOL_CHANNEL = 'sotto:e2e:host-setup-tool'
 export const e2eHostSetupToolSchema = z.object({ name: z.string().min(1).max(80) }).strict()
-/** Calls the visualize tool as a thread's agent would (ADR-0055); main checks and keeps it as it would for a provider. */
+/** Calls the visualize tool as a thread's agent would (ADR-0056); main checks and keeps it as it would for a provider. */
 export const E2E_VISUAL_TOOL_CHANNEL = 'sotto:e2e:visual-tool'
 export const e2eVisualToolSchema = z.object({ threadId: z.string().min(1).max(512), arguments: z.unknown() }).strict()
 export const e2eBrowserAgentResultSchema = z.object({ content: z.array(z.discriminatedUnion('type', [

@@ -6,7 +6,7 @@ import type { MermaidDrawing } from './MermaidDiagram'
 
 /**
  * What every drawn diagram's frame keeps while it is on screen: whether its source is shown instead of the drawing,
- * whether the drawing is expanded, and how the last copy went. An answer's diagram and an agent's visual (ADR-0055)
+ * whether the drawing is expanded, and how the last copy went. An answer's diagram and an agent's visual (ADR-0056)
  * both use it, with the pieces below, and each lays the pieces out in its own header and body.
  */
 export interface DiagramFrameState {

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A visual an agent draws, through the workspace (ADR-0055): kept with the thread, anchored to the newest message when
+ * A visual an agent draws, through the workspace (ADR-0056): kept with the thread, anchored to the newest message when
  * the call arrives, published live into the open window, and gone or kept with history the way the thread's words are.
  */
 import { mkdtemp, rm } from 'node:fs/promises'

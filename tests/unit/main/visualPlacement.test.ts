@@ -1,5 +1,5 @@
 // @vitest-environment node
-/** Where a visual sits in a window (ADR-0055): after its anchor, else at the end of its turn, else nowhere. */
+/** Where a visual sits in a window (ADR-0056): after its anchor, else at the end of its turn, else nowhere. */
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { placeVisuals, visualMessage } from '../../../src/main/agents/visualPlacement'

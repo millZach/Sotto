@@ -280,7 +280,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
   }
   /**
-   * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0055), and a client
+   * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0056), and a client
    * that accepts activity summaries is sent them (#701). Each is made once however many peers are sent it.
    */
   const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()

@@ -243,7 +243,7 @@ export const agentMessageSchema = z.object({
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
   /**
-   * Set on a message Sotto made for a visual an agent drew (ADR-0055), whose ID starts `visual:` and whose text is the
+   * Set on a message Sotto made for a visual an agent drew (ADR-0056), whose ID starts `visual:` and whose text is the
    * visual's words. A visual this reader cannot read is dropped and the text stands in; an older reader drops the field.
    * Either way the message is then its words alone: `isVisualMessage` says no.
    */
@@ -787,7 +787,7 @@ export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, a
 export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
 
 /**
- * Whether a message is a visual an agent drew (ADR-0055): Sotto's own `visual:` message, carrying the visual. This is
+ * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
  * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
  * titles and supervision. A `visual:` message without a visual it can read (a shape this reader does not know, or a
  * socket client's copy, which never carries one) is its words alone, and counts as a reply everywhere. The `visual`

@@ -1,6 +1,6 @@
 # A visual in its thread: verification
 
-October 6, 2026. Issue #792, on `feat/visualize-tool`. The decision is ADR-0055; the glossary term is **Visual**. The
+October 6, 2026. Issue #792, on `feat/visualize-tool`. The decision is ADR-0056; the glossary term is **Visual**. The
 layout is variant C of `prototype/visualize-layout`, without its stepper, which is #793.
 
 ## How it was run

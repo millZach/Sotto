@@ -100,7 +100,7 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId).title).toBe('Workshop')
   })
 
-  it('writes a title from the agent\'s own reply, never from a visual drawn before it (ADR-0055)', async () => {
+  it('writes a title from the agent\'s own reply, never from a visual drawn before it (ADR-0056)', async () => {
     const f = await coordinator()
     const threadId = workshop(f.control).id
     const thread = f.adapters.codex.state.threads[0]!

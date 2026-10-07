@@ -66,7 +66,7 @@ const migrations = [{
     ALTER TABLE activity_epochs ADD COLUMN message_reset_seq INTEGER;
   `,
 }, {
-  // Visuals an agent drew (ADR-0055). Not thread events: a messages-reset rebuilds the projection from the provider's
+  // Visuals an agent drew (ADR-0056). Not thread events: a messages-reset rebuilds the projection from the provider's
   // own history, which knows nothing of them. Each is anchored to the newest message, and the newest user message, the
   // projection held when the call arrived. The sequence keeps their order through a VACUUM.
   version: 4,

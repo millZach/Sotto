@@ -752,7 +752,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostSetupTools = hostSetupTools
   hostSetup.useTools(threadId => hostSetupTools.revoke(threadId))
   providerJobs.useTools(threadId => hostSetupTools.revoke(threadId))
-  // Let an agent draw a visual in its thread (ADR-0055): every admitted launch gets the tool while the switch is on, read live.
+  // Let an agent draw a visual in its thread (ADR-0056): every admitted launch gets the tool while the switch is on, read live.
   const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools

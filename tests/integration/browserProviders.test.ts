@@ -122,7 +122,7 @@ describe('grok browser admission', () => {
   })
 })
 
-// The visual tool (ADR-0055) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
+// The visual tool (ADR-0056) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
 // `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin's client
 // ignores supplied servers, and a switch turned off gives new launches nothing.
 const DIAGRAM = { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.', highlight: ['A->B'] }] }
