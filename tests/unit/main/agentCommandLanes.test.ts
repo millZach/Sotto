@@ -32,6 +32,8 @@ function deferred<T>() {
  * work — so several can be observed in flight at once. Each held action is labelled `what:threadId`.
  */
 class LaneHost extends E2EAgentHost {
+  /** Absent unless a test gives this host an early start (#769). */
+  startThreadSession?: (threadId: string) => Promise<void>
   readonly started: string[] = []
   readonly openedFolders: string[] = []
   private readonly held: (() => void)[] = []
@@ -86,6 +88,44 @@ const busyThreads = (state: AgentState): string[] => [...(state.busyThreadIds ??
 const settled = async (): Promise<void> => { await new Promise(done => { setImmediate(done) }) }
 
 describe('thread-scoped command lanes', () => {
+  it('takes an early start in the thread’s own lane, quietly, and a send typed meanwhile waits behind it', async () => {
+    const f = await fixture()
+    const starting = deferred<void>()
+    const starts: string[] = []
+    f.host.startThreadSession = async (threadId: string) => { starts.push(threadId); await starting.promise; throw new Error('The CLI did not start.') }
+    f.host.hold = true
+    const published = f.published.length
+    const start = f.control.command({ type: 'start-thread-session', threadId: 'docs' })
+    await vi.waitFor(() => expect(starts).toEqual(['docs']))
+    // The start marks nothing busy and publishes nothing.
+    await settled()
+    expect(f.published.length).toBe(published)
+    expect(busyThreads(f.control.get())).toEqual([])
+    const send = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Synthetic prompt', draftId: randomUUID() })
+    await settled()
+    // The send is admitted at once but dispatched only after the start has settled in the lane.
+    expect(f.host.started).toEqual([])
+    starting.resolve()
+    expect((await start).error).toBeNull()
+    await vi.waitFor(() => expect(f.host.started).toEqual(['send:docs']))
+    f.host.release()
+    expect((await send).error).toBeNull()
+    // A failed start says nothing; the send goes as it always did.
+    expect(f.control.get().error).toBeNull()
+  })
+
+  it('asks for no early start for a session main already sees open', async () => {
+    const f = await fixture()
+    const starts: string[] = []
+    f.host.startThreadSession = async (threadId: string) => { starts.push(threadId) }
+    const thread = (f.host as unknown as { state: AgentHostSnapshot }).state.threads.find(item => item.id === 'docs')!
+    thread.providerSessionOpen = true
+    await f.control.command({ type: 'refresh' })
+    await f.control.command({ type: 'start-thread-session', threadId: 'docs' })
+    await f.control.command({ type: 'start-thread-session', threadId: 'workshop' })
+    expect(starts).toEqual(['workshop'])
+  })
+
   it('runs thread-scoped commands on different threads at the same time and one thread’s in order', async () => {
     const f = await fixture()
     f.host.hold = true

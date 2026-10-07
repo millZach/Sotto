@@ -19,7 +19,7 @@ import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentS
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -33,6 +33,7 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
+import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
@@ -154,7 +155,8 @@ export class CodexAppServerHost implements AgentHost {
   private aliases: Record<string, Alias> = {}
   private readonly providerSessionIds = new Map<string, string>()
   private readonly threads = new Map<string, AgentThread>()
-  private readonly live = new Set<string>()
+  /** The threads whose provider session is resumed on their own app-server now. */
+  private readonly live = new OpenSessions(id => this.threads.get(id))
   /** Threads whose turns have been read on this connection; history is read once per open. */
   private readonly histories = new Set<string>()
   /** Watched set: the threads the coordinator asked for. Their sessions are resumed eagerly, never reaped. */
@@ -250,7 +252,7 @@ export class CodexAppServerHost implements AgentHost {
    * a fresh takeover.
    */
   private stopSession(id: string): void {
-    this.live.delete(id)
+    if (this.live.delete(id)) this.emit()
     this.log.release(id)
     this.resuming.delete(id)
     this.opening.delete(id)
@@ -850,6 +852,18 @@ export class CodexAppServerHost implements AgentHost {
     this.observed.clear(); for (const id of watched) this.observed.add(id)
     this.log.observe([...this.observed])
     if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => { this.ensureThread(id).status = 'error'; this.emit() })
+  }
+  /**
+   * Early start (#769): a thread Codex already has is resumed on its own app-server, as opening it does. A thread whose
+   * first send has not happened gets the app-server that send would start, under the ID it will be created with, and
+   * nothing more: `thread/start` makes a Codex thread, so it waits for the send.
+   */
+  async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
+    if (!this.state.connected) return
+    if (this.aliases[id]) { await this.open(id); return }
+    if (!draft || this.creating.has(id)) return
+    await this.runtimeServer(id)
+    this.reaper.touch(id)
   }
   /** Opening a thread resumes it and reads its turns once, when Sotto holds no history for it. */
   private open(id: string): Promise<void> {

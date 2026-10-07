@@ -11,7 +11,7 @@ import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, provide
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -377,6 +377,17 @@ export class ConfiguredProviderHost implements AgentHost {
   private async whole(id: ProviderId, withoutMessages: boolean): Promise<AgentHostSnapshot | undefined> {
     if (!withoutMessages || this.slots.get(id)!.historyFromEvents) return undefined
     return this.options.hosts[id].snapshot()
+  }
+  /** Early start (#769): the thread's own provider, or for a draft the provider its model belongs to, if connected. */
+  async startThreadSession(threadId: string, draft?: ThreadSessionDraft): Promise<void> {
+    if (!draft) {
+      const id = this.providerForThread(threadId)
+      if (!id || this.slots.get(id)!.status.connection !== 'connected') return
+      return this.options.hosts[id].startThreadSession?.(threadId)
+    }
+    const model = resolveModel(this.aggregate().models, this.resolveModelId(draft.modelId))
+    if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return
+    return this.options.hosts[model.providerId].startThreadSession?.(threadId, { ...draft, modelId: nativeEntityId(model.providerId, 'model', model.id) })
   }
   observeThreads(ids: readonly string[]): void {
     this.observed = [...ids]

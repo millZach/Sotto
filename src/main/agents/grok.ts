@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -31,6 +31,7 @@ import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActi
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
+import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { sameSnapshot } from './sameSnapshot'
 import { markSendStage } from './sendStages'
@@ -239,7 +240,7 @@ export class GrokAcpHost implements AgentHost {
   /** Watched set: the threads the coordinator asked for. Their sessions are loaded eagerly, never reaped. */
   private readonly observed = new Set<string>()
   /** The sessions this connection has loaded; only these are polled for history. */
-  private readonly loaded = new Set<string>()
+  private readonly loaded = new OpenSessions(id => this.threads.get(id))
   private readonly loading = new Map<string, Promise<void>>()
   private readonly reaper: SessionReaper
   private pollTimer: ReturnType<typeof setInterval> | undefined
@@ -289,7 +290,8 @@ export class GrokAcpHost implements AgentHost {
         this.confirmLoad(id, alias, value); await this.persist()
       })
       if (this.processes.get(id) !== entry) return
-      this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
+      // Published, so the window sees the session open and asks for an early start again once it stops (#769).
+      this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.emit()
     }).finally(() => { if (this.loading.get(id) === work) this.loading.delete(id); this.stopOutdated() })
     this.loading.set(id, work)
     return work
@@ -301,7 +303,7 @@ export class GrokAcpHost implements AgentHost {
    */
   private async stopSession(id: string): Promise<void> {
     const alias = this.aliases[id]; const entry = this.processes.get(id)
-    this.loaded.delete(id)
+    if (this.loaded.delete(id)) this.emit()
     // The history cursor is a read position in a session Sotto no longer holds; the next load reads afresh.
     this.histories.delete(id)
     this.log.release(id)
@@ -583,6 +585,18 @@ export class GrokAcpHost implements AgentHost {
     this.applyClient(client)
     for (const [id, entry] of this.processes) if (entry.clientRevision < this.clientRevision) this.outdated.add(id)
     this.emit()
+  }
+  /**
+   * Early start (#769): a thread Grok already has loads its session on its own process, as a send would. A thread
+   * whose first send has not happened gets the process that send would start, under the ID it will be created with,
+   * signed in and nothing more: `session/new` makes a Grok session, so it waits for the send.
+   */
+  async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
+    if (!this.state.connected) return
+    if (this.aliases[id]) { await this.loadSession(id); return }
+    if (!draft) return
+    await this.threadProcess(id)
+    this.reaper.touch(id)
   }
   /**
    * Take the watched set as given and load the sessions that have entered it. A thread that has left the
