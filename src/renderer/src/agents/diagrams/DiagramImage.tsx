@@ -19,12 +19,18 @@ interface DiagramImageProps {
   readonly hidden?: boolean
   readonly layer?: 'shown' | 'arriving' | 'leaving'
   readonly onAnimationEnd?: (() => void) | undefined
+  /** Where the image is placed, for the expanded viewer, which zooms and pans it. */
+  readonly className?: string
+  readonly style?: CSSProperties
 }
 
-/** One drawing as an image: its own size, never dragged, decoded off the main thread. Every diagram image is this. */
-export function DiagramImage({ src, alt, width, height, describedBy, hidden, layer, onAnimationEnd }: DiagramImageProps): ReactNode {
+/**
+ * One drawing as an image: never dragged, decoded off the main thread. Every diagram image is this: an answer's, a
+ * visual's step pictures, and the expanded viewer's.
+ */
+export function DiagramImage({ src, alt, width, height, describedBy, hidden, layer, onAnimationEnd, className, style }: DiagramImageProps): ReactNode {
   return <img src={src} alt={alt} width={width} height={height} draggable={false} decoding="async" aria-describedby={describedBy}
-    aria-hidden={hidden || undefined} data-layer={layer} onAnimationEnd={onAnimationEnd} />
+    aria-hidden={hidden || undefined} data-layer={layer} onAnimationEnd={onAnimationEnd} className={className} style={style} />
 }
 
 interface Layer { readonly src: string; readonly key: number }
@@ -35,7 +41,7 @@ interface Layer { readonly src: string; readonly key: number }
  * same size, so nothing moves. Under reduced motion the new picture replaces the old at once. Only the picture on top
  * is in the accessibility tree. `className` lays the pictures over each other.
  */
-export function CrossFadeImage({ src, alt, width, height, describedBy, className }: Omit<DiagramImageProps, 'hidden' | 'layer' | 'onAnimationEnd'> & {
+export function CrossFadeImage({ src, alt, width, height, describedBy, className }: Omit<DiagramImageProps, 'hidden' | 'layer' | 'onAnimationEnd' | 'className' | 'style'> & {
   readonly className: string
 }): ReactNode {
   const reduced = useReducedMotion()
