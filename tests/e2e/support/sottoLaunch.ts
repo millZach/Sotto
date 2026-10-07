@@ -124,7 +124,7 @@ export async function openThreads(page: Page): Promise<void> {
 }
 
 /** The pages a spec can reach by name; Dictate is a switch tab rather than a link. */
-export type SottoPageName = 'Chats' | 'History' | 'Memory' | 'Settings' | 'Help' | 'Dictate'
+export type SottoPageName = 'History' | 'Memory' | 'Settings' | 'Help' | 'Dictate'
 
 /**
  * Opens one of the named pages. The sidebar foot on Threads and the footer on

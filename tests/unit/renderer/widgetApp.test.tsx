@@ -10,7 +10,7 @@ import type {
   SottoWidgetBridge,
   WidgetPresentation,
 } from '../../../src/shared/contracts'
-import { MICROPHONE_NOT_SET_UP_DETAIL, type WidgetErrorCode, type WidgetSnapshot } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type WidgetErrorCode, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { APP_ICON_BRAND, APP_ICON_BRAND_ATTRIBUTE, DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
 import { DEFAULT_THEME_ID } from '../../../src/shared/themes/library'
@@ -217,7 +217,74 @@ describe('WidgetApp', () => {
     expect(screen.getByText(title)).toBeVisible()
     expect(screen.getByText(title)).toHaveAttribute('title', recovery)
     expect(container).not.toHaveTextContent('raw-model-error')
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    // An error stays until it is dismissed, so its one control is Dismiss.
+    expect(screen.queryAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Dismiss'])
+  })
+
+  it('makes the pill Try again for a kept recording and keeps what went wrong in its tooltip', () => {
+    const onRetry = vi.fn()
+    const onCancel = vi.fn()
+    const onDismiss = vi.fn()
+    const onStop = vi.fn()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'error', sessionId: 'kept', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })}
+        platform="win32" now={0}
+        onRetry={onRetry} onCancel={onCancel} onDismiss={onDismiss} onStop={onStop}
+      />,
+    )
+    const label = screen.getByText('Click to try again')
+    expect(label).toBeVisible()
+    expect(label).toHaveAttribute('title', `Too many requests. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED}`)
+
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onStop).not.toHaveBeenCalled()
+
+    // A click in the first half second was aimed at the esc this × replaced.
+    now.mockReturnValue(1_300)
+    fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }))
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // Discarding is its own command; cancel is only for work in progress.
+    now.mockReturnValue(2_000)
+    fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }))
+    expect(onDismiss).toHaveBeenCalledOnce()
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onRetry).toHaveBeenCalledOnce()
+    now.mockRestore()
+  })
+
+  it.each([
+    ['TRANSCRIPTION_RATE_LIMITED', 'Still busy · retry'],
+    ['TRANSCRIPTION_OFFLINE', 'Failed again · retry'],
+  ] as const)('says when Try again on %s failed too', (code, title) => {
+    const onRetry = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'error', sessionId: 'again', code, kept: true, retried: true })}
+        platform="win32" now={0} onRetry={onRetry}
+      />,
+    )
+    expect(screen.getByText(title)).toHaveAttribute('title', expect.stringMatching(/^Try again did not get through\. /))
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('dismisses an error that keeps nothing when the pill is clicked', () => {
+    const onRetry = vi.fn()
+    const onDismiss = vi.fn()
+    const { container } = render(
+      <WidgetApp
+        snapshot={snapshot({ status: 'error', sessionId: 'plain', code: 'NO_SPEECH' })}
+        platform="win32" now={0}
+        onRetry={onRetry} onDismiss={onDismiss}
+      />,
+    )
+    fireEvent.click(container.querySelector('.widget-capsule')!)
+    expect(onDismiss).toHaveBeenCalledOnce()
+    expect(onRetry).not.toHaveBeenCalled()
   })
 
   it('exposes only semantic non-focusing stop and cancel actions in allowed states', () => {
@@ -798,6 +865,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -872,6 +941,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -904,6 +975,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -948,6 +1021,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -982,6 +1057,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1014,6 +1091,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1052,6 +1131,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1104,6 +1185,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1165,6 +1248,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1241,6 +1326,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(commandSucceeded),
       requestStop: vi.fn(commandSucceeded),
       requestCancel: vi.fn(commandSucceeded),
+      requestRetry: vi.fn(commandSucceeded),
+      requestDismiss: vi.fn(commandSucceeded),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }
@@ -1264,6 +1351,8 @@ describe('WidgetEntry', () => {
       requestToggle: vi.fn(async () => Promise.reject(new Error('private toggle failure'))),
       requestStop: vi.fn(async () => Promise.reject(new Error('private stop failure'))),
       requestCancel: vi.fn(async () => Promise.reject(new Error('private cancel failure'))),
+      requestRetry: vi.fn(async () => Promise.reject(new Error('private retry failure'))),
+      requestDismiss: vi.fn(async () => Promise.reject(new Error('private dismiss failure'))),
       setPresentation: vi.fn(commandSucceeded),
       reportDrag: vi.fn(commandSucceeded),
     }

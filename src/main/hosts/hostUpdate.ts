@@ -4,6 +4,7 @@ import { HOST_ARCHIVE_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpda
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from './sshLauncher'
+import { idleNow, stopWorkingThreads, whenIdle, type BusyHostThreads } from './busyHost'
 
 /** A saved host that is connected, or kept reachable for Stop host, and has said which Sotto it runs. */
 export interface HostUpdateCandidate {
@@ -17,6 +18,8 @@ export interface HostUpdateCandidate {
   readonly owned: boolean
   readonly installPath: string
   readonly dataDirectory: string
+  /** The host starts at boot, so its systemd unit runs it and restarts it (ADR-0054). */
+  readonly boot?: boolean
 }
 /** What an update needs of the saved hosts: `DesktopHosts`. */
 export interface HostUpdateHosts {
@@ -30,12 +33,8 @@ export interface HostUpdateHosts {
   restart(id: string, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
   subscribe(listener: () => void): () => void
 }
-/** What an update needs of the threads: which of a host's are working, and the interrupt the composer's Stop sends. */
-export interface HostUpdateThreads {
-  working(hostId: string): readonly string[]
-  interrupt(threadId: string): Promise<void>
-  subscribe(listener: () => void): () => void
-}
+/** What an update needs of the threads: the busy-host question's (`busyHost.ts`). */
+export type HostUpdateThreads = BusyHostThreads
 export interface HostUpdatesOptions {
   readonly hosts: HostUpdateHosts
   readonly threads: HostUpdateThreads
@@ -47,7 +46,7 @@ export interface HostUpdatesOptions {
   readonly download?: (url: string, limit: number, signal: AbortSignal) => Promise<Uint8Array>
 }
 interface Entry {
-  id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string
+  id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string; boot?: boolean | undefined
   phase: HostUpdatePhase; step?: HostUpdateStep | undefined; route?: HostUpdateRoute | undefined
   failure?: HostUpdateFailure | undefined; error?: string | undefined
   /** The launch script's code, or this computer's, for the failure shown. */
@@ -129,7 +128,7 @@ export class HostUpdates {
     delete entry.error
     try {
       if (action === 'update') this.update(entry)
-      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (this.working(entry).length) entry.phase = 'waiting'; else this.begin(entry) } }
+      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.working(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
       else if (action === 'stop-threads') { if (entry.phase === 'confirm' || entry.phase === 'waiting') await this.stopThreadsAndUpdate(entry) }
       else if (action === 'cancel') this.cancel(entry)
       else if (action === 'not-now') {
@@ -153,8 +152,7 @@ export class HostUpdates {
     this.begin(entry)
   }
   private async stopThreadsAndUpdate(entry: Entry): Promise<void> {
-    // A turn that has already ended refuses its Stop; the restart ends whatever is left either way.
-    await Promise.all(this.working(entry).map(threadId => this.options.threads.interrupt(threadId).catch(() => undefined)))
+    await stopWorkingThreads(this.options.threads, entry.hostId)
     if (entry.phase === 'confirm' || entry.phase === 'waiting') this.begin(entry)
   }
   private cancel(entry: Entry): void {
@@ -297,13 +295,13 @@ export class HostUpdates {
   }
   private view(entry: Entry): HostUpdateState {
     return { id: entry.id, name: entry.name, from: entry.from, to: this.options.version, phase: entry.phase, owned: entry.owned,
-      working: this.working(entry).length, commands: this.commands(entry),
+      working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
       ...(entry.failure ? { failure: entry.failure } : {}), ...(entry.error ? { error: entry.error } : {}) }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
-    Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory })
+    Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
   }
   /**
@@ -326,7 +324,7 @@ export class HostUpdates {
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
       // Waiting, or asking, for threads that have all finished: the user has already pressed Update.
-      if ((entry.phase === 'waiting' || entry.phase === 'confirm') && this.working(entry).length === 0) { this.begin(entry); return }
+      if (idleNow(entry.phase, this.working(entry).length)) { this.begin(entry); return }
     }
     for (const [id, entry] of this.entries) {
       if (!seen.has(id) && (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting')) this.entries.delete(id)

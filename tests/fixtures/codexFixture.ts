@@ -16,7 +16,7 @@ async function oneShots(root: string): Promise<Record<string, unknown>[]> {
 }
 const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 /** The fake's own number for a request Sotto holds: Sotto's key also names the app-server that asked it. */
-export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:\d+:/u, '')) as string | number
+export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:[^:]+:/u, '')) as string | number
 /** What the fake recorded of the app-servers Sotto started: each one's introduction, and each thread start or resume on it. */
 export interface ServedRecord { pid: number; method: 'initialize' | 'thread/start' | 'thread/resume'; threadId?: string }
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
@@ -32,7 +32,7 @@ export function aroundTurnStart(requests: readonly RecordedRpc[]): { before: Rec
   return { before: requests.slice(0, start), after: requests.slice(start) }
 }
 // The deadline also covers the fake app server's process start; see the note on claudeFixture.
-export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions = {}) {
+export async function codexFixture(root?: string, wrapped = false, requestTimeoutMs = 2000, session: AdapterSessionOptions & { pollIntervalMs?: number } = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-codex-'))
   const adapter = new CodexAppServerHost({ userDataPath: root, executable: process.execPath,
     args: [resolve('tests/fixtures/fakeCodexAppServer.mjs'), root], codexHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...session })
@@ -63,7 +63,15 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   /** Whether the fake has carried out the action `action` answered with this ID. */
   const acted = async (id: string): Promise<boolean> => (await readFile(join(root, 'actions.jsonl'), 'utf8').catch(() => ''))
     .split('\n').some(line => line === JSON.stringify({ id }))
-  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId,
+  /** Write input typed in another Codex process to the session log, as Codex does, without the adapter polling it. */
+  const typeUnseen = async (id: string, text: string): Promise<void> => {
+    const codexThreadId = await realId(id)
+    const folder = join(root, 'home', 'sessions', '2026', '09', '10'); await mkdir(folder, { recursive: true })
+    const path = join(folder, `rollout-2026-09-10-${codexThreadId}.jsonl`)
+    await writeFile(path, rolloutLine(0, { id: codexThreadId }, 'session_meta'), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
+    await appendFile(path, rolloutLine(Date.now(), { type: 'item_completed', item: { type: 'UserMessage', id: randomUUID(), content: [{ type: 'text', text }] } }))
+  }
+  const fixture = { root, adapter, registry, host, projectId: 'project', modelId: 'fixture-model', script, realId, typeUnseen,
     // A settings change comes back with the snapshot Codex's confirmation produced; a delayed reply loses it (#318).
     settings: { snapshot: true, loseConfirmation: () => script({ delay: { method: 'thread/settings/update', ms: requestTimeoutMs + 1000 }, suppressNotifications: true }) },
     // Every app-server started from now on answers `initialize` as the newer client.
@@ -73,14 +81,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       calls: async () => (await oneShots(root)).map(call => ({ cwd: String(call.cwd), model: flag(call.args, '--model'), material: String(call.input) })),
     },
     driver: {
-      typeInProvider: async (id: string, text: string) => {
-        const codexThreadId = await realId(id)
-        const folder = join(root, 'home', 'sessions', '2026', '09', '10'); await mkdir(folder, { recursive: true })
-        const path = join(folder, `rollout-2026-09-10-${codexThreadId}.jsonl`)
-        await writeFile(path, rolloutLine(0, { id: codexThreadId }, 'session_meta'), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
-        await appendFile(path, rolloutLine(Date.now(), { type: 'item_completed', item: { type: 'UserMessage', id: randomUUID(), content: [{ type: 'text', text }] } }))
-        await adapter.pollSessionLogs()
-      },
+      typeInProvider: async (id: string, text: string) => { await typeUnseen(id, text); await adapter.pollSessionLogs() },
       completeTurn: async (id: string, text: string) => { await action(id, { type: 'complete', text }) },
       raiseQuestion: async (id: string, text: string) => { await action(id, { type: 'question', text }) },
       raisePermission: async (id: string, text: string) => { await action(id, { type: 'permission', text }) },

@@ -6,12 +6,12 @@ import Foundation
 // out of SottoCore; the core's protocol tests remain usable with a standalone Swift toolchain.
 var modelTests: [Target] = []
 #if os(macOS)
-let modelSources = ["Sotto/AppModel.swift", "Sotto/KeychainStore.swift", "Sotto/PhotoPipeline.swift", "Tests/SottoAppModelTests"]
+let modelSources = ["Sotto/AppModel.swift", "Sotto/KeychainStore.swift", "Sotto/PhotoPipeline.swift", "Sotto/PhonePreferences.swift", "Tests/SottoAppModelTests"]
 let appDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Sotto")
 let otherAppFiles = (try? FileManager.default.contentsOfDirectory(atPath: appDirectory.path)) ?? []
 modelTests = [.testTarget(name: "SottoAppModelTests", dependencies: ["SottoCore"], path: ".",
     exclude: ["Sources", "Scripts", "Sotto.xcodeproj", "README.md", "ExportOptions.example.plist", "Tests/SottoCoreTests", "Tests/SottoUITests", "Tests/SottoConnectionTests"]
-        + otherAppFiles.filter { !["AppModel.swift", "KeychainStore.swift", "PhotoPipeline.swift"].contains($0) }.map { "Sotto/" + $0 }, sources: modelSources)]
+        + otherAppFiles.filter { !["AppModel.swift", "KeychainStore.swift", "PhotoPipeline.swift", "PhonePreferences.swift"].contains($0) }.map { "Sotto/" + $0 }, sources: modelSources)]
 modelTests.append(.testTarget(name: "SottoConnectionTests", dependencies: ["SottoCore"], path: ".",
     exclude: ["Sources", "Scripts", "Sotto.xcodeproj", "README.md", "ExportOptions.example.plist", "Tests/SottoCoreTests", "Tests/SottoUITests", "Tests/SottoAppModelTests"]
         + otherAppFiles.filter { $0 != "HostConnection.swift" }.map { "Sotto/" + $0 },

@@ -33,6 +33,9 @@ public enum JSONValue: Codable, Equatable, Sendable {
 public enum ClientError: Error, LocalizedError, Equatable {
     case invalidHost, invalidProtocol, invalidIdentity, invalidRequest, disconnected, uncertain, connectionTimedOut, readTimedOut, rateLimited, rejected(String)
     case hostNotFound(String), hostUnreachable(String), notASottoHost(String), sottoNotRunning(String), invalidCode
+    /// A computer that keeps this iPhone's pairing refused it for now, in its own words, such as a host with phone
+    /// access off. Unlike `rejected`, the pairing stays and the iPhone keeps trying.
+    case hostRefused(String)
     public var errorDescription: String? {
         switch self {
         case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
@@ -50,6 +53,7 @@ public enum ClientError: Error, LocalizedError, Equatable {
         case .rateLimited: return "Too many connection attempts. Wait a minute and try again."
         case .uncertain: return "Delivery is unconfirmed. Check the thread before sending again."
         case .rejected(let message): return message
+        case .hostRefused(let message): return message
         }
     }
 }
@@ -125,9 +129,9 @@ public struct Hello: Decodable, Sendable {
     /// `shell` is a `var` only so the connection can put back a catalog the host named by revision (`ModelCatalogCache`).
     public let hostId: String; public let clientId: String; public var shell: Shell; public let capabilities: Capabilities
     public let features: [String]?
-    public struct Capabilities: Decodable, Sendable { public let mayAnswer: Bool }
+    public struct Capabilities: Decodable, Equatable, Sendable { public let mayAnswer: Bool }
 }
-public struct Shell: Decodable, Sendable {
+public struct Shell: Decodable, Equatable, Sendable {
     /// `host` is a `var` only so the connection can put back a catalog the host named by revision (`ModelCatalogCache`).
     public let hostId: String?; public var host: HostSnapshot; public let deliveries: [Delivery]?; public let deliveredDrafts: [DeliveryReceipt]?
     public let globalLaneBusy: Bool?; public let busyThreadIds: [String]?; public let error: String?
@@ -139,7 +143,7 @@ public struct Shell: Decodable, Sendable {
               host.threads.allSatisfy({ $0.hostId == nil || $0.hostId == hostID }) else { throw ClientError.invalidIdentity }
     }
 }
-public struct HostSnapshot: Decodable, Sendable {
+public struct HostSnapshot: Decodable, Equatable, Sendable {
     public let hostId: String?; public let name: String; public let threads: [ThreadSummary]
     public let projects: [Project]; public let providers: [Provider]?
     /// Always whole once a shell leaves `HostConnection`: a catalog the host named by revision is put back there.
@@ -149,16 +153,16 @@ public struct HostSnapshot: Decodable, Sendable {
     public let modelsRevision: Int?
     public let capabilities: ProviderCapabilities
 }
-public struct Project: Decodable, Identifiable, Sendable {
+public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?
     public let path: String?; public let providerId: String?
 }
-public struct Provider: Decodable, Sendable { public let id: String; public let connection: String; public let capabilities: ProviderCapabilities }
-public struct ProviderCapabilities: Decodable, Sendable {
+public struct Provider: Decodable, Equatable, Sendable { public let id: String; public let connection: String; public let capabilities: ProviderCapabilities }
+public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     public let submit: Bool; public let interrupt: Bool; public let questions: Bool; public let permissions: Bool
     public let projects: Bool?; public let threads: Bool?
 }
-public struct ThreadSummary: Decodable, Identifiable, Sendable {
+public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String
     public let providerId: String?; public let status: String; public let requests: [AgentRequest]
     /// The thread's model in its computer's catalog (`host.models`), which says whether it takes photos.
@@ -169,25 +173,95 @@ public struct ThreadSummary: Decodable, Identifiable, Sendable {
     /// The computer's word that the thread finished while nothing showed it and has not been opened since, on
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public let finishedUnread: Bool?
+    /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
+    /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
+    public let worktree: ThreadWorktree?
     /// Current provider-confirmed work only; never infer it from retained activity or messages.
-    public struct BackgroundWork: Decodable, Sendable { public let type: String }
-    public struct Compaction: Decodable, Sendable { public let status: String }
+    public struct BackgroundWork: Decodable, Equatable, Sendable { public let type: String }
+    public struct Compaction: Decodable, Equatable, Sendable { public let status: String }
     /// What a row reads about the thread's history without holding it.
-    public struct Summary: Decodable, Sendable {
+    public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
 }
+/// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
+/// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).
+/// Every field is optional and read on its own, so one missing or of another type reads as absent.
+public struct ThreadWorktree: Decodable, Equatable, Sendable {
+    /// `independent` for the thread's own worktree, `shared` for the project's folder.
+    public let mode: String?
+    public let branch: String?
+    public let git: GitStatus?
+    private enum Keys: String, CodingKey { case mode, branch, git }
+    public init(from decoder: Decoder) throws {
+        let c = try? decoder.container(keyedBy: Keys.self)
+        mode = c?.tolerant(String.self, .mode)
+        branch = c?.tolerant(String.self, .branch)
+        git = c?.tolerant(GitStatus.self, .git)
+    }
+    /// The folder's branch, its uncommitted changes, its distance from its upstream and its pull request.
+    public struct GitStatus: Decodable, Equatable, Sendable {
+        public let branch: String?
+        public let changedFiles: Int?
+        public let insertions: Int?
+        public let deletions: Int?
+        public let ahead: Int?
+        public let behind: Int?
+        public let dirty: Bool?
+        public let pullRequest: PullRequest?
+        private enum Keys: String, CodingKey { case branch, changedFiles, insertions, deletions, ahead, behind, dirty, pullRequest }
+        public init(from decoder: Decoder) throws {
+            let c = try? decoder.container(keyedBy: Keys.self)
+            branch = c?.tolerant(String.self, .branch)
+            changedFiles = c?.tolerant(Int.self, .changedFiles)
+            insertions = c?.tolerant(Int.self, .insertions)
+            deletions = c?.tolerant(Int.self, .deletions)
+            ahead = c?.tolerant(Int.self, .ahead)
+            behind = c?.tolerant(Int.self, .behind)
+            dirty = c?.tolerant(Bool.self, .dirty)
+            pullRequest = c?.tolerant(PullRequest.self, .pullRequest)
+        }
+    }
+    /// The branch's pull request as the host last heard from GitHub. `state` is `open`, `closed` or `merged`.
+    public struct PullRequest: Decodable, Equatable, Sendable {
+        public let number: Int?
+        public let title: String?
+        public let url: String?
+        public let state: String?
+        public let draft: Bool?
+        private enum Keys: String, CodingKey { case number, title, url, state, draft }
+        public init(from decoder: Decoder) throws {
+            let c = try? decoder.container(keyedBy: Keys.self)
+            number = c?.tolerant(Int.self, .number)
+            title = c?.tolerant(String.self, .title)
+            url = c?.tolerant(String.self, .url)
+            state = c?.tolerant(String.self, .state)
+            draft = c?.tolerant(Bool.self, .draft)
+        }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// The value at `key`, or nil when it is missing, null or of another type.
+    func tolerant<T: Decodable>(_ type: T.Type, _ key: Key) -> T? {
+        guard let value = try? decodeIfPresent(type, forKey: key) else { return nil }
+        return value
+    }
+}
+
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?
 }
 /// Provider-reported work beside a thread's messages. Observational only: nothing here is an answer or a grant.
 /// `kind` and `status` stay strings so a kind this build does not know still shows, by its title.
-public struct Activity: Decodable, Identifiable, Sendable {
+public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let sequence: Int; public let kind: String; public let status: String; public let title: String
     public let command: String?; public let exitCode: Int?; public let durationMs: Double?
     public let startedAt: String?; public let changes: [Change]?
-    public struct Change: Decodable, Sendable { public let path: String; public let kind: String }
+    /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
+    public let afterMessageId: String?
+    public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
         if let command, !command.isEmpty { return command }
@@ -198,6 +272,8 @@ public struct Activity: Decodable, Identifiable, Sendable {
 public struct Message: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let role: String; public let text: String; public let commandId: String?
     public let attachments: [Attachment]?
+    /// When the message was written, as the host sends it (ISO 8601). The thread page places steps by it.
+    public var createdAt: String? = nil
 }
 /// An image a message carries. Its bytes stay on the computer; `preview` says the computer keeps a copy
 /// it will hand back by message and attachment ID (the `preview` request).
@@ -208,8 +284,8 @@ public struct Attachment: Decodable, Identifiable, Equatable, Sendable {
     public struct Preview: Decodable, Equatable, Sendable { public let available: Bool? }
     public var hasPreview: Bool { preview != nil }
 }
-public struct DeliveryReceipt: Decodable, Sendable { public let threadId: String; public let draftId: String }
-public struct Delivery: Decodable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
+public struct DeliveryReceipt: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String }
+public struct Delivery: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?

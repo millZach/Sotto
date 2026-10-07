@@ -14,7 +14,7 @@ ADR-0029 makes the browser grant a deliberate exception to "the user answers eve
 
 ## Decision
 
-**The test iPhone is a page in Sotto's browser, drawn as a phone.** A browser page carries a kind, `device`. An ordinary page has none; the test iPhone's is `iphone`. Everything ADR-0020 gives a page, the phone has too: one thread owns it, it is private until shared, its tasks record steps, evidence and unchecked cases, and Pause stops them. It is not a second browser and not a second grant.
+**The test iPhone is a page in Sotto's browser, drawn as a phone.** A browser page carries a kind, `device`. An ordinary page has none; the test iPhone's is `iphone`. Everything ADR-0020 gives a page, the phone has too: one thread owns it, it is private until shared (or, while the thread has a browser grant, shared as every page is; ADR-0029, October 5 amendment), its tasks record steps, evidence and unchecked cases, and Pause stops them. It is not a second browser and not a second grant.
 
 **The browser grant covers it, because it is the browser.** A tap is a click and a key press is typing, so each asks, or runs under the grant, exactly as those do. A swipe asks nothing, as a scroll does. **Stop** and **Let agents use the browser without asking** reach the phone and the browser together, and the words on both say so. No grant was added, and nothing the grant did not already allow became possible.
 

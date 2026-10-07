@@ -11,6 +11,7 @@ import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { RecordedRpc } from '../fixtures/codexFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 import { resolveModel } from '../../src/shared/modelCatalog'
+import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 
 /** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
 export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }
@@ -48,7 +49,8 @@ export interface AdapterFixture {
     starts(threadId: string): Promise<number>
     stopped(threadId: string): Promise<boolean>
   }
-  skips?: Partial<Record<'uncertain' | 'restart' | 'lazy', string>>
+  /** `sendStages`: the adapter does not yet mark a send's prompt written and acknowledged (#763). */
+  skips?: Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages', string>>
   /**
    * Sotto's side writing on this provider's own client (ADR-0026): script the next answer, and read back
    * what each side call was given. Absent where the provider writes nothing, whose adapter answers null.
@@ -119,6 +121,16 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         expect(added().some(message => message.role === 'user' && message.text === 'Typed in the provider' && message.commandId === undefined)).toBe(true)
       }
       await expect(f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'stale-reply', text: 'Stale reply', expectedLastUserMessageId: 'own-message' })).rejects.toThrow('changed')
+    })
+    it('marks the prompt written and its acknowledgement on the stopwatch lent for the send (#763)', async context => {
+      if (f.skips?.sendStages) { context.skip(); return }
+      const commandId = randomUUID()
+      const stages = new SendStageClock()
+      const endLoan = lendSendStages(commandId, stages)
+      try { expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId, messageId: 'own-message', text: 'Synthetic prompt' })).toEqual({ accepted: true }) }
+      finally { endLoan() }
+      expect([stages.has('written'), stages.has('acknowledged')]).toEqual([true, true])
+      expect(stages.durations().acknowledgementMs).toEqual(expect.any(Number))
     })
     it('creates projects and threads, streams replies, and transitions running to idle', async () => {
       expect((await f.host.snapshot()).projects).toContainEqual({ id: f.projectId, title: 'Project', path: f.root })

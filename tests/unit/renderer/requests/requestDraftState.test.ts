@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
-import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
+import { requestDraftSchema, type RequestDraft, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
 
 it('does not restore a pruned answer when an old submit completes after its request ID is reused', async () => {
   const store = new RequestAnswerStore(() => undefined)
@@ -20,9 +20,93 @@ const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', provider
 const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (text: string, revision = 1, held = false): RequestDraft => requestDraftSchema.parse({ target, selections: { q: selection(text) }, revision, held })
 function gate<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
-function bridge(): RequestDraftBridge { return { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null), save: vi.fn(async value => value), check: vi.fn(async () => null) } }
+function bridge(): RequestDraftBridge {
+  const api: RequestDraftBridge = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(async () => null),
+    status: vi.fn(async target => { const draft = await api.get(target); return draft ? { status: 'draft' as const, draft } : { status: 'missing' as const } }),
+    save: vi.fn(async value => value), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })) }
+  return api
+}
 
 describe('request draft renderer ordering', () => {
+  it.each(['release', 'submit'] as const)('does not save or replay an accepted answer returned by a %s check', async operation => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    api.get = vi.fn(async () => draft('Already delivered', operation === 'release' ? 3 : 2, operation === 'release'))
+    api.check = vi.fn(async () => ({ status: 'accepted' as const, decisionId: 'accepted-attempt', revision: 3 }))
+    await store.connect('thread', 'req', target)
+    const send = vi.fn(async () => ({ error: 'The provider did not confirm this answer.' }))
+    if (operation === 'release') await store.release('thread', 'req')
+    else await store.submit('thread', 'req', null, send)
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'sent', revision: 3, save: 'saved', error: null, saveError: null })
+    expect(api.save).toHaveBeenCalledTimes(operation === 'release' ? 0 : 1)
+    for (const [saved] of vi.mocked(api.save).mock.calls) expect(saved.held).toBe(true)
+    expect(await store.flushForReload()).toBe(true)
+    await store.submit('thread', 'req', null, send)
+    expect(send).toHaveBeenCalledTimes(operation === 'release' ? 0 : 1)
+    expect(api.save).toHaveBeenCalledTimes(operation === 'release' ? 0 : 1)
+  })
+
+  it('preserves a newer unsaved local edit when Check only accepts an older revision', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api)
+    api.get = vi.fn(async () => draft('Older delivered text'))
+    api.save = vi.fn().mockRejectedValue(new Error('Disk unavailable'))
+    await store.connect('thread', 'req', target)
+    store.select('thread', 'req', 'q', selection('New unsent text'))
+    await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('unsaved'))
+    const send = vi.fn(async () => ({ error: null }))
+    await store.submit('thread', 'req', null, send)
+    const revision = store.get('thread', 'req').revision
+    vi.mocked(api.save).mockClear()
+    api.check = vi.fn(async () => ({ status: 'accepted' as const, decisionId: 'older-attempt', revision: 1 }))
+    await store.release('thread', 'req')
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', revision, save: 'unsaved', selections: { q: selection('New unsent text') } })
+    expect(store.canReload()).toBe(false)
+    expect(api.save).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('keeps newer local content when an earlier Check fails after another Check releases it', async () => {
+    const api = bridge(), store = new RequestAnswerStore(() => api), olderCheck = gate<RequestDraftCheckResult>()
+    api.get = vi.fn(async () => draft('Held old text', 3, true))
+    api.check = vi.fn().mockReturnValueOnce(olderCheck.promise).mockResolvedValue({ status: 'editable', draft: draft('Held old text', 4) })
+    await store.connect('thread', 'req', target)
+    const old = store.release('thread', 'req')
+    await vi.waitFor(() => expect(api.check).toHaveBeenCalledOnce())
+    await store.release('thread', 'req')
+    store.select('thread', 'req', 'q', selection('Newest local text'))
+    await store.flush('thread', 'req')
+    const revision = store.get('thread', 'req').revision
+    olderCheck.reject(new Error('That Check was superseded.'))
+    await old
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', revision, save: 'saved',
+      selections: { q: selection('Newest local text') }, saveError: null })
+  })
+
+  it.each(['accepted', 'editable', 'error'] as const)('ignores a delayed %s Check reply after a newer revision starts sending', async outcome => {
+    const api = bridge(), store = new RequestAnswerStore(() => api), oldCheck = gate<RequestDraftCheckResult>(), delivery = gate<{ error: null }>()
+    api.get = vi.fn(async () => draft('Old held text', 3, true))
+    api.check = vi.fn().mockReturnValueOnce(oldCheck.promise).mockResolvedValue({ status: 'editable', draft: draft('Old held text', 4) })
+    await store.connect('thread', 'req', target)
+    const checking = store.release('thread', 'req')
+    await vi.waitFor(() => expect(api.check).toHaveBeenCalledOnce())
+    await store.release('thread', 'req')
+    store.select('thread', 'req', 'q', selection('New answer being sent'))
+    await store.flush('thread', 'req')
+    const send = vi.fn(() => delivery.promise)
+    const sending = store.submit('thread', 'req', null, send)
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+    const revision = store.get('thread', 'req').revision, saves = vi.mocked(api.save).mock.calls.length
+    if (outcome === 'error') oldCheck.reject(new Error('Old Check failed.'))
+    else oldCheck.resolve(outcome === 'accepted' ? { status: 'accepted', decisionId: 'old-attempt', revision: 3 }
+      : { status: 'editable', draft: draft('Old held text', 4) })
+    await checking
+    expect(store.get('thread', 'req')).toMatchObject({ phase: 'sending', revision, save: 'saved', saveError: null,
+      selections: { q: selection('New answer being sent') } })
+    expect(api.save).toHaveBeenCalledTimes(saves)
+    delivery.resolve({ error: null })
+    await sending
+    expect(store.get('thread', 'req').phase).toBe('sent')
+  })
+
   it('retires an accepted form when the same request ID changes questions and returns without an empty snapshot', async () => {
     const api = bridge(), store = new RequestAnswerStore(() => api)
     const first = { id: target.requestId, kind: 'question' as const, text: 'Notes', options: [], questions: target.questions }
@@ -92,7 +176,7 @@ describe('request draft renderer ordering', () => {
 
   it.each(['submit', 'release'] as const)('ignores a retired binding when a delayed %s check resolves or fails', async operation => {
     for (const fails of [false, true]) {
-      const api = bridge(), store = new RequestAnswerStore(() => api), checking = gate<RequestDraft | null>()
+      const api = bridge(), store = new RequestAnswerStore(() => api), checking = gate<RequestDraftCheckResult>()
       await store.connect('thread', 'req', target)
       api.check = vi.fn(() => checking.promise)
       if (operation === 'release') await store.submit('thread', 'req', null, async () => ({ error: null }))
@@ -102,7 +186,7 @@ describe('request draft renderer ordering', () => {
       await store.connect('thread', 'req', target)
       store.select('thread', 'req', 'q', selection('New request text'))
       await store.flush('thread', 'req')
-      if (fails) checking.reject(new Error('Old check failed')); else checking.resolve(null)
+      if (fails) checking.reject(new Error('Old check failed')); else checking.resolve({ status: 'accepted', decisionId: 'old-attempt', revision: 1 })
       await old
       expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', error: null, saveError: null, selections: { q: selection('New request text') } })
     }
@@ -115,7 +199,7 @@ describe('request draft renderer ordering', () => {
     store.prune('thread', [])
     await vi.waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
     expect(store.get('thread', 'req').phase).toBe('unconfirmed')
-    api.check = vi.fn(async () => draft('Kept in main', 2))
+    api.check = vi.fn(async () => ({ status: 'editable' as const, draft: draft('Kept in main', 2) }))
     await store.release('thread', 'req')
     const reading = gate<RequestDraft | null>()
     api.get = vi.fn(() => reading.promise)
@@ -251,7 +335,7 @@ describe('request draft renderer ordering', () => {
     store.prune('thread', [])
     await store.release('thread', 'req')
     expect(store.get('thread', 'req')).toMatchObject({ phase: 'unconfirmed', saveError: 'Still uncertain' })
-    api.check = vi.fn(async () => draft('Held', 4))
+    api.check = vi.fn(async () => ({ status: 'editable' as const, draft: draft('Held', 4) }))
     await store.release('thread', 'req')
     expect(store.get('thread', 'req')).toMatchObject({ phase: 'idle', revision: 4 })
   })
@@ -259,7 +343,7 @@ describe('request draft renderer ordering', () => {
   it('does not mistake a successful delivery check of an older draft for saving newer local text', async () => {
     const api = bridge(); api.get = vi.fn(async () => draft('Older saved text'))
     api.save = vi.fn().mockRejectedValue(new Error('Disk unavailable'))
-    api.check = vi.fn(async () => draft('Older saved text'))
+    api.check = vi.fn(async () => ({ status: 'editable' as const, draft: draft('Older saved text') }))
     const store = new RequestAnswerStore(() => api); await store.connect('thread', 'req', target)
     store.select('thread', 'req', 'q', selection('Newer local text'))
     await vi.waitFor(() => expect(store.get('thread', 'req').save).toBe('unsaved'))

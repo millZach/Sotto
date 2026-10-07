@@ -3,7 +3,8 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
-import { hostPhonesFailure, hostPhonesLabel, TAILSCALE_OPERATOR_COMMAND } from '../../../src/renderer/src/features/settings/HostPhonesDialog'
+import { hostPhonesFailure, hostPhonesLabel } from '../../../src/renderer/src/features/settings/HostPhonesDialog'
+import { TAILSCALE_OPERATOR_COMMAND } from '../../../src/renderer/src/features/settings/hostTailnetWords'
 import type { HostPhonesView, HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../src/shared/hosts'
 import type { PhonesState } from '../../../src/shared/phones'
 
@@ -123,4 +124,53 @@ it('says which ports are taken: only 8443 on a host from before the fallback, bo
   const taken = { phase: 'failed', serve: { status: 'failed', reason: 'port-taken' } } as const
   expect(hostPhonesFailure(phones(taken), 'forge')).toBe('Another app on forge already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on forge, then press Try again.')
   expect(hostPhonesFailure(phones({ ...taken, servePort: null }), 'forge')).toBe('Other apps on forge already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on forge, then press Try again.')
+})
+
+it('shows an admin connection’s Tailscale approval at the top of the dialog while it waits, and opens the page on a press (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { sent } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true, url: 'https://login.tailscale.com/a/l1fixture2b3c' } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByText('Waiting for your approval in Tailscale. forge uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.')).toBeTruthy()
+  await user.click(within(dialog).getByRole('button', { name: 'Open the Tailscale approval page for forge' }))
+  expect(sent()).toContainEqual({ type: 'open-approval', id: REMOTE })
+  expect(within(dialog).getByRole('button', { name: 'Why Tailscale asks' })).toBeTruthy()
+})
+
+it('keeps what it last read on show, with nothing to press, while Tailscale waits to approve a new admin connection (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  fixture({ state: phones() }, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByText(/^Waiting for your approval in Tailscale\./u)).toBeTruthy()
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toBeDisabled()
+})
+
+it('asks SSH’s question for its admin connection in the dialog, and stops signing in on a press (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { sent } = fixture({ state: phones() }, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, prompt: { id: 'prompt-3', kind: 'password', text: 'Password:' } }))
+  const dialog = await open(user)
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toBeDisabled()
+  await user.type(within(dialog).getByLabelText('SSH password'), 'secret{Enter}')
+  expect(sent()).toContainEqual({ type: 'ssh-answer', id: REMOTE, promptId: 'prompt-3', answer: 'secret' })
+  await user.click(within(dialog).getByRole('button', { name: 'Stop signing in' }))
+  expect(sent()).toContainEqual({ type: 'stop-admin-sign-in', id: REMOTE })
+})
+
+it('shows phone access as not read yet until the host is read, with no switch to mislead (ADR-0053)', async () => {
+  const user = userEvent.setup()
+  const { push } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true } }))
+  const dialog = await open(user)
+  // Nothing is known yet: no switch reading off, and each check waits for the first.
+  expect(within(dialog).queryByRole('switch')).toBeNull()
+  const checks = within(dialog).getByRole('list', { name: 'Phone access on forge' })
+  expect(within(checks).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+    'Let phones reach forgeNot read yet. The switch shows once Sotto reaches forge over SSH.',
+    'Tailscale on forgeWaits for the step above.',
+    'Tailscale Serve on port 8443Waits for the step above.',
+    'Paired phonesWaits for the step above.',
+  ])
+  expect(within(checks).getAllByRole('img', { name: 'Not yet' })).toHaveLength(4)
+  // Read: the switch shows as the host has it.
+  push({ state: phones() })
+  expect(within(dialog).getByRole('switch', { name: 'Let phones reach forge' })).toHaveAttribute('aria-checked', 'true')
+  expect(within(dialog).queryByText('Waits for the step above.')).toBeNull()
 })

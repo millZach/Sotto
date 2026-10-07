@@ -52,7 +52,11 @@ export interface PhonesState {
   readonly enabled: boolean
   /** Phone access serves the local host's threads, so it needs the local host running. */
   readonly localHostRunning: boolean
-  /** `starting` checks setup; `on` accepts phones; `failed` stops setup; `cleanup-failed` denies connections while cleanup retries. */
+  /**
+   * `starting` checks setup; `on` means the listener is up and Serve carries it, admitting phones only while `enabled` (a
+   * headless host keeps it up for desktops with phone access off, ADR-0053); `failed` stops setup; `cleanup-failed` denies
+   * connections while cleanup retries.
+   */
   readonly phase: 'off' | 'starting' | 'on' | 'failed' | 'cleanup-failed'
   readonly tailscale: TailscaleCheck
   readonly serve: ServeCheck

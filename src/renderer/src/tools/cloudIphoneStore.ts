@@ -60,12 +60,17 @@ export class CloudIphoneStore {
     this.listen(bridge)
     if (this.watched.has(threadId)) return
     this.watched.add(threadId)
-    void bridge.sessions({ threadId }).then(result => {
-      if (!result.ok) { this.watched.delete(threadId); return }
+    // This computer's bridge refuses a remote host's thread by throwing before it asks anything. That thread has no
+    // sessions here, so a refusal, thrown or rejected, reads as none rather than taking the page down with it.
+    const unwatch = (): void => { this.watched.delete(threadId) }
+    let listing: ReturnType<CloudIphoneBridge['sessions']>
+    try { listing = bridge.sessions({ threadId }) } catch { unwatch(); return }
+    void listing.then(result => {
+      if (!result.ok) { unwatch(); return }
       if (result.value.length === 0) return
       this.sessions.set(threadId, [...result.value].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)))
       this.emit()
-    })
+    }, unwatch)
   }
 
   /** Settings' view of the key, the cap, this month's minutes and recent sessions. */

@@ -13,7 +13,7 @@ import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFl
 import { releaseUrl } from '../../shared/releases'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
 import {
-  BrowserMicrophoneTest,
+  WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
@@ -23,25 +23,51 @@ import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
+import { OpenSystemSettingsButton } from './components/OpenSystemSettingsButton'
+import { platformCopy } from './platformCopy'
+import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import type { SottoPlatform } from '../../shared/platform'
+import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
-import { PersonalChatsView } from './agents/personal/PersonalChatsView'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
 const recoveryMessages = {
+  RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.',
+  ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
+  REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
+  REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
   OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.',
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
   HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
-  ACCESSIBILITY_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation.',
-} as const
+  ACCESSIBILITY_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.',
+  AUTOMATION_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.',
+} as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, string>
+
+// The macOS pane that holds the permission a notice is about.
+const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>> = {
+  ACCESSIBILITY_PERMISSION_REQUIRED: 'accessibility',
+  AUTOMATION_PERMISSION_REQUIRED: 'automation',
+}
+
+function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
+  const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
+    ? platformCopy(platform).openRouterKeyUnreadable
+    : recoveryMessages[notice.code]
+  const pane = recoveryPanes[notice.code]
+  return {
+    id: notice.code,
+    message: pane === undefined ? text : <>{text} <OpenSystemSettingsButton platform={platform} pane={pane} appearance="toast" /></>,
+  }
+}
 
 export interface AppProps {
   readonly createMicrophoneTest?: () => MicrophoneTestController
@@ -79,7 +105,6 @@ function FooterStatus({ navigation, settings, historyKept }: {
 }): ReactNode {
   switch (navigation) {
     case 'agents': return <AgentAppearance />
-    case 'chats': return 'Chats are saved on this computer.'
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
@@ -90,7 +115,7 @@ function FooterStatus({ navigation, settings, historyKept }: {
   }
 }
 
-export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }: AppProps): ReactNode {
+export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
   const voiceCoordinator = useVoiceCoordinatorEnabled()
   const memoryEnabled = useMemoryEnabled()
@@ -224,7 +249,15 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
     else await microphoneReleaseTailRef.current
   }, [commitMicrophoneState, releaseMicrophone])
 
-  const requestMicrophone = useCallback(async (): Promise<void> => {
+  // A test result belongs to one input: choosing another stops the test and
+  // returns it to idle without opening the microphone.
+  const resetMicrophone = useCallback(async (): Promise<void> => {
+    const stopping = stopMicrophone()
+    if (microphoneMountedRef.current) commitMicrophoneState('idle')
+    await stopping
+  }, [commitMicrophoneState, stopMicrophone])
+
+  const requestMicrophone = useCallback(async (selectedDeviceId?: string | null): Promise<void> => {
     const generation = ++microphoneGenerationRef.current
     if (!microphoneMountedRef.current) return
     const previousController = microphoneRef.current
@@ -246,6 +279,9 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       return
     }
     microphoneRef.current = controller
+    const selected = selectedDeviceId !== undefined
+      ? selectedDeviceId
+      : latestSettingsRef.current?.microphoneId
     const outcome = await controller.start((level) => {
       if (
         microphoneMountedRef.current &&
@@ -254,7 +290,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       ) {
         setMicrophoneLevel(level)
       }
-    }, latestSettingsRef.current?.microphoneId ?? undefined, () => {
+    }, selected ? selected : undefined, () => {
       if (
         !microphoneMountedRef.current ||
         microphoneGenerationRef.current !== generation ||
@@ -292,10 +328,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
       </main>
     )
   } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
-    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => ({
-      id: notice.code,
-      message: recoveryMessages[notice.code],
-    }))
+    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform))
     content = (
       <>
         <Onboarding
@@ -308,6 +341,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
           onStopMicrophone={stopMicrophone}
+          onResetMicrophone={resetMicrophone}
           onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
@@ -352,13 +386,6 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
         break
       case 'threads':
         view = threadWorkspace
-        break
-      case 'chats':
-        view = <PersonalChatsView statusText={statusText} onOpenCoordinatorSettings={() => {
-          if (!voiceCoordinator) { app.actions.navigate('settings'); return }
-          setAgentSheet('settings')
-          app.actions.navigate('agents')
-        }} />
         break
       case 'history':
         view = <HistoryView
@@ -411,6 +438,8 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           historyStatus={app.historyStatus}
           onStart={app.actions.start}
           onStop={app.actions.stop}
+          onRetry={app.actions.retry}
+          onDismiss={app.actions.dismiss}
           onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
         />
@@ -461,10 +490,7 @@ export function App({ createMicrophoneTest = () => new BrowserMicrophoneTest() }
           onNotice={message => setThemeNotice(current => ({ id: `theme-${Number(current?.id.slice(6) ?? 0) + 1}`, message }))}
         />
         <ToastRegion messages={[
-          ...app.recoveryNotices.map((notice) => ({
-            id: notice.code,
-            message: recoveryMessages[notice.code],
-          })),
+          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform)),
           ...(themeNotice === null ? [] : [themeNotice]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,

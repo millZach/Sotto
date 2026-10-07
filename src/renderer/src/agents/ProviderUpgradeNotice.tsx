@@ -4,6 +4,14 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './providerRecovery.css'
 
+/**
+ * Whether the coordinator holds a draft recovered after a provider retirement: one that names no thread. This notice
+ * shows it, and the empty Threads page leaves it here.
+ */
+export function isRecoveredDraft(state: AgentState): boolean {
+  return Boolean(state.providerUpgrade && state.draftThreadId === null && (state.draft.trim() || state.draftAttachments?.length))
+}
+
 /** Recovery is a draft review action, never a retry of the retired provider's command. */
 export function ProviderUpgradeNotice({ state, command, threadId, localDraftPresent = false }: {
   readonly state: AgentState; readonly command: AgentConnection['command']; readonly threadId?: string | undefined
@@ -13,7 +21,7 @@ export function ProviderUpgradeNotice({ state, command, threadId, localDraftPres
   if (!upgrade) return null
   const expiresAt = upgrade.migratedAt + 7 * 86_400_000
   const target = state.host.threads.find(thread => thread.id === threadId)
-  const recovered = state.draftThreadId === null && Boolean(state.draft || state.draftAttachments?.length)
+  const recovered = isRecoveredDraft(state)
   return <section className="provider-recovery" aria-label="Recovered work">
     {recovered ? <>
       <p>Your saved draft is kept. Check any earlier send in the previous provider before using it again.</p>

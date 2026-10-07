@@ -90,6 +90,61 @@ final class NewThreadsTests: XCTestCase {
         guard case .listed(let value) = drives else { return XCTFail("Missing drive listing") }
         XCTAssertNil(value.path); XCTAssertEqual(value.folders.first?.path, #"D:\"#)
     }
+    func testANewWorktreeChangesOnlyTheWorkingCopy() throws {
+        let value = try model()
+        let shared = try create(value)
+        let worktree = try Commands.createThread(projectID: "opaque-project", threadID: "00000000-0000-4000-8000-000000000001",
+                                                 model: value, effort: "high", permissionID: "approval-required", mayAnswer: false,
+                                                 workingCopy: .independent)
+        XCTAssertEqual(shared["workingCopy"], .string("shared"))
+        XCTAssertEqual(worktree["workingCopy"], .string("independent"))
+        guard case .object(var sharedFields) = shared, case .object(var worktreeFields) = worktree else { return XCTFail("Not an object") }
+        sharedFields["workingCopy"] = nil; worktreeFields["workingCopy"] = nil
+        XCTAssertEqual(sharedFields, worktreeFields, "Nothing else in the command changes")
+        XCTAssertNil(worktreeFields["baseBranch"], "The host chooses the base branch")
+        XCTAssertNil(worktreeFields["startFromOrigin"])
+        XCTAssertTrue(RemoteCommands.allowed["create-thread"]?.contains("workingCopy") == true)
+    }
+    private func shell(saved: String = "") throws -> Shell {
+        try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h",\#(saved)"host":{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"first","name":"First","provider":"Codex","ready":true,"recommended":true,"reasoningEfforts":["low","high"]},{"id":"second","name":"Second","provider":"Codex","ready":true,"reasoningEfforts":["low","medium","high"]},{"id":"off","name":"Off","provider":"Codex","ready":false}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}"#.utf8))
+    }
+    func testAModelDefaultAppliesOnlyWhereTheComputerOffersIt() throws {
+        let saved = try shell(saved: #""configuration":{"newThreadModelId":"first","newThreadReasoningEffort":"low"},"#)
+        XCTAssertEqual(NewThreads.startingModelID(saved, defaults: NewThreadDefaults(modelID: "second")), "second")
+        XCTAssertEqual(NewThreads.startingModelID(saved, defaults: NewThreadDefaults(modelID: "elsewhere")), "first", "The computer's own choice")
+        XCTAssertEqual(NewThreads.startingModelID(saved, defaults: NewThreadDefaults(modelID: "off")), "first", "A model that isn't ready is not offered")
+        XCTAssertEqual(NewThreads.startingModelID(try shell(), defaults: NewThreadDefaults()), "first")
+    }
+    func testAnEffortDefaultAppliesOnlyWhereTheModelOffersIt() throws {
+        let saved = try shell(saved: #""configuration":{"newThreadReasoningEffort":"low"},"#)
+        let second = try XCTUnwrap(saved.host.models?.first { $0.id == "second" })
+        XCTAssertEqual(NewThreads.startingEffort(second, shell: saved, defaults: NewThreadDefaults(effort: "medium")), "medium")
+        let first = try XCTUnwrap(saved.host.models?.first { $0.id == "first" })
+        XCTAssertEqual(NewThreads.startingEffort(first, shell: saved, defaults: NewThreadDefaults(effort: "medium")), "low", "The computer's own choice")
+    }
+    func testAPermissionDefaultThatGrantsNeedsCanAnswer() throws {
+        let value = try model()
+        let full = NewThreadDefaults(permissionID: "full-access")
+        XCTAssertEqual(NewThreads.startingPermission(value, defaults: full, mayAnswer: true), StartingPermission(id: "full-access", heldBack: false))
+        XCTAssertEqual(NewThreads.startingPermission(value, defaults: full, mayAnswer: false), StartingPermission(id: "approval-required", heldBack: true),
+                       "Without Can answer the thread starts by asking, and says why")
+        XCTAssertEqual(NewThreads.startingPermission(value, defaults: NewThreadDefaults(permissionID: "auto"), mayAnswer: true),
+                       StartingPermission(id: "approval-required", heldBack: false), "A mode this model doesn't offer leaves it asking")
+        XCTAssertEqual(NewThreads.startingPermission(value, defaults: NewThreadDefaults(), mayAnswer: true),
+                       StartingPermission(id: "approval-required", heldBack: false), "No default never selects a grant")
+        let profiles = try model(#", "providerModes":[{"id":"bypass","name":"Bypass"},{"id":"plan","name":"Plan","allows":"nothing"},{"id":"safe","name":"Ask","allows":"nothing"}]"#)
+        XCTAssertEqual(NewThreads.startingPermission(profiles, defaults: NewThreadDefaults(permissionID: "safe"), mayAnswer: false).id, "safe",
+                       "A mode that grants nothing applies without Can answer")
+    }
+    func testWorkingCopyStartsSharedUnlessTheDefaultSaysOtherwise() {
+        XCTAssertEqual(NewThreads.startingWorkingCopy(NewThreadDefaults()), .shared)
+        XCTAssertEqual(NewThreads.startingWorkingCopy(NewThreadDefaults(workingCopy: .independent)), .independent)
+    }
+    func testCatalogUnionListsEachReadyModelOnce() throws {
+        let laptop = try shell().host
+        let forge = try JSONDecoder().decode(HostSnapshot.self, from: Data(#"{"name":"Forge","threads":[],"projects":[],"models":[{"id":"second","name":"Second","provider":"Codex","ready":true},{"id":"third","name":"Third","provider":"Codex","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}"#.utf8))
+        XCTAssertEqual(NewThreads.catalogUnion([laptop, forge]).map(\.id), ["first", "second", "third"])
+    }
     func testCreationMarkersPersistOnlyIdentity() throws {
         let marker = PendingOperation(hostID: UUID().uuidString, clientID: "phone", threadID: UUID().uuidString, kind: "create-project")
         let fields = try JSONDecoder().decode([String: JSONValue].self, from: JSONEncoder().encode(marker))

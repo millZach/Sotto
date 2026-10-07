@@ -62,6 +62,206 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
   })
 
+  it('lists detected inputs on the microphone step and saves the chosen device', async () => {
+    const user = userEvent.setup()
+    const onUpdateSettings = vi.fn(async () => true)
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        onUpdateSettings={onUpdateSettings}
+        microphoneState="idle"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    const picker = await screen.findByRole('combobox', { name: 'Microphone' })
+    expect(screen.getByRole('option', { name: 'System default' })).toBeVisible()
+    expect(screen.getByRole('option', { name: 'MacBook Pro Microphone' })).toHaveValue('mic-builtin')
+    expect(screen.getByRole('option', { name: 'C922 Pro Stream Webcam' })).toHaveValue('mic-c922')
+    await user.selectOptions(picker, 'mic-c922')
+    expect(onUpdateSettings).toHaveBeenCalledWith({ microphoneId: 'mic-c922' })
+  })
+
+  it('opens the microphone only from the test button, never from a picker change', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="idle"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={request}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    const picker = await screen.findByRole('combobox', { name: 'Microphone' })
+    await user.selectOptions(picker, 'mic-builtin')
+    await user.selectOptions(picker, 'mic-c922')
+    expect(request).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    expect(request).toHaveBeenCalledExactlyOnceWith('mic-c922')
+  })
+
+  it('retires the previous input\'s test when another input is chosen, without opening the new one', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn()
+    const reset = vi.fn()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="ready"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={request}
+        onResetMicrophone={reset}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
+    expect(reset).toHaveBeenCalledOnce()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('says so and goes back to the saved microphone when the choice cannot be saved', async () => {
+    const user = userEvent.setup()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        settings={{ ...DEFAULT_SETTINGS, microphoneId: 'mic-builtin' }}
+        onUpdateSettings={vi.fn(async () => false)}
+        microphoneState="idle"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    const picker = await screen.findByRole('combobox', { name: 'Microphone' })
+    await user.selectOptions(picker, 'mic-c922')
+
+    expect(await screen.findByText('Sotto could not save that microphone. The previous one is still selected.')).toBeVisible()
+    expect(picker).toHaveValue('mic-builtin')
+  })
+
+  it('retests the microphone just chosen before that choice is saved', async () => {
+    const user = userEvent.setup()
+    const request = vi.fn()
+    const pending = deferred<boolean>()
+    const mediaDevices = {
+      enumerateDevices: vi.fn(async () => [
+        { deviceId: 'mic-builtin', groupId: 'a', kind: 'audioinput' as const, label: 'MacBook Pro Microphone', toJSON: () => ({}) },
+        { deviceId: 'mic-c922', groupId: 'b', kind: 'audioinput' as const, label: 'C922 Pro Stream Webcam', toJSON: () => ({}) },
+      ]),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    render(
+      <Onboarding
+        {...keyProps}
+        settings={{ ...DEFAULT_SETTINGS, microphoneId: 'mic-builtin' }}
+        onUpdateSettings={() => pending.promise}
+        microphoneState="ready"
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        mediaDevices={mediaDevices}
+        onRequestMicrophone={request}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
+    await user.click(screen.getByRole('button', { name: /retest microphone/i }))
+
+    expect(request).toHaveBeenCalledExactlyOnceWith('mic-c922')
+    pending.resolve(true)
+  })
+
+  it('keeps the microphone test wave running while the stream is open, even in silence', async () => {
+    const user = userEvent.setup()
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="ready"
+        microphoneLevel={0}
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    expect(screen.getByRole('button', { name: /retest microphone/i })).toBeVisible()
+    expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
+  })
+
+  it('keeps the wave still while access is still being asked for', async () => {
+    const user = userEvent.setup()
+    render(
+      <Onboarding
+        {...keyProps}
+        microphoneState="requesting"
+        microphoneLevel={0}
+        shortcut="Control+Shift+Space"
+        platform="darwin"
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    await goToStep(user, 2)
+
+    expect(screen.getByTestId('listening-bars')).not.toHaveAttribute('data-speaking')
+  })
+
   it('requests microphone access, displays live level, and provides Windows recovery guidance', async () => {
     const user = userEvent.setup()
     const request = vi.fn()
@@ -278,5 +478,30 @@ describe('first-run onboarding', () => {
     await user.click(screen.getByRole('button', { name: /continue/i }))
     await user.click(screen.getByRole('button', { name: /continue/i }))
     expect(screen.getByLabelText('Control+Shift+Space')).toBeVisible()
+  })
+
+  it('opens the macOS Microphone pane from the blocked microphone step, by keyboard', async () => {
+    const user = userEvent.setup()
+    const openSystemSettings = vi.fn(async () => ({ ok: true as const }))
+    window.sotto = { openSystemSettings } as never
+    try {
+      render(
+        <Onboarding {...keyProps}
+          microphoneState="denied"
+          shortcut="Control+Shift+Space"
+          platform="darwin"
+          onRequestMicrophone={vi.fn()}
+          onComplete={vi.fn()}
+        />,
+      )
+      await goToStep(user, 2)
+      const open = screen.getByRole('button', { name: 'Open System Settings at Privacy & Security, Microphone' })
+      expect(open).toHaveTextContent('Open System Settings')
+      open.focus()
+      await user.keyboard('{Enter}')
+      expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith('microphone')
+    } finally {
+      delete window.sotto
+    }
   })
 })

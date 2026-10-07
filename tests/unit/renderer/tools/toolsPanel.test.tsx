@@ -596,16 +596,87 @@ describe('shared tools panel', () => {
 
 })
 
-it('keeps remote tools visible without starting local file or terminal actions', async () => {
+const FORGE = '22222222-2222-4222-8222-222222222222'
+/** Every thread on a paired host saved here as forge. */
+function onForge(): AgentState {
   const state = threadsStateFixture()
-  state.host.threads = state.host.threads.map(thread => ({ ...thread, remoteHost: true }))
-  const { store } = setup({ state })
-  const files = vi.spyOn(store.files, 'activate'), terminals = vi.spyOn(store.terminals, 'activate')
+  state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true }]
+  state.host.threads = state.host.threads.map(thread => ({ ...thread, remoteHost: true, hostId: FORGE }))
+  return state
+}
+
+it('keeps a paired host\'s terminal, browser and test iPhone on the host without starting them here', async () => {
+  const { store } = setup({ state: onForge() })
+  const terminals = vi.spyOn(store.terminals, 'activate'), browser = vi.spyOn(store.browser, 'activate')
   act(() => { store.setOpen(true); store.setSurface('terminal') })
   expect(await screen.findByText('Terminal is on the host machine.')).toBeVisible()
   expect(screen.getByRole('tab', { name: 'Terminal' })).toBeVisible()
-  expect(files).not.toHaveBeenCalled(); expect(terminals).not.toHaveBeenCalled()
-  act(() => store.setSurface('files'))
-  expect(screen.getByText('Files is on the host machine.')).toBeVisible()
-  expect(files).not.toHaveBeenCalled()
+  act(() => store.setSurface('browser'))
+  expect(screen.getByText('Browser is on the host machine.')).toBeVisible()
+  act(() => store.setSurface('iphone'))
+  expect(screen.getByText('iPhone is on the host machine.')).toBeVisible()
+  expect(terminals).not.toHaveBeenCalled(); expect(browser).not.toHaveBeenCalled()
+})
+
+it('shows a paired host\'s Files as a local thread\'s, with "on forge" in the footer and no Show in folder (ADR-0025, October 5 amendment)', async () => {
+  const { store, bridge } = setup({ state: onForge() })
+  act(() => { store.setOpen(true); store.setSurface('files') })
+  await userEvent.click(await within(tree()).findByRole('treeitem', { name: 'README.md' }))
+  const preview = await within(panel()).findByRole('region', { name: 'Preview of README.md' })
+  expect(screen.queryByText('Files is on the host machine.')).toBeNull()
+  expect(within(preview).queryByRole('button', { name: /^Show in / })).toBeNull()
+  expect(within(panel()).queryByRole('button', { name: /^Show in .*: working folder$/u })).toBeNull()
+  expect(panel().querySelector('.tools-panel__host')).toHaveTextContent('on forge')
+  expect(panel().querySelector('.tools-panel__copy')).toHaveAttribute('title', expect.stringContaining('on forge'))
+  // Copy path goes to main, which copies the host's own path.
+  await userEvent.click(within(preview).getByRole('button', { name: 'Copy path of README.md' }))
+  expect(bridge!.copyPath).toHaveBeenCalledWith({ threadId: 'visual-gate', path: 'README.md', workspaceId: TOKEN_A })
+  expect(await within(panel()).findByText('Path copied')).toBeInTheDocument()
+  await userEvent.click(within(panel()).getByRole('button', { name: 'Copy working folder path' }))
+  expect(bridge!.copyPath).toHaveBeenLastCalledWith({ threadId: 'visual-gate', path: '', workspaceId: TOKEN_A })
+  expect(bridge!.reveal).not.toHaveBeenCalled()
+})
+
+it('names no host in the footer and keeps Show in folder for a thread on this computer', async () => {
+  const { store } = setup()
+  act(() => { store.setOpen(true); store.setSurface('files') })
+  await findPath('D:\\work\\workshop')
+  expect(panel().querySelector('.tools-panel__host')).toBeNull()
+  expect(within(panel()).getByRole('button', { name: 'Show in File Explorer: working folder' })).toBeVisible()
+})
+
+it('shows what a paired host said when it could not be read, such as the version sentence of a host from before these reads', async () => {
+  const sentence = 'This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto 0.1.31 host in its installation folder, stop the host on that machine, then connect again.'
+  const files = fakeFilesBridge(folders())
+  vi.mocked(files.list).mockResolvedValue({ ok: false, error: { code: 'unavailable', message: sentence } })
+  const subagents: SubagentsBridge = {
+    page: vi.fn<SubagentsBridge['page']>(async () => { throw new Error(`Error invoking remote method 'sotto:subagents:page': Error: ${sentence}`) }),
+    assignments: vi.fn(async ({ threadId, agentId }) => ({ threadId, agentId, assignments: [] })), onChanged: vi.fn(() => () => undefined),
+  }
+  const { store } = setup({ state: onForge(), bridge: files, subagents })
+  act(() => { store.setOpen(true); store.setSurface('files') })
+  expect(await within(panel()).findByText(sentence)).toBeVisible()
+  expect(within(panel()).getByText('Files could not read the working folder.')).toBeVisible()
+  act(() => store.setSurface('agents'))
+  expect(await within(panel()).findByText(sentence)).toBeVisible()
+})
+
+it('reads a paired host\'s agents again when the thread\'s agent counts move, since its host pushes no roster changes', async () => {
+  const state = onForge()
+  state.host.threads = state.host.threads.map(thread => ({ ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY } }))
+  const subagents: SubagentsBridge = {
+    page: vi.fn<SubagentsBridge['page']>(async ({ threadId }) => ({ threadId, revision: 1, rows: [], summary: EMPTY_SUBAGENT_SUMMARY })),
+    assignments: vi.fn(async ({ threadId, agentId }) => ({ threadId, agentId, assignments: [] })),
+    onChanged: vi.fn(() => () => undefined),
+  }
+  const { store, rerender } = setup({ state, subagents })
+  act(() => { store.setOpen(true); store.setSurface('agents') })
+  expect(await screen.findByText('No agents spawned in this thread yet.')).toBeVisible()
+  expect(subagents.page).toHaveBeenCalledOnce()
+  rerender('visual-gate')
+  expect(subagents.page).toHaveBeenCalledOnce()
+  state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, total: 1, working: 1 } } : thread)
+  rerender('visual-gate')
+  await waitFor(() => expect(subagents.page).toHaveBeenCalledTimes(2))
+  expect(subagents.page).toHaveBeenLastCalledWith({ threadId: 'visual-gate' })
 })

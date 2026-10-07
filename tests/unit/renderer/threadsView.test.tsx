@@ -456,6 +456,20 @@ describe('ThreadsView workspace', () => {
     draftThreads.reset()
   })
 
+  it('shows a failed provider connection on the empty workspace and leaves Connect providers usable', () => {
+    const state = stateFixture()
+    state.host.threads = []; state.host.connected = false; state.queue = []; state.activeThreadId = null
+    state.connection = 'disconnected'
+    state.error = 'Install Codex and sign in before connecting this provider.'
+    const view = renderThreads(state)
+    expect(screen.getByRole('alert')).toHaveTextContent('Install Codex and sign in before connecting this provider.')
+    expect(screen.getByRole('button', { name: 'Connect providers' })).toBeEnabled()
+    state.connection = 'connecting'; state.error = null
+    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    expect(screen.getByRole('button', { name: 'Connecting...' })).toBeDisabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('searches settled history while preserving live attention in the sidebar', () => {
     renderThreads(stateFixture())
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: 'codex' } })

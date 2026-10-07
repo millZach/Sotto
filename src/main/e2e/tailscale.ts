@@ -14,8 +14,11 @@ const fixtureSchema = z.object({
   state: z.enum(['running', 'not-running', 'missing']),
   dnsName: z.string().default('laptop-russh2j5.tail5728ca.ts.net'),
   hostName: z.string().default('laptop-russh2j5'),
-  /** Another app's proxy on 8443 (`taken`) or on both 8443 and 10000, or the tailnet not having Serve turned on. */
-  serve: z.enum(['free', 'taken', 'both-taken', 'not-enabled']).default('free'),
+  /**
+   * Another app's proxy on 8443 (`taken`) or on both 8443 and 10000, the tailnet not having Serve turned on, or Serve
+   * refused to an account that is not Tailscale's operator, as Linux refuses it.
+   */
+  serve: z.enum(['free', 'taken', 'both-taken', 'not-enabled', 'denied']).default('free'),
 }).strict()
 
 export function e2eTailscale(profile: string): PhoneAccessTailscale {
@@ -40,7 +43,9 @@ export function e2eTailscale(profile: string): PhoneAccessTailscale {
     status: async (): Promise<TailscaleStatus> => { const fixture = read(); return fixture.state === 'running' ? { state: 'running', dnsName: fixture.dnsName, hostName: fixture.hostName } : { state: fixture.state } },
     serveStatus: async () => config(),
     serve: async (port, loopbackPort): Promise<ServeResult> => {
-      if (read().serve === 'not-enabled') return { ok: false, reason: 'not-enabled', enableUrl: 'https://login.tailscale.com/f/serve?node=e2e' }
+      const serve = read().serve
+      if (serve === 'not-enabled') return { ok: false, reason: 'not-enabled', enableUrl: 'https://login.tailscale.com/f/serve?node=e2e' }
+      if (serve === 'denied') return { ok: false, reason: 'denied' }
       mapped.set(port, loopbackPort)
       return { ok: true }
     },

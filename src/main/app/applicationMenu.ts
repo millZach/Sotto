@@ -22,6 +22,10 @@ export type ApplicationMenuRole =
   | 'selectAll'
   | 'reload'
   | 'toggleDevTools'
+  | 'resetZoom'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'togglefullscreen'
   | 'minimize'
   | 'zoom'
   | 'close'
@@ -43,7 +47,8 @@ export interface ApplicationMenuTemplateOptions {
   readonly appName: string
   readonly includeDeveloperTools: boolean
   readonly onShowSettings: () => void
-  readonly onCheckForUpdates: () => void
+  /** Left out where Sotto cannot update itself, which drops the menu command. */
+  readonly onCheckForUpdates?: () => void
   readonly onShowTurnRecords?: () => void
 }
 
@@ -54,13 +59,13 @@ function separator(): ApplicationMenuItem {
 function appMenu(
   appName: string,
   onShowSettings: () => void,
-  onCheckForUpdates: () => void,
+  onCheckForUpdates: (() => void) | undefined,
 ): ApplicationMenuItem {
   return {
     label: appName,
     submenu: [
       { role: 'about' },
-      { label: 'Check for Updates…', click: onCheckForUpdates },
+      ...(onCheckForUpdates ? [{ label: 'Check for Updates…', click: onCheckForUpdates }] : []),
       separator(),
       { label: 'Settings…', accelerator: 'Command+,', click: onShowSettings },
       separator(),
@@ -92,15 +97,26 @@ function editMenu(): ApplicationMenuItem {
   }
 }
 
-function viewMenu(onShowTurnRecords?: () => void): ApplicationMenuItem {
+// Zoom and full screen match the View menu Electron gives the Windows build by default.
+function viewMenu(includeDeveloperTools: boolean, onShowTurnRecords?: () => void): ApplicationMenuItem {
   return {
     label: 'View',
     submenu: [
-      { role: 'reload' },
-      { role: 'toggleDevTools' },
-      ...(onShowTurnRecords
-        ? [separator(), { label: 'Show recent turn records', click: onShowTurnRecords }]
+      ...(includeDeveloperTools
+        ? [
+            { role: 'reload' as const },
+            { role: 'toggleDevTools' as const },
+            ...(onShowTurnRecords
+              ? [separator(), { label: 'Show recent turn records', click: onShowTurnRecords }]
+              : []),
+            separator(),
+          ]
         : []),
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' },
+      separator(),
+      { role: 'togglefullscreen' },
     ],
   }
 }
@@ -131,7 +147,7 @@ export function buildApplicationMenuTemplate(
   return [
     appMenu(options.appName, options.onShowSettings, options.onCheckForUpdates),
     editMenu(),
-    ...(options.includeDeveloperTools ? [viewMenu(options.onShowTurnRecords)] : []),
+    viewMenu(options.includeDeveloperTools, options.onShowTurnRecords),
     windowMenu(),
   ]
 }

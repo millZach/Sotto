@@ -93,7 +93,7 @@ struct SentPhotoView: View {
                 Image(decorative: image, scale: 1).resizable().scaledToFill()
             } else {
                 ZStack {
-                    Palette.raised
+                    Rectangle().fill(Palette.raised)
                     if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
                     else { ProgressView() }
                 }
@@ -138,12 +138,12 @@ struct PhotoViewer: View {
             Text(opened.photos[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
                 .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.vertical, 12)
         }
-        .background(Palette.canvas.ignoresSafeArea())
+        .background(Palette.canvas)
         // A full-screen cover sits above the root's own cover, so it covers itself while Sotto isn't in front,
         // and the app switcher never shows a photo.
         .overlay {
             if phase != .active {
-                Palette.canvas.ignoresSafeArea().overlay(Text("Sotto").font(.title2).foregroundStyle(Palette.ink))
+                Rectangle().fill(Palette.canvas).ignoresSafeArea().overlay(Text("Sotto").font(.title2).foregroundStyle(Palette.ink))
             }
         }
         .accessibilityAction(.escape) { dismiss() }
@@ -207,10 +207,10 @@ private struct DraftPhotoView: View {
             Group {
                 if let thumbnail = photo.prepared?.thumbnail {
                     Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
-                } else { Palette.surface }
+                } else { Rectangle().fill(Palette.surface) }
             }
             .frame(width: width, height: 88)
-            .overlay { if photo.preparing || photo.staging { ZStack { Palette.canvas.opacity(0.55); ProgressView() } } }
+            .overlay { if photo.preparing || photo.staging { ZStack { Rectangle().fill(Palette.canvas.opacity(0.55)); ProgressView() } } }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
