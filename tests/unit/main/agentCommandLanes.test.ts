@@ -36,8 +36,6 @@ class LaneHost extends E2EAgentHost {
   private readonly held: (() => void)[] = []
   private readonly settledThreads = new Map<string, string | null>()
   hold = false
-  /** What the next thread settings change is refused with, when set. */
-  refuseSettings: string | null = null
   private async pause(label: string): Promise<void> {
     this.started.push(label)
     if (this.hold) await new Promise<void>(done => this.held.push(done))
@@ -49,7 +47,6 @@ class LaneHost extends E2EAgentHost {
   override async snapshot(): Promise<AgentHostSnapshot> { return this.organized(await super.snapshot()) }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'configure-thread' || command.type === 'send') await this.pause(`${command.type}:${command.threadId}`)
-    if (command.type === 'configure-thread' && this.refuseSettings) throw new Error(this.refuseSettings)
     return super.execute(command)
   }
   async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot> {
@@ -116,14 +113,14 @@ describe('thread-scoped command lanes', () => {
   it('gives workspace organization and working-copy actions the same thread lanes', async () => {
     const f = await fixture()
     f.host.hold = true
-    // Settling one thread, retrying another's working copy and opening its folder: two lanes, no waiting between them.
+    // Settling one thread, reading another's working copy and opening a third's folder: three lanes, no waiting.
     const settle = f.control.command({ type: 'settle-thread', threadId: 'docs' })
-    const worktree = f.control.command({ type: 'retry-thread-worktree', threadId: 'workshop' })
+    const worktree = f.control.command({ type: 'refresh-thread-worktree', threadId: 'workshop' })
     const folder = f.control.command({ type: 'open-thread-folder', threadId: 'workshop' })
     await vi.waitFor(() => expect(f.host.holding).toBe(2))
     expect([...f.host.started].sort()).toEqual(['settle:docs', 'worktree:workshop'])
     expect(busyThreads(f.control.get())).toEqual(['docs', 'workshop'])
-    // The folder request is behind its own thread's working-copy retry, not behind the settle.
+    // The folder request is behind its own thread's working-copy refresh, not behind the settle.
     await settled()
     expect(f.host.started).not.toContain('folder:workshop')
     f.host.release()
@@ -222,34 +219,6 @@ describe('prompt admission beside a thread lane', () => {
     expect(f.host.started).toEqual(['send:docs'])
     f.host.hold = false; f.host.release()
     expect((await first).error).toBeNull()
-  })
-
-  it('sends a prompt while a refresh of the same thread’s working copy is still reading it (#766)', async () => {
-    const f = await fixture()
-    f.host.hold = true
-    // The refresh a draft starts: the host orders it against a send itself, so it holds no lane in the coordinator.
-    const refresh = f.control.command({ type: 'refresh-thread-worktree', threadId: 'docs' })
-    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs']))
-    expect(busyThreads(f.control.get())).toEqual([])
-    const send = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Past the refresh' })
-    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs', 'send:docs']))
-    expect(f.control.get().followups ?? []).toEqual([])
-    f.host.hold = false; f.host.release()
-    expect((await refresh).error).toBeNull(); expect((await send).error).toBeNull()
-  })
-
-  it('keeps the error a command on the same thread set while a refresh of its working copy was still reading it', async () => {
-    const f = await fixture()
-    f.host.hold = true
-    const refresh = f.control.command({ type: 'refresh-thread-worktree', threadId: 'docs' })
-    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs']))
-    // A settings change goes ahead of the refresh and fails.
-    f.host.hold = false; f.host.refuseSettings = 'The provider refused these settings.'
-    expect((await f.control.command(options('docs', 'auto'))).error).toBe('The provider refused these settings.')
-    // The refresh finishes after it, and the banner still says what failed.
-    f.host.release()
-    expect((await refresh).error).toBe('The provider refused these settings.')
-    expect(f.control.get().error).toBe('The provider refused these settings.')
   })
 
   it('runs a send made straight after a thread’s settings behind them, in the order they arrived', async () => {

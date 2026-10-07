@@ -287,9 +287,9 @@ describe('the stacked Git action, the way T3 runs it', () => {
   }, 40000)
   it('pushes the commit it just made while a status read begun before the commit is still under way', async () => {
     const f = await fixture()
-    // One Git runner for the reader and the action, so a read the status lane began is one the action could share.
-    // That read is held once Git has told it the folder's state, and let go when the action asks for the folder's
-    // state after its commit.
+    // One Git runner for the reader and the action, so a read another thread on the folder began is one the action
+    // could share. That read is held once Git has told it the folder's state, and let go when the action asks for
+    // the folder's state after its commit.
     let hold: { reached: () => void; go: Promise<void> } | undefined
     let committed = false
     const run: RunGitCommand = async (cwd, command, args, options) => {

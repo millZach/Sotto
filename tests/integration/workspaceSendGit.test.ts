@@ -6,8 +6,8 @@
  * starts them, by `spawn` and `execFile` alike. The checkpoint taken before a turn is not in this host's fixture;
  * it is #764's.
  */
-import { rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { realpath, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/threadWorktrees'
@@ -28,6 +28,9 @@ async function repository(): Promise<SendGitFixture> {
   cleanup.push(async () => { await f.stop(); await f.remove() })
   return f
 }
+
+/** A folder as the file system names it, so two spellings of one folder compare equal. */
+const pathKey = async (path: string) => { const key = resolve(await realpath(path)); return process.platform === 'win32' ? key.toLowerCase() : key }
 
 const record = (f: SendGitFixture) => f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!
 const send = (f: SendGitFixture, index: number) => sendAndCount(f, 'local', index)
@@ -59,32 +62,41 @@ describe('a send and Git', () => {
     await watch.settled(1)
   })
 
-  it('reaches the provider while the remote read a refresh started waits on a slow fetch, and keeps what the send recorded', async () => {
+  it.each([
+    { held: 'fetch', workingCopy: 'independent' },
+    { held: 'GitHub lookup', workingCopy: 'shared' },
+  ] as const)('reaches the provider while the remote half a refresh started waits on a slow $held, which runs outside the thread\'s folder', async ({ held, workingCopy }) => {
     const f = await repository()
-    await startedThread(f, 'local', 'independent')
-    const fetchStarted = deferred(), fetchDone = deferred()
+    await startedThread(f, 'local', workingCopy)
+    // The remote call the test holds, and the folder it was started in.
+    const started = deferred(), done = deferred()
+    let startedIn: string | undefined
     const run: RunGitCommand = async (cwd, command, args, options) => {
-      if (command === 'git' && args[0] === 'fetch') { fetchStarted.release(); await fetchDone.promise; return '' }
-      // Nothing here asks GitHub; the branch's pull request lookup fails quietly, as it does signed out.
-      if (command === 'gh') throw new Error('gh is not used in this test.')
+      const call = command === 'gh' ? 'GitHub lookup' : command === 'git' && args[0] === 'fetch' ? 'fetch' : undefined
+      if (call === held) { startedIn = cwd; started.release(); await done.promise; return command === 'gh' ? '[]' : '' }
+      // Nothing else asks GitHub; a lookup the test does not hold fails quietly, as it does signed out.
+      if (command === 'gh') throw new Error('gh is not used here.')
       return runGitStatusCommand(cwd, command, args, options)
     }
     f.host.setGitStatus(new GitStatusReader({ run, fetchIntervalMs: () => 30_000 }), { pollIntervalMs: () => 0 })
-    // The refresh a draft starts answers once the record is read, and leaves its remote read fetching.
+    // The refresh a draft starts answers once the record is read, and leaves its remote half running.
     await f.host.updateThreadWorktree('local', false)
-    await fetchStarted.promise
-    // Someone switched the worktree's branch in a terminal meanwhile, so this send records a new branch.
-    const worktree = record(f).worktree!
-    await git(worktree.path!, ['switch', '-c', 'feat/terminal'])
+    await started.promise
+    // It runs in the repository's own Git directory: never in a folder a worktree removal could be holding up.
+    const folder = record(f).worktree!.path!
+    const common = (await git(folder, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
+    expect(await pathKey(startedIn!)).toBe(await pathKey(common))
+    if (workingCopy === 'independent') expect((await pathKey(startedIn!)).startsWith(await pathKey(folder))).toBe(false)
+    // Someone switched the folder's branch in a terminal meanwhile, so this send records a new branch.
+    await git(folder, ['switch', '-c', 'feat/terminal'])
     const sent = await send(f, 1)
     expect(sent.heard).toBe(true)
     expect(sent.git).toBe(0)
     expect(record(f).worktree).toMatchObject({ branch: 'feat/terminal', sentBranch: 'feat/terminal' })
-    // The read lands after the send without undoing what the send recorded, and the inspection the send owes,
-    // queued behind it, then reads the branch it went to.
-    fetchDone.release()
-    await vi.waitFor(() => expect(record(f).worktree?.git).toBeDefined())
-    await f.host.updateThreadWorktree('local', false)
+    // Once the remote call is done, the read that takes what it brought lands in the thread's lane after the send and
+    // the inspection the send owes, and finds the branch the send went to.
+    done.release()
+    await vi.waitFor(() => expect(record(f).worktree?.git?.branch).toBe('feat/terminal'))
     expect(record(f).worktree).toMatchObject({ branch: 'feat/terminal', sentBranch: 'feat/terminal' })
   })
 
@@ -118,21 +130,21 @@ describe('a send and Git', () => {
     expect((await send(f, 3)).git).toBe(0)
   })
 
-  it('leaves a ready record as it is when a refresh cannot get Git to confirm the folder, and asks Git before the next send', async () => {
+  it('marks the folder as an error when a refresh finds Git will not take it, as before, and asks Git again on the next send', async () => {
     const f = await repository()
     await startedThread(f, 'local', 'independent')
-    const watch = inspections()
-    watch.inspect.mockRejectedValueOnce(new Error('The working folder no longer belongs to the original repository.'))
+    const folder = record(f).worktree!.path!
+    await git(f.project, ['worktree', 'lock', '--', folder])
     await f.host.updateThreadWorktree('local', false)
-    // A refresh refuses nothing: Git may have failed for a moment, and the folder's own files still say it is sound.
-    expect(record(f).worktree?.status).toBe('ready')
-    expect(record(f).worktree?.error).toBeUndefined()
-    watch.inspect.mockClear()
+    // The pane says what is wrong and offers Retry, rather than showing a ready folder every send is refused from.
+    expect(record(f).worktree).toMatchObject({ status: 'error', error: expect.stringContaining('Git has locked this worktree') })
+    // Unlocked, the next send asks Git before the provider hears it, finds the folder sound, and goes.
+    await git(f.project, ['worktree', 'unlock', '--', folder])
     const sent = await send(f, 1)
-    // The send asked Git before the provider heard it, found the folder sound, and went.
     expect(sent.heard).toBe(true)
     expect(sent.git).toBeGreaterThan(0)
-    expect(watch.inspect).toHaveBeenCalled()
+    expect(record(f).worktree?.status).toBe('ready')
+    expect(record(f).worktree?.error).toBeUndefined()
   })
 
   it('refuses a send into a worktree Git has locked, as it did before', async () => {

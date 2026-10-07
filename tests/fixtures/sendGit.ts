@@ -36,7 +36,7 @@ export async function repositoryWithOrigin(): Promise<SendGitFixture> {
 
 /**
  * A thread on the project whose first send set up its working copy, idle again, with the inspection that send
- * owes finished: a refresh of a folder that is there waits in the thread's status lane behind it.
+ * owes finished: a refresh waits in the thread's lane behind it.
  */
 export async function startedThread(f: SendGitFixture, threadId: string, workingCopy: 'shared' | 'independent'): Promise<void> {
   const snapshot = await f.host.connect()

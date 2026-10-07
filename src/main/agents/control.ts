@@ -1343,27 +1343,6 @@ export class AgentControl {
     return this.shell()
   }
   private readonly skillReads = new Map<string, number>()
-  /**
-   * The window asks for this when a draft begins and when it comes back into focus, so it is the likeliest work
-   * on a thread when Send is pressed. It runs outside the thread's lane: in the host a folder that is there is read
-   * in the thread's status lane, which a send never waits for, and a missing one is put back in the thread's own
-   * lane, which orders it against a send there. Held in this lane it would make the send wait for its Git all the
-   * same (issue #766). Retry, which sets up the folder, keeps the lane.
-   */
-  private async refreshThreadWorktree(threadId: string): Promise<AgentState> {
-    const host = this.dependencies.host
-    // Another command can finish while the refresh reads, and an error it sets is newer than the refresh: only the
-    // error that was showing when the refresh began is the refresh's to clear.
-    const before = { message: this.state.error, cause: this.visibleCommandError }
-    try {
-      this.thread(threadId)
-      if (!host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
-      this.acceptSnapshot(await host.updateThreadWorktree(threadId, false))
-      if (this.state.error === before.message && this.visibleCommandError === before.cause) this.state.error = null
-    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The working copy could not be read.') }
-    this.publish()
-    return this.shell()
-  }
   private async refreshThreadSkills(threadId: string, forceReload = false): Promise<AgentState> {
     const revision = (this.skillReads.get(threadId) ?? 0) + 1
     this.skillReads.set(threadId, revision)
@@ -1643,8 +1622,6 @@ export class AgentControl {
     // disconnect, never on the one global lane, which would lock every other surface while it ran.
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
-    // A refresh holds no lane here: the host orders it against a send itself (issue #766).
-    if (command.type === 'refresh-thread-worktree') return this.refreshThreadWorktree(command.threadId)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
       if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })
@@ -2311,9 +2288,10 @@ export class AgentControl {
         finally { this.earlierMessageBoundaries.delete(command.threadId) }
         return
       }
-      case 'retry-thread-worktree': {
+      case 'retry-thread-worktree':
+      case 'refresh-thread-worktree': {
         if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
-        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, true))
+        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
         return
       }
       case 'configure-thread-working-copy': {
