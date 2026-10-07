@@ -55,7 +55,8 @@ drawing of each kind, and a second sequence diagram with numbered arrows and an 
   Back on the first step stays focusable and does nothing. Read all sits before Show source in the header; Space
   shows every step and the button, still focused, reads Step through, and Space again goes back. Expand opens the viewer and Escape closes it with the focus back on Expand.
 - Under reduced motion the card holds one picture after a step and nothing in it moves for longer than the app's
-  1 ms floor. With motion, the step before fades out under the next, and only the new picture stays.
+  1 ms floor. The cross-fade with motion is checked by `tests/unit/renderer/visualWalkthrough.test.tsx` on a
+  fake clock, not here: it lasts 180 ms, too short to assert on without racing it.
 - At 1600x1000, 1280x800 and 820x560, in light and dark, the flowchart and sequence cards are no wider than the window,
   and their header buttons, walkthrough buttons, picture and words are inside the card. The count, the step's words,
   Read all and the walkthrough's buttons measure at least 4.5:1 on the surface they sit on, and so do Step

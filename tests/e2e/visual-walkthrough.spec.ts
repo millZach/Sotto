@@ -272,10 +272,6 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     expect(await moving(flow)).toEqual([])
     await shot(page, 'flowchart-reduced-motion-1280x800-dark.png')
     await page.emulateMedia({ reducedMotion: null })
-    // With motion, the step before fades out under the next.
-    await flow.getByRole('button', { name: 'Next' }).click()
-    expect(await flow.locator('.visual-card__frames img').evaluateAll(images => images.map(item => (item as HTMLElement).dataset.layer))).toEqual(['leaving', 'arriving'])
-    await expect(flow.locator('.visual-card__frames img')).toHaveCount(1)
 
     // Light and dark at every size, nothing clipped, the walkthrough's words at 4.5:1 on the card.
     await flow.getByRole('button', { name: 'Step 2' }).click()
