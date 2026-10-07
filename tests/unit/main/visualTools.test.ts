@@ -39,6 +39,15 @@ describe('the visualize tool', () => {
     expect(add).toHaveBeenCalledWith('thread', FLOW)
   })
 
+  it('takes an interactive page and tells the agent how the page hears steps and the theme (ADR-0056)', async () => {
+    for (const phrase of ['kind "interactive"', '60,000 characters', 'cannot load anything', 'sotto-visual-step', 'sotto-visual-theme', '--sotto-accent', '--sotto-font', 'between 160 and 640 pixels'])
+      expect(visualizeDefinition.description).toContain(phrase)
+    const { tools, add } = server()
+    const page = { title: 'A queue', kind: 'interactive', source: '<svg width="10" height="10"></svg>', steps: [{ text: 'It fills.', highlight: ['queue'] }] }
+    expect(await said(tools, page)).toEqual({ isError: false, text: 'Shown in the thread as "A queue": an interactive page with 1 step, under your last message. Do not repeat the steps in your reply.' })
+    expect(add).toHaveBeenCalledWith('thread', page)
+  })
+
   it('names the kind with its article and leaves out the steps line when there are none', () => {
     expect(visualShownText('Tables', 'Entity relationship diagram', 0, 'user')).toBe('Shown in the thread as "Tables": an entity relationship diagram, under the user\'s message.')
     expect(visualShownText('Calls', 'Sequence diagram', 1, 'none')).toBe('Shown in the thread as "Calls": a sequence diagram with 1 step, at the start of the thread. Do not repeat the steps in your reply.')

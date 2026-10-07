@@ -16,8 +16,10 @@ export const VISUAL_HIGHLIGHT_MAX = 120
 /** How many visuals one turn may draw, and one thread may hold. */
 export const VISUALS_PER_TURN_MAX = 6
 export const VISUALS_PER_THREAD_MAX = 100
-/** The kinds an agent may send. Interactive pages are a later kind (#794). */
-export const VISUAL_KINDS = ['diagram'] as const
+/** The longest page an interactive visual may be: an agent's own HTML, served sealed (ADR-0056). */
+export const VISUAL_PAGE_SOURCE_MAX = 60_000
+/** The kinds an agent may send: Mermaid source, or its own HTML page run sealed from the network (ADR-0056). */
+export const VISUAL_KINDS = ['diagram', 'interactive'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
 /** Whether this version draws a visual of this kind; a visual of any other kind is shown as its words. */
 export const isKnownVisualKind = (kind: string): kind is VisualKind => (VISUAL_KINDS as readonly string[]).includes(kind)
@@ -32,16 +34,16 @@ const visualStepInputSchema = z.object({
   text: z.string().min(1).max(VISUAL_STEP_TEXT_MAX).refine(notBlank, 'A step needs words.')
     .describe('What this step says, in one or two sentences.'),
   highlight: z.array(z.string().min(1).max(VISUAL_HIGHLIGHT_MAX)).max(VISUAL_HIGHLIGHTS_MAX).optional()
-    .describe('The parts of the diagram this step is about, by name. Unknown names are ignored.'),
+    .describe('The parts of the visual this step is about, by name. A diagram ignores unknown names; an interactive page is sent them with the step.'),
 }).strict()
 
 /** What the `visualize` tool takes. Strict: a field it does not know is refused rather than dropped. */
 export const visualInputSchema = z.object({
   title: z.string().min(1).max(VISUAL_TITLE_MAX).refine(notBlank, 'A visual needs a title.')
     .describe('A short name for the visual, shown above it.'),
-  kind: z.enum(VISUAL_KINDS).describe('diagram: Mermaid source.'),
-  source: z.string().min(1).max(MAX_DIAGRAM_SOURCE_LENGTH)
-    .describe('Mermaid source: a flowchart, sequence, state, class or entity relationship diagram. No init directives or front-matter configuration.'),
+  kind: z.enum(VISUAL_KINDS).describe('diagram: Mermaid source. interactive: an HTML page of your own that never reaches the network.'),
+  source: z.string().min(1).max(VISUAL_PAGE_SOURCE_MAX)
+    .describe(`For a diagram, Mermaid source of up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters: a flowchart, sequence, state, class or entity relationship diagram, with no init directives or front-matter configuration. For an interactive visual, one HTML page of up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters with inline script and style.`),
   intro: z.string().max(VISUAL_INTRO_MAX).optional().describe('One or two sentences shown under the visual, before any steps.'),
   steps: z.array(visualStepInputSchema).max(VISUAL_STEPS_MAX).optional()
     .describe('An ordered walk through the visual, one part at a time.'),
@@ -63,7 +65,7 @@ export const agentVisualSchema = z.object({
 })
 export type AgentVisual = z.infer<typeof agentVisualSchema>
 
-/** A checked call: the visual to keep, and the diagram's kind in words for the reply. Or what was wrong and what to do. */
+/** A checked call: the visual to keep, and its kind in words for the reply. Or what was wrong and what to do. */
 export type VisualCheck =
   | { readonly ok: true; readonly input: VisualInput; readonly label: string }
   | { readonly ok: false; readonly reason: string; readonly next: string }
@@ -94,10 +96,20 @@ function inputProblem(error: z.ZodError): string {
   return `${field} is not in the shape the tool takes.`
 }
 
-/** The schema and the diagram source checks, in that order: the same checks the card makes before drawing. */
+/** What an interactive visual is called in the tool's reply: "an interactive page with 3 steps". */
+export const INTERACTIVE_VISUAL_LABEL = 'Interactive page'
+
+/**
+ * The schema, then for a diagram the source checks, in that order: the same checks the card makes before drawing. An
+ * interactive page is not inspected; it is contained instead (ADR-0056), so what it says cannot reach anything.
+ */
 export function checkVisualInput(args: unknown): VisualCheck {
   const parsed = visualInputSchema.safeParse(args)
   if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
+  if (parsed.data.kind === 'interactive') {
+    if (!notBlank(parsed.data.source)) return { ok: false, reason: 'The source is empty.', next: FIX_IT }
+    return { ok: true, input: parsed.data, label: INTERACTIVE_VISUAL_LABEL }
+  }
   const inspection = inspectDiagramSource(parsed.data.source)
   // The card's words for an oversized diagram say its source is shown instead; a refused call shows nothing, so it
   // says what is too big in its own words.
