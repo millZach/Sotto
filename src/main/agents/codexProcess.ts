@@ -1,5 +1,6 @@
 import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 const OUTPUT_DRAIN_GRACE_MS = 300
@@ -46,8 +47,10 @@ let serials = 0
  * reads) in another, so one ending is only that thread's failure. What a frame means stays with the adapter.
  */
 export class CodexProcess {
-  /** Unique among this run's processes; a request Codex makes is named by it, since each process numbers its own. */
+  /** Unique among this run's processes. */
   readonly serial = ++serials
+  /** Native request counters restart; saved answer identities must also distinguish desktop restarts. */
+  readonly nonce = randomUUID()
   readonly closed: Promise<void>
   private readonly child: ChildProcessWithoutNullStreams
   /** What Sotto asked and is owed an answer to. A waiter outlives its deadline, so a late reply can still be applied. */

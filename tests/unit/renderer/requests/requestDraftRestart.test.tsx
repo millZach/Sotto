@@ -9,8 +9,9 @@ import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('restores structured selections into a fresh renderer store without sending', async () => {
-  let saved: unknown = null
-  const bridge = { get: vi.fn(async () => saved), save: vi.fn(async (draft: unknown) => { saved = structuredClone(draft); return saved }), check: vi.fn() }
+  let saved: RequestDraft | null = null
+  const bridge = { get: vi.fn(async () => saved), status: vi.fn(async () => saved ? { status: 'draft' as const, draft: saved } : { status: 'missing' as const }),
+    save: vi.fn(async (draft: RequestDraft) => { saved = structuredClone(draft); return saved }), check: vi.fn() }
   vi.stubGlobal('sotto', { requestDrafts: bridge })
   Object.defineProperty(window, 'sotto', { configurable: true, value: { requestDrafts: bridge } })
   const request = { id: 'request', kind: 'question' as const, text: 'Choose', options: [], questions: [
@@ -32,8 +33,9 @@ it('restores structured selections into a fresh renderer store without sending',
 it('restores a legacy choice for a thread and sends only its original option ID', async () => {
   const saved = new Map<string, RequestDraft>()
   const bridge: RequestDraftBridge = {
-    list: vi.fn(async () => [...saved.values()]), discard: vi.fn(async () => false), check: vi.fn(async () => null),
+    list: vi.fn(async () => [...saved.values()]), discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })),
     get: vi.fn(async target => saved.get(requestDraftKey(target)) ?? null),
+    status: vi.fn(async target => { const draft = saved.get(requestDraftKey(target)); return draft ? { status: 'draft' as const, draft } : { status: 'missing' as const } }),
     save: vi.fn(async draft => { saved.set(requestDraftKey(draft.target), structuredClone(draft)); return draft }),
   }
   const request = { id: 'legacy', kind: 'question' as const, text: 'Choose the route', options: [{ id: 'native-coast', label: 'Coast (Recommended)' }] }
@@ -54,7 +56,8 @@ it('restores a legacy choice for a thread and sends only its original option ID'
 
 it('keeps a failed legacy choice save visible and blocks sending until it is saved', async () => {
   const bridge: RequestDraftBridge = {
-    list: vi.fn(async () => []), discard: vi.fn(async () => false), check: vi.fn(async () => null), get: vi.fn(async () => null),
+    list: vi.fn(async () => []), discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })), get: vi.fn(async () => null),
+    status: vi.fn(async () => ({ status: 'missing' as const })),
     save: vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => draft),
   }
   const request = { id: 'legacy', kind: 'question' as const, text: 'Choose', options: [{ id: 'coast', label: 'Coast' }] }

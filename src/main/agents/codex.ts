@@ -3,7 +3,7 @@ import { sameMessageContent } from '../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
 import { bracketCompaction } from './compactionActivity'
@@ -130,7 +130,7 @@ type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
 type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
-const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.serial}:${JSON.stringify(id)}`
+const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.nonce}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
 
 export interface CodexAppServerHostOptions {
@@ -180,7 +180,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  })
+  }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
   /**

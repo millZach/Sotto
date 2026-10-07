@@ -5,7 +5,7 @@ import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type P
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { hostClientBridge } from './hostClientBridge'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { createToolsBridges } from './tools'
@@ -343,11 +343,13 @@ export function createSottoBridge(
     }),
     agents: createAgentBridge(renderer, 'main'),
     requestDrafts: Object.freeze<RequestDraftBridge>({
+      onChanged: listener => subscribe(renderer, REQUEST_DRAFT_CHANGED, requestDraftOwnerSchema, listener),
       list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftSchema.array(), requestDraftOwnerSchema.parse(owner)),
       discard: input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, z.boolean(), requestDraftDiscardSchema.parse(input)),
       get: target => invokeParsed(renderer, REQUEST_DRAFT_GET, requestDraftSchema.nullable(), requestDraftTargetSchema.parse(target)),
+      status: target => invokeParsed(renderer, REQUEST_DRAFT_STATUS, requestDraftStatusSchema, requestDraftTargetSchema.parse(target)),
       save: draft => invokeParsed(renderer, REQUEST_DRAFT_SAVE, requestDraftSchema, requestDraftSchema.parse(draft)),
-      check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftSchema.nullable(), requestDraftTargetSchema.parse(target)),
+      check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftCheckResultSchema, requestDraftTargetSchema.parse(target)),
     }),
     platform,
     canFrostWindow,

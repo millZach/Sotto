@@ -14,6 +14,8 @@ export default tseslint.config(
       'artifacts/main-infra-bundle/**',
       'artifacts/pkg-18-e2e/**',
       'artifacts/windows-askpass/**',
+
+      'artifacts/forge-question-ack/**',
       'artifacts/codex-restored-replies/**',
       'artifacts/workspace-picker/**',
       'artifacts/ios-focus/**',
