@@ -8,7 +8,16 @@ export type DictationState =
   | { status: 'processing'; sessionId: string; startedAt: number }
   | { status: 'success'; sessionId: string; text: string; output: 'pasted' | 'copied' }
   | { status: 'cancelled'; sessionId: string }
-  | { status: 'error'; sessionId?: string | undefined; code: string; message: string }
+  | {
+      status: 'error'
+      sessionId?: string | undefined
+      code: string
+      message: string
+      /** The recording is kept in memory and can be sent again (a kept recording). */
+      kept?: boolean | undefined
+      /** The kept recording was tried again and failed again. */
+      retried?: boolean | undefined
+    }
 
 export type WidgetProcessingStage =
   | 'preparing-audio'
@@ -49,7 +58,10 @@ export function isTranscriptionErrorCode(code: string): code is TranscriptionErr
 }
 
 /**
- * What went wrong reaching OpenRouter, in the one wording every surface uses.
+ * What went wrong reaching OpenRouter when nothing was kept, in the one wording
+ * every surface uses. The controller keeps the recording for every
+ * transcription failure today, so TRANSCRIPTION_KEPT_DETAIL is what users read;
+ * these stay for a failure that keeps nothing.
  * The dictate room, the widget and the controller's error state all say the
  * same sentence, so a failure reads the same wherever the user happens to see
  * it, and the recovery it names is only ever changed in one place. Each one
@@ -64,6 +76,22 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
     TRANSCRIPTION_RATE_LIMITED: 'OpenRouter is limiting requests on this key. The recording was not kept. Wait a minute, then dictate again.',
     TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. The recording was not kept. Dictate again in a moment.',
     TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. The recording was not kept. Dictate again.',
+  })
+
+/**
+ * What every surface says when a transcription failure leaves the recording
+ * kept: the same failure, but the recording is still in memory and Try again
+ * sends it, so none of these say it was lost.
+ */
+export const TRANSCRIPTION_KEPT_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
+  Object.freeze({
+    TRANSCRIPTION_UNCONFIGURED: 'Sotto has no OpenRouter API key yet. Your recording is kept until you try again or discard it. Add your key in Settings, then try again.',
+    TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the API key. Your recording is kept until you try again or discard it. Check the key in Settings, then try again.',
+    TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Your recording is kept until you try again or discard it. Check your connection, then try again.',
+    TRANSCRIPTION_BILLING: 'OpenRouter has no credit left for this key. Your recording is kept until you try again or discard it. Add credit at openrouter.ai, then try again.',
+    TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy and turned part of this recording away. Your recording is kept until you try again or discard it.',
+    TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter’s transcription service returned an error. Your recording is kept until you try again or discard it.',
+    TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. Your recording is kept until you try again or discard it.',
   })
 
 /**
@@ -119,6 +147,10 @@ export type WidgetSnapshot = WidgetSnapshotMetadata &
         readonly status: 'error'
         readonly sessionId?: string | undefined
         readonly code: WidgetErrorCode
+        /** Whether the recording is kept, so the widget offers Try again. */
+        readonly kept?: boolean | undefined
+        /** Whether Try again was pressed and failed too, so the pill says so. */
+        readonly retried?: boolean | undefined
       }
   )
 
@@ -134,7 +166,9 @@ export type DictationEvent =
       output?: 'pasted' | 'copied'
     }
   | { type: 'CANCELLED'; sessionId: string }
-  | { type: 'FAILED'; sessionId: string; code: string; message: string }
+  | { type: 'FAILED'; sessionId: string; code: string; message: string; kept?: boolean; retried?: boolean }
+  /** Try again on a kept recording: back to processing for the same session. */
+  | { type: 'RETRIED'; sessionId: string; startedAt: number }
   | { type: 'RESET' }
 
 type ActiveDictationState = Extract<
@@ -229,7 +263,15 @@ export function reduceDictation(
         sessionId: state.sessionId,
         code: event.code,
         message: event.message,
+        ...(event.kept === true ? { kept: true } : {}),
+        ...(event.kept === true && event.retried === true ? { retried: true } : {}),
       }
+
+    case 'RETRIED':
+      if (state.status !== 'error' || state.kept !== true || state.sessionId !== event.sessionId) {
+        return state
+      }
+      return { status: 'processing', sessionId: event.sessionId, startedAt: event.startedAt }
 
     case 'RESET':
       return state.status === 'success' || state.status === 'cancelled' || state.status === 'error'

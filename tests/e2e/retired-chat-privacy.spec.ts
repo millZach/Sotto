@@ -89,7 +89,7 @@ async function expectRedacted({ chatsFile, formsFile, personalDirectory }: Fixtu
   const expectedChat: Record<string, unknown> = expected.chats[0]!
   delete expectedChat.activities
   await expect.poll(async () => JSON.parse(await readFile(chatsFile, 'utf8'))).toEqual(expected)
-  await expect.poll(async () => JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 1, drafts: [unsent, thread] })
+  await expect.poll(async () => JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 2, drafts: [unsent, thread], retirements: [] })
   expect(await readdir(personalDirectory)).not.toContain(crashCopy)
   expect(await readFile(join(personalDirectory, 'codex', 'native.json'), 'utf8')).toBe('Provider-owned history')
 }
@@ -159,7 +159,7 @@ test.describe('retired Chats follow Keep local history', () => {
       const restarted = await launchSotto('success', launched.userData)
       try {
         await expect(restarted.page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
-        expect(JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 1, drafts: [unsent, thread] })
+        expect(JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 2, drafts: [unsent, thread], retirements: [] })
         await expect(restarted.page.getByText(answerNotice, { exact: true })).toHaveCount(0)
         await expect(restarted.page.getByText(notice, { exact: true })).toHaveCount(0)
         await expect(readFile(chatsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
@@ -176,7 +176,7 @@ test.describe('retired Chats follow Keep local history', () => {
       expect(await readFile(chatsFile, 'utf8')).toBe(invalid)
       expect((await readdir(personalDirectory)).sort()).toEqual(['chats.json', crashCopy, 'codex'].sort())
       expect(await readFile(join(personalDirectory, crashCopy), 'utf8')).toBe('Private abandoned snapshot')
-      expect(JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 1, drafts: [unsent, thread] })
+      expect(JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 2, drafts: [unsent, thread], retirements: [] })
       await app.evaluate(({ BrowserWindow }) => {
         BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(820, 560)
       })

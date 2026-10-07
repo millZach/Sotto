@@ -123,7 +123,7 @@ const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 // Each process numbers its own requests, as Codex's do; starting from its own base keeps them apart in requests.jsonl.
-let requestId = process.pid * 1000
+let requestId = read('script.json', {}).requestIdBase ?? process.pid * 1000
 const pending = new Map()
 const heldReplies = new Map()
 /** One agent message item in the newest turn, streamed and completed, as Codex writes before a tool call. */

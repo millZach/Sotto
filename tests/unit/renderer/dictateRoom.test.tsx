@@ -13,7 +13,7 @@ import {
   transcriptStamp,
 } from '../../../src/renderer/src/features/dictate/DictateRoom'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
-import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, type DictationState } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type DictationState } from '../../../src/shared/dictation'
 import type { HistoryEntry } from '../../../src/shared/history'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -180,6 +180,135 @@ describe('DictateRoom', () => {
     expect(alert).toHaveTextContent('Dictation needs attention.')
     expect(alert).toHaveTextContent('No speech was detected. Try again a little closer to the microphone.')
     expect(alert).not.toHaveTextContent('internal')
+  })
+
+  it('offers Try again and Discard recording for a kept recording, from the keyboard', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn(async () => undefined)
+    const onDismiss = vi.fn(async () => undefined)
+    render(<DictateRoom {...baseProps} onRetry={onRetry} onDismiss={onDismiss}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('was not kept')
+    // The shortcut would start over, so it is not shown beside Try again.
+    expect(screen.queryByText(/in any app/)).not.toBeInTheDocument()
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onRetry).toHaveBeenCalledOnce()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Discard recording' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it('says when Try again failed too', () => {
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true, retried: true }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(`Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_RATE_LIMITED}`)
+  })
+
+  it('dismisses an error with Escape, but not from a text field or over a dialog', async () => {
+    const user = userEvent.setup()
+    const onDismiss = vi.fn(async () => undefined)
+    const error = { status: 'error' as const, sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    const { rerender } = render(<>
+      <input aria-label="Search threads" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    // An Escape in the first half second was meant for the work the error replaced.
+    now.mockReturnValue(1_400)
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    now.mockReturnValue(5_000)
+    await user.click(screen.getByRole('textbox', { name: 'Search threads' }))
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    rerender(<>
+      <div role="dialog" aria-label="Open dialog" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    const settle = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    // A native <dialog>, such as the Add project folder browser, owns Escape too.
+    rerender(<>
+      <dialog open aria-label="Choose a folder" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // A non-modal panel, such as the theme editor, does not hold Escape while focus is elsewhere.
+    rerender(<>
+      <div role="dialog" aria-modal="false" aria-label="Theme editor" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledOnce()
+    onDismiss.mockClear()
+
+    // A part of the window that claims Escape, as the client-update card does, keeps it.
+    rerender(<>
+      <button type="button" onKeyDown={(event) => { if (event.key === 'Escape') event.preventDefault() }}>Put away update</button>
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    screen.getByRole('button', { name: 'Put away update' }).focus()
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // Focus on Sotto's own navigation, outside the room, still counts.
+    rerender(<>
+      <button type="button" role="tab" aria-selected="true">Dictate</button>
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    screen.getByRole('tab', { name: 'Dictate' }).focus()
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledOnce()
+
+    rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />)
+    now.mockReturnValue(9_000)
+    screen.getByRole('button', { name: 'Try again' }).focus()
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledTimes(2)
+
+    rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} />)
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledTimes(2)
+    now.mockRestore()
+  })
+
+  it('still points at Settings when a kept recording failed on the key', async () => {
+    const user = userEvent.setup()
+    const onOpenSettings = vi.fn()
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={vi.fn(async () => undefined)} onOpenSettings={onOpenSettings}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_UNAUTHORIZED', message: 'internal', kept: true }} />)
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Open Settings' }))
+    expect(onOpenSettings).toHaveBeenCalledOnce()
+  })
+
+  it('offers Dismiss for an error that keeps nothing, and keeps Start dictation', async () => {
+    const user = userEvent.setup()
+    const onDismiss = vi.fn(async () => undefined)
+    render(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss}
+      dictation={{ status: 'error', sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED)
+    expect(screen.getByRole('button', { name: 'Start dictation' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(onDismiss).toHaveBeenCalledOnce()
   })
 
   it('names the missing key and sends people to Settings instead of a dead pill', async () => {

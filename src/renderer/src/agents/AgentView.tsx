@@ -65,7 +65,7 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     setDraft(value)
     ++writes.current
     const writeVersion = ++version.current
-    void command({ type: 'compose', text: value }).then((result) => {
+    void command({ type: 'compose', threadId: target?.id, text: value }).then((result) => {
       --writes.current
       if (writeVersion === version.current && result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
     })
@@ -75,17 +75,19 @@ export function AgentComposer({ state, command, compact = false, footerControls,
     setAttachments(value)
     ++writes.current
     const writeVersion = ++version.current
-    void command({ type: 'compose', text: draft, attachments: value }).then(result => {
+    void command({ type: 'compose', threadId: target?.id, text: draft, attachments: value }).then(result => {
       --writes.current
       if (writeVersion === version.current && result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
     })
   }
   const send = async (): Promise<void> => {
-    if (readingImages || pausedDraft) return
-    const composed = await command({ type: 'compose', text: draft, attachments })
-    if (composed === null || composed.error !== null) return
-    const result = await command({ type: 'send' })
-    if (result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
+    if (readingImages || pausedDraft || !target) return
+    ++writes.current
+    const sendVersion = ++version.current
+    try {
+      const result = await command({ type: 'send', draft: { threadId: target.id, text: draft, attachments } })
+      if (sendVersion === version.current && result !== null && result.error === null) { setDraft(result.draft); setAttachments(result.draftAttachments ?? []) }
+    } finally { --writes.current }
   }
   const sendDisabled = Boolean(pausedDraft) || state.globalLaneBusy || readingImages || target === undefined || !assigned || (!draft.trim() && !attachments.length) || !isThreadProviderConnected(state.host, target)
   if ((target === undefined || !assigned) && !hasDraft && !pausedDraft) return null

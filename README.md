@@ -39,6 +39,7 @@ If Codex asks for an approval Sotto cannot show, Sotto refuses it and tells you.
 - **Dictation anywhere.** Press `Ctrl+Shift+Space` (`⌃⇧Space` on a Mac), speak, and press it again. The text is copied and can be pasted at your cursor.
 
 Thread drafts save automatically while you type, including while other threads are working.
+For a remote managed thread, the laptop also keeps the latest text and image selections during remote saves. A disconnect or busy host does not replace those edits with an older host draft. Recovery saves the original draft; it never sends an answer automatically.
 
 Standalone Chats, including Talk and Generate prompt, has been removed. With **Keep local history** on, existing `personal-chat/` files and personal records in `request-drafts.json` are preserved without reopening conversations, reconnecting providers or showing old drafts. Turning history off clears Sotto's retained personal transcripts and submitted answers; startup applies the same cleanup when history is already off. Provider-owned history is untouched; nothing is migrated into Threads.
 
@@ -48,6 +49,10 @@ If a Claude Code answer is unconfirmed, **Check again** checks the request witho
 Pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as it is ready. No audio is kept or transcribed.
 
 Settings → Application sets the working-copy default for new threads. Expand **Project defaults** to choose a different default for one project. Previously saved project choices are kept when Sotto updates.
+
+Saved question answers clear when the computer running the thread confirms receiving them. If **Check again** confirms acceptance, the answer stays sent; it does not become an editable draft again. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host. The composer sends its draft in one action. If the host needs an update to save or send that draft, its text stays only in the current window. Update the host before closing the window.
+
+If a provider asks the same question again after restarting, its earlier receipt does not answer the new request. **Check again** reads the provider before allowing a fresh answer. It sends nothing; you choose and send again yourself. An older remote host may need an update to support this check.
 
 New threads open in Unsettled with the defaults saved in Settings → Agents. An existing empty thread is reused only while it is unsettled, its known model, effort and permission choices match those defaults, and no setting change is pending.
 
@@ -85,7 +90,7 @@ If a key saved by an older version of Sotto cannot be moved into the credential 
 
 Your data leaves your computer only when a feature you use needs it, and only to that feature's service:
 
-- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. OpenRouter charges about $0.10 per hour of audio.
+- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. When transcription fails, the recording stays in memory until you try again or discard it. OpenRouter charges about $0.10 per hour of audio.
 - **Optional AI cleanup** sends the finished text to OpenRouter too. It is off until you turn it on.
 - **Your threads** go to the agent's own provider, under that provider's account and data policy. A Sotto host on another machine starts every client signed in there when the host starts, and each talks to its own provider under the account signed in on that machine.
 - **Screenshots** you attach to a thread, or add from Sotto's browser as feedback, are scaled down, in the same format, to 2576 pixels on their longer side before they go anywhere, because that is the most any model Sotto sends them to reads: Claude 4.7 and later read up to 2576 and Codex up to 2048. The pixels past it would cost transfer and storage and change nothing the model reads. Smaller images, animated ones, GIFs, and any the smaller copy would not make smaller in bytes, go as you attached them; nothing is scaled up. **Photos** from the iPhone app are scaled to the same bound on the phone and drawn again without their location or camera details before they go, to the computer that runs the thread only.
@@ -106,6 +111,10 @@ Your data leaves your computer only when a feature you use needs it, and only to
 Thread history keeps long replies in full. An event that cannot be saved raises a notice on its thread while other valid events continue to save. Storage failures retry. Dictation history stays on your computer, and you can turn it off. Older dictation transcripts can still be deleted while history is off. If completed dictation cannot reach the clipboard, Dictate keeps selectable text with **Copy text** until you dismiss it or close Sotto. With history off, that recovery stays in memory. Screenshots you attach to a thread, and photos from the iPhone app, are kept as files on the computer that runs the thread, only while an unsent draft, a queued message or a recent message's preview needs them and for an hour after; with history off, new ones stay in memory and are not written to disk. Keys are kept in your operating system's credential store. If Sotto cannot read its saved keys, it preserves the encrypted file and shows a notice. Add your keys again in Settings. Turn checkpoints follow Keep local history. Turning it off or forgetting a thread deletes its saved checkpoints at once, along with file backups that no other checkpoint needs. Turning history off, forgetting a thread and the age and size limits keep unfinished revert records and their file backups until recovery finishes. Completed checkpoints expire after 30 days; checkpoint storage is capped at 500 MB, removing the oldest checkpoints and recovery backups first. Turning history back on starts fresh checkpoints.
 
 While **Keep local history** is on, the desktop keeps a startup copy of your threads so Threads can show them before providers reconnect. The copy is not encrypted. For each thread it holds your last message and the last reply, up to 2,000 characters each, and any request waiting for your answer, including the command a permission request would run. Turning history off deletes the copy and stops new ones.
+
+The same setting controls the laptop's recovery copy of unsent remote managed drafts in `remote-drafts.json`. It contains text, image handles and the original question binding, not image bytes. With history off, that copy stays in memory and does not survive quitting. Turning history off clears its disk copies. If a remote image is no longer available, Sotto keeps the text and asks you to attach the image again before sending.
+
+Recovery keeps a conflicting laptop edit for review instead of replacing newer host text. A Send whose result is unknown stays held until exact confirmation; reconnecting never sends it again. Unreadable local draft storage leaves remote connections available and preserves the original file while history is on. Forget still revokes and removes a host if optional draft cleanup fails; adding it again does not recover its forgotten drafts.
 
 Diagnostic turn records keep event names, IDs, outcomes, fixed failure codes and timings only. They never keep prompt, answer or error text. On upgrade, Sotto removes text from existing turn records before starting the coordinator. If that rewrite cannot finish, Sotto deletes the diagnostic file; if deletion also fails, it asks you to close apps using the file and restart.
 

@@ -1,10 +1,11 @@
 import { z } from 'zod'
-import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../../shared/requestDrafts'
+import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../../shared/requestDrafts'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 export function registerRequestDraftIpc(ipc: IpcMainAdapter, service: RequestDraftBridge, senders: () => readonly TrustedIpcSender[]): () => void {
   for (const [channel, schema, operation] of [
     [REQUEST_DRAFT_GET, requestDraftTargetSchema, (input: unknown) => service.get(requestDraftTargetSchema.parse(input))],
+    [REQUEST_DRAFT_STATUS, requestDraftTargetSchema, (input: unknown) => service.status(requestDraftTargetSchema.parse(input))],
     [REQUEST_DRAFT_SAVE, requestDraftSchema, (input: unknown) => service.save(requestDraftSchema.parse(input))],
     [REQUEST_DRAFT_CHECK, requestDraftTargetSchema, (input: unknown) => service.check(requestDraftTargetSchema.parse(input))],
     [REQUEST_DRAFT_LIST, requestDraftOwnerSchema, (input: unknown) => service.list(requestDraftOwnerSchema.parse(input))],
@@ -14,5 +15,5 @@ export function registerRequestDraftIpc(ipc: IpcMainAdapter, service: RequestDra
     const [input] = z.tuple([schema]).parse(args)
     return operation(input)
   })
-  return () => { for (const channel of [REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD]) ipc.removeHandler(channel) }
+  return () => { for (const channel of [REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD]) ipc.removeHandler(channel) }
 }

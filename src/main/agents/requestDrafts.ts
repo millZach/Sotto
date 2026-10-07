@@ -5,13 +5,28 @@ import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
   requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
-  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard,
+  type RequestDraft, type RequestDraftOwner, type RequestDraftTarget, type RequestDraftDiscard, type RequestDraftCheckResult, type RequestDraftStatus,
 } from '../../shared/requestDrafts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
-const savedSchema = z.object({ version: z.literal(1), drafts: z.array(requestDraftSchema) }).strict()
+const retirementSchema = z.object({ owner: requestDraftOwnerSchema, requestId: requestDraftTargetSchema.shape.requestId,
+  questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u), decisionId: requestDraftSchema.shape.decisionId.unwrap(),
+  revision: requestDraftSchema.shape.revision }).strict()
+type Retirement = z.infer<typeof retirementSchema>
+const retirementKey = (item: Pick<Retirement, 'owner' | 'requestId' | 'questionsDigest'>): string =>
+  JSON.stringify([requestDraftOwnerKey(item.owner), item.requestId, item.questionsDigest])
+const savedSchema = z.object({ version: z.literal(2), drafts: z.array(requestDraftSchema),
+  retirements: z.array(retirementSchema).max(512) }).strict()
   .refine(saved => new Set(saved.drafts.map(draft => requestDraftKey(draft.target))).size === saved.drafts.length, 'Draft identities must be unique.')
+  .refine(saved => new Set(saved.retirements.map(retirementKey)).size === saved.retirements.length, 'Retirement identities must be unique.')
 type Saved = z.infer<typeof savedSchema>
+const loadedSchema = z.union([savedSchema, z.object({ version: z.literal(1), drafts: savedSchema.shape.drafts,
+  // The unshipped v1 extension is read strictly too, so its accepted records survive this migration.
+  retirements: savedSchema.shape.retirements.default([]) }).strict()])
+const parseSaved = (input: unknown): Saved => {
+  const saved = loadedSchema.parse(input)
+  return savedSchema.parse({ ...saved, version: 2 })
+}
 const unreadable = 'Answer draft storage could not be read. The original request-drafts.json is unchanged. Repair it and restart before saving answers.'
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
 const privacyFailed = 'Local history is off, but retired submitted answers could not be removed. Nothing was changed. Restore local storage access and save Settings again.'
@@ -31,22 +46,23 @@ export interface RequestDraftOwnerState {
  * It never submits an answer. Native delivery and request liveness remain main-owned evidence.
  */
 export class RequestDraftService {
-  private saved: Saved = { version: 1, drafts: [] }
+  private saved: Saved = { version: 2, drafts: [], retirements: [] }
   private readonly store: Pick<AtomicJsonStore<Saved>, 'write'>
   private readonly path: string
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
+  private readonly listeners = new Set<(owner: RequestDraftOwner) => void>()
 
   constructor(directory: string, private readonly lookup: (owner: RequestDraftOwner) => RequestDraftOwnerState | undefined,
-    private readonly refresh: (owner: RequestDraftOwner) => Promise<void>,
+    private readonly refresh: (target: RequestDraftTarget, decisionId?: string) => Promise<void>,
     store?: Pick<AtomicJsonStore<Saved>, 'write'>) {
     this.path = join(directory, 'request-drafts.json')
-    this.store = store ?? new AtomicJsonStore(this.path, savedSchema.parse, () => ({ version: 1, drafts: [] }))
+    this.store = store ?? new AtomicJsonStore(this.path, parseSaved, () => ({ version: 2, drafts: [], retirements: [] }))
   }
 
   async start(): Promise<void> {
     // Do not use read()/peek(): invalid input must never become an empty, writable store or a plaintext backup.
-    try { this.saved = savedSchema.parse(JSON.parse(await readFile(this.path, 'utf8'))) }
+    try { this.saved = parseSaved(JSON.parse(await readFile(this.path, 'utf8'))) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.storageError = unreadable }
     if (this.storageError) return
     // A process killed during atomic replacement can leave its old unsent snapshot beside the file.
@@ -68,14 +84,73 @@ export class RequestDraftService {
     return work
   }
 
-  private async commit(drafts: RequestDraft[]): Promise<void> {
-    const next = savedSchema.parse({ version: 1, drafts })
+  onChanged(listener: (owner: RequestDraftOwner) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  private async commit(drafts: RequestDraft[], retirements = this.saved.retirements): Promise<void> {
+    const next = savedSchema.parse({ version: 2, drafts, retirements })
+    const before = new Map(this.saved.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
+    const after = new Map(next.drafts.map(draft => [requestDraftKey(draft.target), JSON.stringify(draft)]))
+    const changed = new Map<string, RequestDraftOwner>()
+    for (const draft of [...this.saved.drafts, ...next.drafts]) {
+      const key = requestDraftKey(draft.target)
+      if (before.get(key) === after.get(key)) continue
+      const { kind, ownerId, providerId } = draft.target
+      const owner = { kind, ownerId, providerId }
+      changed.set(requestDraftOwnerKey(owner), owner)
+    }
+    const beforeRetirements = new Map(this.saved.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
+    const afterRetirements = new Map(next.retirements.map(item => [retirementKey(item), JSON.stringify(item)]))
+    for (const item of [...this.saved.retirements, ...next.retirements]) {
+      const key = retirementKey(item)
+      if (beforeRetirements.get(key) !== afterRetirements.get(key)) changed.set(requestDraftOwnerKey(item.owner), item.owner)
+    }
     try { await this.store.write(next) } catch { throw new Error(saveFailed) }
     this.saved = next
+    for (const owner of changed.values()) for (const listener of this.listeners) {
+      // A failed window notification cannot turn a successful durable write into a failed save.
+      try { listener(owner) } catch { /* the window lists again when it mounts */ }
+    }
   }
 
   private current(target: RequestDraftTarget): RequestDraft | undefined {
     return this.saved.drafts.find(draft => requestDraftKey(draft.target) === requestDraftKey(target))
+  }
+
+  private retirement(target: RequestDraftTarget): Retirement | undefined {
+    const key = retirementKey({ owner: target, requestId: target.requestId, questionsDigest: requestQuestionsDigest(target.questions) })
+    return this.saved.retirements.find(item => retirementKey(item) === key)
+  }
+
+  private reoffered(target: RequestDraftTarget): boolean {
+    const request = this.lookup(target)?.requests.find(item => item.id === target.requestId
+      && sameRequestQuestions(requestDraftQuestions(item), target.questions))
+    return request?.delivery === 'uncertain' || request?.answerRetryReady === true
+  }
+
+  private currentStatus(target: RequestDraftTarget): RequestDraftStatus {
+    const draft = this.current(target)
+    if (draft) return { status: 'draft', draft: structuredClone(draft) }
+    const accepted = this.retirement(target)
+    if (accepted && this.reoffered(target)) return { status: 'unconfirmed', revision: accepted.revision }
+    return accepted ? { status: 'accepted', decisionId: accepted.decisionId, revision: accepted.revision } : { status: 'missing' }
+  }
+
+  private async retire(drafts: RequestDraft[]): Promise<void> {
+    const retirements = new Map(this.saved.retirements.map(item => [retirementKey(item), item]))
+    for (const draft of drafts) {
+      const { kind, ownerId, providerId, requestId } = draft.target
+      const item: Retirement = { owner: { kind, ownerId, providerId }, requestId,
+        questionsDigest: requestQuestionsDigest(draft.target.questions), decisionId: draft.decisionId!, revision: draft.revision }
+      const key = retirementKey(item)
+      retirements.delete(key)
+      retirements.set(key, item)
+    }
+    const retired = new Set(drafts)
+    // Acceptance metadata and deletion of submitted words share one durable replacement.
+    await this.commit(this.saved.drafts.filter(draft => !retired.has(draft)), [...retirements.values()].slice(-512))
   }
 
   private offered(target: RequestDraftTarget): boolean {
@@ -89,11 +164,17 @@ export class RequestDraftService {
    * Disappearance, changed definitions and legacy receipts are recovery evidence, not acceptance. */
   reconcile(): Promise<void> {
     return this.serial(async () => {
-      const drafts = this.saved.drafts.filter(draft => draft.target.kind !== 'thread' || !draft.held || !draft.decisionId
-        || !this.lookup(draft.target)?.completed?.some(item => item.requestId === draft.target.requestId
+      const accepted = this.saved.drafts.filter(draft => draft.target.kind === 'thread' && draft.held && draft.decisionId && !this.reoffered(draft.target)
+        && this.lookup(draft.target)?.completed?.some(item => item.requestId === draft.target.requestId
           && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
-      if (drafts.length !== this.saved.drafts.length) await this.commit(drafts)
+      if (accepted.length) await this.retire(accepted)
     })
+  }
+
+  /** Main's read-only recovery work, bounded by saved drafts rather than the host's thread archive. */
+  heldThreadAnswers(): Promise<RequestDraft[]> {
+    return this.serial(async () => structuredClone(this.saved.drafts.filter(draft => draft.target.kind === 'thread'
+      && draft.held && draft.decisionId)))
   }
 
   /** Retired submitted answers follow local history; unsent forms and thread recovery keep their own retention. */
@@ -160,11 +241,19 @@ export class RequestDraftService {
     })
   }
 
+  status(input: RequestDraftTarget): Promise<RequestDraftStatus> {
+    const target = requestDraftTargetSchema.parse(input)
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    return this.serial(async () => this.currentStatus(target))
+  }
+
   save(input: RequestDraft): Promise<RequestDraft> {
     const draft = requestDraftSchema.parse(input)
     if (draft.target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       const previous = this.current(draft.target), state = this.lookup(draft.target)
+      const accepted = this.retirement(draft.target)
+      if (accepted && draft.revision <= accepted.revision) throw new Error('This answer revision was already accepted. Reload the current answer before saving.')
       if (draft.decisionId !== previous?.decisionId) throw new Error('Delivery identity is owned by main. Reload this answer before saving.')
       if (!state) throw new Error('This answer belongs to a request that is no longer available.')
       // Native liveness gates a held submission below, not local text retention. Even the first
@@ -183,22 +272,77 @@ export class RequestDraftService {
     })
   }
 
-  async check(input: RequestDraftTarget): Promise<RequestDraft | null> {
+  async check(input: RequestDraftTarget): Promise<RequestDraftCheckResult> {
     const target = requestDraftTargetSchema.parse(input)
     if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    // Capture the attempt before refresh can publish acceptance and reconcile its saved hold.
+    const initial = await this.serial(async () => ({ status: this.currentStatus(target),
+      reoffered: this.reoffered(target), retirement: this.retirement(target),
+      retryReady: this.lookup(target)?.requests.some(item => item.id === target.requestId && item.answerRetryReady === true
+        && sameRequestQuestions(requestDraftQuestions(item), target.questions)) === true,
+      completed: structuredClone(this.lookup(target)?.completed ?? []) }))
+    const observed = initial.status
+    if (observed.status === 'accepted') return observed
+    const captured = observed.status === 'draft' ? observed.draft : null
     // A renderer's cached snapshot/observe subscription is not a fresh native read.
     // The read can publish snapshots, so it must run outside the disk-write lane.
-    await this.refresh(target)
+    let refreshFailure: { error: unknown } | undefined
+    try { await this.refresh(target, captured?.decisionId) }
+    catch (error) { refreshFailure = { error } }
     return this.serial(async () => {
-      if (!this.offered(target)) throw new Error('This answer is still unconfirmed. Reconnect and check the original request.')
       const previous = this.current(target)
-      if (!previous || !sameRequestQuestions(previous.target.questions, target.questions)) return null
-      if (!previous.held) return structuredClone(previous)
+      if (previous && (!captured || previous.revision !== captured.revision
+        || previous.decisionId !== captured.decisionId || previous.held !== captured.held)) {
+        if (refreshFailure) throw refreshFailure.error
+        throw new Error('A newer answer draft is saved. Check the current answer again.')
+      }
+      const accepted = this.retirement(target)
+      const expected = captured ?? initial.retirement
+      if (!previous && accepted && expected && accepted.revision >= expected.revision
+        && (accepted.revision !== expected.revision || accepted.decisionId !== expected.decisionId)) {
+        if (refreshFailure) throw refreshFailure.error
+        throw new Error('A newer answer draft is saved. Check the current answer again.')
+      }
+      const matchesCaptured = (item: { requestId: string; decisionId?: string; questionsDigest?: string }): boolean =>
+        !!captured?.decisionId && item.requestId === target.requestId && item.decisionId === captured.decisionId
+        && item.questionsDigest === requestQuestionsDigest(target.questions)
+      const state = this.lookup(target)
+      // Uncertainty may still describe this held write. Newly arriving proof can settle that
+      // exact attempt once its native request closes, even when the read then fails. A live
+      // re-ask, an explicit retry-ready marker and proof known before Check retain the new-offer boundary instead.
+      const completedDuringRead = captured?.held && captured.decisionId && !initial.retryReady && !initial.completed.some(matchesCaptured)
+        && initial.retirement?.decisionId !== captured.decisionId
+        && !state?.requests.some(item => item.id === target.requestId && sameRequestQuestions(requestDraftQuestions(item), target.questions))
+        && (state?.completed?.some(matchesCaptured) || accepted?.decisionId === captured.decisionId && accepted.revision === captured.revision)
+      const reoffered = (initial.reoffered || this.reoffered(target)) && !completedDuringRead
+      if (!reoffered && !previous && accepted && (!captured || accepted.revision >= captured.revision)) {
+        if (!captured && refreshFailure) throw refreshFailure.error
+        return { status: 'accepted', decisionId: accepted.decisionId, revision: accepted.revision }
+      }
+      if (!reoffered && captured?.held && captured.decisionId
+        && this.lookup(target)?.completed?.some(item => item.requestId === target.requestId
+          && item.decisionId === captured.decisionId && item.questionsDigest === requestQuestionsDigest(target.questions))) {
+        await this.retire([previous ?? captured])
+        return { status: 'accepted', decisionId: captured.decisionId, revision: captured.revision }
+      }
+      // A failed fresh read can confirm only exact acceptance; it never releases an editable hold.
+      if (refreshFailure) throw refreshFailure.error
+      if (!this.offered(target)) throw new Error('This answer is still unconfirmed. Reconnect and check the original request.')
+      if (!previous) {
+        const floor = accepted?.revision ?? initial.retirement?.revision
+        if (reoffered && floor !== undefined) {
+          const next: RequestDraft = { target, revision: floor + 1, selections: {}, held: false }
+          await this.commit([...this.saved.drafts, next])
+          return { status: 'editable', draft: structuredClone(next) }
+        }
+        return { status: 'editable', draft: null }
+      }
+      if (!previous.held) return { status: 'editable', draft: structuredClone(previous) }
       const { decisionId, ...editable } = previous
       void decisionId
       const next = { ...editable, revision: previous.revision + 1, held: false }
       await this.commit(this.saved.drafts.map(item => item === previous ? next : item))
-      return structuredClone(next)
+      return { status: 'editable', draft: structuredClone(next) }
     })
   }
 }
