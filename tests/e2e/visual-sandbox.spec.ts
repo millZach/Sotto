@@ -164,7 +164,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     const frame = card.locator('.interactive-visual')
     await expect(frame).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
 
-    // The page drew and ran its script, cannot see Sotto's bridge, and was given the read-all step and the theme.
+    // The page drew and ran its script, cannot see Sotto's bridge, and was given the walkthrough's first step and the theme.
     await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
     // The walkthrough opens on step 1, sent once the page's script has run and again once its load finished.
     await expect.poll(async () => (JSON.parse((await guestRecord(launched!)).steps ?? '[]') as unknown[]).length).toBeGreaterThan(0)
