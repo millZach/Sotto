@@ -32,7 +32,6 @@ describe('checking a visualize call', () => {
     [{ ...valid, title: '   ' }, 'The title is empty.'],
     [{ ...valid, title: 'x'.repeat(121) }, 'The title is too long. It takes up to 120 characters.'],
     [{ ...valid, kind: 'chart' }, 'The kind must be one of: diagram, interactive.'],
-    [{ ...valid, source: 'x'.repeat(60_001) }, 'The source is too long. It takes up to 60,000 characters.'],
     [{ ...valid, kind: 'interactive', source: ' \n ' }, 'The source is empty.'],
     [{ ...valid, intro: 'x'.repeat(2_001) }, 'The intro is too long. It takes up to 2,000 characters.'],
     [{ ...valid, steps: Array.from({ length: 13 }, () => ({ text: 'Step' })) }, 'There are too many steps. Send up to 12.'],
@@ -100,6 +99,13 @@ describe('checking an interactive visual (ADR-0057)', () => {
     expect(checkVisualInput({ title: 'Pie words', kind: 'interactive', source: 'pie title Pets' }).ok).toBe(true)
     const long = checkVisualInput({ ...valid, source: `flowchart LR\n${'  A --> B\n'.repeat(1_300)}` })
     expect(long).toMatchObject({ ok: false, reason: 'This diagram is too long for Sotto to draw: it takes up to 12,000 characters.' })
+  })
+
+  it('names the limit of the kind that was sent when a source is too long', () => {
+    expect(checkVisualInput({ ...valid, source: 'x'.repeat(60_001) })).toEqual({ ok: false,
+      reason: 'This diagram is too long for Sotto to draw: it takes up to 12,000 characters.', next: 'Split it into smaller diagrams, or explain in text.' })
+    expect(checkVisualInput({ title: 'A page', kind: 'interactive', source: 'x'.repeat(60_001) })).toEqual({ ok: false,
+      reason: 'The page is too long. An interactive page takes up to 60,000 characters.', next: 'Fix it and call visualize again, or explain in text.' })
   })
 })
 

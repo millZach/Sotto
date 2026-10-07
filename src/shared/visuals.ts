@@ -107,11 +107,15 @@ function inputProblem(error: z.ZodError): string {
     if (inner?.code === 'unrecognized_keys') return `Step ${step} has fields it does not take: ${inner.keys.join(', ')}.`
     return `Step ${step} needs text of 1 to ${VISUAL_STEP_TEXT_MAX.toLocaleString('en-US')} characters, as a sentence or as { "text": "..." }.`
   }
+  if (issue.code === 'too_big' && issue.path[0] === 'source') return `The page is too long. An interactive page takes up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters.`
   if (issue.code === 'too_big') return issue.path[0] === 'steps' ? `There are too many steps. Send up to ${VISUAL_STEPS_MAX}.`
     : `${field} is too long. It takes up to ${Number(issue.maximum).toLocaleString('en-US')} characters.`
   if (issue.code === 'too_small' || issue.code === 'custom') return `${field} is empty.`
   return `${field} is not in the shape the tool takes.`
 }
+
+const diagramTooLong = (): VisualRefusal => ({ ok: false, next: SPLIT_IT,
+  reason: `This diagram is too long for Sotto to draw: it takes up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters.` })
 
 /** What an interactive visual is called in the tool's reply: "an interactive page with 3 steps". */
 export const INTERACTIVE_VISUAL_LABEL = 'Interactive page'
@@ -122,7 +126,12 @@ export const INTERACTIVE_VISUAL_LABEL = 'Interactive page'
  */
 export function checkVisualInput(args: unknown): VisualCheck {
   const parsed = visualInputSchema.safeParse(args)
-  if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
+  if (!parsed.success) {
+    // The schema holds every source to a page's limit; a diagram past it is refused with a diagram's own limit.
+    const kind = args !== null && typeof args === 'object' && 'kind' in args ? args.kind : undefined
+    if (kind !== 'interactive' && parsed.error.issues[0]?.code === 'too_big' && parsed.error.issues[0].path[0] === 'source') return diagramTooLong()
+    return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
+  }
   if (parsed.data.kind === 'interactive') {
     if (!notBlank(parsed.data.source)) return { ok: false, reason: 'The source is empty.', next: FIX_IT }
     return { ok: true, input: parsed.data, label: INTERACTIVE_VISUAL_LABEL }
@@ -130,8 +139,7 @@ export function checkVisualInput(args: unknown): VisualCheck {
   const inspection = inspectDiagramSource(parsed.data.source)
   // The card's words for an oversized diagram say its source is shown instead; a refused call shows nothing, so it
   // says what is too big in its own words.
-  if (inspection.exceeds === 'length') return { ok: false, next: SPLIT_IT,
-    reason: `This diagram is too long for Sotto to draw: it takes up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters.` }
+  if (inspection.exceeds === 'length') return diagramTooLong()
   if (inspection.exceeds === 'work') return { ok: false, next: SPLIT_IT,
     reason: 'This diagram is too large for Sotto to draw: it has more parts than Sotto draws safely.' }
   if (inspection.problem) return { ok: false, reason: `The diagram cannot be drawn. ${inspection.problem}`, next: FIX_IT }
