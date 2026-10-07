@@ -3,7 +3,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -187,7 +187,9 @@ export class GrokAcpHost implements AgentHost {
   }
   private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
-  private readonly streams = new Map<string, { threadId: string; userId: string; message: AgentMessage }>()
+  /** Live replies by stream. `recordedLength` is how much of the live text the message log holds as this message's
+   * words, when it holds exactly that and nothing else; a chunk on top of it is an append, not a re-read. */
+  private readonly streams = new Map<string, { threadId: string; userId: string; message: AgentMessage; recordedLength?: number }>()
   private readonly authored = new Map<string, { threadId: string; message: AgentMessage }>()
   private readonly liveStatus = new Map<string, { eventKey: string; status: AgentThread['status'] }>()
   private readonly selections = new Map<string, { model: string; effort: string | undefined }>()
@@ -197,7 +199,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  })
+  }, () => adapterItemCount(this.log, this.threads.values()))
   /**
    * One ACP process per thread session, the way T3 Code runs Grok. The provider itself holds none between a
    * connect and the next: each thread's live work and requests go to its own process, one process exiting
@@ -799,7 +801,9 @@ export class GrokAcpHost implements AgentHost {
       if (live.role === 'assistant') {
         const streamKey = [...this.streams].find(([, entry]) => entry.message === live)?.[0]
         if (!streamKey) continue
-        const userId = this.streams.get(streamKey)!.userId
+        const stream = this.streams.get(streamKey)!
+        delete stream.recordedLength
+        const userId = stream.userId
         const userIndex = messages.findIndex(message => message.id === userId)
         if (userIndex < 0) continue
         const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
@@ -811,9 +815,24 @@ export class GrokAcpHost implements AgentHost {
         else if (persisted.text.startsWith(live.text)) {
           if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(streamKey)
         } else if (live.text.startsWith(persisted.text)) persisted.text = live.text
+        // The log is handed the live words for this message unless the durable rail says more than they do.
+        if (!persisted || persisted.text === live.text) stream.recordedLength = live.text.length
       }
     }
     this.log.set(id, messages)
+  }
+  /**
+   * A chunk on a reply the log already holds as its newest message, at exactly the words before this chunk,
+   * is that message's append: what `record` would work out by copying and re-reading every message the
+   * thread holds, at the cost of the chunk instead. Anything else goes through `record`.
+   */
+  private appendLive(id: string, streamId: string, text: string): boolean {
+    const stream = this.streams.get(streamId)
+    if (stream?.recordedLength === undefined || stream.recordedLength !== stream.message.text.length - text.length) return false
+    if (this.log.lastMessageId(id) !== streamId || !this.log.has(id, streamId)) return false
+    this.log.appendText(id, streamId, text)
+    stream.recordedLength = stream.message.text.length
+    return true
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
@@ -1052,12 +1071,16 @@ export class GrokAcpHost implements AgentHost {
         thread.status = 'running'; thread.lastTurn = { id: messageId, status: 'running' }
         this.markTurn(id, 'running', messageId)
       }
+      let appended: { streamId: string; text: string } | undefined
       if (update.sessionUpdate === 'agent_message_chunk' && content?.type === 'text') {
         const userId = this.log.lastUserMessageId(id) ?? 'native-history'
         const streamId = assistantKey(id, parsed.data, userId, lastReportedId(thread.activities))
         const previous = this.streams.get(streamId)?.message
-        if (previous) previous.text += content.text ?? ''
-        else {
+        if (previous) {
+          const text = typeof content.text === 'string' ? content.text : ''
+          previous.text += text
+          appended = { streamId, text }
+        } else {
           const message: AgentMessage = { id: streamId, role: 'assistant', text: typeof content.text === 'string' ? content.text : '', createdAt: new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString() }
           this.streams.set(streamId, { threadId: id, userId, message })
         }
@@ -1069,7 +1092,7 @@ export class GrokAcpHost implements AgentHost {
         this.markTurn(id, turnOutcome(update.stop_reason ?? update.stopReason))
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
-      this.record(id, thread.status)
+      if (!appended || !this.appendLive(id, appended.streamId, appended.text)) this.record(id, thread.status)
       this.emit(!['user_message_chunk', 'turn_completed', 'interaction_resolved'].includes(update.sessionUpdate))
     }
   }
