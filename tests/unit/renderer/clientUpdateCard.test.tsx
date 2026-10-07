@@ -147,7 +147,8 @@ describe('the client update card', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(command).not.toHaveBeenCalled()
     screen.getByRole('button', { name: 'Update' }).focus()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    // The card claims the press it answers, so the Dictate room leaves its error alone.
+    expect(fireEvent.keyDown(window, { key: 'Escape' })).toBe(false)
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'dismiss-client-updates' }))
   })
 

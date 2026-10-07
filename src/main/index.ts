@@ -31,9 +31,10 @@ import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
+import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
 import { isThreadProviderConnected } from '../shared/agents'
-import { requestDraftProvider } from '../shared/requestDrafts'
+import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -201,6 +202,7 @@ import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
+import { installRemoteHostE2E } from './e2e/remoteHost'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -693,7 +695,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+    bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+  })
   quitHandles.hostRouter = hostRouter
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
@@ -713,7 +717,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+    onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
+    onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -722,6 +729,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
+  await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
   // runs. The thread reaches the device through this computer's SSH setup, so it needs the local host.
   // Have my agent install it, update it or fix it on a host's provider tile runs the same way, in the same project, and
@@ -775,6 +784,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts) : undefined
+  if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
+    try { await desktopHosts.close() }
+    finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
+  } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
   const phoneAccess = new PhoneAccess({ directory: userDataPath,
@@ -790,35 +804,40 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     if (owner.kind !== 'thread') return undefined
     const key = parseHostEntityKey(owner.ownerId)
     const remote = key !== null && key.hostId !== agentControl.get().hostId
-    const state = remote ? hostRouter.shell() : agentControl.shell()
-    const id = remote ? owner.ownerId : key?.id ?? owner.ownerId
+    if (remote) return hostRouter.requestDraftState(owner)
+    const state = agentControl.shell()
+    const id = key?.id ?? owner.ownerId
     const thread = state.host.threads.find(item => item.id === id
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    const recovery = remote ? { completed: [], uncertainRequestIds: thread?.requests.filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [] } : agentControl.requestAnswerRecovery(id, owner.providerId)
+    const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
-  }, async owner => {
-    if (owner.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
-    const key = parseHostEntityKey(owner.ownerId)
-    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.threadDetail(owner.ownerId)
-    else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId)
+  }, async (target, decisionId) => {
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    const key = parseHostEntityKey(target.ownerId)
+    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.refreshRequestDraft(target, decisionId)
+    else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
   })
   await requestDrafts.start()
+  const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   const cleanRetiredHistory = async (): Promise<void> => {
-    const [chats, answers] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
+      Promise.resolve().then(() => retainedDrafts.privacyChanged()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
+    if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
+    if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.
   await cleanRetiredHistory().catch(() => undefined)
-  await requestDrafts.reconcile().catch(() => undefined)
-  const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
+  await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
+  const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
   // nothing more. Only the threads the main window has declared viewed receive their messages.
@@ -830,12 +849,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
-  const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail))
+  // A detail that opens a message goes out at once; the shell waiting in its window goes just ahead of it, so the
+  // window paints the two in one commit (issue #771).
+  const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail),
+    { beforeOpening: () => agentStatePublisher.flush() })
   const unsubscribeAgents = hostRouter.subscribe(state => agentStatePublisher.publish(state))
   const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
   quitHandles.stopPublishing = () => {
-    unsubscribeAgents(); unsubscribeAgentDetail()
+    unsubscribeRequestDrafts(); unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
   }
   const showTurnRecords = (): void => {
@@ -958,10 +980,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
   // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error.
+  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
+  // also records whether the provider or OpenRouter set it, and a request that was rate
+  // limited and then went through is recorded too, so the retries can be seen working.
+  const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
   const transcription = new OpenRouterTranscriptionService({
     getSettings: () => settings.forFormatting(),
-    onFailure: diagnosticsAppender('transcription-diagnostics.jsonl'),
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
@@ -1262,7 +1288,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
-          reload: () => windows.reloadMain(),
+          // A reload ends the main renderer's dictation session as a crash does,
+          // so the widget returns to idle instead of offering an error, or a
+          // kept recording, that no controller holds any more.
+          reload: () => {
+            dictationLifecycle.rendererProcessGone('main')
+            return windows.reloadMain()
+          },
           toggleMaximize: () => windows.toggleMaximizeMain(),
           isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),

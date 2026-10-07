@@ -11,7 +11,7 @@ import {
   type SottoE2EBridge,
 } from '../../src/shared/e2e'
 import type { SottoBridge } from '../../src/shared/contracts'
-import { TRANSCRIPTION_ERROR_DETAIL } from '../../src/shared/dictation'
+import { TRANSCRIPTION_KEPT_DETAIL } from '../../src/shared/dictation'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
 import { closeSotto, e2eEnvironment, launchSotto, openPage } from './support/sottoLaunch'
 
@@ -585,7 +585,7 @@ test('transcription failure is finite and leaves clipboard and history untouched
   try {
     await completeOnboarding(launched.page)
     await dictateWithButton(launched.page)
-    await expect(launched.page.getByRole('alert')).toContainText(TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED)
+    await expect(launched.page.getByRole('alert')).toContainText(TRANSCRIPTION_KEPT_DETAIL.TRANSCRIPTION_FAILED)
     expect(await snapshot(launched.page)).toMatchObject({
       clipboardText: PRESERVED_CLIPBOARD_TEXT,
       pasteAttempts: 0,

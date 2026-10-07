@@ -11,7 +11,7 @@ const rendererRoot = resolve(process.cwd(), 'out/renderer')
 const baselineRoot = resolve(process.cwd(), 'artifacts/design/baseline')
 const actualRoot = resolve(process.cwd(), 'test-results/visual-previews/actual')
 const buildRoot = resolve(process.cwd(), 'test-results/visual-previews/builds')
-const previews = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error'] as const
+const previews = ['idle', 'listening', 'processing', 'pasted', 'copied', 'error', 'kept'] as const
 const themes = ['light', 'dark'] as const
 const updateWidgetBaselines = process.env.SOTTO_UPDATE_WIDGET_BASELINES === '1'
 const buildVariants = [
@@ -231,7 +231,7 @@ for (const theme of themes) {
       expect(pageErrors).toEqual([])
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-      await expect(shell).toHaveAttribute('data-status', preview === 'pasted' || preview === 'copied' ? 'success' : preview)
+      await expect(shell).toHaveAttribute('data-status', preview === 'pasted' || preview === 'copied' ? 'success' : preview === 'kept' ? 'error' : preview)
 
       expect(await shell.boundingBox()).toEqual({ x: 0, y: 0, width: 248, height: 88 })
       const pillBox = await pill.boundingBox()

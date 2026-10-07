@@ -23,6 +23,7 @@ import { version as packageVersion } from '../../package.json'
 import { createServer, type Server } from 'node:http'
 import { HOST_BUSY } from '../../src/shared/hostProtocol'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
+import { RetainedDraftStore, type RetainedDraft } from '../../src/main/agents/retainedDraftStore'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { standInTailscale } from '../fixtures/standInTailscale'
@@ -147,8 +148,8 @@ beforeEach(async () => {
   manager = newManager()
   await manager.start()
 })
-function newManager(): DesktopHosts {
-  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
+function newManager(retainedDrafts?: RetainedDraftStore): DesktopHosts {
+  return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
     openExternal: async url => { opened.push(url) }, resolveTailnet: address => tailnetAt(address) })
 }
 /** Quits and starts Sotto again over the same saved hosts, the way a relaunch does; `saved` replaces the file first when given. */
@@ -170,6 +171,112 @@ async function add(target = 'forge'): Promise<Connection> {
   await manager.command({ type: 'add', host: remote })
   return remote
 }
+const retainedEdit = (): RetainedDraft => ({ hostId: reportedHostId, registrationId: manager.get().hosts.find(host => host.hostId === reportedHostId)!.id, draft: { threadId: 'retained-thread', draftId: randomUUID(),
+  text: 'Synthetic unsent retained text', attachments: [], requestId: null, updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: false })
+const retainedStore = (): RetainedDraftStore => (manager as unknown as { retainedDrafts: RetainedDraftStore }).retainedDrafts
+describe('Forget retained draft lifecycle', () => {
+  it.each([true, false])('revokes and removes the host despite optional draft cleanup write failure (history %s)', async historyEnabled => {
+    await manager.close()
+    const store = new RetainedDraftStore({ directory: join(root, 'desktop'), historyEnabled: () => historyEnabled })
+    manager = newManager(store); await manager.start()
+    const remote = await add(), token = credentials.get('remote-host:' + remote.id)
+    store.put(retainedEdit()); await store.flush()
+    const disk = (store as unknown as { disk: AtomicJsonStore<RetainedDraft[]> }).disk
+    const denial = vi.spyOn(disk, 'write').mockRejectedValue(new Error('Synthetic draft storage denial'))
+    try {
+      await expect(manager.command({ type: 'forget', id: remote.id })).resolves.toMatchObject({ hosts: [] })
+      expect(operations).toEqual(['ssh revoke-client', 'ssh stop-host'])
+      expect(host.pairing.verifyToken(token)).toBeUndefined()
+      expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+      expect(await savedFile()).toEqual([])
+      expect(store.list(reportedHostId)).toEqual([])
+    } finally { denial.mockRestore() }
+  })
+  it('connects and revokes without overwriting unread retained draft bytes', async () => {
+    await manager.close()
+    const path = join(root, 'desktop', 'remote-drafts.json'), original = '{"unread-private-copy":'
+    await mkdir(join(root, 'desktop'), { recursive: true })
+    await writeFile(path, original, 'utf8')
+    const onRecovery = vi.fn(), store = new RetainedDraftStore({ directory: join(root, 'desktop'), onRecovery })
+    manager = newManager(store); await manager.start()
+    try {
+      const remote = await add(), token = credentials.get('remote-host:' + remote.id)
+      expect(manager.get().hosts[0]!.phase).toBe('connected')
+      await expect(manager.command({ type: 'forget', id: remote.id })).resolves.toMatchObject({ hosts: [] })
+      expect(host.pairing.verifyToken(token)).toBeUndefined()
+      expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+      expect(await readFile(path, 'utf8')).toBe(original)
+      expect(onRecovery).toHaveBeenCalled()
+    } finally { await writeFile(path, '[]', 'utf8') }
+  })
+  it('does not reload a forgotten host draft after failed cleanup and a process replacement', async () => {
+    await manager.close()
+    const store = new RetainedDraftStore({ directory: join(root, 'desktop') })
+    manager = newManager(store); await manager.start()
+    const remote = await add(), edit = retainedEdit(), token = credentials.get('remote-host:' + remote.id)
+    store.put(edit); await store.flush()
+    const disk = (store as unknown as { disk: AtomicJsonStore<RetainedDraft[]> }).disk
+    const denial = vi.spyOn(disk, 'write').mockRejectedValue(new Error('Synthetic draft storage denial'))
+    try {
+      await manager.command({ type: 'forget', id: remote.id })
+      store.put({ ...edit, draft: { ...edit.draft, text: 'Synthetic late callback' } })
+      expect(store.list(reportedHostId)).toEqual([])
+      expect(host.pairing.verifyToken(token)).toBeUndefined()
+      expect(credentials.has('remote-host:' + remote.id)).toBe(false)
+      expect(JSON.parse(await readFile(join(root, 'desktop', 'remote-drafts.json'), 'utf8'))).toEqual([edit])
+      await manager.close().catch(() => undefined)
+      const replacement = new RetainedDraftStore({ directory: join(root, 'desktop') })
+      manager = newManager(replacement); await manager.start(); await replacement.load(); await replacement.flush()
+      expect(manager.get().hosts).toEqual([])
+      expect(replacement.list(reportedHostId)).toEqual([])
+      expect(JSON.parse(await readFile(join(root, 'desktop', 'remote-drafts.json'), 'utf8'))).toEqual([])
+    } finally { denial.mockRestore() }
+  })
+  it('preserves unsent text when the user keeps the host during Forget sign-in', async () => {
+    const remote = await add(), store = retainedStore(), edit = retainedEdit()
+    store.put(edit); await store.flush()
+    const token = credentials.get('remote-host:' + remote.id)
+    await manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+    askOnConnect = 'passphrase'
+    const forgetting = manager.command({ type: 'forget', id: remote.id })
+    await vi.waitFor(() => expect(manager.get().hosts[0]).toMatchObject({ adminSignIn: true, prompt: { id: 'prompt-1' } }))
+    await manager.command({ type: 'stop-admin-sign-in', id: remote.id }); await forgetting
+    expect(store.get(reportedHostId, edit.draft.threadId)?.draft).toEqual(edit.draft)
+    expect(operations).toEqual([])
+    expect(host.pairing.verifyToken(token)).toBeDefined()
+  })
+  it('does not revive pre-Forget disk text after re-adding the same authenticated host before storage repair', async () => {
+    await manager.close()
+    const store = new RetainedDraftStore({ directory: join(root, 'desktop') })
+    manager = newManager(store); await manager.start()
+    const original = await add(), edit = retainedEdit(), token = credentials.get('remote-host:' + original.id)
+    store.put(edit); await store.flush()
+    const disk = (store as unknown as { disk: AtomicJsonStore<RetainedDraft[]> }).disk
+    const denial = vi.spyOn(disk, 'write').mockRejectedValue(new Error('Synthetic draft storage denial'))
+    try {
+      await manager.command({ type: 'forget', id: original.id })
+      const readded = await add()
+      expect(readded.id).not.toBe(original.id)
+      expect(manager.get().hosts[0]!.hostId).toBe(reportedHostId)
+      expect(host.pairing.verifyToken(token)).toBeUndefined()
+      expect(host.pairing.verifyToken(credentials.get('remote-host:' + readded.id))).toBeDefined()
+      await manager.command({ type: 'set-enabled', id: readded.id, enabled: false })
+      await manager.close().catch(() => undefined)
+      denial.mockRestore()
+      const replacement = new RetainedDraftStore({ directory: join(root, 'desktop') })
+      manager = newManager(replacement); await manager.start(); await replacement.load(); await replacement.flush()
+      expect(manager.get().hosts[0]!.id).toBe(readded.id)
+      expect(replacement.list(reportedHostId)).toEqual([])
+    } finally { denial.mockRestore() }
+  })
+  it('preserves unsent text when Forget cannot stop the owned host', async () => {
+    const remote = await add(), store = retainedStore(), edit = retainedEdit()
+    store.put(edit); await store.flush(); stopResult = false
+    await expect(manager.command({ type: 'forget', id: remote.id })).rejects.toThrow('may still be running')
+    expect(manager.get().hosts).toHaveLength(1)
+    expect(store.get(reportedHostId, edit.draft.threadId)?.draft).toEqual(edit.draft)
+  })
+})
 /** A thread on the host, connected, so its row on the Threads page has something to lose. */
 async function remoteThread(): Promise<string> {
   await manager.command({ type: 'select', hostId: reportedHostId })
@@ -285,7 +392,7 @@ describe('desktop remote host management over a real socket', () => {
     await credentials.set('remote-host:' + remote.id, paired.token)
     // A saved connection can omit the client ID; setup must use the host's authenticated hello.
     await relaunch([{ ...remote, hostId: reportedHostId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
     try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
     expect(host.pairing.list()).toHaveLength(1)
@@ -301,7 +408,7 @@ describe('desktop remote host management over a real socket', () => {
     const probe = new SocketHostService({ url: 'http://127.0.0.1:' + host.descriptor!.port, token: paired.token })
     try { expect((await probe.connect()).capabilities.mayAnswer).toBe(true) } finally { await probe.close() }
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     expect(JSON.parse(await readFile(join(root, 'remote', 'desktop-clients.json'), 'utf8'))).toEqual([paired.clientId])
   })
 
@@ -313,7 +420,7 @@ describe('desktop remote host management over a real socket', () => {
     // The step that used to be skipped for this desktop fails the way a failed SSH request does, which would be final.
     desktopAnswersFailure = new SshFailure('permission-setup-failed')
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('connected'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('connected')
     expect(scheduled).toEqual([])
   })
 
@@ -323,7 +430,7 @@ describe('desktop remote host management over a real socket', () => {
     await credentials.set('remote-host:' + remote.id, paired.token)
     desktopAnswersFailure = new SshFailure('permission-setup-failed')
     await relaunch([{ ...remote, hostId: reportedHostId, clientId: paired.clientId }])
-    await vi.waitFor(() => expect(manager.get().hosts[0]!.phase).toBe('error'))
+    await expect.poll(() => manager.get().hosts[0]!.phase).toBe('error')
     expect(scheduled).toEqual([])
   })
 

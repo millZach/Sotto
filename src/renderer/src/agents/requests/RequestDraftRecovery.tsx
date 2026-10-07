@@ -58,8 +58,8 @@ export interface RequestDraftRecoveryModel {
 
 /**
  * The owner's durable answers that no live request card shows. Listing never refreshes, checks or sends, and a
- * response for an owner the view has since left is ignored. A change of `observed` lists again: main reconciles
- * before it publishes a snapshot, so the next list no longer includes answers it accepted or retired.
+ * response for an owner the view has since left is ignored. Owner change events list again after main commits
+ * asynchronous receipt recovery; snapshots also list again when the observed owner changes.
  * A request can close before its last save or answer acknowledgement settles. When the answer store reports either
  * for a request that left the live set, the list is read again; main alone decides what it still keeps.
  */
@@ -70,6 +70,9 @@ function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentR
   const [attempt, setAttempt] = useState(0)
   const latest = useRef(0)
   const settled = useSyncExternalStore(answers.subscribe, () => answers.recoverySnapshot(owner, live))
+  useEffect(() => bridge?.onChanged?.(changed => {
+    if (requestDraftOwnerKey(changed) === ownerKey) setAttempt(value => value + 1)
+  }), [bridge, ownerKey])
   useEffect(() => {
     if (!bridge?.list) return
     const call = ++latest.current

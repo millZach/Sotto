@@ -70,8 +70,15 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * changed files as Git's status lists them and `thread-changes-review` with its Working tree or Branch changes comparison, for
  * Changes. `subagents`: the host answers `subagent-page` and `subagent-assignments` with a thread's agents, for Agents.
  * All six are reads, bounded as the desktop's own are (ADR-0025, October 5 amendment).
+ * `answer-check`: an authorized client's `check-answer` freshly reads an exact native question and may
+ * release its restart re-offer for a new user choice. Receipt reads and background publications never do this.
+ * `atomic-send`: `send` may carry its selected thread's text and staged attachment handles in `draft`.
+ * The host admits and sends that draft together, without a separate Compose request. A Compose save may also
+ * carry `threadId` to retain its exact selected owner after Send. Neither field grants authority.
+ * `draft-revisions`: targeted Compose and atomic Send accept stable draft IDs; recovery saves can
+ * require an exact previous host revision. Socket save outcomes remain private to their caller.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -154,6 +161,10 @@ export function hostVersionMismatch(clientVersion: string, hostVersion: string |
 export const HOST_MAX_FRAME_BYTES = 16 * 1024 * 1024
 export const HOST_EVENT_PAGE_SIZE = 256
 const id = z.string().min(1).max(512)
+/** Evidence of acceptance of one exact answer attempt; never the question or answer text. */
+export const hostAnswerTargetSchema = z.object({ threadId: id, providerId: providerIdSchema, requestId: id,
+  questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
+export type HostAnswerTarget = z.infer<typeof hostAnswerTargetSchema>
 /** Feature names are read leniently, so a name this build does not know is ignored rather than refused. */
 const featureList = z.array(z.string().min(1).max(64)).max(64)
 const sottoVersion = z.string().min(1).max(64)
@@ -173,7 +184,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
-  z.object({ ...base, op: z.literal('receipt'), commandId: id }).strict(),
+  z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
+  z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
   /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */
@@ -223,6 +235,7 @@ export type HostWireShell = Omit<HostClientShell, 'host'> & {
 }
 export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?: HostEventPage | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
+  | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
@@ -247,6 +260,8 @@ export interface HostReceipt {
   status: 'pending' | 'completed' | 'unknown'; error?: HostProtocolError | undefined
   /** This answer command's own successful outcome. Older hosts omit it; completion alone proves none. */
   answerDelivered?: boolean | undefined
+  /** Acceptance of this authenticated client's exact answer attempt and original questions. */
+  acceptedAnswer?: (HostAnswerTarget & { decisionId: string }) | undefined
 }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
 export interface HostDescriptor extends HostAbout { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
@@ -292,6 +307,8 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('shell'), state: protocolAgentStateSchema, eventPage: hostEventPageSchema.optional() }),
   z.object({ v: z.literal(1), event: z.literal('detail'), threadId: id, detail: agentThreadDetailResultSchema }),
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
+  z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
 ])
-export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(), answerDelivered: z.boolean().optional() })
+export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
+  answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional() })

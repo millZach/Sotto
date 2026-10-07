@@ -1,0 +1,94 @@
+{
+  "codeCommit": "56fe5e16",
+  "date": "2026-10-06",
+  "method": "Screenshot-guided Electron mouse and keyboard actions through Playwright; native computer-use runtime failed to start.",
+  "host": "Paired loopback headless host with scripted providers; not live Forge.",
+  "results": [
+    {
+      "scenario": "Codex fixture: legacy choice accepted once",
+      "id": "04-codex-confirmed",
+      "width": 1280,
+      "height": 800,
+      "warningCount": 0,
+      "questionCount": 0,
+      "answerCount": 1,
+      "savedCount": 0,
+      "heldCount": 0,
+      "pageErrorCount": 0,
+      "answerSummary": [
+        {
+          "requestId": "remote-choice",
+          "legacyChoice": true,
+          "structuredChoice": false,
+          "structuredText": false
+        }
+      ]
+    },
+    {
+      "scenario": "Codex fixture: typed answer submitted with Tab and Enter",
+      "id": "10-typed-confirmed",
+      "width": 1280,
+      "height": 800,
+      "warningCount": 0,
+      "questionCount": 0,
+      "answerCount": 2,
+      "savedCount": 0,
+      "heldCount": 0,
+      "pageErrorCount": 0,
+      "answerSummary": [
+        {
+          "requestId": "remote-choice",
+          "legacyChoice": true,
+          "structuredChoice": false,
+          "structuredText": false
+        },
+        {
+          "requestId": "remote-form",
+          "legacyChoice": false,
+          "structuredChoice": false,
+          "structuredText": true
+        }
+      ]
+    },
+    {
+      "scenario": "Claude fixture: delayed receipt clears mounted warning after reconnect",
+      "id": "21-delayed-confirmed",
+      "width": 1280,
+      "height": 800,
+      "warningCount": 0,
+      "questionCount": 0,
+      "answerCount": 1,
+      "savedCount": 0,
+      "heldCount": 0,
+      "pageErrorCount": 0,
+      "answerSummary": [
+        {
+          "requestId": "remote-form",
+          "legacyChoice": false,
+          "structuredChoice": true,
+          "structuredText": false
+        }
+      ]
+    },
+    {
+      "scenario": "Grok fixture: uncertain answer survives renderer reload",
+      "id": "27-uncertain-after-reload",
+      "width": 1280,
+      "height": 800,
+      "warningCount": 1,
+      "questionCount": 0,
+      "answerCount": 1,
+      "savedCount": 1,
+      "heldCount": 1,
+      "pageErrorCount": 0,
+      "answerSummary": [
+        {
+          "requestId": "remote-form",
+          "legacyChoice": false,
+          "structuredChoice": true,
+          "structuredText": false
+        }
+      ]
+    }
+  ]
+}

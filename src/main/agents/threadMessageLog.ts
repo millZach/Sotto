@@ -39,28 +39,44 @@ interface Track {
   lastUser: AgentMessage | undefined
   lastAssistant: AgentMessage | undefined
   lastMessageAt: string | undefined
-  /** Messages opened with no text yet: a stream that has announced a reply but not said anything. An
-   * empty message is never recorded, so nothing has to be taken back when the turn drops it. */
-  readonly empty: Set<string>
+  /** Messages opened with no words yet, with the blank text they hold so far: a stream that has announced a
+   * reply but said nothing but whitespace. Such a message is never recorded, so nothing has to be taken back
+   * when the turn drops it, and its first words are what opens it. */
+  readonly empty: Map<string, string>
+  /** The hash behind the mark of the reply growing now, so the next chunk extends it rather than hashing
+   * the whole reply again. Only good for the message and the length it names. */
+  growing: { id: string; length: number; hash: number } | undefined
 }
 
 function freshTrack(): Track {
   return { messages: [], ids: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
-    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Set() }
+    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Map(), growing: undefined }
 }
 
 /** The mark of a message the store holds whose words the log never saw. The first report of it matches. */
 const UNREAD = '?'
 
 /** A short mark of a message's text, so an unchanged one can be recognised without keeping the words. */
-function mark(text: string): string {
-  let hash = 0x811c9dc5
+function mark(text: string): string { return markOf(text.length, fnv(text)) }
+function markOf(length: number, hash: number): string { return `${length}:${hash.toString(36)}` }
+/** FNV-1a over the text, continued from `hash`: the hash of a text and a suffix is the suffix hashed on from the text's. */
+function fnv(text: string, hash = 0x811c9dc5): number {
   for (let index = 0; index < text.length; index++) {
     hash ^= text.charCodeAt(index)
     hash = Math.imul(hash, 0x01000193) >>> 0
   }
-  return `${text.length}:${hash.toString(36)}`
+  return hash
 }
+
+/** A message in the held window. A streaming reply is nearly always the newest, so that one is looked at
+ * first and a chunk on it costs the same however long the thread is. */
+function heldMessage(track: Track, messageId: string): AgentMessage | undefined {
+  const last = track.messages?.at(-1)
+  return last?.id === messageId ? last : track.messages?.find(value => value.id === messageId)
+}
+
+/** Whether a message has said anything yet. A reply that has sent only line breaks or spaces has not. */
+function said(text: string): boolean { return text.trim().length > 0 }
 
 /** True when the two messages differ in anything but their text. */
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
@@ -170,6 +186,12 @@ export class ThreadMessageLog {
     return id === undefined ? {} : { lastUserMessageId: id }
   }
   count(threadId: string): number { return this.track(threadId).order.length }
+  /** How many messages are recorded across every thread. A message's first words move it; a later chunk does not. */
+  recorded(): number {
+    let count = 0
+    for (const track of this.tracks.values()) count += track.order.length
+    return count
+  }
   has(threadId: string, messageId: string): boolean { return this.track(threadId).ids.has(messageId) }
   userMessageIds(threadId: string): readonly string[] { return this.track(threadId).userIds }
   lastUserMessageId(threadId: string): string | undefined { return this.track(threadId).userIds.at(-1) }
@@ -226,29 +248,34 @@ export class ThreadMessageLog {
    * grew by a suffix is an append, and anything else about a message already recorded is a replacement.
    * A message opened with no text yet is held back until it says something.
    */
-  add(threadId: string, message: AgentMessage): void {
+  add(threadId: string, message: AgentMessage): void { this.record(threadId, message) }
+
+  /** `add`, with the held messages already indexed by a caller recording a whole list. */
+  private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
-    const existing = track.messages?.find(value => value.id === message.id)
+    const existing = held ? held.get(message.id) : heldMessage(track, message.id)
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
-        if (!message.text.length) { if (existing) Object.assign(existing, message); return }
+        if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
         track.empty.delete(message.id)
-      } else if (!message.text.length && message.role === 'assistant') {
+      } else if (!said(message.text) && message.role === 'assistant') {
         // Nothing was said yet. Keep the place in the window and wait for the first words.
-        track.empty.add(message.id)
-        if (!existing) track.messages?.push({ ...message })
+        track.empty.set(message.id, message.text)
+        if (existing) Object.assign(existing, message)
+        else this.hold(track, message, held)
         return
       }
       if (existing) Object.assign(existing, message)
-      else track.messages?.push({ ...message })
+      else this.hold(track, message, held)
       this.publish(threadId, track, { kind: 'message-added', at: message.createdAt || new Date().toISOString(), message: { ...message } })
       return
     }
     if (track.ids.get(message.id) === UNREAD) {
       // The store already holds this one; the provider is reading its own history back to us.
       track.ids.set(message.id, mark(message.text))
+      if (track.growing?.id === message.id) track.growing = undefined
       if (existing) Object.assign(existing, message)
-      else track.messages?.push({ ...message })
+      else this.hold(track, message, held)
       return
     }
     const previous = track.last?.id === message.id ? track.last : undefined
@@ -271,10 +298,10 @@ export class ThreadMessageLog {
   appendText(threadId: string, messageId: string, appendText: string): void {
     if (!appendText.length) return
     const track = this.track(threadId)
-    const existing = track.messages?.find(value => value.id === messageId)
+    const existing = heldMessage(track, messageId)
     if (track.empty.has(messageId) && !track.ids.has(messageId)) {
       const opened = existing ?? { id: messageId, role: 'assistant' as const, text: '', createdAt: new Date().toISOString() }
-      this.add(threadId, { ...opened, text: appendText })
+      this.add(threadId, { ...opened, text: track.empty.get(messageId)! + appendText })
       return
     }
     if (!track.ids.has(messageId)) return
@@ -298,7 +325,11 @@ export class ThreadMessageLog {
    * providers are read to append and never to rebuild (ADR-0016), and only `reset` takes words back.
    */
   set(threadId: string, messages: readonly AgentMessage[]): void {
-    for (const message of messages) this.add(threadId, message)
+    // One index for the whole list: looking each message up in the held window made a re-read cost the
+    // square of the thread's length.
+    const held = new Map<string, AgentMessage>()
+    for (const message of this.track(threadId).messages ?? []) if (!held.has(message.id)) held.set(message.id, message)
+    for (const message of messages) this.record(threadId, message, held)
     // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
     if (!this.wanted(threadId)) { current.messages = undefined; return }
@@ -336,6 +367,7 @@ export class ThreadMessageLog {
     if (track.last?.id === messageId && !last || track.lastUser?.id === messageId && !lastUser
       || track.lastAssistant?.id === messageId && !lastAssistant) return
     track.ids.delete(messageId)
+    track.growing = undefined
     track.order = order
     track.userIds = userIds
     if (track.messages) track.messages = track.messages.filter(message => message.id !== messageId)
@@ -352,6 +384,14 @@ export class ThreadMessageLog {
     if (!track?.empty.size) return
     if (track.messages) track.messages = track.messages.filter(message => !track.empty.has(message.id))
     track.empty.clear()
+  }
+
+  /** Put a copy of a message in the held window, and in the caller's index of it when there is one. */
+  private hold(track: Track, message: AgentMessage, held: Map<string, AgentMessage> | undefined): void {
+    if (!track.messages) return
+    const copy = { ...message }
+    track.messages.push(copy)
+    if (held && !held.has(copy.id)) held.set(copy.id, copy)
   }
 
   private track(threadId: string): Track {
@@ -377,11 +417,20 @@ export class ThreadMessageLog {
       if (track.lastUser?.id === event.messageId) track.lastUser = { ...track.lastUser, text: track.lastUser.text + event.appendText }
       const grown = track.last?.id === event.messageId ? track.last.text
         : track.lastAssistant?.id === event.messageId ? track.lastAssistant.text : undefined
-      if (grown !== undefined) track.ids.set(event.messageId, mark(grown))
+      if (grown !== undefined) {
+        // The reply's mark is kept as it grows: the chunk is hashed on from the text before it, so a long
+        // reply costs its chunk rather than all of itself on every delta.
+        const before = grown.length - event.appendText.length
+        const growing = track.growing
+        const hash = growing?.id === event.messageId && growing.length === before ? fnv(event.appendText, growing.hash) : fnv(grown)
+        track.growing = { id: event.messageId, length: grown.length, hash }
+        track.ids.set(event.messageId, markOf(grown.length, hash))
+      }
       track.lastTextId = event.messageId
     } else if (event.kind === 'message-replaced') {
       const { message } = event
       track.ids.set(message.id, mark(message.text))
+      if (track.growing?.id === message.id) track.growing = undefined
       if (track.last?.id === message.id) track.last = { id: message.id, role: message.role, text: message.text }
       if (message.role === 'user' && track.lastUser?.id === message.id) track.lastUser = { ...message }
       if (message.role === 'assistant' && track.lastAssistant?.id === message.id) track.lastAssistant = { ...message }
