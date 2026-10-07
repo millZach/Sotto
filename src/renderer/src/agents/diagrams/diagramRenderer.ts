@@ -5,6 +5,7 @@ import mermaid, { type MermaidConfig } from 'mermaid'
 import figtreeLatin from '../../assets/fonts/figtree-latin.woff2?inline'
 import figtreeLatinExt from '../../assets/fonts/figtree-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
+import { FIGTREE_FONT_STACK, figtreeFontFaces } from '../../../../shared/figtreeFaces'
 import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
 import { assertDiagramSafe } from './diagramSafety'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
@@ -13,12 +14,9 @@ export type DiagramRenderResult =
   | { readonly ok: true; readonly dataUrl: string; readonly width: number; readonly height: number; readonly title: string | null; readonly description: string | null }
   | { readonly ok: false; readonly reason: string }
 
-const FONT_FAMILY = '"Figtree", ui-sans-serif, system-ui, sans-serif'
+const FONT_FAMILY = FIGTREE_FONT_STACK
 // The image document cannot see the window's fonts, so the label face travels with every drawing.
-const LABEL_FONT_CSS = [
-  `@font-face{font-family:"Figtree";font-style:normal;font-weight:300 900;src:url(${figtreeLatin}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}`,
-  `@font-face{font-family:"Figtree";font-style:normal;font-weight:300 900;src:url(${figtreeLatinExt}) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}`,
-].join('')
+const LABEL_FONT_CSS = figtreeFontFaces(figtreeLatin, figtreeLatinExt)
 
 /** Corrections to Mermaid's own theme CSS: solid label backings and no fixed light fills in a dark room. */
 function finishingCss(palette: DiagramPalette): string {
