@@ -123,17 +123,23 @@ const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 // Each process numbers its own requests, as Codex's do; starting from its own base keeps them apart in requests.jsonl.
-let requestId = process.pid * 1000
+let requestId = read('script.json', {}).requestIdBase ?? process.pid * 1000
 const pending = new Map()
 const heldReplies = new Map()
-function complete(thread, text, status = 'completed') {
+/** One agent message item in the newest turn, streamed and completed, as Codex writes before a tool call. */
+function say(thread, text) {
   const turn = thread.turns.at(-1)
-  if (!turn) return
+  if (!turn) return undefined
   const item = { type: 'agentMessage', id: randomUUID(), text }
   turn.items.push(item)
   notify('item/started', { threadId: thread.id, turnId: turn.id, item: { ...item, text: '' } })
   notify('item/agentMessage/delta', { threadId: thread.id, turnId: turn.id, itemId: item.id, delta: text })
   notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+  return turn
+}
+function complete(thread, text, status = 'completed') {
+  const turn = say(thread, text)
+  if (!turn) return
   turn.status = status
   thread.status = { type: status === 'failed' ? 'systemError' : 'idle' }
   save()
@@ -380,6 +386,7 @@ function control(action) {
   }
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
+  else if (action.type === 'say') { say(thread, action.text); save() }
   // Another Codex process on the same session: what it does reaches the shared history, never this connection's stream.
   // `count` adds that many turns at once, all completed except the last when `status` is `inProgress`, and `reply`
   // is what each completed one answered.

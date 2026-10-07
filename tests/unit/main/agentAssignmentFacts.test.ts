@@ -8,7 +8,8 @@ import { AgentCredentials, type CredentialEncryption } from '../../../src/main/a
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import { defaultAgentConfiguration } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, type AgentMessage } from '../../../src/shared/agents'
+import { visualMessageId } from '../../../src/shared/visuals'
 import { designThreadsFixture } from '../../../src/shared/e2e'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
@@ -186,6 +187,35 @@ describe('assignment facts', () => {
     expectIso(stopped.stoppedAt)
     expect(f.control.get().queue).toContainEqual(expect.objectContaining({ kind: 'blocked', text: expect.stringContaining('repeating a failure') }))
     await expect.poll(() => f.savedAssignment()).toEqual(stopped)
+  })
+
+  // A visual is Sotto's drawing, not the agent's words (ADR-0056): supervision reads past it to what was written.
+  const drawnAfter = (text: string): AgentMessage[] => [
+    { id: `reply-${text.length}-${Math.random()}`, role: 'assistant', text, createdAt: new Date().toISOString() },
+    { id: visualMessageId(`v-${Math.random()}`), role: 'assistant', text: 'A flow\n\nThe visual is in Sotto on your computer.', createdAt: new Date().toISOString(),
+      visual: { id: 'v', title: 'A flow', kind: 'diagram', source: 'flowchart LR\n  A --> B' } },
+  ]
+
+  it('stops on a repeated failure when a visual follows the second one', async () => {
+    const f = await fixture()
+    await f.supervise()
+    f.host.event({ type: 'failure', threadId: 'workshop', text: 'The same test failed.' })
+    await expect.poll(() => f.control.get().host.threads[0]?.status).toBe('running')
+    const before = f.control.get().host.threads[0]!.messages
+    f.host.event({ type: 'history', threadId: 'workshop', text: '', status: 'error', messages: [...before, ...drawnAfter('The same test failed.')] })
+    await expect.poll(() => f.control.get().assignments[0]?.paused).toBe(true)
+    expect(f.control.get().assignments[0]).toMatchObject({ stopReason: 'repeat', followups: 1 })
+  })
+
+  it('names the reply, not a visual after it, when a thread is ready', async () => {
+    const f = await fixture()
+    await f.connect()
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the existing failing tests.' })
+    const before = f.control.get().host.threads[0]!.messages
+    const [reply, drawn] = drawnAfter('The tests pass now.')
+    f.host.event({ type: 'history', threadId: 'workshop', text: '', status: 'idle', messages: [...before, reply!, drawn!] })
+    await expect.poll(() => f.control.get().queue.find(item => item.threadId === 'workshop' && item.kind === 'ready'))
+      .toMatchObject({ id: `workshop:${reply!.id}:ready`, text: 'The tests pass now.' })
   })
 
   it('records a supervision error and clears stop facts when a new prompt is sent', async () => {

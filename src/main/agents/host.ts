@@ -76,8 +76,10 @@ export interface ThreadReadPurpose {
    * holds without asking the provider; the caller reads again, whole, when the echo is not there (#765).
    */
   readonly afterSend?: boolean
-  /** An explicit Check again may reopen an uncertain Claude answer for a fresh user choice. */
+  /** An explicit Check may reopen a native re-offer for a fresh user choice. */
   readonly retryUncertainAnswers?: boolean
+  /** Restricts an explicit answer Check to the exact request the user selected. */
+  readonly retryUncertainAnswerId?: string
   /**
    * The reader keeps each thread's history from the host's `subscribeEvents` and reads none from what the read
    * hands back, as an activity subscriber that asks for it does. A host that publishes events then hands back
@@ -136,8 +138,11 @@ export interface ActivitySubscriptionOptions {
 export interface AgentHost {
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
-  /** Inject the host setup tools, which only a host setup thread is given (ADR-0035), before connecting. */
-  useHostSetupTools?(tools: ScopedThreadTools): void
+  /**
+   * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
+   * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.
+   */
+  useThreadTools?(tools: readonly ScopedThreadTools[]): void
   rollbackCapability?(threadId: string): { supported: boolean; reason?: string }
   /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
    * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */

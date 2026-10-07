@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { renderDiagram } from '../../../src/renderer/src/agents/diagrams/diagramRenderer'
 import { readDiagramPalette } from '../../../src/renderer/src/agents/diagrams/diagramPalette'
-import { inspectDiagramSource } from '../../../src/renderer/src/agents/diagrams/diagramSource'
+import { inspectDiagramSource } from '../../../src/shared/diagramSource'
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MessageContent } from '../../../src/renderer/src/agents/MessageContent'

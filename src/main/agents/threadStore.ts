@@ -8,6 +8,7 @@ import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { isImmutableActivities } from './activitySnapshots'
+import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -64,7 +65,35 @@ const migrations = [{
     CREATE INDEX events_thread_resets ON events(thread_id, seq) WHERE kind = 'messages-reset';
     ALTER TABLE activity_epochs ADD COLUMN message_reset_seq INTEGER;
   `,
+}, {
+  // Visuals an agent drew (ADR-0056). Not thread events: a messages-reset rebuilds the projection from the provider's
+  // own history, which knows nothing of them. Each is anchored to the newest message, and the newest user message, the
+  // projection held when the call arrived. The sequence keeps their order through a VACUUM.
+  version: 4,
+  sql: `
+    CREATE TABLE visuals (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id TEXT NOT NULL,
+      visual_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      anchor_message_id TEXT,
+      anchor_user_message_id TEXT,
+      payload TEXT NOT NULL,
+      UNIQUE (thread_id, visual_id)
+    );
+    CREATE INDEX visuals_thread ON visuals(thread_id, seq);
+  `,
 }]
+
+/** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
+export interface StoredVisual {
+  readonly visual: AgentVisual
+  readonly createdAt: string
+  /** The newest message the projection held when the call arrived; null when it held none. */
+  readonly anchorMessageId: string | null
+  /** The newest user message then: the turn the visual belongs to. */
+  readonly anchorUserMessageId: string | null
+}
 
 interface ActivityState {
   known: boolean
@@ -128,6 +157,8 @@ export class ThreadStore {
   private readonly redactionChecks = new Map<string, Map<string, boolean>>()
   /** While history is off, this connection writes identity hashes alone, never activity text. */
   private durableRedactions: ThreadStore | undefined
+  /** Each thread's visuals as last read or written, so a window read per publish costs no query. */
+  private readonly visualCache = new Map<string, readonly StoredVisual[]>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string) {}
@@ -198,6 +229,7 @@ export class ThreadStore {
     this.activityStates.clear()
     this.activityRedactions.clear()
     this.redactionChecks.clear()
+    this.visualCache.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -476,6 +508,7 @@ export class ThreadStore {
       for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
       this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
       this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
+      this.statement('DELETE FROM visuals WHERE thread_id = ?').run(threadId)
       redactEvents(db, threadId)
       db.exec('COMMIT')
     } catch (error) {
@@ -483,6 +516,7 @@ export class ThreadStore {
       throw error
     }
     this.activityStates.delete(threadId)
+    this.visualCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
@@ -499,6 +533,7 @@ export class ThreadStore {
       for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
       db.exec('DELETE FROM activities')
       db.exec('DELETE FROM activity_epochs')
+      db.exec('DELETE FROM visuals')
       redactEvents(db)
       db.exec('COMMIT')
     } catch (error) {
@@ -506,10 +541,61 @@ export class ThreadStore {
       throw error
     }
     this.activityStates.clear()
+    this.visualCache.clear()
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
     scrub(db)
+  }
+
+  /** The newest message the projection holds, and the newest user message: where a visual arriving now is drawn. */
+  newestMessages(threadId: string): { messageId: string | null; userMessageId: string | null } {
+    const newest = this.statement('SELECT message_id FROM messages WHERE thread_id = ? ORDER BY position DESC LIMIT 1').get(threadId)
+    const user = this.statement("SELECT message_id FROM messages WHERE thread_id = ? AND role = 'user' ORDER BY position DESC LIMIT 1").get(threadId)
+    return { messageId: newest === undefined ? null : String(newest.message_id), userMessageId: user === undefined ? null : String(user.message_id) }
+  }
+
+  /** A thread's visuals, oldest first. A row this version cannot read is left out rather than refusing the rest. */
+  readVisuals(threadId: string): readonly StoredVisual[] {
+    const held = this.visualCache.get(threadId)
+    if (held) return held
+    const visuals: StoredVisual[] = []
+    for (const row of this.statement('SELECT visual_id, created_at, anchor_message_id, anchor_user_message_id, payload FROM visuals WHERE thread_id = ? ORDER BY seq').all(threadId)) {
+      let payload: unknown
+      try { payload = JSON.parse(String(row.payload)) } catch { continue }
+      const visual = agentVisualSchema.safeParse(payload)
+      if (!visual.success || visual.data.id !== String(row.visual_id)) continue
+      visuals.push({ visual: visual.data, createdAt: String(row.created_at),
+        anchorMessageId: row.anchor_message_id === null || row.anchor_message_id === undefined ? null : String(row.anchor_message_id),
+        anchorUserMessageId: row.anchor_user_message_id === null || row.anchor_user_message_id === undefined ? null : String(row.anchor_user_message_id) })
+    }
+    this.visualCache.set(threadId, visuals)
+    return visuals
+  }
+
+  /** Keeps one visual with its thread. Throws when the store refuses it, so nothing is shown that was not kept. */
+  addVisual(threadId: string, stored: StoredVisual): void {
+    const visual = agentVisualSchema.parse(stored.visual)
+    const before = this.readVisuals(threadId)
+    this.statement('INSERT INTO visuals (thread_id, visual_id, created_at, anchor_message_id, anchor_user_message_id, payload) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(threadId, visual.id, stored.createdAt, stored.anchorMessageId, stored.anchorUserMessageId, JSON.stringify(visual))
+    this.visualCache.set(threadId, [...before, { ...stored, visual }])
+  }
+
+  /** Removes the visuals drawn in these turns, named by their user messages: a confirmed rewind took the turns back. */
+  deleteVisualsForTurns(threadId: string, userMessageIds: readonly string[]): number {
+    const doomed = new Set(userMessageIds)
+    const before = this.readVisuals(threadId)
+    const removed = before.filter(stored => stored.anchorUserMessageId !== null && doomed.has(stored.anchorUserMessageId))
+    if (removed.length === 0) return 0
+    const db = this.requireOpen()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
+      db.exec('COMMIT')
+    } catch (error) { db.exec('ROLLBACK'); throw error }
+    this.visualCache.set(threadId, before.filter(stored => !removed.includes(stored)))
+    return removed.length
   }
 
   /**

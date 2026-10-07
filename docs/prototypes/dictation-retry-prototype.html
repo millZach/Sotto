@@ -1,0 +1,331 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Question: what should the floating widget show when a
+  transcription request is turned away (OpenRouter 429), now that the error
+  stays until dismissed and the held audio can be sent again?
+  Three variants of the active capsule, switchable via ?variant=A|B|C, each
+  driven through the same states: today's flash, rate-limited, trying again,
+  recovered, failed again, dismissed.
+  Colours are the Sotto theme's light and dark roles; sizes are the widget's
+  real footprints (capsule 212x40 in a 248x88 window, controls 320x88).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Dictation retry in the widget</title>
+<style>
+  :root, :root[data-theme='dark'] {
+    --theme-canvas: oklch(0.115 0.008 265);
+    --theme-surface: oklch(0.145 0.008 265);
+    --theme-surface-raised: oklch(0.185 0.008 265);
+    --theme-text: oklch(0.985 0.005 280);
+    --theme-accent: oklch(0.714403 0.104089 183.092);
+    --theme-muted: oklch(0.72 0.014 265);
+    --theme-error: oklch(0.702184 0.189226 22.228);
+    --theme-primary: oklch(0.83 0.08 183);
+    --surface-sunken: color-mix(in oklab, var(--theme-surface) 70%, var(--theme-canvas));
+    --widget-surface-top: color-mix(in oklab, var(--theme-surface-raised) 55%, var(--theme-surface));
+    --widget-surface-bottom: var(--surface-sunken);
+    --widget-rim: rgb(255 255 255 / 28%);
+    --widget-edge: rgb(0 0 0 / 55%);
+    --widget-shadow: 0 4px 11px rgb(0 0 0 / 55%);
+    --desk: linear-gradient(160deg, #2b3440, #1a1f27 60%, #13171d);
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --theme-canvas: oklch(0.978 0.004 85);
+    --theme-surface: oklch(0.99 0.003 85);
+    --theme-surface-raised: oklch(0.955 0.006 85);
+    --theme-text: oklch(0.235 0.014 75);
+    --theme-accent: oklch(0.53 0.095 186);
+    --theme-muted: oklch(0.5 0.014 75);
+    --theme-error: oklch(0.509494 0.208583 28.513);
+    --theme-primary: oklch(0.43 0.08 186);
+    --surface-sunken: color-mix(in oklab, var(--theme-surface) 55%, var(--theme-surface-raised));
+    --widget-surface-top: var(--theme-surface);
+    --widget-surface-bottom: var(--surface-sunken);
+    --widget-rim: rgb(255 255 255 / 75%);
+    --widget-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
+    --widget-shadow: 0 4px 11px color-mix(in srgb, var(--theme-text) 28%, transparent);
+    --desk: linear-gradient(160deg, #dfe6ee, #c9d3de 60%, #b9c4d1);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+    background: #0d0f12; color: #e8eaee; display: grid; grid-template-columns: 340px 1fr;
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* ---- prototype chrome (not part of the design) ---- */
+  aside.notes { padding: 22px 22px 90px; border-right: 1px solid #23272e; background: #121418; font-size: 13px; line-height: 1.5; overflow: auto; height: 100vh; }
+  aside.notes h1 { font-size: 15px; margin: 0 0 4px; }
+  aside.notes h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8b93a1; margin: 20px 0 8px; }
+  aside.notes p { margin: 0 0 8px; color: #c4c9d2; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: #111; background: #f5c542; padding: 2px 6px; border-radius: 4px; margin-bottom: 10px; }
+  .states { display: grid; gap: 6px; }
+  .states button, .tools button {
+    text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid #2c313a; background: #191c22; color: #e8eaee; font: inherit; cursor: pointer;
+  }
+  .states button[aria-pressed='true'] { border-color: #5fd0c3; background: #17302d; }
+  .states small { display: block; color: #8b93a1; font-size: 11.5px; }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+  pre.state { background: #0b0d10; border: 1px solid #23272e; border-radius: 8px; padding: 10px; font-size: 11.5px; color: #9fe3d8; white-space: pre-wrap; margin: 0; }
+
+  main.desk { position: relative; background: var(--desk); height: 100vh; overflow: hidden; }
+  .desk-caption { position: absolute; top: 18px; left: 22px; right: 22px; color: color-mix(in srgb, var(--theme-text) 70%, transparent); font-size: 12.5px; }
+  .desk-caption b { color: var(--theme-text); }
+  .footprint { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); outline: 1px dashed color-mix(in srgb, var(--theme-text) 18%, transparent); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; }
+  .footprint-label { position: absolute; top: -18px; left: 0; font-size: 10px; color: color-mix(in srgb, var(--theme-text) 45%, transparent); white-space: nowrap; }
+
+  /* ---- the widget, copied from widget.css ---- */
+  .capsule {
+    position: relative; display: flex; height: 40px; align-items: center; gap: 7px; padding: 0 12px 0 10px;
+    border: 1px solid var(--widget-edge); border-radius: 20px; color: var(--theme-text);
+    background: linear-gradient(180deg, var(--widget-surface-top), var(--widget-surface-bottom));
+    box-shadow: 0 0 0 1px var(--widget-rim), var(--widget-shadow), inset 0 1px 0 rgb(255 255 255 / 20%);
+    animation: pop .2s cubic-bezier(.25,1,.4,1); cursor: pointer; overflow: hidden;
+  }
+  .capsule[data-live] { --widget-rim: var(--theme-accent); border-color: var(--theme-accent); }
+  @keyframes pop { from { transform: scale(.92) translateY(5px); opacity: 0; } }
+  .mark { width: 22px; height: 22px; flex: none; border-radius: 6px; background: linear-gradient(150deg, var(--theme-accent), color-mix(in oklab, var(--theme-accent) 55%, #0b2b2a)); display: grid; place-items: center; }
+  .mark svg { width: 14px; height: 14px; }
+  .icon { display: inline-flex; flex: none; }
+  .icon svg { width: 14px; height: 14px; }
+  .copy { min-width: 0; flex: 1; overflow: hidden; font-size: 11.5px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+  .err .copy, .err .icon { color: var(--theme-error); }
+  .ok .copy, .ok .icon { color: var(--theme-primary); }
+  .muted { color: var(--theme-muted); }
+  .spinner { width: 12px; height: 12px; flex: none; border: 2px solid color-mix(in srgb, var(--theme-accent) 22%, transparent); border-top-color: var(--theme-accent); border-radius: 50%; animation: orbit .9s linear infinite; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  .progress { position: absolute; left: 15px; right: 15px; bottom: 5px; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--theme-text) 12%, transparent); overflow: hidden; }
+  .progress > span { display: block; height: 100%; width: var(--p, 0%); background: var(--theme-accent); transition: width .3s ease; }
+  .esc { flex: none; padding: 1px 6px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--theme-text) 22%, transparent); background: transparent; color: var(--theme-muted); font: inherit; font-size: 10px; cursor: pointer; }
+  .esc:hover { color: var(--theme-text); }
+  .round { flex: none; display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--theme-text) 10%, transparent); color: var(--theme-text); cursor: pointer; }
+  .round:hover { background: color-mix(in srgb, var(--theme-text) 18%, transparent); }
+  .pillbtn { flex: none; height: 24px; padding: 0 10px; border-radius: 12px; border: 0; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; background: var(--theme-accent); color: oklch(0.18 0.02 190); }
+  :root[data-theme='light'] .pillbtn { color: #fff; }
+  .pillbtn.quiet { background: color-mix(in srgb, var(--theme-text) 10%, transparent); color: var(--theme-text); font-weight: 500; }
+  .pillbtn:focus-visible, .round:focus-visible, .esc:focus-visible, .capsule:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
+
+  /* variant B: a note above the pill */
+  .note {
+    width: 300px; padding: 12px 14px 12px; border-radius: 14px; color: var(--theme-text);
+    border: 1px solid var(--widget-edge);
+    background: linear-gradient(180deg, var(--widget-surface-top), var(--widget-surface-bottom));
+    box-shadow: 0 0 0 1px var(--widget-rim), var(--widget-shadow); animation: pop .2s cubic-bezier(.25,1,.4,1);
+    font-size: 12px; line-height: 1.45;
+  }
+  .note h3 { margin: 0 0 4px; font-size: 12.5px; color: var(--theme-error); display: flex; gap: 6px; align-items: center; }
+  .note p { margin: 0 0 10px; color: var(--theme-muted); }
+  .parts { display: flex; gap: 4px; margin: 0 0 10px; }
+  .parts span { flex: 1; height: 4px; border-radius: 2px; background: var(--theme-accent); }
+  .parts span.bad { background: var(--theme-error); }
+  .parts span.wait { background: color-mix(in srgb, var(--theme-text) 18%, transparent); }
+  .note .row { display: flex; gap: 6px; justify-content: flex-end; }
+
+  .flash { animation: flash .5s steps(1) forwards; }
+  @keyframes flash { to { visibility: hidden; } }
+  .gone { font-size: 11px; color: color-mix(in srgb, var(--theme-text) 55%, transparent); }
+
+  /* floating switcher */
+  .switcher { position: fixed; left: calc(50% + 170px); bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 999px; background: #f5c542; color: #111; box-shadow: 0 6px 20px rgb(0 0 0 / 45%); font-size: 12.5px; font-weight: 700; z-index: 10; }
+  .switcher button { border: 0; background: #111; color: #f5c542; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; }
+  .switcher span { padding: 0 10px; min-width: 230px; text-align: center; }
+</style>
+</head>
+<body>
+<aside class="notes">
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>Dictation retry in the widget</h1>
+  <p>A long dictation goes up in parts. Today, when OpenRouter turns one part away (HTTP 429), Sotto throws the whole dictation away and shows the error for 500 ms.</p>
+  <p>What the fix does in every variant: Sotto first waits and retries the part by itself (about 1, 2 and 4 s). Only if that still fails does the widget ask you. The audio stays in memory, never on disk, until you try again, discard it, or start a new dictation.</p>
+
+  <h2>States</h2>
+  <div class="states" id="states"></div>
+
+  <h2>Look</h2>
+  <div class="tools">
+    <button id="theme">Switch to light</button>
+  </div>
+
+  <h2>Keyboard</h2>
+  <p>The widget never takes focus, so keys are global while the error shows. <b>Esc</b> discards. Your dictation hotkey starts a new dictation, which also discards. Try again is a click in A, B and C.</p>
+
+  <h2>Current state</h2>
+  <pre class="state" id="readout"></pre>
+</aside>
+
+<main class="desk" id="desk">
+  <div class="desk-caption" id="caption"></div>
+  <div class="footprint" id="footprint"></div>
+</main>
+
+<div class="switcher" role="group" aria-label="Prototype variant">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span id="variantLabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+</div>
+
+<script>
+const ICON = {
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  retry: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  mark: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M5 10v4M9.5 7v10M14 9v6M18.5 11v2"/></svg>',
+}
+const MARK = `<span class="mark" aria-hidden="true">${ICON.mark}</span>`
+
+const STATES = [
+  { key: 'today', label: 'Today', hint: 'Error flashes for 500 ms, recording gone' },
+  { key: 'limited', label: 'Turned away', hint: '1 of 3 parts still rejected after retries' },
+  { key: 'retrying', label: 'Trying again', hint: 'After you press Try again' },
+  { key: 'recovered', label: 'Recovered', hint: 'All parts back, text pasted' },
+  { key: 'again', label: 'Turned away again', hint: 'The retry was rejected too' },
+  { key: 'dismissed', label: 'Discarded', hint: 'Esc, ×, or a new dictation' },
+]
+
+const VARIANTS = {
+  A: { name: 'Buttons in the pill', width: 320, footprint: 'pill-controls 320×88' },
+  B: { name: 'Note above the pill', width: 340, footprint: 'grows to 340×190 while the note shows' },
+  C: { name: 'The pill is the button', width: 248, footprint: 'active 248×88, unchanged' },
+}
+
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+let state = params.get('state') && STATES.some(s => s.key === params.get('state')) ? params.get('state') : 'limited'
+let retryTimer = null
+
+function setUrl() {
+  const p = new URLSearchParams(location.search)
+  p.set('variant', variant); p.set('state', state)
+  history.replaceState(null, '', '?' + p.toString())
+}
+
+function go(next) {
+  clearTimeout(retryTimer)
+  state = next
+  if (next === 'retrying') retryTimer = setTimeout(() => go('recovered'), 2600)
+  render()
+}
+
+const DETAIL = 'OpenRouter turned away part of this recording. It’s held in memory, not saved to disk, until you try again or discard it.'
+const DETAIL_AGAIN = 'OpenRouter is still busy. Your recording is still held in memory. Wait a moment, then try again, or discard it.'
+
+function capsule({ cls = '', live = false, inner, width = 212, label = '', role = '' }) {
+  return `<div class="capsule ${cls}" ${live ? 'data-live' : ''} style="width:${width}px" ${role} ${label ? `aria-label="${label}"` : ''}>${MARK}${inner}</div>`
+}
+
+function retryingCapsule(width) {
+  return capsule({ live: true, width, inner: `<span class="spinner" aria-hidden="true"></span><span class="copy">Transcribing part 3 of 3</span><span class="progress"><span style="--p:66%"></span></span>` })
+}
+function recoveredCapsule(width) {
+  return `<div class="ok">${capsule({ width, inner: `<span class="icon">${ICON.check}</span><span class="copy">Pasted</span>` })}</div>`
+}
+function dismissed() {
+  return `<div class="gone">Widget back to its resting sliver. Nothing was pasted. The audio is gone from memory.</div>`
+}
+function today() {
+  return `<div class="flash err">${capsule({ inner: `<span class="icon">${ICON.alert}</span><span class="copy">Too many requests</span>` })}</div>
+          <div class="gone">Gone after 500 ms. The whole 30 s dictation was thrown away, including the 2 parts that came back.</div>`
+}
+
+const RENDER = {
+  A(s) {
+    const w = 320
+    if (s === 'today') return today()
+    if (s === 'retrying') return retryingCapsule(w)
+    if (s === 'recovered') return recoveredCapsule(w)
+    if (s === 'dismissed') return dismissed()
+    const title = s === 'again' ? 'Still busy at OpenRouter' : 'Part not transcribed'
+    const detail = s === 'again' ? DETAIL_AGAIN : DETAIL
+    return `<div class="err">${capsule({ width: w, inner: `
+      <span class="icon">${ICON.alert}</span>
+      <span class="copy" title="${detail}">${title}</span>
+      <button class="pillbtn" data-act="retry">Try again</button>
+      <button class="round" data-act="discard" aria-label="Discard recording" title="Discard recording (Esc)">${ICON.x}</button>` })}</div>`
+  },
+  B(s) {
+    if (s === 'today') return today()
+    if (s === 'retrying') return retryingCapsule(212)
+    if (s === 'recovered') return recoveredCapsule(212)
+    if (s === 'dismissed') return dismissed()
+    const again = s === 'again'
+    return `<section class="note" role="alert">
+        <h3><span class="icon">${ICON.alert}</span>${again ? 'Still busy at OpenRouter' : 'Part of this dictation wasn’t transcribed'}</h3>
+        <div class="parts" aria-label="2 of 3 parts transcribed"><span></span><span></span><span class="bad"></span></div>
+        <p>${again ? 'The last part was turned away again. Your recording is still held in memory, not on disk.' : '2 of 3 parts came back. OpenRouter turned the last one away. The recording is held in memory, not on disk, until you choose.'}</p>
+        <div class="row">
+          <button class="pillbtn quiet" data-act="discard">Discard</button>
+          <button class="pillbtn" data-act="retry">Try again</button>
+        </div>
+      </section>
+      <div class="err">${capsule({ inner: `<span class="icon">${ICON.alert}</span><span class="copy">Not transcribed</span>` })}</div>`
+  },
+  C(s) {
+    if (s === 'today') return today()
+    if (s === 'retrying') return retryingCapsule(212)
+    if (s === 'recovered') return recoveredCapsule(212)
+    if (s === 'dismissed') return dismissed()
+    const detail = s === 'again' ? DETAIL_AGAIN : DETAIL
+    return `<div class="err" data-act="retry">${capsule({ role: 'role="button" tabindex="0"', label: 'Try transcribing again', inner: `
+      <span class="icon">${ICON.retry}</span>
+      <span class="copy" title="${detail}">${s === 'again' ? 'Still busy · try again' : 'Click to try again'}</span>
+      <button class="esc" data-act="discard" aria-label="Discard recording">esc</button>` })}</div>`
+  },
+}
+
+const CAPTION = {
+  A: '<b>A · Buttons in the pill.</b> The capsule widens to the 320 px controls width that the thread controls already use. Title in the pill, the full sentence on hover. Try again and × are real buttons.',
+  B: '<b>B · Note above the pill.</b> A short note says what happened, how much came back and what is held, with Try again and Discard. The pill underneath stays the usual size. The widget grows while the note is up.',
+  C: '<b>C · The pill is the button.</b> No new controls. The whole capsule is Try again, and the esc chip that cancels a dictation today discards. Smallest change; the sentence lives only in the tooltip and the screen-reader alert.',
+}
+
+function render() {
+  document.getElementById('footprint').style.width = VARIANTS[variant].width + 'px'
+  document.getElementById('footprint').innerHTML = `<span class="footprint-label">window: ${VARIANTS[variant].footprint}</span>` + RENDER[variant](state)
+  document.getElementById('caption').innerHTML = CAPTION[variant]
+  document.getElementById('variantLabel').textContent = `${variant} — ${VARIANTS[variant].name}`
+  const statesEl = document.getElementById('states')
+  statesEl.innerHTML = STATES.map(s => `<button data-state="${s.key}" aria-pressed="${s.key === state}">${s.label}<small>${s.hint}</small></button>`).join('')
+  document.getElementById('readout').textContent = JSON.stringify({
+    variant, state,
+    errorStays: state === 'today' ? '500 ms (successDisplayMs)' : 'until dismissed',
+    parts: state === 'recovered' ? '3 of 3' : state === 'dismissed' ? 'discarded' : state === 'today' ? 'all lost' : '2 of 3 back, 1 held',
+    audioHeldInMemory: ['limited', 'retrying', 'again'].includes(state),
+    writtenToDisk: false,
+  }, null, 2)
+  setUrl()
+}
+
+document.addEventListener('click', e => {
+  const st = e.target.closest('[data-state]')
+  if (st) return go(st.dataset.state)
+  const act = e.target.closest('[data-act]')
+  if (!act) return
+  e.stopPropagation()
+  if (act.dataset.act === 'discard') go('dismissed')
+  if (act.dataset.act === 'retry') go('retrying')
+})
+const order = Object.keys(VARIANTS)
+const cycle = d => { variant = order[(order.indexOf(variant) + d + order.length) % order.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') cycle(-1)
+  if (e.key === 'ArrowRight') cycle(1)
+  if (e.key === 'Escape' && ['limited', 'again'].includes(state)) go('dismissed')
+})
+const themeBtn = document.getElementById('theme')
+themeBtn.onclick = () => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  themeBtn.textContent = light ? 'Switch to dark' : 'Switch to light'
+}
+render()
+</script>
+</body>
+</html>

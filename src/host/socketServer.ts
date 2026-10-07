@@ -3,12 +3,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { Duplex } from 'node:stream'
 import { isIP } from 'node:net'
 import { z } from 'zod'
-import type { HostService, ClientIdentity } from '../main/agents/hostService'
+import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
-import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, detailWithActivitySummaries, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
+import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
@@ -69,7 +69,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
  */
-interface Peer { desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null }
+interface Peer { desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
@@ -150,6 +150,9 @@ export interface HostPhonesAdministration {
   /** Reads `tailnetConnections`, or sets it and waits for Serve to follow. */
   tailnet(request: { readonly enabled?: boolean | undefined }): Promise<HostTailnetAnswer>
 }
+/** An internal native attempt ID, isolated from other paired clients and local provider attempts. */
+const answerDecisionId = (clientId: string, commandId: string): string =>
+  'socket-answer:' + createHash('sha256').update(JSON.stringify([clientId, commandId])).digest('hex')
 /**
  * A peer sending more than this many messages in a second is closed, except for event pages, which are
  * paced instead: a page past its own budget waits for the next second. A client reading a long log one
@@ -174,6 +177,9 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
+    && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
+    && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
@@ -273,12 +279,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     for (const id of peer.held.keys()) if (!peer.observed.has(id)) peer.held.delete(id)
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
   }
-  /** Each whole detail's activity summaries, made once however many peers accept them (#701); every other peer is sent it whole. */
+  /**
+   * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0056), and a client
+   * that accepts activity summaries is sent them (#701). Each is made once however many peers are sent it.
+   */
+  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
-    if (!peer.activitySummaries || detail === null) return detail
+    if (detail === null) return detail
+    let withoutVisuals = withoutVisualsOf.get(detail)
+    if (!withoutVisuals) withoutVisualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail))
+    if (!peer.activitySummaries) return withoutVisuals
     let summary = summarised.get(detail)
-    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(detail))
+    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return summary
   }
   const sendWhole = (peer: Peer, threadId: string, detail: AgentThreadDetail | null): void => {
@@ -334,6 +347,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const threadId = update.threadId
     waiting.delete(threadId)
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
+    let strippedDelta: AgentThreadDetailDelta | undefined
     let summaries: AgentThreadDetailDelta | undefined
     for (const peer of peers) {
       if (!peer.observed.has(threadId)) continue
@@ -341,11 +355,27 @@ export async function startSocketServer(options: SocketServerOptions) {
       const held = peer.held.get(threadId)
       if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
       if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(update)) : update }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+      strippedDelta ??= deltaWithoutVisuals(update)
+      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
       else peer.held.delete(threadId)
     }
   })
-  const unsubscribe = service.subscribe(state => shellPublisher.publish(state))
+  // Only exact attempts a peer already read without acceptance are watched. This is an in-memory
+  // lookup on a host publication, never a provider read or another socket request.
+  const acceptedAnswer = (peer: Peer, decisionId: string, target: HostAnswerTarget): boolean =>
+    service.requestAnswerRecovery?.(target.threadId, target.providerId).completed.some(item =>
+      item.requestId === target.requestId && item.questionsDigest === target.questionsDigest
+      && item.decisionId === answerDecisionId(peer.client.clientId, decisionId)) ?? false
+  const unsubscribe = service.subscribe(state => {
+    for (const peer of peers) {
+      if (!peer.ready || !peer.answerReceipts) continue
+      for (const [decisionId, target] of peer.answerWatches) {
+        if (!acceptedAnswer(peer, decisionId, target)) continue
+        if (push(peer, { v: 1, event: 'answer-receipt', acceptedAnswer: { ...target, decisionId } })) peer.answerWatches.delete(decisionId)
+      }
+    }
+    shellPublisher.publish(state)
+  })
   // A whole the service published may still be waiting out the coalescing window when a client starts observing
   // its thread. The client is sent that copy before its observe is acknowledged, and it does not follow a second time.
   // An entry lasts only until the thread's next update goes out, which carries or follows it.
@@ -370,16 +400,26 @@ export async function startSocketServer(options: SocketServerOptions) {
       return shell(peer)
     }
     const input = request.command
+    if ((input.type === 'send' && input.draft || input.type === 'compose' && input.threadId !== undefined)
+      && !offers(peer, 'atomic-send')) throw new Refusal('invalid_request')
+    if ((input.type === 'compose' && input.draftId !== undefined || input.type === 'send' && input.draft?.draftId !== undefined
+      || input.type === 'save-thread-draft' && input.expectedDraftId !== undefined) && !offers(peer, 'draft-revisions')) throw new Refusal('invalid_request')
     const state = service.shell()
     const targetThreadId = peer.selectedThreadId
     const savedDraft = state.draftThreadId !== targetThreadId || !state.composing && !state.draft.trim() && !state.draftAttachments?.length
       ? state.threadDrafts?.find(draft => draft.threadId === targetThreadId) : undefined
-    const draftRequestId = state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
+    // A native question needs current answer authority even before any client has saved its draft.
+    const nativeQuestion = state.host.threads.find(thread => thread.id === targetThreadId)?.requests
+      .find(item => item.kind === 'question')
+    const draftRequestId = nativeQuestion?.id ?? (state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
       : savedDraft ? savedDraft.requestId
-        : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId
+        : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId)
+    // Targeted Compose resolves its binding after earlier admitted saves in the coordinator's lane.
+    // The coordinator checks current answer authority before staging that actual binding. Pairing,
+    // shape and this peer's exact selected owner are still checked here; Send stays conservative.
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
-      draftRequestId: input.type === 'send' || input.type === 'compose' ? draftRequestId : undefined,
-      clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
+      draftRequestId: input.type === 'send' || input.type === 'compose' && input.threadId === undefined ? draftRequestId : undefined,
+      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {
       const result = await service.command(input, peer.client)
@@ -406,10 +446,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         } else {
           const previousEditor = peer.editingThreadId
           if (input.type === 'compose') peer.editingThreadId = peer.selectedThreadId
-          const result = await service.command(input, { ...peer.client, selectedThreadId: peer.selectedThreadId })
+          const client = { ...peer.client, selectedThreadId: peer.selectedThreadId }
+          const result = input.type === 'answer'
+            ? await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
+            : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['pause-draft', 'cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          if (input.type === 'answer' || input.type === 'send') privateError = result.error
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }
@@ -449,14 +492,44 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.clientUpdates = (request.accepts?.includes('client-updates') ?? false) && offers(peer, 'client-updates')
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
+        peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
         return { hostId, clientId: peer.client.clientId, shell: shell(peer), capabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false }, sottoVersion, features: featuresFor(peer),
           ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
       }
       case 'shell': return shell(peer)
       case 'detail': return forPeer(peer, service.threadDetail(request.threadId))
+      case 'check-answer': {
+        if (!offers(peer, 'answer-check') || !service.checkRequestAnswer) throw new Refusal('invalid_request')
+        if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+        try { await service.checkRequestAnswer(request.answer, peer.client) }
+        catch (error) {
+          throw error instanceof RequestAnswerCheckRefusal ? new Refusal(error.hostCode, error.message) : new Refusal('unavailable')
+        }
+        if (!authenticated(peer)) throw new Refusal('unauthenticated')
+        if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
+        return shell(peer)
+      }
       case 'events': return events(peer, request.afterSeq, request.threadId)
-      case 'receipt': return receipts.get(peer.client.clientId, request.commandId)?.receipt ?? { status: 'unknown' }
+      case 'receipt': {
+        const receipt = receipts.get(peer.client.clientId, request.commandId)?.receipt ?? { status: 'unknown' as const }
+        // The coordinator's receipt survives a host restart. Only acceptance of this authenticated
+        // client's exact native attempt and original questions can complete its retained answer.
+        if (request.answer) {
+          const target = request.answer
+          if (acceptedAnswer(peer, request.commandId, target)) {
+            peer.answerWatches.delete(request.commandId)
+            return { status: 'completed', answerDelivered: true, acceptedAnswer: { ...target, decisionId: request.commandId } }
+          }
+          // Registration and the acceptance check are synchronous, so a late publish cannot fall
+          // between a negative response and its watch. Old clients never ask for this push.
+          if (peer.answerReceipts) {
+            peer.answerWatches.set(request.commandId, target)
+            while (peer.answerWatches.size > 512) peer.answerWatches.delete(peer.answerWatches.keys().next().value!)
+          }
+        }
+        return receipt
+      }
       case 'observe': {
         // Only a thread this client does not hold is sent whole: one it holds is kept current by the pushes that follow
         // it. The service publishes a newly observed thread whole as it is observed, and that copy is the one sent.
@@ -706,10 +779,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null }
+    const peer: Peer = { desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.answerWatches.clear(); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

@@ -480,6 +480,8 @@ describe('typed preload bridge', () => {
         'platform',
         'reportDrag',
         'requestCancel',
+        'requestDismiss',
+        'requestRetry',
         'requestStop',
         'requestToggle',
         'setPresentation',
@@ -1093,7 +1095,7 @@ describe('IPC validation and lifecycle', () => {
     harness.cleanup()
   })
 
-  it.each(['cancel', 'stop', 'toggle'] as const)(
+  it.each(['cancel', 'stop', 'toggle', 'retry', 'dismiss'] as const)(
     'allows a widget renderer to request the least-privilege %s command',
     async (type) => {
       const harness = createIpcHarness()
@@ -1291,6 +1293,12 @@ describe('IPC validation and lifecycle', () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { browserWithoutAsking: false })).resolves.toMatchObject({ browserWithoutAsking: false })
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ browserWithoutAsking: false })
+  })
+
+  it('persists turning visuals in threads off through settings IPC (ADR-0056)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { visualsInThreads: false })).resolves.toMatchObject({ visualsInThreads: false })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ visualsInThreads: false })
   })
 
   it('persists phone access and the name phones show through the settings allow-list (ADR-0033)', async () => {

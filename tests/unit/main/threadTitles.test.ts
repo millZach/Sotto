@@ -100,6 +100,26 @@ describe('naming a thread from its first exchange', () => {
     expect(titled(f.control, threadId).title).toBe('Workshop')
   })
 
+  it('writes a title from the agent\'s own reply, never from a visual drawn before it (ADR-0056)', async () => {
+    const f = await coordinator()
+    const threadId = workshop(f.control).id
+    const thread = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    // The agent draws before it writes: the workspace slots the visual in under the prompt, as it does in the app.
+    f.host.observeThreads([threadId])
+    thread.messages = [{ id: 'first-prompt', role: 'user', text: 'How does a send work?', createdAt: at }]
+    thread.status = 'running'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(item => item.id === threadId)?.messages.map(message => message.id)).toEqual(['first-prompt']))
+    expect(await f.host.addVisual(threadId, { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A --> B' })).toMatchObject({ added: true, anchor: 'user' })
+    thread.messages = [...thread.messages, { id: 'first-reply', role: 'assistant', text: 'The diagram above shows it.', createdAt: at }]
+    thread.status = 'idle'
+    f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(item => item.id === threadId)?.messages.map(message => message.id)).toEqual(['first-prompt', expect.stringMatching(/^visual:/u), 'first-reply']))
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    expect(f.titles.mock.calls[0]).toEqual([threadId, { prompt: 'How does a send work?', reply: 'The diagram above shows it.' }])
+  })
+
   it('names a stand-in titled thread once the first reply lands, keeping the name across provider events and a restart', async () => {
     const f = await coordinator()
     const threadId = workshop(f.control).id

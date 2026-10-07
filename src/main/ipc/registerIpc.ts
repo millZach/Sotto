@@ -136,6 +136,7 @@ const settingKeys = [
   'phoneAccessName',
   'showBrowserPreviews',
   'browserWithoutAsking',
+  'visualsInThreads',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
@@ -537,8 +538,9 @@ export function registerIpc(
       dictationCommandSchema,
       1,
       async (command, role): Promise<CommandResult> => {
-        // The widget may toggle (click-to-dictate), stop, and cancel; only the
-        // explicit 'start' command stays a main-renderer privilege.
+        // The widget may toggle (click-to-dictate), stop, cancel, and retry or
+        // dismiss a kept recording; only the explicit 'start' command stays a
+        // main-renderer privilege.
         if (role === 'widget' && command.type === 'start') {
           throw new UnauthorizedIpcSenderError()
         }

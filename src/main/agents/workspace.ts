@@ -11,12 +11,14 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
-import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
+import { placeVisuals } from './visualPlacement'
+import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
@@ -82,6 +84,14 @@ const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access t
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
 
+/**
+ * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
+ * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
+ */
+export type VisualAddition =
+  | { readonly added: true; readonly visual: AgentVisual; readonly anchor: 'assistant' | 'user' | 'none' }
+  | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
+
 /** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
 interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string }
 /** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
@@ -132,7 +142,7 @@ const WRITE_WINDOW_MS = 250
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
-  useHostSetupTools(tools: ScopedThreadTools): void { this.inner.useHostSetupTools?.(tools) }
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   private readonly store: AtomicJsonStore<Workspace>
@@ -160,6 +170,10 @@ export class WorkspaceHost implements AgentHost {
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
+  /** Whether the open publish window lets no opening change cut it short: one already did, or it carries a flood. */
+  private publishCut = false
+  /** Whether an opening change is among what waits for the end of the open publish window. */
+  private publishHeldOpening = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
   private readonly organizationLanes = new Map<string, Promise<unknown>>()
@@ -948,8 +962,57 @@ export class WorkspaceHost implements AgentHost {
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
-      return this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      const result = await this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0056). An uncertain one
+      // keeps them: a visual whose turn did go is left out of every window anyway, having no place to sit.
+      if (result.accepted && !result.uncertain && removedUserMessages > 0) this.forgetVisuals(threadId, expectedUserMessageIds.slice(-removedUserMessages))
+      return result
     })
+  }
+  /** Removes the visuals drawn in these turns, and shows the thread without them. */
+  private forgetVisuals(threadId: string, userMessageIds: readonly string[]): void {
+    if (this.storeUnavailable) return
+    try { if (this.threadStore.deleteVisualsForTurns(threadId, userMessageIds) === 0) return }
+    catch { this.saveError = HISTORY_SAVE_ERROR; return }
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+  }
+  /**
+   * Keeps a visual an agent drew in this thread and shows it where the thread stood when the call arrived: under the
+   * newest message the store holds, in the newest user message's turn (ADR-0056). Whatever the provider said before the
+   * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
+   * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
+   */
+  async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
+    await this.initialize()
+    if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
+    this.writeEvents()
+    if (!this.historyWritable() || this.failedEventThreads.has(threadId) || this.pendingEvents.has(threadId)) return { added: false, reason: 'history-unavailable' }
+    let stored: StoredVisual
+    try {
+      const newest = this.threadStore.newestMessages(threadId)
+      const visuals = this.threadStore.readVisuals(threadId)
+      if (visuals.length >= VISUALS_PER_THREAD_MAX) return { added: false, reason: 'thread-limit' }
+      if (visuals.filter(item => item.anchorUserMessageId === newest.userMessageId).length >= VISUALS_PER_TURN_MAX) return { added: false, reason: 'turn-limit' }
+      stored = { visual: visualFromInput(randomUUID(), input), createdAt: new Date().toISOString(), anchorMessageId: newest.messageId, anchorUserMessageId: newest.userMessageId }
+      this.threadStore.addVisual(threadId, stored)
+    } catch { return { added: false, reason: 'history-unavailable' } }
+    const anchor = stored.anchorMessageId === null ? 'none' : this.threadStore.message(threadId, stored.anchorMessageId)?.role ?? 'none'
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+    return { added: true, visual: stored.visual, anchor }
+  }
+  /** Whether a thread may draw a visual: one this host holds, on a provider that offers Sotto's tools (Devin does not). */
+  admitsVisuals(threadId: string): boolean {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread !== undefined && thread.providerId !== 'devin'
+  }
+  /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
+  private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
+    if (this.storeUnavailable) return [...messages]
+    let visuals: readonly StoredVisual[]
+    try { visuals = this.threadStore.readVisuals(threadId) } catch { return [...messages] }
+    return placeVisuals(messages, visuals, windowStartsThread)
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
@@ -965,9 +1028,10 @@ export class WorkspaceHost implements AgentHost {
     this.eventSourced = typeof inner.subscribeEvents === 'function'
     this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
       if (!this.ready || this.deliveryStopped) return
+      const records = this.watchedRecordCount()
       this.accept(snapshot)
       this.writeSoon()
-      this.publishSoon()
+      this.publishSoon(this.watchedRecordCount() > records)
     }, { historyFromEvents: this.eventSourced }))
     const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
       if (!this.deliveryStopped) this.recordEvent(threadId, event)
@@ -1185,7 +1249,7 @@ export class WorkspaceHost implements AgentHost {
     if (waiting) waiting.push(event)
     else this.pendingEvents.set(threadId, [event])
     this.eventChanged.add(threadId)
-    if (this.ready) this.publishSoon()
+    if (this.ready) this.publishSoon(event.kind === 'message-added' && this.inView(threadId))
   }
   /** Write what the events said. Called before anything reads the store, and at every publish. */
   private writeEvents(force = false): void {
@@ -1300,10 +1364,10 @@ export class WorkspaceHost implements AgentHost {
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
     }
-    if (!this.watched.has(thread.id)) return this.declared ? [] : [...messages]
+    if (!this.watched.has(thread.id)) return this.declared ? [] : this.withVisuals(thread.id, messages, true)
     const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
     if (hidden > 0) thread.earlierAvailable = true
-    return hidden > 0 ? messages.slice(hidden) : [...messages]
+    return this.withVisuals(thread.id, hidden > 0 ? messages.slice(hidden) : messages, hidden === 0)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -1324,7 +1388,7 @@ export class WorkspaceHost implements AgentHost {
     const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
     if (!window) return
     this.hidden.set(threadId, Math.max(0, window.firstPosition))
-    thread.messages = window.messages
+    thread.messages = this.withVisuals(threadId, window.messages, !window.earlierAvailable)
     if (window.earlierAvailable) thread.earlierAvailable = true
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
@@ -1619,15 +1683,44 @@ export class WorkspaceHost implements AgentHost {
    * A publish the providers asked for. The first of a burst goes out at once, so a reply appearing
    * still feels immediate, and everything inside the window behind it becomes one publish at its
    * end with the last state. No adapter can make the host copy the workspace per event.
+   *
+   * `opening` is an opening change in a thread a window may be looking at: a message's first words or a new
+   * activity record. It goes out at once even inside a window, and starts a fresh one behind it, so the first
+   * words of a reply never wait behind the echo of the prompt that asked for it. The fresh window lets no second
+   * opening change through: a read that records a hundred messages in one task costs two publishes and a trailing
+   * one, not a hundred. Nor does a window whose trailing publish carried opening changes held back, so a flood
+   * that goes on across tasks, such as a long transcript read in chunks, costs one publish a window like any
+   * other burst. Later chunks of the same message ride the window as before.
    */
-  private publishSoon(): void {
-    if (this.publishTimer) { this.publishPending = true; return }
+  private publishSoon(opening = false): void {
+    if (this.publishTimer) {
+      if (!opening || this.publishCut) { this.publishPending = true; this.publishHeldOpening ||= opening; return }
+      clearTimeout(this.publishTimer); this.publishTimer = undefined; this.publishPending = false
+      this.publishNow(true)
+      return
+    }
+    this.publishNow(false)
+  }
+  /** Publish now and open a window behind it; `closed` is whether that window lets no opening change cut it. */
+  private publishNow(closed: boolean): void {
     this.publish()
+    this.publishCut = closed
+    this.publishHeldOpening = false
     this.publishTimer = setTimeout(() => {
       this.publishTimer = undefined
-      if (this.publishPending) { this.publishPending = false; this.publishSoon() }
+      this.publishCut = false
+      if (this.publishPending) { this.publishPending = false; this.publishNow(this.publishHeldOpening) }
     }, PUBLISH_WINDOW_MS)
     this.publishTimer.unref?.()
+  }
+  /** Whether a window may be looking at this thread: one it said it watches, or any while none has said. */
+  private inView(threadId: string): boolean { return !this.declared || this.watched.has(threadId) }
+  /** The activity records of the threads a window may be looking at, so a provider snapshot that brought one
+   * there can say so. A record in a thread nobody is looking at has nothing to paint and rides the window. */
+  private watchedRecordCount(): number {
+    let count = 0
+    for (const thread of this.state.snapshot.threads) if (this.inView(thread.id)) count += thread.activities?.length ?? 0
+    return count
   }
   /** A cache write the providers asked for: never more than one waiting, and the state it finds
    * when it runs is the one that is written. */
@@ -1914,7 +2007,11 @@ export class WorkspaceHost implements AgentHost {
         this.known.clear()
         this.hidden.clear()
         this.storedAnchors.clear()
-        for (const thread of this.state.snapshot.threads) delete thread.earlierAvailable
+        // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
+        for (const thread of this.state.snapshot.threads) {
+          delete thread.earlierAvailable
+          if (thread.messages.some(isVisualMessage)) thread.messages = thread.messages.filter(message => !isVisualMessage(message))
+        }
       }
     }
     this.dirty = true
