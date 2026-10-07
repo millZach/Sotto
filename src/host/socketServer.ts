@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { Duplex } from 'node:stream'
 import { isIP } from 'node:net'
 import { z } from 'zod'
-import type { HostService, ClientIdentity } from '../main/agents/hostService'
+import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
@@ -481,7 +481,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'check-answer': {
         if (!offers(peer, 'answer-check') || !service.checkRequestAnswer) throw new Refusal('invalid_request')
         if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
-        await service.checkRequestAnswer(request.answer, peer.client)
+        try { await service.checkRequestAnswer(request.answer, peer.client) }
+        catch (error) {
+          throw error instanceof RequestAnswerCheckRefusal ? new Refusal(error.hostCode, error.message) : new Refusal('unavailable')
+        }
         if (!authenticated(peer)) throw new Refusal('unauthenticated')
         if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
         return shell(peer)

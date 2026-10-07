@@ -488,7 +488,10 @@ describe('exact answer notice ownership', () => {
 })
 
 describe('explicit native answer checks', () => {
-  it.each(['uncertain', 'retry-ready'] as const)('does not let an old receipt shortcut a %s native re-offer', async boundary => {
+  it.each([
+    ['uncertain', 'stable'], ['retry-ready', 'stable'], ['uncertain', 'cleared'], ['retry-ready', 'cleared'],
+    ['uncertain', 'failed'], ['retry-ready', 'failed'],
+  ] as const)('does not let an old receipt shortcut a %s native re-offer (receipt %s)', async (boundary, receiptOutcome) => {
     const remote = fixture(REMOTE, 'remote'), router = new DesktopHostRouter(emptyDesktopState)
     const questions = [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }]
     remote.state.host.threads[0]!.providerId = 'grok'
@@ -497,13 +500,17 @@ describe('explicit native answer checks', () => {
     const target = { kind: 'thread' as const, ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'grok' as const, requestId: 'question', questions }
     const digest = requestQuestionsDigest(questions)
     remote.connection.service.requestAnswerRecovery = () => ({ uncertainRequestIds: [], completed: [{ requestId: 'question', decisionId: 'old-answer', questionsDigest: digest }] })
-    const receipt = vi.fn(async () => undefined), check = vi.fn(async () => undefined)
+    const receipt = vi.fn(async () => {
+      if (receiptOutcome === 'cleared') remote.state.host.threads[0]!.requests = []
+      if (receiptOutcome === 'failed') throw new Error('Synthetic receipt read failed')
+    }), check = vi.fn(async () => undefined)
     remote.connection.refreshRequestAnswer = receipt
     Object.assign(remote.connection.service, { checkRequestAnswer: check })
     router.add(remote.connection)
     await router.refreshRequestDraft(target, 'old-answer')
     expect(check).toHaveBeenCalledWith({ threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: digest }, desktopWindowClient())
-    expect(receipt).not.toHaveBeenCalled(); expect(remote.detail).not.toHaveBeenCalled()
+    expect(receipt).toHaveBeenCalledWith('old-answer', { threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: digest })
+    expect(remote.detail).not.toHaveBeenCalled()
     router.dispose()
   })
   it('refuses an older host instead of treating cached detail as a fresh native Check', async () => {

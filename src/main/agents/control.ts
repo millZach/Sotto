@@ -19,7 +19,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
 import type { AgentCredentials } from './credentials'
 import { approvalWords, classifyRiskyAction, denialWords, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
-import { desktopWindowClient, supervisionClient, type ClientIdentity } from './hostService'
+import { desktopWindowClient, supervisionClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
 import type { AgentHost, AgentHostCommand, PromptImage, ThreadReadPurpose } from './host'
 import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
@@ -249,6 +249,9 @@ export class AgentControl {
     this.visibleCommandError = error; this.state.error = message
   }
   private readonly activeCommands = new Set<Promise<AgentState>>()
+  private readonly requestDraftReads = new Set<Promise<void>>()
+  /** Queued admissions and native dispatches both fence Checks without owning any command lane. */
+  private readonly answerActivities = new Map<string, { revision: number; active: Set<string> }>()
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null
   private privacyCleanupPending = false
   private privacyRevision = 0
@@ -1216,13 +1219,13 @@ export class AgentControl {
 
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     const validate = () => {
-      this.guardClientGrant(client)
-      const thread = this.thread(target.threadId)
-      const request = thread.requests.find(item => item.id === target.requestId)
+      if (!(this.dependencies.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed) throw new RequestAnswerCheckRefusal('forbidden')
+      const thread = this.state.host.threads.find(item => item.id === target.threadId)
+      const request = thread?.requests.find(item => item.id === target.requestId)
       const questions = request ? requestDraftQuestions(request) : []
-      if (isThreadClosed(thread) || requestDraftProvider(this.state.host, thread, this.state.configuration.provider) !== target.providerId
+      if (!thread || isThreadClosed(thread) || requestDraftProvider(this.state.host, thread, this.state.configuration.provider) !== target.providerId
         || !request || !questions.length || requestQuestionsDigest(questions) !== target.questionsDigest) {
-        throw new Error('The original question changed or is no longer pending. Your saved answer is kept.')
+        throw new RequestAnswerCheckRefusal('stale-question')
       }
     }
     validate()
@@ -1230,28 +1233,36 @@ export class AgentControl {
   }
 
   async refreshRequestDraft(threadId: string, requestId?: string, validate?: () => void): Promise<void> {
-    // Direct answers own the thread lane; composer and voice answers own the global lane.
-    // Reserve both before waiting, so neither can overtake Check or lose a new reservation.
-    const task = Promise.all([this.threadActions.get(threadId), this.serial].map(pending => Promise.resolve(pending).catch(() => undefined)))
-      .then(() => this.readRequestDraft(threadId, requestId, validate))
-    this.threadActions.set(threadId, task)
-    this.serial = task.catch(() => undefined)
+    // A native read owns no command lane: one provider must never hold other threads or the composer.
+    const task = this.readRequestDraft(threadId, requestId, validate)
+    this.requestDraftReads.add(task)
     try { await task }
-    finally { if (this.threadActions.get(threadId) === task) this.threadActions.delete(threadId) }
+    finally { this.requestDraftReads.delete(task) }
   }
 
   private async readRequestDraft(threadId: string, requestId?: string, validate?: () => void): Promise<void> {
     validate?.()
+    const dispatchRevision = this.answerActivities.get(threadId)?.revision ?? 0
+    const unchanged = () => {
+      const dispatches = this.answerActivities.get(threadId)
+      if (dispatches?.active.size) throw new RequestAnswerCheckRefusal('answer-in-progress')
+      if ((dispatches?.revision ?? 0) !== dispatchRevision) throw new RequestAnswerCheckRefusal('answer-changed')
+    }
+    unchanged()
+    const reservations = new Set(this.outbox.filter(item => item.type === 'answer' && item.threadId === threadId
+      && (!requestId || item.requestId === requestId)).map(item => item.id))
     const thread = this.thread(threadId)
-    if (!isThreadProviderConnected(this.state.host, thread)) throw new Error('Reconnect the original provider before checking this answer.')
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { retryUncertainAnswers: true, ...(requestId ? { retryUncertainAnswerId: requestId } : {}) }))
+    if (!isThreadProviderConnected(this.state.host, thread)) throw new RequestAnswerCheckRefusal('provider-disconnected')
+    const snapshot = await this.readThread(threadId, undefined, { retryUncertainAnswers: true, ...(requestId ? { retryUncertainAnswerId: requestId } : {}) })
+    unchanged()
+    this.acceptSnapshot(snapshot)
     validate?.()
     const checked = this.thread(threadId)
     if (['claude', 'grok'].includes(requestDraftProvider(this.state.host, checked, this.state.configuration.provider))) {
       const retryable = new Set(checked.requests.filter(request => request.answerRetryReady && (!requestId || request.id === requestId)).map(request => request.id))
       // This user check releases only the old answer reservation. It dispatches nothing;
       // The adapter keeps its durable uncertain-answer evidence until the user chooses again.
-      this.outbox = this.outbox.filter(item => item.type !== 'answer' || item.threadId !== threadId || !item.requestId || !retryable.has(item.requestId))
+      this.outbox = this.outbox.filter(item => !reservations.has(item.id) || !item.requestId || !retryable.has(item.requestId))
     }
     await this.persist()
     this.publish()
@@ -1606,9 +1617,21 @@ export class AgentControl {
       this.publish()
       return Promise.resolve(this.shell())
     }
-    const pending = this.commandWhileRunning(command, client, answerDecisionId)
+    const sendsDraft = command.type === 'send' || command.type === 'utterance'
+      && command.text.trim().toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim() === 'send it'
+    const socketDraft = command.type === 'send' && client.transport === 'socket'
+      ? this.state.threadDrafts?.find(draft => draft.threadId === client.selectedThreadId) : undefined
+    const answerThreadId = command.type === 'answer' ? command.threadId
+      : command.type === 'send' && client.transport === 'socket' ? socketDraft?.requestId ? socketDraft.threadId : null
+      : sendsDraft && this.state.draftRequestId ? this.state.draftThreadId : null
+    // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
+    const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
+    let pending: Promise<AgentState>
+    try { pending = this.commandWhileRunning(command, client, answerDecisionId) }
+    catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
-    void pending.then(() => this.activeCommands.delete(pending), () => this.activeCommands.delete(pending))
+    const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
+    void pending.then(settled, settled)
     return pending
   }
   private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
@@ -2621,11 +2644,18 @@ export class AgentControl {
     const host = this.dependencies.host
     return threadId && host.refreshThread ? host.refreshThread(threadId, purpose) : provider ? host.snapshot(provider) : host.snapshot()
   }
+  private holdAnswer(threadId: string, token: string = randomUUID()): () => void {
+    const activity = this.answerActivities.get(threadId) ?? { revision: 0, active: new Set<string>() }
+    activity.revision++; activity.active.add(token)
+    this.answerActivities.set(threadId, activity)
+    return () => { activity.active.delete(token) }
+  }
   private async dispatch(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
     client: ClientIdentity = this.localClient): Promise<void> {
     if (turn) this.dispatchTurns.set(command.commandId, turn)
+    const releaseAnswer = command.type === 'answer' ? this.holdAnswer(command.threadId, command.commandId) : () => undefined
     try { await this.dispatchPending(command, turn, validate, draftId, client) }
-    finally { this.dispatchTurns.delete(command.commandId); this.settingsDispatching.delete(command.commandId) }
+    finally { releaseAnswer(); this.dispatchTurns.delete(command.commandId); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
     client: ClientIdentity = this.localClient): Promise<void> {
@@ -3399,7 +3429,7 @@ export class AgentControl {
   }
   /** Called after disconnecting providers, before the headless process releases its stores. */
   async closed(): Promise<void> {
-    await Promise.allSettled([...this.activeCommands, this.serial, ...this.threadActions.values(), ...this.titleWrites])
+    await Promise.allSettled([...this.activeCommands, ...this.requestDraftReads, this.serial, ...this.threadActions.values(), ...this.titleWrites])
     await this.persist(true)
     // A send's record still waiting for its reply is written now, without a first output, rather than when the wait runs out.
     this.firstOutputs.closeAll()

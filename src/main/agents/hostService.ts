@@ -12,7 +12,28 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import { REMOTE_PERMISSION_DENIED } from './authority'
+
+type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
+const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
+  'stale-question': { code: 'stale_request', message: 'The original question changed or is no longer pending. Your saved answer is kept.' },
+  'provider-disconnected': { code: 'unavailable', message: 'Reconnect the original provider before checking this answer.' },
+  forbidden: { code: 'forbidden', message: `${REMOTE_PERMISSION_DENIED} Your saved answer is kept.` },
+  unsupported: { code: 'invalid_request', message: 'Update this host before checking an unconfirmed answer.' },
+  'answer-in-progress': { code: 'busy', message: 'This answer is still being sent. Wait for it to finish before checking it again. Your saved answer is kept.' },
+  'answer-changed': { code: 'stale_request', message: 'Another answer started during this check. Check again. Your saved answer is kept.' },
+}
+
+/** Only these host-owned refusals may cross the socket as answer Check guidance. Provider errors remain private. */
+export class RequestAnswerCheckRefusal extends Error {
+  readonly hostCode: HostErrorCode
+  constructor(reason: RequestAnswerCheckRefusalReason) {
+    const refusal = requestAnswerCheckRefusals[reason]
+    super(refusal.message)
+    this.hostCode = refusal.code
+  }
+}
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -167,7 +188,7 @@ export class LocalHostService implements HostService {
   shell(): AgentState { return this.control.shell() }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
-    if (!this.control.checkRequestAnswer) throw new Error('Update this host before checking an unconfirmed answer.')
+    if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
     await this.control.checkRequestAnswer(target, client)
   }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }

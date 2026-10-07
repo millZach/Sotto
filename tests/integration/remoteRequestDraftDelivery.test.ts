@@ -351,6 +351,44 @@ it.each([true, false])('settles a late native answer completion %s after a negat
   } finally { off(); settle(false) }
 })
 
+it.each([false, true])('confirms its pending remote write when it completes during Check (read fails %s)', async fails => {
+  const f = await fixture('claude')
+  let settle: (accepted: boolean) => void = () => undefined
+  const answerCompletion = new Promise<boolean>(resolve => { settle = resolve })
+  const original = f.native.execute.bind(f.native)
+  const execute = vi.spyOn(f.native, 'execute').mockImplementation(async command => {
+    const result = await original(command)
+    if (command.type !== 'answer') return result
+    f.native.event({ type: 'question', threadId: 'workshop', text: '', request: { ...question, delivery: 'uncertain' } })
+    return { accepted: false, uncertain: true, answerCompletion }
+  })
+  await f.router.command({ type: 'answer', threadId: f.owner.ownerId, requestId: question.id,
+    answer: '', questionAnswers: { q: { optionIds: ['a'] } } }, desktopWindowClient('Synthetic user'))
+  const held = (await f.drafts.list(f.owner))[0]!
+  await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.find(item => item.id === question.id)?.delivery).toBe('uncertain')
+  expect(f.router.requestDraftState(f.owner)?.completed).toEqual([])
+  const refresh = vi.fn(async (threadId: string, purpose?: ThreadReadPurpose) => {
+    expect(threadId).toBe('workshop')
+    expect(purpose).toMatchObject({ retryUncertainAnswers: true, retryUncertainAnswerId: question.id })
+    f.native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+    settle(true)
+    await expect.poll(() => f.router.requestDraftState(f.owner)?.completed?.some(item => item.decisionId === held.decisionId)).toBe(true)
+    await f.drafts.reconcile()
+    if (fails) throw new Error('Synthetic native Check failure after acceptance')
+    return f.native.snapshot()
+  })
+  Object.assign(f.native, { refreshThread: refresh })
+  const receipt = vi.spyOn(f.client, 'refreshRequestAnswer')
+  try {
+    await expect(f.drafts.check(f.target)).resolves.toEqual({ status: 'accepted', decisionId: held.decisionId, revision: held.revision })
+    expect(await f.drafts.list(f.owner)).toEqual([])
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(receipt).toHaveBeenCalledWith(held.decisionId, { threadId: f.threadId, providerId: 'claude',
+      requestId: question.id, questionsDigest: requestQuestionsDigest(f.target.questions) })
+    expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toHaveLength(1)
+  } finally { settle(false) }
+})
+
 
 it('restores accepted remote status while its original native card remains, without receipt reads or replay', async () => {
   const f = await fixture('claude')

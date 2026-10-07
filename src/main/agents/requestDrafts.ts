@@ -268,14 +268,17 @@ export class RequestDraftService {
     const target = requestDraftTargetSchema.parse(input)
     // Capture the attempt before refresh can publish acceptance and reconcile its saved hold.
     const initial = await this.serial(async () => ({ status: this.currentStatus(target),
-      reoffered: this.reoffered(target), retirement: this.retirement(target) }))
+      reoffered: this.reoffered(target), retirement: this.retirement(target),
+      retryReady: this.lookup(target)?.requests.some(item => item.id === target.requestId && item.answerRetryReady === true
+        && sameRequestQuestions(requestDraftQuestions(item), target.questions)) === true,
+      completed: structuredClone(this.lookup(target)?.completed ?? []) }))
     const observed = initial.status
     if (observed.status === 'accepted') return observed
     const captured = observed.status === 'draft' ? observed.draft : null
     // A renderer's cached snapshot/observe subscription is not a fresh native read.
     // The read can publish snapshots, so it must run outside the disk-write lane.
     let refreshFailure: { error: unknown } | undefined
-    try { await this.refresh(target, initial.reoffered ? undefined : captured?.decisionId) }
+    try { await this.refresh(target, captured?.decisionId) }
     catch (error) { refreshFailure = { error } }
     return this.serial(async () => {
       const previous = this.current(target)
@@ -291,9 +294,18 @@ export class RequestDraftService {
         if (refreshFailure) throw refreshFailure.error
         throw new Error('A newer answer draft is saved. Check the current answer again.')
       }
-      // Native uncertainty/retry readiness names a new offer boundary even after the fresh
-      // read clears its flag. Historical acceptance belongs only to the earlier attempt.
-      const reoffered = initial.reoffered || this.reoffered(target)
+      const matchesCaptured = (item: { requestId: string; decisionId?: string; questionsDigest?: string }): boolean =>
+        !!captured?.decisionId && item.requestId === target.requestId && item.decisionId === captured.decisionId
+        && item.questionsDigest === requestQuestionsDigest(target.questions)
+      const state = this.lookup(target)
+      // Uncertainty may still describe this held write. Newly arriving proof can settle that
+      // exact attempt once its native request closes, even when the read then fails. A live
+      // re-ask, an explicit retry-ready marker and proof known before Check retain the new-offer boundary instead.
+      const completedDuringRead = captured?.held && captured.decisionId && !initial.retryReady && !initial.completed.some(matchesCaptured)
+        && initial.retirement?.decisionId !== captured.decisionId
+        && !state?.requests.some(item => item.id === target.requestId && sameRequestQuestions(requestDraftQuestions(item), target.questions))
+        && (state?.completed?.some(matchesCaptured) || accepted?.decisionId === captured.decisionId && accepted.revision === captured.revision)
+      const reoffered = (initial.reoffered || this.reoffered(target)) && !completedDuringRead
       if (!reoffered && !previous && accepted && (!captured || accepted.revision >= captured.revision)) {
         if (!captured && refreshFailure) throw refreshFailure.error
         return { status: 'accepted', decisionId: accepted.decisionId, revision: accepted.revision }

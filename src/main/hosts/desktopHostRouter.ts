@@ -319,10 +319,12 @@ export class DesktopHostRouter {
       return !!(thread && request && requestDraftProvider(state.host, thread, state.configuration.provider) === target.providerId
         && requestQuestionsDigest(requestDraftQuestions(request)) === questionsDigest && (request.delivery === 'uncertain' || request.answerRetryReady))
     }
-    if (decisionId && !reoffered()) {
-      await connection.refreshRequestAnswer?.(decisionId, { threadId: id!, providerId: target.providerId,
-        requestId: target.requestId, questionsDigest })
-      if (!reoffered() && connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
+    const initialReoffered = reoffered()
+    if (decisionId) {
+      try { await connection.refreshRequestAnswer?.(decisionId, { threadId: id!, providerId: target.providerId,
+        requestId: target.requestId, questionsDigest }) }
+      catch (error) { if (!initialReoffered) throw error }
+      if (!initialReoffered && !reoffered() && connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
         item.decisionId === decisionId && item.requestId === target.requestId && item.questionsDigest === questionsDigest)) return
     }
     if (!connection.service.checkRequestAnswer) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')

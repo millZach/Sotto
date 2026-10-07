@@ -757,7 +757,7 @@ it.each(['delivery', 'answerRetryReady'] as const)('does not retire a bound hold
   await service.reconcile()
   expect(await service.get(target)).toEqual({ ...draft({ held: true }), decisionId: 'old-completed' })
   expect(await service.check(target)).toEqual({ status: 'editable', draft: draft({ revision: 2 }) })
-  expect(refresh).toHaveBeenCalledExactlyOnceWith(target, undefined)
+  expect(refresh).toHaveBeenCalledExactlyOnceWith(target, 'old-completed')
   expect((await disk()).drafts).toEqual([draft({ revision: 2 })])
 })
 
@@ -867,4 +867,53 @@ it('does not apply another native form retry flag to the historical exact retire
   expect(await service.status(target)).toEqual(accepted)
   expect(await service.check(target)).toEqual(accepted)
   expect(refresh).not.toHaveBeenCalled()
+})
+
+it.each([[false, false], [true, false], [false, true], [true, true]])(
+  'confirms an uncertain held attempt that completes during Check (retired %s, read failed %s)', async (retired, failed) => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const failure = new Error('Native read ended after the same answer completed')
+  const refresh = vi.fn(async () => {
+    state = { connected: !failed, ready: true, requests: [], completed: [{ requestId: target.requestId,
+      decisionId: 'pending-at-check', questionsDigest: requestQuestionsDigest(questions) }] }
+    if (retired) await service.reconcile()
+    if (failed) throw failure
+  })
+  const service = new RequestDraftService(directory, () => state, refresh)
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'pending-at-check', submittedAnswers)
+  state = { ...state, requests: [{ ...request, delivery: 'uncertain' }], uncertainRequestIds: [request.id] }
+  const accepted = { status: 'accepted', decisionId: 'pending-at-check', revision: 1 }
+  await expect(service.check(target)).resolves.toEqual(accepted)
+  expect(refresh).toHaveBeenCalledExactlyOnceWith(target, 'pending-at-check')
+  expect(await service.status(target)).toEqual(accepted)
+  expect((await disk()).drafts).toEqual([])
+})
+
+it.each([false, true])('does not let newly discovered historical proof retire a still-offered re-ask (retry marker %s)', async retryReady => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, () => state, async () => {
+    state = { ...state, requests: [{ ...request, ...(retryReady ? { answerRetryReady: true } : {}) }],
+      completed: [{ requestId: request.id, decisionId: 'historical-found-during-check', questionsDigest: requestQuestionsDigest(questions) }] }
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'historical-found-during-check', submittedAnswers)
+  state = { ...state, requests: [{ ...request, delivery: 'uncertain' }] }
+  await expect(service.check(target)).resolves.toEqual({ status: 'editable', draft: draft({ revision: 2 }) })
+  expect(await disk()).toMatchObject({ retirements: [] })
+})
+
+it.each(['known-proof', 'retry-ready'] as const)('keeps the historical %s boundary when its re-ask disappears during Check', async boundary => {
+  let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
+  const completed = [{ requestId: request.id, decisionId: 'historical', questionsDigest: requestQuestionsDigest(questions) }]
+  const service = new RequestDraftService(directory, () => state, async () => {
+    state = { ...state, requests: [], completed }
+  })
+  await service.start(); await service.save(draft({ held: true }))
+  await service.bindDecision(target, 'historical', submittedAnswers)
+  state = { ...state, requests: [{ ...request, ...(boundary === 'retry-ready' ? { answerRetryReady: true } : { delivery: 'uncertain' as const }) }],
+    ...(boundary === 'known-proof' ? { completed } : {}) }
+  await expect(service.check(target)).rejects.toThrow('still unconfirmed')
+  expect((await disk()).drafts).toEqual([{ ...draft({ held: true }), decisionId: 'historical' }])
+  expect(await disk()).toMatchObject({ retirements: [] })
 })

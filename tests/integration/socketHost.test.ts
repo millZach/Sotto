@@ -24,6 +24,8 @@ import { ThreadStore } from '../../src/main/agents/threadStore'
 import { TurnRecorder } from '../../src/main/agents/turns'
 import { HOST_BUSY, HOST_EVENT_PAGE_SIZE } from '../../src/shared/hostProtocol'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS } from '../../src/main/agents/control'
+import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
+import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 
 let root: string
 let host: Awaited<ReturnType<typeof startHeadlessHost>>
@@ -43,6 +45,47 @@ async function pair(name = 'Socket test', onPushError?: (message: string) => voi
   await client.connect(); return { client, result }
 }
 describe('authenticated host socket', () => {
+  it.each(['missing-thread', 'wrong-provider', 'missing-request', 'changed-form', 'changed-during-read', 'closed-during-read', 'disconnected-provider', 'revoked-during-read', 'unexpected-native-error'] as const)('keeps safe answer Check guidance across the socket for %s', async scenario => {
+    const { client, result } = await pair()
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const policy = async (action: 'allow-answers' | 'deny-answers') => {
+      expect((await fetch(url + '/v1/admin/' + action, { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
+    }
+    await policy('allow-answers')
+    const questions = [{ id: 'q', question: 'Which color?', options: [], multiSelect: false, allowFreeText: true }]
+    native.event({ type: 'question', threadId: 'workshop', text: '', request: { id: 'check-question', kind: 'question', text: '', options: [], questions, delivery: 'uncertain' } })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.some(request => request.id === 'check-question')).toBe(true)
+    const refresh = vi.fn(async () => {
+      if (scenario === 'unexpected-native-error') throw new Error('Synthetic private provider output must not cross the socket')
+      const snapshot = await native.snapshot()
+      const thread = snapshot.threads.find(thread => thread.id === 'workshop')!
+      if (scenario === 'changed-during-read') thread.requests[0]!.questions![0]!.question = 'A replacement question'
+      if (scenario === 'closed-during-read') thread.settledAt = new Date().toISOString()
+      if (scenario === 'revoked-during-read') await policy('deny-answers')
+      return snapshot
+    })
+    Object.assign(native, { refreshThread: refresh })
+    const execute = vi.spyOn(native, 'execute')
+    if (scenario === 'disconnected-provider') {
+      native.event({ type: 'disconnect', threadId: 'workshop', text: '' })
+      await expect.poll(() => host.service.shell().host.providers?.find(provider => provider.id === 'codex')?.connection).toBe('disconnected')
+    }
+    const answer = { threadId: scenario === 'missing-thread' ? 'missing' : threadId, providerId: scenario === 'wrong-provider' ? 'claude' as const : 'codex' as const,
+      requestId: scenario === 'missing-request' ? 'missing' : 'check-question', questionsDigest: scenario === 'changed-form' ? 'a'.repeat(64) : requestQuestionsDigest(questions) }
+    const expected = scenario === 'unexpected-native-error'
+      ? { code: 'unavailable', message: 'The host could not complete this request. Refresh the thread before trying again.' }
+      : scenario === 'revoked-during-read'
+        ? { code: 'forbidden', message: `${REMOTE_PERMISSION_DENIED} Your saved answer is kept.` }
+        : scenario === 'disconnected-provider'
+          ? { code: 'unavailable', message: 'Reconnect the original provider before checking this answer.' }
+          : { code: 'stale_request', message: 'The original question changed or is no longer pending. Your saved answer is kept.' }
+    await expect(client.checkRequestAnswer(answer)).rejects.toMatchObject(expected)
+    expect(refresh).toHaveBeenCalledTimes(['changed-during-read', 'closed-during-read', 'revoked-during-read', 'unexpected-native-error'].includes(scenario) ? 1 : 0)
+    expect(execute.mock.calls.filter(([command]) => command.type === 'answer')).toEqual([])
+  })
   it('returns a worktree preview only in its command response, never in cached or paired-client shells', async () => {
     const { client } = await pair()
     const other = await pair('Other preview client')
