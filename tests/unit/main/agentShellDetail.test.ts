@@ -633,6 +633,51 @@ describe('an opening at the IPC boundary', () => {
     publisher.publish(added(1, 'reply', 'Hi'))
     expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
   })
+  it('lets one opening cut a lane’s window short, and none the window after a send that carried one held back', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish(base)
+    // A run of new messages, as a transcript read on a watched thread brings them.
+    publisher.publish(added(1, 'read-1', 'One'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+    publisher.publish(added(2, 'read-2', 'Two'))
+    publisher.publish(added(3, 'read-3', 'Three'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+    // The held ones go at the window's end with the shell ahead of them, and the window that send starts is closed too.
+    clock.tick()
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2', 'shell', 'detail:4'])
+    publisher.publish(added(4, 'read-4', 'Four'))
+    expect(sent).toHaveLength(5)
+    clock.tick()
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2', 'shell', 'detail:4', 'shell', 'detail:5'])
+    // A window whose send carried no opening lets the next one through at once.
+    publisher.publish({ threadId: 'workshop', baseRevision: 5, revision: 6, messageDeltas: [{ id: 'read-4', appendText: '!' }], activityDeltas: [] })
+    clock.tick()
+    expect(sent.at(-1)).toBe('detail:6')
+    publisher.publish(added(6, 'reply', 'Done'))
+    expect(sent.slice(-2)).toEqual(['shell', 'detail:7'])
+    publisher.dispose()
+  })
+  it('remembers what a thread was sent after its lane goes quiet, so an older record’s change is not new', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish({ ...base, activities: [record('monitor', '')] })
+    clock.tick(); clock.tick()
+    // The lane went quiet; a record from the earlier turn changes. It leads a fresh lane, without the shell.
+    publisher.publish({ threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [], activityDeltas: [{ record: record('monitor', 'tick') }] })
+    expect(sent).toEqual(['detail:1', 'detail:2'])
+    clock.tick(); clock.tick()
+    // Removed and brought back under the same ID, a record is new to the window again.
+    publisher.publish({ threadId: 'workshop', baseRevision: 2, revision: 3, messageDeltas: [], activityDeltas: [{ id: 'monitor', removed: true }] })
+    clock.tick(); clock.tick()
+    publisher.publish({ threadId: 'workshop', baseRevision: 3, revision: 4, messageDeltas: [], activityDeltas: [{ record: record('monitor', '') }] })
+    expect(sent).toEqual(['detail:1', 'detail:2', 'detail:3', 'shell', 'detail:4'])
+    publisher.dispose()
+  })
   it('sends an opening published while the lane is sending in that same flush, after the update being sent', () => {
     const sent: string[] = []
     const clock = new TestClock()

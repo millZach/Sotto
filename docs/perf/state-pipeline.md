@@ -166,7 +166,8 @@ publish of a burst still goes out at once, so a reply appearing is as immediate 
 opening change (a message's first words or a new activity record) also goes out at once inside a window, here,
 in the coordinator and at the IPC boundary, so a reply's first words no longer wait out the window its prompt's
 echo started (`2026-10-06-first-words-to-bridge.md`). Here and in the adapters only one opening change may cut a
-given window short, so a flood of new messages still costs two copies a window, not one a message. The fixture
+given window short, and none the window after a publish that carried one held back, so a flood of new messages costs
+at most two copies a window, and one a window while it goes on, not one a message. The fixture
 workspace is small, so each copy costs about 13 us here; on the folder measured above, where one copy is
 4.5 ms, the same burst is the difference between roughly 9 s of copying and 60 ms.
 

@@ -160,8 +160,10 @@ export class WorkspaceHost implements AgentHost {
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
-  /** Whether an opening change already cut the open publish window short. */
+  /** Whether the open publish window lets no opening change cut it short: one already did, or it carries a flood. */
   private publishCut = false
+  /** Whether an opening change is among what waits for the end of the open publish window. */
+  private publishHeldOpening = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
   private readonly organizationLanes = new Map<string, Promise<unknown>>()
@@ -896,10 +898,10 @@ export class WorkspaceHost implements AgentHost {
     this.eventSourced = typeof inner.subscribeEvents === 'function'
     this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
       if (!this.ready || this.deliveryStopped) return
-      const records = this.activityRecordCount()
+      const records = this.watchedRecordCount()
       this.accept(snapshot)
       this.writeSoon()
-      this.publishSoon(this.activityRecordCount() > records)
+      this.publishSoon(this.watchedRecordCount() > records)
     }, { historyFromEvents: this.eventSourced }))
     const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
       if (!this.deliveryStopped) this.recordEvent(threadId, event)
@@ -1117,7 +1119,7 @@ export class WorkspaceHost implements AgentHost {
     if (waiting) waiting.push(event)
     else this.pendingEvents.set(threadId, [event])
     this.eventChanged.add(threadId)
-    if (this.ready) this.publishSoon(event.kind === 'message-added')
+    if (this.ready) this.publishSoon(event.kind === 'message-added' && this.inView(threadId))
   }
   /** Write what the events said. Called before anything reads the store, and at every publish. */
   private writeEvents(force = false): void {
@@ -1552,31 +1554,42 @@ export class WorkspaceHost implements AgentHost {
    * still feels immediate, and everything inside the window behind it becomes one publish at its
    * end with the last state. No adapter can make the host copy the workspace per event.
    *
-   * `opening` is an opening change: a message's first words or a new activity record. It goes out at once
-   * even inside a window, and starts a fresh one behind it, so the first words of a reply never wait behind
-   * the echo of the prompt that asked for it. The fresh window lets no second opening change through: a read
-   * that records a hundred messages in one task costs two publishes and a trailing one, not a hundred, and a
-   * window never holds more than two. Later chunks of the same message ride the window as before.
+   * `opening` is an opening change in a thread a window may be looking at: a message's first words or a new
+   * activity record. It goes out at once even inside a window, and starts a fresh one behind it, so the first
+   * words of a reply never wait behind the echo of the prompt that asked for it. The fresh window lets no second
+   * opening change through: a read that records a hundred messages in one task costs two publishes and a trailing
+   * one, not a hundred. Nor does a window whose trailing publish carried opening changes held back, so a flood
+   * that goes on across tasks, such as a long transcript read in chunks, costs one publish a window like any
+   * other burst. Later chunks of the same message ride the window as before.
    */
   private publishSoon(opening = false): void {
-    const cutting = this.publishTimer !== undefined
     if (this.publishTimer) {
-      if (!opening || this.publishCut) { this.publishPending = true; return }
+      if (!opening || this.publishCut) { this.publishPending = true; this.publishHeldOpening ||= opening; return }
       clearTimeout(this.publishTimer); this.publishTimer = undefined; this.publishPending = false
+      this.publishNow(true)
+      return
     }
+    this.publishNow(false)
+  }
+  /** Publish now and open a window behind it; `closed` is whether that window lets no opening change cut it. */
+  private publishNow(closed: boolean): void {
     this.publish()
-    this.publishCut = cutting
+    this.publishCut = closed
+    this.publishHeldOpening = false
     this.publishTimer = setTimeout(() => {
       this.publishTimer = undefined
       this.publishCut = false
-      if (this.publishPending) { this.publishPending = false; this.publishSoon() }
+      if (this.publishPending) { this.publishPending = false; this.publishNow(this.publishHeldOpening) }
     }, PUBLISH_WINDOW_MS)
     this.publishTimer.unref?.()
   }
-  /** Every activity record the workspace holds, so a provider snapshot that brought a new one can say so. */
-  private activityRecordCount(): number {
+  /** Whether a window may be looking at this thread: one it said it watches, or any while none has said. */
+  private inView(threadId: string): boolean { return !this.declared || this.watched.has(threadId) }
+  /** The activity records of the threads a window may be looking at, so a provider snapshot that brought one
+   * there can say so. A record in a thread nobody is looking at has nothing to paint and rides the window. */
+  private watchedRecordCount(): number {
     let count = 0
-    for (const thread of this.state.snapshot.threads) count += thread.activities?.length ?? 0
+    for (const thread of this.state.snapshot.threads) if (this.inView(thread.id)) count += thread.activities?.length ?? 0
     return count
   }
   /** A cache write the providers asked for: never more than one waiting, and the state it finds

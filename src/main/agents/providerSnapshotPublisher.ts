@@ -9,12 +9,13 @@ export const PROVIDER_PUBLISH_WINDOW_MS = 16
  * activity record) is not held behind the window either: `countItems` counts what the adapter has, and a count
  * that moved since the last publish sends at once and starts a fresh window. That fresh window lets no second
  * opening change through, so a read that records a hundred messages in one go costs two copies rather than a
- * hundred, and the copy rate stays at most two per window however many items a burst brings.
+ * hundred. Nor does the window a trailing publish starts when that publish brought new items itself, so a flood
+ * that goes on across tasks costs one copy a window like any other burst.
  */
 export class ProviderSnapshotPublisher {
   private timer: ReturnType<typeof setTimeout> | undefined
   private pending = false
-  /** Whether an opening change already cut this window short. */
+  /** Whether this window lets no opening change cut it short: one already did, or it follows a flood's publish. */
   private cut = false
   /** What `countItems` counted at the last publish. */
   private published: number | undefined
@@ -48,8 +49,9 @@ export class ProviderSnapshotPublisher {
     this.timer = setTimeout(() => {
       this.timer = undefined
       this.cut = false
-      // A burst that continues keeps coalescing: the trailing publish opens the next window.
-      if (this.pending) { this.pending = false; this.send(); this.startWindow(false) }
+      // A burst that continues keeps coalescing: the trailing publish opens the next window, which is a flood's
+      // when that publish brings new items of its own.
+      if (this.pending) { this.pending = false; const flood = this.bringsNewItem(); this.send(); this.startWindow(flood) }
     }, PROVIDER_PUBLISH_WINDOW_MS)
     this.timer.unref?.()
   }

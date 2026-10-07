@@ -59,10 +59,20 @@ it('lets one opening change cut a window short, so a burst of new messages costs
   expect(seen).toEqual([1, 2])
   vi.advanceTimersByTime(PROVIDER_PUBLISH_WINDOW_MS)
   expect(seen).toEqual([1, 2, 300])
-  // The window the trailing publish started has not been cut, so the next message's first words go at once.
+  // That trailing publish brought new messages itself, so the window it started is a flood's: a read that goes on
+  // in the next task waits for its end too, and costs one publish a window.
   messages = 301
   publisher.publish(true)
+  expect(seen).toEqual([1, 2, 300])
+  vi.advanceTimersByTime(PROVIDER_PUBLISH_WINDOW_MS)
   expect(seen).toEqual([1, 2, 300, 301])
+  // A window whose trailing publish brought only words lets the next message's first words through at once.
+  publisher.publish(true)
+  vi.advanceTimersByTime(PROVIDER_PUBLISH_WINDOW_MS)
+  expect(seen).toEqual([1, 2, 300, 301, 301])
+  messages = 302
+  publisher.publish(true)
+  expect(seen).toEqual([1, 2, 300, 301, 301, 302])
 })
 
 it('flushes a permission or turn boundary synchronously and cancels the redundant trailing update', () => {

@@ -202,19 +202,60 @@ describe('workspace publish coalescing', () => {
     expect(published).toBe(2)
     for (const appendText of ['igo', ' it', ' is.']) f.adapter.publish(id, { kind: 'message-text-appended', at, messageId: 'reply', appendText })
     expect(published).toBe(2)
-    // The reply's first words already cut this window short, so a new record waits for its end with the chunks.
-    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running' }]
-    f.adapter.emit()
-    expect(published).toBe(2)
     await expect.poll(() => published).toBe(3)
-    // In the window the trailing publish started, a new record is an opening change and goes at once; a change to it is not.
-    f.adapter.state.threads[0]!.activities = [...f.adapter.state.threads[0]!.activities!, { id: 'read', turnId: 'prompt', sequence: 1, kind: 'command', title: 'Read', status: 'running' }]
+    // The trailing publish carried chunks alone, so in the window it started a new record is an opening change
+    // and goes at once; a change to it is not.
+    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running' }]
     f.adapter.emit()
     expect(published).toBe(4)
     f.adapter.state.threads[0]!.activities = f.adapter.state.threads[0]!.activities!.map(record => ({ ...record, output: 'ok' }))
     f.adapter.emit()
     expect(published).toBe(4)
     await expect.poll(() => published).toBe(5)
+  })
+
+  it('holds an opening change in a window it already cut short, and in the one after a trailing publish that carried one', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    const at = new Date().toISOString()
+    const add = (index: number): void => f.adapter.publish(id, { kind: 'message-added', at, message: { id: `read-${index}`, role: 'assistant', text: `Part ${index}`, createdAt: at } })
+    // A transcript read in chunks: each chunk is its own task, run here just after a publish, inside its window.
+    const counts: number[] = []
+    let published = 0
+    const nextChunk = new Map<number, () => void>([
+      [3, () => { add(3); counts.push(published) }],
+      [4, () => { add(4); counts.push(published) }],
+    ])
+    f.host.subscribe(() => { published += 1; const chunk = nextChunk.get(published); if (chunk) queueMicrotask(chunk) })
+    add(0); add(1); add(2)
+    // The first opens a window, the second cuts it short and the third waits for its end.
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(5)
+    // That trailing publish carried a held opening change, so the window it started is a flood's: the next chunk's
+    // message waited for its end, and so did the one after.
+    expect(counts).toEqual([3, 4])
+    // Once a window closes with nothing waiting, the next opening change goes at once again.
+    await new Promise<void>(resolve => { setTimeout(resolve, 40) })
+    expect(published).toBe(5)
+    add(5)
+    expect(published).toBe(6)
+  })
+
+  it('lets only a thread a window may be looking at cut a window short', async () => {
+    const f = await fixture(new EventProviderHost())
+    const [watched, other] = f.adapter.state.threads
+    f.host.observeThreads([watched!.id])
+    await new Promise<void>(resolve => { setTimeout(resolve, 40) })
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    f.adapter.publish(other!.id, { kind: 'message-added', at, message: { id: 'background-1', role: 'assistant', text: 'One', createdAt: at } })
+    expect(published).toBe(1)
+    // A history read in a thread nobody is looking at has nothing to paint, and leaves the window's one cut alone.
+    f.adapter.publish(other!.id, { kind: 'message-added', at, message: { id: 'background-2', role: 'assistant', text: 'Two', createdAt: at } })
+    expect(published).toBe(1)
+    f.adapter.publish(watched!.id, { kind: 'message-added', at, message: { id: 'first-words', role: 'assistant', text: 'Here', createdAt: at } })
+    expect(published).toBe(2)
   })
 
   it('publishes a read that records hundreds of messages in one task twice, not once a message', async () => {

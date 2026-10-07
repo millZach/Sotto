@@ -19,14 +19,23 @@ sent, and the detail coalescer when an update carries a message or record it has
 also sends the first frame of a burst at once now, as the others already did. Later chunks of the same message ride
 the publish windows as before.
 
-The adapters' publishers and the workspace let only one opening change cut a given publish window short; the next
-waits for that fresh window's end. A read that records many messages in one go (a Claude transcript catch-up, a Grok
-or Codex history read that finds messages written outside Sotto) would otherwise copy the whole workspace once per
-message: a review measured 300 messages in one task as 300 publishes in 1.2 s. It is now two publishes and a trailing
-one (`tests/unit/main/workspacePublishCoalescing.test.ts`, `tests/unit/main/providerSnapshotPublisher.test.ts`), so
-those two layers publish at most twice per window. The coordinator and the detail coalescer after them let every
-opening change through: they see no more than the workspace sends them. The cost of the rule is that a second opening
-change within 16 ms of one that cut a window, say a tool record just after the reply's first words, waits up to 16 ms.
+The adapters' publishers, the workspace and the detail coalescer let only one opening change cut a given publish
+window short; the next waits for that fresh window's end. Nor may one cut the window after a trailing publish that
+itself carried an opening change held back. A read that records many messages in one go (a Claude transcript
+catch-up, a Grok or Codex history read that finds messages written outside Sotto) would otherwise copy the whole
+workspace once per message: a review measured 300 messages in one task as 300 publishes in 1.2 s. It is now two
+publishes and a trailing one, and a read that goes on across tasks, as a transcript read in 64 KB chunks does, costs
+one publish a window like any other burst (`tests/unit/main/workspacePublishCoalescing.test.ts`,
+`tests/unit/main/providerSnapshotPublisher.test.ts`, `tests/unit/main/agentShellDetail.test.ts`). In the workspace
+only a thread a window may be looking at has opening changes: a history read in a thread nobody has open has nothing
+to paint and rides the window. The coordinator has no rule of its own, since it cuts only for a thread a window holds
+and sees no more than the workspace sends it. The cost of the rule is that a second opening change within one publish
+window of one that cut it, say a tool record just after the reply's first words, waits for that window's end.
+
+A reply whose first chunk is only whitespace, a line break before the words, is held the way an empty one is, so its
+first words are what opens it rather than the blank in front of them. The detail coalescer remembers what it sent each
+of the last 64 threads after a lane goes quiet, so a record from an earlier turn that changes after a pause is not
+taken for a new one.
 
 In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged.
 The shell waiting in its own window now goes just ahead of a detail that opens a message, so the two are painted in
@@ -98,8 +107,8 @@ than any gap between versions: the machine was running another build throughout.
 Threads page with a mocked connection, so they measure what a commit costs, which this change leaves alone.
 `shellDetailCommits`, which drives the real connection hook, still makes one commit per streamed chunk. The one row
 on the changed path, `statePipeline`'s streaming delta, moved within its noise. What this change adds in main is a
-publish per opening change, and the one-cut rule above bounds that at two per publish window; none of these
-benchmarks times it.
+publish per opening change, and the one-cut rule above bounds that at two per publish window, and one per window in
+a flood that goes on; none of these benchmarks times it.
 
 ## The window's commit
 
