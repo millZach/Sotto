@@ -1,6 +1,6 @@
-import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
-import { acpThinkingActivities, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
+import { acpThinkingActivities, settledThinking, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
 
@@ -27,10 +27,19 @@ export function grokActivities(update: Record<string, unknown>, context: Context
 }
 
 /**
+ * Every Grok thought still running, cut off. Its process ended, or a history read found its turn had ended with no end
+ * recorded: Grok writes none for a turn its process took down, so the next prompt would otherwise read as the model
+ * moving on and settle the thought as completed.
+ */
+export function cutThinking(rows: readonly AgentActivity[], live: boolean): AgentActivity[] {
+  const cut = settledThinking(GROK_THINKING_ID_PREFIX, rows, 'interrupted', live)
+  return cut.length ? mergeAgentActivities(rows, cut) : [...rows]
+}
+
+/**
  * A history read can trail the live stream it describes. Its copy of a thought still being written is a prefix of the
- * one the stream has shown, and must not take the stream's later words back. Nor can it tell a thought cut off by its
- * process ending from one the model moved on from: Grok records no end for that turn, so the next prompt reads as
- * moving on. A thought Sotto saw cut off stays interrupted.
+ * one the stream has shown, and must not take the stream's later words back. A thought Sotto saw cut off stays
+ * interrupted, whatever the read made of it.
  */
 export function keepStreamedThinking(history: readonly AgentActivity[], shown: readonly AgentActivity[] | undefined): AgentActivity[] {
   if (!shown?.length) return [...history]

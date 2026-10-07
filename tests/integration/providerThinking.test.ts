@@ -191,6 +191,49 @@ it.each([
   } finally { await f.cleanup() }
 })
 
+// A turn Sotto only watched has no request of its own to fail, so nothing but the disconnect itself can settle it.
+it('Grok settles a thought as interrupted when Sotto disconnects in the middle of a turn it only watched', async () => {
+  const f = await grokFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.refreshThread(id); await f.action(id, { type: 'takeover', text: 'Typed in Grok', notify: true })
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('running')
+    await f.action(id, { type: 'thought', text: 'Half of a thought.', meta: { promptId: 'prompt', streamStartMs: 10 } })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    f.host.disconnect()
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+  } finally { await f.cleanup() }
+})
+
+// Grok's history keeps the thought and no end for its turn, so a thread read back fresh has only Sotto's record of the
+// turn ending to go on; and once a later prompt follows, only the missing end of the turn before it.
+it('Grok reads a thought a restart cut off back as interrupted, and a later prompt and restart leave it so', async () => {
+  let f = await grokFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.refreshThread(id); await f.action(id, { type: 'takeover', text: 'Typed in Grok', notify: true })
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('running')
+    await f.action(id, { type: 'thought', text: 'Half of a thought.', meta: { promptId: 'prompt', streamStartMs: 10 } })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+
+    f = await f.driver.restart(); await f.host.connect(); await f.host.refreshThread(id)
+    await expect.poll(async () => (await thread(f.host))?.status).toBe('idle')
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+    await f.host.execute({ type: 'send', commandId: 'again', messageId: 'again', threadId: id, text: 'Carry on' })
+    await f.driver.completeTurn(id, 'Carried on.')
+    await expect.poll(async () => (await replies(f.host)).map(message => message.text)).toEqual(['Carried on.'])
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+
+    f = await f.driver.restart(); await f.host.connect(); await f.host.refreshThread(id)
+    await expect.poll(async () => (await replies(f.host)).map(message => message.text)).toEqual(['Carried on.'])
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a thought.', 'interrupted']])
+  } finally { await f.cleanup() }
+})
+
 it('Devin settles a thought its failed turn cut off as interrupted, not as an unknown outcome', async () => {
   const f = await devinFixture(); const id = randomUUID()
   try {

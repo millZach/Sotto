@@ -22,8 +22,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { GROK_THINKING_ID_PREFIX, grokActivities, keepStreamedThinking } from './grokActivity'
-import { settledThinking } from './thinkingActivity'
+import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
 import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -698,6 +697,8 @@ export class GrokAcpHost implements AgentHost {
           const update = parsed.data.update; const content = object(update.content)
           this.usage.grok(id, this.thread(id).modelId, parsed.data); this.thread(id)
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
+          // A prompt after a turn with no recorded end follows a turn its process cut off, and that cut off its thought too.
+          if (update.sessionUpdate === 'user_message_chunk' && history.lastTurn?.status === 'running') history.activities = cutThinking(history.activities, false)
           history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
@@ -723,13 +724,15 @@ export class GrokAcpHost implements AgentHost {
     if (changed) await this.persist()
     if (!current()) throw new Error('Grok connection changed while reading the thread.')
     const thread = this.thread(id)
-    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThinking(history.activities, thread.activities))
     let status = history.status; let lastTurn = history.lastTurn
     // A turn whose process ended before it finished never records its end in Grok's history, which would
-    // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how.
+    // otherwise read as running for good and refuse every later send. Sotto saw it end, and says how; a
+    // thought the turn was still on was cut off with it.
     if (status === 'running' && lastTurn && alias.endedTurn?.id === lastTurn.id && !this.activePrompts.has(id)) {
       status = alias.endedTurn.outcome === 'failed' ? 'error' : 'idle'; lastTurn = { id: lastTurn.id, status: alias.endedTurn.outcome }
+      history.activities = cutThinking(history.activities, false)
     }
+    if (history.activities.length || thread.activities?.length) thread.activities = mergeAgentActivities(thread.activities, keepStreamedThinking(history.activities, thread.activities))
     // A live native turn may belong to the CLI, not activePrompts. Older durable
     // status cannot supersede it until its event has entered the persisted timeline.
     const liveStatus = this.liveStatus.get(id)
@@ -1047,9 +1050,7 @@ export class GrokAcpHost implements AgentHost {
    * that turn's end, so nothing else would settle it until the next prompt, and then as completed.
    */
   private cutThoughts(id: string): void {
-    const thread = this.threads.get(id); if (!thread?.activities) return
-    const cut = settledThinking(GROK_THINKING_ID_PREFIX, thread.activities, 'interrupted', true)
-    if (cut.length) thread.activities = mergeAgentActivities(thread.activities, cut)
+    const thread = this.threads.get(id); if (thread?.activities) thread.activities = cutThinking(thread.activities, true)
   }
   /**
    * Grok reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
@@ -1074,7 +1075,7 @@ export class GrokAcpHost implements AgentHost {
     this.deliveries.clear()
     // Each thread's turn ends with its process, and Grok's history will never say so.
     let ended = false
-    for (const id of this.processes.keys()) ended = this.endTurn(id, 'interrupted') || ended
+    for (const id of this.processes.keys()) { this.cutThoughts(id); ended = this.endTurn(id, 'interrupted') || ended }
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) this.closeProcess(entry)
     this.processes.clear(); this.outdated.clear(); this.state.connected = false; this.emit()
