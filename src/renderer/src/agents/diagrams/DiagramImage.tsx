@@ -6,9 +6,6 @@ export const CROSS_FADE_MS = 180
 /** How long past the fade the leaving picture stays when its animation does not report its end. */
 const FADE_GRACE_MS = 120
 
-/** A picture of a drawing to show in its place, such as a visual's lit step, and whether a new one cross-fades in. */
-export interface DiagramPicture { readonly dataUrl: string; readonly crossFade: boolean }
-
 interface DiagramImageProps {
   readonly src: string
   /** The drawing's accessible name; empty for a picture kept out of the accessibility tree. */

@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState, type ReactNode, type RefObje
 import { Check, CircleAlert, CodeXml, Copy, Maximize2 } from 'lucide-react'
 import { useTransientFlag, writeClipboard } from '../richActions'
 import { DiagramViewer } from './DiagramViewer'
-import { CrossFadeImage, DiagramImage, type DiagramPicture } from './DiagramImage'
+import { CrossFadeImage, DiagramImage } from './DiagramImage'
 import type { MermaidRendering } from './MermaidDiagram'
 
 /**
@@ -74,20 +74,20 @@ export function DiagramActions({ frame, copyLabel, expandLabel }: {
 /**
  * The drawing, which expands on a click; or, while there is none or the source is asked for, why there is none and the
  * readable source. `block` is the class prefix of the frame's own styles (`block__canvas`, `block__notice`,
- * `block__source`), and `stage`, when set, is the class of an element the notice and source are wrapped in. `picture`
- * shows another picture of the same drawing, such as a visual's lit step, cross-fading from one to the next when it
- * asks to (`block__layers`).
+ * `block__source`), and `stage`, when set, is the class of an element the notice and source are wrapped in. `picture`,
+ * a data URL, shows another picture of the same drawing in its place, a visual's lit step, and cross-fades from one to
+ * the next (`block__layers`).
  */
 export function DiagramStage({ frame, name, sourceLabel, block, stage, picture }: {
   readonly frame: DiagramFrameState; readonly name: string; readonly sourceLabel: string; readonly block: string; readonly stage?: string
-  readonly picture?: DiagramPicture | undefined
+  readonly picture?: string | undefined
 }): ReactNode {
   const { drawing: drawn, notice, failed } = frame.rendering
   if (drawn && !frame.showSource) {
     const describedBy = drawn.description ? frame.descriptionId : undefined
-    const image = { src: picture?.dataUrl ?? drawn.dataUrl, alt: name, width: drawn.width, height: drawn.height, describedBy }
+    const image = { alt: name, width: drawn.width, height: drawn.height, describedBy }
     return <div className={`${block}__canvas`} onClick={frame.expand}>
-      {picture?.crossFade ? <CrossFadeImage className={`${block}__layers`} {...image} /> : <DiagramImage {...image} />}
+      {picture ? <CrossFadeImage className={`${block}__layers`} src={picture} {...image} /> : <DiagramImage src={drawn.dataUrl} {...image} />}
       {drawn.description && <span id={frame.descriptionId} className="tt-visually-hidden">{drawn.description}</span>}
     </div>
   }
@@ -101,10 +101,10 @@ export function DiagramStage({ frame, name, sourceLabel, block, stage, picture }
 }
 
 /** The expanded drawing, while it is open: `picture` when given (the one the stage shows), else the drawing itself. */
-export function DiagramExpanded({ frame, name, picture }: { readonly frame: DiagramFrameState; readonly name: string; readonly picture?: DiagramPicture | undefined }): ReactNode {
+export function DiagramExpanded({ frame, name, picture }: { readonly frame: DiagramFrameState; readonly name: string; readonly picture?: string | undefined }): ReactNode {
   const drawn = frame.rendering.drawing
   if (!frame.expanded || !drawn) return null
-  return <DiagramViewer dataUrl={picture?.dataUrl ?? drawn.dataUrl} width={drawn.width} height={drawn.height} name={name}
+  return <DiagramViewer dataUrl={picture ?? drawn.dataUrl} width={drawn.width} height={drawn.height} name={name}
     description={drawn.description} copyFeedback={frame.feedback} onCopy={frame.copy} onClose={frame.close} />
 }
 

@@ -5,7 +5,7 @@ import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
 import { useMermaidRendering } from './diagrams/MermaidDiagram'
 import { stepImage } from './diagrams/diagramSteps'
-import { VisualStepper } from './VisualStepper'
+import { VisualStepper, clampStep } from './VisualStepper'
 import './visualCard.css'
 
 /**
@@ -63,11 +63,11 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
   const name = `${kind}: ${visual.title}`
   const steps = visual.steps ?? []
   const walking = steps.length > 0 && !readAll
-  const current = Math.min(step, Math.max(steps.length - 1, 0))
+  const current = clampStep(step, steps.length)
   const drawn = rendering.drawing
   const highlight = walking ? steps[current]?.highlight : undefined
   // The step's picture, lit for it and cross-fading in from the last, in the card and in Expand.
-  const stepPicture = useMemo(() => drawn ? { dataUrl: stepImage(drawn, highlight), crossFade: true } : undefined, [drawn, highlight])
+  const stepPicture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
 
   return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(rendering)}>
     <header className="visual-card__bar">

@@ -10,6 +10,9 @@ export interface VisualStepperProps {
   readonly onStep: (index: number) => void
 }
 
+/** The step to show for `index` out of `count` steps: a whole number from 0 to the last step. */
+export const clampStep = (index: number, count: number): number => Math.min(Math.max(Math.trunc(index) || 0, 0), Math.max(count - 1, 0))
+
 /**
  * A visual's walkthrough (ADR-0056, #793): "Step n of N", a dot for each step, Back and Next ("Start over" on the last
  * step), and the step's words in larger type, read out as they change. Left and Right step while focus is anywhere in
@@ -21,7 +24,7 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
   const dots = useRef<(HTMLButtonElement | null)[]>([])
   const count = steps.length
   if (!count) return null
-  const current = Math.min(Math.max(Math.trunc(index) || 0, 0), count - 1)
+  const current = clampStep(index, count)
   const first = current === 0
   const last = current === count - 1
   // One step has nowhere to go: its words alone, under its lit part of the visual.
@@ -33,7 +36,7 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    const next = Math.min(Math.max(current + (event.key === 'ArrowRight' ? 1 : -1), 0), count - 1)
+    const next = clampStep(current + (event.key === 'ArrowRight' ? 1 : -1), count)
     go(next)
     // On the dots, the focus goes with the step, so the one Tab stop stays the current step's dot.
     if (dots.current.includes(event.target as HTMLButtonElement)) dots.current[next]?.focus()
