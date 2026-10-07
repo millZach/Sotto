@@ -203,6 +203,10 @@ const control = setInterval(() => {
   if (command.type === 'complete') complete(sessionId, command.text, command.reason, command.thought)
   if (command.type === 'thought') update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: command.text } })
   if (command.type === 'mode') update(sessionId, { sessionUpdate: 'current_mode_update', currentModeId: command.mode })
+  // Any one session update, as a test scripts it, so a test can say which kinds of streamed work show a prompt was taken.
+  if (command.type === 'update') update(sessionId, command.update)
+  // The running prompt answered with an error, while this process stays up.
+  if (command.type === 'fail') { const id = active.get(sessionId); if (id !== undefined) { active.delete(sessionId); reject(id) } }
   if (command.type === 'changed-permission') {
    const prior = [...pending].find(([, value]) => value.kind === 'permission' && value.sessionId === sessionId)
    if (prior) {

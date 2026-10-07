@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
@@ -127,4 +127,33 @@ it('confirms a turn taken on the stream by one replay read once the turn ends', 
   await f.driver.completeTurn(id, ' and done')
   await expect.poll(confirmed).toBe(true)
   expect(await loads(f)).toBe(loaded + 1)
+})
+
+it('confirms a turn taken on the stream when its prompt ends in an error', async () => {
+  f = await quiet()
+  const id = await opened(f)
+  await f.script({ streamOnPrompt: 'Working on it' })
+  expect(await send(f, id)).toEqual({ accepted: true })
+  const loaded = await loads(f)
+  const confirmed = async (): Promise<boolean> => JSON.parse(await readFile(join(f!.root, 'devin-threads.json'), 'utf8'))[id].origins[0].confirmed
+  await f.action(id, { type: 'fail' })
+  await expect.poll(confirmed).toBe(true)
+  expect(await loads(f)).toBe(loaded + 1)
+})
+
+it('refuses the next send when the replay contradicts a dispatch taken on the stream', async () => {
+  f = await quiet()
+  const id = await opened(f)
+  await f.script({ streamOnPrompt: 'Working on it' })
+  expect(await send(f, id, 'What Sotto sent')).toEqual({ accepted: true })
+  // Devin's own record of the prompt says something else.
+  const file = join(f.root, `native-${await f.realId(id)}.json`)
+  const native = JSON.parse(await readFile(file, 'utf8')) as { messages: { role: string; text: string }[] }
+  native.messages.find(message => message.role === 'user')!.text = 'Something else'
+  await writeFile(file, JSON.stringify(native))
+  await f.script({})
+  await f.driver.completeTurn(id, ' and done')
+  await expect.poll(async () => (await f!.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  await expect(send(f, id, 'A follow-up')).rejects.toThrow('did not match the saved dispatch')
+  expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
 })

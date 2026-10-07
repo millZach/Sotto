@@ -550,7 +550,8 @@ export class DevinAcpHost implements AgentHost {
     // While this thread's own connection holds its session, Devin refuses the session to every other client
     // (-32015), so the replay the owner loaded and its stream since are the whole history and nothing can have
     // changed it unseen. A replay then adds only the confirmation of a dispatch not yet confirmed by one, which a
-    // reconciliation read still gets; the read before a send needs none, so it never starts an observer (ADR-0017).
+    // reconciliation read still gets. The read before a send leaves that to the send, which makes it just before its
+    // prompt, so one send reads the replay at most once (ADR-0017).
     const unconfirmed = this.aliases[id]?.origins.some(origin => !origin.confirmed) === true
     if (!this.connections.has(id) || unconfirmed && !purpose?.beforeSend) await this.readHistory(id)
     return this.current(purpose?.historyFromEvents)
@@ -874,10 +875,13 @@ export class DevinAcpHost implements AgentHost {
       await this.readHistory(id)
       return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
+    // A dispatch no replay has confirmed yet, as a turn taken on the stream can leave one, has its replay read before
+    // the next prompt goes out, joining a read already running. A replay that contradicts it refuses this send.
+    if (alias.origins.some(origin => !origin.confirmed)) await this.readHistory(id)
     // The profile and native integrations are confirmed fresh before every prompt (ADR-0017): once, here, unless
-    // opening the session for this same send has just done it. No history is read first. This connection holds the
-    // session, Devin refuses it to every other client while it does (-32015), and the replay it loaded and its
-    // stream since are the whole history, so the stale-input check below needs nothing more.
+    // opening the session for this same send has just done it. Nothing else is read first. This connection holds the
+    // session, Devin refuses it to every other client while it does, and the replay it loaded and its stream since
+    // are the whole history, so the stale-input check below needs nothing more.
     if (connection.checkedAt < began) await this.revalidate(connection, alias.cwd, generation)
     checkConnection()
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The Devin thread changed before this follow-up. Review the newest input first.')
@@ -892,6 +896,15 @@ export class DevinAcpHost implements AgentHost {
     this.thread(id).lastTurn = { id: origin.messageId, status: 'running' }
     this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status: 'running' })
     this.emit()
+    // A turn taken on the stream's evidence alone has its replay read once it ends, however it ends, unless a read
+    // has confirmed it already: a replay that contradicts it then says so, and the next send has nothing to confirm.
+    const confirmOnceEnded = (): void => {
+      if (origin.confirmed) return
+      void this.readHistory(id).catch(() => {
+        if (generation !== this.generation) return
+        this.state.error = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'; this.emit()
+      })
+    }
     markSendStage(command.commandId, 'written')
     void connection.rpc.request('session/prompt', {
       sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: command.text }],
@@ -908,15 +921,12 @@ export class DevinAcpHost implements AgentHost {
       const thoughts = settledThinking(DEVIN_THINKING_ID_PREFIX, this.thread(id).activities ?? [], thinkingSettledAs(status), true)
       this.thread(id).activities = markTurnActivity(thoughts.length ? mergeAgentActivities(this.thread(id).activities, thoughts) : this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
       this.reaper.touch(id); this.emit()
-      // A turn taken on the stream's evidence alone has its replay read once it ends, unless a read has confirmed it
-      // already, so a dispatch the replay contradicts still says so, and the next send's reads find nothing to confirm.
-      if (!origin.confirmed) void this.readHistory(id).catch(() => {
-        if (generation !== this.generation) return
-        this.state.error = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'; this.emit()
-      })
+      confirmOnceEnded()
     }, true).catch(() => {
       if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id); this.thread(id).status = 'error'; this.emit()
+      // A prompt Devin answered with an error may still have been taken on the stream first.
+      confirmOnceEnded()
     })
     return this.acceptance(id, command.commandId, turn, generation)
   }
