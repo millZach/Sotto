@@ -12,8 +12,8 @@ moved since, so a Codex send makes the newest-turn check once; Claude and Grok k
 prompt; nothing inside an adapter builds a snapshot it does not read; a read before a send that changed nothing writes
 and publishes nothing; and the read after an accepted send asks the workspace for the echo it holds before reading
 whole. What it rests on is ADR-0005's amendment "one read before a send". The checkpoint hook's own read before a
-send is #764's and is not in either measurement below: it is wired only in the desktop app, not in the headless
-host the benchmark runs.
+send was #764's, which removed it; it was never in either measurement below, since it was wired only in the desktop
+app, not in the headless host the benchmark runs.
 
 ## What was measured
 
