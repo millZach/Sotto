@@ -402,13 +402,11 @@ export async function startSocketServer(options: SocketServerOptions) {
     const draftRequestId = nativeQuestion?.id ?? (state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
       : savedDraft ? savedDraft.requestId
         : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId)
-    // A targeted save keeps its existing binding, including an ordinary prompt's explicit null.
-    const retainedDraft = state.threadDrafts?.find(draft => draft.threadId === targetThreadId)
-    const composeRequestId = retainedDraft ? retainedDraft.requestId
-      : state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId : draftRequestId
+    // Targeted Compose resolves its binding after earlier admitted saves in the coordinator's lane.
+    // The coordinator checks current answer authority before staging that actual binding. Pairing,
+    // shape and this peer's exact selected owner are still checked here; Send stays conservative.
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
-      draftRequestId: input.type === 'compose' && input.threadId !== undefined ? composeRequestId
-        : input.type === 'send' || input.type === 'compose' ? draftRequestId : undefined,
+      draftRequestId: input.type === 'send' || input.type === 'compose' && input.threadId === undefined ? draftRequestId : undefined,
       selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {

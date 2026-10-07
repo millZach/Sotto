@@ -9,7 +9,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import type { AgentRequest } from '../../../src/shared/agents'
-import type { HostOperation } from '../../../src/shared/hostProtocol'
+import type { HostOperation, HostRequest } from '../../../src/shared/hostProtocol'
 import type { RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { version as packageVersion } from '../../../package.json'
@@ -82,6 +82,121 @@ describe('targeted socket Compose', () => {
     await expect(client.command(command, undefined, 'targeted-save')).resolves.toMatchObject({ error: outcome })
     expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command }, 'targeted-save')
     expect(detail).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled(); expect(onPushError).not.toHaveBeenCalled()
+  })
+})
+
+describe('bounded targeted autosaves', () => {
+  function heldSocket() {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const state = emptyDesktopState(), frames: HostRequest[] = []
+    const receive = (value: unknown) => (client as unknown as { receive(text: string): void }).receive(JSON.stringify(value))
+    const socket = { send: (frame: HostRequest) => { frames.push(structuredClone(frame)); return true },
+      close: () => (client as unknown as { disconnected(frames: unknown): void }).disconnected(socket) }
+    Object.assign(client, { features: ['atomic-send', 'answer-check'], cached: state, frames: socket, session: { session: 'session', hostId: state.hostId } })
+    const reply = (frame: HostRequest, error: string | null = null) => receive({ v: 1, id: frame.id, ok: true,
+      result: frame.op === 'detail' ? null : frame.op === 'receipt' ? { status: 'completed' } : { ...state, error } })
+    return { client, state, frames, socket, reply }
+  }
+  it('admits Send, detail, receipt and Check during forty held autosaves, with only the first and latest save on the wire', async () => {
+    const f = heldSocket()
+    try {
+      const saves = Array.from({ length: 40 }, (_, index) => f.client.command({ type: 'compose', threadId: 'thread', text: `Edit ${index}` }))
+      const detail = f.client.readThreadDetail('thread'), receipt = f.client.receipt('answer-attempt')
+      const check = f.client.checkRequestAnswer({ threadId: 'thread', providerId: 'codex', requestId: 'question', questionsDigest: 'a'.repeat(64) })
+      const packet = { type: 'send' as const, draft: { threadId: 'thread', text: 'Immutable Send', attachments: [] } }
+      const send = f.client.command(packet)
+      const all = Promise.allSettled([...saves, detail, receipt, check, send])
+      packet.draft.text = 'A later local edit'
+      const commands = f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)
+      expect(commands).toEqual([{ type: 'compose', threadId: 'thread', text: 'Edit 0' },
+        { type: 'compose', threadId: 'thread', text: 'Edit 39' }, { type: 'send', draft: { threadId: 'thread', text: 'Immutable Send', attachments: [] } }])
+      expect(f.frames.filter(frame => ['detail', 'receipt', 'check-answer'].includes(frame.op))).toHaveLength(3)
+      for (const frame of f.frames) f.reply(frame)
+      expect((await Promise.all(saves)).every(state => state.error === null)).toBe(true)
+      expect((await all).every(result => result.status === 'fulfilled')).toBe(true)
+      expect(f.frames).toHaveLength(6)
+    } finally { await f.client.close() }
+  })
+  it.each([{ remove: false, explicitUndefined: false }, { remove: true, explicitUndefined: false },
+    { remove: false, explicitUndefined: true }, { remove: true, explicitUndefined: true }])('retains the last explicit attachment edit through omitted text saves (%j)', async ({ remove, explicitUndefined }) => {
+    const f = heldSocket()
+    try {
+      const first = f.client.command({ type: 'compose', threadId: 'thread', text: 'First' })
+      const image = { id: 'image', digest: 'a'.repeat(64), name: 'Image', mimeType: 'image/png' as const, sizeBytes: 1 }
+      const add = f.client.command({ type: 'compose', threadId: 'thread', text: 'Image added', attachments: [image] })
+      const saves = [add, f.client.command({ type: 'compose', threadId: 'thread', text: 'Text after image' })]
+      if (remove) saves.push(f.client.command({ type: 'compose', threadId: 'thread', text: 'Image removed', attachments: [] }))
+      saves.push(f.client.command({ type: 'compose', threadId: 'thread', text: 'Latest text', ...(explicitUndefined ? { attachments: undefined } : {}) }))
+      const settledSaves = Promise.allSettled(saves)
+      const expectedImage = structuredClone(image)
+      image.name = 'Changed caller object'
+      f.reply(f.frames[0]!)
+      await first
+      await vi.waitFor(() => expect(f.frames).toHaveLength(2))
+      expect(f.frames[1]).toMatchObject({ op: 'command', command: { type: 'compose', threadId: 'thread', text: 'Latest text', attachments: remove ? [] : [expectedImage] } })
+      f.reply(f.frames[1]!)
+      expect((await settledSaves).every(result => result.status === 'fulfilled' && result.value.error === null)).toBe(true)
+    } finally { await f.client.close() }
+  })
+  it('seals owners before selection and refuses a pending save rather than flushing it after a full-budget barrier', async () => {
+    const f = heldSocket()
+    try {
+      const a = f.client.command({ type: 'compose', threadId: 'A', text: 'First A' })
+      const latestA = f.client.command({ type: 'compose', threadId: 'A', text: 'Latest A' })
+      const selectB = f.client.command({ type: 'select-thread', threadId: 'B' })
+      const b = f.client.command({ type: 'compose', threadId: 'B', text: 'Latest B' })
+      const selectA = f.client.command({ type: 'select-thread', threadId: 'A' })
+      expect((await b).error).toContain('Your latest text is only in this window.')
+      expect(f.frames.filter(frame => frame.op === 'command').map(frame => frame.command)).toEqual([
+        { type: 'compose', threadId: 'A', text: 'First A' }, { type: 'compose', threadId: 'A', text: 'Latest A' },
+        { type: 'select-thread', threadId: 'B' }, { type: 'select-thread', threadId: 'A' },
+      ])
+      for (const frame of f.frames) f.reply(frame)
+      await vi.waitFor(() => expect(f.frames.filter(frame => frame.op === 'detail')).toHaveLength(2))
+      for (const frame of f.frames.filter(frame => frame.op === 'detail')) f.reply(frame)
+      await Promise.all([a, latestA, selectB, selectA])
+      expect(f.frames.filter(frame => frame.op === 'command' && frame.command.type === 'compose')).toHaveLength(2)
+    } finally { await f.client.close() }
+  })
+  it('preserves explicit receipt identities under the same two-save budget and settles every coalesced failure', async () => {
+    const f = heldSocket()
+    try {
+      const first = f.client.command({ type: 'compose', threadId: 'thread', text: 'One' }, undefined, 'save-one')
+      const second = f.client.command({ type: 'compose', threadId: 'thread', text: 'Two' }, undefined, 'save-two')
+      const third = f.client.command({ type: 'compose', threadId: 'thread', text: 'Three' }, undefined, 'save-three')
+      const send = f.client.command({ type: 'send', draft: { threadId: 'thread', text: 'Three', attachments: [] } })
+      expect((await third).error).toContain('Your latest text is only in this window.')
+      expect(f.frames.slice(0, 2).map(frame => frame.id)).toEqual(['save-one', 'save-two'])
+      f.reply(f.frames[0]!)
+      f.reply(f.frames[1]!, 'The save failed.')
+      f.reply(f.frames[2]!)
+      expect((await first).error).toBeNull(); expect((await second).error).toBe('The save failed.')
+      await send
+      expect(f.frames.some(frame => frame.id === 'save-three')).toBe(false)
+      const held = f.client.command({ type: 'compose', threadId: 'thread', text: 'Held' })
+      const edits = ['Later one', 'Later two'].map(text => f.client.command({ type: 'compose', threadId: 'thread', text }))
+      const index = f.frames.length - 1
+      f.reply(f.frames[index]!)
+      await held
+      await vi.waitFor(() => expect(f.frames).toHaveLength(index + 2))
+      f.reply(f.frames[index + 1]!, 'The latest save failed.')
+      expect((await Promise.all(edits)).map(state => state.error)).toEqual(['The latest save failed.', 'The latest save failed.'])
+    } finally { await f.client.close() }
+  })
+  it('settles unsent callers on disconnect and never replays them on a replacement connection', async () => {
+    const f = heldSocket()
+    const promises = ['First', 'Latest one', 'Latest two'].map(text => f.client.command({ type: 'compose', threadId: 'thread', text }))
+    const settled = Promise.allSettled(promises)
+    await f.client.close()
+    expect((await settled).map(result => result.status)).toEqual(['rejected', 'rejected', 'rejected'])
+    expect(f.frames).toHaveLength(1)
+    Object.assign(f.client, { frames: f.socket })
+    const next = f.client.command({ type: 'compose', threadId: 'thread', text: 'New connection edit' })
+    expect(f.frames).toHaveLength(2)
+    f.reply(f.frames[1]!)
+    expect((await next).error).toBeNull()
+    expect(f.frames.map(frame => frame.op === 'command' && frame.command.type === 'compose' ? frame.command.text : null)).toEqual(['First', 'New connection edit'])
+    await f.client.close()
   })
 })
 

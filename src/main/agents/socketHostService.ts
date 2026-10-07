@@ -25,6 +25,11 @@ import { version as clientVersion } from '../../../package.json'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.'
 
+const COMPOSE_WIRE_LIMIT = 2
+type TargetedCompose = Extract<AgentCommand, { type: 'compose' }> & { threadId: string }
+type ComposeBatch = { command: TargetedCompose; commandId?: string; result: Promise<AgentState>;
+  resolve(state: AgentState): void; reject(error: unknown): void }
+
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
 export class HostConnectionError extends Error {
   constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
@@ -99,6 +104,7 @@ export class SocketHostService implements HostService {
   private generation = 0
   private opening: AbortController | undefined
   private previewTail: Promise<unknown> = Promise.resolve()
+  private composeBudget: { active: number; queued?: ComposeBatch } = { active: 0 }
   constructor(private readonly options: SocketHostServiceOptions) { this.endpoint('/v1/health') }
   private get catchesUp(): boolean { return this.options.catchUpEvents !== false }
   /**
@@ -126,6 +132,7 @@ export class SocketHostService implements HostService {
     return task
   }
   private async open(): Promise<HostHello> {
+    this.resetComposeQueue()
     const selectedThreadId = this.cached?.activeThreadId
     const generation = ++this.generation
     this.opening?.abort()
@@ -200,6 +207,7 @@ export class SocketHostService implements HostService {
   private disconnected(frames: SocketFrames): void {
     if (this.frames !== frames) return
     this.frames = undefined
+    this.resetComposeQueue()
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer)
       item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
@@ -350,6 +358,7 @@ export class SocketHostService implements HostService {
   async checkRequestAnswer(answer: HostAnswerTarget, _client?: ClientIdentity): Promise<void> {
     void _client // The socket's authenticated pairing supplies authority on the host.
     if (!this.features.includes('answer-check')) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
+    this.flushCompose()
     const generation = this.generation
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
     this.sameGeneration(generation); this.publish(state)
@@ -360,6 +369,57 @@ export class SocketHostService implements HostService {
   async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    const admitted = structuredClone(command)
+    if (admitted.type === 'compose' && admitted.threadId !== undefined && this.supportsAtomicSend) {
+      return this.queueCompose(admitted as TargetedCompose, commandId)
+    }
+    // Saves admitted before a command go onto the wire first. Send never waits for their replies.
+    this.flushCompose()
+    return this.commandNow(admitted, _client, commandId)
+  }
+  private queueCompose(command: TargetedCompose, commandId?: string): Promise<AgentState> {
+    const budget = this.composeBudget, queued = budget.queued
+    if (queued && queued.command.threadId === command.threadId && queued.commandId === undefined && commandId === undefined) {
+      // Omission inherits the latest explicit image list; [] deliberately removes images.
+      const { attachments, ...latest } = command
+      queued.command = { ...queued.command, ...latest, ...(attachments !== undefined ? { attachments } : {}) }
+      return queued.result
+    }
+    // A new owner or an explicit receipt identity seals the older pending save.
+    this.flushCompose()
+    let resolve!: ComposeBatch['resolve'], reject!: ComposeBatch['reject']
+    const result = new Promise<AgentState>((done, fail) => { resolve = done; reject = fail })
+    const batch: ComposeBatch = { command, ...(commandId ? { commandId } : {}), result, resolve, reject }
+    if (budget.active === 0) this.dispatchCompose(batch, budget)
+    else budget.queued = batch
+    return result
+  }
+  private dispatchCompose(batch: ComposeBatch, budget = this.composeBudget): void {
+    budget.active++
+    void this.commandNow(batch.command, undefined, batch.commandId).then(
+      state => batch.resolve(state),
+      error => batch.reject(error),
+    ).finally(() => {
+      budget.active--
+      if (budget === this.composeBudget && budget.active < COMPOSE_WIRE_LIMIT) this.flushCompose()
+    })
+  }
+  private flushCompose(): void {
+    const budget = this.composeBudget, queued = budget.queued
+    if (!queued) return
+    delete budget.queued
+    if (budget.active >= COMPOSE_WIRE_LIMIT) {
+      const state = { ...this.state(), error: 'The host is still saving earlier edits. Your latest text is only in this window. Wait for saving to finish, then edit again.' }
+      queued.resolve(state)
+    } else this.dispatchCompose(queued, budget)
+  }
+  private resetComposeQueue(): void {
+    const queued = this.composeBudget.queued
+    this.composeBudget = { active: 0 }
+    queued?.reject(new HostConnectionError(
+      'The connection closed before this draft was sent. Your latest text is only in this window. Reconnect and save it again.', 'disconnected'))
+  }
+  private async commandNow(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     if (!this.supportsAtomicSend) {
       if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your text is only in this window.' }
       if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
@@ -539,5 +599,5 @@ export class SocketHostService implements HostService {
     if (!response.ok) throw refusal(response.status, 'The host could not forget this device. Connect again and retry.', 'unavailable')
     await this.close()
   }
-  async close(): Promise<void> { this.generation++; this.opening?.abort(); this.frames?.close() }
+  async close(): Promise<void> { this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }
 }

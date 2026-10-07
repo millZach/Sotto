@@ -309,7 +309,7 @@ it.each([false, true])('offers atomic Send only when the service implements it a
   expect(await desktop.call('legacy-save', { op: 'command', command: { type: 'compose', text: 'Legacy draft' } })).toMatchObject({ ok: true })
 })
 
-it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compose'].map(type => ({ delivery, type }))))('takes targeted $type authority from the selected native $delivery question before any saved draft exists and refuses selection drift', async ({ delivery, type }) => {
+it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compose'].map(type => ({ delivery, type }))))('keeps targeted $type selection exact during a native $delivery question and delegates Compose authority to execution', async ({ delivery, type }) => {
   const { pairing, paired } = await pairedClient('Desktop')
   const { service, commands } = recordingService()
   let allowed = false
@@ -324,17 +324,18 @@ it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compo
   const command = type === 'send' ? { type, draft } : { type, ...draft }
   expect(await desktop.call('unselected', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
-  expect(await desktop.call('denied', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
-  expect(commands).toEqual([])
+  // This recorder is not a coordinator: real TCP tests prove its execution-time Compose policy.
+  expect(await desktop.call('denied', { op: 'command', command })).toMatchObject(type === 'compose' ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
+  expect(commands).toEqual(type === 'compose' ? [{ command, clientId: paired.clientId }] : [])
   allowed = true
   expect(await desktop.call('allowed', { op: 'command', command })).toMatchObject({ ok: true })
-  expect(commands).toEqual([{ command, clientId: paired.clientId }])
+  expect(commands).toHaveLength(type === 'compose' ? 2 : 1)
   allowed = false
-  expect(await desktop.call('revoked', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await desktop.call('revoked', { op: 'command', command })).toMatchObject(type === 'compose' ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
   await desktop.call('switch', { op: 'command', command: { type: 'select-thread', threadId: 'other' } })
   allowed = true
   expect(await desktop.call('drifted', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
-  expect(commands).toHaveLength(1)
+  expect(commands).toHaveLength(type === 'compose' ? 3 : 1)
 })
 
 it('returns a targeted Compose refusal as its own outcome when the shared shell has another error', async () => {
@@ -353,7 +354,7 @@ it('returns a targeted Compose refusal as its own outcome when the shared shell 
   expect(service.shell().error).toBe('A different command changed the shared error.')
 })
 
-it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as const)('keeps targeted Compose answer authority bound to the exact %s draft', async binding => {
+it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as const)('delegates targeted Compose binding authority to its coordinator for a %s draft', async binding => {
   const { pairing, paired } = await pairedClient('Desktop')
   const { service, commands } = recordingService()
   const saved = binding.startsWith('saved')
@@ -368,9 +369,9 @@ it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as 
   await desktop.call('hello', { op: 'hello' })
   await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
   const command = { type: 'compose', threadId: 'thread', text: 'A new edit' }
-  expect(await desktop.call('targeted', { op: 'command', command })).toMatchObject(plain ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
-  expect(commands).toEqual(plain ? [{ command, clientId: paired.clientId }] : [])
-  // Only the exact targeted save keeps its binding; legacy Compose and Send retain their native-question gate.
+  expect(await desktop.call('targeted', { op: 'command', command })).toMatchObject({ ok: true })
+  expect(commands).toEqual([{ command, clientId: paired.clientId }])
+  // The real coordinator checks targeted saves at execution; legacy Compose and Send keep their native-question gate.
   expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', text: 'Legacy edit' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(await desktop.call('send', { op: 'command', command: { type: 'send', draft: { threadId: 'thread', text: 'Prompt' } } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 })

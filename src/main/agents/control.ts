@@ -70,7 +70,7 @@ type ComposerContext = {
   composition: Extract<AgentCommand, { type: 'save-thread-draft' }>
   order: number
   previousDraftId?: string
-  questionsDigest?: string
+  questionsDigest?: string | null
   retryId?: string
 }
 /** The send or steer a command is, or null for any other: what `dispatch` asks, once, of every command. */
@@ -213,7 +213,7 @@ export class AgentControl {
   private readonly store: AtomicJsonStore<Saved>
   private persistedDrafts = new Map<string, string>()
   private readonly pendingDraftWrites = new Set<Map<string, string>>()
-  private readonly emptyDraftRevisions = new Map<string, string>()
+  private readonly emptyDraftRevisions = new Map<string, { draftId: string; requestId?: string | null }>()
   private nextDraftAdmission = 0
   private readonly draftWriteOrders = new Map<string, number>()
   private publishedDraftPersistence = ''
@@ -787,7 +787,7 @@ export class AgentControl {
   private draftPersistence(): NonNullable<AgentState['threadDraftPersistence']> {
     const drafts = this.state.threadDrafts ?? []
     const current = this.draftSignatures(drafts)
-    const revisions = new Map(this.emptyDraftRevisions)
+    const revisions = new Map([...this.emptyDraftRevisions].map(([threadId, revision]) => [threadId, revision.draftId]))
     for (const draft of drafts) revisions.set(draft.threadId, draft.draftId)
     return [...revisions].map(([threadId, draftId]) => {
       const signature = current.get(threadId)
@@ -1330,7 +1330,7 @@ export class AgentControl {
     if (draft.text.length || draft.attachments.length) {
       this.emptyDraftRevisions.delete(draft.threadId)
       this.state.threadDrafts.push(structuredClone(draft))
-    } else this.emptyDraftRevisions.set(draft.threadId, draft.draftId)
+    } else this.emptyDraftRevisions.set(draft.threadId, { draftId: draft.draftId, requestId: draft.requestId })
   }
   private syncLegacyDraft(): void {
     if (!this.state.draftThreadId) return
@@ -1384,7 +1384,7 @@ export class AgentControl {
       const previous = this.state.threadDrafts?.find(item => item.threadId === draft.threadId)
       const sameRevision = previous ? previous.draftId === draft.draftId && previous.text === draft.text && previous.requestId === draft.requestId
         && followupDigest(previous) === followupDigest(draft)
-        : this.emptyDraftRevisions.get(draft.threadId) === draft.draftId && !draft.text.length && !draft.attachments.length
+        : this.emptyDraftRevisions.get(draft.threadId)?.draftId === draft.draftId && !draft.text.length && !draft.attachments.length
       if (command.composer === 'manual' && !sameRevision && this.state.assignments.some(item => item.threadId === draft.threadId && item.mode === 'managed')) {
         throw new Error('This draft now belongs to the managed composer. Your manual edit was not saved over it. Stop managing before saving that edit.')
       }
@@ -1657,18 +1657,18 @@ export class AgentControl {
         const thread = this.thread(packet.threadId!)
         if (client.transport === 'socket' && client.selectedThreadId !== thread.id) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
         const saved = this.state.threadDrafts?.find(item => item.threadId === thread.id)
+        const activeRequestId = this.activeCompositionRequest(thread.id)
         const requestId = saved ? saved.requestId
-          : this.state.composing && this.state.draftThreadId === thread.id ? this.state.draftRequestId
-            : thread.requests.find(item => item.kind === 'question')?.id ?? null
+          : activeRequestId !== undefined ? activeRequestId : thread.requests.find(item => item.kind === 'question')?.id ?? null
         const question = thread.requests.find(item => item.kind === 'question' && item.id === requestId)
-        if (requestId) this.guardClientGrant(client)
+        if (command.type === 'send' && requestId) this.guardClientGrant(client)
         composer = { order: ++this.nextDraftAdmission, composition: { type: 'save-thread-draft', threadId: thread.id,
           draftId: randomUUID(), text: packet.text,
           attachments: command.type === 'send' ? structuredClone(packet.attachments ?? saved?.attachments ?? [])
             : packet.attachments === undefined ? undefined : structuredClone(packet.attachments),
           skills: command.type === 'send' ? saved?.skills : undefined, files: command.type === 'send' ? saved?.files : undefined, requestId },
         ...(saved ? { previousDraftId: saved.draftId } : {}),
-        ...(question && question.id === requestId ? { questionsDigest: requestQuestionsDigest(requestDraftQuestions(question)) } : {}),
+        ...(requestId ? { questionsDigest: question ? requestQuestionsDigest(requestDraftQuestions(question)) : null } : {}),
         ...(this.outbox.find(item => item.threadId === thread.id)?.id ? { retryId: this.outbox.find(item => item.threadId === thread.id)!.id } : {}) }
       }
     } catch (error) {
@@ -2174,6 +2174,15 @@ export class AgentControl {
       if ((this.draftWriteOrders.get(composer.composition.threadId) ?? 0) > composer.order) {
         throw new Error('This draft changed while Send was waiting. Your newer draft is kept. Review it and send again.')
       }
+      const current = this.state.threadDrafts?.find(item => item.threadId === composer.composition.threadId)
+      const establishedRequestId = current ? current.requestId : this.activeCompositionRequest(composer.composition.threadId)
+      if (establishedRequestId !== undefined && establishedRequestId !== (composer.composition.requestId ?? null)) {
+        // Keep the packet as a save on the established binding; it cannot acquire new Send authority.
+        const refusal = { ...composer, composition: { ...composer.composition, requestId: establishedRequestId } }
+        this.activateComposition(refusal, client)
+        await this.stageThreadDraft(refusal.composition, refusal.order, true)
+        throw new Error('This draft changed while Send was waiting. Nothing was sent. Your text was saved. Review it and send again.')
+      }
       if (!composer.retryId) {
         try { this.validateComposerQuestion(composer) }
         catch (error) {
@@ -2192,12 +2201,18 @@ export class AgentControl {
       return
     }
     if (command.type === 'compose' && composer) {
-      this.activateComposition(composer, client)
-      // Omitted fields inherit from earlier edits in this owner's lane, never from another thread or binding.
-      const previous = this.state.threadDrafts?.find(item => item.threadId === composer.composition.threadId
-        && item.requestId === (composer.composition.requestId ?? null))
-      await this.stageThreadDraft({ ...composer.composition, attachments: composer.composition.attachments ?? previous?.attachments ?? [],
-        skills: previous?.skills, files: previous?.files }, composer.order)
+      const saved = this.state.threadDrafts?.find(item => item.threadId === composer.composition.threadId)
+      const activeRequestId = this.activeCompositionRequest(composer.composition.threadId)
+      // Earlier queued edits settle this owner's binding. An admitted question fallback survives only while pending.
+      const capturedRequestId = composer.composition.requestId ?? null
+      const pendingCapturedRequestId = this.thread(composer.composition.threadId).requests
+        .some(item => item.kind === 'question' && item.id === capturedRequestId) ? capturedRequestId : null
+      const requestId = saved ? saved.requestId : activeRequestId !== undefined ? activeRequestId : pendingCapturedRequestId
+      const resolved = { ...composer, composition: { ...composer.composition, requestId } }
+      this.activateComposition(resolved, client)
+      const previous = saved?.requestId === (requestId ?? null) ? saved : undefined
+      await this.stageThreadDraft({ ...resolved.composition, attachments: resolved.composition.attachments ?? previous?.attachments ?? [],
+        skills: previous?.skills, files: previous?.files }, resolved.order)
       return
     }
     if (client.transport === 'socket' && ['compose', 'send', 'cancel-draft', 'pause-draft', 'cancel-request'].includes(command.type)) {
@@ -2207,6 +2222,7 @@ export class AgentControl {
       } else if (command.type === 'send') {
         await this.sendDraft(turn, undefined, selectionRevision, client, thread.id)
       } else if (command.type === 'cancel-draft') {
+        this.clearEmptyDraftBinding(thread.id)
         if (this.state.draftThreadId === thread.id) this.clearDraft()
         else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id)
       } else if (command.type === 'pause-draft' && this.state.draftThreadId === thread.id) {
@@ -2631,6 +2647,7 @@ export class AgentControl {
         assignment?.handledRequestIds.push(command.requestId)
         this.state.queue = this.state.queue.filter(q => q.requestId !== command.requestId)
         if (answerDraft) {
+          this.clearEmptyDraftBinding(command.threadId, answerDraft.draftId)
           this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== command.threadId || draft.draftId !== answerDraft.draftId)
         }
         if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
@@ -2645,13 +2662,23 @@ export class AgentControl {
     const requestId = context.composition.requestId
     if (!requestId) return
     const question = this.thread(context.composition.threadId).requests.find(item => item.id === requestId && item.kind === 'question')
-    if (!question || context.questionsDigest !== undefined && requestQuestionsDigest(requestDraftQuestions(question)) !== context.questionsDigest) {
+    if (!question || context.questionsDigest === null || context.questionsDigest !== undefined && requestQuestionsDigest(requestDraftQuestions(question)) !== context.questionsDigest) {
       throw new Error('This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt.')
     }
   }
+  private activeCompositionRequest(threadId: string): string | null | undefined {
+    const requestId = this.state.composing && this.state.draftThreadId === threadId
+      ? this.state.draftRequestId : this.emptyDraftRevisions.get(threadId)?.requestId
+    return requestId === null || this.thread(threadId).requests.some(item => item.kind === 'question' && item.id === requestId)
+      ? requestId : undefined
+  }
+  private clearEmptyDraftBinding(threadId: string, draftId?: string): void {
+    const revision = this.emptyDraftRevisions.get(threadId)
+    if (revision && (draftId === undefined || revision.draftId === draftId)) delete revision.requestId
+  }
   private activateComposition(context: ComposerContext, client: ClientIdentity): void {
     const { threadId, requestId } = context.composition
-    if (requestId) this.guardClientGrant(client)
+    if (requestId) this.guardClientGrant(client, REMOTE_PERMISSION_DENIED)
     if ((this.draftWriteOrders.get(threadId) ?? 0) > context.order) return
     // A newer edit keeps its original owner even when the preceding Send presented another thread.
     if (client.transport !== 'socket' && (this.state.draftThreadId === threadId
@@ -2689,7 +2716,7 @@ export class AgentControl {
   private checkManagedDraftHandoff(threadId: string, expectedDraftId: string | null | undefined): void {
     if (expectedDraftId === undefined) return // Existing voice/management commands keep their authority contract.
     const draft = this.state.threadDrafts?.find(item => item.threadId === threadId)
-    const currentId = draft?.draftId ?? this.emptyDraftRevisions.get(threadId) ?? null
+    const currentId = draft?.draftId ?? this.emptyDraftRevisions.get(threadId)?.draftId ?? null
     if (currentId !== expectedDraftId) throw new Error('The thread draft changed before management could take it. Keep your edit and retry the handoff.')
     if (this.outbox.some(item => item.threadId === threadId)
       || this.state.deliveries?.some(item => item.threadId === threadId && ['queued', 'submitting', 'uncertain'].includes(item.status))) {
@@ -3090,6 +3117,7 @@ export class AgentControl {
     assignment.stopReason = 'none'; assignment.stoppedAt = ''
     assignment.contextUpdatedAt = Date.now()
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId)
+    this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
     else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
     this.state.queue = this.state.queue.filter(q => q.threadId !== thread.id || q.kind === 'permission' || q.kind === 'question')
@@ -3115,6 +3143,7 @@ export class AgentControl {
     this.state.composing = true
   }
   private clearDraft(): void {
+    if (this.state.draftThreadId) this.clearEmptyDraftBinding(this.state.draftThreadId)
     this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(item => item.threadId !== this.state.draftThreadId)
     this.manualDraftId = null
     this.state.draftAttachments = []
@@ -3254,6 +3283,12 @@ export class AgentControl {
     this.processedAssignmentThreads = new Set()
     const previousThreads = new Map(this.state.host.threads.map(thread => [thread.id, thread]))
     this.state.host = snapshot
+    for (const threadId of this.emptyDraftRevisions.keys()) {
+      if (!snapshot.threads.some(thread => thread.id === threadId && !isThreadClosed(thread))) {
+        this.clearEmptyDraftBinding(threadId)
+        if (this.state.draftThreadId === threadId && !this.hasDraft()) this.clearDraft()
+      }
+    }
     // Saved with the persist below; a disconnected snapshot changes no mark, so its early return loses nothing.
     this.finishedUnread.track(snapshot)
     this.scheduleProviderReconnects()

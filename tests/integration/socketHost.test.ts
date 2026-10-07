@@ -19,6 +19,7 @@ import { hostPushSchema, hostVersionMismatch } from '../../src/shared/hostProtoc
 import { agentActivitySchema, type AgentActivity } from '../../src/shared/agentActivity'
 import { version as packageVersion } from '../../package.json'
 import { rawPeer } from '../fixtures/rawHostPeer'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { TurnRecorder } from '../../src/main/agents/turns'
@@ -60,6 +61,196 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().threadDrafts?.find(draft => draft.threadId === threadId)).toMatchObject({ text: 'An acknowledged saved edit', requestId: null })
     expect(command.mock.calls.filter(([input]) => input.type === 'compose')).toHaveLength(1)
     expect(detail).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled(); expect(onPushError).not.toHaveBeenCalled()
+  })
+
+  it('keeps forty real autosaves from starving Send, history, receipts or Check while an acknowledgement is held', async () => {
+    const { client, result } = await pair('Burst saves')
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Burst project', path: root, useExisting: true })
+    const projectId = created.host.projects.find(project => project.path === root)!.id
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Burst thread', modelId: created.host.models[0]!.id, managed: true })
+    const threadId = opened.host.threads.find(thread => thread.title === 'Burst thread')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    expect((await fetch(url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken,
+      'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
+    const actual = host.service.command.bind(host.service), calls: AgentCommand[] = []
+    let release: () => void = () => undefined, entered: () => void = () => undefined, sent: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const sendAdmitted = new Promise<void>(resolve => { sent = resolve })
+    const pending: Promise<unknown>[] = []
+    const spy = vi.spyOn(host.service, 'command').mockImplementation(async (...args) => {
+      calls.push(structuredClone(args[0]))
+      const result = actual(...args)
+      if (args[0].type === 'send') sent()
+      const state = await result
+      if (args[0].type === 'compose' && args[0].text === 'Edit 0') { entered(); await gate }
+      return state
+    })
+    try {
+      const saves = Array.from({ length: 40 }, (_, index) => client.command({ type: 'compose', threadId, text: `Edit ${index}` }))
+      pending.push(...saves)
+      await started
+      const detail = client.readThreadDetail(threadId), receipt = client.receipt('absent-attempt')
+      const check = client.checkRequestAnswer({ threadId, providerId: 'codex', requestId: 'absent-question', questionsDigest: 'a'.repeat(64) })
+      const checked = expect(check).rejects.toMatchObject({ code: 'stale_request' })
+      const send = client.command({ type: 'send', draft: { threadId, text: 'Edit 39', attachments: [] } })
+      pending.push(detail, receipt, checked, send)
+      await sendAdmitted
+      expect(calls.filter(command => command.type === 'compose').map(command => command.text)).toEqual(['Edit 0', 'Edit 39'])
+      expect(await receipt).toEqual({ status: 'unknown' })
+      expect(await detail).not.toBeNull()
+      await checked
+      expect((await send).error).toBeNull()
+      release(); await Promise.all(pending)
+      expect(saves.length).toBe(40)
+      expect(calls.filter(command => command.type === 'compose')).toHaveLength(2)
+    } finally { release(); await Promise.allSettled(pending); spy.mockRestore() }
+  })
+
+  it('retains the latest Send packet as a null-bound prompt when both Compose slots are held and its pending save is refused', async () => {
+    const { client, result } = await pair('Full autosave slots')
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    expect((await fetch(url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken,
+      'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
+    const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const control = (host.service as unknown as { control: { persist(): Promise<void> } }).control
+    const persist = control.persist.bind(control)
+    let release: () => void = () => undefined, entered: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    const actual = host.service.command.bind(host.service), admitted: AgentCommand[] = []
+    const command = vi.spyOn(host.service, 'command').mockImplementation((...args) => {
+      const operation = actual(...args); admitted.push(structuredClone(args[0])); return operation
+    })
+    const nativeWrites = vi.spyOn(native, 'execute'), pending: Promise<unknown>[] = []
+    try {
+      pending.push(client.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+      pending.push(client.command({ type: 'compose', threadId, text: 'First prompt', attachments: [image] }, undefined, 'first-save'))
+      await expect.poll(() => admitted.filter(input => input.type === 'compose').length).toBe(1)
+      native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
+        id: 'new-question', kind: 'question', text: 'New question', options: [{ id: 'native:blue', label: 'Blue' }] } })
+      await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.some(request => request.id === 'new-question')).toBe(true)
+      pending.push(client.command({ type: 'compose', threadId, text: 'Second prompt', attachments: [image] }, undefined, 'second-save'))
+      const latest = client.command({ type: 'compose', threadId, text: 'Latest packet', attachments: [] })
+      pending.push(latest)
+      await expect.poll(() => admitted.filter(input => input.type === 'compose').length).toBe(2)
+      const send = client.command({ type: 'send', draft: { threadId, text: 'Latest packet', attachments: [] } }); pending.push(send)
+      expect((await latest).error).toContain('Your latest text is only in this window.')
+      await expect.poll(() => admitted.some(input => input.type === 'send')).toBe(true)
+      expect(nativeWrites.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])
+      release(); await Promise.all(pending)
+      expect((await send).error).toContain('Nothing was sent. Your text was saved.')
+      const disk = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
+      expect(disk.threadDrafts).toContainEqual(expect.objectContaining({ threadId, requestId: null, text: 'Latest packet', attachments: [] }))
+      expect(host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId, requestId: null, text: 'Latest packet', attachments: [] }))
+      expect(admitted.filter(input => input.type === 'compose')).toHaveLength(2)
+      expect(nativeWrites.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])
+    } finally { release(); await Promise.allSettled(pending); command.mockRestore(); held.mockRestore(); nativeWrites.mockRestore() }
+  })
+
+  it('keeps a queued null-bound prompt save outside answer policy when its preceding save establishes that binding', async () => {
+    const { client } = await pair('Queued plain intent')
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const control = (host.service as unknown as { control: { persist(): Promise<void> } }).control
+    const persist = control.persist.bind(control)
+    let release: () => void = () => undefined, entered: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    const actual = host.service.command.bind(host.service), admitted: AgentCommand[] = []
+    const command = vi.spyOn(host.service, 'command').mockImplementation((...args) => {
+      const operation = actual(...args); admitted.push(structuredClone(args[0])); return operation
+    })
+    const pending: Promise<unknown>[] = []
+    try {
+      pending.push(client.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+      pending.push(client.command({ type: 'compose', threadId, text: 'First plain intent', attachments: [image] }))
+      await expect.poll(() => admitted.some(input => input.type === 'compose')).toBe(true)
+      native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
+        id: 'new-question', kind: 'question', text: 'New question', options: [{ id: 'native:blue', label: 'Blue' }] } })
+      await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
+      const latest = client.command({ type: 'compose', threadId, text: 'Newest plain intent' })
+      pending.push(latest, client.command({ type: 'observe-threads', threadIds: [] }))
+      const settled = Promise.allSettled(pending)
+      release(); await settled
+      expect((await latest).error).toBeNull()
+      expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts).toContainEqual(expect.objectContaining({
+        threadId, requestId: null, text: 'Newest plain intent', attachments: [image],
+      }))
+      expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.requests.map(request => request.id)).toEqual(['new-question'])
+    } finally { release(); await Promise.allSettled(pending); command.mockRestore(); held.mockRestore() }
+  })
+
+  it.each(['live', 'uncertain', 'retry-ready'] as const)('checks current answer authority at real targeted Compose execution for %s, including revocation after admission', async delivery => {
+    const { client, result } = await pair('Compose authority')
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const policy = async (allowed: boolean) => expect((await fetch(url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
+    native.event({ type: 'question', threadId: 'workshop', text: 'Question', request: {
+      id: 'bound-question', kind: 'question', text: 'Question', options: [{ id: 'native:blue', label: 'Blue' }],
+      ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) } })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
+    const writes = vi.spyOn(native, 'execute')
+    expect((await client.command({ type: 'compose', threadId, text: 'No policy' })).error).toBe(REMOTE_PERMISSION_DENIED)
+    expect(host.service.shell().threadDrafts).toEqual([])
+    await policy(true)
+    expect((await client.command({ type: 'compose', threadId, text: 'Authorized answer' })).error).toBeNull()
+    const before = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts
+    let release: () => void = () => undefined, entered: () => void = () => undefined
+    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const actual = host.service.command.bind(host.service)
+    const held = vi.spyOn(host.service, 'command').mockImplementationOnce(async (...args) => { entered(); await gate; return actual(...args) })
+    const editing = client.command({ type: 'compose', threadId, text: 'Revoked answer' })
+    try {
+      await started; await policy(false); release()
+      expect((await editing).error).toBe(REMOTE_PERMISSION_DENIED)
+      expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts).toEqual(before)
+      native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+      await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(0)
+      expect((await client.command({ type: 'compose', threadId, text: 'A saved stale answer still needs policy' })).error).toBe(REMOTE_PERMISSION_DENIED)
+      expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts).toEqual(before)
+      expect(writes.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])
+    } finally { release(); await Promise.allSettled([editing]); held.mockRestore(); writes.mockRestore() }
+  })
+
+  it('ignores a closed-question binding in an empty active composer over the real socket', async () => {
+    const { client, result } = await pair('Empty stale composer')
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const policy = async (allowed: boolean) => expect((await fetch(url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), {
+      method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
+    await host.service.command({ type: 'assign', threadId, instruction: 'Work' }, desktopWindowClient())
+    await host.service.command({ type: 'select-thread', threadId }, desktopWindowClient())
+    await policy(true)
+    native.event({ type: 'question', threadId: 'workshop', text: 'Question', request: {
+      id: 'closed-question', kind: 'question', text: 'Question', options: [{ id: 'native:blue', label: 'Blue' }] } })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
+    await host.service.command({ type: 'cancel-draft' }, desktopWindowClient())
+    expect((await host.service.command({ type: 'compose', text: '' }, desktopWindowClient())).error).toBeNull()
+    expect(host.service.shell()).toMatchObject({ composing: true, draftThreadId: threadId, draftRequestId: 'closed-question', threadDrafts: [] })
+    native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(0)
+    await policy(false)
+    expect((await client.command({ type: 'compose', threadId, text: 'A new plain prompt' })).error).toBeNull()
+    expect(JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')).threadDrafts).toContainEqual(expect.objectContaining({ threadId, requestId: null, text: 'A new plain prompt' }))
   })
 
   it.each(['missing-thread', 'wrong-provider', 'missing-request', 'changed-form', 'changed-during-read', 'closed-during-read', 'disconnected-provider', 'revoked-during-read', 'unexpected-native-error'] as const)('keeps safe answer Check guidance across the socket for %s', async scenario => {
