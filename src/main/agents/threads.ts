@@ -186,6 +186,10 @@ export class SottoThreadHost implements AgentHost {
     await this.registry.load()
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+    // The read after an accepted send is answered from what the adapter holds, and the caller reads whole when the
+    // echo is not in it (#765). In the app the workspace above answers it first; this is where a stack without one
+    // does, so that it reads the thread whole once at most, as it did before.
+    if (purpose?.afterSend) return this.read(() => this.inner.snapshot())
     return this.read(() => this.inner.refreshThread?.(binding.sessionId, purpose) ?? this.inner.snapshot())
   }
 
@@ -265,7 +269,7 @@ export class SottoThreadHost implements AgentHost {
     const result = await this.inner.execute(translated)
     // A settings change's snapshot crosses this boundary the way every snapshot does: under Sotto's thread IDs.
     const mapped = result.snapshot ? { ...result, snapshot: this.mapSnapshot(result.snapshot) } : result
-    await this.registry.flush()
+    await this.registry.flush().catch(() => { console.warn('registry-flush-deferred') })
     return mapped
   }
 

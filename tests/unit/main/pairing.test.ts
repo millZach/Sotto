@@ -49,6 +49,20 @@ describe('paired clients', () => {
     await expect(store.redeem(second.code, 'Again')).rejects.toThrow(PAIRING_CODE_REJECTED)
   })
 
+  it('normalises new and previously saved device names without changing their client IDs', async () => {
+    const store = clients(); await store.load()
+    const paired = await store.redeem(store.issuePairingCode().code, '  Studio\n\u202e laptop\u0000  ')
+    expect(store.list()[0]).toMatchObject({ clientId: paired.clientId, name: 'Studio laptop' })
+    const path = join(root, 'paired-clients.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    saved.clients[0].name = '\u2066Old\t phone\u2069'
+    await writeFile(path, JSON.stringify(saved))
+    const reopened = clients(); await reopened.load()
+    expect(reopened.list()[0]).toMatchObject({ clientId: paired.clientId, name: 'Old phone' })
+    expect(reopened.verifyToken(paired.token)).toBe(paired.clientId)
+    const unnamed = await store.redeem(store.issuePairingCode().code, '\u202e\n')
+    expect(store.list().find(client => client.clientId === unnamed.clientId)?.name).toBe('Paired client')
+  })
   it('refuses an unknown or expired code without pairing anything', async () => {
     const store = clients()
     await store.load()

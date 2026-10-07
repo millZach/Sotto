@@ -5,6 +5,7 @@ import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBra
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
 import {
   APPEARANCE_CONTRAST,
+  FROST_SEE_THROUGH,
   GLASS_OPACITY,
   THEME_COLOR_ROLES,
   parseCustomThemes,
@@ -20,12 +21,12 @@ import {
 export type ResolvedAppearance = ThemeAppearance
 
 /** Everything that decides the main window's look. */
-export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'glassOpacity' | 'effortColor'> & {
+export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'glassOpacity' | 'frostedWindow' | 'frostSeeThrough' | 'effortColor'> & {
   readonly customThemes: readonly ThemeDefinition[]
 }
 
 type ChoiceKey = keyof AppearanceChoice
-const CHOICE_KEYS = ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'effortColor', 'customThemes'] as const satisfies readonly ChoiceKey[]
+const CHOICE_KEYS = ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'frostedWindow', 'frostSeeThrough', 'effortColor', 'customThemes'] as const satisfies readonly ChoiceKey[]
 
 const isEffortColor = (value: unknown): value is EffortColor => typeof value === 'string' && (EFFORT_COLORS as readonly string[]).includes(value)
 
@@ -106,6 +107,7 @@ export function applyAppearance(
   root: HTMLElement = document.documentElement,
   systemDark: boolean = systemPrefersDark(),
   draft: ThemeDraft | null = null,
+  canFrost: boolean = frostAvailable(),
 ): ResolvedAppearance {
   const resolved = draft?.appearance ?? resolveAppearance(choice.appearance, systemDark)
   const { theme, colors } = resolveThemeFor(choice, resolved)
@@ -129,10 +131,25 @@ export function applyAppearance(
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   root.style.setProperty('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
   root.style.setProperty('--theme-glass-opacity', `${clampStep(choice.glassOpacity, GLASS_OPACITY)}%`)
+  // Frost (ADR-0048) is a look over whichever theme is in force: the room lets the window's system material through.
+  if (choice.frostedWindow && canFrost) root.dataset.frost = ''
+  else delete root.dataset.frost
+  root.style.setProperty('--theme-frost-solid', `${100 - clampStep(choice.frostSeeThrough, FROST_SEE_THROUGH)}%`)
   // The effort colourway is an attribute, not a role: tokens.css keys its palette blocks on it (ADR-0019).
   root.dataset.effortColor = isEffortColor(choice.effortColor) ? choice.effortColor : DEFAULT_SETTINGS.effortColor
   if (draft === null) writeCachedAppearance(choice)
   return resolved
+}
+
+const REDUCED_TRANSPARENCY_QUERY = '(prefers-reduced-transparency: reduce)'
+
+/**
+ * Whether this window can show the desktop through the room: main says whether the system draws a frosted
+ * material behind it (Windows 11 22H2 and later, macOS), and a system asking for less transparency always wins.
+ */
+export function frostAvailable(target: (Pick<Window, 'matchMedia'> & { readonly sotto?: unknown }) | undefined = typeof window === 'undefined' ? undefined : window): boolean {
+  if (target === undefined || (target.sotto as { readonly canFrostWindow?: unknown } | undefined)?.canFrostWindow !== true) return false
+  return typeof target.matchMedia !== 'function' || !target.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches
 }
 
 function suppressTransitions(root: HTMLElement): void {
@@ -152,6 +169,8 @@ function defaultChoice(): AppearanceChoice {
     darkTheme: DEFAULT_SETTINGS.darkTheme,
     appearanceContrast: DEFAULT_SETTINGS.appearanceContrast,
     glassOpacity: DEFAULT_SETTINGS.glassOpacity,
+    frostedWindow: DEFAULT_SETTINGS.frostedWindow,
+    frostSeeThrough: DEFAULT_SETTINGS.frostSeeThrough,
     effortColor: DEFAULT_SETTINGS.effortColor,
     customThemes: [],
   }
@@ -174,6 +193,8 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
       darkTheme: resolveThemeHalfId(text(record.darkTheme, fallback.darkTheme), 'dark', customThemes),
       appearanceContrast: clampStep(number(record.appearanceContrast, fallback.appearanceContrast), APPEARANCE_CONTRAST),
       glassOpacity: clampStep(number(record.glassOpacity, fallback.glassOpacity), GLASS_OPACITY),
+      frostedWindow: typeof record.frostedWindow === 'boolean' ? record.frostedWindow : fallback.frostedWindow,
+      frostSeeThrough: clampStep(number(record.frostSeeThrough, fallback.frostSeeThrough), FROST_SEE_THROUGH),
       effortColor: isEffortColor(record.effortColor) ? record.effortColor : fallback.effortColor,
       customThemes,
     }
@@ -194,6 +215,8 @@ function writeCachedAppearance(choice: AppearanceChoice, storage: Pick<Storage, 
       darkTheme: choice.darkTheme,
       appearanceContrast: choice.appearanceContrast,
       glassOpacity: choice.glassOpacity,
+      frostedWindow: choice.frostedWindow,
+      frostSeeThrough: choice.frostSeeThrough,
       effortColor: choice.effortColor,
       customThemes: selected,
     }))
@@ -288,6 +311,8 @@ export class AppearancePreview {
       darkTheme: fields.darkTheme?.value ?? persisted.darkTheme,
       appearanceContrast: fields.appearanceContrast?.value ?? persisted.appearanceContrast,
       glassOpacity: fields.glassOpacity?.value ?? persisted.glassOpacity,
+      frostedWindow: fields.frostedWindow?.value ?? persisted.frostedWindow,
+      frostSeeThrough: fields.frostSeeThrough?.value ?? persisted.frostSeeThrough,
       effortColor: fields.effortColor?.value ?? persisted.effortColor,
       customThemes,
     }
@@ -328,6 +353,20 @@ export const appearancePreview = new AppearancePreview()
 /** Re-render when a pending appearance edit or editor draft starts or settles. */
 export function useAppearancePreviewVersion(preview: AppearancePreview = appearancePreview): number {
   return useSyncExternalStore(preview.subscribe, preview.snapshot, preview.snapshot)
+}
+
+/** Whether the system asks for less transparency, kept current, so a frosted room turns solid (and back) at once. */
+export function useSystemReducesTransparency(): boolean {
+  const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(REDUCED_TRANSPARENCY_QUERY)
+    const update = (): void => setReduced(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return reduced
 }
 
 /** Whether the operating system currently prefers a dark scheme, updated live. */

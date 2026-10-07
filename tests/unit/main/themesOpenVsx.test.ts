@@ -8,10 +8,10 @@ import {
   OpenVsxFailure,
   extractVsixThemes,
   parseExtensionDetail,
-  parseJsonc,
   readZipDirectory,
   type FetchLike,
 } from '../../../src/main/themes/openVsx'
+import { parseJsonc } from '../../../src/shared/themes/jsonc'
 import { createOpenVsxFixtureFetch, createThemeVsix, createZip } from '../../../src/main/themes/openVsxFixture'
 import { customThemesSchema } from '../../../src/shared/themes/library'
 import type { OpenVsxThemeExtension } from '../../../src/shared/themes/bridge'

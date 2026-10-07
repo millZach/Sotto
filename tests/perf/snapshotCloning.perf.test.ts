@@ -225,7 +225,7 @@ it('still finds the private members the snapshot cloning benchmark times', () =>
   for (const member of PRIVATE_MEMBERS.claudeAdapter) expect(typeof (ClaudeStreamJsonHost.prototype as unknown as Record<string, unknown>)[member]).toBe('function')
   for (const member of PRIVATE_MEMBERS.providerSwitch) expect(typeof (ConfiguredProviderHost.prototype as unknown as Record<string, unknown>)[member]).toBe('function')
   for (const member of PRIVATE_MEMBERS.workspace) expect(typeof (WorkspaceHost.prototype as unknown as Record<string, unknown>)[member]).toBe('function')
-  const publisher = new ProviderSnapshotPublisher(() => undefined) as unknown as Record<string, unknown>
+  const publisher = new ProviderSnapshotPublisher(() => undefined, () => 0) as unknown as Record<string, unknown>
   for (const member of PRIVATE_MEMBERS.publisher) expect(typeof publisher[member]).toBe('function')
   // The adapter's publisher is an instance field. Constructing an adapter reads, writes and starts nothing.
   const adapter = new ClaudeStreamJsonHost({ userDataPath: join(tmpdir(), 'sotto-snapshot-cloning-members') }) as unknown as Record<string, unknown>

@@ -1,3 +1,4 @@
+import { stderrRateExceeded } from './stderrRate'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -62,7 +63,7 @@ export class DevinRpc {
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
-    let buffer = ''; let bufferedBytes = 0; let queued = 0; let stderr = 0
+    let buffer = ''; let bufferedBytes = 0; let queued = 0
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => {
       if (this.stopped) return
@@ -94,7 +95,8 @@ export class DevinRpc {
       }
     })
     // Consume without decoding, retaining or logging native stderr.
-    this.child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.length; if (stderr > MAX_BYTES) this.fail() })
+    const stderrExceeded = stderrRateExceeded()
+    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.fail() })
   }
   request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false): Promise<void> {
     return new Promise((resolve, reject) => {

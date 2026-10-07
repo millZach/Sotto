@@ -137,14 +137,13 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly reviewComments?: ReviewCommentStore
 }): ReactNode {
   const threadId = row.thread.id
-  const { draft, save, saveError, hasContent } = useComposerControls(store, threadId)
+  const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
   // Screenshots still being read for this draft hold Send, even ones pasted before the user left the thread and came back.
   const readingImages = useScreenshotReads(store, threadId).pending > 0
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
-  const [answerState, setAnswerState] = useState<{ readonly sending: boolean; readonly error: string | null }>({ sending: false, error: null })
   const textarea = useRef<HTMLTextAreaElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
@@ -184,7 +183,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
 
   const edit = (patch: Parameters<ThreadDraftStore['edit']>[1]): void => {
     store.edit(threadId, question ? { ...patch, requestId: question.requestId! } : patch)
-    if (answerState.error) setAnswerState({ sending: false, error: null })
   }
 
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
@@ -197,14 +195,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       const answer = store.submit(threadId, submittedAt)
       if (answer === null) return
       store.dismiss(threadId, answer.draftId)
-      setAnswerState({ sending: true, error: null })
+      store.setAnswerState(threadId, { sending: true, error: null })
       // The composer emptied on the press, so a refused answer comes back to it unless something newer is written.
       const failed = (error: string): void => {
         const restored = store.restoreDraft(threadId, answer, true) !== null
-        setAnswerState({ sending: false, error: `${error}${restored ? ' It is back in the composer.' : ' Your newer draft is in the composer.'}` })
+        store.setAnswerState(threadId, { sending: false, error: `${error}${restored ? ' It is back in the composer.' : ' Your newer draft is in the composer.'}` })
       }
       void command({ type: 'answer', threadId, requestId: question.requestId, answer: answer.text })
-        .then(result => { if (result === null) failed('Sotto could not confirm this answer.'); else if (result.error !== null) failed(result.error); else setAnswerState({ sending: false, error: null }) },
+        .then(result => { if (result === null) failed('Sotto could not confirm this answer.'); else if (result.error !== null) failed(result.error); else store.setAnswerState(threadId, { sending: false, error: null }) },
           () => failed('Sotto could not confirm this answer.'))
       return
     }
@@ -295,6 +293,7 @@ interface ComposerControls {
   readonly draft: Omit<ComposerDraft, 'text' | 'draftId'>
   readonly save: ThreadComposerSnapshot['save']
   readonly saveError: string | null
+  readonly answerState: ThreadComposerSnapshot['answer']
   readonly hasContent: boolean
   readonly hasUltrathink: boolean
 }
@@ -304,14 +303,15 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
   const read = useMemo(() => {
     let previous: ComposerControls | undefined
     return (): ComposerControls => {
-      const { draft, save, saveError } = store.snapshot(threadId)
+      const { draft, save, saveError, answer: answerState } = store.snapshot(threadId)
       const hasContent = hasDraftContent(draft)
       const hasUltrathink = /\bultrathink\b/iu.test(draft.text)
       if (previous && previous.save === save && previous.saveError === saveError
+        && previous.answerState === answerState
         && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink
         && previous.draft.attachments === draft.attachments && previous.draft.skills === draft.skills
         && previous.draft.files === draft.files && previous.draft.requestId === draft.requestId) return previous
-      return previous = { draft, save, saveError, hasContent, hasUltrathink }
+      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink }
     }
   }, [store, threadId])
   return useSyncExternalStore(store.subscribe, read)
@@ -401,7 +401,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={supported}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
-      <textarea ref={textarea} id={composerId} rows={3} value={draft.text} disabled={!editable} spellCheck
+      <textarea ref={textarea} id={composerId} rows={3} value={draft.text} disabled={Boolean(row.thread.archivedAt)} readOnly={!editable} spellCheck
         aria-describedby={statusId}
         aria-autocomplete={menus ? 'list' : undefined}
         aria-controls={picker.open && picker.options.length ? listId : files.open && files.options.length ? fileListId : undefined}
@@ -409,7 +409,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
         aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex)
           : files.open && files.activeIndex !== null ? fileOptionId(fileListId, files.activeIndex) : undefined}
         placeholder={placeholder}
-        onChange={event => { editText(event.target.value); picker.track(event.target); files.track(event.target) }}
+        onChange={event => { if (!editable) return; editText(event.target.value); picker.track(event.target); files.track(event.target) }}
         onSelect={event => { picker.track(event.currentTarget); files.track(event.currentTarget) }}
         onKeyDown={event => {
           // Without the skills list, an open menu is still told by aria-expanded.

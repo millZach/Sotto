@@ -53,3 +53,36 @@
   .phones-pair { grid-template-columns: minmax(0, 1fr); }
   .phones-code { min-height: 0; }
 }
+
+/* A remote host's Phones dialog (ADR-0050): the same switch, checklist and phones, set closer together. */
+.host-phones-dialog { width: min(620px, 100%); max-height: calc(100% - 40px); overflow: auto; }
+.host-phones { gap: 14px; }
+.hosts-settings .host-phones__intro { margin: 0; }
+/* An admin connection waiting for Tailscale's approval (ADR-0053): the sentence, then the page and why it asks. */
+.host-phones-approval { align-items: flex-start; }
+.host-phones-approval__copy { display: grid; flex: 1; gap: 10px; min-width: 0; }
+.host-phones-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.host-phones-approval__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
+/* Before the host is read, every check waits, and the switch is not shown. */
+.host-phones-unread { border-top: 1px solid var(--tt-hairline); }
+.hosts-settings .host-phones-unread .phones-step__copy > p { margin: 2px 0 0; font-size: 13px; }
+.host-phones .phones-switch { padding: 12px 0; border-block: 1px solid var(--tt-hairline); }
+.host-phones-steps { border-top: 0; }
+.host-phones-steps > li { gap: 6px 12px; padding: 10px 0; }
+.host-phones-steps > li:last-child { border-bottom: 0; }
+.host-phones-steps .phones-step__copy > b { font-size: 14px; }
+.host-phones-command { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
+.host-phones-command > code { padding: 4px 8px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); }
+.host-phones-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.hosts-settings .host-phones-pair > p { flex: 1 1 240px; margin: 0; font-size: 13px; }
+.host-phones-code { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); padding: 12px 14px; }
+.host-phones-code .phones-code__value { font-size: 28px; }
+.host-phones-code__copy { display: grid; flex: 1 1 220px; gap: 6px; min-width: 0; }
+.hosts-settings .host-phones-code__copy > p { margin: 0; color: var(--tt-text); font-size: 13px; }
+.host-phones-code__actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.host-phones-list > h3 { font-size: 14px; color: var(--tt-text-muted); }
+.hosts-settings .host-phones-list > p { font-size: 13px; }
+.host-phones-list .phones-list { margin-top: 6px; }
+.host-phones-list .hosts-row { padding: 10px 0; }
+.host-phones-remove { flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
+.host-phones-remove > .grow { flex: 1 1 260px; min-width: 0; }

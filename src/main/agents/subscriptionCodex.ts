@@ -54,7 +54,7 @@ export function nativeEnvironment(): NodeJS.ProcessEnv {
   // Preserve native login discovery, OS/keychain access and the system proxy.
   // API keys, provider endpoint overrides and NODE_OPTIONS never enter the child.
   return Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-    /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|HOME|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|TEMP|TMP|TMPDIR|CODEX_HOME|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|LANG|LC_ALL)$/i.test(key),
+    /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|HOME|USER|LOGNAME|USERNAME|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|TEMP|TMP|TMPDIR|CODEX_HOME|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|LANG|LC_ALL)$/i.test(key),
   ))
 }
 

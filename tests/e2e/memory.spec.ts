@@ -16,6 +16,9 @@ test('remembers working preferences across restart, retains supersession history
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toBeFocused()
+    expect(await page.getByRole('region', { name: 'Working preferences' }).ariaSnapshot()).toContain('Question 1 of 9')
+    await expect(page.locator('.memory-progress')).toHaveAttribute('aria-hidden', 'true')
+    await expect(page.getByRole('region', { name: 'Working preferences' }).locator('[role="status"], [aria-live]')).toHaveCount(0)
     await page.getByRole('textbox').fill('Give concise replies and interrupt only when I need to decide.')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/questionnaire.png' })
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
@@ -24,6 +27,7 @@ test('remembers working preferences across restart, retains supersession history
     await page.getByRole('button', { name: 'Set working preferences', exact: true }).click()
     await expect(page.getByRole('textbox')).toHaveValue('Give concise replies and interrupt only when I need to decide.')
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    expect(await page.getByRole('region', { name: 'Working preferences' }).ariaSnapshot()).toContain('Question 2 of 9')
     for (let index = 0; index < 6; index++) {
       await page.getByRole('button', { name: 'No preference', exact: true }).click()
       await page.getByRole('button', { name: 'Continue', exact: true }).click()

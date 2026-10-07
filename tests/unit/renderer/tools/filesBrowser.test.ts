@@ -13,6 +13,123 @@ function workshop(token = TOKEN_A): FakeFolders[string] {
 }
 
 describe('Files browsing model', () => {
+  it('ends queued lists, previews and Retry with busy when all request slots stall', async () => {
+    const bridge = fakeFilesBridge({ t1: workshop(), t2: workshop() })
+    const store = new FilesBrowserStore()
+    store.activate(bridge, 't1')
+    await settle()
+    const list = bridge.list
+    const releases: (() => void)[] = []
+    bridge.list = vi.fn(async request => {
+      await new Promise<void>(resolve => { releases.push(resolve) })
+      return list(request)
+    })
+    vi.useFakeTimers()
+    try {
+      for (let i = 0; i < 4; i++) store.reloadDirectory(bridge, 't1', `held${i}`)
+      store.activate(bridge, 't2')
+      store.openFile(bridge, 't1', 'README.md')
+      await vi.advanceTimersByTimeAsync(10_000)
+      const busy = { status: 'error', error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
+      expect(store.thread('t2')?.listings.get('')).toMatchObject(busy)
+      expect(store.thread('t1')?.preview).toMatchObject(busy)
+      store.openFile(bridge, 't1', 'README.md')
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(store.thread('t1')?.preview).toMatchObject(busy)
+      expect(bridge.preview).not.toHaveBeenCalled()
+      expect(bridge.list).toHaveBeenCalledTimes(4)
+
+      // Expired waiters must not consume a slot when the stalled requests finally finish.
+      for (const release of releases.splice(0)) release()
+      await vi.advanceTimersByTimeAsync(0)
+      bridge.list = list
+      store.openFile(bridge, 't1', 'README.md')
+      store.reloadDirectory(bridge, 't2', '')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(store.thread('t1')?.preview?.status).toBe('ready')
+      expect(store.thread('t2')?.listings.get('')?.status).toBe('ready')
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each([4, 5])('opens a Changes file %i folders deep without exceeding the service request limit', async depth => {
+    const folders = Array.from({ length: depth }, (_, index) => Array.from({ length: index + 1 }, (_, part) => `folder${part}`).join('/'))
+    const path = `${folders.at(-1)!}/app.ts`
+    const bridge = fakeFilesBridge({ t1: { root: 'D:/work', token: TOKEN_A, tree: {
+      ...Object.fromEntries(folders.map(folder => [folder, { kind: 'directory' as const }])),
+      [path]: { kind: 'file', content: text('ready') },
+    } } })
+    const pending: (() => void)[] = []
+    let active = 0
+    let rejected = 0
+    const limited = async <T,>(request: () => Promise<FilesResult<T>>): Promise<FilesResult<T>> => {
+      if (active >= 4) { rejected++; return { ok: false, error: { code: 'busy', message: 'Files is busy.' } } }
+      active++
+      try {
+        await new Promise<void>(resolve => { pending.push(resolve) })
+        return await request()
+      } finally { active-- }
+    }
+    const list = bridge.list, preview = bridge.preview
+    bridge.list = vi.fn(request => limited(() => list(request)))
+    bridge.preview = vi.fn(request => limited(() => preview(request)))
+    const store = new FilesBrowserStore()
+    store.showFile(bridge, 't1', path)
+    while (pending.length) {
+      for (const release of pending.splice(0)) release()
+      await settle()
+    }
+    expect(rejected).toBe(0)
+    expect(store.thread('t1')?.preview).toMatchObject({ status: 'ready', path })
+    for (const folder of folders) expect(store.thread('t1')?.listings.get(folder)?.status).toBe('ready')
+  })
+
+  it('opens a Changes file after a delayed first root listing and loads its folders', async () => {
+    const bridge = fakeFilesBridge({ t1: workshop() })
+    const list = bridge.list
+    let release!: () => void
+    bridge.list = vi.fn(async request => {
+      if (request.path === '') await new Promise<void>(resolve => { release = resolve })
+      return list(request)
+    })
+    const store = new FilesBrowserStore()
+    store.showFile(bridge, 't1', 'src/app.ts')
+    expect(bridge.preview).not.toHaveBeenCalled()
+    release()
+    await settle()
+    expect(store.thread('t1')?.preview).toMatchObject({ status: 'ready', path: 'src/app.ts' })
+    expect(store.thread('t1')?.listings.get('src')?.status).toBe('ready')
+  })
+
+  it('retries the root when preview Retry follows a failed initial listing', async () => {
+    const bridge = fakeFilesBridge({ t1: workshop() })
+    vi.mocked(bridge.list).mockResolvedValueOnce({ ok: false, error: { code: 'unavailable', message: 'Unavailable' } })
+    const store = new FilesBrowserStore()
+    store.showFile(bridge, 't1', 'src/app.ts')
+    await settle()
+    expect(store.thread('t1')?.preview?.status).toBe('error')
+    store.openFile(bridge, 't1', 'src/app.ts')
+    await settle()
+    expect(store.thread('t1')?.preview).toMatchObject({ status: 'ready', path: 'src/app.ts' })
+    expect(store.thread('t1')?.listings.get('src')?.status).toBe('ready')
+  })
+
+  it('does not reopen a preview closed while the root listing was pending', async () => {
+    const bridge = fakeFilesBridge({ t1: workshop() })
+    const list = bridge.list
+    let release!: () => void
+    bridge.list = vi.fn(async request => {
+      if (request.path === '') await new Promise<void>(resolve => { release = resolve })
+      return list(request)
+    })
+    const store = new FilesBrowserStore()
+    store.showFile(bridge, 't1', 'README.md')
+    store.closePreview('t1')
+    release()
+    await settle()
+    expect(bridge.preview).not.toHaveBeenCalled()
+    expect(store.thread('t1')?.preview).toBeNull()
+  })
+
   it('lists the root without a token and sends the returned workspace ID with every later request', async () => {
     const folders: FakeFolders = { t1: workshop() }
     const bridge = fakeFilesBridge(folders)

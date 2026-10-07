@@ -10,9 +10,11 @@ import { runWorktreeGit, type RunGit } from './threadWorktrees'
  */
 export interface WorktreeCleanupHost {
   workspaceSnapshot(): AgentHostSnapshot
-  reclaimThreadWorktree(threadId: string, options: { automatic: true }): Promise<unknown>
+  reclaimThreadWorktree(threadId: string, options: { automatic: true; expectedMergedTip?: string }): Promise<unknown>
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
-  setWorkspaceSettled?(kind: 'thread', id: string, settled: true): Promise<unknown>
+  /** Reports the current IDs immediately, then on publication, without copying histories. */
+  subscribeSettledThreads?(listener: (ids: readonly string[]) => void): () => void
+  setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: { expectedMergedTip: string; expectedMergedBranch: string }): Promise<unknown>
 }
 export interface WorktreeCleanupDependencies {
   readonly host: WorktreeCleanupHost
@@ -65,13 +67,24 @@ export class WorktreeCleanup {
     this.now = dependencies.now ?? Date.now
   }
   start(): void {
-    this.settled = this.settledThreads(this.dependencies.host.workspaceSnapshot())
-    this.unsubscribe = this.dependencies.host.subscribe(snapshot => {
-      const settled = this.settledThreads(snapshot)
+    const changed = (ids: Iterable<string>) => {
+      const settled = new Set(ids)
       const newlySettled = [...settled].some(id => !this.settled.has(id))
       this.settled = settled
       if (newlySettled && this.dependencies.rules().onSettle) this.request()
-    })
+    }
+    const host = this.dependencies.host
+    if (host.subscribeSettledThreads) {
+      let initial = true
+      this.unsubscribe = host.subscribeSettledThreads(ids => {
+        // The immediate delivery seeds existing settlement; start requests its own sweep below.
+        if (initial) { initial = false; this.settled = new Set(ids) }
+        else changed(ids)
+      })
+    } else {
+      this.settled = this.settledThreads(host.workspaceSnapshot())
+      this.unsubscribe = host.subscribe(snapshot => changed(this.settledThreads(snapshot)))
+    }
     this.timer = setInterval(() => this.request(), this.dependencies.intervalMs ?? HOUR_MS)
     this.timer.unref?.()
     this.request()
@@ -92,14 +105,16 @@ export class WorktreeCleanup {
   private autoSettleOn(): boolean {
     try { return this.dependencies.autoSettleMerged?.() === true && Boolean(this.dependencies.pullRequestMerged && this.dependencies.host.setWorkspaceSettled) } catch { return false }
   }
-  private merged(repositoryRoot: string, branch: string): Promise<boolean> {
-    const key = `${repositoryRoot}\0${branch}`
+  private async merged(repositoryRoot: string, branch: string): Promise<string | null> {
+    const tip = await this.git(repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+    if (!tip) return null
+    const key = `${repositoryRoot}\0${branch}\0${tip}`
     let answer = this.mergedAnswers.get(key)
     if (!answer) {
       answer = this.dependencies.pullRequestMerged ? this.dependencies.pullRequestMerged(repositoryRoot, branch).catch(() => false) : Promise.resolve(false)
       this.mergedAnswers.set(key, answer)
     }
-    return answer
+    return await answer && await this.git(repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim() === tip, () => false) ? tip : null
   }
   /**
    * Auto-settle merged threads: a thread at rest whose branch's pull request GitHub reports merged is settled,
@@ -122,8 +137,9 @@ export class WorktreeCleanup {
       if (this.autoSettled.has(key)) continue
       try {
         if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
-        if (!await this.merged(worktree.repositoryRoot, branch)) continue
-        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true)
+        const tip = await this.merged(worktree.repositoryRoot, branch)
+        if (!tip) continue
+        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, { expectedMergedTip: tip, expectedMergedBranch: branch })
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
       } catch { this.dependencies.log?.('thread-auto-settle-skipped') }
@@ -154,17 +170,18 @@ export class WorktreeCleanup {
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || !worktree.branch || worktree.reused || worktree.reclaimedAt) continue
       if (thread.status === 'running' || thread.requests.length) continue
       try {
-        if (!await this.eligible(thread, rules, defaults)) continue
-        await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true })
+        const eligibility = await this.eligible(thread, rules, defaults)
+        if (!eligibility) continue
+        await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true, ...eligibility })
         this.dependencies.log?.('worktree-cleanup-reclaimed')
       } catch { this.dependencies.log?.('worktree-cleanup-skipped') }
     }
   }
-  private async eligible(thread: AgentThread, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<boolean> {
+  private async eligible(thread: AgentThread, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<{ expectedMergedTip?: string } | null> {
     const snapshot = this.dependencies.host.workspaceSnapshot()
     const worktree = thread.worktree!
-    if (rules.onSettle && isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return true
-    if (rules.afterDays !== null && lastActivity(thread, this.now()) < this.now() - rules.afterDays * DAY_MS) return true
+    if (rules.onSettle && isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return {}
+    if (rules.afterDays !== null && lastActivity(thread, this.now()) < this.now() - rules.afterDays * DAY_MS) return {}
     if (rules.unchanged) {
       const repositoryRoot = worktree.repositoryRoot!
       if (!defaults.has(repositoryRoot)) defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))
@@ -172,11 +189,14 @@ export class WorktreeCleanup {
       if (base) {
         const head = (await this.git(worktree.path!, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
         const integrated = await this.git(repositoryRoot, ['merge-base', '--is-ancestor', head, `refs/heads/${base}`]).then(() => true, () => false)
-        if (integrated) return true
+        if (integrated) return {}
       }
     }
-    if (rules.merged && this.dependencies.pullRequestMerged && await this.merged(worktree.repositoryRoot!, worktree.branch!)) return true
-    return false
+    if (rules.merged && this.dependencies.pullRequestMerged) {
+      const tip = await this.merged(worktree.repositoryRoot!, worktree.branch!)
+      if (tip) return { expectedMergedTip: tip }
+    }
+    return null
   }
   /** The repository's default branch as the local clone knows it: origin's HEAD when recorded, else main or master. */
   private async defaultBranch(repositoryRoot: string): Promise<string | null> {
@@ -189,12 +209,19 @@ export class WorktreeCleanup {
 }
 
 /** Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request is merged. */
-export function githubPullRequestMerged(cwd: string, branch: string): Promise<boolean> {
-  return new Promise((accept, reject) => {
+export async function githubPullRequestMerged(cwd: string, branch: string): Promise<boolean> {
+  const tip = await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+  if (!tip) return false
+  const merged = await new Promise<boolean>((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
-    execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '1', '--json', 'number'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout) => {
+    execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout) => {
       if (error) { reject(error); return }
-      try { accept(Array.isArray(JSON.parse(stdout)) && JSON.parse(stdout).length > 0) } catch (parseError) { reject(parseError) }
+      try {
+        const prs: unknown = JSON.parse(stdout)
+        accept(Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip))
+      } catch (parseError) { reject(parseError) }
     })
   })
+  // A branch moved while GitHub was answering is current work, even if its previous tip was merged.
+  return merged && await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim() === tip, () => false)
 }

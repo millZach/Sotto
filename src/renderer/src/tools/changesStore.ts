@@ -150,8 +150,9 @@ export class ChangesStore {
   }
 
   /**
-   * Read the change list, the thread's turns and the comparison on screen again. A refresh the watch started
-   * (`asked` false) leaves a turn's comparison alone unless the turns themselves changed.
+   * Read the change list, the thread's turns and the comparison on screen again. A refresh nobody pressed for (`asked`
+   * false: the watch, a paired host's included) reads the comparison again only when the
+   * working copy moved, and leaves a turn's comparison alone unless the turns themselves changed.
    */
   async refresh(bridge: GitChangesBridge | undefined, threadId: string, asked = true): Promise<void> {
     const current = this.threads.get(threadId)
@@ -173,13 +174,15 @@ export class ChangesStore {
     }
     const { workspace, branch, revision, files, truncated } = result.value
     const replaced = latest.workspace !== null && latest.workspace.workspaceId !== workspace.workspaceId
+    // Whether the working copy moved since the list on screen was read: only then is a comparison it did not ask for read again.
+    const moved = replaced || latest.list.status !== 'ready' || latest.list.revision !== revision
     this.set({ ...latest, workspace, list: { status: 'ready', branch, revision, files, truncated }, ...(replaced ? { review: null, collapsed: new Map() } : {}), refreshing: false })
     // Only the displayed working copy owns the watcher, including after its folder is replaced.
     void this.watch(bridge, threadId)
     const turnsChanged = await this.loadTurns(bridge, threadId)
     const now = this.threads.get(threadId)
     if (!now || this.token(threadId, 'list') !== token) return
-    if (asked || now.scope.kind !== 'turn' || turnsChanged || now.review === null) void this.loadReview(bridge, threadId)
+    if (asked || turnsChanged || now.review === null || now.review.status === 'error' || now.scope.kind !== 'turn' && moved) void this.loadReview(bridge, threadId)
   }
 
   /** Compare something else: another scope, base or turn. What each scope had collapsed stays with it. */
@@ -238,8 +241,10 @@ export class ChangesStore {
 
   private async pathAction(bridge: GitChangesBridge | undefined, threadId: string, path: string, action: 'copyPath' | 'reveal'): Promise<ToolsResult<unknown>> {
     const workspace = this.threads.get(threadId)?.workspace
-    if (!bridge || !workspace) return { ok: false, error: unavailable }
-    return settle(bridge[action]({ threadId, workspaceId: workspace.workspaceId, path }))
+    // A thread on a paired host has no reveal: its folder is on that host, so the control is not offered.
+    const act = bridge?.[action]
+    if (!bridge || !workspace || !act) return { ok: false, error: unavailable }
+    return settle(act.call(bridge, { threadId, workspaceId: workspace.workspaceId, path }))
   }
 
   /** The thread's checkpoints for the scope menu. Resolves true when they changed. */

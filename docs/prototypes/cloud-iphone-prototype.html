@@ -1,0 +1,423 @@
+<!doctype html>
+<!--
+  VERDICT (October 3, 2026): Zach picked C, "Its own Settings page, asked in the thread". Settings gets a Cloud
+  iPhone page (the run.cloud key, the monthly cap, the idle time, this month's minutes, recent sessions); an agent's
+  request to start a session is a card in the thread, where it said why; the phone player appears once the session
+  starts, with the session's minutes on its label; Tools > iPhone shows the session's card. ADR-0047. A and B are kept
+  as the record of what was weighed.
+
+  PROTOTYPE — throwaway. Question: how should the cloud iPhone (phase 2 of docs/plans/2026-10-03-test-iphone.md, #711)
+  look: where the run.cloud key and the monthly cap live, where an agent's request to start a session waits, and what
+  a running session shows? Decided already (October 3, 2026): run.cloud; an agent passes a simulator build's path;
+  each session asks first; taps and typing inside a session do not; a monthly minute cap, 750 by default.
+  Variants via ?variant=A|B|C, states via ?state=settings|request|running|capped, ?theme=light, ?motion=reduced.
+  Styles and the phone are the test iPhone prototype's (iphone-tool-prototype.html). No host calls, no persistence.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto cloud iPhone — prototype</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900}
+@font-face{font-family:'Spline Sans Mono';src:url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2');font-weight:300 700}
+
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-text-faint:oklch(0.675 0.012 270);
+  --tt-hairline:oklch(0.305 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-sidebar-row-hover:oklch(0.28 0.003 265);--tt-sidebar-row-active:oklch(0.32 0.025 190);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-warning:oklch(0.829017 0.171221 81.038);--tt-success:oklch(0.79 0.13 165);
+  --tt-shadow-overlay:0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+  --win-edge:#2a2a30;--page:#161618;--page-text:#e8e8ea;--page-muted:#a0a0a8;--bezel:#1b1c20;--bezel-edge:#3a3b42;
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-text-faint:oklch(0.535 0.015 78);
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-sidebar-row-hover:oklch(0.93 0.01 85);--tt-sidebar-row-active:oklch(0.915 0.02 190);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-warning:oklch(0.546927 0.155556 45.359);--tt-success:oklch(0.5 0.11 158);
+  --tt-shadow-overlay:0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+  --win-edge:#c9c9cf;--page:#e7e7ea;--page-text:#1c1c1f;--page-muted:#5a5a62;--bezel:#1b1c20;--bezel-edge:#4a4b52;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:15px/1.5 Figtree,system-ui,sans-serif;padding:28px 32px 120px}
+.page-head{max-width:1280px;margin:0 0 18px}
+.page-head .kicker{font-size:13px;color:var(--page-muted);margin:0 0 4px}
+.page-head h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin:0;max-width:1000px;color:var(--page-muted)}
+.page-head p b{color:var(--page-text);font-weight:600}
+.notes{max-width:1280px;margin:16px 0 0;color:var(--page-muted);font-size:14px}
+.notes b{color:var(--page-text)}
+.notes ul{margin:6px 0 0;padding-left:20px}
+
+/* ---------- the Sotto window ---------- */
+.stage{transform-origin:top left}
+.win{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:10px;border:1px solid var(--win-edge);background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:grid;grid-template-columns:270px 1fr auto;box-shadow:0 30px 60px -30px #0009}
+.win button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;border-radius:8px}
+.win button:focus-visible,.win input:focus-visible,.win select:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:'Spline Sans Mono',ui-monospace,monospace;font-size:12.5px}
+
+.side{background:var(--tt-sidebar);display:flex;flex-direction:column;border-right:1px solid var(--tt-hairline)}
+.side .brand{height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;font-weight:650}
+.side .brand i{width:20px;height:20px;border-radius:5px;background:var(--tt-accent)}
+.side .search{margin:4px 10px 10px;height:32px;border:1px solid var(--tt-hairline);border-radius:9px;background:var(--tt-field);color:var(--tt-text-faint);display:flex;align-items:center;gap:8px;padding:0 10px;font-size:13px}
+.side .proj{padding:6px 14px;font-weight:600;display:flex;justify-content:space-between}
+.side .row{margin:2px 6px;padding:8px 10px 8px 26px;border-radius:9px}
+.side .row.on{background:var(--tt-sidebar-row-active);border:1px solid color-mix(in oklab,var(--tt-accent) 35%,transparent)}
+.side .row small{display:flex;justify-content:space-between;color:var(--tt-text-muted);font-size:12.5px}
+.side .row .work{color:var(--tt-accent-text)}
+
+.thread{position:relative;display:flex;flex-direction:column;min-width:0;background:var(--tt-canvas)}
+.thread .bar{height:44px;display:flex;align-items:center;gap:10px;padding:0 16px;font-weight:600;border-bottom:1px solid transparent}
+.thread .bar span{color:var(--tt-text-muted);font-weight:400}
+.msgs{flex:1;overflow:hidden;padding:12px 28px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:560px;color:var(--tt-text-2);font-size:14px}
+.msg.user{align-self:flex-end;background:var(--tt-surface-elevated);color:var(--tt-text);padding:8px 12px;border-radius:12px}
+.toolcall{display:flex;align-items:center;gap:8px;color:var(--tt-text-muted);font-size:13px}
+.toolcall b{color:var(--tt-text-2);font-weight:500}
+.composer{margin:0 22px 16px;border:1px solid var(--tt-hairline);border-radius:14px;background:var(--tt-surface);padding:12px 14px;color:var(--tt-text-faint);height:96px;display:flex;flex-direction:column;justify-content:space-between}
+.composer .chips{display:flex;gap:6px}
+.composer .chips span{border:1px solid var(--tt-hairline);border-radius:999px;padding:2px 10px;font-size:12.5px;color:var(--tt-text-2)}
+
+.req{align-self:stretch;border:1px solid var(--tt-border);background:var(--tt-surface-elevated);border-radius:12px;padding:12px 14px;max-width:620px}
+.req p{margin:0 0 10px;color:var(--tt-text)}
+.req p span{color:var(--tt-text-muted)}
+.req .acts{display:flex;gap:8px;flex-wrap:wrap}
+.btn{height:30px;padding:0 12px;border:1px solid var(--tt-hairline)!important;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--tt-accent);color:var(--tt-on-accent)!important;border-color:transparent!important;font-weight:600}
+.btn:hover{background:var(--tt-hover)}
+.btn.primary:hover{background:var(--tt-accent)}
+
+/* ---------- Tools pane and rail ---------- */
+.tools{display:flex;border-left:1px solid var(--tt-hairline);background:var(--tt-canvas)}
+.tools .pane{display:flex;flex-direction:column;min-width:0}
+.rail{width:64px;border-left:1px solid var(--tt-hairline);display:flex;flex-direction:column;align-items:center;padding-top:6px;gap:4px}
+.rail button{width:56px;padding:7px 0 5px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px!important;color:var(--tt-text-muted)!important}
+.rail button svg{width:18px;height:18px}
+.rail button.on{background:var(--tt-accent-surface);color:var(--tt-text)!important}
+.rail button .dot{position:absolute;margin:-2px 0 0 18px;width:7px;height:7px;border-radius:50%;background:var(--tt-accent)}
+.rail button:not(.on):hover{background:var(--tt-hover)}
+
+.tabs{height:44px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid var(--tt-hairline)}
+.tab{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;background:var(--tt-accent-surface);font-size:13px;max-width:280px;white-space:nowrap;overflow:hidden}
+.tab .sub{color:var(--tt-text-muted)}
+.tabs .sp{flex:1}
+.ib{width:30px;height:30px;display:inline-grid;place-items:center;color:var(--tt-text-muted)!important}
+.ib:hover{background:var(--tt-hover);color:var(--tt-text)!important}
+.toolbar{height:44px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid var(--tt-hairline)}
+.addr{flex:1;min-width:0;height:30px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);display:flex;align-items:center;padding:0 10px;color:var(--tt-text);gap:8px;overflow:hidden;white-space:nowrap}
+.addr .k{color:var(--tt-text-muted);font-family:Figtree;font-size:12.5px}
+.sel{height:30px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);color:var(--tt-text);padding:0 8px;font:inherit;font-size:13px}
+.grant{padding:8px 12px;border-bottom:1px solid var(--tt-hairline);color:var(--tt-text-2);font-size:13px;display:flex;gap:6px;align-items:center}
+.grant .link{color:var(--tt-accent-text);font-weight:600;padding:0 4px}
+.task{padding:8px 12px;border-bottom:1px solid var(--tt-hairline);font-size:13px}
+.task .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.task .top b{font-weight:500}
+.task details summary{color:var(--tt-text-muted);cursor:pointer;margin-top:4px}
+.task ol{margin:6px 0 2px;padding-left:22px;color:var(--tt-text-2)}
+.state{display:inline-flex;align-items:center;gap:6px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--tt-accent);animation:pulse 1.4s ease-in-out infinite}
+.pulse.off{background:var(--tt-text-faint);animation:none}
+@keyframes pulse{50%{opacity:.35}}
+.foot{height:34px;border-top:1px solid var(--tt-hairline);display:flex;align-items:center;gap:6px;padding:0 12px;color:var(--tt-text-muted);font-size:12.5px}
+.empty{flex:1;display:grid;place-items:center;text-align:center;color:var(--tt-text-muted);padding:24px}
+.empty h3{margin:10px 0 4px;color:var(--tt-text);font-size:15px;font-weight:600}
+.empty p{margin:0 0 14px;max-width:320px}
+.empty form{display:flex;gap:6px;justify-content:center}
+.empty input{height:30px;width:220px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);color:var(--tt-text);padding:0 10px;font:inherit;font-size:13px}
+
+/* ---------- the phone (copied from virtual-iphone, drawn in CSS) ---------- */
+.phone{--w:250px;position:relative;width:var(--w);aspect-ratio:71.6/147.6;border-radius:calc(var(--w)*.17);background:var(--bezel);padding:calc(var(--w)*.035);box-shadow:inset 0 0 0 1.5px var(--bezel-edge),0 18px 40px -18px #000a;flex:none}
+.phone.bare{background:none;box-shadow:none;padding:0}
+.screen{position:relative;width:100%;height:100%;border-radius:calc(var(--w)*.135);overflow:hidden;background:#f4f3f8;color:#1d1b29;font-size:calc(var(--w)*.044);container-type:inline-size}
+.phone.bare .screen{border-radius:18px;box-shadow:0 0 0 1px var(--tt-hairline)}
+.island{position:absolute;top:2.6%;left:50%;transform:translateX(-50%);width:31%;height:3.9%;border-radius:999px;background:#000;z-index:3}
+.phone.bare .island{display:none}
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:4.2cqw 9cqw 0;height:13cqw;font-weight:600;font-size:4.6cqw}
+.sbar i{font-style:normal;letter-spacing:1px;font-size:3.8cqw}
+.app{padding:3cqw 7cqw}
+.app h4{margin:2cqw 0 0;font-size:8.6cqw;letter-spacing:-.02em;font-weight:750}
+.app .date{font-size:3cqw;letter-spacing:.12em;color:#7b7891;text-transform:uppercase;margin-bottom:5cqw}
+.app .hero{background:#e3dcf3;border-radius:6cqw;padding:5cqw;margin-bottom:6cqw}
+.app .hero small{font-size:2.8cqw;letter-spacing:.1em;color:#7b5cc2;font-weight:700}
+.app .hero b{display:block;font-size:6.6cqw;line-height:1.15;margin:2cqw 0}
+.app .hero span{font-size:3cqw;color:#666}
+.app h5{font-size:5cqw;margin:0 0 3cqw}
+.card{position:relative;display:flex;gap:4cqw;align-items:center;background:#fff;border-radius:4.5cqw;padding:3.6cqw;margin-bottom:3cqw}
+.card i{width:10cqw;height:10cqw;border-radius:3cqw;background:#d3f0dc;display:grid;place-items:center;color:#2b8a4b;font-style:normal;font-size:6cqw}
+.card b{display:block;font-size:4.1cqw}
+.card span{font-size:3.2cqw;color:#777}
+.field{background:#fff;border-radius:4cqw;padding:3.4cqw 4cqw;margin-bottom:3cqw;font-size:4.2cqw;border:.6cqw solid #7b5cc2}
+.field .caret{display:inline-block;width:.5cqw;height:4.6cqw;background:#7b5cc2;vertical-align:-0.8cqw;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.sheet-title{display:flex;justify-content:space-between;font-size:4.2cqw;margin:2cqw 0 5cqw;color:#7b5cc2}
+.sheet-title b{color:#1d1b29}
+.home{position:absolute;bottom:2%;left:50%;transform:translateX(-50%);width:36%;height:1.3%;border-radius:999px;background:#1d1b29}
+.tap{position:absolute;width:12cqw;height:12cqw;margin:-6cqw 0 0 -6cqw;border-radius:50%;border:.8cqw solid var(--tt-accent);background:color-mix(in srgb,var(--tt-accent) 25%,transparent);z-index:4;animation:tap 1.6s ease-out infinite}
+@keyframes tap{0%{transform:scale(.4);opacity:1}70%{transform:scale(1.15);opacity:.15}100%{opacity:0}}
+/* native screen: Sotto's own iPhone client */
+.screen.native{background:#0f1015;color:#f2f2f5}
+.screen.native .sbar{color:#f2f2f5}
+.nat{padding:2cqw 6cqw}
+.nat h4{font-size:8.4cqw;margin:2cqw 0 4cqw;font-weight:700}
+.nat .seg{display:flex;gap:2cqw;margin-bottom:5cqw}
+.nat .seg span{font-size:3.4cqw;padding:1.4cqw 3.4cqw;border-radius:99px;background:#24262e;color:#b8bac4}
+.nat .seg span.on{background:#2c5450;color:#fff}
+.nat .it{background:#1a1c23;border-radius:4cqw;padding:3.6cqw 4cqw;margin-bottom:2.6cqw;position:relative}
+.nat .it b{display:block;font-size:4.1cqw}
+.nat .it span{font-size:3.3cqw;color:#a3a6b2}
+.nat .it em{position:absolute;right:4cqw;top:3.8cqw;font-style:normal;font-size:3cqw;color:#6fd3c4}
+.screen.native .home{background:#f2f2f5}
+.boot{position:absolute;inset:0;display:grid;place-items:center;background:#000;color:#bbb;font-size:3.6cqw;z-index:5}
+
+[data-motion=reduced] .pulse,[data-motion=reduced] .tap,[data-motion=reduced] .field .caret{animation:none}
+[data-motion=reduced] .tap{opacity:.8}
+
+/* ---------- floating player (Browser player look) ---------- */
+.player{position:absolute;z-index:20;border:1px solid var(--tt-border);background:var(--tt-surface-elevated);border-radius:12px;box-shadow:var(--tt-shadow-overlay);overflow:hidden;display:flex;flex-direction:column}
+.player .ph{height:36px;display:flex;align-items:center;gap:6px;padding:0 4px 0 10px;border-bottom:1px solid var(--tt-hairline);font-size:13px;white-space:nowrap}
+.player .ph b{font-weight:600}
+.player .ph .sub{color:var(--tt-text-muted);overflow:hidden;text-overflow:ellipsis}
+.player .ph .sp{flex:1}
+.player .pf{height:36px;display:flex;align-items:center;gap:8px;padding:0 6px 0 12px;border-top:1px solid var(--tt-hairline);font-size:13px}
+.player .pf .sp{flex:1}
+.player .body{flex:1;display:grid;place-items:center;background:var(--tt-surface-sunken);padding:12px}
+
+/* variant C widget, the virtual-iphone look */
+.widget{position:absolute;z-index:20;display:flex;flex-direction:column;align-items:center;gap:10px}
+.pill{display:flex;align-items:center;gap:6px;height:34px;padding:0 6px 0 12px;border-radius:999px;background:var(--tt-surface-overlay);border:1px solid var(--tt-border);box-shadow:var(--tt-shadow-overlay);font-size:13px;white-space:nowrap}
+.pill .grip{color:var(--tt-text-faint);letter-spacing:-1px;cursor:grab}
+
+/* variant B activity log */
+.split{flex:1;display:grid;grid-template-columns:auto 1fr;min-height:0}
+.split .left{display:grid;place-items:center;padding:16px;background:var(--tt-surface-sunken);border-right:1px solid var(--tt-hairline)}
+.log{overflow:auto;padding:12px 14px;font-size:13px}
+.log h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--tt-text-muted);font-weight:600}
+.step{display:grid;grid-template-columns:18px 1fr auto;gap:8px;padding:7px 0;border-bottom:1px solid var(--tt-hairline);color:var(--tt-text-2)}
+.step time{color:var(--tt-text-faint);font-size:12px}
+.step.now{color:var(--tt-text)}
+.step.now svg{color:var(--tt-accent-text)}
+.seg2{display:inline-flex;border:1px solid var(--tt-hairline);border-radius:8px;overflow:hidden}
+.seg2 button{border-radius:0!important;padding:0 10px;height:28px;font-size:13px!important;color:var(--tt-text-muted)!important}
+.seg2 button.on{background:var(--tt-accent-surface);color:var(--tt-text)!important}
+
+/* variant C control page */
+.ctl{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;font-size:13px}
+.ctl section{border:1px solid var(--tt-hairline);border-radius:12px;background:var(--tt-surface);padding:12px 14px}
+.ctl h4{margin:0 0 8px;font-size:13.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.ctl .kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;color:var(--tt-text-2)}
+.ctl .kv span{color:var(--tt-text-muted)}
+.ctl .on-src{border-color:color-mix(in oklab,var(--tt-accent) 55%,transparent)}
+.badge{font-size:11.5px;font-weight:600;color:var(--tt-accent-text);background:var(--tt-accent-surface);padding:1px 8px;border-radius:99px}
+.muted{color:var(--tt-text-muted)}
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:999px;background:#111;color:#fff;font:13px/1 system-ui,sans-serif;box-shadow:0 10px 30px #0008;border:2px solid #ff3d7f}
+.proto-bar button{white-space:nowrap;background:#2a2a2a;color:#fff;border:0;border-radius:999px;padding:7px 11px;cursor:pointer;font:inherit}
+.proto-bar button.on{background:#ff3d7f}
+.proto-bar .lbl{white-space:nowrap;min-width:220px;text-align:center;font-weight:600}
+.proto-bar .grp{display:flex;gap:4px;padding-left:10px;border-left:1px solid #444}
+
+/* ---------- cloud prototype additions ---------- */
+.settings{flex:1;overflow:auto;padding:28px 40px;background:var(--tt-canvas)}
+.settings h2{font-size:20px;margin:0 0 4px;font-weight:650}
+.settings .sub{color:var(--tt-text-muted);margin:0 0 18px}
+.scard{border:1px solid var(--tt-hairline);border-radius:12px;background:var(--tt-surface);padding:14px 16px;margin-bottom:14px;max-width:640px}
+.scard h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.scard p{margin:0 0 10px;color:var(--tt-text-muted);font-size:13px}
+.frow{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;margin:10px 0}
+.frow label{color:var(--tt-text-2);font-size:13px}
+.input{height:32px;border:1px solid var(--tt-hairline);border-radius:8px;background:var(--tt-field);color:var(--tt-text);padding:0 10px;font:inherit;font-size:13px;display:flex;align-items:center;gap:8px}
+.meter{height:6px;border-radius:99px;background:var(--tt-surface-sunken);overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:var(--tt-accent);width:5%}
+.req2{border:1px solid var(--tt-warning);border-radius:12px;background:var(--tt-surface);padding:10px 12px;font-size:13px}
+.req2 p{margin:0 0 4px}
+.req2 .facts{color:var(--tt-text-muted);font-size:12.5px;margin-bottom:8px}
+.navs{width:220px;border-right:1px solid var(--tt-hairline);padding:14px 10px;background:var(--tt-sidebar)}
+.navs div{padding:8px 10px;border-radius:8px;color:var(--tt-text-muted);font-size:13.5px}
+.navs div.on{background:var(--tt-sidebar-row-active);color:var(--tt-text)}
+.cloudbadge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:99px;background:var(--tt-accent-surface);color:var(--tt-accent-text)}
+.timer{font-variant-numeric:tabular-nums;color:var(--tt-text-muted)}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <p class="kicker">Prototype · not the app · cloud iPhone, phase 2</p>
+  <h1>Sotto cloud iPhone</h1>
+  <p id="lede"></p>
+</div>
+<div class="stage" id="stage"><div class="win" id="win"></div></div>
+<div class="notes" id="notes"></div>
+<div class="proto-bar" role="toolbar" aria-label="Prototype switcher">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lbl" id="vlabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <span class="grp" id="states"></span>
+  <span class="grp"><button id="theme">Light</button><button id="motion">Reduce motion</button></span>
+</div>
+<script>
+const I = {
+  phone:'<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  term:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  files:'<path d="M4 4h6v6H4zM14 7h6M14 17h6M4 14h6v6H4z"/>',
+  changes:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V14a4 4 0 0 0 4 4h5.5M18 15.5V10a4 4 0 0 0-4-4H8.5"/>',
+  pr:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4"/>',
+  agents:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  x:'<path d="M6 6l12 12M18 6 6 18"/>', pause:'<path d="M9 5v14M15 5v14"/>', dock:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  cloud:'<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/>',
+};
+const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+const VARIANTS = { A: 'In the surfaces you have', B: 'Everything in Tools > iPhone', C: 'Its own Settings page, asked in the thread' };
+const STATES = { settings: 'Setting it up', request: 'Agent asks to start', running: 'Session running', capped: 'Monthly cap reached' };
+const q = new URLSearchParams(location.search);
+let variant = VARIANTS[q.get('variant')] ? q.get('variant') : 'A';
+let state = STATES[q.get('state')] ? q.get('state') : 'request';
+let theme = q.get('theme') === 'light' ? 'light' : 'dark';
+let motion = q.get('motion') === 'reduced' ? 'reduced' : 'full';
+const USED = state === 'capped' ? 750 : 38, CAP = 750;
+const BUILD = 'apps/ios/build/Sotto.app.zip';
+
+function screen() {
+  if (state === 'request' || state === 'capped') return `<div class="screen" style="background:#000"><div class="boot">${state === 'capped' ? 'Not started' : 'Waiting for you to start it'}</div></div>`;
+  return `<div class="screen native"><div class="island"></div>
+    <div class="sbar"><span>9:41</span><i>▂▄▆ ▮</i></div>
+    <div class="nat"><h4>Threads</h4>
+      <div class="seg"><span>All</span><span class="on">Needs you</span><span>Studio PC</span></div>
+      <div class="it"><b>Workshop</b><span>Wants to run npm test</span><em>Answer</em></div>
+      <div class="it"><b>Docs</b><span>Asks which heading to keep</span><em>Answer</em></div>
+      <div class="it"><b>Launch video</b><span>Waiting for your reply</span></div>
+      <span class="tap" style="left:58%;top:29%"></span></div><div class="home"></div></div>`;
+}
+const phone = (w) => `<div class="phone" style="--w:${w}px">${screen()}</div>`;
+const sidebar = () => `<aside class="side"><div class="brand"><i></i>Sotto</div><div class="search">Search threads</div>
+  <div class="proj"><span>Sotto</span><span class="muted">2</span></div>
+  <div class="row on">Workshop<small><span>Claude</span><span class="${state === 'running' ? 'work' : ''}">${state === 'running' ? 'Working' : state === 'request' ? 'Needs you' : 'Done'}</span></small></div>
+  <div class="row">Docs<small><span>Codex</span><span>Done</span></small></div></aside>`;
+const rail = () => `<nav class="rail">${[['phone','iPhone',1],['globe','Browser'],['term','Terminal'],['files','Files'],['changes','Changes'],['pr','PR'],['agents','Agents']].map(([n,l,on]) => `<button class="${on ? 'on' : ''}">${ic(n)}${l}</button>`).join('')}</nav>`;
+
+const requestFacts = `Uploads <span class="mono">${BUILD}</span> (41 MB) to run.cloud and starts an iPhone 16 simulator, iOS 18. About $0.02 a minute. ${USED} of ${CAP} minutes used this month.`;
+const requestCard = (compact) => state === 'capped'
+  ? `<div class="req2" style="border-color:var(--tt-error)"><p><b>Workshop could not start a cloud iPhone.</b></p><div class="facts">You have used all ${CAP} cloud iPhone minutes for October. Nothing was uploaded. Raise the cap in Settings, or wait until November 1.</div><div class="acts"><button class="btn">Open Settings</button></div></div>`
+  : `<div class="req2"><p><b>Workshop wants to start a cloud iPhone.</b>${compact ? '' : ' To check the Needs you list on a native build.'}</p><div class="facts">${requestFacts}</div>
+    <div class="acts"><button class="btn primary">Start cloud iPhone</button><button class="btn">Deny</button></div></div>`;
+
+function threadPane(inline) {
+  const msgs = `<div class="msg user">Build the iOS app for the simulator and check the Needs you list on a cloud iPhone.</div>
+    <div class="msg">I built <span class="mono">${BUILD}</span> with xcodebuild. Starting a cloud iPhone to check it.</div>
+    ${inline && (state === 'request' || state === 'capped') ? requestCard(false) : ''}
+    ${state === 'running' ? ['Uploaded the build','Started iPhone 16, iOS 18','Opened Sotto','Tapped Needs you'].map(t => `<div class="toolcall">${ic('cloud')}<b>Cloud iPhone</b> ${t}</div>`).join('') : ''}`;
+  return msgs;
+}
+
+function playerA(label, extra = '') {
+  const status = state === 'running' ? `<span class="state"><span class="pulse"></span>Tapped Needs you</span><span class="timer">3:12</span><button class="btn" style="border-radius:999px">${ic('pause')}Pause</button>`
+    : state === 'request' ? `<span class="state"><span class="pulse off"></span>Waiting for you to start it</span>` : `<span class="state"><span class="pulse off"></span>Not started</span>`;
+  return `<div class="widget" style="right:24px;top:52px">
+    <div class="pill"><span class="grip">⋮⋮</span><b style="font-weight:600">${label}</b>${extra}<button class="ib">${ic('dock')}</button><button class="ib">${ic('x')}</button></div>
+    ${phone(232)}
+    <div class="pill" style="padding-right:4px;gap:10px">${status}</div></div>`;
+}
+
+function cloudCard(withKey) {
+  return `<section class="${state === 'running' ? 'on-src' : ''}"><h4>Cloud iPhone ${state === 'running' ? '<span class="badge">Running</span>' : ''}</h4>
+    <div class="kv"><span>Build</span><span class="mono">${BUILD}</span><span>Device</span><span>iPhone 16 · iOS 18 · run.cloud</span>
+    <span>This month</span><span>${USED} of ${CAP} minutes<div class="meter"><i style="width:${Math.min(100, USED / CAP * 100)}%"></i></div></span>
+    ${state === 'running' ? '<span>This session</span><span class="timer">3:12 · ends after 5 minutes idle</span>' : ''}</div>
+    ${state === 'running' ? `<div style="margin-top:10px"><button class="btn">${ic('stop')}End session</button></div>` : ''}
+    ${withKey ? `<div style="margin-top:10px" class="muted">run.cloud key saved in your credential store · <button class="link" style="color:var(--tt-accent-text);font-weight:600;padding:0">Change</button></div>` : ''}</section>`;
+}
+
+function settingsCardA() {
+  return `<div class="settings"><h2>Application</h2><p class="sub">… Browser, notifications, startup …</p>
+    <div class="scard"><h3>Cloud iPhone</h3><p>Agents can test a native iOS build on a run.cloud simulator. Each session asks you first. It uploads the build to run.cloud and costs about $0.02 a minute.</p>
+      <div class="frow"><label>run.cloud key</label><div class="input">${ic('key')}<span class="muted">Paste your key</span></div></div>
+      <div class="frow"><label>Monthly cap</label><div class="input" style="width:140px">750 minutes</div></div>
+      <div class="frow"><label>Used in October</label><div>${USED} of ${CAP} minutes<div class="meter"><i style="width:${USED / CAP * 100}%"></i></div></div></div></div></div>`;
+}
+
+function variantA() {
+  if (state === 'settings') return { main: settingsCardA(), tools: '', player: '', note: '<b>A, in the surfaces you have.</b> The key, the cap and this month\'s minutes sit in a Cloud iPhone card in Settings > Application, beside the browser\'s settings. Nothing else in Sotto changes until an agent asks.' };
+  const tools = `<div class="tools"><div class="pane" style="width:400px"><div class="tabs"><div class="tab" style="background:none;font-weight:600">${ic('phone')}iPhone</div><span class="sp"></span><button class="btn">${ic('phone')}Hide phone</button></div>
+    <div class="grant">Taps and typing in a running session do not ask</div>
+    <div class="ctl">${state !== 'running' ? requestCard(true) : ''}<section><h4>Web build</h4><div class="kv"><span>Address</span><span class="muted">None loaded</span></div></section>${cloudCard(true)}</div></div>${rail()}</div>`;
+  return { main: null, tools, player: playerA('iPhone 16 · cloud'), inline: false,
+    note: '<b>A, in the surfaces you have.</b> The request waits where the browser\'s do: in Tools > iPhone and on the phone\'s status. Tools > iPhone gains a Cloud iPhone card under Web build, with the build, device, this month\'s minutes and End session. Settings > Application holds the key and the cap (see "Setting it up").' };
+}
+function variantB() {
+  const seg = `<div class="seg2"><button class="${state === 'running' || state === 'request' || state === 'capped' ? '' : 'on'}">Web build</button><button class="${state !== 'settings' ? 'on' : ''}">Cloud iPhone</button></div>`;
+  const setup = `<section><h4>Set up the cloud iPhone</h4><p class="muted" style="margin:0 0 8px">Native builds run on a run.cloud simulator. Each session asks you first, uploads the build there and costs about $0.02 a minute.</p>
+    <div class="frow" style="grid-template-columns:110px 1fr"><label>run.cloud key</label><div class="input">${ic('key')}<span class="muted">Paste your key</span></div></div>
+    <div class="frow" style="grid-template-columns:110px 1fr"><label>Monthly cap</label><div class="input" style="width:130px">750 minutes</div></div><button class="btn primary">Save</button></section>`;
+  const body = state === 'settings' ? setup : `${state !== 'running' ? requestCard(true) : ''}${cloudCard(false)}`;
+  const tools = `<div class="tools"><div class="pane" style="width:420px"><div class="tabs" style="gap:8px"><div class="tab" style="background:none;font-weight:600">${ic('phone')}iPhone</div>${seg}<span class="sp"></span></div>
+    <div class="ctl">${body}</div></div>${rail()}</div>`;
+  return { main: null, tools, player: state === 'settings' ? '' : playerA('iPhone 16 · cloud'), inline: false,
+    note: '<b>B, everything in Tools > iPhone.</b> A switch at the top picks Web build or Cloud iPhone. The first time, the cloud side asks for the run.cloud key and the cap right there, so you set it up where you use it; nothing new in Settings. The request and the session live on the cloud side.' };
+}
+function variantC() {
+  if (state === 'settings') return { main: `<div style="display:flex;flex:1;min-width:0"><div class="navs"><div>General</div><div>Dictation</div><div>Application</div><div>Phones</div><div class="on">Cloud iPhone</div><div>Hosts</div></div>
+    <div class="settings"><h2>Cloud iPhone</h2><p class="sub">Agents test native iOS builds on a run.cloud simulator. Each session asks you first.</p>
+    <div class="scard"><h3>run.cloud</h3><p>The build is uploaded to run.cloud, in the EU, and deleted when the session ends. About $0.02 a minute; your first $15 each month is free.</p>
+      <div class="frow"><label>Key</label><div class="input">${ic('key')}<span class="muted">Paste your key</span></div></div></div>
+    <div class="scard"><h3>Spending</h3><div class="frow"><label>Monthly cap</label><div class="input" style="width:140px">750 minutes</div></div>
+      <div class="frow"><label>Used in October</label><div>${USED} of ${CAP} minutes<div class="meter"><i style="width:${USED / CAP * 100}%"></i></div></div></div>
+      <div class="frow"><label>Idle sessions end after</label><div class="input" style="width:140px">5 minutes</div></div></div>
+    <div class="scard"><h3>Recent sessions</h3><p>Workshop · Oct 3 · 11 minutes<br>Docs · Oct 2 · 27 minutes</p></div></div></div>`, tools: '', player: '', note: '<b>C, its own Settings page.</b> Cloud iPhone gets a page in Settings, like Phones and Hosts: the key, the cap, the idle time, this month\'s minutes and recent sessions.' };
+  const tools = `<div class="tools"><div class="pane" style="width:380px"><div class="tabs"><div class="tab" style="background:none;font-weight:600">${ic('phone')}iPhone</div><span class="sp"></span></div><div class="ctl">${cloudCard(false)}</div></div>${rail()}</div>`;
+  return { main: null, tools, player: state === 'running' ? playerA('iPhone 16 · cloud', ' <span class="timer">3:12</span>') : '', inline: true,
+    note: '<b>C, asked in the thread.</b> The request is a card in the thread itself, where the agent said why, since it is about spending and an upload rather than a page. The phone only appears once you start the session, with the session\'s minutes on its label.' };
+}
+
+function render() {
+  document.documentElement.dataset.theme = theme; document.documentElement.dataset.motion = motion;
+  const v = { A: variantA, B: variantB, C: variantC }[variant]();
+  const main = v.main ?? `<main class="thread"><div class="bar">Workshop <span>/ Sotto</span></div><div class="msgs">${threadPane(v.inline)}</div>
+    <div class="composer">What would you like to do next?<div class="chips"><span>Claude</span><span>Low</span><span>Permissions</span></div></div>${v.player}</main>`;
+  document.getElementById('win').innerHTML = `${v.main ? `<aside class="side"><div class="brand"><i></i>Sotto · Settings</div></aside>` : sidebar()}${main}${v.tools}`;
+  document.getElementById('win').style.gridTemplateColumns = v.main ? '270px 1fr' : '270px 1fr auto';
+  document.getElementById('lede').innerHTML = `Variant <b>${variant}, ${VARIANTS[variant]}</b> · state <b>${STATES[state]}</b>. Decided: an agent passes a simulator build's path; each session asks you first; a monthly minute cap, 750 by default.`;
+  document.getElementById('notes').innerHTML = v.note + `<ul><li><b>Same in every variant:</b> taps and typing inside a running session do not ask; the session ends after 5 minutes idle, when the agent finishes, or at End session; the build is uploaded only after you press Start.</li></ul>`;
+  document.getElementById('vlabel').textContent = `${variant} — ${VARIANTS[variant]}`;
+  document.getElementById('states').innerHTML = Object.entries(STATES).map(([k, l]) => `<button data-s="${k}" class="${k === state ? 'on' : ''}">${l}</button>`).join('');
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark';
+  document.getElementById('motion').textContent = motion === 'reduced' ? 'Full motion' : 'Reduce motion';
+  const u = new URL(location); u.searchParams.set('variant', variant); u.searchParams.set('state', state);
+  theme === 'light' ? u.searchParams.set('theme', 'light') : u.searchParams.delete('theme');
+  motion === 'reduced' ? u.searchParams.set('motion', 'reduced') : u.searchParams.delete('motion');
+  history.replaceState(null, '', u); fit();
+}
+function fit() { document.getElementById('stage').style.zoom = Math.min(1, (innerWidth - 64) / 1282); }
+const keys = Object.keys(VARIANTS);
+const step = d => { variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; render(); };
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.getElementById('states').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { state = b.dataset.s; location.search = new URLSearchParams({ variant, state, ...(theme === 'light' ? { theme } : {}) }).toString() } };
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render(); };
+document.getElementById('motion').onclick = () => { motion = motion === 'reduced' ? 'full' : 'reduced'; render(); };
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1); });
+addEventListener('resize', fit);
+render();
+</script>
+</body>
+</html>

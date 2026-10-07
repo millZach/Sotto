@@ -78,6 +78,23 @@ describe('browser addresses', () => {
 })
 
 describe('Browser surface', () => {
+  it('keeps the first unchecked viewport unmounted without claiming that a dialog is open', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const firstPlacement: { bounds: unknown; notice: string | null }[] = []
+    const mount = BrowserStore.prototype.mount
+    vi.spyOn(BrowserStore.prototype, 'mount').mockImplementation(function (this: BrowserStore, ...args) {
+      const viewport = document.querySelector('.browser-viewport')
+      // The native placement hook runs during layout, before the overlay scan's passive effect.
+      if (viewport && firstPlacement.length === 0) {
+        firstPlacement.push({ bounds: args[3], notice: viewport.querySelector('.browser-viewport__covered')?.textContent ?? null })
+      }
+      return mount.apply(this, args)
+    })
+    setup(browser)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_1, bounds: shownAt }))
+    expect(firstPlacement).toEqual([{ bounds: null, notice: null }])
+  })
+
   it('opens a typed address, draws the page into the viewport and steps aside for overlays and hiding', async () => {
     const browser = fakeBrowser()
     const { store } = setup(browser)
@@ -201,6 +218,33 @@ describe('browser grant', () => {
     fireEvent.click(await within(panel()).findByRole('button', { name: 'Stop letting this thread use the browser without asking' }))
     expect(await within(panel()).findByText('Could not stop this thread using the browser without asking; try Stop again. The browser is busy.')).toBeInTheDocument()
     expect(within(panel()).getByText('This thread uses the browser without asking')).toBeInTheDocument()
+  })
+  it('says when a page is private under the grant, and shares it again from that line (ADR-0029)', async () => {
+    const browser = fakeBrowser([page(PAGE_1, { sharedOrigin: 'http://localhost:5173' })])
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [page(PAGE_1, { sharedOrigin: 'http://localhost:5173' })], grant: { grantedAt: 1, source: 'settings' } }))
+    setup(browser)
+    const share = await within(panel()).findByRole('button', { name: 'Stop sharing' })
+    expect(share).toHaveAttribute('aria-pressed', 'true')
+    expect(share).toHaveAttribute('title', 'The agent in this thread can see and use this page. Stop sharing keeps it private.')
+    expect(within(panel()).queryByText('This page is private. The agent cannot see it')).not.toBeInTheDocument()
+    fireEvent.click(share)
+    await waitFor(() => expect(browser.bridge.share).toHaveBeenCalledWith({ ...target, pageId: PAGE_1, enabled: false }))
+    expect(await within(panel()).findByText('This page is private. The agent cannot see it')).toBeInTheDocument()
+    const [toolbarShare, lineShare] = within(panel()).getAllByRole('button', { name: 'Share with agent' })
+    expect(toolbarShare).toHaveAttribute('title', 'This page is private. Share it with the agent in this thread.')
+    fireEvent.click(lineShare!)
+    await waitFor(() => expect(browser.bridge.share).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, enabled: true }))
+    await waitFor(() => expect(within(panel()).queryByText('This page is private. The agent cannot see it')).not.toBeInTheDocument())
+    // The line took its own button away, so focus lands on the Share button that now shows the page shared.
+    await waitFor(() => expect(within(panel()).getByRole('button', { name: 'Stop sharing' })).toHaveFocus())
+  })
+  it('says nothing about privacy for a page an agent asked to open that nobody has opened yet', async () => {
+    const waiting = page(PAGE_1, { sharedOrigin: null, error: 'Waiting for you to open and share this page.' })
+    const browser = fakeBrowser([waiting])
+    vi.mocked(browser.bridge.list).mockResolvedValue(ok({ workspace, pages: [waiting], grant: { grantedAt: 1, source: 'settings' } }))
+    setup(browser)
+    expect(await within(panel()).findByText('This thread uses the browser without asking')).toBeInTheDocument()
+    expect(within(panel()).queryByText('This page is private. The agent cannot see it')).not.toBeInTheDocument()
   })
   it('follows main when the answer is given or ends elsewhere', async () => {
     const browser = fakeBrowser([page(PAGE_1)])
@@ -508,5 +552,62 @@ describe('browser placement admission', () => {
     expect(browser.bridge.mount).toHaveBeenLastCalledWith({ ...target, pageId: PAGE_1, bounds: null })
     await act(async () => { finish(ok(undefined)) })
     expect(browser.bridge.mount).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('the test iPhone’s own mount slot (ADR-0045)', () => {
+  it('keeps a pane page and a phone page mounted at once: hiding one never hides the other', async () => {
+    const pane = page(PAGE_1)
+    const phone = page(PAGE_2, { device: 'iphone' })
+    const browser = fakeBrowser([pane, phone])
+    const store = new BrowserStore()
+    store.adopt(pane); store.adopt(phone)
+    store.mount(browser.bridge, workspace.threadId, pane.id, shownAt)
+    store.mount(browser.bridge, workspace.threadId, phone.id, { ...shownAt, x: 50 })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: phone.id, bounds: { ...shownAt, x: 50 } }))
+    expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: pane.id, bounds: shownAt })
+    vi.mocked(browser.bridge.mount).mockClear()
+    store.mount(browser.bridge, workspace.threadId, pane.id, null)
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: pane.id, bounds: null }))
+    expect(browser.bridge.mount).not.toHaveBeenCalledWith(expect.objectContaining({ pageId: phone.id }))
+  })
+
+  it('closing a page, by request or by main’s own event, forgets only that page’s slot', async () => {
+    const pane = page(PAGE_1)
+    const phone = page(PAGE_2, { device: 'iphone' })
+    const browser = fakeBrowser([pane, phone])
+    const store = new BrowserStore()
+    store.adopt(pane); store.adopt(phone)
+    store.mount(browser.bridge, workspace.threadId, pane.id, shownAt)
+    store.mount(browser.bridge, workspace.threadId, phone.id, shownAt)
+    await waitFor(() => expect(vi.mocked(browser.bridge.mount).mock.calls.filter(([request]) => request.bounds !== null)).toHaveLength(2))
+    await store.close(browser.bridge, workspace.threadId, pane.id)
+    expect(browser.bridge.close).toHaveBeenCalledWith({ ...target, pageId: pane.id })
+    vi.mocked(browser.bridge.mount).mockClear()
+    // The same rectangle for the phone's own slot is still a no-op: closing the pane page never touched it.
+    store.mount(browser.bridge, workspace.threadId, phone.id, shownAt)
+    expect(browser.bridge.mount).not.toHaveBeenCalled()
+
+    // Main's own 'closed' event (the page closed itself, not through a request here) follows the same rule.
+    const another = page(PAGE_1, { title: 'Second pane page' })
+    store.adopt(another)
+    store.mount(browser.bridge, workspace.threadId, another.id, shownAt)
+    await waitFor(() => expect(vi.mocked(browser.bridge.mount).mock.calls.some(([request]) => request.pageId === another.id && request.bounds !== null)).toBe(true))
+    vi.mocked(browser.bridge.mount).mockClear()
+    act(() => browser.emit({ type: 'closed', threadId: workspace.threadId, workspaceId: workspace.workspaceId, pageId: another.id }))
+    store.mount(browser.bridge, workspace.threadId, phone.id, shownAt)
+    expect(browser.bridge.mount).not.toHaveBeenCalled()
+  })
+
+  it('never lists the test iPhone in Tools > Browser’s tabs, and never makes it the active page', async () => {
+    const pane = page(PAGE_1)
+    const phone = page(PAGE_2, { device: 'iphone' })
+    const browser = fakeBrowser([pane, phone])
+    const { store } = setup(browser)
+    const pages = await within(panel()).findByRole('tablist', { name: 'Pages' })
+    await within(pages).findByRole('tab', { name: 'Vite App' })
+    expect(within(pages).getAllByRole('tab')).toHaveLength(1)
+    expect(within(pages).queryByRole('tab', { name: phone.url })).not.toBeInTheDocument()
+    expect(store.browser.thread('visual-gate')?.activePageId).toBe(pane.id)
   })
 })

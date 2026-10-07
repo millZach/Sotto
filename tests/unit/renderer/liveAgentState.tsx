@@ -6,6 +6,7 @@ import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import type { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
+import { FOLDER_TOGGLES_KEY, folderKey } from '../../../src/renderer/src/agents/ThreadSidebar'
 
 type Connection = ReturnType<typeof useAgents>
 
@@ -33,6 +34,12 @@ export function threadsStateFixture(): AgentState {
 
 type Status = AgentDelivery['status']
 
+/** Opens every project folder the Threads sidebar would list for this state, in the open list and in Settled. */
+export function openSidebarFolders(state: AgentState): void {
+  const ids = new Set([...state.host.projects.map(project => project.id), ...state.host.threads.map(thread => thread.projectId)])
+  sessionStorage.setItem(FOLDER_TOGGLES_KEY, JSON.stringify([...ids].flatMap(id => [folderKey('open', id), folderKey('settled', id)])))
+}
+
 /**
  * A published agent state with the controller's draft and delivery rules: a draft save stores the
  * revision by thread, manual-send stores its revision and publishes `queued` on admission, and the
@@ -44,7 +51,10 @@ export function liveAgentState(initial: AgentState, options: {
   readonly holdQueue?: boolean
   /** The native catalog main publishes for a refresh; omitted leaves the request unanswered until `publishCatalog`. */
   readonly catalog?: (request: Extract<AgentCommand, { type: 'refresh-thread-skills' }>) => AgentSkillCatalog
+  /** The sidebar starts every project folder closed. These suites are about the rows inside, so they start open unless a suite asks for the real default. */
+  readonly folders?: 'open' | 'closed'
 } = {}) {
+  if (options.folders !== 'closed') openSidebarFolders(initial)
   let current: AgentState = { ...initial, threadDrafts: initial.threadDrafts ?? [], deliveries: initial.deliveries ?? [], deliveredDrafts: initial.deliveredDrafts ?? [] }
   const listeners = new Set<() => void>()
   const heldSaves: { readonly command: Extract<AgentCommand, { type: 'save-thread-draft' }>; readonly finish: (error?: string | null) => void }[] = []

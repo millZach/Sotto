@@ -1,0 +1,16 @@
+/* Settings > Cloud iPhone: the run.cloud key, the monthly cap, this month's minutes and recent sessions (ADR-0047). */
+.settings-view .cloud-iphone-settings { gap: 20px; }
+.settings-view .cloud-iphone-intro { margin: -4px 0 0; color: var(--tt-text-muted); font-size: 14px; }
+.settings-view .cloud-iphone-card { display: grid; gap: 10px; padding: 16px 18px; }
+.settings-view .cloud-iphone-card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.settings-view .cloud-iphone-card > p { margin: -4px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.settings-view .cloud-iphone-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-view .cloud-iphone-usage { display: grid; gap: 6px; font-size: 13px; color: var(--tt-text-2); }
+.settings-view .cloud-iphone-usage > span:first-child { color: var(--tt-text-muted); }
+.settings-view .cloud-iphone-meter { height: 6px; border-radius: 99px; background: var(--tt-surface-sunken); overflow: hidden; }
+.settings-view .cloud-iphone-meter > i { display: block; height: 100%; background: var(--tt-accent); }
+.settings-view .cloud-iphone-recent { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.settings-view .cloud-iphone-recent > li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 0; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+.settings-view .cloud-iphone-recent > li:last-child { border-bottom: 0; }
+.settings-view .cloud-iphone-recent > li > span:first-child { flex: 1 1 auto; min-width: 0; color: var(--tt-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-view .cloud-iphone-recent > li > span:not(:first-child) { color: var(--tt-text-muted); }

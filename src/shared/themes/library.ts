@@ -43,6 +43,8 @@ export const DEFAULT_THEME_ID = 't3-code'
 export const MAX_CUSTOM_THEMES = 64
 export const APPEARANCE_CONTRAST = { min: 50, max: 200, step: 5, default: 100 } as const
 export const GLASS_OPACITY = { min: 40, max: 100, step: 5, default: 80 } as const
+/** How much of the desktop shows through a frosted window, in percent (ADR-0048). */
+export const FROST_SEE_THROUGH = { min: 10, max: 80, step: 5, default: 40 } as const
 
 const THEME_COLOR_ROLE_SET: ReadonlySet<string> = new Set(THEME_COLOR_ROLES)
 

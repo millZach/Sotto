@@ -78,6 +78,22 @@ export function planSteps(steps: readonly { text: unknown; status: unknown }[]):
     ? [{ text: step.text.slice(0, 1_000), status: state(step.status) }] : []).slice(0, 200)
 }
 
+/**
+ * The title of a reasoning record that holds a provider's thinking as it streams: Claude's thinking blocks and
+ * Grok's and Devin's thought chunks. Codex's reasoning summaries are the same kind of record under their own title,
+ * and both are drawn by the same row.
+ */
+export const THINKING_TITLE = 'Thinking'
+
+/**
+ * Thinking text as a record keeps it. It grows as it streams and stops at the record's detail budget, marked as cut,
+ * the way any other detail is. Empty thinking (redacted, or a model that sends none) keeps no text at all.
+ */
+export function thinkingText(text: string): Pick<AgentActivity, 'text' | 'truncated'> {
+  if (!text) return {}
+  return text.length > MAX_ACTIVITY_TEXT ? { text: text.slice(0, MAX_ACTIVITY_TEXT), truncated: true } : { text }
+}
+
 export function isTerminalActivity(status: AgentActivity['status']): boolean {
   return status !== 'running' && status !== 'unknown'
 }

@@ -130,6 +130,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkTranscriptionKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
@@ -342,6 +343,25 @@ describe('shared main-window frame', () => {
 })
 
 describe('Sotto application onboarding integration', () => {
+  it('explains that retired chat data remains when privacy cleanup fails', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.')).toBeVisible()
+  })
+
+  it('describes shared answer-storage failures without claiming the user has retired Chats', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'ANSWER_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.')).toBeVisible()
+    expect(screen.queryByText(/Saved chat history could not be fully cleared/)).not.toBeInTheDocument()
+  })
+
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
     let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined
     const bridge = createBridge({
@@ -396,6 +416,60 @@ describe('Sotto application onboarding integration', () => {
     expect(toast).toBeVisible()
     expect(toast).toHaveTextContent(/Privacy & Security > Accessibility/i)
     expect(toast).toHaveTextContent(/Privacy & Security > Automation/i)
+    expect(toast).toHaveTextContent(/After an update, if paste still fails, remove Sotto from the Accessibility list and add it again/)
+  })
+
+  it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'accessibility', 'Accessibility'],
+    ['AUTOMATION_PERMISSION_REQUIRED', 'automation', 'Automation'],
+  ] as const)('opens the macOS pane a %s notice is about', async (code, pane, paneName) => {
+    const openSystemSettings = vi.fn(async () => ({ ok: true as const }))
+    const bridge = createBridge({
+      platform: 'darwin',
+      openSystemSettings,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code }]),
+    })
+    // The button opens the pane through the window bridge, as external links do.
+    window.sotto = bridge
+    try {
+      renderApp(bridge)
+
+      const button = await screen.findByRole('button', { name: `Open System Settings at Privacy & Security, ${paneName}` })
+      expect(button).toHaveTextContent('Open System Settings')
+      button.focus()
+      await userEvent.setup().keyboard('{Enter}')
+      expect(openSystemSettings).toHaveBeenCalledExactlyOnceWith(pane)
+    } finally {
+      delete window.sotto
+    }
+  })
+
+  it('says a denied Automation permission left the text copied', async () => {
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'AUTOMATION_PERMISSION_REQUIRED' as const }]),
+    })
+    renderApp(bridge)
+
+    const toast = await screen.findByText(/copied the transcript instead of pasting it/i)
+    expect(toast).toHaveTextContent(/control System Events in System Settings > Privacy & Security > Automation/)
+    expect(screen.queryByRole('button', { name: /Open System Settings/ })).toBeNull()
+  })
+
+  it.each([
+    ['darwin', /allow Keychain access when macOS asks, or enter the key again in Settings → Transcription/],
+    ['win32', /Nothing was deleted. Enter the key again in Settings → Transcription/],
+  ] as const)('explains an unreadable saved OpenRouter key on %s', async (platform, text) => {
+    const bridge = createBridge({
+      platform,
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'OPENROUTER_KEY_UNREADABLE' as const }]),
+    })
+    renderApp(bridge)
+
+    expect(await screen.findByText(text)).toBeVisible()
   })
 
   it('renders loading and a finite recovery state when settings cannot load', async () => {
@@ -786,10 +860,11 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('tab', { name: 'Threads' })).toBeVisible()
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     // The sidebar's foot carries the other pages as icon links; Threads is the switch's own tab.
-    for (const destination of ['Chats', 'History', 'Settings', 'Help']) {
+    for (const destination of ['History', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name: destination })).toBeVisible()
     }
-    await user.click(screen.getByRole('link', { name: 'Chats' }))
+    expect(screen.queryByRole('link', { name: 'Chats' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Threads' }))
     expect(screen.queryByRole('heading', { name: /check your microphone/i })).not.toBeInTheDocument()
   })
 
@@ -816,6 +891,42 @@ describe('Sotto application onboarding integration', () => {
     await userEvent.click(await screen.findByRole('button', { name: /continue/i }))
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset', expect.any(Function)))
+  })
+
+  it('stops a ready onboarding test and asks for a new one when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
+    expect(microphone.start).toHaveBeenCalledOnce()
+    expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText(/Microphone ready/i)
+    expect(microphone.start).toHaveBeenLastCalledWith(expect.any(Function), undefined, expect.any(Function))
+  })
+
+  it('clears a blocked onboarding result when another input is chosen', async () => {
+    const microphone = { start: vi.fn(async () => 'denied' as const), stop: vi.fn(async () => undefined) }
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
+    const user = userEvent.setup()
+    await reachMicrophoneStep(user)
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await screen.findByText('Microphone access is blocked.')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Microphone' }), '')
+
+    expect(await screen.findByText('Run a quick input-level test.')).toBeVisible()
+    expect(screen.queryByText('Microphone access is blocked.')).not.toBeInTheDocument()
+    expect(microphone.start).toHaveBeenCalledOnce()
   })
 
   it('reports an ended onboarding input and ignores an older ended callback after retry', async () => {
@@ -1008,6 +1119,24 @@ describe('transcription pipeline prewarm', () => {
     )
     return prewarm
   }
+
+  it('has each new controller announce it holds no session, so a reload clears the widget', async () => {
+    const announceIdle = vi.fn()
+    const factory: AppControllerFactory = () => ({
+      getState: () => ({ status: 'idle' }),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      toggle: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+      announceIdle,
+    })
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    })
+    render(<AppProvider bridge={bridge} createController={factory}><App /></AppProvider>)
+    await waitFor(() => expect(announceIdle).toHaveBeenCalledTimes(1))
+  })
 
   it('prewarms the pipeline once the controller becomes ready', async () => {
     const bridge = createBridge({

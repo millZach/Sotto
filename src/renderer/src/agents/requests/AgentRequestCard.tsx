@@ -11,7 +11,7 @@ import {
 import './requests.css'
 
 export interface AgentRequestCardProps {
-  /** The thread or personal chat that owns the request; answers always carry this and `request.id`. */
+  /** The thread that owns the request; answers always carry this and `request.id`. */
   readonly ownerId: string
   readonly ownerTitle: string
   readonly draftOwner?: RequestDraftOwner
@@ -38,7 +38,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
-    ? { ...draftOwner, requestId: request.id, questions: draftQuestions } : undefined)
+    ? { ...draftOwner, requestId: request.id, questions: draftQuestions } : undefined,
+    request.delivery === 'uncertain' ? 'uncertain' : request.answerRetryReady === true ? 'retry-ready' : undefined)
   const [checking, setChecking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
@@ -46,7 +47,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const mode = requestMode(request)
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
-  const uncertain = request.delivery === 'uncertain' || entry.phase === 'unconfirmed'
+  const nativeUncertain = request.delivery === 'uncertain'
+  const uncertain = nativeUncertain || entry.phase === 'unconfirmed'
   const locked = uncertain || entry.phase === 'sending' || entry.phase === 'sent'
   const disabled = locked || blocked !== null || entry.save === 'loading'
   const titleId = `${baseId}-title`
@@ -57,7 +59,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const check = (): void => {
     if (!onCheck || checking) return
     setChecking(true)
-    void onCheck().then(async ok => { if (ok) await store.release(entryOwner, request.id) }, () => undefined).finally(() => setChecking(false))
+    void store.release(entryOwner, request.id, onCheck).finally(() => setChecking(false))
   }
   const summary = permission ? permissionSummary(request) : null
   const questions = request.questions ?? []
@@ -68,7 +70,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const legacySelection = entry.selections[request.id] ?? EMPTY_SELECTION
   const legacyChoice = request.options.find(option => legacySelection.optionIds.includes(option.id))
 
-  const status = request.delivery === 'uncertain'
+  const status = nativeUncertain
     ? <div className="agent-request__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
       {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button> : null}</div>
     : entry.phase === 'unconfirmed'

@@ -11,6 +11,7 @@ import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { GitActionButton } from './GitActionButton'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
+import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore, requestMode } from './requests/requestAnswers'
 import { ThreadComposer, sendThreadRevision } from './ThreadComposer'
@@ -74,6 +75,8 @@ export interface ThreadPaneProps {
   readonly actions?: ReactNode
   /** Placed directly above the composer. */
   readonly notice?: ReactNode
+  /** Placed directly after the composer, full pane width: the pane's own terminal drawer. */
+  readonly drawer?: ReactNode
   /** Opens this thread in a second pane. The More menu leaves the item out where the page cannot split. */
   readonly onOpenBeside?: (() => void) | undefined
   /** A fixed clock where the page holds one still (a capture run); the held ornament reads from it. */
@@ -84,10 +87,15 @@ export interface ThreadPaneProps {
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, workingCopy, actions, notice, now }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onOpenThread, onClose, onFocusPane, onOpenBeside, workingCopy, actions, notice, drawer, now }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [handingOff, setHandingOff] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const renameReturn = useRef<HTMLElement | null>(null)
+  const restoreRenameFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (!renaming && restoreRenameFocus.current) { restoreRenameFocus.current = false; renameReturn.current?.focus() }
+  }, [renaming])
   const [holdingWriteHere, setHoldingWriteHere] = useState(false)
   /** A Git refusal the branch toolbar shows under its row; the pane's own error line leaves it to the row. */
   const [toolbarExplained, setToolbarExplained] = useState<string | null>(null)
@@ -197,7 +205,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   }
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
-    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => setRenaming(true) }] : []),
+    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
     // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
     // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
     ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
@@ -238,7 +246,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {renaming
           ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
-            onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={() => setRenaming(false)} /></h2>
+            onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2>{thread.title}</h2>}
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
@@ -254,11 +262,13 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>
     {settleDialog}
+    {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
+      {!isThreadClosed(thread) && !thread.remoteHost ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
       {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
       <RequestDraftRecovery owner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
         live={closed ? [] : thread.requests} provider={row.provider}
@@ -291,5 +301,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           connected={rowConnected && !closed} blocked={threadBusy || handingOff} command={command} />
       </div>
     </div>
+    {drawer}
   </>
 }

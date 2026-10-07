@@ -46,6 +46,10 @@ export interface PairingCode {
 /** Said when a code is wrong, spent or too old. One sentence for all three: guessing learns nothing. */
 export const PAIRING_CODE_REJECTED = 'This pairing code is not valid any more. Make a new one on this PC.'
 
+function deviceName(name: string): string {
+  return name.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 256).replace(/[\uD800-\uDBFF]$/u, '') || 'Paired client'
+}
+
 function newSecret(): string { return randomBytes(32).toString('base64url') }
 
 function hash(secret: string, value: string): string {
@@ -103,7 +107,7 @@ export class PairedClients {
     this.loaded = true
   }
 
-  list(): readonly PairedClient[] { return this.file.clients.map(client => ({ ...client })) }
+  list(): readonly PairedClient[] { return this.file.clients.map(client => ({ ...client, name: deviceName(client.name) })) }
 
   /** A short-lived, single-use code for the user to read to the machine being paired. */
   issuePairingCode(): PairingCode {
@@ -134,7 +138,7 @@ export class PairedClients {
     const clientId = this.createId()
     const token = randomBytes(32).toString('base64url')
     const client = pairedClientSchema.parse({
-      clientId, name: name.trim() || 'Paired client',
+      clientId, name: deviceName(name),
       pairedAt: new Date(this.now()).toISOString(), tokenHash: hash(this.file.secret, `token:${token}`),
     })
     await this.mutate(async () => {

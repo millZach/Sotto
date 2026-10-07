@@ -1,7 +1,8 @@
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../../shared/hosts'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
-import { useHostsModalOpen } from './HostDialog'
+import { useHostsModalOpen } from './HostsModal'
+import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import './hosts.css'
 
 /**
@@ -27,6 +28,20 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState<string | null>(null)
   const hostsDialogOpen = useHostsModalOpen()
+  const answerRef = useRef<HTMLInputElement>(null)
+  const hostKeyRef = useRef<HTMLPreElement>(null)
+  const fallbackFocusRef = useRef<HTMLElement | null>(null)
+  // Keep the page's focus across consecutive questions: the next dialog may inherit body.
+  useEffect(() => {
+    const remember = (): void => {
+      const active = document.activeElement
+      if (active instanceof HTMLElement && active !== document.body && !active.closest('[role="dialog"]')) fallbackFocusRef.current = active
+    }
+    remember()
+    document.addEventListener('focusin', remember)
+    return () => document.removeEventListener('focusin', remember)
+  }, [])
+  if (!fallbackFocusRef.current?.isConnected) fallbackFocusRef.current = document.querySelector<HTMLElement>('[aria-current="page"], [role="tab"][aria-selected="true"]')
   useEffect(() => {
     if (!bridge) return
     let alive = true
@@ -34,58 +49,77 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
-  /** The setup question the user put off with Not now; it shows again once another one comes. */
-  const [later, setLater] = useState<string | null>(null)
-  const saved = state?.hosts.find(item => item.prompt)
+  /** Dismiss only this question, so other hosts and new questions can still ask. */
+  const { dismissedQuestionKeys, dismissQuestion, focusAnswer } = useHostQuestionDismissals(bridge)
+  const saved = state?.hosts.find(item => item.prompt && !dismissedQuestionKeys.has(hostQuestionKey(item)!))
   const waiting = saved ? undefined : setupWait(state)
-  const setupKey = waiting ? waiting.prompt ? `prompt:${waiting.prompt.id}` : `tailscale:${waiting.id}` : null
-  const host = saved ?? (setupKey !== later ? waiting : undefined)
+  const setupKey = waiting ? hostQuestionKey(waiting) ?? `tailscale:${waiting.id}` : null
+  const savedKey = saved ? hostQuestionKey(saved) : null
+  const host = saved ?? (setupKey && !dismissedQuestionKeys.has(setupKey) ? waiting : undefined)
   const prompt = host?.prompt
-  useEffect(() => { setAnswer(''); setError(null) }, [prompt?.id, setupKey])
+  useEffect(() => { setAnswer(''); setError(null) }, [savedKey, prompt?.id, setupKey])
   if (!bridge || !host || hostsDialogOpen) return null
   const run = async (command: HostsCommand, failure: string): Promise<boolean> => {
     setError(null)
     try { setState(await bridge.command(command)); return true }
     catch (reason) { setError(reason instanceof Error ? reason.message : failure); return false }
   }
+  const dismiss = (): void => {
+    setAnswer('')
+    const key = savedKey ?? setupKey
+    if (key) dismissQuestion(key)
+    // The row's Answer button exists after the dismissal renders. A following dialog takes priority.
+    if (savedKey) queueMicrotask(() => {
+      if (document.querySelector('[role="dialog"]')) return
+      focusAnswer(savedKey)
+    })
+  }
   if (!saved) {
     const name = state?.setup?.name ?? host.name
-    const notNow = (): void => { setAnswer(''); setLater(setupKey) }
     const putOff = ' Not now leaves it waiting, and Show setup in Settings > Hosts has it too.'
-    if (!prompt) return <ConfirmationDialog key={setupKey} danger={false} title={`Approve the connection to ${name} in Tailscale`}
-      confirmLabel="Open approval page" cancelLabel="Not now" onCancel={notNow}
+    if (!prompt) return <ConfirmationDialog key={setupKey} danger={false} fallbackFocusRef={fallbackFocusRef} title={`Approve the connection to ${name} in Tailscale`}
+      confirmLabel="Open approval page" cancelLabel="Not now" onCancel={dismiss}
       onConfirm={() => run({ type: 'open-approval', id: host.id }, 'The approval page could not open. Nothing was changed. Try again.')}
       {...(error ? { failureMessage: error } : {})}
       description={<p>{`An agent is setting up ${name}, and Tailscale SSH asks you to approve this computer's connection before the setup goes on. Open the approval page and approve it in your browser.${putOff}`}</p>} />
     const hostKey = prompt.kind === 'host-key'
-    return <ConfirmationDialog key={setupKey} danger={false}
+    return <ConfirmationDialog key={setupKey} danger={false} confirmFirst submitOnEnter={!hostKey} initialFocus={hostKey ? hostKeyRef : answerRef} fallbackFocusRef={fallbackFocusRef}
       title={hostKey ? `Trust the SSH host ${name}?` : `Unlock the SSH connection to ${name}`}
-      confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Not now" onCancel={notNow}
+      confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Not now" onCancel={dismiss}
       // The dialog stays until main clears the question, which it does once SSH has the answer.
       onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Answer it again from Show setup in Settings > Hosts.'); setAnswer(''); return false }}
       {...(error ? { failureMessage: error } : {})}
       description={<div className="hosts-dialog__fields">
         <p>{(hostKey ? `An agent is setting up ${name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
           : `An agent is setting up ${name}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`) + putOff}</p>
-        <pre className="hosts-challenge">{prompt.text}</pre>
+        <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? 'SSH host key' : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
         {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
-          <input id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
+          <input ref={answerRef} id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
       </div>} />
   }
   if (!prompt) return null
   const hostKey = prompt.kind === 'host-key'
-  return <ConfirmationDialog key={prompt.id} danger={false}
+  // An admin connection's sign-in (ADR-0053) is for a press the user made, not the host's own connect: stopping it
+  // changes nothing on the host and leaves the switch alone.
+  const admin = host.adminSignIn === true
+  const why = admin ? `Sotto is signing in to ${host.name} for a change you asked for there` : `Sotto is connecting to ${host.name}`
+  return <ConfirmationDialog key={savedKey} danger={false} confirmFirst submitOnEnter={!hostKey} initialFocus={hostKey ? hostKeyRef : answerRef} fallbackFocusRef={fallbackFocusRef}
     title={hostKey ? `Trust the SSH host ${host.name}?` : `Unlock the SSH connection to ${host.name}`}
-    confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Switch it off"
-    onCancel={() => { setAnswer(''); void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`) }}
+    confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel={admin ? 'Stop signing in' : 'Switch it off'}
+    onDismiss={dismiss}
+    onCancel={() => {
+      setAnswer('')
+      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, `Sotto could not stop signing in to ${host.name}. Try again in Settings > Hosts.`)
+      else void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`)
+    }}
     // The dialog stays until main clears the question, which it does once SSH has the answer.
     onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Switch the host off and on to try again.'); setAnswer(''); return false }}
     {...(error ? { failureMessage: error } : {})}
     description={<div className="hosts-dialog__fields">
-      <p>{hostKey ? `Sotto is connecting to ${host.name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
-        : `Sotto is connecting to ${host.name}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`}</p>
-      <pre className="hosts-challenge">{prompt.text}</pre>
+      <p>{hostKey ? `${why}, and SSH has not seen this host before. Check its key, then trust it to continue.`
+        : `${why}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`}</p>
+      <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? 'SSH host key' : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
       {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
-        <input id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
+        <input ref={answerRef} id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
     </div>} />
 }

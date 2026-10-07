@@ -2,9 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 
 // T3's Git action in the pane header, against a real repository and an owned bare remote. GitHub is a scripted gh
 // (tests/fixtures/fakeGh.mjs) reached through the host's test seam, so the pull request is "created" without a network.
@@ -247,5 +247,102 @@ test('the Git action commits and pushes from the header, asks before the default
       if (value === undefined) delete process.env[key]; else process.env[key] = value
     }
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => undefined)
+  }
+})
+
+async function removeRefusalFixture(directory: string): Promise<void> {
+  const owned = resolve(directory)
+  if (dirname(owned) !== resolve(tmpdir()) || !owned.includes('sotto-e2e-git-refusal-')) throw new Error('Unexpected fixture folder')
+  await rm(owned, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+}
+
+test('a sibling Git action refuses a send and keeps the composer text for retry', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-git-refusal-'))
+  const repository = join(directory, 'project'), hooks = join(directory, 'hooks')
+  let launched: LaunchedSotto | undefined, committing: Promise<unknown> | undefined
+  const release = join(directory, 'release')
+  try {
+    await mkdir(repository); await mkdir(hooks)
+    git(repository, 'init', '-q', '-b', 'main')
+    git(repository, 'config', 'core.hooksPath', hooks)
+    await writeFile(join(repository, 'file.txt'), 'Baseline')
+    git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Baseline')
+    const hold = join(directory, 'hold.mjs')
+    await writeFile(hold, `import { existsSync, watch, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const folder = process.argv[2], release = join(folder, 'release');
+const watcher = watch(folder, () => { if (existsSync(release)) { watcher.close(); process.exit(0) } });
+writeFileSync(join(folder, 'started'), 'ready');
+if (existsSync(release)) { watcher.close(); process.exit(0) }
+`)
+    await writeFile(join(hooks, 'pre-commit'), `#!/bin/sh
+node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
+`, { mode: 0o755 })
+    await writeFile(join(repository, 'file.txt'), 'Change under review')
+    launched = await launch([['Refusal project', repository]])
+    const { page } = launched
+    await createThread(page, repository, 'Git holder')
+    const holder = (await activeThread(page)).id
+    await createThread(page, repository, 'Sibling sender')
+    const sibling = (await activeThread(page)).id
+    committing = page.evaluate(async threadId => (await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit', commitMessage: 'Commit reviewed change' })).error, holder)
+    await expect.poll(async () => {
+      const action = await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)
+      if (action?.status === 'failed') throw new Error(action.error ?? 'The fixture commit failed')
+      return existsSync(join(directory, 'started'))
+    }, { timeout: 30_000 }).toBe(true)
+    const prompt = pane(page).getByRole('textbox', { name: 'Prompt', exact: true })
+    await prompt.fill('Keep this refused message')
+    await pane(page).getByRole('button', { name: 'Send prompt', exact: true }).click()
+    const copy = 'A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.'
+    await expect(pane(page)).toContainText(copy)
+    await expect(prompt).toHaveValue('Keep this refused message')
+    expect(await userMessageTexts(page, sibling)).not.toContain('Keep this refused message')
+    for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
+      await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
+      await resize(launched, width, height)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await expect(prompt).toBeVisible()
+      await expect(pane(page)).toContainText(copy)
+      await page.screenshot({ animations: 'disabled', path: `artifacts/pkg-34-workspace-git/refused-send-${width}-${appearance}.png` })
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(prompt).toHaveValue('Keep this refused message')
+    // A retained queue needs the user's recovery, so the next Git refusal must not tell them to wait.
+    await page.evaluate(async threadId => {
+      await window.sotto!.agents!.command({ type: 'queue-followup', threadId, draftId: crypto.randomUUID(), text: 'Keep this failed follow-up' })
+      await window.sotto!.agents!.command({ type: 'resume-followups', threadId })
+    }, sibling)
+    await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).followups?.find(item => item.threadId === id)?.status, sibling)).toBe('failed')
+    await writeFile(release, 'finish')
+    await expect(committing).resolves.toBeNull()
+    await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction?.status, holder)).toBe('done')
+    const previous = await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)
+    const refusalCopy = 'Thread "Sibling sender" has queued follow-ups that did not send. Resume or remove them, then try again.'
+    const refused = await page.evaluate(async threadId => (await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit' })).error, holder)
+    expect(refused).toBe(refusalCopy)
+    expect(await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)).toEqual(previous)
+    for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
+      await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
+      await resize(launched, width, height)
+      await expect(pane(page)).toContainText(refusalCopy)
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.screenshot({ animations: 'disabled', path: `artifacts/pkg-34-workspace-git/failed-queue-${width}-${appearance}.png` })
+    }
+    await page.evaluate(async threadId => {
+      const state = await window.sotto!.agents!.get()
+      const item = state.followups!.find(item => item.threadId === threadId)!
+      await window.sotto!.agents!.command({ type: 'remove-followup', threadId, itemId: item.id })
+    }, sibling)
+    await expect(prompt).toHaveValue('Keep this refused message')
+    await prompt.press('Control+Enter')
+    await expect.poll(() => userMessageTexts(page, sibling)).toEqual(['Keep this refused message'])
+    await expect(prompt).toHaveValue('')
+  } finally {
+    await writeFile(release, 'finish').catch(() => undefined)
+    await committing?.catch(() => undefined)
+    if (launched) await closeSotto(launched)
+    await removeRefusalFixture(directory)
   }
 })

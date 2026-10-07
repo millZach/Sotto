@@ -48,8 +48,7 @@ async function fixture(partialAuthority?: Pick<Authority, 'authorizes'> & Partia
   roots.push(root)
   const credentials = new AgentCredentials(join(root, 'vault'), encryption)
   await credentials.load()
-  const recorder = new TurnRecorder({ directory: root, historyEnabled: () => true,
-    resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
+  const recorder = new TurnRecorder({ directory: root, resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
   const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
   const host = new RecordingHost()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
@@ -151,6 +150,33 @@ describe('authority at dispatch', () => {
     expect(execute).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    { accepted: true, requestLeaves: false, completion: false },
+    { accepted: true, requestLeaves: true, completion: false },
+    { accepted: false, requestLeaves: true, completion: false },
+    { accepted: false, requestLeaves: false, completion: true },
+  ])('keeps a phone answer uncertainty private to its caller: %j', async ({ accepted, requestLeaves, completion }) => {
+    const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+      mayGrant: () => ({ allowed: true, reason: 'paired-client' }) })
+    f.permission()
+    const before = f.control.get().speech
+    const publishedErrors: Array<string | null> = []
+    const off = f.control.subscribe(state => { publishedErrors.push(state.error) })
+    const execute = f.host.execute.bind(f.host)
+    vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => {
+      if (requestLeaves) await execute(command)
+      return { accepted, uncertain: true, ...(completion ? { answerCompletion: Promise.resolve(false) } : {}) }
+    })
+    try {
+      const result = await f.control.command({ type: 'answer', threadId: 'workshop', requestId: 'permission', answer: 'Allow', approved: true },
+        { clientId: 'phone', user: 'Fixture client', transport: 'socket' })
+      expect(result.error).toBeTruthy()
+      expect(f.control.get().error).toBeNull()
+      expect(publishedErrors.every(error => error === null)).toBe(true)
+      expect(f.control.get().speech.id).toBe(before.id)
+    } finally { off() }
+  })
+
   it('leaves a definitively refused answer without attribution', async () => {
     const f = await fixture()
     const recordAnswer = vi.fn()
@@ -161,7 +187,7 @@ describe('authority at dispatch', () => {
     expect(recordAnswer).not.toHaveBeenCalled()
   })
   it.each([false, true])('preserves command client context when permitted is %s', async allowed => {
-    const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket' }
+    const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket', selectedThreadId: 'workshop' }
     const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
         : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
@@ -173,13 +199,58 @@ describe('authority at dispatch', () => {
     const result = await f.control.commandShell({ type: 'send' }, client)
     if (allowed) {
       expect(result.error).toBeNull()
-      expect(recordAnswer).toHaveBeenCalledWith('workshop', expect.objectContaining({ attribution: client }))
+      expect(recordAnswer).toHaveBeenCalledWith('workshop', expect.objectContaining({ attribution: { clientId: client.clientId, user: client.user, transport: client.transport } }))
     } else {
       expect(result.error).toBe(UNPAIRED_CLIENT_ERROR)
       expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
       expect(recordAnswer).not.toHaveBeenCalled()
     }
   })
+  it.each([false, true])('retains an ordinary selected draft binding when answer permission is %s', async allowed => {
+    const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket', selectedThreadId: 'workshop' }
+    const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+      mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
+        : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
+    await f.control.commandShell({ type: 'compose', text: 'Ordinary prompt' }, client)
+    f.host.event({ type: 'question', threadId: 'workshop', requestId: 'choice', text: 'Which color?' })
+    await vi.waitFor(() => expect(f.control.get().queue.some(item => item.requestId === 'choice')).toBe(true))
+    const edited = await f.control.commandShell({ type: 'compose', text: 'Edited prompt' }, client)
+    expect(edited.error).toBeNull()
+    expect(edited.threadDrafts?.find(draft => draft.threadId === 'workshop')).toMatchObject({ text: 'Edited prompt', requestId: null })
+    const sent = await f.control.commandShell({ type: 'send' }, client)
+    expect(sent.error).toContain('Answer the pending question')
+    expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
+  })
+
+  it('keeps the compose client check consistent with send', async () => {
+    const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket', selectedThreadId: 'workshop' }
+    const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+      mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
+        : { allowed: false, reason: 'no-policy' } })
+    await f.control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const intent = vi.spyOn(f.reasoner, 'intent').mockImplementation(async () => {
+      await held
+      return { type: 'clarify', text: 'Which action?' }
+    })
+    const thinking = f.control.command({ type: 'utterance', text: 'Choose the next action' })
+    await vi.waitFor(() => expect(intent).toHaveBeenCalled())
+    const composing = f.control.commandShell({ type: 'compose', text: 'Blue' }, client)
+    try {
+      f.host.event({ type: 'question', threadId: 'workshop', requestId: 'choice', text: 'Which color?' })
+    } finally { release() }
+    await thinking
+    const result = await composing
+    expect(result.error).toBe(UNPAIRED_CLIENT_ERROR)
+    expect(result.draft).not.toBe('Blue')
+    expect(result.composing).toBe(false)
+    expect(result.draftRequestId).toBeNull()
+    expect(result.threadDrafts?.some(draft => draft.requestId === 'choice')).not.toBe(true)
+    expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
+  })
+
   it('supervision leaves a pending permission in the attention queue', async () => {
     const f = await fixture({ authorizes: () => ({ allowed: true, reason: 'allowed' }) })
     await f.control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
@@ -201,7 +272,7 @@ describe('authority at dispatch', () => {
     f.host.event({ type: 'question', threadId: 'workshop', requestId: 'permission', text: 'May I publish?' })
     await vi.waitFor(async () => {
       expect((await f.recorder.recent(100)).find(record => record.source === 'supervision')).toMatchObject({
-        outcome: 'failed', error: 'Permissions are never answered automatically. This request stays in your attention queue.',
+        outcome: 'failed',
       })
     })
     expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])

@@ -78,6 +78,55 @@ it('keeps activity snapshots independently mutable without corrupting saved hist
   expect(host.workspaceSnapshot().threads[0]!.activities?.[0]).toEqual(activity('old', 'Retained tool output'))
 })
 
+it.each(['retry while off', 'resume before retry', 'successful transition'])('keeps private messages and activity out of durable history (%s)', async mode => {
+  let history = true
+  const f = await fixture(() => history)
+  const host = await f.open()
+  const thread = f.provider.state.threads[0]!
+  thread.messages.push({ id: 'old-message', role: 'user', text: 'OLD_MESSAGE_BEFORE_HISTORY_OFF', createdAt: new Date().toISOString() })
+  await host.connect()
+  const transition = vi.spyOn(ThreadStore.prototype, 'becomeEphemeral')
+  if (mode !== 'successful transition') transition.mockImplementationOnce(() => { throw new Error('Synthetic failed redaction') })
+  history = false
+  if (mode === 'successful transition') await host.privacyChanged()
+  else await expect(host.privacyChanged()).rejects.toThrow('Thread messages could not be removed')
+  thread.activities!.push(activity('private', 'PRIVATE_ACTIVITY_DURING_RETRY'))
+  thread.messages.push({ id: 'private-message', role: 'assistant', text: 'PRIVATE_MESSAGE_DURING_RETRY', createdAt: new Date().toISOString() })
+  await host.snapshot()
+  const disk = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  disk.open()
+  try {
+    expect(disk.readActivities(thread.id).map(record => record.output)).not.toContain('PRIVATE_ACTIVITY_DURING_RETRY')
+    expect(disk.readMessages(thread.id).messages.map(message => message.text)).not.toContain('PRIVATE_MESSAGE_DURING_RETRY')
+  } finally { disk.close() }
+  if (mode === 'resume before retry') {
+    history = true
+    thread.messages.push({ id: 'resumed-message', role: 'assistant', text: 'Message after history resumed', createdAt: new Date().toISOString() })
+    expect((await host.snapshot()).threads[0]!.messages.map(message => message.text)).toContain('Message after history resumed')
+  }
+  await host.privacyChanged()
+  expect(transition).toHaveBeenCalledTimes(mode === 'successful transition' ? 1 : 2)
+  history = true
+  await host.privacyChanged()
+  thread.activities!.push(activity('fresh', 'Fresh retained output'))
+  thread.messages.find(message => message.id === 'private-message')!.text += ' with a later streaming update'
+  thread.messages.push({ id: 'fresh-message', role: 'assistant', text: 'Fresh retained message', createdAt: new Date().toISOString() })
+  await host.snapshot()
+  disk.open()
+  try {
+    expect(disk.readActivities(thread.id).map(record => record.output)).toEqual(['Fresh retained output'])
+    expect(disk.readMessages(thread.id).messages.map(message => message.text)).toEqual([
+      ...(mode === 'resume before retry' ? ['Message after history resumed'] : []), 'Fresh retained message',
+    ])
+  } finally { disk.close() }
+  await f.close(host)
+  const bytes = (await Promise.all((await readdir(f.directory)).map(name => readFile(join(f.directory, name), 'latin1')))).join('')
+  expect(bytes).not.toContain('Retained tool output')
+  expect(bytes).not.toContain('OLD_MESSAGE_BEFORE_HISTORY_OFF')
+  expect(bytes).not.toContain('PRIVATE_ACTIVITY_DURING_RETRY')
+  expect(bytes).not.toContain('PRIVATE_MESSAGE_DURING_RETRY')
+})
+
 it('erases old activity on privacy changes and never revives it when history is enabled again', async () => {
   let history = true
   const f = await fixture(() => history)
@@ -202,6 +251,103 @@ it('suppresses legacy activity when first opened with history off, including res
   await f.close(host)
   const reopened = await f.open()
   expect(reopened.workspaceSnapshot().threads[0]!.activities ?? []).toEqual([])
+})
+
+it.each([false, true])('keeps Threads usable after a failed durable reopen and recovers on restart (redaction retry: %s)', async retry => {
+  let history = retry
+  const f = await fixture(() => history)
+  const host = await f.open()
+  await host.connect()
+  const thread = f.provider.state.threads[0]!
+  if (retry) {
+    vi.spyOn(ThreadStore.prototype, 'becomeEphemeral').mockImplementationOnce(() => { throw new Error('Synthetic failed redaction') })
+    history = false
+    await expect(host.privacyChanged()).rejects.toThrow('Thread messages could not be removed')
+  }
+  const reopen = ThreadStore.prototype.becomeDurable
+  vi.spyOn(ThreadStore.prototype, 'becomeDurable').mockImplementationOnce(function (this: ThreadStore) {
+    vi.spyOn(ThreadStore.prototype, 'open').mockImplementationOnce(() => { throw new Error('Synthetic locked file') })
+    reopen.call(this)
+  })
+  history = true
+  await expect(host.privacyChanged()).rejects.toThrow('Thread messages could not be opened')
+  await expect(host.snapshot()).resolves.toMatchObject({ connected: true })
+  await expect(host.refreshThread(thread.id)).resolves.toMatchObject({ connected: true })
+  expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).not.toContain('Retained tool output')
+  await f.close(host)
+  const recovered = await f.open()
+  await recovered.connect()
+  thread.activities!.push(activity('after-restart', 'Retained after restart'))
+  await recovered.snapshot()
+  const disk = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  disk.open()
+  try { expect(disk.readActivities(thread.id).map(record => record.output)).toContain('Retained after restart') }
+  finally { disk.close() }
+})
+
+it('keeps legacy messages private across a rewind after history resumes', async () => {
+  let history = true
+  const f = await fixture(() => history)
+  const host = await f.open()
+  await host.connect()
+  const thread = f.provider.state.threads[0]!
+  history = false
+  await host.privacyChanged()
+  thread.messages.push({ id: 'private-before-rewind', role: 'user', text: 'PRIVATE_REWOUND_MESSAGE', createdAt: new Date().toISOString() })
+  await host.snapshot()
+  history = true
+  await host.privacyChanged()
+  thread.historyEpoch = 'rewound-epoch'
+  thread.messages.push({ id: 'fresh-after-rewind', role: 'assistant', text: 'Fresh after rewind', createdAt: new Date().toISOString() })
+  const messages = (await host.snapshot()).threads[0]!.messages.map(message => message.text)
+  expect(messages).toEqual(['Fresh after rewind'])
+  const disk = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  disk.open()
+  try { expect(disk.readMessages(thread.id).messages.map(message => message.text)).toEqual(['Fresh after rewind']) }
+  finally { disk.close() }
+})
+
+it('scrubs pending permission words from workspace JSON even when redaction fails', async () => {
+  let history = true
+  const f = await fixture(() => history)
+  const host = await f.open()
+  const thread = f.provider.state.threads[0]!
+  thread.requests = [{ id: 'pending', kind: 'permission', text: 'PRIVATE_PERMISSION_TEXT', options: [], context: { command: 'PRIVATE_PENDING_COMMAND' } }]
+  await host.connect()
+  const path = join(f.directory, 'workspace.json')
+  expect(await readFile(path, 'utf8')).toContain('PRIVATE_PENDING_COMMAND')
+  vi.spyOn(ThreadStore.prototype, 'becomeEphemeral').mockImplementationOnce(() => { throw new Error('Synthetic failed redaction') })
+  history = false
+  await expect(host.privacyChanged()).rejects.toThrow('Thread messages could not be removed')
+  const saved = await readFile(path, 'utf8')
+  expect(saved).not.toContain('PRIVATE_PERMISSION_TEXT')
+  expect(saved).not.toContain('PRIVATE_PENDING_COMMAND')
+  expect(JSON.parse(saved).snapshot.threads.every((item: { requests: unknown[] }) => item.requests.length === 0)).toBe(true)
+  await host.privacyChanged()
+})
+
+it('keeps Threads usable and retries when redaction closes the store but memory open fails', async () => {
+  let history = true
+  const f = await fixture(() => history)
+  const host = await f.open()
+  await host.connect()
+  const thread = f.provider.state.threads[0]!
+  vi.spyOn(ThreadStore.prototype, 'open').mockImplementationOnce(() => { throw new Error('Synthetic failed memory open') })
+  history = false
+  await expect(host.privacyChanged()).rejects.toThrow('Thread messages could not be removed')
+  await expect(host.snapshot()).resolves.toMatchObject({ connected: true })
+  await expect(host.refreshThread(thread.id)).resolves.toMatchObject({ connected: true })
+  thread.activities!.push(activity('private-after-close', 'PRIVATE_AFTER_FAILED_MEMORY_OPEN'))
+  await host.snapshot()
+  await host.privacyChanged()
+  history = true
+  await host.privacyChanged()
+  thread.activities!.push(activity('fresh-after-retry', 'Fresh after memory retry'))
+  await host.snapshot()
+  const disk = new ThreadStore(join(f.directory, 'threads.sqlite'))
+  disk.open()
+  try { expect(disk.readActivities(thread.id).map(record => record.output)).toEqual(['Fresh after memory retry']) }
+  finally { disk.close() }
 })
 
 it('never falls back to JSON containing private activity when enabling history fails', async () => {

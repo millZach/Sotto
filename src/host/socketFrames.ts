@@ -9,6 +9,13 @@ export class SocketFrames {
   private fragments: Buffer[] = []
   private fragmentedBytes = 0
   private ended = false
+  private heartbeat: ReturnType<typeof setInterval> | undefined
+  private awaitingPong: Buffer | undefined
+  private silentRounds = 0
+  private wroteSincePing = false
+  private lastProgress = Date.now()
+  private clientLiveness = false
+  get isClosed(): boolean { return this.ended }
   private readonly closedListeners = new Set<() => void>()
   constructor(private readonly stream: Duplex, private readonly client: boolean, private readonly message: (text: string) => void) {
     stream.on('data', (data: Buffer) => this.receive(data))
@@ -16,14 +23,49 @@ export class SocketFrames {
     stream.on('close', () => this.closed())
     stream.on('end', () => this.close())
   }
+  /** Only peers opting in through hello take responsibility for their own pings. */
+  setClientLiveness(enabled: boolean): void { this.clientLiveness = enabled; this.awaitingPong = undefined; this.silentRounds = 0 }
+  startHeartbeat(): void {
+    if (this.heartbeat || this.ended) return
+    this.heartbeat = setInterval(() => {
+      if (this.stream.writableLength > 0) { this.silentRounds = 0; return }
+      if (!this.client && this.clientLiveness) {
+        if (Date.now() - this.lastProgress >= 75_000) this.close()
+        return
+      }
+      // A tunnel can drain Node's buffer while still delivering our frames to the peer.
+      // Our own keep-alive pings must not count as progress for a dead connection.
+      if (this.awaitingPong && !this.wroteSincePing) this.silentRounds++
+      else this.silentRounds = 0
+      if (this.silentRounds >= 2) { this.close(); return }
+      this.wroteSincePing = false
+      this.awaitingPong = randomBytes(8)
+      this.write(9, this.awaitingPong)
+    }, 25_000)
+    this.heartbeat.unref()
+  }
   feed(data: Buffer): void { if (data.length) this.receive(data) }
   onClose(listener: () => void): () => void { this.closedListeners.add(listener); return () => this.closedListeners.delete(listener) }
+  /**
+   * True while the stream holds at least its high-water mark of output the peer has not read yet: what is
+   * written now only queues behind it. False once the stream drains or closes.
+   */
+  get backlogged(): boolean { return !this.ended && this.stream.writableNeedDrain }
+  /** Waits for buffered output to drain before the next detail in a batch is materialised. */
+  drained(): Promise<void> {
+    if (!this.backlogged) return Promise.resolve()
+    return new Promise(resolve => {
+      const done = (): void => { this.stream.removeListener('drain', done); this.closedListeners.delete(done); resolve() }
+      this.stream.once('drain', done); this.closedListeners.add(done)
+    })
+  }
   send(value: unknown): boolean { return this.sendText(JSON.stringify(value)) }
   sendText(text: string): boolean { return this.write(1, Buffer.from(text)) }
   close(): void { if (!this.ended) { this.stream.destroy(); this.closed() } }
   private closed(): void {
     if (this.ended) return
     this.ended = true
+    clearInterval(this.heartbeat); this.heartbeat = undefined; this.awaitingPong = undefined
     this.chunks = []; this.bufferedBytes = 0; this.fragments = []
     for (const listener of this.closedListeners) listener()
     this.closedListeners.clear()
@@ -43,11 +85,12 @@ export class SocketFrames {
       for (let index = 0; index < data.length; index++) data[index] = data[index]! ^ mask[index % 4]!
     }
     this.stream.write(Buffer.concat([header, data]))
+    if (opcode !== 9) { this.wroteSincePing = true; this.lastProgress = Date.now() }
     return true
   }
   private receive(data: Buffer): void {
     if (this.ended) return
-    if (data.length) { this.chunks.push(data); this.bufferedBytes += data.length }
+    if (data.length) { this.lastProgress = Date.now(); this.awaitingPong = undefined; this.silentRounds = 0; this.chunks.push(data); this.bufferedBytes += data.length }
     while (this.bufferedBytes >= 2 && !this.ended) {
       const header = this.header()
       const first = header[0]!, second = header[1]!, opcode = first & 15
@@ -70,7 +113,7 @@ export class SocketFrames {
       if (masked) for (let index = 0; index < size; index++) payload[index] = payload[index]! ^ header[maskOffset + index % 4]!
       if (opcode === 8) { if (this.write(8, payload)) { this.stream.end(); this.closed() } return }
       if (opcode === 9) { this.write(10, payload); continue }
-      if (opcode === 10) continue
+      if (opcode === 10) { if (this.awaitingPong?.equals(payload)) this.awaitingPong = undefined; continue }
       if ((opcode === 0 && this.fragments.length === 0) || (opcode === 1 && this.fragments.length > 0)) { this.close(); return }
       this.fragmentedBytes += payload.length
       if (this.fragmentedBytes > HOST_MAX_FRAME_BYTES) { this.close(); return }

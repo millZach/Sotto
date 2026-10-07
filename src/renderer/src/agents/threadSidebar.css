@@ -1,7 +1,4 @@
-/* The Threads page sidebar: the 44px top row, search, project folders, adaptive thread rows and the Settled/Closed shelf.
-   Terminal mode reuses every class here (terminals/TerminalSidebar.tsx). The Chats page borrows the frame's
-   older shape (agents/personal/PersonalChatsView.tsx), so everything the redesign moved is scoped to the
-   [data-mode] the Threads and Terminal sidebars carry and Chats does not. */
+/* Sidebar styling is scoped to the thread navigation. */
 /* Sidebar */
 .thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
 .thread-nav[data-mode] { padding: 0; }
@@ -128,7 +125,7 @@
 }
 @keyframes thread-ring { to { rotate: 360deg; } }
 
-/* Thread rows pair this status with a provider; Chats also uses the inline status dot. */
+/* Thread rows pair this status with a provider. */
 .thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }
@@ -164,7 +161,10 @@
 .thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }
 .thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
 .thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
-.thread-nav__provider { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after it. */
+.thread-nav__provider { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
+.thread-nav__provider .thread-nav__model { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .thread-nav__metadata .thread-nav__status { display: block; margin-left: auto; min-width: 0; flex-shrink: 0; max-width: 70%; text-overflow: ellipsis; }
 .thread-nav__model, .thread-nav__copy-kind { display: none; }
 .thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
@@ -179,7 +179,6 @@
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__branch { padding-right: 114px; }
 .thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
 .thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; }
-.thread-nav__resize::after { content: ''; position: absolute; left: 3px; top: calc(50% - 18px); height: 36px; width: 4px; border-radius: 4px; background: var(--tt-border); }
 .thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }

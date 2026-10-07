@@ -114,6 +114,23 @@ test('the browser player moves and resizes with the pointer and the keyboard, wi
     await page.keyboard.press('ArrowDown')
     await expect.poll(async () => (await player.boundingBox())!.height).toBe(beforeKeyResize.height + 16)
 
+    // A visible DOM placeholder is not proof that the native page survived moving and resizing.
+    const viewportBounds = await player.locator('.browser-player__viewport').evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      const x = Math.round(rect.left), y = Math.round(rect.top)
+      return { x, y, width: Math.round(rect.right) - x, height: Math.round(rect.bottom) - y }
+    })
+    await expect.poll(() => launched.app.evaluate(({ BrowserWindow, WebContentsView }) => {
+      const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
+      return host.contentView.children.filter(view => view instanceof WebContentsView).map(view => ({
+        url: (view as Electron.WebContentsView).webContents.getURL(), bounds: view.getBounds(),
+      }))
+    })).toEqual([{ url, bounds: viewportBounds }])
+    await expect.poll(() => launched.app.evaluate(async ({ webContents }, url) => {
+      const page = webContents.getAllWebContents().find(item => item.getURL() === url)
+      return page?.executeJavaScript('document.body.innerText')
+    }, url)).toBe('Fieldnotes')
+
     await resize(launched, 1600, 1000)
     await expect(player.locator('.browser-player__viewport')).toBeVisible()
     const atSize = (await player.boundingBox())!

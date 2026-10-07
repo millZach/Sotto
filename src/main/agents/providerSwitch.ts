@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
+import { sameSnapshot } from './sameSnapshot'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
@@ -256,7 +257,11 @@ export class ConfiguredProviderHost implements AgentHost {
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
     const whole = await this.whole(id, read?.historyFromEvents === true)
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
-    this.accept(id, whole ?? snapshot); this.publish(); return cloneHostSnapshot(this.aggregate())
+    const before = { snapshot: slot.snapshot, status: slot.status }
+    this.accept(id, whole ?? snapshot)
+    // A read before a send that changed nothing publishes nothing (#765): every send makes one.
+    if (!read?.beforeSend || !sameSnapshot(before.snapshot, slot.snapshot) || !sameSnapshot(before.status, slot.status)) this.publish()
+    return cloneHostSnapshot(this.aggregate())
   }
   rollbackCapability(threadId: string) {
     const provider = this.providerForThread(threadId)
@@ -324,7 +329,8 @@ export class ConfiguredProviderHost implements AgentHost {
           if (!target) throw new Error('The provider has not confirmed the earlier project registration. Refresh its connection before retrying; it will not be registered twice.')
         } else {
           this.registrations.add(key)
-          await this.registrationStore?.write([...this.registrations])
+          try { await this.registrationStore?.write([...this.registrations]) }
+          catch (error) { this.registrations.delete(key); throw error }
           let result: AgentHostResult
           try { result = await this.options.hosts[id].execute({ type: 'create-project', commandId: `${command.commandId}:project`, projectId, title: project.title, path: project.path }) }
           catch (error) { this.registrations.delete(key); await this.registrationStore?.write([...this.registrations]); throw error }

@@ -33,7 +33,7 @@ async function fixture(saved?: object) {
     decide,
   }
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
-    turns: new TurnRecorder({ directory: root, historyEnabled: () => true, resolveSession: () => undefined }),
+    turns: new TurnRecorder({ directory: root, resolveSession: () => undefined }),
   })
   controls.push(control)
   await control.start()

@@ -88,6 +88,7 @@
   --theme-contrast-boost: 0%;
   --theme-contrast-border-boost: 0%;
   --theme-glass-opacity: 80%;
+  --theme-frost-solid: 60%;
 }
 
 :root[data-theme='light'] {
@@ -202,6 +203,7 @@
   --tt-attention: var(--tt-warning);
   --tt-error: color-mix(in oklab, color-mix(in oklab, var(--theme-error-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
   --tt-error-text: var(--tt-error);
+  --tt-danger: var(--tt-error);
   --tt-error-contrast: var(--theme-canvas);
   --tt-error-surface: var(--theme-error-surface);
   --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
@@ -267,6 +269,12 @@
   --tt-glass: color-mix(in srgb, var(--theme-surface-overlay) var(--theme-glass-opacity), transparent);
   --tt-glass-filter: blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation));
   --tt-glass-field: color-mix(in srgb, var(--tt-field) var(--theme-glass-opacity), transparent);
+
+  /* Frost (ADR-0048): with the Frosted window setting on, the room is the canvas at the chosen solidity over the
+     system material that blurs the desktop, and the sidebar a little more solid on top of it. frost.css says where. */
+  --tt-frost-room: color-mix(in oklab, var(--theme-canvas) var(--theme-frost-solid), transparent);
+  --tt-frost-sidebar: color-mix(in oklab, var(--theme-sidebar) min(100%, calc(var(--theme-frost-solid) + 8%)), transparent);
+  --tt-frost-terminal: color-mix(in oklab, var(--theme-terminal-background) min(100%, calc(var(--theme-frost-solid) + 18%)), transparent);
 
   --tt-success: oklch(0.79 0.13 165);
   --tt-provider-codex: #d7dbe1;

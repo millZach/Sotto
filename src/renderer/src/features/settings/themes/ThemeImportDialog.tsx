@@ -13,6 +13,7 @@ import React, { useEffect, useId, useRef, useState, type DragEvent, type ReactNo
 import { Download, ExternalLink, PackagePlus, Plus, RefreshCw, Search, X } from 'lucide-react'
 
 import { MAX_THEME_FILE_BYTES, OPEN_VSX_SORTS, type OpenVsxThemeExtension, type OpenVsxThemeSort } from '../../../../../shared/themes/bridge'
+import { parseJsonc } from '../../../../../shared/themes/jsonc'
 import { parseThemeFile, type ThemeDefinition } from '../../../../../shared/themes/library'
 import { isVsCodeThemeFile, humanizeThemeName, pairVsCodeThemes, parseVsCodeThemeFile, resolveThemeLabelCollisions } from '../../../../../shared/themes/vscodeImport'
 import { Button } from '../../../components/Button'
@@ -53,7 +54,7 @@ export function parseImportedThemeText(text: string): ThemeDefinition {
   if (oversized) throw new Error(oversized)
   let value: unknown
   try {
-    value = JSON.parse(text)
+    value = parseJsonc(text)
   } catch {
     throw new Error('That is not valid JSON. Check for a missing comma or quote.')
   }

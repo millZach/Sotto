@@ -22,10 +22,14 @@ export type ServeCheck =
       /**
        * `port-taken`: port 8443 already carries another Serve setting, which Sotto leaves alone.
        * `not-enabled`: the tailnet has not turned Serve on; `canOpenSetup` says whether Sotto has the page that turns it on.
+       * `cleanup`: phones cannot connect while Sotto finishes removing its Serve setting.
+       * `cleanup-record`: cleanup cannot identify an occupied setting because its saved record is unreadable.
+       * `record`: setup stopped because Sotto could not save its cleanup record.
+       * `denied`: Tailscale refused to let this account change Serve, as Linux does until the account is its operator.
        * `listener`: Sotto could not open its own loopback listener. `failed`: the serve command failed some other way.
        */
-      readonly reason: 'port-taken' | 'not-enabled' | 'listener' | 'failed'
-      readonly canOpenSetup?: boolean
+      readonly reason: 'port-taken' | 'not-enabled' | 'denied' | 'listener' | 'failed' | 'cleanup' | 'cleanup-record' | 'record'
+      readonly canOpenSetup?: boolean | undefined
     }
 
 export interface PairedPhone {
@@ -44,8 +48,12 @@ export interface PhonesState {
   readonly enabled: boolean
   /** Phone access serves the local host's threads, so it needs the local host running. */
   readonly localHostRunning: boolean
-  /** `starting` while Sotto checks Tailscale and sets up Serve; `on` once phones can connect. */
-  readonly phase: 'off' | 'starting' | 'on' | 'failed'
+  /**
+   * `starting` checks setup; `on` means the listener is up and Serve carries it, admitting phones only while `enabled` (a
+   * headless host keeps it up for desktops with phone access off, ADR-0053); `failed` stops setup; `cleanup-failed` denies
+   * connections while cleanup retries.
+   */
+  readonly phase: 'off' | 'starting' | 'on' | 'failed' | 'cleanup-failed'
   readonly tailscale: TailscaleCheck
   readonly serve: ServeCheck
   /** `https://<name>.<tailnet>.ts.net:8443`, once Serve is in place. */
@@ -75,3 +83,35 @@ export interface PhonesBridge {
   command(command: PhonesCommand): Promise<PhonesState>
   onChanged(listener: (state: PhonesState) => void): () => void
 }
+
+/**
+ * A remote host's phone access (ADR-0050): the host runs it the way the desktop runs its own, and the desktop reads and
+ * changes it through the host's administrative routes, over the SSH connection it already has. Turning it on or off is
+ * the host's own setting, so it carries `set-enabled` beside the Phones page's commands.
+ */
+export const hostPhonesCommandSchema = z.discriminatedUnion('type', [
+  ...phonesCommandSchema.options,
+  z.object({ type: z.literal('set-enabled'), enabled: z.boolean() }).strict(),
+])
+export type HostPhonesCommand = z.infer<typeof hostPhonesCommandSchema>
+
+/** What a host's administrative route answers with, checked before the desktop shows any of it. */
+export const phonesStateSchema = z.object({
+  enabled: z.boolean(), localHostRunning: z.boolean(),
+  phase: z.enum(['off', 'starting', 'on', 'failed', 'cleanup-failed']),
+  tailscale: z.union([
+    z.object({ status: z.literal('waiting') }),
+    z.object({ status: z.literal('ok'), hostName: z.string().max(256), dnsName: z.string().max(256) }),
+    z.object({ status: z.literal('failed'), reason: z.enum(['missing', 'not-running']) }),
+  ]),
+  serve: z.union([
+    z.object({ status: z.literal('waiting') }),
+    z.object({ status: z.literal('ok') }),
+    z.object({ status: z.literal('failed'), reason: z.enum(['port-taken', 'not-enabled', 'denied', 'listener', 'failed', 'cleanup', 'cleanup-record', 'record']), canOpenSetup: z.boolean().optional() }),
+  ]),
+  address: z.string().max(512).nullable(),
+  computerName: z.string().max(256), defaultName: z.string().max(256),
+  code: z.object({ code: z.string().min(1).max(32), expiresAt: z.iso.datetime() }).nullable(),
+  phones: z.array(z.object({ clientId: z.string().min(1).max(512), name: z.string().max(256), pairedAt: z.string().max(64), connected: z.boolean(), canAnswer: z.boolean() })).max(200),
+  answersAvailable: z.boolean(),
+}) satisfies z.ZodType<PhonesState>

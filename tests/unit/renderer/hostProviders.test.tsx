@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostProviders, connectedProvidersLabel, hostProviderTile } from '../../../src/renderer/src/features/settings/HostProviders'
@@ -126,7 +126,12 @@ it('signs Claude Code in with a pasted code, says so when the code is refused, a
   await waitFor(() => expect(field).toHaveFocus())
   expect(within(dialog).getByText('Opened claude.com in your browser.')).toBeInTheDocument()
   expect(within(dialog).getByRole('button', { name: 'Finish sign-in' })).toBeDisabled()
-  await user.type(field, 'abc#def{Enter}')
+  await user.type(field, 'abc#def')
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    fireEvent.keyDown(field, { key: 'Enter', ...composition })
+    expect(signIn).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'code' }))
+  }
+  await user.keyboard('{Enter}')
   expect(signIn).toHaveBeenCalledWith({ type: 'code', id: HOST, signInId: SIGN_IN, code: 'abc#def' })
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('Claude Code did not accept that code, so forge is still not signed in. Open the sign-in page again for a new code.')
   const again = within(dialog).getByRole('button', { name: 'Try again' })

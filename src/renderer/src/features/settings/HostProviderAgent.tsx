@@ -4,7 +4,7 @@ import { PROVIDER_LABELS, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderJobCase } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
-import { HostsModal } from './HostDialog'
+import { HostsModal } from './HostsModal'
 import { SetupModelSelect } from './HostSetupView'
 
 const clean = (failure: unknown, fallback: string): string =>

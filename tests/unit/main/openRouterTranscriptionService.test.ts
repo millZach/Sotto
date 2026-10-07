@@ -75,7 +75,7 @@ describe('OpenRouter transcription', () => {
     },
   )
 
-  it.each([429, 500, 503])('retries HTTP %i once', async (status) => {
+  it.each([500, 503])('retries HTTP %i once', async (status) => {
     const { service, fetchFn } = setup()
     fetchFn.mockResolvedValueOnce(new Response(null, { status }))
     expect(await service.transcribe(request)).toEqual({ ok: true, text: 'Hello Sotto.' })
@@ -198,10 +198,144 @@ describe('OpenRouter transcription', () => {
   })
 
   it('computes the shared deadline from duration with bounds', () => {
-    expect(transcriptionTimeoutMs(0)).toBe(8_000)
-    expect(transcriptionTimeoutMs(2)).toBe(8_600)
-    expect(transcriptionTimeoutMs(4.4)).toBe(9_320)
+    expect(transcriptionTimeoutMs(0)).toBe(15_000)
+    expect(transcriptionTimeoutMs(9)).toBe(15_000)
+    expect(transcriptionTimeoutMs(30)).toBe(17_000)
     expect(transcriptionTimeoutMs(300)).toBe(30_000)
+  })
+})
+
+describe('rate-limited transcription', () => {
+  // OpenRouter's answer when Azure, the provider behind the model, turns a request away.
+  const providerLimited = (retryAfter: string | null = '1') => new Response(
+    JSON.stringify({ error: { message: 'Provider returned 429', code: 429, metadata: { retry_after_seconds: 1, headers: { 'Retry-After': '1' } } } }),
+    { status: 429, headers: retryAfter === null ? {} : { 'Retry-After': retryAfter } },
+  )
+
+  function limited(responses: Response[], patch: { timeoutMs?: number; random?: number } = {}) {
+    const fetchFn = vi.fn<typeof fetch>()
+    for (const response of responses) fetchFn.mockResolvedValueOnce(response)
+    fetchFn.mockResolvedValue(Response.json({ text: 'Back again.' }))
+    const waits: number[] = []
+    const onFailure = vi.fn()
+    const onRecovered = vi.fn()
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
+      fetchFn,
+      onFailure,
+      onRecovered,
+      // The waits are recorded rather than slept, so the backoff itself is the assertion.
+      sleep: async (milliseconds) => { waits.push(milliseconds) },
+      random: () => patch.random ?? 0,
+    })
+    return { service, fetchFn, waits, onFailure, onRecovered, request: { ...request, timeoutMs: patch.timeoutMs ?? 15_000 } }
+  }
+
+  it('waits out a provider rate limit for longer each time, then transcribes', async () => {
+    const run = limited([providerLimited(), providerLimited()])
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: true, text: 'Back again.' })
+    expect(run.fetchFn).toHaveBeenCalledTimes(3)
+    expect(run.waits).toEqual([1_000, 2_000])
+    expect(run.onFailure).not.toHaveBeenCalled()
+    expect(run.onRecovered).toHaveBeenCalledWith(expect.objectContaining({ recovered: true, rateLimited: 2, attempts: 3, limitedBy: 'provider' }))
+  })
+
+  it('waits at least as long as Retry-After asks', async () => {
+    const run = limited([providerLimited('3')])
+    await run.service.transcribe(run.request)
+    expect(run.waits).toEqual([3_000])
+  })
+
+  it('reads the wait from the answer when the header is missing', async () => {
+    const answer = new Response(JSON.stringify({ error: { message: 'Provider returned 429', metadata: { retry_after_seconds: 2.5 } } }), { status: 429 })
+    const run = limited([answer])
+    await run.service.transcribe(run.request)
+    expect(run.waits).toEqual([2_500])
+  })
+
+  it('adds jitter so the parts of one dictation do not retry together', async () => {
+    const run = limited([providerLimited()], { random: 0.5 })
+    await run.service.transcribe(run.request)
+    expect(run.waits).toEqual([1_125])
+  })
+
+  it('gives up after three retries and records who limited it and how long it asked for', async () => {
+    const run = limited([providerLimited(), providerLimited(), providerLimited(), providerLimited()], { timeoutMs: 30_000 })
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.fetchFn).toHaveBeenCalledTimes(4)
+    expect(run.waits).toEqual([1_000, 2_000, 4_000])
+    expect(run.onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'rate-limited', status: 429, attempts: 4, limitedBy: 'provider', retryAfterMs: 1_000,
+    }))
+    expect(JSON.stringify(run.onFailure.mock.calls)).not.toContain('Provider returned')
+    expect(run.onRecovered).not.toHaveBeenCalled()
+  })
+
+  it('tells OpenRouter’s own limit apart from the provider’s', async () => {
+    const own = new Response(JSON.stringify({ error: { code: 429, message: 'Rate limit exceeded' } }), {
+      status: 429, headers: { 'X-RateLimit-Limit': '20', 'X-RateLimit-Remaining': '0' },
+    })
+    const run = limited([own], { timeoutMs: 1_499 })
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.onFailure.mock.calls[0]?.[0]).toMatchObject({ limitedBy: 'openrouter' })
+    expect(run.onFailure.mock.calls[0]?.[0]).not.toHaveProperty('retryAfterMs')
+  })
+
+  it('does not wait out a Retry-After longer than a retry can afford', async () => {
+    const run = limited([providerLimited('20')])
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.fetchFn).toHaveBeenCalledOnce()
+    expect(run.onFailure.mock.calls[0]?.[0]).toMatchObject({ retryAfterMs: 20_000 })
+  })
+
+  it('stops retrying when the wait would leave too little of the deadline', async () => {
+    const run = limited([providerLimited()], { timeoutMs: 2_400 })
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.fetchFn).toHaveBeenCalledOnce()
+    expect(run.waits).toEqual([])
+  })
+
+  it('reports a rate-limited request whose last retry runs out of time as rate limited', async () => {
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerLimited())
+      // The retry is cut off by the request's deadline.
+      .mockRejectedValue(new DOMException('timed out', 'TimeoutError'))
+    const onFailure = vi.fn()
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
+      fetchFn,
+      onFailure,
+      sleep: async () => undefined,
+      random: () => 0,
+    })
+    expect(await service.transcribe({ ...request, timeoutMs: 4_500 })).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'rate-limited', attempts: 2, limitedBy: 'provider' }))
+  })
+
+  it('leaves a rate-limit retry room to upload and transcribe its part', async () => {
+    const run = limited([providerLimited()], { timeoutMs: 3_900 })
+    expect(await run.service.transcribe(run.request)).toEqual({ ok: false, reason: 'rate-limited' })
+    expect(run.fetchFn).toHaveBeenCalledOnce()
+  })
+
+  it('cancels while waiting out a rate limit without another attempt', async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(providerLimited())
+    let waiting!: () => void
+    const waited = new Promise<void>((resolve) => { waiting = resolve })
+    const service = new OpenRouterTranscriptionService({
+      getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
+      fetchFn,
+      sleep: (_milliseconds, signal) => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        waiting()
+      }),
+    })
+    const result = service.transcribe({ ...request, timeoutMs: 15_000 })
+    await waited
+    service.cancel(request.requestId)
+    expect(await result).toEqual({ ok: false, reason: 'cancelled' })
+    expect(fetchFn).toHaveBeenCalledOnce()
   })
 })
 

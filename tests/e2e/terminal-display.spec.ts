@@ -39,7 +39,7 @@ test('native terminal preserves truecolor, contiguous block glyphs and redraws a
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
-      const thread = state.host.threads.find(item => item.id === 'workshop')!
+      const thread = state.host.threads.find(item => item.id === 'workshop' || item.id.endsWith(':workshop'))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path
     })
     expect(folder.startsWith(launched.userData)).toBe(true)
@@ -70,9 +70,11 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
     await input.pressSequentially('node terminal-display.cjs')
     await input.press('Enter')
     const output = () => page.evaluate(async () => {
-      const list = await window.sotto!.terminal!.list({ threadId: 'workshop' })
+      const state = await window.sotto!.agents!.get()
+      const threadId = state.host.threads.find(item => item.id === 'workshop' || item.id.endsWith(':workshop'))!.id
+      const list = await window.sotto!.terminal!.list({ threadId })
       if (!list.ok || !list.value.sessions[0]) return ''
-      const read = await window.sotto!.terminal!.read({ threadId: 'workshop', workspaceId: list.value.workspace.workspaceId, sessionId: list.value.sessions[0].id })
+      const read = await window.sotto!.terminal!.read({ threadId, workspaceId: list.value.workspace.workspaceId, sessionId: list.value.sessions[0].id })
       return read.ok ? read.value.output : ''
     })
     await expect.poll(output).toContain('COLOR_DEPTH=24')

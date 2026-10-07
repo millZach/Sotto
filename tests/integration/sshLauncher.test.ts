@@ -11,6 +11,7 @@ import { AskpassBroker } from '../../src/main/hosts/sshAskpass'
 import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 import { createServer } from 'node:http'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
+import { fakeSystemd } from '../fixtures/fakeSystemd'
 
 const directories: string[] = [], launchers: SshHostLauncher[] = [], hosts: number[] = []
 afterEach(async () => {
@@ -20,14 +21,17 @@ afterEach(async () => {
 })
 const configuration = { target: 'user@forge', installPath: '/opt/sotto release', dataDirectory: '/data/sotto' }
 const SCRIPT_SHA = createHash('sha256').update(LAUNCH_SCRIPT_SOURCE).digest('hex')
-interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; stdinSha256: string; askpass: boolean }
-async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; approvalTimeoutMs?: number; startMs?: number; holdMs?: number; version?: string; platform?: NodeJS.Platform; readyTimeoutMs?: number } = {}) {
+interface Spawned { type: string; args: string[]; tunnel: boolean; resolve: boolean; op?: string; removeBoot?: boolean; stdinSha256: string; askpass: boolean }
+async function fixture(mode = 'started', options: { authenticationTimeoutMs?: number; approvalTimeoutMs?: number; startMs?: number; holdMs?: number; version?: string; platform?: NodeJS.Platform; readyTimeoutMs?: number; env?: NodeJS.ProcessEnv } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'sotto-ssh-')); directories.push(path)
   const record = join(path, 'ssh.jsonl')
   const spawner: SpawnSsh = (_file, args, spawnOptions) => spawn(process.execPath, [resolve('tests/fixtures/fakeSsh.mjs'), ...args],
     { shell: false, windowsHide: true, stdio: [spawnOptions.stdin, 'pipe', 'pipe'],
-      env: { ...spawnOptions.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0), FAKE_SSH_HOLD_MS: String(options.holdMs ?? 200), FAKE_SSH_VERSION: options.version ?? '' } })
-  const launcher = new SshHostLauncher({ spawn: spawner, authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000, readyTimeoutMs: options.readyTimeoutMs ?? 5000,
+      env: { ...spawnOptions.env, ...options.env, FAKE_SSH_MODE: mode, FAKE_SSH_RECORD: record, FAKE_SSH_ROOT: path, FAKE_SSH_START_MS: String(options.startMs ?? 0), FAKE_SSH_HOLD_MS: String(options.holdMs ?? 200), FAKE_SSH_VERSION: options.version ?? '' } })
+  // Ordinary connection tests use production budgets; only deadline tests shorten them deliberately.
+  const launcher = new SshHostLauncher({ spawn: spawner,
+    ...(options.authenticationTimeoutMs !== undefined ? { authenticationTimeoutMs: options.authenticationTimeoutMs } : {}),
+    ...(options.readyTimeoutMs !== undefined ? { readyTimeoutMs: options.readyTimeoutMs } : {}),
     ...(options.approvalTimeoutMs ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.platform ? { platform: options.platform } : {}) })
   launchers.push(launcher)
@@ -40,6 +44,9 @@ async function failure(promise: Promise<unknown>): Promise<SshFailure> {
   return error as SshFailure
 }
 
+// This is a readiness and ownership journey, not a latency assertion. Windows compiles the askpass helper
+// with its own 60-second budget before four real SSH children connect, verify and close. Match the existing
+// password journey's deadline so a loaded runner cannot fail the whole journey at the helper's deadline.
 it.each(['started', 'discovered'])('discovers readiness, verifies the forward and leaves the host running on close: %s', async mode => {
   const { launcher, spawns } = await fixture(mode)
   const status: string[] = []
@@ -56,9 +63,9 @@ it.each(['started', 'discovered'])('discovers readiness, verifies the forward an
   // -G, launch, forward, pairing code: four ssh processes, and only the forward outlives its answer.
   expect(spawned.map(item => item.resolve ? 'resolve' : item.tunnel ? 'forward' : item.op)).toEqual(['resolve', 'launch', 'forward', 'pairing-code'])
   expect(spawned.find(item => item.tunnel)?.args).toContainEqual(expect.stringMatching(/^127\.0\.0\.1:\d+:127\.0\.0\.1:4317$/u))
-})
+}, 150_000)
 it('starts the sign-in deadline after the askpass helper is ready', async () => {
-  const { launcher } = await fixture('started')
+  const { launcher } = await fixture('started', { authenticationTimeoutMs: 10_000 })
   const preparing = Promise.withResolvers<void>(), ready = Promise.withResolvers<void>()
   const start = AskpassBroker.start.bind(AskpassBroker)
   const preparation = vi.spyOn(AskpassBroker, 'start').mockImplementation(async (...args) => {
@@ -84,6 +91,14 @@ it('starts the sign-in deadline after the askpass helper is ready', async () => 
     ready.resolve()
     preparation.mockRestore()
     await connecting.catch(() => undefined)
+  }
+})
+it('says the host refused a revoke only when the launch script answered so, and that SSH failed when no answer came', async () => {
+  for (const [mode, code] of [['revoke-refused', 'revoke-failed'], ['revoke-silent', 'ssh-failed']] as const) {
+    const { launcher } = await fixture(mode)
+    const connection = await launcher.connect(configuration)
+    await expect(connection.revokeClient('22222222-2222-4222-8222-222222222222')).rejects.toMatchObject({ code })
+    await connection.close()
   }
 })
 it('turns multiplexing and any configured remote command off and asks through askpass on every ssh, and pipes the launch script to every control command', async () => {
@@ -121,7 +136,8 @@ it('sets up desktop permissions through the verified SSH host, carrying no crede
   await expect(connection.ensureDesktopAnswers('bad\nclient')).rejects.toThrow('valid paired client')
 })
 it('asks for a password once per connect although three ssh processes sign in, and never records it', async () => {
-  const { launcher, events } = await fixture('password')
+  // Password reuse is the assertion here; allow the same sign-in budget as the real launcher.
+  const { launcher, events } = await fixture('password', { authenticationTimeoutMs: 120_000 })
   const prompts: SshPrompt[] = []
   const promptReady = Promise.withResolvers<SshPrompt>()
   let waiting: SshPrompt | null = null
@@ -140,7 +156,9 @@ it('asks for a password once per connect although three ssh processes sign in, a
     { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }, { type: 'answered', kind: 'password', accepted: true }])
   expect(JSON.stringify(await events())).not.toContain('test-secret')
   expect(() => launcher.answerPrompt(prompts[0]!.id, 'again')).toThrow('no longer waiting')
-})
+  // The test's own deadline matches the sign-in budget above: three real ssh processes sign in one after another,
+  // and a loaded Windows suite has taken longer than the default 15 seconds to finish them.
+}, 150_000)
 it('asks again when an answer is refused, instead of repeating it', async () => {
   const { launcher, events } = await fixture('passphrase')
   const prompts: SshPrompt[] = []
@@ -248,7 +266,7 @@ it('lets OpenSSH 8.4 through', async () => {
 it('gives the host its own time to start however long signing in took', async () => {
   // Sign-in has 4 s and the host 5 s. A password answered after 1 s and a host that then needs 4 s to
   // start take longer than sign-in's budget together, and still connect.
-  const { launcher } = await fixture('password', { authenticationTimeoutMs: 4000, startMs: 4000 })
+  const { launcher } = await fixture('password', { authenticationTimeoutMs: 4000, readyTimeoutMs: 5000, startMs: 4000 })
   const status: string[] = []
   const connection = await launcher.connect(configuration, { onStatus: value => status.push(value),
     onPrompt: prompt => { if (prompt) setTimeout(() => launcher.answerPrompt(prompt.id, 'test-secret'), 1000) } })
@@ -298,6 +316,51 @@ it('keeps a host it started owned across a reconnect, so Stop host still stops i
   expect(second).toMatchObject({ owned: true, hostId: first.hostId })
   expect(await second.stopHost()).toBe(true)
   expect(() => process.kill(descriptor.pid, 0)).toThrow()
+})
+
+// Phone access on a host (ADR-0050): the launch hands back the host's administrative token, so no second sign-in is needed.
+it('keeps the administrative token the launch read for this connection, and never puts it on a command line', async () => {
+  const { launcher, path, spawns } = await fixture('run')
+  const install = join(path, 'opt', 'sotto release', 'host')
+  await mkdir(install, { recursive: true })
+  await writeFile(join(install, '..', 'package.json'), JSON.stringify({ type: 'module' }))
+  await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(install, 'index.js'))
+  const connection = await launcher.connect(configuration)
+  hosts.push((JSON.parse(await readFile(join(path, 'data', 'sotto', 'host-listener.json'), 'utf8')) as { pid: number }).pid)
+  expect(await connection.hostAdminToken()).toBe('remote-only-secret')
+  const spawned = await spawns()
+  expect(spawned.filter(item => item.op).map(item => item.op)).toEqual(['launch'])
+  for (const item of spawned) expect(item.args.join(' ')).not.toContain('remote-only-secret')
+  await connection.stopHost()
+})
+// An admin connection (ADR-0053): the same sign-in and forward, but the launch only finds a running host.
+it('opens an admin connection only to a running host, starts none, and names the Node its launch ran under', async () => {
+  const { launcher, path, spawns } = await fixture('run')
+  const install = join(path, 'opt', 'sotto release', 'host')
+  await mkdir(install, { recursive: true })
+  await writeFile(join(install, '..', 'package.json'), JSON.stringify({ type: 'module' }))
+  await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(install, 'index.js'))
+  const descriptor = join(path, 'data', 'sotto', 'host-listener.json')
+  expect((await failure(launcher.connect(configuration, {}, { start: false }))).code).toBe('host-not-running')
+  await expect(readFile(descriptor, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  // No forward was opened for a host that is not there.
+  expect((await spawns()).some(item => item.tunnel)).toBe(false)
+  // Forget's admin connection asks the same launch to take the boot unit away first; it still fails the same way.
+  expect((await failure(launcher.connect(configuration, {}, { start: false, removeBoot: true }))).code).toBe('host-not-running')
+  expect((await spawns()).filter(item => item.op === 'launch').map(item => item.removeBoot ?? false)).toEqual([false, true])
+  const started = await launcher.connect(configuration)
+  hosts.push((JSON.parse(await readFile(descriptor, 'utf8')) as { pid: number }).pid)
+  expect(started.node).toMatch(/node(\.exe)?$/iu)
+  await started.close()
+  const admin = await launcher.connect(configuration, {}, { start: false })
+  expect(admin).toMatchObject({ owned: true, hostId: started.hostId, node: started.node })
+  expect(await admin.hostAdminToken()).toBe('remote-only-secret')
+  expect(await admin.stopHost()).toBe(true)
+})
+it('says phone access cannot be reached when the launch handed back no token', async () => {
+  const { launcher } = await fixture('started')
+  const connection = await launcher.connect(configuration)
+  expect((await failure(connection.hostAdminToken())).code).toBe('admin-failed')
 })
 
 // The host setup checklist and Tailscale SSH's `check` mode (#429).
@@ -457,3 +520,29 @@ it('ends the ssh of an update step when the update is cancelled, and keeps the c
     expect(await connection.showHostPairingCode()).toMatchObject({ code: 'ABC123' })
   } finally { silent.closeAllConnections(); await new Promise(done => silent.close(done)) }
 })
+
+// Start at boot (ADR-0054) over SSH: the real launch script behind the fake ssh, with fake systemctl and loginctl on the path.
+it.skipIf(process.platform === 'darwin')('reads start at boot when it connects, then installs and removes it over SSH, handing the host over to the unit and back', async () => {
+  const outside = await mkdtemp(join(tmpdir(), 'sotto-ssh-boot-')); directories.push(outside)
+  const systemd = await fakeSystemd(outside, { linger: true })
+  const pathKey = Object.keys(systemd.env).find(key => key.toUpperCase() === 'PATH')!
+  const { launcher, path, spawns } = await fixture('run', { env: { [pathKey]: systemd.env[pathKey], XDG_CONFIG_HOME: systemd.env.XDG_CONFIG_HOME,
+    FAKE_SYSTEMD_STATE: systemd.env.FAKE_SYSTEMD_STATE, FAKE_SYSTEMD_RECORD: systemd.env.FAKE_SYSTEMD_RECORD } })
+  await installedFlat(path)
+  const connection = await launcher.connect(configuration)
+  const detached = await runningHost(path)
+  hosts.push(detached)
+  expect(connection.bootStart).toEqual({ supported: true, installed: false, enabled: false, active: false, linger: true, nodeDrift: false })
+  const installed = await connection.boot({ op: 'boot-install' })
+  hosts.push(...await systemd.spawned())
+  expect(installed).toMatchObject({ type: 'boot-installed', installed: true, stopped: true, bootStart: { installed: true, enabled: true, active: true } })
+  expect(() => process.kill(detached, 0)).toThrow()
+  expect(await connection.boot({ op: 'boot-status' })).toEqual({ type: 'boot-status', bootStart: { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false } })
+  const removed = await connection.boot({ op: 'boot-remove', restart: false })
+  expect(removed).toMatchObject({ type: 'boot-removed', stopped: true, bootStart: { installed: false } })
+  // Each operation was its own ssh, with the launch script on stdin; the install named the host this connection reached.
+  const boots = (await spawns()).filter(item => item.op?.startsWith('boot-'))
+  expect(boots.map(item => item.op)).toEqual(['boot-install', 'boot-status', 'boot-remove'])
+  for (const item of boots) expect(item.stdinSha256).toBe(SCRIPT_SHA)
+  expect(await systemd.calls()).toContain('systemctl disable --now sotto-host')
+}, 150_000)

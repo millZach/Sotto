@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
-import { threadTitleWriter, type ThreadTitleExchange } from '../../../src/main/llm/threadTitle'
+import { firstMessageTitle, firstMessageTitleWriter, threadTitleWriter, type ThreadTitleExchange } from '../../../src/main/llm/threadTitle'
 import { e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentThread } from '../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
@@ -24,6 +24,9 @@ async function coordinator(options: {
   /** Names threads through the provider hosts' own side calls rather than a stand-in writer. */
   providerWriting?: AppSettings
   historyEnabled?: () => boolean
+  logFailure?: (code: string, detail: string) => void
+  /** Gives first-message titles under these settings; absent, no thread is given one. */
+  firstMessageTitles?: AppSettings
 } = {}) {
   const workspace = await workspaceFixture(options.root)
   if (options.root === undefined) removals.push(workspace.remove)
@@ -35,6 +38,8 @@ async function coordinator(options: {
   const control = new AgentControl({
     schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner,
     writeThreadTitle: titles,
+    ...(options.firstMessageTitles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => options.firstMessageTitles!) } : {}),
+    ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}),
   })
   opened.push({ control, stop: workspace.stop })
@@ -66,6 +71,17 @@ afterEach(async () => {
 })
 
 describe('naming a thread from its first exchange', () => {
+  it('logs only a stable failure code when a title request throws private text', async () => {
+    const logFailure = vi.fn()
+    const f = await coordinator({ logFailure, writeThreadTitle: async () => { throw new Error('PRIVATE PROMPT C:\\Users\\Zach\\project') } })
+    const threadId = workshop(f.control).id
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(logFailure).toHaveBeenCalledOnce())
+    expect(logFailure).toHaveBeenCalledWith('thread-title-failed', 'failed')
+    expect(titled(f.control, threadId).title).toBe('Workshop')
+    expect(f.control.get().error).toBeNull()
+  })
+
   it('drains an automatic title request without applying its result after disposal', async () => {
     let finish!: (title: string) => void
     const f = await coordinator({ writeThreadTitle: () => new Promise(resolve => { finish = resolve }) })
@@ -221,5 +237,97 @@ describe('naming a thread from its first exchange', () => {
     await vi.waitFor(() => expect(f.titles).toHaveBeenCalledTimes(1))
     expect(f.adapters.codex.sideWrites).toEqual([])
     expect(titled(f.control, threadId).title).toBe('Workshop')
+  })
+})
+
+describe('naming a thread from its first message while the first turn runs', () => {
+  /** The thread's first message arrives while its turn is still running, as it does the moment it is sent. */
+  function send(adapter: { state: { threads: AgentThread[] }; emit: () => void }, ...texts: string[]): void {
+    const thread = adapter.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = texts.map((text, index) => ({ id: index === 0 ? 'first-prompt' : `steer-${index}`, role: 'user' as const, text, createdAt: at }))
+    thread.status = 'running'
+    adapter.emit()
+  }
+
+  it('takes the opening words of the message, on one line, cut at a word to fit a sidebar row', () => {
+    expect(firstMessageTitle('  Fix the\n  sidebar logos  ')).toBe('Fix the sidebar logos')
+    const long = firstMessageTitle('Fix the sidebar so each thread shows the provider logo instead of the provider name')!
+    expect(long).toBe('Fix the sidebar so each thread shows the provider logo…')
+    expect(long.length).toBeLessThanOrEqual(60)
+    // A word that ends exactly where the ellipsis goes is kept whole.
+    expect(firstMessageTitle(`${'w'.repeat(50)} abcdefgh and more`)).toBe(`${'w'.repeat(50)} abcdefgh…`)
+    expect(firstMessageTitle('x'.repeat(80))).toBe(`${'x'.repeat(59)}…`)
+    // A long run is never cut between the halves of an emoji.
+    expect(firstMessageTitle(`${'x'.repeat(58)}😀yyy`)).toBe(`${'x'.repeat(58)}…`)
+    expect(firstMessageTitle(' \n ')).toBeNull()
+  })
+
+  it('names a thread from its first message as soon as it is sent, then takes the generated name when it lands', async () => {
+    let finish!: (title: string) => void
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: () => new Promise(resolve => { finish = resolve }) })
+    const threadId = workshop(f.control).id
+    send(f.adapters.codex, 'The palette is unreadable in dark mode.')
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titleSource: 'default', titledFromFirstMessage: true }))
+    expect(f.titles).not.toHaveBeenCalled()
+    // The provider still calls its session "Workshop"; the first-message title is not flickered back.
+    f.adapters.codex.emit()
+    await f.control.command({ type: 'refresh' })
+    expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titledFromFirstMessage: true })
+
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    finish('Dark theme contrast')
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
+    expect(titled(f.control, threadId).titledFromFirstMessage).toBeUndefined()
+  })
+
+  it('still names a thread that was steered during its first turn, across a restart', async () => {
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
+    const threadId = workshop(f.control).id
+    // The steer is already beside the first message on the frame that brings it.
+    send(f.adapters.codex, 'The palette is unreadable in dark mode.', 'Light mode too.')
+    await vi.waitFor(() => expect(titled(f.control, threadId)).toMatchObject({ title: 'The palette is unreadable in dark mode.', titledFromFirstMessage: true }))
+
+    const reopened = await coordinator({ root: f.root, firstMessageTitles: DEFAULT_SETTINGS })
+    const thread = reopened.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = [
+      { id: 'first-prompt', role: 'user', text: 'The palette is unreadable in dark mode.', createdAt: at },
+      { id: 'steer-1', role: 'user', text: 'Light mode too.', createdAt: at },
+      { id: 'first-reply', role: 'assistant', text: 'I raised the foreground contrast on both themes.', createdAt: at }]
+    thread.status = 'idle'
+    reopened.adapters.codex.emit()
+    await vi.waitFor(() => expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Dark theme contrast', titleSource: 'generated' }))
+    expect(reopened.titles.mock.calls[0]![1]).toEqual({ prompt: 'The palette is unreadable in dark mode.', reply: 'I raised the foreground contrast on both themes.' })
+  })
+
+  it('leaves an older thread alone: one that already had history when Sotto first saw it', async () => {
+    const before = await coordinator({ writeThreadTitle: async () => null })
+    const threadId = workshop(before.control).id
+    reply(before.adapters.codex)
+    await vi.waitFor(() => expect(before.titles).toHaveBeenCalledOnce())
+
+    const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
+    reply(reopened.adapters.codex)
+    await reopened.control.command({ type: 'refresh' })
+    expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Workshop' })
+    expect(titled(reopened.control, threadId).titledFromFirstMessage).toBeUndefined()
+  })
+
+  it('leaves the stand-in with generated titles off', async () => {
+    const f = await coordinator({ firstMessageTitles: { ...DEFAULT_SETTINGS, threadTitles: false }, writeThreadTitle: async () => null })
+    send(f.adapters.codex, 'The palette is unreadable in dark mode.')
+    reply(f.adapters.codex)
+    await vi.waitFor(() => expect(f.titles).toHaveBeenCalledOnce())
+    expect(titled(f.control, workshop(f.control).id)).toMatchObject({ title: 'Workshop' })
+  })
+
+  it('leaves the stand-in while local history is off', async () => {
+    const f = await coordinator({ firstMessageTitles: DEFAULT_SETTINGS, historyEnabled: () => false })
+    f.setHistory(false)
+    send(f.adapters.codex, 'The palette is unreadable in dark mode.')
+    await f.control.command({ type: 'refresh' })
+    expect(titled(f.control, workshop(f.control).id).title).toBe('Workshop')
   })
 })

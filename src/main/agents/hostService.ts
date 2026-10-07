@@ -1,12 +1,39 @@
 import { userInfo } from 'node:os'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
+import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
+import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
+import type { HostThreadToolReads } from './threadToolReads'
+import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import { REMOTE_PERMISSION_DENIED } from './authority'
+
+type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
+const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
+  'stale-question': { code: 'stale_request', message: 'The original question changed or is no longer pending. Your saved answer is kept.' },
+  'provider-disconnected': { code: 'unavailable', message: 'Reconnect the original provider before checking this answer.' },
+  forbidden: { code: 'forbidden', message: `${REMOTE_PERMISSION_DENIED} Your saved answer is kept.` },
+  unsupported: { code: 'invalid_request', message: 'Update this host before checking an unconfirmed answer.' },
+  'answer-in-progress': { code: 'busy', message: 'This answer is still being sent. Wait for it to finish before checking it again. Your saved answer is kept.' },
+  'answer-changed': { code: 'stale_request', message: 'Another answer started during this check. Check again. Your saved answer is kept.' },
+}
+
+/** Only these host-owned refusals may cross the socket as answer Check guidance. Provider errors remain private. */
+export class RequestAnswerCheckRefusal extends Error {
+  readonly hostCode: HostErrorCode
+  constructor(reason: RequestAnswerCheckRefusalReason) {
+    const refusal = requestAnswerCheckRefusals[reason]
+    super(refusal.message)
+    this.hostCode = refusal.code
+  }
+}
 
 /**
  * Who is speaking to the host. The desktop window on this machine is `ipc`; a paired remote client
@@ -20,6 +47,7 @@ export interface ClientIdentity {
   readonly clientId: string
   readonly user: string
   readonly transport: 'ipc' | 'socket'
+  readonly selectedThreadId?: string | null
 }
 
 /**
@@ -30,6 +58,10 @@ export interface ClientIdentity {
  * rewrite. Threads are addressed by Sotto thread ID either way (ADR-0002).
  */
 export interface HostService {
+  /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
+  readonly supportsAtomicSend?: boolean
+  /** Stable draft IDs, exact recovery revision guards and private socket save outcomes. */
+  readonly supportsDraftRevisions?: boolean
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -40,7 +72,10 @@ export interface HostService {
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
    * error is its own command outcome; it is independent of the published shell's shared error. */
-  command(command: AgentCommand, client: ClientIdentity): Promise<AgentState>
+  command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
+  requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
+  /** A user's explicit native read of this exact answer, never a send or a background receipt read. */
+  checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -55,6 +90,23 @@ export interface HostService {
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
   /** One folder's subfolders on this host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
+  /** A folder's entries in a thread's working copy, for Files (ADR-0025, October 5 amendment). */
+  threadFiles?(request: FileListRequest): Promise<FilesResult<FileListing>>
+  /** One file's preview from a thread's working copy, for Files. */
+  threadFilePreview?(request: FileRequest): Promise<FilesResult<FilePreview>>
+  /** A thread's changed files as Git's status lists them, for Changes. */
+  gitChanges?(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
+  /** A thread's Working tree or Branch changes comparison, for Changes. */
+  gitReview?(request: GitReviewRequest): Promise<ToolsResult<GitReview>>
+  /** A page of a thread's agents, for Agents. */
+  subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
+  /** One agent's assignments, for Agents. */
+  subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
+}
+
+export interface RequestAnswerRecovery {
+  uncertainRequestIds: string[]
+  completed: { requestId: string; questionsDigest: string; decisionId?: string }[]
 }
 
 /** The part of the event store a client is allowed to read through the host. */
@@ -90,7 +142,9 @@ export interface LocalHostControl {
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
-  commandShell(command: AgentCommand, client?: ClientIdentity): Promise<AgentState>
+  commandShell(command: AgentCommand, client?: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
+  requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
+  checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
@@ -100,6 +154,8 @@ export interface LocalHostControl {
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, for the Pull request surface and its dialogs (ADR-0027). */
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  /** The threads some client shows now, for the finished-unread mark (ADR-0046); true when a mark was cleared. */
+  showThreads?(threadIds: readonly string[]): boolean
 }
 
 /**
@@ -108,13 +164,24 @@ export interface LocalHostControl {
  * boundary is the same one a socket would cross.
  */
 export class LocalHostService implements HostService {
+  readonly supportsAtomicSend = true
+  readonly supportsDraftRevisions = true
   private readonly observations = new Map<string, string[]>()
+  /**
+   * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
+   * thread that finishes behind another app, minimised or hidden to the tray is finished unread. A host with no window
+   * to ask leaves it true, and a host without a screen has no window client at all.
+   */
+  private windowFocused = true
   private readonly control: LocalHostControl
   private readonly eventSource: ThreadEventSource | undefined
+  private readonly tools: HostThreadToolReads | undefined
 
-  constructor(options: { control: LocalHostControl; events?: ThreadEventSource }) {
+  /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
+  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads }) {
     this.control = options.control
     this.eventSource = options.events
+    this.tools = options.tools
   }
 
   /** Empty when no event source is wired: the window reads history through the thread detail today. */
@@ -126,6 +193,10 @@ export class LocalHostService implements HostService {
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
+  async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
+    if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
+    await this.control.checkRequestAnswer(target, client)
+  }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
@@ -148,12 +219,36 @@ export class LocalHostService implements HostService {
   // The folder browser reads this machine, not the coordinator, so it goes straight to the filesystem
   // rather than through `LocalHostControl`.
   hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> { return listHostFolders(request) }
-  command(command: AgentCommand, client: ClientIdentity): Promise<AgentState> {
-    if (command.type === 'observe-threads') {
-      if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
-      else this.observations.delete(client.clientId)
-      command = { type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }
-    }
-    return this.control.commandShell(command, client)
+  requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
+    return this.control.requestAnswerRecovery?.(threadId, providerId) ?? { uncertainRequestIds: [], completed: [] }
+  }
+  // A thread's Files, Changes and Agents, read as the window's own IPC reads them, with the same bounds.
+  async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return this.reads().threadFiles(request) }
+  async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return this.reads().threadFilePreview(request) }
+  async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return this.reads().gitChanges(request) }
+  async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return this.reads().gitReview(request) }
+  async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.reads().subagentPage(request) }
+  async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.reads().subagentAssignments(request) }
+  private reads(): HostThreadToolReads {
+    if (!this.tools) throw new Error('Files, Changes and Agents are unavailable on this host.')
+    return this.tools
+  }
+  async command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
+    if (command.type !== 'observe-threads') return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
+    if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
+    else this.observations.delete(client.clientId)
+    // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
+    const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
+    return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
+  }
+  /** Main reports the window's focus as it moves; gaining it shows the window's panes again, which reads their finish. */
+  setWindowFocused(focused: boolean): void {
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    this.control.showThreads?.(this.shownThreads())
+  }
+  /** The threads some client shows: every client's observed threads, the window's only while it has the focus. */
+  private shownThreads(): string[] {
+    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? [] : ids))]
   }
 }

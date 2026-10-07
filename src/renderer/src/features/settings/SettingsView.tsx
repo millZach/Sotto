@@ -2,7 +2,7 @@ import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { useRevisionDraft } from './useRevisionDraft'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, AudioLines, ChevronRight, Command, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
+import { ArrowUpRight, AudioLines, ChevronRight, Cloud, Command, GitBranch, Mic, Palette, Server, Settings2, Smartphone, Sparkles, Workflow } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -25,6 +25,7 @@ import type {
 import { WORKTREE_CLEANUP_DAYS } from '../../../../shared/settings'
 import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { Button } from '../../components/Button'
+import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
@@ -39,16 +40,19 @@ import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
+import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
-  BrowserMicrophoneTest,
+  useAudioInputDevices,
+  type MediaDevicesAdapter,
+} from '../../audio/useAudioInputDevices'
+import {
+  WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
 } from '../onboarding/microphoneTest'
-
-type MediaDevicesAdapter = Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
 
 export interface SettingsViewProps {
   readonly openRouterKeyMigrationFailed?: boolean
@@ -83,6 +87,7 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-providers', label: 'Providers', icon: Command },
   { id: 'settings-hosts', label: 'Hosts', icon: Server },
   { id: 'settings-phones', label: 'Phones', icon: Smartphone },
+  { id: 'settings-cloud-iphone', label: 'Cloud iPhone', icon: Cloud },
   { id: 'settings-agents', label: 'Agents', icon: Workflow },
   { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
@@ -138,7 +143,7 @@ export function SettingsView({
   statusText,
   updateStatus,
   mediaDevices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
-  createMicrophoneTest = () => new BrowserMicrophoneTest(),
+  createMicrophoneTest = () => new WorkletMicrophoneTest(),
   onUpdateSettings,
   onNotice,
   onReplaceHotkey,
@@ -150,13 +155,18 @@ export function SettingsView({
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
-  const [microphones, setMicrophones] = useState<readonly MediaDeviceInfo[]>([])
+  const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
+  const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
+  if (settings.microphoneId !== savedMicrophoneId) {
+    setSavedMicrophoneId(settings.microphoneId)
+    setMicrophoneId(settings.microphoneId)
+  }
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState | 'closed'>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const microphonePeakRef = useRef(0)
   const microphoneTestRef = useRef<MicrophoneTestController | null>(null)
   const microphoneTestGeneration = useRef(0)
-  const [deviceState, setDeviceState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
   const [pasteDelayError, setPasteDelayError] = useState<string | undefined>()
   const [successDurationError, setSuccessDurationError] = useState<string | undefined>()
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
@@ -171,44 +181,12 @@ export function SettingsView({
   const [resetOpen, setResetOpen] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const saveSequenceRef = useRef(0)
+  const microphoneSaveRef = useRef(0)
   const motionSequenceRef = useRef(0)
   const settingsRef = useRef(settings)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   settingsRef.current = settings
-
-  useEffect(() => {
-    if (mediaDevices === undefined) {
-      setDeviceState('error')
-      return
-    }
-    let current = true
-    let refreshVersion = 0
-    const refresh = async (): Promise<void> => {
-      const version = ++refreshVersion
-      try {
-        const devices = await mediaDevices.enumerateDevices()
-        if (!current || version !== refreshVersion) return
-        setMicrophones(devices.filter((candidate) => candidate.kind === 'audioinput'))
-        setDeviceState('ready')
-      } catch {
-        if (current && version === refreshVersion) setDeviceState('error')
-      }
-    }
-    const onDeviceChange = (): void => { void refresh() }
-    void refresh()
-    try {
-      mediaDevices.addEventListener('devicechange', onDeviceChange)
-    } catch {
-      // Enumeration still works when device-change observation is unavailable.
-    }
-    return () => {
-      current = false
-      try { mediaDevices.removeEventListener('devicechange', onDeviceChange) } catch {
-        // Enumeration remains disposable even on older media-device implementations.
-      }
-    }
-  }, [mediaDevices])
 
   const save = useCallback(async (patch: SettingsPatch, successText = 'Setting saved.'): Promise<boolean> => {
     const sequence = ++saveSequenceRef.current
@@ -258,7 +236,6 @@ export function SettingsView({
    */
   const runMicrophoneTest = async (): Promise<void> => {
     const generation = ++microphoneTestGeneration.current
-    const selectedDeviceId = settingsRef.current.microphoneId ?? undefined
     const previous = microphoneTestRef.current
     microphoneTestRef.current = null
     setMicrophoneLevel(0)
@@ -272,6 +249,7 @@ export function SettingsView({
       return
     }
     microphoneTestRef.current = controller
+    const selectedDeviceId = microphoneId ?? undefined
     const outcome = await controller.start((level) => {
       if (microphoneTestRef.current !== controller) return
       const safeLevel = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
@@ -460,7 +438,15 @@ export function SettingsView({
                 <div className="settings-section__heading"><h2>Dictation</h2><p>Microphone & recording</p></div>
                 <div className="settings-rows">
                   <Field label="Microphone" {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}>
-                    <Select value={settings.microphoneId ?? ''} onChange={(event) => void save({ microphoneId: event.currentTarget.value || null })}>
+                    <Select value={microphoneId ?? ''} onChange={(event) => {
+                      const next = event.currentTarget.value || null
+                      const sequence = ++microphoneSaveRef.current
+                      setMicrophoneId(next)
+                      void save({ microphoneId: next }).then((saved) => {
+                        // The notice says the previous setting is still active; show it.
+                        if (!saved && sequence === microphoneSaveRef.current) setMicrophoneId(settingsRef.current.microphoneId)
+                      })
+                    }}>
                       <option value="">{copy.settingsMicrophoneDefaultOption}</option>
                       {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
                       {microphones.map((microphone, index) => <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${index + 1}`}</option>)}
@@ -469,13 +455,13 @@ export function SettingsView({
                   <Field label="Microphone test" description="Check that Sotto can hear you. Access is asked for only while the test runs.">
                     <div className="settings-microphone-test" data-state={microphoneState}>
                       {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
-                      <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" />
+                      <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
                       <p role="status">
                         {microphoneState === 'ready' ? 'Listening. Say something.' : null}
                         {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_TEST_HEARD_THRESHOLD ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
                         {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
                         {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
-                        {microphoneState === 'denied' ? copy.settingsMicrophoneUnavailable : null}
+                        {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}
                         {microphoneState === 'missing' ? !microphoneKnown && microphones.length > 0 ? 'The chosen microphone is not connected. Plug it in or choose another.' : 'No microphone was found.' : null}
                         {microphoneState === 'error' ? 'The microphone test could not start.' : null}
                       </p>
@@ -486,6 +472,7 @@ export function SettingsView({
                       >
                         {microphoneState === 'ready' ? 'Stop test' : microphoneState === 'closed' ? 'Test again' : 'Test microphone'}
                       </Button>
+                      {microphoneState === 'denied' ? <OpenSystemSettingsButton platform={platform} pane="microphone" /> : null}
                     </div>
                   </Field>
                   <div className="settings-input-action">
@@ -537,7 +524,7 @@ export function SettingsView({
                     <p className="settings-disclosure" role="status">{dictionaryPasteCut ? 'The pasted text was cut to fit the 4,000-character limit.' : ''}</p>
 
                   </div>
-                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Ask a thread's own model to name the thread from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
+                  <Toggle label="Generated thread titles" checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description="Name a new thread from the opening words of its first message as soon as you send it, then ask the thread's own model to name it from its first exchange, and a new worktree branch from its first prompt, only while local history is kept. Names you choose are never replaced." />
                   <Toggle label="Generated commit messages" checked={settings.commitMessages} onCheckedChange={(checked) => void save({ commitMessages: checked })} description="When the commit dialog's message is left empty, ask the thread's own model to write it in the Commit and pull request style chosen under Git. It is sent the staged diff, the staged file names, the repository's last twenty commit subjects, its AGENTS.md, and your custom instructions when that style is chosen. Off, the commit takes the subject “Update project files”." />
                   <Toggle label="Generated pull request text" checked={settings.pullRequestText} onCheckedChange={(checked) => void save({ pullRequestText: checked })} description="Ask the thread's own model to write a pull request's title and body when a Git action creates one, in the Commit and pull request style chosen under Git. It is sent the branch's commit subjects and a capped diff against the base, and your custom instructions when that style is chosen; a Git action also sends the changed files, and the repository's pull request template when Sotto finds one and Follow pull request templates is on." />
 
@@ -550,6 +537,9 @@ export function SettingsView({
 
               <Card className="settings-section" id="settings-phones" {...panelProps('settings-phones')}><div className="settings-section__heading"><h2>Phones</h2><p>Sotto on your iPhone, reaching this computer</p></div><PhonesSettings phoneAccess={settings.phoneAccess} phoneAccessName={settings.phoneAccessName} onUpdateSettings={onUpdateSettings}
                 onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /></Card>
+
+              <Card className="settings-section" id="settings-cloud-iphone" {...panelProps('settings-cloud-iphone')}><div className="settings-section__heading"><h2>Cloud iPhone</h2><p>Native iOS builds on a run.cloud simulator</p></div>
+                <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>{settings.voiceCoordinatorEnabled ? 'Reasoning, voice, new threads & projects' : 'Reasoning, new threads & projects'}</p></div><AgentSetupFields /></Card>
 
@@ -571,8 +561,8 @@ export function SettingsView({
 
                   <Field label="Reduced motion" description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">Follow system</option><option value="on">Reduce motion</option></Select></Field>
                   <Field label="Web links in threads" description="Where a link in a thread opens when you click it. Right-click a link, or press Shift+F10, to choose for that link."><SegmentedControl label="Web links in threads" value={settings.webLinkDestination} onChange={value => void save({ webLinkDestination: value as AppSettings['webLinkDestination'] })} options={[{ value: 'external', label: 'System browser' }, { value: 'embedded', label: 'Sotto browser' }]} /></Field>
-                  <Toggle label="Show the browser when an agent opens a page" checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description="When an agent opens a page, its thread's browser player opens over the thread. When off, the player stays closed and Tools > Browser still shows the work." />
-                  <Toggle label="Let agents use the browser without asking" checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description="Agents can open pages, click and type in Sotto's browser without asking first, including on sites you are signed in to there. Stop it for one thread in Tools > Browser." />
+                  <Toggle label="Show the browser when an agent opens a page" checked={settings.showBrowserPreviews} onCheckedChange={checked => void save({ showBrowserPreviews: checked })} description="When an agent opens a page, its thread's browser player opens over the thread, and the test iPhone does the same when an agent uses it. When off, both stay closed and Tools still shows the work." />
+                  <Toggle label="Let agents use the browser without asking" checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description="Agents can open pages, click and type in Sotto's browser without asking first. They can see every page in their thread's browser, including pages you open and sites you are signed in to there. Stop sharing one page, or stop it for one thread, in Tools > Browser." />
                   <Field label="Replies in threads" description="Stream a reply word by word as the agent writes it, or show it once it is finished. Commands and tool calls always appear as they run."><SegmentedControl label="Replies in threads" value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: 'As written' }, { value: 'complete', label: 'When finished' }]} /></Field>
                   <Field label="New threads work in" description="Project defaults can override this. Existing threads keep their working folder."><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">Project folder</option><option value="independent">New worktree</option></Select></Field>
                   <Field label="Remove idle worktrees after" description="A thread's own worktree folder goes when the thread has been idle this long. The branch stays and sending puts the folder back. Only a folder with no uncommitted changes and nothing but installed dependencies in its ignored files is removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void save({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
@@ -583,10 +573,14 @@ export function SettingsView({
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
-                    setNotice(result?.enabled === checked ? { text: 'Startup setting saved.', error: false } : { text: copy.settingsStartupFailureNotice, error: true })
+                    setNotice(result?.enabled !== checked
+                      ? { text: copy.settingsStartupFailureNotice, error: true }
+                      : result.approvalRequired === true
+                        ? { text: 'Sotto starts at login once you allow it in System Settings > General > Login Items.', error: false }
+                        : { text: 'Startup setting saved.', error: false })
                   }} />
                   <Toggle label="Start minimized" checked={settings.startMinimized} onCheckedChange={(checked) => void save({ startMinimized: checked })} description={copy.settingsStartMinimizedDescription} />
-                  <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse." />
+                  <Toggle label="Keep local history" checked={settings.historyEnabled} onCheckedChange={(checked) => void save({ historyEnabled: checked })} description="Store transcript text locally for search and reuse. Turning this off also deletes saved checkpoints at once." />
                   <Field label="History retention" description="Maximum saved entries when history is enabled."><Select disabled={!settings.historyEnabled} value={String(settings.historyRetention)} onChange={(event) => { const value = event.currentTarget.value; void save({ historyRetention: value === 'unlimited' ? 'unlimited' : Number(value) as HistoryRetention }) }}><option value="25">25 entries</option><option value="100">100 entries</option><option value="500">500 entries</option><option value="unlimited">Unlimited</option></Select></Field>
                 </div>
                 <div className="settings-updates" id="settings-updates">

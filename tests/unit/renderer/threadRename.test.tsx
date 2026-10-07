@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
@@ -36,6 +36,7 @@ describe('renaming a thread from the sidebar row', () => {
     fireEvent.keyDown(field, { key: 'Enter' })
     expect(renames(live)).toEqual([{ type: 'rename-thread', threadId: 'weekly-note', title: 'Friday wrap' }])
     expect(screen.queryByRole('textbox', { name: 'Rename Weekly note' })).toBeNull()
+    expect(within(row('Weekly note')).getByRole('button', { name: 'Rename Weekly note' })).toHaveFocus()
   })
 
   it('cancels with Escape, leaving the thread and its name alone', () => {
@@ -47,6 +48,7 @@ describe('renaming a thread from the sidebar row', () => {
     expect(renames(live)).toEqual([])
     expect(screen.queryByRole('textbox', { name: 'Rename Weekly note' })).toBeNull()
     expect(within(row('Weekly note')).getByRole('button', { name: 'Weekly note' })).toBeInTheDocument()
+    expect(within(row('Weekly note')).getByRole('button', { name: 'Rename Weekly note' })).toHaveFocus()
   })
 
   it('refuses an empty or whitespace-only name and keeps the editor open', () => {
@@ -62,6 +64,16 @@ describe('renaming a thread from the sidebar row', () => {
     expect(field).not.toHaveAttribute('aria-invalid')
     fireEvent.keyDown(field, { key: 'Enter' })
     expect(renames(live)).toEqual([{ type: 'rename-thread', threadId: 'weekly-note', title: 'Friday wrap' }])
+  })
+
+  it('keeps focus where the user moves it when leaving the editor', () => {
+    const live = mount()
+    fireEvent.click(within(row('Weekly note')).getByRole('button', { name: 'Rename Weekly note' }))
+    const destination = screen.getByRole('button', { name: 'Visual gate flake' })
+    act(() => destination.focus())
+    expect(screen.queryByRole('textbox', { name: 'Rename Weekly note' })).toBeNull()
+    expect(destination).toHaveFocus()
+    expect(renames(live)).toEqual([])
   })
 
   it('offers no rename for an archived thread', () => {
@@ -84,6 +96,7 @@ describe('renaming a thread from the pane header', () => {
     fireEvent.change(field, { target: { value: 'Flaky visual gate' } })
     fireEvent.keyDown(field, { key: 'Enter' })
     expect(renames(live)).toEqual([{ type: 'rename-thread', threadId: 'visual-gate', title: 'Flaky visual gate' }])
+    expect(within(header()).getByRole('button', { name: 'More actions' })).toHaveFocus()
   })
 
   it('cancels with Escape and refuses a blank name', () => {
@@ -91,6 +104,7 @@ describe('renaming a thread from the pane header', () => {
     fireEvent.click(within(openPaneMenu(header())).getByRole('menuitem', { name: 'Rename' }))
     fireEvent.keyDown(within(header()).getByRole('textbox', { name: 'Rename Visual gate flake' }), { key: 'Escape' })
     expect(within(header()).queryByRole('textbox')).toBeNull()
+    expect(within(header()).getByRole('button', { name: 'More actions' })).toHaveFocus()
     fireEvent.click(within(openPaneMenu(header())).getByRole('menuitem', { name: 'Rename' }))
     const field = within(header()).getByRole('textbox', { name: 'Rename Visual gate flake' })
     fireEvent.change(field, { target: { value: ' ' } })

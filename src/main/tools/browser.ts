@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
+import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
 import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
@@ -10,7 +10,21 @@ import { ToolOperations, fail, parse, workspace } from './common'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
-interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null }
+/** `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user shares it again. */
+interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean }
+/** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
+type MountSlot = 'pane' | 'phone'
+const slotOf = (record: PageRecord): MountSlot => record.page.device ? 'phone' : 'pane'
+/** The actions that reach one element, so the element is recorded when asked and must still be there when run. */
+type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>
+const targeted = (action: BrowserAction): action is TargetedAction => action.type === 'click' || action.type === 'type' || action.type === 'tap' || action.type === 'key'
+/**
+ * How far a swipe must travel. Shorter, Chromium reads it as a tap and clicks what it started on, and a swipe asks
+ * nothing, so a short one would be a tap the browser grant never covered.
+ */
+const SWIPE_MINIMUM = 24
+/** The phone's page never shows a desktop scrollbar; an iPhone draws none. */
+const PHONE_CSS = 'html { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; }'
 export interface BrowserDependencies {
   files: FilesService
   getWindow(): BrowserWindow | null
@@ -35,9 +49,9 @@ export class BrowserService extends ToolOperations {
   private readonly grants = new BrowserGrants(() => this.dependencies.byDefault())
   /** Threads Tools has listed, so a change of the setting reaches a thread with no page yet. */
   private readonly listed = new Set<string>()
-  private mounted: { record: PageRecord; window: BrowserWindow; cleanup(): void } | null = null
-  private mountVersion = 0
-  private desiredPageId: string | null = null
+  private readonly mounted = new Map<MountSlot, { record: PageRecord; window: BrowserWindow; cleanup(): void }>()
+  private readonly mountVersion: Record<MountSlot, number> = { pane: 0, phone: 0 }
+  private readonly desiredPageId: Record<MountSlot, string | null> = { pane: null, phone: null }
   constructor(private readonly dependencies: BrowserDependencies) { super() }
   private publish(record: PageRecord): BrowserPage {
     if (!record.view.webContents.isDestroyed()) {
@@ -57,10 +71,16 @@ export class BrowserService extends ToolOperations {
     record.page.error = message
     this.publish(record)
   }
-  private browserSession(workspaceId: string): Session {
-    const existing = this.sessions.get(workspaceId)
+  /**
+   * One session per working copy for ordinary pages. The test iPhone has a session of its own per thread: it keeps
+   * its own storage, as a separate device does, and Chromium keeps page zoom per origin within a session, so the
+   * phone's zoom (which fits its 393-pixel page into the player) never reaches a page in Tools.
+   */
+  private browserSession(workspace: FileWorkspace, phone: boolean): Session {
+    const key = phone ? `phone:${workspace.threadId}:${workspace.workspaceId}` : workspace.workspaceId
+    const existing = this.sessions.get(key)
     if (existing) return existing
-    const isolated = session.fromPartition(`sotto-browser-${this.namespace}-${workspaceId}`)
+    const isolated = session.fromPartition(phone ? `sotto-phone-${this.namespace}-${randomUUID()}` : `sotto-browser-${this.namespace}-${workspace.workspaceId}`)
     blockSpellcheckDictionaryDownloads(isolated)
     isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
     isolated.setPermissionCheckHandler(() => false)
@@ -76,7 +96,7 @@ export class BrowserService extends ToolOperations {
       try { allowed = ['http:', 'https:', 'ws:', 'wss:', 'data:', 'blob:'].includes(new URL(details.url).protocol) } catch { /* Reject malformed URLs. */ }
       callback({ cancel: !allowed })
     })
-    this.sessions.set(workspaceId, isolated)
+    this.sessions.set(key, isolated)
     return isolated
   }
   /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
@@ -116,26 +136,65 @@ export class BrowserService extends ToolOperations {
     for (const threadId of threads) {
       const grant = this.grantView(threadId)
       this.dependencies.emit({ type: 'browser-grant', threadId, grant })
-      // Turning the setting on answers what was already waiting, as "Allow this thread to use the browser" does.
-      if (grant) void this.performWaitingActions(threadId).catch(() => undefined)
+      // Turning the setting on shares the thread's pages and answers what was already waiting, as "Allow this thread to use the browser" does.
+      if (grant) { this.shareThreadPages(threadId); void this.performWaitingActions(threadId).catch(() => undefined) }
     }
+  }
+  /**
+   * While its thread has a browser grant, a page is shared with that thread the moment it opens, whoever opened it,
+   * unless the user made it private (ADR-0029, October 5 amendment). Returns whether this made the page shared.
+   */
+  private shareByGrant(record: PageRecord): boolean {
+    if (record.initial || record.madePrivate || record.page.sharedOrigin || !this.grants.active(record.page.workspace.threadId)) return false
+    const url = safeBrowserUrl(record.page.url)
+    if (!url) return false
+    record.page.sharedOrigin = new URL(url).origin
+    record.automation.observe()
+    return true
+  }
+  /** A grant was given: the thread's pages the user has not made private are shared now, not only the next ones. */
+  private shareThreadPages(threadId: string): void {
+    for (const record of this.pages.values()) if (record.page.workspace.threadId === threadId && this.shareByGrant(record)) this.publish(record)
+  }
+  /**
+   * The page is moving to `url`. While its thread has a browser grant, a shared page stays shared as it goes to
+   * another site, a server's redirect included. Without one, sharing ends at the origin it was given for.
+   */
+  private followSharing(record: PageRecord, url: string): void {
+    const origin = new URL(url).origin
+    if (!record.page.sharedOrigin || record.page.sharedOrigin === origin) return
+    if (this.grants.active(record.page.workspace.threadId)) record.page.sharedOrigin = origin
+    else this.revoke(record)
   }
   create(payload: unknown) { return this.run(async () => this.createPage(parse(browserCreateSchema, payload))) }
   private async createPage(request: ReturnType<typeof browserCreateSchema.parse>, initial = false): Promise<BrowserPage> {
     const owner = await this.owner(request.threadId, request.workspaceId)
     if (this.disposed) return fail('unavailable', 'Browser is shutting down.')
     if (this.pages.size >= 32) return fail('busy', 'Close a browser page before opening another (32 maximum).')
+    const phone = request.device === 'iphone'
+    if (phone && this.phoneOf(owner)) return fail('busy', 'This thread already has a test iPhone. Open the address on it instead.')
     const view = new WebContentsView({ webPreferences: {
-      session: this.browserSession(owner.workspaceId), contextIsolation: true, sandbox: true,
+      session: this.browserSession(owner, phone), contextIsolation: true, sandbox: true,
       nodeIntegration: false, nodeIntegrationInWorker: false, nodeIntegrationInSubFrames: false,
       webviewTag: false, webSecurity: true, allowRunningInsecureContent: false,
       navigateOnDragDrop: false, safeDialogs: true, backgroundThrottling: true,
       // Deliberately no preload and no Sotto renderer-role arguments.
     } })
-    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 })
-    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record)), initial, selection: null, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null } }
+    // A phone starts at its own size, so a capture before the player ever draws it is already 393 pixels wide.
+    view.setBounds(phone ? { x: 0, y: 0, width: TEST_IPHONE.width, height: TEST_IPHONE.height } : { x: 0, y: 0, width: 1280, height: 800 })
+    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: false, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
     this.pages.set(record.page.id, record)
     const contents = view.webContents
+    if (phone) {
+      contents.setUserAgent(TEST_IPHONE.userAgent)
+      // Each new origin starts at the session's default zoom, so the phone's fit is put back on every document.
+      contents.on('did-navigate', () => { if (!contents.isDestroyed()) contents.setZoomFactor(record.zoom) })
+      contents.on('dom-ready', () => {
+        if (contents.isDestroyed()) return
+        contents.setZoomFactor(record.zoom)
+        void contents.insertCSS(PHONE_CSS).catch(() => undefined)
+      })
+    }
     const blocked = (event: { preventDefault(): void }, url: string): void => {
       if (safeBrowserUrl(url)) return
       event.preventDefault()
@@ -152,22 +211,28 @@ export class BrowserService extends ToolOperations {
       this.issue(record, 'A new-window request was blocked. Use a link destination action or open this page externally.')
       return { action: 'deny' }
     })
-    contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
-      if (!mainFrame || !safeBrowserUrl(url)) return
+    /** The main frame is moving to `url`: what waited on the old page lapses, and its sharing follows or ends. */
+    const moving = (url: string, mainFrame: boolean): boolean => {
+      const safe = safeBrowserUrl(url)
+      if (!mainFrame || !safe) return false
       this.invalidate(record)
       record.generation++
+      this.followSharing(record, safe)
+      record.page.url = safe
+      return true
+    }
+    contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
+      if (!moving(url, mainFrame)) return
       record.automation.clear()
-      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
-      record.page.url = safeBrowserUrl(url)!
       record.page.status = 'loading'; record.page.error = null
       this.publish(record)
     })
+    // A server's redirect is the same navigation going somewhere else. Without this the page kept the address it
+    // started from, never finished loading, and a shared page could not be inspected at the address it reached.
+    contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => { if (moving(url, mainFrame)) this.publish(record) })
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
-      if (!mainFrame || !safeBrowserUrl(url)) return
-      this.invalidate(record)
-      record.generation++
-      if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
-      record.page.url = safeBrowserUrl(url)!; record.page.status = 'ready'
+      if (!moving(url, mainFrame)) return
+      record.page.status = 'ready'
       this.publish(record)
     })
     contents.on('did-finish-load', () => {
@@ -188,14 +253,14 @@ export class BrowserService extends ToolOperations {
       this.issue(record, 'This page is unavailable. Check the address or start its local server, then reload.', true)
     })
     contents.on('render-process-gone', () => this.issue(record, 'This page stopped unexpectedly. Reload to reopen it.', true))
-    if (!initial) this.load(record, request.url)
-    else record.page.error = 'Waiting for you to open and share this page.'
+    if (!initial) { this.load(record, request.url); this.shareByGrant(record) }
+    else record.page.error = BROWSER_WAITING_TO_OPEN
     return this.publish(record)
   }
   private load(record: PageRecord, url: string): void {
     this.invalidate(record)
     record.automation.clear()
-    if (record.page.sharedOrigin && record.page.sharedOrigin !== new URL(url).origin) this.revoke(record)
+    this.followSharing(record, url)
     record.page.url = url; record.page.status = 'loading'; record.page.error = null
     const generation = ++record.generation
     void record.view.webContents.loadURL(url).catch((error: unknown) => {
@@ -209,17 +274,24 @@ export class BrowserService extends ToolOperations {
     if (this.disposed || !this.pages.has(request.pageId) || record.view.webContents.isDestroyed()) return fail('page-unavailable', 'This browser page has closed.')
     return record
   }
+  /** The thread's test iPhone, if it has opened one; a thread has at most one. */
+  private phoneOf(owner: FileWorkspace): PageRecord | undefined {
+    return [...this.pages.values()].find(record => record.page.device === 'iphone' && record.page.workspace.threadId === owner.threadId && record.page.workspace.workspaceId === owner.workspaceId)
+  }
+  private isMounted(record: PageRecord): boolean { return this.mounted.get(slotOf(record))?.record === record }
   navigate(payload: unknown) { return this.run(async () => {
     const request = parse(browserNavigateSchema, payload)
     const record = await this.owned(request)
     record.initial = false
     this.load(record, request.url)
+    // A page the user loads is the user's own now: under the grant it is shared like any other (ADR-0029).
+    this.shareByGrant(record)
     return this.publish(record)
   }) }
   private history(payload: unknown, action: 'back' | 'forward' | 'reload') { return this.run(async () => {
     const record = await this.owned(parse(browserRequestSchema, payload))
     const history = record.view.webContents.navigationHistory
-    if (action === 'reload') { record.initial = false; this.load(record, record.page.url) }
+    if (action === 'reload') { record.initial = false; this.load(record, record.page.url); this.shareByGrant(record) }
     else if (action === 'back' && history.canGoBack()) history.goBack()
     else if (action === 'forward' && history.canGoForward()) history.goForward()
     return this.publish(record)
@@ -239,17 +311,20 @@ export class BrowserService extends ToolOperations {
   }) }
   mount(payload: unknown) { return this.run(async () => {
     const request = parse(browserMountSchema, payload)
+    // A page's slot follows from its kind. An unknown page is refused by `owned` below; until then it counts as the pane's.
+    const known = this.pages.get(request.pageId)
+    const slot: MountSlot = known ? slotOf(known) : 'pane'
     // Binding validation does disk IO. Last requested page wins even if earlier IO finishes later.
-    const version = request.bounds !== null ? ++this.mountVersion : this.mountVersion
-    if (request.bounds !== null) this.desiredPageId = request.pageId
-    else if (this.desiredPageId === request.pageId) { this.desiredPageId = null; this.mountVersion++ }
+    const version = request.bounds !== null ? ++this.mountVersion[slot] : this.mountVersion[slot]
+    if (request.bounds !== null) this.desiredPageId[slot] = request.pageId
+    else if (this.desiredPageId[slot] === request.pageId) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     const record = await this.owned(request, request.bounds !== null)
-    if (request.bounds === null) { if (this.mounted?.record === record) this.removeMountedView(); return }
-    if (version !== this.mountVersion) return
+    if (request.bounds === null) { if (this.isMounted(record)) this.removeMountedView(slot); return }
+    if (version !== this.mountVersion[slot]) return
     const window = this.dependencies.getWindow()
     if (!window || window.isDestroyed()) return fail('unavailable', 'The main window is unavailable.')
-    this.removeMountedView()
-    this.desiredPageId = request.pageId
+    this.removeMountedView(slot)
+    this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
     // Detach on host reload/crash so native content cannot obscure a recovered app screen.
@@ -258,28 +333,37 @@ export class BrowserService extends ToolOperations {
     window.webContents.on('destroyed', detach)
     window.on('closed', detach)
     window.on('resize', detach)
-    this.mounted = { record, window, cleanup: () => {
+    this.mounted.set(slot, { record, window, cleanup: () => {
       window.webContents.removeListener('did-start-loading', detach)
       window.webContents.removeListener('render-process-gone', detach)
       window.webContents.removeListener('destroyed', detach)
       window.removeListener('closed', detach)
       window.removeListener('resize', detach)
-    } }
+    } })
     window.contentView.addChildView(record.view)
   }) }
   private setBounds(record: PageRecord, window: BrowserWindow, bounds: BrowserBounds): void {
     const zoom = window.webContents.getZoomFactor()
     const [width = 0, height = 0] = window.getContentSize()
     const x = Math.min(width, Math.round(bounds.x * zoom)), y = Math.min(height, Math.round(bounds.y * zoom))
-    record.view.setBounds({ x, y, width: Math.max(0, Math.min(width - x, Math.round(bounds.width * zoom))), height: Math.max(0, Math.min(height - y, Math.round(bounds.height * zoom))) })
+    const view = { x, y, width: Math.max(0, Math.min(width - x, Math.round(bounds.width * zoom))), height: Math.max(0, Math.min(height - y, Math.round(bounds.height * zoom))) }
+    record.view.setBounds(view)
+    if (!record.page.device) return
+    // The phone's page lays out at 393 CSS pixels however large the player draws it: page zoom, not device
+    // emulation, whose scale moves CDP input away from the point asked for (ADR-0045).
+    record.zoom = Math.max(0.25, view.width / TEST_IPHONE.width)
+    if (!record.view.webContents.isDestroyed()) record.view.webContents.setZoomFactor(record.zoom)
+    record.view.setBorderRadius(Math.round(view.width * 0.12))
   }
   detach(): void {
-    this.mountVersion++
-    this.desiredPageId = null
-    this.removeMountedView()
+    for (const slot of ['pane', 'phone'] as const) {
+      this.mountVersion[slot]++
+      this.desiredPageId[slot] = null
+      this.removeMountedView(slot)
+    }
   }
-  private removeMountedView(): void {
-    const mounted = this.mounted; this.mounted = null
+  private removeMountedView(slot: MountSlot): void {
+    const mounted = this.mounted.get(slot); this.mounted.delete(slot)
     if (!mounted) return
     mounted.cleanup()
     if (!mounted.window.isDestroyed()) {
@@ -317,7 +401,7 @@ export class BrowserService extends ToolOperations {
       const lease: CaptureLease = { count: 1, window, bounds: record.view.getBounds(), throttling: contents.getBackgroundThrottling(), temporary: false }
       this.captureLeases.set(record, lease)
       contents.setBackgroundThrottling(false)
-      if (this.mounted?.record !== record) {
+      if (!this.isMounted(record)) {
         this.parkCapture(record, lease)
       }
     }
@@ -330,7 +414,7 @@ export class BrowserService extends ToolOperations {
       this.captureLeases.delete(record)
       if (!record.view.webContents.isDestroyed()) {
         record.view.webContents.setBackgroundThrottling(lease.throttling)
-        if (this.mounted?.record !== record) {
+        if (!this.isMounted(record)) {
           if (!lease.window.isDestroyed()) lease.window.contentView.removeChildView(record.view)
           record.view.setBounds(lease.bounds)
         }
@@ -345,8 +429,9 @@ export class BrowserService extends ToolOperations {
     this.dependencies.emit({ type: 'closed', ...request })
   }) }
   private destroy(record: PageRecord): Promise<void> {
-    if (this.desiredPageId === record.page.id) { this.desiredPageId = null; this.mountVersion++ }
-    if (this.mounted?.record === record) this.removeMountedView()
+    const slot = slotOf(record)
+    if (this.desiredPageId[slot] === record.page.id) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
+    if (this.isMounted(record)) this.removeMountedView(slot)
     for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && ['working', 'paused'].includes(task.status)) {
       task.status = 'failed'; task.summary = 'This browser page closed.'; task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
     }
@@ -404,7 +489,7 @@ export class BrowserService extends ToolOperations {
       if (!oldest) return fail('busy', 'Finish a browser task before starting another.')
       this.taskRecords.delete(oldest.id)
     }
-    const task: BrowserTask = { id: randomUUID(), threadId: record.page.workspace.threadId, workspaceId: record.page.workspace.workspaceId, pageId: record.page.id, status: 'working', description, updatedAt: Date.now(), steps: [], thumbnail: null, summary: null, unchecked: [], pendingAction: null, output: null, evidence: [] }
+    const task: BrowserTask = { id: randomUUID(), threadId: record.page.workspace.threadId, workspaceId: record.page.workspace.workspaceId, pageId: record.page.id, status: 'working', description, updatedAt: Date.now(), steps: [], thumbnail: null, summary: null, unchecked: [], pendingAction: null, output: null, evidence: [], device: record.page.device ?? null }
     this.taskRecords.set(task.id, task)
     return this.publishTask(task)
   }
@@ -422,6 +507,7 @@ export class BrowserService extends ToolOperations {
     const record = await this.owned(request)
     if (request.enabled && record.initial) return fail('blocked', 'Answer the request to open this page first.')
     record.page.sharedOrigin = request.enabled ? new URL(record.page.url).origin : null
+    record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
     if (!request.enabled) {
       record.automation.dispose()
@@ -436,6 +522,7 @@ export class BrowserService extends ToolOperations {
   viewport(payload: unknown) { return this.run(async () => {
     const request = parse(browserViewportSchema, payload)
     const record = await this.owned(request)
+    if (record.page.device) return fail('blocked', 'The test iPhone keeps its own size.')
     if ('reset' in request) {
       await record.automation.resetViewport()
       record.page.viewport = null
@@ -487,24 +574,43 @@ export class BrowserService extends ToolOperations {
     this.shared(record)
     return this.begin(record, request.description)
   }) }
-  agentOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => {
+  agentOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => this.open(parse(browserAgentOpenSchema, payload))) }
+  /**
+   * `iphone_open`: the agent opens a URL on the thread's test iPhone (ADR-0045). A thread has one phone, so a phone
+   * it already has is replaced by the new one, which asks or is granted exactly as a new page is; one with a task
+   * still working or paused on it is left alone.
+   */
+  phoneOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => {
     const request = parse(browserAgentOpenSchema, payload)
+    const owner = await this.owner(request.threadId, request.workspaceId)
+    const existing = this.phoneOf(owner)
+    if (existing) {
+      if ([...this.taskRecords.values()].some(task => task.pageId === existing.page.id && ['working', 'paused'].includes(task.status))) return fail('busy', 'Finish the test iPhone\'s current browser task first.')
+      await this.destroy(existing)
+      this.dependencies.emit({ type: 'closed', threadId: owner.threadId, workspaceId: owner.workspaceId, pageId: existing.page.id })
+    }
+    return this.open({ ...request, device: 'iphone' })
+  }) }
+  private async open(request: ReturnType<typeof browserCreateSchema.parse> & { description: string }): Promise<BrowserAgentResult> {
     const page = await this.createPage(request, true)
     const record = this.pages.get(page.id)!
     const created = this.begin(record, request.description)
     const task = this.taskRecords.get(created.id)!
     return this.requestAction(record, task, { type: 'navigate', url: request.url })
-  }) }
+  }
   private async requestAction(record: PageRecord, task: BrowserTask, action: BrowserAction): Promise<BrowserAgentResult> {
     if (task.pendingAction) return fail('busy', 'A browser action is waiting for the user. Read the task before requesting another action.')
     const generation = record.generation
-    const target = action.type === 'click' || action.type === 'type' ? await record.automation.target(action) : undefined
+    const target = targeted(action) ? await record.automation.target(action) : undefined
     this.working(task)
     if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
     if (!record.initial) this.shared(record)
     // A browser grant answers navigate, click and type exactly as the user's own one-time answer would (ADR-0029).
     if (grantCovers(action.type) && this.grants.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, target, true)
-    const description = action.type === 'navigate' ? `${record.initial ? 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}` : action.type === 'click' ? `Click at ${action.x}, ${action.y} on ${record.page.url}` : action.type === 'type' ? `Type ${JSON.stringify(action.text)} into the focused field on ${record.page.url}` : action.type
+    const where = record.page.device ? `on the test iPhone at ${record.page.url}` : `on ${record.page.url}`
+    const description = action.type === 'navigate' ? `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}`
+      : action.type === 'click' ? `Click at ${action.x}, ${action.y} ${where}` : action.type === 'tap' ? `Tap at ${action.x}, ${action.y} ${where}`
+        : action.type === 'type' ? `Type ${JSON.stringify(action.text)} into the focused field ${where}` : action.type === 'key' ? `Press ${action.key} ${where}` : action.type
     task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000 }
     this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}) })
     return { task: this.publishTask(task), approvalRequired: true }
@@ -515,6 +621,8 @@ export class BrowserService extends ToolOperations {
     const task = this.task(request)
     this.working(task)
     if (request.action.type !== 'navigate' || !record.initial) this.shared(record)
+    if (request.action.type === 'viewport' && record.page.device) return fail('blocked', 'The test iPhone keeps its own size.')
+    if (request.action.type === 'swipe' && Math.hypot(request.action.toX - request.action.x, request.action.toY - request.action.y) < SWIPE_MINIMUM) return fail('blocked', `A swipe must move at least ${SWIPE_MINIMUM} pixels. Use tap to tap.`)
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     if (grantCovers(request.action.type)) return this.requestAction(record, task, request.action)
     if (task.pendingAction) return fail('busy', 'Answer the pending browser action first.')
@@ -543,6 +651,7 @@ export class BrowserService extends ToolOperations {
     if (request.forThread) {
       this.grants.grant(threadId)
       this.dependencies.emit({ type: 'browser-grant', threadId, grant: this.grantView(threadId) })
+      this.shareThreadPages(threadId)
     }
     try { return (await this.perform(record, task, pending.action, scope.initial, scope.target)).task }
     finally { if (request.forThread) await this.performWaitingActions(threadId) }
@@ -576,12 +685,12 @@ export class BrowserService extends ToolOperations {
     }
     try {
       guard()
-      if ((action.type === 'click' || action.type === 'type') && (!approvedTarget || await record.automation.target(action) !== approvedTarget)) fail('blocked', 'The target changed. Inspect the page and request the action again.')
+      if (targeted(action) && (!approvedTarget || await record.automation.target(action) !== approvedTarget)) fail('blocked', 'The target changed. Inspect the page and request the action again.')
       guard()
       let output = '', image: string | undefined
       if (action.type === 'navigate') {
         record.initial = false
-        // Only an explicit Open and share answer, or the browser grant that answer can leave, shares the page.
+        // An agent's new page is shared by its Open and share answer, or by the browser grant that stands for it.
         if (initial) record.page.sharedOrigin = new URL(action.url).origin
         this.load(record, action.url)
         if (record.page.sharedOrigin) record.automation.observe()
@@ -606,7 +715,7 @@ export class BrowserService extends ToolOperations {
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       task.output = output
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? `Entered text in the focused field.${grantNote}` : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output}${grantNote}` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? `Entered text in the focused field.${grantNote}` : action.type === 'key' ? `Pressed ${action.key}.${grantNote}` : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output}${grantNote}` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {

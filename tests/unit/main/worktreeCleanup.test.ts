@@ -80,6 +80,19 @@ describe('worktree cleanup rules', () => {
     expect(host.reclaimed).toEqual(['integrated'])
     expect((await git(r.project, ['rev-parse', ahead.branch!])).trim()).toBe((await git(ahead.path!, ['rev-parse', 'HEAD'])).trim())
   })
+  it('does not reuse a merged answer after auto-settle advances the branch during the sweep', async () => {
+    const r = await repository(), copy = await r.checkout()
+    const tip = (await git(r.project, ['rev-parse', `refs/heads/${copy.branch}`])).trim()
+    const base = fakeHost([thread('a', copy)], r.worktrees)
+    const host = { ...base, setWorkspaceSettled: async () => {
+      await writeFile(join(copy.path!, 'tracked.txt'), 'new work')
+      await git(copy.path!, ['add', '.']); await commit(copy.path!, 'More work')
+    } }
+    const pullRequestMerged = vi.fn(async () => (await git(r.project, ['rev-parse', `refs/heads/${copy.branch}`])).trim() === tip)
+    await new WorktreeCleanup({ host, rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, merged: true }), autoSettleMerged: () => true, pullRequestMerged }).sweep()
+    expect(host.reclaimed).toEqual([])
+    expect(pullRequestMerged).toHaveBeenCalledTimes(2)
+  })
   it('asks GitHub only for the merged rule and skips a folder a rule may not touch', async () => {
     const r = await repository()
     const merged = await r.checkout()
@@ -134,6 +147,7 @@ describe('auto-settle merged threads', () => {
   const trunkGit = vi.fn(async (_cwd: string, args: string[]) => {
     if (args[0] === 'symbolic-ref') return 'origin/trunk\n'
     if (args[0] === 'rev-parse' && args.at(-1) === 'refs/heads/trunk') return 'abc123\n'
+    if (args[0] === 'rev-parse' && args.at(-1)?.endsWith('^{commit}')) return 'fixture-tip\n'
     throw new Error('not in this fixture')
   })
   it('settles an idle thread whose branch merged, once, and leaves the rest where they are', async () => {

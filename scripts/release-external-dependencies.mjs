@@ -113,7 +113,7 @@ export function verifyExternalDependencyInventories(
 // The Linux host currently needs only pure JavaScript zod. Adding a native module requires
 // an explicit platform build/ABI strategy; never copy the desktop's node-pty into this archive.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
-  'node:child_process', 'node:crypto', 'node:fs', 'node:fs/promises', 'node:http',
+  'node:child_process', 'node:crypto', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
   'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises',
   'node:url', 'node:util', 'zod',
 ])

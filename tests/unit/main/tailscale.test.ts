@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { parseServeStatus, parseTailscaleStatus, servePortOwner, serveTarget, tailscaleCandidates, TailscaleCli, type TailscaleRun } from '../../../src/main/phones/tailscale'
+import { parseServeStatus, parseTailscaleStatus, servePortOwner, serveTarget, tailscaleCandidates, TailscaleAccessDenied, TailscaleCli, type TailscaleRun } from '../../../src/main/phones/tailscale'
 
 const running = JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'laptop-russh2j5.tail5728ca.ts.net.', HostName: 'Laptop-RUSSH2J5' } })
 const web = (target: string, extra: Record<string, unknown> = {}) => ({ TCP: { 8443: { HTTPS: true } }, Web: { 'laptop.tail5728ca.ts.net:8443': { Handlers: { '/': { Proxy: target } } } }, ...extra })
@@ -80,6 +80,12 @@ describe('the CLI', () => {
     const stdout = 'Serve is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/serve?node=nXyZ123CNTRL\n'
     const run = vi.fn<TailscaleRun>(async (_executable, _args, options) => { expect(options.stopOn!.test(stdout)).toBe(true); return { code: null, stdout, stderr: '' } })
     expect(await new TailscaleCli(run, ['tailscale']).serve(8443, 41000)).toEqual({ ok: false, reason: 'not-enabled', enableUrl: 'https://login.tailscale.com/f/serve?node=nXyZ123CNTRL' })
+  })
+  it('says Tailscale refused this account, as Linux does until the account is its operator', async () => {
+    const stderr = 'Access denied: serve config denied\n\nUse \'sudo tailscale serve\' or \'sudo tailscale set --operator=$USER\' to run it as you.\n'
+    const cli = new TailscaleCli(async () => ({ code: 1, stdout: '', stderr }), ['tailscale'])
+    expect(await cli.serve(8443, 41000)).toEqual({ ok: false, reason: 'denied' })
+    await expect(cli.serveStatus()).rejects.toBeInstanceOf(TailscaleAccessDenied)
   })
   it('reports any other serve failure as failed', async () => {
     const cli = new TailscaleCli(async () => ({ code: 1, stdout: '', stderr: 'error: something went wrong' }), ['tailscale'])

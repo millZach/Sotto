@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import { ProviderUnavailable } from '../../src/main/agents/providerProblem'
 import { ProviderClients, type RunLike } from '../../src/main/agents/providerClients'
+import { installerDetail, installerOutput } from '../../src/main/agents/installerDetail'
 import type { AgentHostSnapshot, ProviderId } from '../../src/shared/agents'
 
 /**
@@ -61,10 +62,12 @@ export function clientUpdateHost(directory: string, home: string) {
       await wait(700)
       if (id === 'codex' && existsSync(join(directory, 'codex.fail'))) {
         rmSync(join(directory, 'codex.fail'))
-        return { ok: false, detail: 'mise ERROR connection reset by peer', printed: [
+        const said = [
           `mise ERROR Failed to install aqua:openai/codex@${PUBLISHED.codex}`,
           `mise ERROR error sending request for url (https://github.com/openai/codex/releases/download/rust-v${PUBLISHED.codex}/codex-x86_64-unknown-linux-musl.tar.gz)`,
-          'mise ERROR connection reset by peer'].join('\n') }
+          'mise ERROR /Users/John Smith/Library/Application Support/mise/codex failed: exit status 1',
+          String.raw`C:\Users\John Smith\AppData\codex.exe: The process cannot access the file. connection reset by peer`].join('\n')
+        return { ok: false, detail: installerDetail(said)!, printed: installerOutput(said)! }
       }
       if (id !== 'grok') disk[id] = PUBLISHED[id]
       return { ok: true, stdout: '' }

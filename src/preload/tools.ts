@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolTargetSchema, toolsResultSchema } from '../shared/tools'
-import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSnapshotSchema, terminalListingSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
+import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
 import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitPathRequestSchema, gitReviewRequestSchema, gitReviewSchema, gitWatchRequestSchema, gitListingSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
@@ -20,7 +20,7 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
   }
   return {
     terminal: Object.freeze<TerminalBridge>({
-      list: request => call(TERMINAL_CHANNEL + 'list', toolListRequestSchema, terminalListingSchema, request),
+      list: request => call(TERMINAL_CHANNEL + 'list', terminalListRequestSchema, terminalListingSchema, request),
       create: request => call(TERMINAL_CHANNEL + 'create', terminalCreateSchema, terminalSnapshotSchema, request),
       read: request => call(TERMINAL_CHANNEL + 'read', terminalRequestSchema, terminalSnapshotSchema, request),
       write: request => call(TERMINAL_CHANNEL + 'write', terminalWriteSchema, z.undefined(), request),

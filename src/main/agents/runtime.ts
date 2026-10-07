@@ -2,10 +2,10 @@ import { join } from 'node:path'
 import type { ProviderId } from '../../shared/agents'
 import type { AppSettings } from '../../shared/settings'
 import { ShortTextWriter } from '../llm/shortTextWriter'
-import { threadTitleWriter } from '../llm/threadTitle'
+import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
 import { CodexAppServerHost } from './codex'
-import { ClaudeStreamJsonHost, type ClaudeSettingsEvent } from './claude'
+import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -18,6 +18,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
+import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitActions } from './gitActions'
 import { GitPullRequests } from './gitPullRequests'
@@ -46,8 +47,7 @@ export interface AgentRuntimeOptions {
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
   /** How a Claude settings change reached its CLI, as stable event names; never a model, a level or a mode. */
-  claudeSettingsLog?: (event: ClaudeSettingsEvent) => void
-  clientUpdated?: ControlDependencies['clientUpdated']
+  claudeSettingsLog?: (event: ClaudeAdapterEvent) => void
   missingAttachment?: ControlDependencies['missingAttachment']
   /** The headless host says so: it connects every signed-in provider at start and names itself in refusals (ADR-0036). */
   runsAs?: ControlDependencies['runsAs']
@@ -59,6 +59,7 @@ export interface AgentRuntimeOptions {
   /** A journey's stand-ins for the client update check and installer, and for where each client is (#480). */
   clients?: ControlDependencies['clients']
   locateClient?: ControlDependencies['locateClient']
+  installedProviders?: ControlDependencies['installedProviders']
   /**
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
@@ -109,7 +110,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
   const shortTextWriter = new ShortTextWriter({
     write: (threadId, prompt, signal) => agentHost.writeShortText(threadId, prompt, signal),
-    onFailure: failure => options.logFailure?.('short-writing-failed', failure.purpose + ' ' + failure.reason),
+    onFailure: failure => options.logFailure?.('short-writing-failed', `${failure.purpose} ${failure.reason}`),
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
@@ -119,8 +120,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
   if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests(gitRun ? { run: gitRun } : {}))
-  const turns = new TurnRecorder({ directory, historyEnabled: options.historyEnabled,
-    resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
+  const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
   const reasoner = options.reasoner ?? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {
       claude: new ClaudeSubscriptionClient(join(directory, 'reasoning', 'claude')),
@@ -136,25 +136,31 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
-    ...(options.clientUpdated ? { clientUpdated: options.clientUpdated } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
+    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
+    writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
     reasoner,
   })
+  agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
   // checks are wired (the desktop's open terminals), and close drains it before anything it asks is closed.
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup })
+  // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
+  // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
+  const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       await worktreeCleanup.close()
+      toolReads.dispose()
       agentControl.dispose()
       try {
         const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
@@ -177,6 +183,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost })
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads })
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, close }
 }

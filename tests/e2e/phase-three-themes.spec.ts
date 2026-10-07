@@ -77,6 +77,31 @@ test.beforeAll(async () => {
   await mkdir(artifacts, { recursive: true })
 })
 
+test('themes: imports JSON with comments and trailing commas by paste and file', async () => {
+  const profile = await createProfile()
+  const launched = await launchSotto('phase3-workspace', profile)
+  try {
+    const { page } = launched
+    const section = await openAppearance(page)
+    for (const source of ['paste', 'file'] as const) {
+      await section.getByRole('button', { name: 'Add theme' }).click()
+      const add = page.getByRole('dialog', { name: 'Add a theme' })
+      const name = `JSONC ${source}`
+      const text = `{ // VS Code theme\n "name": "${name}", "colors": { "editor.background": "#1e1e1e", /* canvas */ }, }`
+      if (source === 'paste') await add.getByLabel('Theme JSON').fill(text)
+      else await add.locator('input[type="file"]').setInputFiles({ name: 'theme.json', mimeType: 'application/json', buffer: Buffer.from(text) })
+      await expect(add.getByLabel('Theme JSON')).toHaveValue(text)
+      await add.getByRole('button', { name: 'Add theme', exact: true }).click()
+      await expect(add).toHaveCount(0)
+      await expect.poll(async () => (await savedSettings(page)).customThemes.some(theme => theme.label === name)).toBe(true)
+    }
+    await shot(page, 'jsonc-imports', section.locator('.theme-halves'))
+  } finally {
+    await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})
+
 test('themes: halves, system, contrast, glass, editor, inspector, import, Open VSX, removal and restart', async () => {
   test.setTimeout(300_000)
   const profile = await createProfile()

@@ -29,8 +29,11 @@ export interface BrowserGrant {
  * moving every time it is read. A `user` grant is made only by the user's own answer in Tools and outlives the
  * setting turning off, so only Stop or the thread going away can end it.
  */
-/** The actions ADR-0020 holds for an answer, and so the ones a browser grant can answer instead. */
-export const grantCovers = (type: string): boolean => type === 'navigate' || type === 'click' || type === 'type'
+/**
+ * The actions ADR-0020 holds for an answer, and so the ones a browser grant can answer instead. On the test iPhone a
+ * tap is a click and a key press is typing (ADR-0045), so they ask and are granted the same way.
+ */
+export const grantCovers = (type: string): boolean => type === 'navigate' || type === 'click' || type === 'type' || type === 'tap' || type === 'key'
 
 export class BrowserGrants {
   private readonly grants = new Map<string, BrowserGrant>()

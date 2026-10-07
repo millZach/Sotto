@@ -11,7 +11,6 @@ export function agentContextFixture(state: AgentState | null, command: ReturnTyp
     state, command, threadDrafts, error: null,
     voice: { status: 'off' }, muteVoice: vi.fn(), stopSpeech: vi.fn(), retryVoice: vi.fn(),
     attention: { items: state?.queue ?? [], show: false, dismiss: vi.fn(), reopen: vi.fn(), next: vi.fn(async () => undefined) },
-    claimPersonalAudio: vi.fn(() => () => undefined), waitForPersonalAudio: vi.fn(async () => undefined),
     responseStreaming: 'live', showBrowserPreviews: true,
   }
 }

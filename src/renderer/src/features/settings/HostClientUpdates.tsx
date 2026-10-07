@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { writeClipboard } from '../../agents/richActions'
 import { Check, Copy } from 'lucide-react'
 import { PROVIDER_LABELS, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import { Button } from '../../components/Button'
@@ -45,7 +46,7 @@ export function HostSpinner(): ReactNode { return <span className="host-client-u
 export function CommandLines({ lead, lines, name, host }: { readonly lead: string; readonly lines: readonly string[]; readonly name: string; readonly host: string }): ReactNode {
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
-  const copy = async (): Promise<void> => { try { await navigator.clipboard.writeText(lines.join('\n')); setCopied('copied') } catch { setCopied('failed') } }
+  const copy = async (): Promise<void> => { try { await writeClipboard(lines.join('\n')); setCopied('copied') } catch { setCopied('failed') } }
   return <div className="host-provider__command">
     <p>{lead}</p>
     <code>{lines.map((line, index) => <React.Fragment key={index}>{index ? <br /> : null}{line}</React.Fragment>)}</code>

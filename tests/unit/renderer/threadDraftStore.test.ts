@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentCommand, AgentState } from '../../../src/shared/agents'
+import { agentCommandSchema, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 
 type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
@@ -34,6 +34,158 @@ beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('ThreadDraftStore revisions and saves', () => {
+  it.each(['receipt', 'delivery', 'queue'] as const)('retires a recovered alias on exact %s ownership without a renderer submission', evidence => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    store.edit('source', { text: 'A'.repeat(60_000) })
+    store.submit('source', 1)
+    store.edit('source', { text: 'B'.repeat(60_000) })
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    const [first, overflow] = store.submissions()
+    const draft = store.draft('target')
+    const at = new Date().toISOString()
+    const receipt = { threadId: 'target', draftId: draft.draftId }
+    // A voice send uses main's saved composer directly; failure or another revision proves no ownership.
+    store.receive(baseState({ deliveries: [{ ...receipt, status: 'failed', createdAt: at, updatedAt: at }] }))
+    store.receive(baseState({ deliveredDrafts: [{ ...receipt, draftId: 'another-revision' }] }))
+    expect(store.submissions().map(item => item.draftId)).toEqual([first!.draftId, overflow!.draftId])
+    store.receive(baseState(evidence === 'receipt' ? { deliveredDrafts: [receipt] }
+      : evidence === 'queue' ? { followupReceipts: [receipt] }
+      : { deliveries: [{ ...receipt, status: 'accepted', createdAt: at, updatedAt: at }] }))
+    expect(store.submissions().map(item => item.draftId)).toEqual([overflow!.draftId])
+    expect(store.retry('target', first!.draftId, 3)).toBeNull()
+    store.restore('target', overflow!.draftId)
+    expect(store.draft('target').text).toBe('B'.repeat(60_000))
+  })
+
+  it.each(['receipt', 'delivery', 'queue'] as const)('retires recovered content when its restored revision has %s ownership', evidence => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    const images = Array.from({ length: 8 }, (_, index) => ({ id: `shot-${index}`, name: `shot-${index}.png`, mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }))
+    store.edit('source', { text: 'First prompt', attachments: images })
+    store.submit('source', 1)
+    store.edit('source', { text: 'Newer prompt', attachments: [{ ...images[0]!, id: 'newer' }] })
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    const [first, overflow] = store.submissions()
+    const sent = store.submit('target', 2)!
+    store.receive(baseState())
+    expect(store.submissions().map(item => item.draftId)).toEqual([sent.draftId, overflow!.draftId])
+    expect(store.retry('target', first!.draftId, 3)).toBeNull()
+    store.resolve('target', sent.draftId, 'Nothing was sent.', true)
+    expect(store.submissions().find(item => item.draftId === sent.draftId)).toMatchObject({ text: 'First prompt', notSent: true })
+    const at = new Date().toISOString()
+    const receipt = { threadId: 'target', draftId: sent.draftId }
+    store.receive(baseState(evidence === 'receipt' ? { deliveredDrafts: [receipt] }
+      : evidence === 'queue' ? { followupReceipts: [receipt] }
+      : { deliveries: [{ ...receipt, status: 'accepted', createdAt: at, updatedAt: at }] }))
+    expect(store.submissions()).toHaveLength(1)
+    expect(store.submissions()[0]).toMatchObject({ draftId: overflow!.draftId, text: 'Newer prompt', notSent: true })
+    expect(store.retry('target', first!.draftId, 4)).toBeNull()
+    store.restore('target', overflow!.draftId)
+    expect(store.draft('target')).toMatchObject({ text: 'Newer prompt', attachments: [{ ...images[0]!, id: 'newer' }] })
+  })
+
+  it.each(['count', 'bytes', 'text'] as const)('retains separate, valid recovery revisions when their combined %s exceeds a limit', reason => {
+    const held = heldCommand()
+    const store = new ThreadDraftStore(held.command, 250, uuids())
+    const images = (count: number, prefix: string, sizeBytes = 8) => Array.from({ length: count }, (_, index) => ({
+      id: `${prefix}-${index}`, name: `${prefix}-${index}.png`, mimeType: 'image/png' as const, sizeBytes, digest: 'e'.repeat(64) }))
+    const first = { text: reason === 'text' ? 'A'.repeat(60_000) : 'First prompt', attachments: reason === 'count' ? images(8, 'first') : reason === 'bytes' ? images(2, 'first', 6 * 1024 * 1024) : [] }
+    const second = { text: reason === 'text' ? 'B'.repeat(60_000) : 'Newer prompt', attachments: reason === 'count' ? images(1, 'second') : reason === 'bytes' ? images(2, 'second', 6 * 1024 * 1024) : [] }
+    store.edit('source', first)
+    store.submit('source', 1)
+    store.edit('source', second)
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    expect(store.draft('target')).toMatchObject(first)
+    const retained = store.submissions().filter(item => item.threadId === 'target')
+    expect(retained.every(item => item.error === 'This prompt was kept after a new thread was refused. Use Restore prompt to bring it back. Nothing was sent.')).toBe(true)
+    expect(retained).toHaveLength(2)
+    expect(retained[0]).toMatchObject(first)
+    expect(retained[1]).toMatchObject(second)
+    expect(retained.every(item => item.notSent)).toBe(true)
+    expect(retained.every(item => agentCommandSchema.safeParse({ type: 'manual-send', threadId: 'target', text: item.text, attachments: item.attachments, skills: item.skills, files: item.files, draftId: item.draftId }).success)).toBe(true)
+    store.flush('target')
+    expect(held.saves().filter(save => save.threadId === 'target').every(save => agentCommandSchema.safeParse(save).success)).toBe(true)
+    // State reception and another send must not silently discard or automatically restore overflow.
+    store.receive(baseState())
+    store.submit('target', 2)
+    store.receive(baseState())
+    expect(store.draft('target').text).toBe('')
+    expect(store.submissions().filter(item => item.threadId === 'target')).toHaveLength(2)
+    store.restore('target', retained[1]!.draftId)
+    expect(store.draft('target')).toMatchObject(second)
+    store.restore('target', store.submissions().find(item => item.threadId === 'target' && item.text === first.text)!.draftId)
+    expect(store.draft('target')).toMatchObject(first)
+  })
+
+  it('retains a late staged screenshot separately when recovered screenshots fill the composer', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    const images = Array.from({ length: 8 }, (_, index) => ({ id: `shot-${index}`, name: `shot-${index}.png`, mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }))
+    store.edit('source', { text: 'First prompt', attachments: images })
+    store.submit('source', 1)
+    const endRead = store.beginScreenshotRead('source')
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    const late = { ...images[0]!, id: 'late', name: 'late.png' }
+    store.addLateScreenshots('source', [late], { imagesSupported: true })
+    endRead()
+    expect(store.draft('target').attachments).toEqual(images)
+    const retained = store.submissions().filter(item => item.threadId === 'target')
+    expect(retained).toHaveLength(2)
+    expect(retained[1]!.attachments).toEqual([late])
+    store.restore('target', retained[1]!.draftId)
+    expect(store.draft('target').attachments).toEqual([late])
+    expect(store.screenshotReads('target').pending).toBe(0)
+  })
+
+  it.each([1, 2])('updates retained recovery content when %s late images partly fit the restored draft', count => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    const images = Array.from({ length: 7 }, (_, index) => ({ id: `shot-${index}`, name: `shot-${index}.png`, mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }))
+    store.edit('source', { text: 'A'.repeat(60_000), attachments: images })
+    store.submit('source', 1)
+    store.edit('source', { text: 'B'.repeat(60_000) })
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    const late = Array.from({ length: count }, (_, index) => ({ ...images[0]!, id: `late-${index}`, name: `late-${index}.png` }))
+    store.addLateScreenshots('source', late, { imagesSupported: true })
+    const retained = store.submissions().filter(item => item.threadId === 'target')
+    expect(retained).toHaveLength(count === 1 ? 2 : 3)
+    expect(retained[0]!.attachments).toEqual([...images, late[0]!])
+    if (count === 2) expect(retained[2]!.attachments).toEqual([late[1]!])
+    store.restore('target', retained[1]!.draftId)
+    store.restore('target', retained[0]!.draftId)
+    expect(store.draft('target').attachments).toEqual([...images, late[0]!])
+  })
+
+  it('recovers a second refused creation without duplicating its restored and submitted revision', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    const images = Array.from({ length: 8 }, (_, index) => ({ id: `shot-${index}`, name: `shot-${index}.png`, mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }))
+    store.edit('source', { text: 'First prompt', attachments: images })
+    store.submit('source', 1)
+    store.edit('source', { text: 'Newer prompt', attachments: [{ ...images[0]!, id: 'newer' }] })
+    store.carryRefusedCreation('source', 'project')
+    store.restoreRefusedCreation('intermediate', 'project')
+    store.submit('intermediate', 2)
+    store.carryRefusedCreation('intermediate', 'project')
+    store.restoreRefusedCreation('target', 'project')
+    expect(store.draft('target').text).toBe('First prompt')
+    expect(store.submissions().filter(item => item.threadId === 'target').map(item => item.text)).toEqual(['First prompt', 'Newer prompt'])
+  })
+
+  it('recovers an unconfirmed creation into itself without duplicating content or redirecting its reads', () => {
+    const store = new ThreadDraftStore(heldCommand().command, 250, uuids())
+    const image = { id: 'shot', name: 'Screenshot.png', mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }
+    store.edit('thread', { text: 'Keep this prompt.', attachments: [image] })
+    const endRead = store.beginScreenshotRead('thread')
+    store.carryRefusedCreation('thread', 'project')
+    store.restoreRefusedCreation('thread', 'project')
+    expect(store.draft('thread')).toMatchObject({ text: 'Keep this prompt.', attachments: [image] })
+    expect(store.screenshotReads('thread').pending).toBe(1)
+    endRead()
+    expect(store.screenshotReads('thread').pending).toBe(0)
+  })
+
   it('saves a text edit beside an 8 MiB screenshot with the handle alone, no image bytes (ADR-0031)', () => {
     const held = heldCommand()
     const store = new ThreadDraftStore(held.command, 250, uuids())
@@ -442,5 +594,77 @@ describe('screenshots read for a draft', () => {
     expect(store.screenshotReads('thread').problem).not.toBeNull()
     store.submit('thread', 1)
     expect(store.screenshotReads('thread').problem).toBeNull()
+  })
+})
+
+describe('ThreadDraftStore.place', () => {
+  const leftover = (text: string, attachments: AgentState['draftAttachments'] = []) => ({ text, attachments: attachments ?? [] })
+
+  it('puts a leftover draft after what the composer holds and resolves saved only once main saved it', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    store.edit('thread', { text: 'Already typed.' })
+    const placed = store.place('thread', leftover('The leftover prompt.'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.draft('thread').text).toBe('Already typed.\n\nThe leftover prompt.')
+    const save = saves().at(-1)!
+    expect(save.text).toBe('Already typed.\n\nThe leftover prompt.')
+    calls.at(-1)!.resolve(published(save))
+    await expect(placed).resolves.toBe('saved')
+  })
+
+  it('resolves unsaved and keeps the composer’s copy when the save is not confirmed', async () => {
+    const { command, calls } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const placed = store.place('thread', leftover('The leftover prompt.'))
+    await vi.advanceTimersByTimeAsync(0)
+    calls.at(-1)!.resolve(null)
+    await expect(placed).resolves.toBe('unsaved')
+    expect(store.draft('thread').text).toBe('The leftover prompt.')
+  })
+
+  it('adds nothing twice when the same draft is placed again, and still reports the save', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const shot = { id: 'shot', name: 'footer.png', mimeType: 'image/png' as const, sizeBytes: 8, digest: 'e'.repeat(64) }
+    const first = store.place('thread', leftover('The leftover prompt.', [shot]))
+    await vi.advanceTimersByTimeAsync(0)
+    calls.at(-1)!.resolve(null)
+    await expect(first).resolves.toBe('unsaved')
+    // A retry after the refused save, a refused creation brought back or the same unused thread reused.
+    const again = store.place('thread', leftover('The leftover prompt.', [shot]))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.draft('thread')).toMatchObject({ text: 'The leftover prompt.', attachments: [shot] })
+    calls.at(-1)!.resolve(published(saves().at(-1)!))
+    await expect(again).resolves.toBe('saved')
+    const saveCount = saves().length
+    await expect(store.place('thread', leftover('The leftover prompt.', [shot]))).resolves.toBe('saved')
+    expect(saves()).toHaveLength(saveCount)
+    expect(store.draft('thread').text).toBe('The leftover prompt.')
+  })
+
+  it('saves typing that lands while the placed draft is saving, in the same call', async () => {
+    const { command, calls, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    const placed = store.place('thread', leftover('The leftover prompt.'))
+    await vi.advanceTimersByTimeAsync(0)
+    const first = saves().at(-1)!
+    store.edit('thread', { text: 'The leftover prompt. And one more line.' })
+    calls.at(-1)!.resolve(published(first))
+    await vi.advanceTimersByTimeAsync(0)
+    const second = saves().at(-1)!
+    expect(second.text).toBe('The leftover prompt. And one more line.')
+    calls.at(-1)!.resolve(published(second))
+    await expect(placed).resolves.toBe('saved')
+  })
+
+  it('writes nothing when the two together pass one prompt’s limit', async () => {
+    const { command, saves } = heldCommand()
+    const store = new ThreadDraftStore(command, 250, uuids())
+    store.edit('thread', { text: 'A'.repeat(60_000) })
+    const before = store.draft('thread')
+    await expect(store.place('thread', leftover('B'.repeat(60_000)))).resolves.toBe('too-long')
+    expect(store.draft('thread')).toBe(before)
+    expect(saves()).toHaveLength(0)
   })
 })

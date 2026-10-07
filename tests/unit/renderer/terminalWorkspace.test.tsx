@@ -25,6 +25,25 @@ const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
+it('clears workspace copy feedback without erasing a newer input failure', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  const { views, factory } = fakeViews()
+  await store.activate(bridge)
+  store.attach(bridge, ID_1, document.createElement('div'), factory)
+  await waitFor(() => expect(views[0]!.input.at(-1)).toBe(true))
+  const copyNotice = views[0]!.handlers.onNotice!
+  copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+  copyNotice(null)
+  expect(store.getSnapshot().notice).toBeNull()
+  copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+  vi.mocked(bridge.write).mockRejectedValueOnce(new Error('Input transport failed'))
+  store.write(bridge, ID_1, 'input')
+  await waitFor(() => expect(store.getSnapshot().notice).toContain('Terminal input stopped'))
+  copyNotice(null)
+  expect(store.getSnapshot().notice).toContain('Terminal input stopped')
+})
+
 it('keeps terminal workspace paste chunks and later events ordered while another terminal continues', async () => {
   const { bridge } = fakeBridge([terminal(ID_1), terminal(ID_2)])
   const store = new TerminalWorkspaceStore()

@@ -15,6 +15,45 @@ interface CatalogSnapshot {
 }
 
 /**
+ * A revision for each model catalog, keyed by the caller, that advances only when that catalog's content
+ * actually changes. Content is compared with `isDeepStrictEqual`, because a shell rebuilds `models` into new
+ * arrays and objects on every publish even when nothing in it changed, so identity cannot tell a repeat from
+ * a change. The counter starts at 1 and only advances, so a revision names one content for as long as this
+ * object lives. `AgentStateBroadcaster` uses one for the desktop's windows (ADR-0028); the socket listener
+ * uses one of its own for its peers that accept `model-catalog-revision` (ADR-0028, October 3 amendment).
+ */
+export class ModelCatalogRevisions {
+  private readonly catalogs = new Map<string, CatalogSnapshot>()
+  private lastComparison: { stored: readonly AgentModel[]; incoming: readonly AgentModel[]; lengths: [number, number]; equal: boolean } | null = null
+
+  /** The revision `models` has under `key`: the one it last had when its content is unchanged, otherwise the next. */
+  revisionFor(key: string, models: readonly AgentModel[]): number {
+    const existing = this.catalogs.get(key)
+    if (existing && this.sameContent(existing.models, models)) return existing.revision
+    const revision = (existing?.revision ?? 0) + 1
+    this.catalogs.set(key, { revision, models })
+    return revision
+  }
+
+  /**
+   * One content comparison serves every key that holds the same array and is handed the same array:
+   * `host.models` and the selected host's `clientHosts[]` entry are one array in a shell, and one shell is
+   * encoded for both windows. Without this, a publish compared the 608-model catalog four times and a
+   * receipt twice. The last pair compared is remembered by identity and by the length each had then. A
+   * shell is rebuilt, never edited, so identity is enough today; the lengths make a model added to or
+   * removed from either array in place compare afresh rather than reuse a stale answer for good.
+   */
+  private sameContent(stored: readonly AgentModel[], incoming: readonly AgentModel[]): boolean {
+    const last = this.lastComparison
+    if (last !== null && last.stored === stored && last.incoming === incoming
+      && last.lengths[0] === stored.length && last.lengths[1] === incoming.length) return last.equal
+    const equal = stored === incoming || isDeepStrictEqual(stored, incoming)
+    this.lastComparison = { stored, incoming, lengths: [stored.length, incoming.length], equal }
+    return equal
+  }
+}
+
+/**
  * Turns a shell into what actually crosses `sotto:agents:state` for one destination window, omitting a
  * model catalog that window was already sent and nothing has changed since (issue #286): `models` is
  * rebuilt into new arrays and objects on every publish even when its content is unchanged (`clientAgentState`
@@ -35,9 +74,8 @@ interface CatalogSnapshot {
  * `hostCatalogKey` and `clientCatalogKey` from `src/shared/agents.ts`, which the page's cache uses too.
  */
 export class AgentStateBroadcaster {
-  private readonly catalogs = new Map<string, CatalogSnapshot>()
+  private readonly revisions = new ModelCatalogRevisions()
   private readonly sent: Record<AgentStateBroadcastDestination, Map<string, number>> = { main: new Map(), widget: new Map() }
-  private lastComparison: { stored: readonly AgentModel[]; incoming: readonly AgentModel[]; lengths: [number, number]; equal: boolean } | null = null
 
   /** Encodes `state` for `destination` and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
@@ -88,28 +126,5 @@ export class AgentStateBroadcaster {
     }
   }
 
-  private revisionFor(key: string, models: readonly AgentModel[]): number {
-    const existing = this.catalogs.get(key)
-    if (existing && this.sameContent(existing.models, models)) return existing.revision
-    const revision = (existing?.revision ?? 0) + 1
-    this.catalogs.set(key, { revision, models })
-    return revision
-  }
-
-  /**
-   * One content comparison serves every key that holds the same array and is handed the same array:
-   * `host.models` and the selected host's `clientHosts[]` entry are one array in a shell, and one shell is
-   * encoded for both windows. Without this, a publish compared the 608-model catalog four times and a
-   * receipt twice. The last pair compared is remembered by identity and by the length each had then. A
-   * shell is rebuilt, never edited, so identity is enough today; the lengths make a model added to or
-   * removed from either array in place compare afresh rather than reuse a stale answer for good.
-   */
-  private sameContent(stored: readonly AgentModel[], incoming: readonly AgentModel[]): boolean {
-    const last = this.lastComparison
-    if (last !== null && last.stored === stored && last.incoming === incoming
-      && last.lengths[0] === stored.length && last.lengths[1] === incoming.length) return last.equal
-    const equal = stored === incoming || isDeepStrictEqual(stored, incoming)
-    this.lastComparison = { stored, incoming, lengths: [stored.length, incoming.length], equal }
-    return equal
-  }
+  private revisionFor(key: string, models: readonly AgentModel[]): number { return this.revisions.revisionFor(key, models) }
 }

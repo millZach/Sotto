@@ -167,7 +167,7 @@ describe('attribution on an answer', () => {
     f.permission()
     expect((await f.answer(desktopWindowClient('tester'))).error).toBeNull()
     expect(f.host.executed).toContainEqual(expect.objectContaining({ type: 'answer' }))
-    expect(f.logFailure).toHaveBeenCalledWith('thread-answer-attribution-failed', 'workshop')
+    expect(f.logFailure).toHaveBeenCalledWith('thread-answer-attribution-failed', 'failed')
   })
 })
 

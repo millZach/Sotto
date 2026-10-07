@@ -18,7 +18,7 @@ const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirec
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const session = (id: string, patch: Partial<TerminalSession> = {}): TerminalSession =>
-  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, ...patch })
+  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, place: 'tools', ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 /** Main's terminal service as the renderer sees it: sessions, snapshots, and one event stream. */
@@ -83,9 +83,28 @@ function setup(terminal: ReturnType<typeof fakeTerminal>) {
 }
 
 const panel = () => screen.getByRole('complementary', { name: 'Tools' })
-const output = (id: string, sequence: number, data: string): TerminalEvent => ({ type: 'output', threadId: 'visual-gate', workspaceId: TOKEN_A, sessionId: id, data, sequence })
+const output = (id: string, sequence: number, data: string): TerminalEvent => ({ type: 'output', threadId: 'visual-gate', workspaceId: TOKEN_A, sessionId: id, data, sequence, place: 'tools' })
 
 describe('Terminal surface', () => {
+  it('clears copy feedback after recovery without erasing a newer input failure', async () => {
+    const terminal = fakeTerminal([session(ID_1)])
+    const store = new TerminalStore()
+    const { views, factory } = fakeViews()
+    await store.activate(terminal.bridge, 'visual-gate')
+    store.attach(terminal.bridge, 'visual-gate', ID_1, document.createElement('div'), factory)
+    await waitFor(() => expect(store.replaying(ID_1)).toBe(false))
+    const copyNotice = views[0]!.handlers.onNotice!
+    copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+    copyNotice(null)
+    expect(store.thread('visual-gate')?.notice).toBeNull()
+    copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+    vi.mocked(terminal.bridge.write).mockRejectedValueOnce(new Error('Input transport failed'))
+    store.write(terminal.bridge, 'visual-gate', ID_1, 'input')
+    await waitFor(() => expect(store.thread('visual-gate')?.notice).toContain('Terminal input stopped'))
+    copyNotice(null)
+    expect(store.thread('visual-gate')?.notice).toContain('Terminal input stopped')
+  })
+
   it('orders separate input events and paste chunks without holding another session', async () => {
     const terminal = fakeTerminal([session(ID_1), session(ID_2)])
     const store = new TerminalStore()
@@ -183,7 +202,7 @@ describe('Terminal surface', () => {
     const terminal = fakeTerminal([])
     const { store, views } = setup(terminal)
     await userEvent.click(await within(panel()).findByRole('button', { name: 'Start terminal' }))
-    expect(terminal.bridge.create).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A })
+    expect(terminal.bridge.create).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, place: 'tools' })
     expect(await within(panel()).findByRole('tab', { name: 'PowerShell', selected: true })).toBeInTheDocument()
     expect(views[0]!.written).toEqual(['<reset>', 'PS D:\\work\\workshop> '])
     expect(views[0]!.focused).toBe(1)

@@ -1,12 +1,13 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentCommand, AgentState } from '../../../src/shared/agents'
+import { PROJECT_FOLDER_MISSING, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import type { HostFoldersClientRequest, HostFoldersResult } from '../../../src/shared/hostFolders'
 import { browsableHosts, FolderBrowserDialog } from '../../../src/renderer/src/agents/FolderBrowserDialog'
 import { useAddProject } from '../../../src/renderer/src/agents/addProject'
+import { projectForFolder, useProjectChooser, type ProjectChoice } from '../../../src/renderer/src/agents/ProjectChooser'
 import { threadsStateFixture } from './liveAgentState'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -59,6 +60,19 @@ describe('browsableHosts', () => {
 })
 
 describe('FolderBrowserDialog', () => {
+  it.each([{ isComposing: true }, { keyCode: 229 }])('finishes composing a folder name before naming it: %j', async composition => {
+    stubBridge()
+    render(<FolderBrowserDialog state={twoHosts()} hostId={FORGE} heading="Choose a folder" onUse={vi.fn()} onClose={vi.fn()} />)
+    await screen.findByRole('button', { name: 'code' })
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    const input = screen.getByRole('textbox', { name: 'New folder name' })
+    fireEvent.change(input, { target: { value: 'new-project' } })
+    fireEvent.keyDown(input, { key: 'Enter', ...composition })
+    expect(input).toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull()
+    expect(screen.getByText(/This folder is new/)).toBeInTheDocument()
+  })
   it('asks for the computer first, with none chosen, then lists that computer\'s home folder', async () => {
     const { hostFolders } = stubBridge()
     const user = userEvent.setup()
@@ -122,7 +136,7 @@ describe('FolderBrowserDialog', () => {
     expect(screen.getByText(/This folder is new/)).toBeVisible()
     expect(onUse).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Use this folder' }))
-    expect(onUse).toHaveBeenCalledWith({ hostId: FORGE, path: '/home/zach/code/voice-lab', name: 'voice-lab' })
+    expect(onUse).toHaveBeenCalledWith({ hostId: FORGE, path: '/home/zach/code/voice-lab', name: 'voice-lab', isNew: true })
   })
 
   it('offers Open project for a folder that is one, and uses the folder with Ctrl+Enter', async () => {
@@ -218,6 +232,91 @@ describe('Add project', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Use this folder' })).toBeNull())
   })
 
+  it('asks the host to make a folder named with New folder rather than attach it as existing', async () => {
+    stubBridge()
+    const state = twoHosts()
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state as AgentState | null)
+    const user = userEvent.setup()
+    render(<Harness state={state} command={command} />)
+    await user.click(screen.getByRole('button', { name: 'Add project' }))
+    await user.click(screen.getByRole('button', { name: /forge/ }))
+    await user.click(await screen.findByRole('button', { name: 'code' }))
+    await screen.findByRole('button', { name: /forge-ml/ })
+    await user.click(screen.getByRole('button', { name: 'New folder' }))
+    await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-project', title: 'voice-lab', path: '/home/zach/code/voice-lab' })))
+    expect(command.mock.calls.find(([request]) => request.type === 'create-project')![0]).not.toHaveProperty('useExisting')
+  })
+
+  it('attaches a new folder as existing when its first try went unanswered', async () => {
+    stubBridge()
+    const state = twoHosts()
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => null)
+    const user = userEvent.setup()
+    render(<Harness state={state} command={command} />)
+    await user.click(screen.getByRole('button', { name: 'Add project' }))
+    await user.click(screen.getByRole('button', { name: /forge/ }))
+    await user.click(await screen.findByRole('button', { name: 'code' }))
+    await screen.findByRole('button', { name: /forge-ml/ })
+    await user.click(screen.getByRole('button', { name: 'New folder' }))
+    await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm the new project.')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    await waitFor(() => expect(command.mock.calls.filter(([request]) => request.type === 'create-project')).toHaveLength(2))
+    const [first, second] = command.mock.calls.filter(([request]) => request.type === 'create-project').map(([request]) => request)
+    expect(first).not.toHaveProperty('useExisting')
+    expect(second).toMatchObject({ path: '/home/zach/code/voice-lab', useExisting: true })
+  })
+
+  it('makes a new folder after all when the check finds its unanswered first try made nothing', async () => {
+    stubBridge()
+    const state = twoHosts()
+    const answers: (AgentState | null)[] = [null, { ...state, error: PROJECT_FOLDER_MISSING }, state]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => request.type === 'create-project' && answers.length ? answers.shift()! : state)
+    const user = userEvent.setup()
+    render(<Harness state={state} command={command} />)
+    await user.click(screen.getByRole('button', { name: 'Add project' }))
+    await user.click(screen.getByRole('button', { name: /forge/ }))
+    await user.click(await screen.findByRole('button', { name: 'code' }))
+    await screen.findByRole('button', { name: /forge-ml/ })
+    await user.click(screen.getByRole('button', { name: 'New folder' }))
+    await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm the new project.')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Use this folder' })).toBeNull())
+    const sent = command.mock.calls.map(([request]) => request).filter(request => request.type === 'create-project')
+    expect(sent.map(request => 'useExisting' in request)).toEqual([false, true, false])
+  })
+
+  it('forgets an unanswered new folder when Add project is opened again', async () => {
+    stubBridge()
+    const state = twoHosts()
+    const answers: (AgentState | null)[] = [null, state]
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => request.type === 'create-project' && answers.length ? answers.shift()! : state)
+    const user = userEvent.setup()
+    render(<Harness state={state} command={command} />)
+    const nameVoiceLab = async (): Promise<void> => {
+      await user.click(screen.getByRole('button', { name: 'Add project' }))
+      await user.click(await screen.findByRole('button', { name: /forge/ }))
+      await user.click(await screen.findByRole('button', { name: 'code' }))
+      await screen.findByRole('button', { name: /forge-ml/ })
+      await user.click(screen.getByRole('button', { name: 'New folder' }))
+      await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    }
+    await nameVoiceLab()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm the new project.')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Use this folder' })).toBeNull())
+    await nameVoiceLab()
+    await waitFor(() => expect(command.mock.calls.filter(([request]) => request.type === 'create-project')).toHaveLength(2))
+    const sent = command.mock.calls.map(([request]) => request).filter(request => request.type === 'create-project')
+    expect(sent.map(request => 'useExisting' in request)).toEqual([false, false])
+  })
+
   it('opens the project a folder already is, on that computer', async () => {
     stubBridge()
     const state = twoHosts()
@@ -245,5 +344,37 @@ describe('Add project', () => {
     await user.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Connect Codex before creating a project.')
     expect(screen.getByRole('button', { name: 'Use this folder' })).toBeEnabled()
+  })
+})
+
+describe('a folder chosen in New thread or New terminal', () => {
+  function Chooser({ onChoose }: { readonly onChoose: (choice: ProjectChoice) => void }) {
+    const chooser = useProjectChooser(twoHosts(), onChoose, { hostId: FORGE })
+    return <>{chooser.choices}</>
+  }
+
+  it('carries New folder through the project chooser', async () => {
+    stubBridge()
+    const onChoose = vi.fn()
+    const user = userEvent.setup()
+    render(<Chooser onChoose={onChoose} />)
+    await user.click(screen.getByRole('button', { name: /Folder on forge/ }))
+    await user.click(await screen.findByRole('button', { name: 'code' }))
+    // forge-ml is listed as a project too, so the folder list shows it a second time once code is open.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /forge-ml/ })).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: 'New folder' }))
+    await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    expect(onChoose).toHaveBeenCalledWith({ folder: '/home/zach/code/voice-lab', isNew: true })
+  })
+
+  it('is made when it was named with New folder, and otherwise attached only if it is still there', async () => {
+    const state = twoHosts()
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state as AgentState | null)
+    const common = { command, latest: () => state, providerId: undefined, hostId: FORGE }
+    await projectForFolder({ ...common, folder: '/home/zach/code/voice-lab', isNew: true, attempted: new Set() })
+    expect(command).toHaveBeenNthCalledWith(1, { type: 'create-project', title: 'voice-lab', path: '/home/zach/code/voice-lab' })
+    await projectForFolder({ ...common, folder: '/home/zach/code/sotto', attempted: new Set() })
+    expect(command).toHaveBeenCalledWith({ type: 'create-project', title: 'sotto', path: '/home/zach/code/sotto', useExisting: true })
   })
 })

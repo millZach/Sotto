@@ -1,4 +1,4 @@
-import type { AgentActivity } from '../../../shared/agentActivity'
+import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 
@@ -441,13 +441,17 @@ export const agentStatusLabel = (status: string): string => AGENT_STATUS[status]
 export function groupSummary(records: readonly AgentActivity[]): string {
   const count = (kind: AgentActivity['kind']): AgentActivity[] => records.filter(record => record.kind === kind)
   const files = new Set(count('file-change').flatMap(record => record.changes?.length ? record.changes.map(change => change.path) : [record.id]))
+  // Thinking a provider streamed and Codex's reasoning summaries share a row, but not a name.
+  const thoughts = count('reasoning').filter(record => record.title === THINKING_TITLE).length
+  const summaries = count('reasoning').length - thoughts
   const parts = [
     count('command').length ? `ran ${plural(count('command').length, 'command', 'commands')}` : '',
     files.size ? `changed ${plural(files.size, 'file', 'files')}` : '',
     count('tool').length ? `used ${plural(count('tool').length, 'tool', 'tools')}` : '',
     count('subagent').length ? plural(count('subagent').length, 'agent action', 'agent actions') : '',
     count('plan').length ? 'updated the plan' : '',
-    count('reasoning').length ? plural(count('reasoning').length, 'reasoning summary', 'reasoning summaries') : '',
+    summaries ? plural(summaries, 'reasoning summary', 'reasoning summaries') : '',
+    thoughts ? thoughts === 1 ? 'thought once' : `thought ${thoughts} times` : '',
     count('status').length ? plural(count('status').length, 'notice', 'notices') : '',
     count('compaction').length ? 'compacted the context' : '',
   ].filter(Boolean)

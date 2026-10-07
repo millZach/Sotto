@@ -22,7 +22,7 @@ vi.mock('../../../src/renderer/src/agents/orb/orb', async (original) => ({
 }))
 
 const choice = (patch: Partial<AppearanceChoice> = {}): AppearanceChoice => ({
-  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, glassOpacity: 80, effortColor: 'ember', customThemes: [], ...patch,
+  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, glassOpacity: 80, frostedWindow: false, frostSeeThrough: 40, effortColor: 'ember', customThemes: [], ...patch,
 })
 
 function builtIn(id: string, mode: ThemeAppearance) {

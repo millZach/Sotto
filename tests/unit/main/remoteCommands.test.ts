@@ -33,7 +33,11 @@ describe('remote command allow-list', () => {
   it('decides every host request: reads and the session, commands through their own list, and the sign-in requests (ADR-0037)', () => {
     expect([...REMOTE_SIGN_IN_OPERATIONS]).toEqual(['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
-      'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS]
+      'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
+      'check-answer',
+      // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
+      'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
@@ -56,6 +60,40 @@ describe('remote command allow-list', () => {
     expect(remoteCommandRefusal({ type: 'send' }, { mayAnswer: false, draftRequestId: null })).toBeNull()
     expect(refuse({ type: 'save-thread-draft', threadId: 'thread', draftId: 'draft', text: 'Blue' })).toBeNull()
   })
+  it('binds an atomic Send to this socket selection and refuses every unlisted draft field', () => {
+    const draft = { threadId: 'thread', text: 'Blue', attachments: [] }
+    const command = { type: 'send', draft } as const
+    const context = { mayAnswer: true, selectedThreadId: 'thread', draftRequestId: 'native-question' }
+    expect(remoteCommandRefusal(command, context)).toBeNull()
+    for (const selectedThreadId of [undefined, null, 'other-thread']) {
+      expect(remoteCommandRefusal(command, { ...context, selectedThreadId })).toBe('forbidden')
+    }
+    expect(remoteCommandRefusal(command, { ...context, mayAnswer: false })).toBe('forbidden')
+    expect(remoteCommandRefusal(command, { ...context, mayAnswer: false, draftRequestId: null })).toBeNull()
+    for (const field of ['approved', 'requestId', 'providerId', 'permissionChoice', 'extra']) {
+      const extended = { ...command, draft: { ...draft, [field]: 'claimed' } }
+      expect(remoteCommandRefusal(extended, context), field).toBe('forbidden')
+      expect(hostRequestSchema.safeParse({ v: 1, id: 'command', session: 'session', op: 'command', command: extended }).success, field).toBe(false)
+    }
+    expect(hostRequestSchema.safeParse({ v: 1, id: 'command', session: 'session', op: 'command', command }).success).toBe(true)
+    expect(hostRequestSchema.safeParse({ v: 1, id: 'legacy', session: 'session', op: 'command', command: { type: 'send' } }).success).toBe(true)
+  })
+  it('binds a targeted Compose to this socket selection without changing legacy Compose', () => {
+    const command = { type: 'compose' as const, threadId: 'thread', text: 'The retained draft', attachments: [] }
+    const context = { mayAnswer: true, selectedThreadId: 'thread', draftRequestId: 'native-question' }
+    expect(remoteCommandRefusal(command, context)).toBeNull()
+    for (const selectedThreadId of [undefined, null, 'other-thread']) {
+      expect(remoteCommandRefusal(command, { ...context, selectedThreadId })).toBe('forbidden')
+    }
+    expect(remoteCommandRefusal(command, { ...context, mayAnswer: false })).toBe('forbidden')
+    expect(remoteCommandRefusal({ type: 'compose', text: 'Legacy draft' }, { mayAnswer: false })).toBeNull()
+    for (const field of ['approved', 'requestId', 'providerId', 'permissionChoice', 'extra']) {
+      const extended = { ...command, [field]: 'claimed' }
+      expect(remoteCommandRefusal(extended, context), field).toBe('forbidden')
+      expect(hostRequestSchema.safeParse({ v: 1, id: 'save', session: 'session', op: 'command', command: extended }).success, field).toBe(false)
+    }
+    expect(hostRequestSchema.safeParse({ v: 1, id: 'save', session: 'session', op: 'command', command }).success).toBe(true)
+  })
   it('applies command admission consistently while composing', () => {
     const command = { type: 'compose', text: 'Draft text' } as const
     expect(remoteCommandRefusal(command, { mayAnswer: false, draftRequestId: 'request' })).toBe('forbidden')
@@ -71,6 +109,7 @@ describe('remote command allow-list', () => {
       { type: 'configure-thread', threadId: 'thread', runtimeMode: 'auto-accept-edits' },
       { type: 'create-thread', projectId: 'project', title: 'Auto', modelId: 'codex', runtimeMode: 'auto' },
       { type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: true },
+      { type: 'reclaim-thread-worktree', threadId: 'thread', confirmedIgnored: ['.env'] },
       { type: 'restore-thread-branch', threadId: 'thread', withUncommittedChanges: true },
       { type: 'answer', threadId: 'thread', requestId: 'request', answer: 'Allow', approved: true },
       { type: 'save-thread-draft', threadId: 'thread', draftId: 'draft', text: 'Blue', requestId: 'request' },

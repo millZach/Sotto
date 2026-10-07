@@ -1,4 +1,5 @@
 import React, { useState, type ReactNode } from 'react'
+import { isCompositionKey } from './composerKeys'
 
 /**
  * The inline editor for a thread's name, shared by the sidebar row and the pane header.
@@ -13,7 +14,7 @@ export function ThreadNameField({ title, label, className, onRename, onDone }: {
   /** The new name, already trimmed; not called when the name is unchanged. */
   readonly onRename: (title: string) => void
   /** The editor is finished, whether the name changed or not. */
-  readonly onDone: () => void
+  readonly onDone: (restoreFocus: boolean) => void
 }): ReactNode {
   const [value, setValue] = useState(title)
   const [refused, setRefused] = useState(false)
@@ -21,15 +22,16 @@ export function ThreadNameField({ title, label, className, onRename, onDone }: {
     const next = value.trim()
     if (next === '') { setRefused(true); return }
     if (next !== title) onRename(next)
-    onDone()
+    onDone(true)
   }
   return <input type="text" className={className} aria-label={label} aria-invalid={refused || undefined}
     // The editor only ever appears from an explicit Rename action, so it takes the caret with it.
     autoFocus value={value} spellCheck={false}
     onChange={event => { setValue(event.target.value); setRefused(false) }}
     onKeyDown={event => {
+      if (isCompositionKey(event.nativeEvent)) return
       if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); confirm() }
-      else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onDone() }
+      else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onDone(true) }
     }}
-    onBlur={onDone} />
+    onBlur={() => onDone(false)} />
 }

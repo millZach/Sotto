@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { readFile, stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowserAgentServer, type BrowserAgentTools } from '../../src/main/agents/browserAgentServer'
 import { browserToolDefinitions } from '../../src/main/tools/browserAgentTools'
@@ -40,13 +42,17 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     expect(mcpServer).toHaveBeenCalledWith(threadId)
     const endpoint = await server.mcpServer(threadId)
     const records = await fixture.driver.requests()
+    let claudeConfig: string | undefined
     if (provider === 'codex') {
       // The browser's own tools carry no native prompt; page actions are Tools' to decide (ADR-0029).
       expect(records.find(record => record.method === 'thread/start')?.params).toMatchObject({ config: { mcp_servers: { sotto_browser: { url: endpoint.url, default_tools_approval_mode: 'approve', http_headers: { Authorization: endpoint.headers[0]!.value } } } } })
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch?.params?.frame as { args: string[] }).args
-      expect(JSON.parse(args[args.indexOf('--mcp-config') + 1]!)).toMatchObject({ mcpServers: { sotto_browser: { url: endpoint.url } } })
+      claudeConfig = args[args.indexOf('--mcp-config') + 1]!
+      expect(dirname(claudeConfig)).toBe(fixture.root)
+      expect(JSON.parse(await readFile(claudeConfig, 'utf8'))).toMatchObject({ mcpServers: { sotto_browser: { url: endpoint.url, headers: { Authorization: endpoint.headers[0]!.value } } } })
+      if (process.platform !== 'win32') expect((await stat(claudeConfig)).mode & 0o777).toBe(0o600)
       // The browser's own tools carry no native prompt; page actions are Tools' to decide (ADR-0029).
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual(browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`))
@@ -62,12 +68,21 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     host.disconnect(); server.revoke(threadId)
     host.observeThreads([threadId])
     await host.connect()
+    if (claudeConfig) await expect(stat(claudeConfig)).rejects.toMatchObject({ code: 'ENOENT' })
     await host.refreshThread(threadId)
     expect(mcpServer.mock.calls.length).toBeGreaterThan(callsBeforeReconnect)
     const renewed = await server.mcpServer(threadId)
     expect(renewed.headers).not.toEqual(endpoint.headers)
     const nextRecords = await fixture.driver.requests()
-    expect(JSON.stringify(nextRecords.slice(records.length))).toContain(renewed.headers[0]!.value)
+    if (provider === 'claude') {
+      const launch = nextRecords.slice(records.length).find(record => ['launch', 'resume'].includes(record.method ?? '') && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))!
+      const args = (launch.params!.frame as { args: string[] }).args
+      const path = args[args.indexOf('--mcp-config') + 1]!
+      expect(path).not.toBe(claudeConfig)
+      expect(await readFile(path, 'utf8')).toContain(renewed.headers[0]!.value)
+      host.disconnect(); await (fixture as Awaited<ReturnType<typeof claudeFixture>>).adapter.closed()
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+    } else expect(JSON.stringify(nextRecords.slice(records.length))).toContain(renewed.headers[0]!.value)
   })
 })
 

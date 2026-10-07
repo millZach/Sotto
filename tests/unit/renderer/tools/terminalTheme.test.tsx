@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const xterm = vi.hoisted(() => ({ instances: [] as { options: Record<string, unknown>; themes: unknown[] }[] }))
+const xterm = vi.hoisted(() => ({ selection: 'terminal selection', range: { start: { x: 0, y: 0 }, end: { x: 18, y: 0 } }, instances: [] as { options: Record<string, unknown>; themes: unknown[]; key: (event: KeyboardEvent) => boolean; clearSelection: ReturnType<typeof vi.fn>; selectionChange: () => void }[] }))
 const gpu = vi.hoisted(() => ({ fail: false, instances: [] as { dispose: ReturnType<typeof vi.fn>; lose(): void }[] }))
 vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class {
   readonly dispose = vi.fn()
@@ -21,7 +21,14 @@ vi.mock('@xterm/xterm', () => ({
     }
     loadAddon(addon: unknown): void { if (gpu.fail && addon && typeof addon === 'object' && 'onContextLoss' in addon) throw new Error('WebGL unavailable') }
     onData(): void {}
-    attachCustomKeyEventHandler(): void {}
+    key: (event: KeyboardEvent) => boolean = () => true
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void { this.key = handler }
+    selectionChange: () => void = () => {}
+    onSelectionChange(listener: () => void): { dispose(): void } { this.selectionChange = listener; return { dispose() {} } }
+    hasSelection(): boolean { return xterm.selection.length > 0 }
+    getSelection(): string { return xterm.selection }
+    getSelectionPosition() { return xterm.selection ? { start: { ...xterm.range.start }, end: { ...xterm.range.end } } : undefined }
+    readonly clearSelection = vi.fn(() => { xterm.selection = ''; this.selectionChange() })
     open(): void {}
     dispose(): void {}
   },
@@ -30,6 +37,23 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions(): unde
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 const { createXtermView, terminalTheme } = await import('../../../../src/renderer/src/tools/terminalView')
+
+it('copies a terminal selection through main when browser clipboard access is denied', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const deliverOutput = vi.fn(async () => 'copied')
+  const writeText = vi.fn(async () => { throw new Error('Permission denied') })
+  vi.stubGlobal('sotto', { deliverOutput })
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+  const view = createXtermView({ onInput() {}, onInterrupt() {} }, { resolveColor: value => value })
+  const terminal = xterm.instances[0]!
+  expect(terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))).toBe(false)
+  await Promise.resolve()
+  expect(deliverOutput).toHaveBeenCalledWith({ text: 'terminal selection', autoPaste: false, pasteDelayMs: 50 })
+  expect(writeText).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(terminal.clearSelection).toHaveBeenCalledOnce())
+  view.dispose()
+  vi.unstubAllGlobals()
+})
 
 /** Stands in for the page's colour engine: the named CSS values the tests use, as the sRGB a canvas reads back. */
 const PAINTED: Record<string, string> = {
@@ -68,11 +92,123 @@ function paint(root: HTMLElement, values: Record<string, string>): void {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   document.documentElement.removeAttribute('style')
   for (const name of Object.keys(document.documentElement.dataset)) delete document.documentElement.dataset[name]
   xterm.instances.length = 0
   gpu.instances.length = 0
   gpu.fail = false
+  xterm.selection = 'terminal selection'
+  xterm.range = { start: { x: 0, y: 0 }, end: { x: 18, y: 0 } }
+})
+
+it('keeps the terminal selection until copying succeeds and explains a failed copy', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  let fail!: (error: Error) => void
+  const deliverOutput = vi.fn(() => new Promise((_resolve, reject) => { fail = reject }))
+  vi.stubGlobal('sotto', { deliverOutput })
+  const onNotice = vi.fn()
+  const view = createXtermView({ onInput() {}, onInterrupt() {}, onNotice }, { resolveColor: value => value })
+  const terminal = xterm.instances[0]!
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  fail(new Error('Permission denied'))
+  await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not copy. Your selection is kept. Try Ctrl+C again.'))
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  deliverOutput.mockResolvedValue('copied')
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  await vi.waitFor(() => expect(terminal.clearSelection).toHaveBeenCalledOnce())
+  expect(onNotice).toHaveBeenLastCalledWith(null)
+  view.dispose()
+})
+
+it.each([
+  { selection: 'new selection', change: 'selection' },
+  { selection: 'terminal selection', change: 'selection' },
+  { selection: 'drag selection', change: 'mousedown' },
+  { selection: 'pointer selection', change: 'pointerdown' },
+])('keeps a newer $change selection when an earlier copy completes', async ({ selection, change }) => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const pending = Promise.withResolvers<string>()
+  const deliverOutput = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue('copied')
+  vi.stubGlobal('sotto', { deliverOutput })
+  const onNotice = vi.fn(), onInterrupt = vi.fn()
+  const view = createXtermView({ onInput() {}, onInterrupt, onNotice }, { resolveColor: value => value })
+  view.setInputEnabled(true)
+  const host = document.createElement('div')
+  view.mount(host)
+  const terminal = xterm.instances[0]!
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  xterm.selection = selection
+  if (change === 'selection') terminal.selectionChange()
+  else host.firstElementChild!.dispatchEvent(new MouseEvent(change, { bubbles: true }))
+  pending.resolve('copied')
+  await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith(null))
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  expect(deliverOutput).toHaveBeenLastCalledWith({ text: selection, autoPaste: false, pasteDelayMs: 50 })
+  expect(onInterrupt).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(terminal.clearSelection).toHaveBeenCalledOnce())
+  view.dispose()
+})
+
+it('keeps a range expanded after copying during an active drag', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const pending = Promise.withResolvers<string>()
+  const deliverOutput = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue('copied')
+  vi.stubGlobal('sotto', { deliverOutput })
+  const onNotice = vi.fn(), onInterrupt = vi.fn()
+  const view = createXtermView({ onInput() {}, onInterrupt, onNotice }, { resolveColor: value => value })
+  view.setInputEnabled(true)
+  const host = document.createElement('div')
+  view.mount(host)
+  const terminal = xterm.instances[0]!
+  host.firstElementChild!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  xterm.selection = 'terminal selection expanded'
+  xterm.range.end = { x: 26, y: 0 }
+  // xterm updates the live endpoint during dragging, then emits selectionChange on mouseup.
+  pending.resolve('copied')
+  await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith(null))
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  expect(deliverOutput).toHaveBeenLastCalledWith({ text: 'terminal selection expanded', autoPaste: false, pasteDelayMs: 50 })
+  expect(onInterrupt).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(terminal.clearSelection).toHaveBeenCalledOnce())
+  view.dispose()
+})
+
+it.each(['success', 'failure'])('ignores a pending copy %s after the terminal is disposed', async outcome => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const pending = Promise.withResolvers<string>()
+  vi.stubGlobal('sotto', { deliverOutput: vi.fn(() => pending.promise) })
+  const onNotice = vi.fn()
+  const view = createXtermView({ onInput() {}, onInterrupt() {}, onNotice }, { resolveColor: value => value })
+  const terminal = xterm.instances[0]!
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  view.dispose()
+  if (outcome === 'success') pending.resolve('copied')
+  else pending.reject(new Error('Copy failed'))
+  await pending.promise.catch(() => {})
+  await Promise.resolve()
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  expect(onNotice).not.toHaveBeenCalled()
+})
+
+it('does not copy whitespace-only terminal selections or interrupt the command', () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const deliverOutput = vi.fn(), onInterrupt = vi.fn(), onNotice = vi.fn()
+  vi.stubGlobal('sotto', { deliverOutput })
+  xterm.selection = ' \n\t '
+  const view = createXtermView({ onInput() {}, onInterrupt, onNotice }, { resolveColor: value => value })
+  view.setInputEnabled(true)
+  const terminal = xterm.instances[0]!
+  terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
+  expect(deliverOutput).not.toHaveBeenCalled()
+  expect(terminal.clearSelection).not.toHaveBeenCalled()
+  expect(onInterrupt).not.toHaveBeenCalled()
+  expect(onNotice).toHaveBeenCalledWith('Nothing to copy. Select some text first.')
+  view.dispose()
 })
 
 describe('terminal colours', () => {
@@ -104,6 +240,16 @@ describe('terminal colours', () => {
     root.dataset.theme = 'dark'
     paint(root, { '--tt-sidebar': '#050706', '--tt-code-text': '#dfe4e1', '--tt-accent': 'oklch(0.758933 0.105833 241.548)' })
     expect(terminalTheme(root, resolve)).toMatchObject({ background: '#050706', foreground: '#dfe4e1', cursor: '#58b6ec', selectionBackground: '#58b6ec52', selectionInactiveBackground: '#58b6ec2e' })
+  })
+
+  it('keeps the background colour at zero alpha when see-through, so contrast is still measured against it', () => {
+    const root = document.documentElement
+    root.dataset.theme = 'dark'
+    paint(root, TERMINAL_LIGHT)
+    const solid = terminalTheme(root, resolve)
+    const seeThrough = terminalTheme(root, resolve, true)
+    expect(seeThrough.background).toBe(`${solid.background}00`)
+    expect(seeThrough).toMatchObject({ foreground: solid.foreground, cursorAccent: solid.cursorAccent, red: solid.red })
   })
 
   it('never hands xterm a value the page cannot paint', () => {

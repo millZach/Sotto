@@ -1,12 +1,18 @@
 // @vitest-environment node
 import { serialize } from 'node:v8'
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import type { FileListRequest, FileRequest } from '../../../src/shared/files'
+import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
+import { hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
+import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
+import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
-import { HostConnectionError } from '../../../src/main/agents/socketHostService'
+import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand } from '../../../src/shared/agents'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE = '22222222-2222-4222-8222-222222222222'
@@ -22,7 +28,130 @@ function fixture(hostId: string, kind: 'local' | 'remote') {
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail, observe, preview: () => null }
   return { state, command, detail, observe, connection }
 }
+function unsupportedComposer() {
+  const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+  remote.state.activeThreadId = 'thread'; remote.state.draftThreadId = 'thread'
+  remote.state.draft = 'Previously saved text'; remote.state.composing = true
+  const onPushError = vi.fn()
+  const socket = () => {
+    const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false, onPushError })
+    const call = vi.fn(async (operation: HostOperation) => operation.op === 'detail' ? null : remote.state)
+    Object.assign(service, { cached: remote.state, features: [], call })
+    return { service, call, connection: { ...remote.connection, service } }
+  }
+  const first = socket()
+  router.add(first.connection); router.select(REMOTE)
+  const notifications: { error: string | null; title: string; draft: string }[] = []
+  router.subscribe(state => notifications.push({ error: state.error, title: state.host.threads[0]?.title ?? '', draft: state.draft }))
+  const save = (text: string) => router.command({ type: 'compose', threadId: hostEntityKey(REMOTE, 'thread'), text }, desktopWindowClient())
+  return { router, remote, ...first, notifications, save, socket, onPushError }
+}
+
 describe('desktop host routing', () => {
+  it('qualifies and bounds exact retirement and delivery proof across two full host ledgers', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) {
+      f.state.obsoleteDrafts = Array.from({ length: MAX_DELIVERED_DRAFTS }, () => ({ threadId: 'thread', draftId: randomUUID() }))
+      f.state.deliveredDrafts = Array.from({ length: MAX_DELIVERED_DRAFTS }, () => ({ threadId: 'thread', draftId: randomUUID() }))
+      router.add(f.connection)
+    }
+    try {
+      const result = agentStateSchema.parse(router.shell())
+      expect(result.obsoleteDrafts).toHaveLength(MAX_DELIVERED_DRAFTS)
+      expect(result.deliveredDrafts).toHaveLength(MAX_DELIVERED_DRAFTS)
+      expect(result.obsoleteDrafts?.every(item => item.threadId === hostEntityKey(REMOTE, 'thread'))).toBe(true)
+      expect(result.deliveredDrafts?.every(item => item.threadId === hostEntityKey(REMOTE, 'thread'))).toBe(true)
+    } finally { router.dispose() }
+  })
+  it.each(['send', 'compose'] as const)('returns fixed update guidance for targeted %s to an older host without sending or losing its draft', async type => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    remote.state.activeThreadId = 'thread'
+    remote.state.draft = 'The retained prompt'
+    remote.state.draftThreadId = 'thread'
+    remote.state.composing = true
+    const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const call = vi.fn()
+    Object.assign(service, { cached: remote.state, features: ['answer-check'], call })
+    router.add({ ...remote.connection, service })
+    router.select(REMOTE)
+    const draft = { threadId: hostEntityKey(REMOTE, 'thread'), text: 'The retained prompt', attachments: [] }
+    const result = await router.command(type === 'send' ? { type, draft } : { type, ...draft }, desktopWindowClient())
+    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your draft is kept on this computer.'
+      : 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.')
+    expect(result.draft).toBe('The retained prompt')
+    expect(result.draftThreadId).toBe(hostEntityKey(REMOTE, 'thread'))
+    expect(result.composing).toBe(true)
+    expect(call).not.toHaveBeenCalled()
+    expect(service.state()).toMatchObject(remote.state)
+    expect((service as unknown as { cached: unknown }).cached).toEqual(remote.state)
+    expect(router.shell().error).toBe(result.error)
+    router.dispose()
+  })
+
+  it('notifies unsupported autosave once while every edit remains refused and unsaved', async () => {
+    const f = unsupportedComposer()
+    try {
+      for (const text of ['New edit', 'New edit two', 'New edit three']) {
+        const result = await f.save(text)
+        expect(result.error).toBe('This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.')
+      }
+      expect(f.notifications).toHaveLength(4)
+      expect(f.notifications.map(item => item.draft)).toEqual(['New edit', 'New edit', 'New edit two', 'New edit three'])
+      expect(f.notifications.slice(1).every(item => item.error === f.router.shell().error)).toBe(true)
+      expect(f.call).not.toHaveBeenCalled(); expect(f.onPushError).not.toHaveBeenCalled()
+      expect(f.service.state().draft).toBe('New edit three')
+      expect((f.service as unknown as { cached: { draft: string } }).cached.draft).toBe('Previously saved text')
+    } finally { f.router.dispose() }
+  })
+
+  it.each(['error', 'selection', 'shell', 'reconnect'] as const)('does not suppress a refused autosave notice after an intervening %s while its reply is held', async intervening => {
+    const f = unsupportedComposer()
+    let release!: () => void, started!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve }), entered = new Promise<void>(resolve => { started = resolve })
+    const actual = f.service.command.bind(f.service)
+    let running: Promise<ReturnType<typeof f.router.shell>> | undefined
+    try {
+      const first = await f.save('First unsaved edit')
+      const held = vi.spyOn(f.service, 'command').mockImplementationOnce(async (command, client, id) => {
+        const result = await actual(command, client, id)
+        started(); await gate
+        return result
+      })
+      running = f.save('A newer unsaved edit')
+      await entered
+      if (intervening === 'error') {
+        f.call.mockResolvedValueOnce({ ...f.remote.state, error: 'Another action failed.' })
+        await f.router.command({ type: 'configure', patch: { followupLimit: 2 } }, desktopWindowClient())
+        expect(f.notifications.some(item => item.error === 'Another action failed.')).toBe(true)
+      } else if (intervening === 'selection') {
+        await f.router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
+      } else if (intervening === 'shell') {
+        const state = structuredClone(f.remote.state)
+        state.host.threads[0]!.title = 'Changed while the save reply was held'
+        const receiver = f.service as unknown as { receive(text: string): void }
+        receiver.receive(JSON.stringify({ v: 1, event: 'shell', state }))
+        expect(f.notifications.at(-1)!.title).toBe('Changed while the save reply was held')
+      } else {
+        f.router.replace(f.socket().connection)
+      }
+      const before = f.notifications.length
+      release()
+      expect((await running).error).toBe(first.error)
+      expect(f.notifications).toHaveLength(before + (intervening === 'shell' ? 0 : 1))
+      expect(f.notifications.at(-1)!.error).toBe(first.error)
+      if (intervening === 'shell') expect(f.notifications.at(-1)!.title).toBe('Changed while the save reply was held')
+      held.mockRestore()
+      if (intervening === 'reconnect') {
+        const reconnected = f.notifications.length
+        expect((await f.save('Edit on the reconnected host')).error).toBe(first.error)
+        expect(f.notifications).toHaveLength(reconnected + 2)
+        expect(f.notifications.at(-1)!.draft).toBe('Edit on the reconnected host')
+      }
+      expect(f.call.mock.calls.every(([operation]) => operation.op !== 'command' || operation.command.type !== 'compose')).toBe(true)
+      expect(f.onPushError).not.toHaveBeenCalled()
+    } finally { release(); await running; f.router.dispose() }
+  })
+
   it.each(['disconnected', 'unavailable', 'version_mismatch'] as const)('keeps %s failures on the uncertain command path', async code => {
     const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
     router.add(remote.connection)
@@ -49,6 +178,21 @@ describe('desktop host routing', () => {
     own.add(local.connection)
     local.state.error = noProviderRefusal('desktop', false)
     expect(own.shell().error).toBe('No provider is connected on this computer. Connect one in Settings > Providers.')
+  })
+  it('returns a worktree preview only to its caller and explains older host failures', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    router.add(remote.connection)
+    const publish = vi.fn(); router.subscribe(publish); publish.mockClear()
+    const preview = { path: '/checkout', branch: 'sotto/test', dirty: false, ignored: ['.env'], items: [{ path: '.env', bytes: 10, fileCount: 1 }], repositories: [], untracked: [] }
+    remote.command.mockResolvedValueOnce({ ...remote.state, worktreeReclaimPreview: preview })
+    expect((await router.command({ type: 'preview-reclaim-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).worktreeReclaimPreview).toEqual(preview)
+    expect(router.shell().worktreeReclaimPreview).toBeUndefined()
+    expect(publish).not.toHaveBeenCalled()
+    remote.command.mockResolvedValueOnce(remote.state)
+    expect((await router.command({ type: 'preview-reclaim-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).error).toContain('Update the host')
+    remote.command.mockRejectedValueOnce(new Error('Unknown command'))
+    expect((await router.command({ type: 'preview-reclaim-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).error).toContain('update the host')
+    expect(publish).not.toHaveBeenCalled()
   })
   it('keeps colliding IDs distinct and dispatches every thread action to its owner', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
@@ -77,6 +221,19 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, stage: stages.remote, content: contents.remote, available: () => false })
     await expect(router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes })).rejects.toThrow('Nothing was attached.')
     expect(await router.attachmentContent({ threadId: hostEntityKey(REMOTE, 'thread'), digest: handle.digest })).toBeNull()
+  })
+  it('passes each host\'s finished-unread mark to the window on that host\'s thread, and sends the window\'s panes to the host that owns them (ADR-0046)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    remote.state.host.threads = [{ ...remote.state.host.threads[0]!, finishedUnread: true }]
+    const thread = (hostId: string) => router.shell().host.threads.find(item => item.id === hostEntityKey(hostId, 'thread'))
+    expect(thread(REMOTE)?.finishedUnread).toBe(true)
+    expect(thread(LOCAL)).not.toHaveProperty('finishedUnread')
+    // Showing the remote thread is the remote host's to hear: it clears the mark there, and the next shell carries that.
+    await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())
+    expect(remote.observe).toHaveBeenCalledWith(['thread'])
+    expect(local.observe).toHaveBeenCalledWith([])
+    router.dispose()
   })
   it("names each host's unconfirmed settings changes by the thread's client key", () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
@@ -133,6 +290,94 @@ describe('desktop host routing', () => {
       moveLocalTo('thread'); moveLocalTo('other')
       expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'thread'))
     })
+    describe('a thread this window creates on a remote host', () => {
+      // A remote host keeps a selection for each client and leaves it alone on create-thread, as forge did.
+      const NEW_THREAD = '33333333-3333-4333-8333-333333333334'
+      const newThread = hostEntityKey(REMOTE, NEW_THREAD)
+      const addNewThread = (host: ReturnType<typeof fixture>) =>
+        host.state.host.threads.push({ id: NEW_THREAD, projectId: 'project', title: 'New thread', modelId: '', status: 'idle', messages: [], requests: [] })
+      /** The host's answer to create-thread: the thread added and its own selection unmoved, or a refusal. */
+      function hostAnswersCreation(host: ReturnType<typeof fixture>, refusal: string | null = null) {
+        host.command.mockImplementationOnce(async () => {
+          if (refusal === null) addNewThread(host)
+          return { ...host.state, error: refusal }
+        })
+      }
+      const createFromWindow = (router: DesktopHostRouter, hostId = REMOTE, threadId: string | null = hostEntityKey(hostId, NEW_THREAD)) =>
+        router.command({ type: 'create-thread', ...(threadId ? { threadId } : {}), projectId: hostEntityKey(hostId, 'project'), title: 'New thread', modelId: 'model' }, desktopWindowClient())
+      const sentTypes = (host: ReturnType<typeof fixture>) => host.command.mock.calls.map(([request]) => request.type)
+
+      it('opens it and tells the host, so the host composes and sends there', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        hostAnswersCreation(remote)
+        await createFromWindow(router)
+        expect(router.shell()).toMatchObject({ hostId: REMOTE, activeThreadId: newThread, activeProjectId: hostEntityKey(REMOTE, 'project') })
+        expect(remote.command).toHaveBeenLastCalledWith({ type: 'select-thread', threadId: NEW_THREAD }, desktopWindowClient())
+      })
+      it('stays put when the host refuses it', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        hostAnswersCreation(remote, 'Choose an available project.')
+        await createFromWindow(router)
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'thread'))
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+      })
+      it('keeps a selection the user made while the host created it', async () => {
+        const { router, remote } = setup()
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'other') }, desktopWindowClient())
+        finish(); await creating
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
+      })
+      it('keeps where Next took the window while the host created it', async () => {
+        const { router, local, remote, moveLocalTo } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        local.command.mockImplementationOnce(async () => { moveLocalTo('other'); return local.state })
+        await router.command({ type: 'next' }, desktopWindowClient())
+        finish(); await creating
+        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
+      })
+      it('reports the creation, not a refusal, when the host loses or refuses the selection that follows', async () => {
+        const { router, remote } = setup()
+        hostAnswersCreation(remote)
+        remote.command.mockRejectedValueOnce(new HostConnectionError('The host did not confirm the command.', 'disconnected'))
+        await expect(createFromWindow(router)).resolves.toMatchObject({ error: null })
+        expect(router.shell().activeThreadId).toBe(newThread)
+      })
+      it('reports the creation when the host refuses the selection that follows', async () => {
+        const { router, remote } = setup()
+        hostAnswersCreation(remote)
+        remote.command.mockImplementationOnce(async () => ({ ...remote.state, error: 'That thread is unavailable.' }))
+        await expect(createFromWindow(router)).resolves.toMatchObject({ error: null })
+        expect(router.shell().activeThreadId).toBe(newThread)
+      })
+      it('leaves a host removed while it created the thread', async () => {
+        const { router, remote } = setup()
+        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
+        let finish: () => void = () => undefined
+        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
+        const creating = createFromWindow(router)
+        router.remove(REMOTE)
+        finish(); await creating
+        expect(router.shell().hostId).toBe(LOCAL)
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+      })
+      it('asks nothing more of a creation that names no thread, or of this computer, which selects what it creates', async () => {
+        const { router, local, remote } = setup()
+        hostAnswersCreation(remote)
+        await createFromWindow(router, REMOTE, null)
+        expect(sentTypes(remote)).toEqual(['create-thread'])
+        hostAnswersCreation(local)
+        await createFromWindow(router, LOCAL)
+        expect(sentTypes(local)).toEqual(['create-thread'])
+      })
+    })
     it('keeps a selection the user made while the command ran', async () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
@@ -176,6 +421,70 @@ describe('desktop host routing', () => {
     router.remove(LOCAL)
     router.add({ ...local.connection })
     await expect(router.hostFolders({ hostId: LOCAL })).rejects.toThrow('cannot list its folders yet')
+  })
+  it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
+    const workspace = { threadId: 'thread', projectId: 'project', workingDirectory: '/home/forge/repo', workspaceId }
+    const agentRow = { id: 'claude:ui', sequence: 1, revision: 1, assignmentId: 'task-ui', assignmentCount: 1, title: 'Build the Agents view', description: 'Connect the roster.', status: 'running' as const, lastObservedAt: '2026-10-05T10:00:00.000Z' }
+    const reads = {
+      threadFiles: vi.fn(async (request: FileListRequest) => ({ ok: true as const, value: { workspace, path: request.path, truncated: false,
+        entries: [{ name: 'a.txt', path: request.path ? `${request.path}/a.txt` : 'a.txt', kind: 'file' as const }] } })),
+      threadFilePreview: vi.fn(async (request: FileRequest) => ({ ok: true as const, value: { workspace, path: request.path, name: 'a.txt', size: 1, content: { kind: 'text' as const, text: 'a' } } })),
+      gitChanges: vi.fn(async () => ({ ok: true as const, value: { workspace, branch: 'main', revision: 'r1', files: [], truncated: false } })),
+      gitReview: vi.fn(async () => ({ ok: true as const, value: { workspace, revision: 'r1', scope: { kind: 'working' as const }, files: [], truncated: false } })),
+      subagentPage: vi.fn(async () => ({ threadId: 'thread', revision: 1, rows: [agentRow], summary: EMPTY_SUBAGENT_SUMMARY })),
+      subagentAssignments: vi.fn(async () => ({ threadId: 'thread', agentId: 'agent', assignments: [] })),
+    }
+    router.add(local.connection); router.add({ ...remote.connection, ...reads })
+    // The host is asked by its own ID, and its answer's thread and project come back keyed to it.
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key, projectId: hostEntityKey(REMOTE, 'project'), workingDirectory: '/home/forge/repo', workspaceId } } })
+    expect(reads.threadFiles).toHaveBeenCalledWith({ threadId: 'thread', path: '' })
+    await expect(router.threadFilePreview({ threadId: key, path: 'a.txt', workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    expect(reads.threadFilePreview).toHaveBeenCalledWith({ threadId: 'thread', path: 'a.txt', workspaceId })
+    await expect(router.gitChanges({ threadId: key, workspaceId })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toMatchObject({ ok: true, value: { workspace: { threadId: key } } })
+    expect(reads.gitReview).toHaveBeenCalledWith({ threadId: 'thread', workspaceId, scope: { kind: 'working' } })
+    // The host's roster comes back whole, keyed to the host's thread.
+    await expect(router.subagentPage({ threadId: key })).resolves.toMatchObject({ threadId: key, rows: [agentRow] })
+    expect(reads.subagentPage).toHaveBeenCalledWith({ threadId: 'thread' })
+    // An agent's ID is the provider's, not a Sotto reference, so it comes back as it went.
+    await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).resolves.toEqual({ threadId: key, agentId: 'agent', assignments: [] })
+    // Copy path is the host's own path, in its format, once a listing of its folder shows the working folder and the entry.
+    await expect(router.threadFilePath({ threadId: key, path: 'notes/a.txt', workspaceId })).resolves.toMatchObject({ ok: true, value: { path: 'notes/a.txt', absolutePath: '/home/forge/repo/notes/a.txt', workspace: { threadId: key } } })
+    expect(reads.threadFiles).toHaveBeenLastCalledWith({ threadId: 'thread', path: 'notes', workspaceId })
+    await expect(router.threadFilePath({ threadId: key, path: '', workspaceId })).resolves.toMatchObject({ ok: true, value: { absolutePath: '/home/forge/repo' } })
+    await expect(router.threadFilePath({ threadId: key, path: 'gone.txt', workspaceId })).resolves.toMatchObject({ ok: false, error: { code: 'path-unavailable' } })
+    await expect(router.gitChangesPath({ threadId: key, path: 'src/b.ts', workspaceId })).resolves.toMatchObject({ ok: true, value: { absolutePath: '/home/forge/repo/src/b.ts', workspace: { threadId: key } } })
+    expect(local.command).not.toHaveBeenCalled()
+  })
+  it('answers Files and Changes with the host\'s trouble in words, and refuses Agents with the same words', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
+    const older = new HostConnectionError(hostVersionMismatch('0.1.31', '0.1.30', false), 'version_mismatch')
+    router.add({ ...remote.connection, threadFiles: vi.fn(async () => { throw older }), subagentPage: vi.fn(async () => { throw older }),
+      gitChanges: vi.fn(async () => { throw new Error('{"issues":[]}') }) })
+    // A host from before these reads says which side to update, where the listing would have been.
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: older.message } })
+    await expect(router.subagentPage({ threadId: key })).rejects.toThrow(older.message)
+    // Anything else it could not read is named by the host, never shown raw.
+    await expect(router.gitChanges({ threadId: key })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Forge could not read this thread\'s changes. Nothing was changed. Try again.' } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.' } })
+    await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).rejects.toThrow('Agents is unavailable on this host.')
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, threadFiles: vi.fn(), available: () => false })
+    await expect(router.threadFiles({ threadId: key, path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: 'This host is disconnected. Nothing was changed. Connect again to read its files.' } })
+    await expect(router.threadFiles({ threadId: hostEntityKey('33333333-3333-4333-8333-333333333333', 'thread'), path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+  it('joins a paired host\'s path in that host\'s own format, never this computer\'s', () => {
+    expect(hostAbsolutePath('/home/forge/repo', 'src/a.ts')).toBe('/home/forge/repo/src/a.ts')
+    expect(hostAbsolutePath('/home/forge/repo/', 'src/a.ts')).toBe('/home/forge/repo/src/a.ts')
+    expect(hostAbsolutePath('/', 'etc/hosts')).toBe('/etc/hosts')
+    expect(hostAbsolutePath('/home/forge/back\\slash', 'a.txt')).toBe('/home/forge/back\\slash/a.txt')
+    expect(hostAbsolutePath('C:\\work\\repo', 'src/a.ts')).toBe('C:\\work\\repo\\src\\a.ts')
+    expect(hostAbsolutePath('C:\\', 'a.txt')).toBe('C:\\a.txt')
+    expect(hostAbsolutePath('C:/work/repo', 'src/a.ts')).toBe('C:/work/repo/src/a.ts')
+    expect(hostAbsolutePath('/home/forge/repo', '')).toBe('/home/forge/repo')
   })
   it('splits observed threads, routes attention IDs, and refuses cross-host commands and local folder actions', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
@@ -260,5 +569,79 @@ describe('a host restarting for an update (ADR-0040)', () => {
     const own = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local')
     local.state.clientUpdates = [reading]; own.add(local.connection)
     expect(own.shell().clientUpdates).toEqual([reading])
+  })
+})
+
+describe('exact answer notice ownership', () => {
+  function answerNoticeFixture() {
+    const remote = fixture(REMOTE, 'remote')
+    remote.state.host.threads[0]!.providerId = 'claude'
+    remote.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Question', options: [{ id: 'yes', label: 'Yes' }] }]
+    const completed: RequestAnswerRecovery['completed'] = []
+    const bound: RequestAnswerRecovery['completed'] = []
+    remote.connection.service.requestAnswerRecovery = () => ({ uncertainRequestIds: [], completed })
+    const router = new DesktopHostRouter(emptyDesktopState, { bindRequestDraftDecision: async (target, decisionId) => {
+      bound.push({ requestId: target.requestId, questionsDigest: requestQuestionsDigest(target.questions), decisionId })
+    } })
+    router.add(remote.connection)
+    const answer = { type: 'answer' as const, threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', answer: 'yes' }
+    return { remote, completed, bound, router, answer }
+  }
+  it.each(['before', 'after'] as const)('retires only its exact answer notice when proof arrives %s the command reply', async timing => {
+    const f = answerNoticeFixture()
+    f.remote.command.mockImplementationOnce(async () => {
+      if (timing === 'before') f.completed.push(f.bound[0]!)
+      return { ...f.remote.state, error: 'Synthetic unconfirmed answer' }
+    })
+    const result = await f.router.command(f.answer, desktopWindowClient())
+    expect(result.error).toBe(timing === 'before' ? null : 'Synthetic unconfirmed answer')
+    if (timing === 'after') f.completed.push(f.bound[0]!)
+    expect(f.router.shell().error).toBeNull()
+    f.router.dispose()
+  })
+  it.each(['answer', 'interrupt'] as const)('keeps a newer %s notice with the same wording when an older answer gains proof', async later => {
+    const f = answerNoticeFixture()
+    f.remote.command.mockImplementation(async () => ({ ...f.remote.state, error: 'Synthetic unconfirmed answer' }))
+    await f.router.command(f.answer, desktopWindowClient())
+    const oldProof = f.bound[0]!
+    await f.router.command(later === 'answer' ? f.answer : { type: 'interrupt', threadId: f.answer.threadId }, desktopWindowClient())
+    f.completed.push(oldProof)
+    expect(f.router.shell().error).toBe('Synthetic unconfirmed answer')
+    f.router.dispose()
+  })
+})
+
+describe('explicit native answer checks', () => {
+  it.each([
+    ['uncertain', 'stable'], ['retry-ready', 'stable'], ['uncertain', 'cleared'], ['retry-ready', 'cleared'],
+    ['uncertain', 'failed'], ['retry-ready', 'failed'],
+  ] as const)('does not let an old receipt shortcut a %s native re-offer (receipt %s)', async (boundary, receiptOutcome) => {
+    const remote = fixture(REMOTE, 'remote'), router = new DesktopHostRouter(emptyDesktopState)
+    const questions = [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }]
+    remote.state.host.threads[0]!.providerId = 'grok'
+    remote.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Question', options: [], questions,
+      ...(boundary === 'uncertain' ? { delivery: 'uncertain' as const } : { answerRetryReady: true }) }]
+    const target = { kind: 'thread' as const, ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'grok' as const, requestId: 'question', questions }
+    const digest = requestQuestionsDigest(questions)
+    remote.connection.service.requestAnswerRecovery = () => ({ uncertainRequestIds: [], completed: [{ requestId: 'question', decisionId: 'old-answer', questionsDigest: digest }] })
+    const receipt = vi.fn(async () => {
+      if (receiptOutcome === 'cleared') remote.state.host.threads[0]!.requests = []
+      if (receiptOutcome === 'failed') throw new Error('Synthetic receipt read failed')
+    }), check = vi.fn(async () => undefined)
+    remote.connection.refreshRequestAnswer = receipt
+    Object.assign(remote.connection.service, { checkRequestAnswer: check })
+    router.add(remote.connection)
+    await router.refreshRequestDraft(target, 'old-answer')
+    expect(check).toHaveBeenCalledWith({ threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: digest }, desktopWindowClient())
+    expect(receipt).toHaveBeenCalledWith('old-answer', { threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: digest })
+    expect(remote.detail).not.toHaveBeenCalled()
+    router.dispose()
+  })
+  it('refuses an older host instead of treating cached detail as a fresh native Check', async () => {
+    const remote = fixture(REMOTE, 'remote'), router = new DesktopHostRouter(emptyDesktopState)
+    router.add(remote.connection)
+    await expect(router.refreshRequestDraft({ kind: 'thread', ownerId: hostEntityKey(REMOTE, 'thread'), providerId: 'claude', requestId: 'question',
+      questions: [{ id: '0', question: 'Question', options: [], multiSelect: false, allowFreeText: true }] })).rejects.toThrow('Update')
+    expect(remote.detail).not.toHaveBeenCalled(); router.dispose()
   })
 })

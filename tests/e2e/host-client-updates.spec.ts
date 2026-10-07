@@ -157,10 +157,14 @@ test('a host’s client updates show on its tiles and run there, one at a time, 
     await expect(tile('Codex')).toContainText('Or run this on forge:')
     await expect(tile('Codex').locator('code')).toHaveText('mise upgrade codex')
     await tile('Codex').getByText('What mise printed').click()
-    await expect(tile('Codex')).toContainText('mise ERROR connection reset by peer')
+    await expect(tile('Codex')).toContainText('mise ERROR …: exit status 1')
+    await expect(tile('Codex')).toContainText('…: The process cannot access the file. connection reset by peer')
+    await expect(tile('Codex')).not.toContainText('John Smith')
     await capture(launched, 'failed-tile', async () => {
       await tile('Codex').scrollIntoViewIfNeeded()
-      await expect(tile('Codex')).toContainText('mise ERROR connection reset by peer')
+      await tile('Codex').locator('pre').evaluate(element => { element.scrollTop = element.scrollHeight })
+      await expect(tile('Codex')).toContainText('…: The process cannot access the file. connection reset by peer')
+      await expect(tile('Codex')).not.toContainText('John Smith')
     })
 
     // Try again on Codex's row finishes it; Done puts the chip away and focus goes back to Show providers.
