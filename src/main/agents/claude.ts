@@ -37,6 +37,7 @@ import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
+import { ReadsBeforeSend } from './readsBeforeSend'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
@@ -203,6 +204,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * replayed record takes its turn and anchor from how far the read has got, as it would from an empty log.
    */
   private readonly replays = new Map<string, { seen: Set<string>; userId?: string; textId?: string }>()
+  /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
+  private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly staleMemoryContexts = new Set<string>()
   private readonly nativeTakeovers = new Set<string>()
   private readonly completedOrigins = new Set<string>()
@@ -342,7 +345,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.staleMemoryContexts.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.staleMemoryContexts.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       let alias = stored
       if (alias.rollbackPending?.targetSessionId) {
@@ -450,7 +453,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd),
       executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
+  /**
+   * Read a thread back from Claude Code: bring it up to date, then hand back the snapshot. The read before a send
+   * (`beforeSend`) is the same read, and it stands for the send's own first read (#765).
+   */
   async refreshThread(id: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
+    await this.sync(id, purpose)
+    this.readsBeforeSend.mark(id, purpose)
+    return this.view(purpose?.historyFromEvents)
+  }
+  /** How far this thread has been read, as a send's first read compares it with the read the coordinator made for it. */
+  private readState(id: string): string { return `${this.generation}:${this.aliases[id]?.sessionId}:${this.messageLog.count(id)}` }
+  /**
+   * Bring a thread up to date from its transcript: start its session when it has none, read what is new in the
+   * transcript, and reopen an uncertain answer when asked. It builds no snapshot; a caller that wants one asks
+   * `refreshThread`.
+   */
+  private async sync(id: string, purpose?: ThreadReadPurpose): Promise<void> {
     if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')
     const generation = this.generation
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
@@ -474,7 +493,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
       this.emit()
     }
-    return this.view(purpose?.historyFromEvents)
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
@@ -508,7 +526,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'rewinding it'))
     const generation = this.generation
     const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), alias.cwd, this.options.historyModulePath)
-    await this.refreshThread(id)
+    await this.sync(id)
     const matches = (): boolean => isDeepStrictEqual([...this.messageLog.userMessageIds(id)], [...expectedUserMessageIds])
     if (!matches()) throw new Error('Claude conversation changed. Refresh the checkpoint preview.')
     const messages = await history.read(alias.sessionId)
@@ -520,7 +538,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const retained = retainedCount ? messages.slice(0, firstRemoved) : []
     const boundary = retained.at(-1)?.uuid
     if (retainedCount > 0 && (!boundary || firstRemoved < 1)) throw new Error('Claude retained history is unavailable.')
-    await this.refreshThread(id)
+    await this.sync(id)
     if (generation !== this.generation || !this.state.connected || !matches() || this.threads.get(id)?.status === 'running' || thread.requests.length || thread.backgroundWork?.length) throw new Error('Claude changed before rewind. Refresh the preview.')
     this.dispatching.add(id)
     const sourceSessionId = alias.sessionId
@@ -632,6 +650,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const id = command.threadId; const alias = this.aliases[id]; const thread = this.threads.get(id)
     if (!alias || !thread) throw new Error('That Claude thread is unavailable.')
+    // The coordinator's read before this send stands for its first read (#765).
+    const readForSend = this.readsBeforeSend.take(id, command)
     this.reaper.touch(id)
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review the original and forked native sessions before continuing; Sotto will not replay it.')
     if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
@@ -662,7 +682,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const checkLatestUserMessage = (): void => {
         if (command.expectedLastUserMessageId !== undefined && (this.messageLog.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
       }
-      await this.refreshThread(id)
+      if (!readForSend()) await this.sync(id)
       checkLatestUserMessage()
       if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
       if (this.dispatching.has(id) || thread.status === 'running') throw new Error('Claude is already running a turn.')
@@ -697,7 +717,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
         try {
-          await this.refreshThread(id); checkLatestUserMessage()
+          await this.sync(id); checkLatestUserMessage()
           if (thread.requests.length || this.threads.get(id)?.status === 'running') throw new Error('The Claude thread started working or needs an answer before another prompt.')
           if (this.runtimes.get(id) !== runtime) throw new Error('Claude Code stopped before this message was sent. Nothing was sent; send it again.')
         }

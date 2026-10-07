@@ -168,3 +168,7 @@ SOTTO_PERF_BENCH=1 npx vitest run tests/perf/codexSendRead.perf.test.ts --maxWor
 SOTTO_PERF_BENCH=1 SOTTO_PERF_WITHOUT_TURNS_LIST=1 npx vitest run tests/perf/codexSendRead.perf.test.ts --maxWorkers=1 --disable-console-intercept
 SOTTO_CODEX_TURNS_LIVE=1 npx vitest run tests/integration/codexNewestTurnLive.test.ts --maxWorkers=1 --disable-console-intercept
 ```
+
+Since #765 the coordinator's check stands for the adapter's own while the thread has not moved, so a send from the
+Threads page makes one newest-turn check, and the reconciliation read after Codex accepts a send asks the workspace for
+the echo it holds before reading whole (`2026-10-05-one-read-per-send.md`).
