@@ -1,9 +1,10 @@
 // @vitest-environment node
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { RetiredChatHistory } from '../../../src/main/settings/retiredChats'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))) })
@@ -81,12 +82,24 @@ it.each(['{broken', JSON.stringify({ selectedChatId: null, chats: [{}] }), JSON.
   expect(await readdir(personal)).toEqual(['chats.json'])
 })
 
-it('leaves a missing primary missing and does not treat its abandoned copy as authoritative', async () => {
+it.each([false, true])('honors local history for abandoned copies when the primary is missing (history on: %s)', async enabled => {
   const { directory, personal, path } = await fixture()
   await rm(path)
   await writeFile(join(personal, crashCopy), 'private abandoned copy')
+  await writeFile(join(personal, 'chats.json.tmp-other'), 'unrelated file')
+  await mkdir(join(personal, 'codex'))
+  await writeFile(join(personal, 'codex', 'native.json'), 'native provider history')
+  await new RetiredChatHistory(directory, () => enabled).privacyChanged()
+  expect((await readdir(personal)).sort()).toEqual((enabled ? [crashCopy, 'chats.json.tmp-other', 'codex'] : ['chats.json.tmp-other', 'codex']).sort())
+  expect(await readFile(join(personal, 'codex', 'native.json'), 'utf8')).toBe('native provider history')
+})
+
+it('does not create a missing personal-chat directory', async () => {
+  const { directory, personal, path } = await fixture()
+  await rm(path)
+  await rmdir(personal)
   await new RetiredChatHistory(directory, () => false).privacyChanged()
-  expect(await readdir(personal)).toEqual([crashCopy])
+  expect(await readdir(directory)).toEqual([])
 })
 
 it('reports unreadable storage without revealing a body or resetting the primary', async () => {
@@ -115,8 +128,30 @@ it('strips unrecognized fields just as the original saved-chat schema did', asyn
   const input = { ...saved(), unknownTranscript: 'private unknown text' }
   Object.assign(input.chats[0]!, { unknownTranscript: 'private unknown text' })
   const { directory, path } = await fixture(JSON.stringify(input))
-  await new RetiredChatHistory(directory, () => false).privacyChanged()
+  const history = new RetiredChatHistory(directory, () => false)
+  await history.privacyChanged()
   expect(await readFile(path, 'utf8')).not.toContain('unknownTranscript')
+  // Comparing two parsed schemas would hide unknown content added to an otherwise clean primary.
+  const redacted = JSON.parse(await readFile(path, 'utf8'))
+  redacted.unknownTranscript = 'private unknown text'
+  redacted.chats[0].unknownTranscript = 'private unknown text'
+  await writeFile(path, JSON.stringify(redacted))
+  await history.privacyChanged()
+  expect(await readFile(path, 'utf8')).not.toContain('unknownTranscript')
+})
+
+it('does not write already redacted decisions again on subsequent startup or Settings cleanup', async () => {
+  const { directory, path } = await fixture()
+  const atomic = new AtomicJsonStore(path, (value: unknown) => value, () => null)
+  const store = { write: vi.fn(atomic.write.bind(atomic)) }
+  const history = new RetiredChatHistory(directory, () => false, store)
+  await history.privacyChanged()
+  expect(store.write).toHaveBeenCalledOnce()
+  const redacted = await readFile(path, 'utf8')
+  await history.privacyChanged()
+  await new RetiredChatHistory(directory, () => false, store).privacyChanged()
+  expect(store.write).toHaveBeenCalledOnce()
+  expect(await readFile(path, 'utf8')).toBe(redacted)
 })
 
 it('reports a failed crash-copy sweep after primary redaction and retries without restoring private content', async () => {

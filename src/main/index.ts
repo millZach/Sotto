@@ -805,12 +805,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   await requestDrafts.start()
   const cleanRetiredHistory = async (): Promise<void> => {
-    try {
-      await cleanSettingsHistory(retiredChatHistory, undefined, [() => requestDrafts.privacyChanged(agentHistoryEnabled)])
-    } catch (error) {
-      recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
-      throw error
-    }
+    const [chats, answers] = await Promise.allSettled([
+      Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
+      Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
+    ])
+    if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
+    if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
+    if (chats.status === 'rejected') throw chats.reason
+    if (answers.status === 'rejected') throw answers.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.

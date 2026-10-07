@@ -52,7 +52,7 @@ must not interfere with thread draft recovery.
 
 The failure notice reuses the existing recovery toast. Its minimum-size preview
 is archived on `prototype/remove-chat-privacy-notice` at
-`c0f7e2145963b52e167ee157c2e7a60ee8320752`, in the same prototype HTML path.
+`17a75ce3eb009680b9c268be55f7d938060d52ca`, in the same prototype HTML path.
 The preview confirms the copy fits without proposing a new surface.
 
 ## Verification scope
@@ -77,7 +77,7 @@ working files are retained in `.cache/inherited-launch-video`.
 - Separate GPT-6.1 Sol reviews find no remaining standards or scope issues.
 - Design capture and verification each pass 10 journeys and 146 tuples.
 - The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. The artifact deadline fix passes; 57 boot checks pass without reproducing the original failures. Initial PR CI passed with 7,810 Windows tests and the Linux host checks. The privacy correction requires fresh CI before merge.
-- Privacy correction: 115 focused unit/renderer tests, the artifact-ignore check, all four new privacy Electron journeys and eight removal/recovery neighbors pass. Typecheck, lint, notices and build pass. The failure notice fits at minimum size.
+- Final privacy correction: 120 focused unit/renderer tests, the artifact-ignore check, all five new privacy Electron journeys and eight removal/recovery neighbors pass. Typecheck, lint, notices and build pass. The failure notice fits at minimum size.
 - Native and browser computer-use runtimes still fail at startup with
   `apply deny-read ACLs`, including after the permission change and reset.
   A later retry again failed before reaching a window: the native kernel exited

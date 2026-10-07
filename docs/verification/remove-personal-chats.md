@@ -24,7 +24,8 @@ on startup and Settings saves, preserve unsent drafts and recovery identities,
 and remove submitted personal forms from the shared answer store. Thread forms
 retain their separate recovery policy. Malformed originals are never reset or
 backed up; a stable recovery notice reports incomplete cleanup. Only exact
-abandoned atomic copies are swept after a validated primary is cleaned.
+abandoned atomic copies are swept after a validated primary is cleaned, or
+when the primary is absent. A malformed primary blocks that sweep.
 
 ## Rendered review
 
@@ -124,7 +125,20 @@ issues. Its full CI remains a merge requirement.
 
 The existing recovery-toast copy was previewed at minimum size on local branch
 `prototype/remove-chat-privacy-notice`, commit
-`c0f7e2145963b52e167ee157c2e7a60ee8320752`. A later computer-use retry still
+`17a75ce3eb009680b9c268be55f7d938060d52ca`. A later computer-use retry still
 failed before reaching a window: the native kernel exited and the browser
 runtime reported the same ACL error. The accepted verification fallback remains
 Electron interaction tests and direct screenshot inspection.
+
+A second review tightened the cleanup: canonical output comparison avoids
+repeated writes, including after restart, while still removing unknown retained
+content. Exact abandoned temporary copies are removed when the primary is
+missing without creating a replacement. Shared answer-store failures have
+their own notice, and retry copy names both Settings saves and restarts.
+The recovery notices describe the failed attempt and remain available for the
+session, like the app's existing recovery notices. The final focused checks
+cover 57 runtime cases and 63 notice/schema/renderer cases. All five privacy
+Electron journeys pass on the final build, including an unreadable answer store
+with no retired Chats file; only the answer notice appears. Typecheck, lint,
+notices and build pass again. Standards and Spec reviews find no remaining
+actionable issues, and the final three-line notice screenshot is inspected.

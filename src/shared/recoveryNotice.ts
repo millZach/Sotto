@@ -11,6 +11,7 @@ export const recoveryNoticeSchema = z
       'AUTOMATION_PERMISSION_REQUIRED',
       'OPENROUTER_KEY_UNREADABLE',
       'RETIRED_CHAT_HISTORY_NOT_CLEARED',
+      'ANSWER_HISTORY_NOT_CLEARED',
     ]),
   })
   .strict()

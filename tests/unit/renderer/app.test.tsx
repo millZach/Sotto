@@ -349,7 +349,17 @@ describe('Sotto application onboarding integration', () => {
       listRecoveryNotices: vi.fn(async () => [{ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' as const }]),
     })
     renderApp(bridge)
-    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Restart Sotto to try again.')).toBeVisible()
+    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Save Settings or restart Sotto to try again.')).toBeVisible()
+  })
+
+  it('describes shared answer-storage failures without claiming the user has retired Chats', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'ANSWER_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved answer cleanup could not finish. The original file was preserved. Save Settings or restart Sotto to try again.')).toBeVisible()
+    expect(screen.queryByText(/Saved chat history could not be fully cleared/)).not.toBeInTheDocument()
   })
 
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {

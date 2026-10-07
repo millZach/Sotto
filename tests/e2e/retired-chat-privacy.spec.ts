@@ -7,7 +7,8 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
-const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Restart Sotto to try again.'
+const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Save Settings or restart Sotto to try again.'
+const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Save Settings or restart Sotto to try again.'
 const crashCopy = 'chats.json.tmp-123-12345678-1234-1234-1234-123456789abc'
 
 function savedChats() {
@@ -49,22 +50,24 @@ interface Fixture {
   readonly personalDirectory: string
 }
 
-async function withProfile(historyEnabled: boolean, chats: string, run: (fixture: Fixture) => Promise<void>): Promise<void> {
+async function withProfile(historyEnabled: boolean, chats: string | null, run: (fixture: Fixture) => Promise<void>, forms: string = sourceForms): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-retired-privacy-'))
   let launched: LaunchedSotto | undefined
   try {
     const personalDirectory = join(profile, 'personal-chat')
-    await mkdir(personalDirectory)
     const chatsFile = join(personalDirectory, 'chats.json')
     const formsFile = join(profile, 'request-drafts.json')
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS,
       onboardingComplete: true, historyEnabled, appearance: 'dark', reducedMotion: 'on', showWidgetWhenIdle: false,
     }), 'utf8')
-    await writeFile(chatsFile, chats, 'utf8')
-    await writeFile(formsFile, sourceForms, 'utf8')
-    await writeFile(join(personalDirectory, crashCopy), 'Private abandoned snapshot', 'utf8')
-    await mkdir(join(personalDirectory, 'codex'))
-    await writeFile(join(personalDirectory, 'codex', 'native.json'), 'Provider-owned history', 'utf8')
+    await writeFile(formsFile, forms, 'utf8')
+    if (chats !== null) {
+      await mkdir(personalDirectory)
+      await writeFile(chatsFile, chats, 'utf8')
+      await writeFile(join(personalDirectory, crashCopy), 'Private abandoned snapshot', 'utf8')
+      await mkdir(join(personalDirectory, 'codex'))
+      await writeFile(join(personalDirectory, 'codex', 'native.json'), 'Provider-owned history', 'utf8')
+    }
     launched = await launchSotto('success', profile)
     await run({ launched, chatsFile, formsFile, personalDirectory })
   } finally {
@@ -124,11 +127,23 @@ test.describe('retired Chats follow Keep local history', () => {
     await withProfile(false, sourceChats, expectRedacted)
   })
 
+  test('malformed answer storage stays intact and reports answer cleanup without claiming Chats failed', async () => {
+    const invalid = '{"version":1,"drafts":[{"retained":"Private unparsed answer"}]}\n'
+    await withProfile(false, null, async ({ launched, chatsFile, formsFile }) => {
+      await expect(launched.page.getByRole('status').filter({ hasText: answerNotice })).toBeVisible()
+      await expect(launched.page.getByText(notice, { exact: true })).toHaveCount(0)
+      expect(await readFile(formsFile, 'utf8')).toBe(invalid)
+      expect((await readdir(launched.userData)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
+      await expect(readFile(chatsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    }, invalid)
+  })
+
   test('an invalid primary stays intact and reports incomplete cleanup without blocking answer cleanup', async () => {
     const invalid = '{"selectedChatId":"retired-chat","chats":[{"private":"Unreadable saved history"}]}\n'
     await withProfile(false, invalid, async ({ launched, chatsFile, formsFile, personalDirectory }) => {
       const { page, app } = launched
       await expect(page.getByRole('status').filter({ hasText: notice })).toBeVisible()
+      await expect(page.getByText(answerNotice, { exact: true })).toHaveCount(0)
       expect(await readFile(chatsFile, 'utf8')).toBe(invalid)
       expect((await readdir(personalDirectory)).sort()).toEqual(['chats.json', crashCopy, 'codex'].sort())
       expect(await readFile(join(personalDirectory, crashCopy), 'utf8')).toBe('Private abandoned snapshot')

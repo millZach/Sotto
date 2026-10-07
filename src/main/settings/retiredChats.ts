@@ -38,13 +38,29 @@ export class RetiredChatHistory {
     this.store = store ?? new AtomicJsonStore(this.path, savedSchema.parse, () => ({ selectedChatId: null, chats: [] }))
   }
 
+  private async clearAbandonedCopies(): Promise<void> {
+    const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return []
+      throw error
+    })
+    for (const name of names) {
+      if (/^chats\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) await unlink(join(this.directory, name))
+    }
+  }
+
   privacyChanged(): Promise<void> {
     if (this.historyEnabled()) return Promise.resolve()
     const work = this.writing.catch(() => undefined).then(async () => {
       if (this.historyEnabled()) return
       let source: string
       try { source = await readFile(this.path, 'utf8') }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw new Error(unreadable, { cause: error }) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(unreadable, { cause: error })
+        // No primary is needed to discard abandoned writes, and a missing directory stays missing.
+        if (this.historyEnabled()) return
+        try { await this.clearAbandonedCopies() } catch { throw new Error(failed) }
+        return
+      }
       let saved: Saved
       try { saved = savedSchema.parse(JSON.parse(source)) } catch { throw new Error(unreadable) }
       for (const chat of saved.chats) {
@@ -60,12 +76,11 @@ export class RetiredChatHistory {
       if (this.historyEnabled()) return
       try {
         // No backup or default read: replace only a validated primary, atomically.
-        if (JSON.stringify(JSON.parse(source)) !== JSON.stringify(saved)) await this.store.write(savedSchema.parse(saved))
+        const next = savedSchema.parse(saved)
+        if (JSON.stringify(JSON.parse(source)) !== JSON.stringify(next)) await this.store.write(next)
         // A killed atomic write can retain old content. Only this store's exact temporary names are removed,
         // after its primary has been read safely; native histories and other files remain provider-owned.
-        for (const name of await readdir(this.directory)) {
-          if (/^chats\.json\.tmp-\d+-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name)) await unlink(join(this.directory, name))
-        }
+        await this.clearAbandonedCopies()
       } catch { throw new Error(failed) }
     })
     this.writing = work
