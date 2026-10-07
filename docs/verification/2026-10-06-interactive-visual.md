@@ -18,11 +18,13 @@ run, at a display scale of 150 percent.
 - The page drew and ran its script. `window.sotto`, `require` and `process` were undefined in it.
 - It received the read-all step (step 0 of 2) and the theme, and its style and colour scheme followed light and dark.
 - The frame took the page's own 260 pixels; a 2,000-pixel page was held to 640.
-- Escape inside the page put focus back on the card. Show source showed the HTML, and Expand opened the page over the
+- An Escape the page dispatched itself moved nothing. The user's Escape inside the page put focus back on the card, with its focus ring. Show source showed the HTML, and Expand opened the page over the
   window while the card's own page stopped. Escape closed it, back on Expand.
 - The fetch and the image were refused by the page's policy (`connect-src`, `img-src`). The links left the page where
   it was and opened no window. A fetch made by the session itself failed with `ERR_BLOCKED_BY_CLIENT`, and the page's
   address could not be loaded a second time.
+- The session's own fetch failed with `ERR_BLOCKED_BY_CLIENT`. The session resolved a loopback address to its SOCKS5 proxy, not DIRECT, and the guest's WebRTC IP policy was `disable_non_proxied_udp`.
+- With Reduce motion on, the page was told and its style stopped movement. A page whose body fills the frame grew to its 300 pixels of content.
 - The listener saw no connection. No request completed but the pages, no frame committed a navigation but each
   guest's one load, and nothing downloaded.
 
@@ -31,6 +33,8 @@ run, at a display scale of 150 percent.
 - `artifacts/interactive-visual/page-1280x800-dark.png` and `page-1280x800-light.png`: the card with its header
   ("Interactive page", Show source, Copy source, Expand), the page in the theme's colours and Figtree, and the intro
   and numbered steps under it.
+- `page-1600x1000-dark.png` and `page-1600x1000-light.png`: the same at the largest size checked.
+- `page-1280x800-dark-reduced-motion.png`: the card with Reduce motion on.
 - `page-820x560-dark.png` and `page-820x560-light.png`: the minimum window. The card fits, and the page is clipped
   by the transcript above the composer like the rest of the thread.
 - `expanded-1280x800-dark.png`: Expand, with focus on Close.

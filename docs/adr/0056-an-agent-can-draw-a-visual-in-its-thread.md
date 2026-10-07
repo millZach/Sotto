@@ -4,6 +4,8 @@
 
 Accepted October 6, 2026, for issue #792, the first of three tickets in `docs/plans/2026-10-06-visualize-tool.md`. The layout is the walkthrough Zach picked from `prototype/visualize-layout` (variant C); this ticket draws the card's header, the diagram and the Read all layout, and #793 adds the step-by-step walkthrough. Interactive pages are #794, with their own ADR. The tool's transport is ADR-0020's and its scoping is ADR-0035's, used for a third server. Amends ADR-0016: a visual is thread content kept beside its event store rather than in it, so it has no sequence number and no catch-up of events after one carries it (see **Kept in its own table** below, and ADR-0016's October 6 amendment).
 
+October 7, 2026: an interactive visual (#794) runs the agent's own script, so the reasoning under **No prompt** below, that a visual runs no command and is source the agent could have written into its reply, no longer covers every visual. ADR-0057 keeps the decision, asking nothing, on a different footing: the page runs sealed and changes nothing outside the thread. See its **Still no prompt**.
+
 ## Context
 
 An agent explaining how something works writes a wall of words, or a Mermaid fence the reader has to find in a long reply. Sotto already draws Mermaid safely in answers (`src/renderer/src/agents/diagrams/`). What it lacked was a way for the agent to say "this is a visual, here is what it shows, step by step", so that Sotto can lay it out as one thing, keep it with the thread and give a phone the words when it cannot show the drawing.
