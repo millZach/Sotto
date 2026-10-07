@@ -123,7 +123,7 @@ export class ThreadToolServer {
 /**
  * A tool server only some threads get: `mcpServer` answers undefined for every other thread, so an adapter asks for
  * it at each launch and offers nothing when there is nothing to offer. The host setup tools are one (ADR-0035), and
- * the visual tool another (ADR-0055). An adapter is handed every one of them as a list.
+ * the visual tool another (ADR-0056). An adapter is handed every one of them as a list.
  */
 export interface ScopedThreadTools {
   readonly name: string

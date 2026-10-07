@@ -7,7 +7,7 @@ import { InteractiveVisualCard } from './InteractiveVisualCard'
 import './visualCard.css'
 
 /**
- * Whether a message is a visual this window can draw (ADR-0055): a visual message of a kind this version knows. Any
+ * Whether a message is a visual this window can draw (ADR-0056): a visual message of a kind this version knows. Any
  * other visual message is drawn as its text, which says what the visual showed.
  */
 export function isDrawableVisual(message: AgentMessage): message is AgentMessage & { visual: AgentVisual } {
@@ -27,12 +27,12 @@ export function VisualReadAll({ intro, steps }: Pick<AgentVisual, 'intro' | 'ste
 }
 
 /**
- * A visual an agent drew in its thread (ADR-0055): a header with its title and kind, Show source, Copy source and
+ * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Show source, Copy source and
  * Expand; the diagram, drawn by the same safe renderer and frame as a diagram in an answer; and its explanation. When
  * the diagram cannot be drawn, its source and the reason take its place and the explanation stays readable.
  */
 export const VisualCard = memo(function VisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId?: string | undefined }): ReactNode {
-  // An agent's own page runs sealed (ADR-0056), in a card with the same header and explanation.
+  // An agent's own page runs sealed (ADR-0057), in a card with the same header and explanation.
   return visual.kind === 'interactive' ? <InteractiveVisualCard visual={visual} threadId={threadId} /> : <DiagramVisualCard visual={visual} />
 })
 

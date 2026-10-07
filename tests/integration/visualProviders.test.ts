@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A visualize call from each fake provider, through the whole local stack (ADR-0055): the adapter, Sotto's thread IDs,
+ * A visualize call from each fake provider, through the whole local stack (ADR-0056): the adapter, Sotto's thread IDs,
  * the workspace and its store. The provider calls the endpoint it was given at launch, and the card lands live in the
  * open window after the words the provider wrote before the call and before the words it writes after.
  */

@@ -9,7 +9,7 @@ import { VisualReadAll } from './VisualCard'
 const readAllStep = (visual: AgentVisual): { step: number; total: number; highlight: readonly string[] } => ({ step: 0, total: visual.steps?.length ?? 0, highlight: [] })
 
 /**
- * An interactive visual in its card (ADR-0056): the same header as a diagram's (title, kind, Show source, Copy source,
+ * An interactive visual in its card (ADR-0057): the same header as a diagram's (title, kind, Show source, Copy source,
  * Expand), the agent's page running sealed in the middle, and the intro and steps under it. Escape inside the page gives
  * focus back to the card.
  */

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A visual's checks and words (ADR-0055): the strict input the visualize tool takes, the diagram source checks main
+ * A visual's checks and words (ADR-0056): the strict input the visualize tool takes, the diagram source checks main
  * shares with the renderer, the lenient shape a window reads, and the text a reader that cannot draw it is given.
  */
 import { describe, expect, it } from 'vitest'
@@ -87,7 +87,7 @@ describe('a visual as Sotto keeps it', () => {
   })
 })
 
-describe('checking an interactive visual (ADR-0056)', () => {
+describe('checking an interactive visual (ADR-0057)', () => {
   const page = '<!doctype html><svg width="40" height="40"><circle cx="20" cy="20" r="18"/></svg><script>addEventListener("message", () => {})</script>'
 
   it('takes a page of up to 60,000 characters and names it for the reply', () => {

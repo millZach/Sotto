@@ -1296,7 +1296,7 @@ describe('IPC validation and lifecycle', () => {
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ browserWithoutAsking: false })
   })
 
-  it('persists turning visuals in threads off through settings IPC (ADR-0055)', async () => {
+  it('persists turning visuals in threads off through settings IPC (ADR-0056)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { visualsInThreads: false })).resolves.toMatchObject({ visualsInThreads: false })
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ visualsInThreads: false })

@@ -1,7 +1,7 @@
 # An interactive visual in its thread: verification
 
-October 6, 2026. Issue #794, on `feat/interactive-visuals`. The decision is ADR-0056; the glossary term is
-**Interactive visual**. The tests use ordinary loads only, as Zach decided; ADR-0056 says what that leaves unproved.
+October 6, 2026. Issue #794, on `feat/interactive-visuals`. The decision is ADR-0057; the glossary term is
+**Interactive visual**. The tests use ordinary loads only, as Zach decided; ADR-0057 says what that leaves unproved.
 
 ## How it was run
 

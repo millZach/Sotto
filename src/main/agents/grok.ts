@@ -159,7 +159,7 @@ export class GrokAcpHost implements AgentHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   /**
    * Sotto's own tool servers for this thread: the browser's, the host setup tools while its setup runs (ADR-0035), and
-   * the visual tool while visuals are on (ADR-0055).
+   * the visual tool while visuals are on (ADR-0056).
    */
   private async toolServers(id: string) {
     if (this.aliases[id]?.kind === 'personal' || !this.httpToolServers) return []
@@ -174,7 +174,7 @@ export class GrokAcpHost implements AgentHost {
   private toolAdmission(pending: Pending): unknown {
     if (!pending.permission || !this.httpToolServers || this.aliases[pending.threadId]?.kind === 'personal') return undefined
     // Each scoped server is answered the same way, by its own name: adding a host asks the user in the thread itself
-    // (ADR-0035), and a visual changes nothing outside the thread (ADR-0055).
+    // (ADR-0035), and a visual changes nothing outside the thread (ADR-0056).
     const browser = this.browserTools ? grokToolAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name)) : undefined
     if (browser !== undefined) return browser
     for (const entry of this.threadTools) {

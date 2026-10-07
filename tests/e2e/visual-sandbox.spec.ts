@@ -7,7 +7,7 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
-// An interactive visual runs in a sealed page (ADR-0056, #794), in the running app. The page an agent sends draws, runs
+// An interactive visual runs in a sealed page (ADR-0057, #794), in the running app. The page an agent sends draws, runs
 // its script and follows Sotto's step and theme messages; an ordinary fetch, an ordinary image and an ordinary link aimed
 // at a listener on this computer reach nothing. These are ordinary loads, not a catalogue of ways out: the ADR says what
 // this does not prove.

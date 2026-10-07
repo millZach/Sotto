@@ -85,7 +85,7 @@ const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access t
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
 
 /**
- * What became of a visual an agent asked to draw (ADR-0055): kept and shown, with where it went, or why nothing was drawn.
+ * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
  * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
  */
 export type VisualAddition =
@@ -888,7 +888,7 @@ export class WorkspaceHost implements AgentHost {
     return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
       const result = await this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
-      // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0055). An uncertain one
+      // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0056). An uncertain one
       // keeps them: a visual whose turn did go is left out of every window anyway, having no place to sit.
       if (result.accepted && !result.uncertain && removedUserMessages > 0) this.forgetVisuals(threadId, expectedUserMessageIds.slice(-removedUserMessages))
       return result
@@ -904,7 +904,7 @@ export class WorkspaceHost implements AgentHost {
   }
   /**
    * Keeps a visual an agent drew in this thread and shows it where the thread stood when the call arrived: under the
-   * newest message the store holds, in the newest user message's turn (ADR-0055). Whatever the provider said before the
+   * newest message the store holds, in the newest user message's turn (ADR-0056). Whatever the provider said before the
    * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
    * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
    */
@@ -932,7 +932,7 @@ export class WorkspaceHost implements AgentHost {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return thread !== undefined && thread.providerId !== 'devin'
   }
-  /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0056). */
+  /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0057). */
   visual(threadId: string, visualId: string): AgentVisual | undefined {
     if (this.storeUnavailable) return undefined
     try { return this.threadStore.readVisuals(threadId).find(stored => stored.visual.id === visualId)?.visual } catch { return undefined }
@@ -1883,7 +1883,7 @@ export class WorkspaceHost implements AgentHost {
         this.known.clear()
         this.hidden.clear()
         this.storedAnchors.clear()
-        // A visual has no copy but the store's (ADR-0055), so the windows stop showing the ones it no longer holds.
+        // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
         for (const thread of this.state.snapshot.threads) {
           delete thread.earlierAvailable
           if (thread.messages.some(isVisualMessage)) thread.messages = thread.messages.filter(message => !isVisualMessage(message))

@@ -6,7 +6,7 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
-// A visual an agent draws in its thread (ADR-0055, #792), in the running app: the visualize tool is called as the
+// A visual an agent draws in its thread (ADR-0056, #792), in the running app: the visualize tool is called as the
 // thread's agent would call it, and the card lands in the open thread between the words before and after the call.
 const SHOTS = resolve('artifacts/visual-in-thread')
 // A minute ago, so the folded turn's "Worked for" line reads as the short turn it was.

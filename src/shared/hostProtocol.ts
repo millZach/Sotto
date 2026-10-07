@@ -109,7 +109,7 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
   }
 }
-/** A message without the visual Sotto drew for it (ADR-0055): its text, the visual's words, stands in. */
+/** A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. */
 function withoutVisual(message: AgentMessage): AgentMessage {
   if (!('visual' in message)) return message
   const { visual, ...rest } = message
@@ -118,7 +118,7 @@ function withoutVisual(message: AgentMessage): AgentMessage {
 }
 /**
  * A thread's detail as a socket client is sent it: every visual message keeps its text and loses its `visual`, so the
- * iPhone shows a visual's explanation and the line saying the drawing is on the computer (ADR-0055). The same detail
+ * iPhone shows a visual's explanation and the line saying the drawing is on the computer (ADR-0056). The same detail
  * when it holds no visual.
  */
 export function detailWithoutVisuals(detail: AgentThreadDetail): AgentThreadDetail {

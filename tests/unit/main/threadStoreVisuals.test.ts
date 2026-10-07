@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Visuals in the thread store (ADR-0055): their own table rather than thread events, kept in order, untouched by a
+ * Visuals in the thread store (ADR-0056): their own table rather than thread events, kept in order, untouched by a
  * messages-reset, and gone with Keep local history, a forgotten thread and a confirmed rewind of their turn.
  */
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'

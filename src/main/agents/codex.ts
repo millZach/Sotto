@@ -57,7 +57,7 @@ async function threadConfig(tools: BrowserAgentTools | undefined, threadId: stri
   const browser = await browserCodexConfig(tools, threadId, reasoningEffort)
   const config: Record<string, unknown> = { ...(browser.config as Record<string, unknown> | undefined), 'features.default_mode_request_user_input': true }
   // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs (ADR-0035)
-  // and the visual tool while visuals are on (ADR-0055). Like the browser's, they carry no native prompt: adding a host
+  // and the visual tool while visuals are on (ADR-0056). Like the browser's, they carry no native prompt: adding a host
   // asks the user in the thread itself, and a visual changes nothing outside it. A host check can wait 5 minutes.
   for (const { server, tools: entry } of await scopedThreadServers(threadTools, threadId)) {
     config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), [server.name]: { url: server.url,

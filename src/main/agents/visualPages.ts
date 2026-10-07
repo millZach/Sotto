@@ -5,7 +5,7 @@ import { VISUAL_PARTITION, VISUAL_SCHEME, type VisualPageRequest, type VisualPag
 import { visualThemeCss, type VisualTheme } from '../../shared/visualGuest'
 
 /**
- * An interactive visual's sealed page (ADR-0056). Main keeps the page in its own visual store; the window asks for a
+ * An interactive visual's sealed page (ADR-0057). Main keeps the page in its own visual store; the window asks for a
  * visual by thread and ID and is given a one-time address on the `sotto-visual:` scheme, which a `<webview>` guest on
  * an in-memory session loads once. Everything here is what makes that page unable to reach anything: the headers it is
  * served with, the session it runs in and the guest that shows it.
@@ -69,7 +69,7 @@ export class VisualPages {
   /**
    * A one-time address for a visual this thread holds and that is an interactive page; why not, otherwise. Turning off
    * Let agents draw visuals in threads stops new visuals, not these: a page already in a thread still shows, as a
-   * diagram does (ADR-0055).
+   * diagram does (ADR-0056).
    */
   open(request: VisualPageRequest): VisualPageResult {
     if (!this.dependencies.sealed()) return { ok: false, reason: `Sotto could not seal this page from the network. ${NOT_SHOWN}` }

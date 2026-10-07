@@ -1,5 +1,5 @@
 /**
- * An interactive visual in the transcript (ADR-0056): the card asks main for a one-time page address by thread and
+ * An interactive visual in the transcript (ADR-0057): the card asks main for a one-time page address by thread and
  * visual, never sends the page, runs at most three pages at once and only near the view, sizes the page to the height
  * the guest measured, and gives focus back to the card on Escape. The guest itself is Electron's; here it is the bare
  * `<webview>` element jsdom makes.

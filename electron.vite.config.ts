@@ -111,7 +111,7 @@ export default defineConfig({
   },
   preload: {
     // Sandboxed preload scripts cannot resolve arbitrary node_modules at runtime, nor a chunk two of them share: the
-    // window's preload and an interactive visual's (ADR-0056) import no module in common.
+    // window's preload and an interactive visual's (ADR-0057) import no module in common.
     build: { rollupOptions: { input: {
       index: resolve(__dirname, 'src/preload/index.ts'),
       visual: resolve(__dirname, 'src/preload/visual.ts'),

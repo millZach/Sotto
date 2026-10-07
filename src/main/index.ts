@@ -754,12 +754,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostSetupTools = hostSetupTools
   hostSetup.useTools(threadId => hostSetupTools.revoke(threadId))
   providerJobs.useTools(threadId => hostSetupTools.revoke(threadId))
-  // Let an agent draw a visual in its thread (ADR-0055): every admitted launch gets the tool while the switch is on, read live.
+  // Let an agent draw a visual in its thread (ADR-0056): every admitted launch gets the tool while the switch is on, read live.
   const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
   agentHost.useThreadTools([hostSetupTools, visualTools])
-  // An interactive visual runs in a sealed page (ADR-0056): main serves it from this store, once per address.
+  // An interactive visual runs in a sealed page (ADR-0057): main serves it from this store, once per address.
   const disposeVisualSandbox = await installVisualSandbox({ read: (threadId, visualId) => agentHost.visual(parseHostEntityKey(threadId)?.id ?? threadId, visualId),
     mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
     preloadDirectory: join(__dirname, '../preload') })
@@ -1438,7 +1438,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 }
 
 // Electron takes one list of privileged schemes. An interactive visual's page is standard, so it has an origin to
-// seal, and nothing more: not secure, no fetch, no CORS, no service workers (ADR-0056).
+// seal, and nothing more: not secure, no fetch, no CORS, no service workers (ADR-0057).
 registerModelSchemesAsPrivileged({ registerSchemesAsPrivileged: schemes => protocol.registerSchemesAsPrivileged([
   ...schemes as Parameters<typeof protocol.registerSchemesAsPrivileged>[0], { scheme: VISUAL_SCHEME, privileges: { standard: true } }]) })
 enableWasmThreadSupport(app.commandLine)

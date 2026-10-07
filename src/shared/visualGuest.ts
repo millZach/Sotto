@@ -1,5 +1,5 @@
 /**
- * What passes between Sotto and the sealed page of an interactive visual (ADR-0056). Sotto's guest preload imports this
+ * What passes between Sotto and the sealed page of an interactive visual (ADR-0057). Sotto's guest preload imports this
  * file and nothing else, so it has no imports of its own: a sandboxed preload is one file, and a module it shared with
  * the window's preload would be split into a chunk it cannot load.
  */

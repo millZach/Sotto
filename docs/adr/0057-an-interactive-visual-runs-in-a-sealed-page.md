@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 6, 2026, for issue #794, the third ticket in `docs/plans/2026-10-06-visualize-tool.md`. Builds on ADR-0055, which kept the card, the store and the tool; this adds a second kind to them. Amends nothing.
+Accepted October 6, 2026, for issue #794, the third ticket in `docs/plans/2026-10-06-visualize-tool.md`. Builds on ADR-0056, which kept the card, the store and the tool; this adds a second kind to them. Amends nothing.
 
 ## Context
 
@@ -34,7 +34,7 @@ Before the agent's HTML, Sotto puts a charset, a `color-scheme` that matches the
 
 **At most three at once.** A page runs only while its card is near the view, and at most three run at once. The others show a quiet line until they come near. Expand shows the page over the window, and the card's own page stops meanwhile, so one visual never runs twice. A page that comes back starts again from the top, on a new address.
 
-**The tool.** `visualize` takes `kind: "interactive"` with a source of up to 60,000 characters. A page gets none of the diagram checks; containment stands in for them. The tool's description tells agents that the page cannot load anything, to colour it with the `--sotto-*` variables and how to listen for the two messages. The fallback text and what the iPhone gets are ADR-0055's.
+**The tool.** `visualize` takes `kind: "interactive"` with a source of up to 60,000 characters. A page gets none of the diagram checks; containment stands in for them. The tool's description tells agents that the page cannot load anything, to colour it with the `--sotto-*` variables and how to listen for the two messages. The fallback text and what the iPhone gets are ADR-0056's.
 
 ## What the tests prove, and what they do not
 
@@ -59,7 +59,7 @@ They do not prove that nothing else gets out. No test tries WebRTC with STUN or 
 ## Consequences
 
 - The README's "Privacy and cost" stays true: a visual is made on this computer and contacts no one. The dead proxy is a port on this computer that Sotto holds, not a host.
-- Turning off **Let agents draw visuals in threads** stops new visuals, as ADR-0055 says. A page already in a thread still shows, as a diagram does.
+- Turning off **Let agents draw visuals in threads** stops new visuals, as ADR-0056 says. A page already in a thread still shows, as a diagram does.
 - The main window has `webviewTag` on. Any later use of `<webview>` must pass the same admission in main; today a guest is admitted for a live visual page address and nothing else.
 - A page has an opaque origin, so `localStorage` and cookies throw or are empty; the tool's description says it has no storage.
 - A page's script runs in its own renderer process. A page that spins costs that process, not Sotto's window. Sotto does not measure or stop it.

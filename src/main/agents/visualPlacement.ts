@@ -8,7 +8,7 @@ export function visualMessage(stored: StoredVisual): AgentMessage {
 }
 
 /**
- * A window's messages with its thread's visuals slotted in (ADR-0055). Each visual goes right after the message it was
+ * A window's messages with its thread's visuals slotted in (ADR-0056). Each visual goes right after the message it was
  * anchored to when that message is in the window, after any earlier visual on the same message; otherwise at the end of
  * the turn it was drawn in, when that turn's user message is in the window; otherwise it is left out, because its place
  * is above the window or was taken back. A visual drawn before the thread held any message leads a window that starts

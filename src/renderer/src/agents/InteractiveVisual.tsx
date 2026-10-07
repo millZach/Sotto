@@ -8,7 +8,7 @@ import { useDiagramPalette, type DiagramPalette } from './diagrams/diagramPalett
 import './interactiveVisual.css'
 
 /**
- * An interactive visual's page in its card (ADR-0056). The page is an agent's own HTML, so it never runs in this
+ * An interactive visual's page in its card (ADR-0057). The page is an agent's own HTML, so it never runs in this
  * window: main serves it once, from its own store, into a `<webview>` guest on a sealed in-memory session. This side
  * only asks for the page's address, sizes the guest to the height Sotto's guest preload measured, and sends the
  * walkthrough's step and the theme in. At most three pages run at once, each only while its card is near the view.

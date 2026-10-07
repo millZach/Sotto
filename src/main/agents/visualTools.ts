@@ -5,7 +5,7 @@ import { VISUAL_FONT_TOKEN, VISUAL_STEP_MESSAGE, VISUAL_THEME_MESSAGE, VISUAL_TH
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 import type { VisualAddition } from './workspace'
 
-/** The one name every client addresses the visual tool by (ADR-0055). */
+/** The one name every client addresses the visual tool by (ADR-0056). */
 export const VISUAL_MCP_SERVER = 'sotto_visual'
 export const VISUALIZE_TOOL = 'visualize'
 
@@ -69,7 +69,7 @@ export function visualShownText(title: string, label: string, steps: number, anc
 
 /**
  * `sotto_visual`: the loopback MCP server through which an agent in a project thread draws a visual in that thread
- * (ADR-0055). Every launch of an admitted thread gets it while Let agents draw visuals in threads is on, and none
+ * (ADR-0056). Every launch of an admitted thread gets it while Let agents draw visuals in threads is on, and none
  * otherwise; a running session's call is refused once the switch is off. Drawing in the thread changes nothing outside
  * it, so no call asks the user anything.
  */

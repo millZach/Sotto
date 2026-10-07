@@ -374,7 +374,7 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ browserWithoutAsking: false })
   })
 
-  it('turns letting agents draw visuals in threads off through the ordinary patch flow (ADR-0055)', async () => {
+  it('turns letting agents draw visuals in threads off through the ordinary patch flow (ADR-0056)', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)

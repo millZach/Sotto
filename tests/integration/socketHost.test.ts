@@ -1205,7 +1205,7 @@ describe('thread detail over the socket', () => {
     } finally { vi.useRealTimers(); phone.frames.close(); await client.close(); await server.close() }
   })
 
-  it('sends no client a visual, only its words, in a whole thread, a delta and a read (ADR-0055)', async () => {
+  it('sends no client a visual, only its words, in a whole thread, a delta and a read (ADR-0056)', async () => {
     const { stream, server, client, session } = await streamingHost()
     const visual = { id: 'v1', title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
     const drawn = { id: 'visual:v1', role: 'assistant' as const, text: '**How a send moves**\n\nThe visual is in Sotto on your computer.', createdAt: '2026-09-23T00:00:01.000Z', visual }
