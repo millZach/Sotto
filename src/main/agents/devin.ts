@@ -21,7 +21,7 @@ import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
-import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinAllowance, type DevinProfile } from './devinPolicy'
+import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 
@@ -130,7 +130,7 @@ interface ActiveTurn {
   origin: Origin
   text: string
   assistant: string
-  /** The owner's own stream has carried this turn's work: Devin took the prompt (see `send`). */
+  /** The thread's own process has streamed this turn's work: Devin took the prompt (see `awaitAcceptance`). */
   streamed: boolean
   /** The prompt's own answer came, or the turn was settled without one. */
   ended: boolean
@@ -143,9 +143,26 @@ interface ActiveTurn {
  * `tool_call_update` is left out because background work started by an earlier turn may still report.
  */
 const TURN_WORK = new Set(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'plan'])
-/** How long a send waits on the owner's stream before it also reads the replay for its dispatch identity. */
+/** Whether a session update of this kind, streamed while a prompt is out, shows Devin took the prompt. */
+export const isDevinTurnWork = (kind: unknown): boolean => typeof kind === 'string' && TURN_WORK.has(kind)
+/** How long a send waits on its thread's own stream before it also reads the replay for its dispatch identity. */
 const ACCEPTANCE_GRACE_MS = 1_500
-const settle = (turn: ActiveTurn): void => { turn.ended = true; turn.wake?.() }
+/** The read pace of a held thread with a prompt Devin has not yet shown it took, and the replay fallback's pace. */
+const AWAITING_READ_MS = 1_500
+/** The read pace of every other held thread. */
+const IDLE_READ_MS = 15_000
+/**
+ * How long a thread whose session Sotto holds goes between history reads. Only a prompt Devin has not yet shown it
+ * took is read at the busy pace: once the thread's own stream carries the turn, a replay has nothing to add sooner.
+ * A configured interval, which the tests set, overrides both.
+ */
+export const devinReadInterval = (awaitingAcceptance: boolean, configuredMs?: number): number =>
+  configuredMs ?? (awaitingAcceptance ? AWAITING_READ_MS : IDLE_READ_MS)
+const HISTORY_UNCHECKED = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'
+/** Devin has shown it took this turn's prompt, on the thread's own stream or by a replay of its dispatch identity. */
+const promptTaken = (turn: ActiveTurn): boolean => turn.streamed || turn.origin.confirmed
+/** The turn's prompt has its answer, or the turn was settled without one: wake the send waiting on it. */
+const endTurn = (turn: ActiveTurn): void => { turn.ended = true; turn.wake?.() }
 export interface DevinAcpOptions {
   executable?: string
   /** Arguments before native flags, used by the scripted provider. */
@@ -154,7 +171,7 @@ export interface DevinAcpOptions {
   nativeConfigDirectory?: string
   requestTimeoutMs?: number
   pollIntervalMs?: number
-  /** How long a send waits on the owner's stream before reading the replay as well. */
+  /** How long a send waits on its thread's own stream before reading the replay as well. */
   acceptanceGraceMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
@@ -307,12 +324,10 @@ export class DevinAcpHost implements AgentHost {
       const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, cwd, this.options.nativeConfigDirectory)
       // The process is already running, so the integration lists and its own reading of the profile are
       // independent and run side by side. Both must pass; the lists are judged first so a refusal reads the same.
-      const [integrations, config] = await Promise.allSettled([
+      await settleInOrder(
         assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd),
         connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile) }),
-      ])
-      if (integrations.status === 'rejected') throw integrations.reason
-      if (config.status === 'rejected') throw config.reason
+      )
       current()
       connection.passedCheck = check
     } catch (error) {
@@ -323,7 +338,7 @@ export class DevinAcpHost implements AgentHost {
   private finishUnsettledTurn(id: string, status: 'failed' | 'interrupted'): void {
     const turn = this.active.get(id)
     if (!turn) return
-    this.publishActive(id); this.active.delete(id); settle(turn)
+    this.publishActive(id); this.active.delete(id); endTurn(turn)
     const thread = this.thread(id)
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.origin.messageId, status }
@@ -420,8 +435,8 @@ export class DevinAcpHost implements AgentHost {
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     this.reaper.start()
     this.pollTimer = setInterval(() => { void this.poll().catch(() => {
-      this.state.error = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'; this.emit()
-    }) }, this.options.pollIntervalMs ?? 1500)
+      this.state.error = HISTORY_UNCHECKED; this.emit()
+    }) }, this.options.pollIntervalMs ?? AWAITING_READ_MS)
     this.pollTimer.unref(); this.emit(); return this.current()
   }
   /** Sets the session's conversation mode and refuses the thread unless Devin echoes it back. */
@@ -540,10 +555,9 @@ export class DevinAcpHost implements AgentHost {
       if (this.loading.has(id)) return false
       const active = this.active.get(id)
       const busy = active !== undefined || this.thread(id).requests.length > 0
-      // Every thread polled here has a live owner, and the owner's stream carries its turn once Devin has shown
-      // it took the prompt. Until then only a replay can confirm it, so that is the one wait read at the busy pace.
-      const awaiting = active !== undefined && !active.streamed && !active.origin.confirmed
-      const interval = this.options.pollIntervalMs ?? (awaiting ? 1_500 : 15_000)
+      // Every thread polled here is held by its own process, whose stream carries its turn once Devin has shown it
+      // took the prompt. Until then only a replay can confirm it, so that is the one wait read at the busy pace.
+      const interval = devinReadInterval(active !== undefined && !promptTaken(active), this.options.pollIntervalMs)
       return (this.observed.has(id) || busy) && now - (this.lastReadAt.get(id) ?? 0) >= interval
     })
     const polling = Promise.all(ids.map(id => this.readHistory(id))).then(() => undefined)
@@ -643,12 +657,12 @@ export class DevinAcpHost implements AgentHost {
     if (changed) await this.persist()
     this.publishActive(id); this.emit()
   }
-  /** The owner's stream showed Devin working on this turn's prompt: show it, and wake the send waiting on it. */
-  private taken(id: string, turn: ActiveTurn): void { turn.streamed = true; this.publishActive(id); turn.wake?.() }
+  /** The thread's own stream showed Devin working on this turn's prompt: mark it taken, show it, and wake the send. */
+  private markTaken(id: string, turn: ActiveTurn): void { turn.streamed = true; this.publishActive(id); turn.wake?.() }
   private publishActive(id: string): void {
     const active = this.active.get(id)
     // Shown once Devin has taken the prompt, by its replay or by its own stream, so a reply appears as it streams.
-    if (!active || !active.origin.confirmed && !active.streamed) return
+    if (!active || !promptTaken(active)) return
     this.log.add(id, { id: active.origin.messageId, role: 'user', text: active.text,
       commandId: active.origin.commandId, createdAt: active.origin.createdAt })
     const existing = this.log.message(id, 'devin-assistant-' + active.origin.nativeMessageId)
@@ -678,8 +692,7 @@ export class DevinAcpHost implements AgentHost {
         connection.tools.set(update.toolCallId, tool)
       }
       const active = this.active.get(id)
-      if (active && !active.streamed && typeof update.sessionUpdate === 'string' && TURN_WORK.has(update.sessionUpdate)
-        && this.connections.get(id) === connection) this.taken(id, active)
+      if (active && !active.streamed && isDevinTurnWork(update.sessionUpdate) && this.connections.get(id) === connection) this.markTaken(id, active)
       if (update.sessionUpdate === 'agent_message_chunk' && active) {
         const content = record(update.content)
         if (content?.type === 'text' && typeof content.text === 'string') {
@@ -716,9 +729,9 @@ export class DevinAcpHost implements AgentHost {
           await connection.rpc.reply(frame.id, devinDecline(decision)); return
         }
         this.pending.set(decision.request.id, { decision, connection, fingerprint }); this.thread(id).requests.push(decision.request)
-        // A question or a permission on the owner's session is the prompt being worked on, as streamed work is.
+        // A question or a permission on the thread's own session is the prompt being worked on, as streamed work is.
         const active = this.active.get(id)
-        if (active && !active.streamed && this.connections.get(id) === connection) this.taken(id, active)
+        if (active && !active.streamed && this.connections.get(id) === connection) this.markTaken(id, active)
         this.reaper.touch(id); this.emit()
       } catch {
         connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported request' } })
@@ -908,18 +921,20 @@ export class DevinAcpHost implements AgentHost {
       if (origin.confirmed) return
       void this.readHistory(id).catch(() => {
         if (generation !== this.generation) return
-        this.state.error = 'Devin history could not be checked. Your thread is kept. Reconnect before sending a follow-up.'; this.emit()
+        this.state.error = HISTORY_UNCHECKED; this.emit()
       })
     }
+    // This turn is no longer the one the thread runs, or the connection it went out on has gone.
+    const superseded = (): boolean => generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin
     markSendStage(command.commandId, 'written')
     void connection.rpc.request('session/prompt', {
       sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: command.text }],
       _meta: { 'cognition.ai/clientMessageId': origin.nativeMessageId },
     }, async value => {
-      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
+      if (superseded()) { endTurn(turn); return }
       const stopReason = z.object({ stopReason: z.string() }).parse(value).stopReason
       // A completion alone is not taken as acceptance: one with no work streamed is checked against the replay.
-      this.publishActive(id); this.active.delete(id); settle(turn); this.clearRequests(id); connection.tools.clear(); connection.toolBytes = 0
+      this.publishActive(id); this.active.delete(id); endTurn(turn); this.clearRequests(id); connection.tools.clear(); connection.toolBytes = 0
       const status = stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : 'failed'
       this.thread(id).status = status === 'failed' ? 'error' : 'idle'
       this.thread(id).lastTurn = { id: origin.messageId, status }
@@ -929,28 +944,29 @@ export class DevinAcpHost implements AgentHost {
       this.reaper.touch(id); this.emit()
       confirmOnceEnded()
     }, true).catch(() => {
-      if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
+      if (superseded()) { endTurn(turn); return }
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id); this.thread(id).status = 'error'; this.emit()
       // A prompt Devin answered with an error may still have been taken on the stream first.
       confirmOnceEnded()
     })
-    return this.acceptance(id, command.commandId, turn, generation)
+    return this.awaitAcceptance(id, command.commandId, turn, generation)
   }
   /**
    * Whether Devin took a prompt. Native ACP sends no acknowledgement and no echo of it, so there are two kinds of
-   * evidence. The first is the owner's own stream: Devin streams a turn's work only while a prompt runs, and only
+   * evidence. The first is the thread's own stream: Devin streams a turn's work only while a prompt runs, and only
    * this connection can prompt the session it holds, so work streamed after this prompt went out is this prompt
-   * being worked on. The second is the replay of the dispatch identity saved before sending, which an observer
-   * reads only once the stream has shown nothing for the grace period, or the turn ended without showing any work.
-   * Neither ever sends the prompt again; a prompt with no evidence by the request deadline stays uncertain.
+   * being worked on. The second is the replay of the dispatch identity saved before sending. This wait reads it
+   * once the stream has shown nothing for the grace period, or the turn ended without showing any work, and then at
+   * the busy read pace; a poll of the thread at that pace may read it sooner, which counts the same. Neither ever
+   * sends the prompt again; a prompt with no evidence by the request deadline stays uncertain.
    */
-  private async acceptance(id: string, commandId: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
+  private async awaitAcceptance(id: string, commandId: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
     const deadline = Date.now() + (this.options.requestTimeoutMs ?? 15_000)
-    const cadence = this.options.pollIntervalMs ?? 1_500
+    const cadence = devinReadInterval(true, this.options.pollIntervalMs)
     let nextRead = Date.now() + (this.options.acceptanceGraceMs ?? ACCEPTANCE_GRACE_MS)
     let readAfterEnd = false
     while (true) {
-      if (turn.streamed || turn.origin.confirmed) { markSendStage(commandId, 'acknowledged'); return { accepted: true } }
+      if (promptTaken(turn)) { markSendStage(commandId, 'acknowledged'); return { accepted: true } }
       if (generation !== this.generation) return { accepted: false, uncertain: true }
       if (turn.ended && !readAfterEnd) { readAfterEnd = true; nextRead = Date.now() }
       const now = Date.now()

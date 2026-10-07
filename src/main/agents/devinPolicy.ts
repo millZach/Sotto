@@ -216,16 +216,24 @@ export async function assertDevinNoPlugins(executable: string, argsPrefix: reado
 }
 
 /**
+ * Waits for two checks running side by side, then throws the first one's refusal before the second's, so a
+ * refusal names the same cause however the two finish.
+ */
+export async function settleInOrder<A, B>(first: Promise<A>, second: Promise<B>): Promise<[A, B]> {
+  const [a, b] = await Promise.allSettled([first, second])
+  if (a.status === 'rejected') throw a.reason
+  if (b.status === 'rejected') throw b.reason
+  return [a.value, b.value]
+}
+
+/**
  * Allow an empty native MCP registry or entries all explicitly disabled. The two lists are independent reads that
- * change nothing, so they run side by side. Both are awaited and judged in a fixed order, plugins first, so a
- * refusal names the same cause however the two runs finish.
+ * change nothing, so they run side by side and are judged plugins first (`settleInOrder`).
  */
 export async function assertDevinNoIntegrations(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
-  const [plugins, mcp] = await Promise.allSettled([
+  const [, mcp] = await settleInOrder(
     assertDevinNoPlugins(executable, argsPrefix, environment, cwd),
     nativeList(executable, [...argsPrefix, 'mcp', 'list'], environment, cwd),
-  ])
-  if (plugins.status === 'rejected') throw plugins.reason
-  if (mcp.status === 'rejected') throw mcp.reason
-  verifyDevinMcpList(mcp.value)
+  )
+  verifyDevinMcpList(mcp)
 }
