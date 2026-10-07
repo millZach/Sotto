@@ -18,8 +18,8 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  *
  * Only this computer's own Serve setting is ever changed: one Sotto put on 8443 or 10000 itself, proxying
  * to a loopback port Sotto remembers. Anything else on those ports is left alone; when other apps hold both,
- * the Phones page says so. The
- * setting is removed when phone access turns off and when Sotto quits, and put back at the next start.
+ * the Phones page says so. The setting is removed when phone access turns off and when Sotto quits, and put
+ * back at the next start on the Serve port it was last on while that port is free, since phones keep its address.
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
@@ -103,12 +103,15 @@ const recordSchema = z.object({
   port: z.number().int().min(1).max(65535).nullable(),
   /** Set before Sotto asks for the Serve setting and cleared once it is gone, so a crash is cleaned up at the next start. */
   mapped: z.boolean(),
-  /** The Serve port the setting is on. Absent means 8443, as in every record from before the fallback. */
+  /**
+   * The Serve port the setting is on, or was last on, which the next start tries first so paired phones keep their
+   * address. Absent means 8443, as in every record from before the fallback.
+   */
   servePort: z.literal(10000).optional(),
 }).strict()
 type PhoneAccessRecord = z.infer<typeof recordSchema>
 
-/** The Serve port a record's setting is on. */
+/** The Serve port a record's setting is on, or was last on. */
 const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.servePort ?? 8443
 /** A record naming a Serve port, written the way records from before the fallback read: 8443 is left implicit. */
 const onPort = (record: Omit<PhoneAccessRecord, 'servePort'>, servePort: PhoneAccessServePort): PhoneAccessRecord =>
@@ -385,9 +388,12 @@ export class PhoneAccess {
     let owners: { port: PhoneAccessServePort; owner: ReturnType<typeof servePortOwner> }[]
     try {
       const config = await this.options.tailscale.serveStatus()
-      owners = PHONE_ACCESS_SERVE_PORTS.map(port => ({ port, owner: servePortOwner(config, port, this.ourPorts()) }))
+      // The port phones last used comes first: they keep its address, so a restart must not move them while it is free.
+      const last = servePortOf(this.record)
+      const ports = [last, ...PHONE_ACCESS_SERVE_PORTS.filter(port => port !== last)]
+      owners = ports.map(port => ({ port, owner: servePortOwner(config, port, this.ourPorts()) }))
     } catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
-    // A setting that is already Sotto's wins, so a restart keeps the port phones were using; else the first free one.
+    // A setting that is already Sotto's wins; else the first free port, the one phones last used if it is free.
     const chosen = owners.find(entry => entry.owner === 'ours') ?? owners.find(entry => entry.owner === 'free')
     if (!chosen) { await this.failServe('port-taken'); return }
     const owner = chosen.owner, servePort = chosen.port

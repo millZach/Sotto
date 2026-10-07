@@ -300,6 +300,36 @@ it('removes the Serve setting and closes the listener on quit, and keeps the set
   expect(await record()).toEqual({ port: 41000, mapped: false })
 })
 
+it('serves phones on 10000 again after a restart, even once 8443 is free, so a phone paired there keeps reaching it', async () => {
+  const fake = fakeTailscale({ other: 'http://127.0.0.1:3773' }), server = fakeServer()
+  const first = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await first.access.start()
+  expect(first.access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:10000` })
+  await first.access.close()
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
+  // The other app let go of 8443 while Sotto was closed.
+  fake.tailscale.unserve(8443)
+  fake.calls.length = 0
+  const next = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await next.access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000 on 10000'])
+  expect(next.access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:10000`, servePort: 10000 })
+  expect(await record()).toEqual({ port: 41000, mapped: true, servePort: 10000 })
+  await next.access.close()
+})
+
+it('falls back to 8443 after a restart when another app took the 10000 it last used', async () => {
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: false, servePort: 10000 }))
+  const fake = fakeTailscale({ others: { 10000: 'http://127.0.0.1:3774' } }), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000'])
+  expect(access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:8443`, servePort: 8443 })
+  expect(fake.proxy(10000)).toBe('http://127.0.0.1:3774')
+  expect(await record()).toEqual({ port: 41000, mapped: true })
+  await access.close()
+})
+
 it('serves the name phones show: the setting, or the Tailscale machine name', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
