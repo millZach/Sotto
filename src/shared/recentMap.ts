@@ -1,6 +1,6 @@
 /**
- * A Map kept as a small most-recent-first cache: a Map iterates in insertion order, so moving an entry to the end marks
- * it as the most recent and the first entry is the one to drop.
+ * A Map kept as a small cache of its most recent entries: a Map iterates in insertion order, so the newest entry is the
+ * last, moving an entry to the end marks it as the most recent, and the first entry is the oldest, the one to drop.
  */
 
 /** Keeps `value` under `key` as the most recent entry, dropping the oldest entries past `limit`. Returns `value`. */

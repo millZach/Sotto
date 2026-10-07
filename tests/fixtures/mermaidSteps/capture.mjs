@@ -5,108 +5,10 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { CONFIG, SOURCES } from './sources.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../../..')
-
-export const SOURCES = {
-  flowchart: [
-    'flowchart LR',
-    '  A[Draft] --> B{Ready?}',
-    '  B -->|yes| C[Send]',
-    '  B -->|no| A',
-    '  subgraph Provider',
-    '    C --> D[Codex]',
-    '    D --> E[Reply]',
-    '  end',
-    '  E --> A',
-  ].join('\n'),
-  sequence: [
-    'sequenceDiagram',
-    '  participant You',
-    '  participant Sotto',
-    '  participant Codex',
-    '  You->>Sotto: Send prompt',
-    '  Sotto-->>You: Shows it as sending',
-    '  loop Until accepted',
-    '    Sotto->>Codex: turn/start',
-    '  end',
-    '  Note over Sotto,Codex: Checked, never sent twice',
-    '  alt Accepted',
-    '    Codex-->>Sotto: Accepted',
-    '  else Dropped',
-    '    Sotto->>Sotto: Reconcile',
-    '  end',
-    '  Codex-->>You: Streams the answer',
-  ].join('\n'),
-  'sequence-numbered': [
-    'sequenceDiagram',
-    '  autonumber',
-    '  actor You',
-    '  participant Sotto',
-    '  You->>+Sotto: Send prompt',
-    '  Sotto-->>-You: Shows it as sending',
-  ].join('\n'),
-  'sequence-aliased': [
-    'sequenceDiagram',
-    '  participant U as User',
-    '  participant S as Sotto desktop app',
-    '  U->>S: Send prompt',
-  ].join('\n'),
-  'flowchart-nested': [
-    'flowchart LR',
-    '  subgraph Outer',
-    '    A[Draft] --> B[Check]',
-    '    subgraph Inner',
-    '      C[Send] --> D[Wait]',
-    '    end',
-    '  end',
-    '  B --> C',
-    '  D --> E[Reply]',
-  ].join('\n'),
-  state: [
-    'stateDiagram-v2',
-    '  [*] --> Idle',
-    '  Idle --> Running: send',
-    '  state Running {',
-    '    [*] --> Thinking',
-    '    Thinking --> Writing',
-    '  }',
-    '  Running --> Idle: done',
-    '  Running --> Failed: error',
-    '  Failed --> [*]',
-  ].join('\n'),
-  class: [
-    'classDiagram',
-    '  class Thread {',
-    '    +id string',
-    '    +send(text)',
-    '  }',
-    '  class Message',
-    '  class Visual',
-    '  Thread "1" *-- "many" Message : holds',
-    '  Thread --> Visual : draws',
-  ].join('\n'),
-  er: [
-    'erDiagram',
-    '  THREAD ||--o{ MESSAGE : holds',
-    '  THREAD ||--o{ VISUAL : draws',
-    '  VISUAL {',
-    '    string id',
-    '    string title',
-    '  }',
-  ].join('\n'),
-}
-
-const CONFIG = {
-  startOnLoad: false, securityLevel: 'strict', deterministicIds: false, htmlLabels: false, theme: 'base',
-  fontFamily: 'sans-serif', fontSize: 15,
-  flowchart: { htmlLabels: false, useMaxWidth: false },
-  sequence: { useMaxWidth: false, wrap: true, mirrorActors: false },
-  state: { useMaxWidth: false },
-  class: { htmlLabels: false, useMaxWidth: false },
-  er: { useMaxWidth: false },
-}
 
 const browser = await chromium.launch()
 try {

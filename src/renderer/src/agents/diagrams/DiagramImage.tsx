@@ -60,7 +60,7 @@ export function CrossFadeImage({ src, alt, width, height, describedBy, className
   }, [fading, layers])
   useEffect(() => { if (reduced) setLayers(current => current.length > 1 ? current.slice(-1) : current) }, [reduced])
 
-  return <span className={className} data-fading={fading || undefined} style={{ '--diagram-fade': `${CROSS_FADE_MS}ms` } as CSSProperties}>
+  return <span className={className} style={{ '--diagram-fade': `${CROSS_FADE_MS}ms` } as CSSProperties}>
     {layers.map((layer, index) => {
       const shown = index === layers.length - 1
       return <DiagramImage key={layer.key} src={layer.src} alt={shown ? alt : ''} hidden={!shown} width={width} height={height}
