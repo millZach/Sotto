@@ -95,8 +95,12 @@ test('lets go of a turned-away dictation when Discard recording is pressed', asy
 test('lets go of a turned-away dictation when Escape is pressed in Sotto’s window', async () => {
   await withTurnedAwayDictation(async ({ page }, widget) => {
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 15_000 })
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible()
+    // An Escape in the first half second is taken as meant for the work before
+    // the error, so the press is repeated until one counts.
+    await expect(async () => {
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('heading', { level: 1, name: 'Ready when you are.' })).toBeVisible({ timeout: 250 })
+    }).toPass({ timeout: 10_000 })
     await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
   })
 })

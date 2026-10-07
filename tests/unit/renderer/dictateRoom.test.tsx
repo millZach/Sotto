@@ -213,10 +213,17 @@ describe('DictateRoom', () => {
     const user = userEvent.setup()
     const onDismiss = vi.fn(async () => undefined)
     const error = { status: 'error' as const, sessionId: 'one', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'internal', kept: true }
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const { rerender } = render(<>
       <input aria-label="Search threads" />
       <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
     </>)
+    // An Escape in the first half second was meant for the work the error replaced.
+    now.mockReturnValue(1_400)
+    await user.keyboard('{Escape}')
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    now.mockReturnValue(5_000)
     await user.click(screen.getByRole('textbox', { name: 'Search threads' }))
     await user.keyboard('{Escape}')
     expect(onDismiss).not.toHaveBeenCalled()
@@ -229,6 +236,7 @@ describe('DictateRoom', () => {
     expect(onDismiss).not.toHaveBeenCalled()
 
     rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />)
+    now.mockReturnValue(9_000)
     screen.getByRole('button', { name: 'Try again' }).focus()
     await user.keyboard('{Escape}')
     expect(onDismiss).toHaveBeenCalledOnce()
@@ -236,6 +244,7 @@ describe('DictateRoom', () => {
     rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} />)
     await user.keyboard('{Escape}')
     expect(onDismiss).toHaveBeenCalledOnce()
+    now.mockRestore()
   })
 
   it('still points at Settings when a kept recording failed on the key', async () => {

@@ -35,6 +35,8 @@ export interface DictateRoomProps {
 }
 
 const TIMER_TICK_MS = 250
+/** How long after an error appears an Escape is still taken as meant for the work before it. */
+const ESCAPE_GRACE_MS = 500
 
 export function formatElapsed(milliseconds: number): string {
   const totalSeconds = Number.isFinite(milliseconds) ? Math.max(0, Math.floor(milliseconds / 1_000)) : 0
@@ -189,11 +191,18 @@ export function DictateRoom({
   const dismiss = dictation.status === 'error' && onDismiss !== undefined ? onDismiss : undefined
   // Escape dismisses an error, and lets go of a kept recording, inside this
   // window. Sotto does not claim the key system-wide for it, so other apps keep
-  // their Escape while an error waits.
+  // their Escape while an error waits. An Escape in the first half second is
+  // taken as one meant for the work the error replaced, which Sotto held the
+  // key for, so it cannot discard a recording that was just kept.
+  const errorKey = dictation.status === 'error'
+    ? `${dictation.sessionId ?? ''}:${dictation.code}:${String(dictation.kept)}:${String(dictation.retried)}`
+    : ''
   useEffect(() => {
     if (dismiss === undefined) return undefined
+    const shownAt = Date.now()
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
+      if (Date.now() - shownAt < ESCAPE_GRACE_MS) return
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
       if (document.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return
@@ -202,7 +211,7 @@ export function DictateRoom({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dismiss])
+  }, [dismiss, errorKey])
   const keyProblem = !configured || (dictation.status === 'error'
     && (dictation.code === 'TRANSCRIPTION_UNCONFIGURED' || dictation.code === 'TRANSCRIPTION_UNAUTHORIZED'))
 
