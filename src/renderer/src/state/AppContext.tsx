@@ -54,10 +54,12 @@ export interface AppController {
   start(): Promise<void>
   stop(): Promise<void>
   toggle(): Promise<void>
-  /** Stops listening or processing; on an error, dismisses it and drops a kept recording. */
+  /** Stops listening or processing, or returns a cancelled Try again to its kept recording. */
   cancel(): Promise<void>
   /** Sends a kept recording again. */
   retry?(): Promise<void>
+  /** Clears an error, letting go of a kept recording. */
+  dismiss?(): Promise<void>
   prewarm?(): Promise<void>
   /** Tells main the new controller holds no session, so a widget left over from a reload returns to idle. */
   announceIdle?(): void
@@ -132,6 +134,7 @@ export interface AppActions {
   toggle(): Promise<void>
   cancel(): Promise<void>
   retry(): Promise<void>
+  dismiss(): Promise<void>
   navigate(destination: AppNavigation): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
@@ -497,6 +500,7 @@ export function AppProvider({
               case 'stop': void invokeController(controller, (value) => value.stop()); break
               case 'cancel': void invokeController(controller, (value) => value.cancel()); break
               case 'retry': void invokeController(controller, (value) => value.retry?.() ?? Promise.resolve()); break
+              case 'dismiss': void invokeController(controller, (value) => value.dismiss?.() ?? Promise.resolve()); break
             }
           })
           setDictation(controller.getState())
@@ -549,6 +553,7 @@ export function AppProvider({
     toggle: () => invokeController(controllerRef.current, (controller) => controller.toggle()),
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
+    dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: setNavigation,
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)

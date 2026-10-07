@@ -437,13 +437,19 @@ export class DictationController {
     return processing
   }
 
+  /**
+   * Clears an error, letting go of a kept recording. Separate from cancel, so
+   * an Escape meant for work in progress that lands just after it failed
+   * cannot discard what was kept.
+   */
+  dismiss(): Promise<void> {
+    const session = this.session
+    if (session !== null && this.state.status === 'error' && this.isCurrent(session)) this.letGo(session)
+    return Promise.resolve()
+  }
+
   async cancel(): Promise<void> {
     const session = this.session
-    // An error stays until it is dismissed; dismissing it lets go of a kept recording.
-    if (session !== null && this.state.status === 'error' && this.isCurrent(session)) {
-      this.dismiss(session)
-      return
-    }
     if (session === null || !session.cancellable || !this.isCancellableState()) return
     // Cancelling a Try again stops it and returns to the kept recording; only
     // Discard, a new dictation or closing Sotto lets a kept recording go.
@@ -792,7 +798,7 @@ export class DictationController {
   }
 
   /** Clears an error and lets go of a recording it kept. */
-  private dismiss(session: ActiveSession): void {
+  private letGo(session: ActiveSession): void {
     this.clearResetTimer()
     session.kept = false
     session.parts.length = 0

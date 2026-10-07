@@ -444,7 +444,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           onStart={app.actions.start}
           onStop={app.actions.stop}
           onRetry={app.actions.retry}
-          onDismiss={app.actions.cancel}
+          onDismiss={app.actions.dismiss}
           onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
         />

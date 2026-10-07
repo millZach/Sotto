@@ -482,6 +482,7 @@ describe('typed preload bridge', () => {
         'platform',
         'reportDrag',
         'requestCancel',
+        'requestDismiss',
         'requestRetry',
         'requestStop',
         'requestToggle',
@@ -1096,7 +1097,7 @@ describe('IPC validation and lifecycle', () => {
     harness.cleanup()
   })
 
-  it.each(['cancel', 'stop', 'toggle', 'retry'] as const)(
+  it.each(['cancel', 'stop', 'toggle', 'retry', 'dismiss'] as const)(
     'allows a widget renderer to request the least-privilege %s command',
     async (type) => {
       const harness = createIpcHarness()

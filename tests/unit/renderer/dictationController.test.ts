@@ -1217,7 +1217,7 @@ describe('kept recordings', () => {
   it('lets go of a kept recording when the error is dismissed', async () => {
     const { harness, calls, record } = turnedAway()
     await record()
-    await harness.controller.cancel()
+    await harness.controller.dismiss()
     expect(harness.controller.getState()).toEqual({ status: 'idle' })
     expect(snapshots(harness).at(-1)).toMatchObject({ status: 'idle' })
     await harness.controller.retry()
@@ -1384,8 +1384,17 @@ describe('kept recordings', () => {
     expect(harness.controller.getState()).not.toHaveProperty('kept')
     await harness.controller.retry()
     expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
-    await harness.controller.cancel()
+    await harness.controller.dismiss()
     expect(harness.controller.getState()).toEqual({ status: 'idle' })
+  })
+
+  it('ignores a cancel that lands after the failure, so an Escape meant for the work cannot discard what was kept', async () => {
+    const { harness, record } = turnedAway()
+    await record()
+    await harness.controller.cancel()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
+    await harness.controller.retry()
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'part-1 part-2 part-3' }))
   })
 })
 

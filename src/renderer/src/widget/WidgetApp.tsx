@@ -188,6 +188,7 @@ export interface WidgetAppProps {
   readonly onStop?: () => void
   readonly onCancel?: () => void
   readonly onRetry?: () => void
+  readonly onDismiss?: () => void
   readonly onPresentationChange?: (presentation: WidgetPresentation) => void
   readonly onDrag?: (payload: WidgetDragPayload) => void
   readonly dragCancellationVersion?: number
@@ -340,6 +341,7 @@ export function WidgetApp({
   onStop,
   onCancel,
   onRetry,
+  onDismiss,
   onPresentationChange,
   onDrag,
   dragCancellationVersion,
@@ -406,7 +408,7 @@ export function WidgetApp({
     }
   }
   const surface = useWidgetDragGesture(
-    isIdle ? onToggle : snapshot.status === 'error' ? (kept ? onRetry : onCancel) : onStop,
+    isIdle ? onToggle : snapshot.status === 'error' ? (kept ? onRetry : onDismiss) : onStop,
     reportDragPhase,
     isIdle ? () => setExpanded(false) : undefined,
     dragCancellationVersion,
@@ -542,7 +544,7 @@ export function WidgetApp({
   // An error stays until it is dismissed. Escape is not claimed for it, since
   // holding the key system-wide while an error waits would take it from every app.
   const dismissAction = snapshot.status === 'error' && (
-    <WidgetAction label={kept ? 'Discard recording' : 'Dismiss'} onClick={onCancel}>
+    <WidgetAction label={kept ? 'Discard recording' : 'Dismiss'} onClick={onDismiss}>
       <X aria-hidden="true" size={11} strokeWidth={2.6} />
     </WidgetAction>
   )
@@ -723,6 +725,7 @@ export function WidgetEntry({ bridge, preview, platform }: WidgetEntryProps): Re
       onStop: () => { void bridge.requestStop().catch(() => undefined) },
       onCancel: () => { void bridge.requestCancel().catch(() => undefined) },
       onRetry: () => { void bridge.requestRetry().catch(() => undefined) },
+      onDismiss: () => { void bridge.requestDismiss().catch(() => undefined) },
       onPresentationChange: (presentation: WidgetPresentation) => {
         void bridge.setPresentation({
           presentation,
