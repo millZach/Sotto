@@ -262,7 +262,12 @@ test.describe('theme branding evidence', () => {
         // A failed transcription keeps its recording, so the pill offers Try again
         // and the error waits for the user to discard it.
         await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
-        await widget.getByRole('button', { name: 'Discard recording' }).click()
+        // A click in the first half second after the error appears is ignored,
+        // so the press is repeated until one counts.
+        await expect(async () => {
+          await widget.getByRole('button', { name: 'Discard recording' }).click({ timeout: 1_000 })
+          await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 250 })
+        }).toPass({ timeout: 10_000 })
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 20_000 })
       }
     } finally {
