@@ -190,4 +190,44 @@ describe('Claude transcript catch-up', () => {
       expect.objectContaining({ id: 'claude-task-replayed-task', status: 'completed', text: 'Recovered completion' }),
     ]))
   })
+
+  it('recognises stored messages and keeps each record in its own turn when no cursor was saved', async () => {
+    const session = await f.realId(id)
+    const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+    await mkdir(folder, { recursive: true })
+    const path = join(folder, `${session}.jsonl`)
+    const [first, second] = [randomUUID(), randomUUID()]
+    const turn = (user: string, prompt: string, tool: string) => [
+      { type: 'user', uuid: user, message: { role: 'user', content: prompt } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: `reply-${tool}`, role: 'assistant', content: [{ type: 'tool_use', id: tool, name: 'Bash', input: { command: 'echo ok' } }] } },
+      { type: 'user', uuid: randomUUID(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: tool, content: 'ok' }] } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: `answer-${tool}`, role: 'assistant', content: [{ type: 'text', text: `Done with ${tool}` }] } },
+    ]
+    const frames = [...turn(first, 'First prompt', 'tool-a'), ...turn(second, 'Second prompt', 'tool-b')]
+    await appendFile(path, frames.map(frame => JSON.stringify({ ...frame, sessionId: session, timestamp: new Date().toISOString() })).join('\n') + '\n')
+    await f.adapter.pollSessionLogs()
+    const before = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    const placed = (thread: typeof before) => Object.fromEntries((thread.activities ?? []).filter(record => record.id.startsWith('claude-tool-'))
+      .map(record => [record.id, { turnId: record.turnId, afterMessageId: record.afterMessageId }]))
+    expect(placed(before)).toEqual({
+      'claude-tool-tool-a': expect.objectContaining({ turnId: first }),
+      'claude-tool-tool-b': expect.objectContaining({ turnId: second }),
+    })
+
+    // Restart before any cursor was saved: the transcript is read again from its first byte.
+    f.adapter.disconnect(); await f.adapter.closed()
+    const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
+    delete aliases[id].transcriptCursor
+    await writeFile(join(f.root, 'claude-threads.json'), JSON.stringify(aliases))
+    f = await claudeFixture(f.root)
+    f.adapter.useThreadHistory({ messageIdentities: () => before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })) })
+    const kinds: string[] = []
+    f.adapter.subscribeEvents(({ event }) => { kinds.push(event.kind) })
+    await f.host.connect()
+
+    // Every message the store holds is recognised rather than recorded a second time.
+    expect(kinds).not.toContain('message-added')
+    // And each replayed record keeps the turn and the anchor the first read gave it, not the newest stored message's.
+    expect(placed((await f.host.snapshot()).threads.find(thread => thread.id === id)!)).toEqual(placed(before))
+  })
 })
