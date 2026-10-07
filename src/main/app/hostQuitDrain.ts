@@ -8,6 +8,7 @@ export interface HostQuitHandles {
   phoneAccess?: AsyncClose
   hostSetup?: AsyncClose
   hostSetupTools?: AsyncClose
+  visualTools?: AsyncClose
   providerJobs?: { close(): void }
   hostUpdates?: { dispose(): void }
   hostBoot?: { dispose(): void }
@@ -32,7 +33,7 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     handles.hostPhones?.close()
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), handles.localRuntime?.close(),
-      handles.hostSetupTools?.close(),
+      handles.hostSetupTools?.close(), handles.visualTools?.close(),
       handles.cloudIphone?.close(),
     ])
     handles.hostRouter?.dispose()

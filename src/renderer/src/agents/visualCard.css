@@ -1,0 +1,82 @@
+/* A visual an agent drew in its thread (ADR-0056): a card in the transcript with its own header, the drawing and the
+   explanation under it. It borrows the code block's buttons and source view (.rich-code__copy, .rich-code__scroll),
+   so it sets the --rich-* properties they read; every colour is a theme token. */
+
+.visual-card {
+  --rich-muted: var(--tt-text-muted);
+  --rich-strong: var(--tt-text);
+  --rich-code-text: var(--tt-code-text, var(--tt-text));
+
+  min-width: 0;
+  margin: 14px 0 18px;
+  overflow: hidden;
+  border: 1px solid var(--tt-code-border, var(--tt-border-faint));
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-code-bg, var(--tt-surface));
+  container-type: inline-size;
+}
+
+.visual-card__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 4px 4px 4px 14px;
+  border-bottom: 1px solid var(--tt-hairline);
+  background: var(--tt-surface-elevated);
+}
+.visual-card__heading { display: flex; flex: 1; align-items: baseline; gap: 10px; min-width: 0; overflow: hidden; }
+.visual-card__title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--tt-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visual-card__kind { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; white-space: nowrap; }
+.visual-card__actions { display: flex; flex: none; align-items: center; gap: 2px; }
+/* A narrow column keeps the title and the controls; the kind is in the image's name and the source's label. */
+@container (max-width: 360px) { .visual-card__kind { display: none; } }
+
+.visual-card__canvas {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 18px 16px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.visual-card__canvas img { display: block; width: auto; max-width: 100%; height: auto; max-height: 420px; object-fit: contain; user-select: none; }
+
+.visual-card__stage { min-width: 0; }
+.visual-card__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 11px 14px 0;
+  color: var(--tt-text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.visual-card__notice[data-tone='problem'] { color: var(--tt-text-2); }
+.visual-card__notice > svg { flex: none; margin-top: 2px; color: var(--tt-warning); }
+.visual-card__source { max-height: 360px; overflow: auto; }
+
+.visual-card__explain {
+  padding: 2px 18px 14px;
+  border-top: 1px solid var(--tt-hairline);
+  color: var(--tt-text-2);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.visual-card__intro { margin: 12px 0 6px; white-space: pre-wrap; }
+.visual-card__steps { margin: 10px 0 4px; padding-left: 24px; }
+.visual-card__intro + .visual-card__steps { margin-top: 6px; }
+.visual-card__steps li { margin: 4px 0; padding-left: 2px; white-space: pre-wrap; }
+.visual-card__steps li::marker { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }

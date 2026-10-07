@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
@@ -108,6 +108,26 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.startedAt !== undefined ? { startedAt: record.startedAt } : {}),
     ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
   }
+}
+/** A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. */
+function withoutVisual(message: AgentMessage): AgentMessage {
+  if (!('visual' in message)) return message
+  const { visual, ...rest } = message
+  void visual
+  return rest
+}
+/**
+ * A thread's detail as a socket client is sent it: every visual message keeps its text and loses its `visual`, so the
+ * iPhone shows a visual's explanation and the line saying the drawing is on the computer (ADR-0056). The same detail
+ * when it holds no visual.
+ */
+export function detailWithoutVisuals(detail: AgentThreadDetail): AgentThreadDetail {
+  return detail.messages.some(message => 'visual' in message) ? { ...detail, messages: detail.messages.map(withoutVisual) } : detail
+}
+/** The same for a detail delta: a whole message it carries loses its `visual`. Its revisions are unchanged, so it still applies. */
+export function deltaWithoutVisuals(delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
+  return delta.messageDeltas.some(item => 'message' in item && 'visual' in item.message)
+    ? { ...delta, messageDeltas: delta.messageDeltas.map(item => 'message' in item ? { message: withoutVisual(item.message) } : item) } : delta
 }
 /** A thread's detail with each activity record as its summary. Messages, revision and the rest are the detail's own. */
 export function detailWithActivitySummaries(detail: AgentThreadDetail): AgentThreadDetail {

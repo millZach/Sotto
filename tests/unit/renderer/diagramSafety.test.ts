@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import mermaid from 'mermaid'
 import { readFileSync } from 'node:fs'
 import { assertDiagramSafe } from '../../../src/renderer/src/agents/diagrams/diagramSafety'
-import { inspectDiagramSource } from '../../../src/renderer/src/agents/diagrams/diagramSource'
+import { inspectDiagramSource } from '../../../src/shared/diagramSource'
 
 beforeEach(() => mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false,
   maxTextSize: 12000, maxEdges: 300, flowchart: { htmlLabels: false }, class: { htmlLabels: false } }))

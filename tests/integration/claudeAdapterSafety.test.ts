@@ -428,7 +428,7 @@ describe('Claude recovery and safety', () => {
       return { name: 'sotto_browser' as const, type: 'http' as const, url: 'http://127.0.0.1:1234/mcp', headers: [] }
     }
     if (tools === 'browser') f.adapter.useBrowserTools({ definitions: [], call: async () => ({ content: [] }), mcpServer })
-    else f.adapter.useHostSetupTools({ name: 'fixture_tools', definitions: [], mcpServer })
+    else f.adapter.useThreadTools([{ name: 'fixture_tools', definitions: [], mcpServer }])
     const created = randomUUID()
     const creating = f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Cancelled launch', modelId: f.modelId })
     const cancelled = expect(creating).resolves.toEqual({ accepted: false, uncertain: true })
