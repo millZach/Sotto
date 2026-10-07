@@ -165,6 +165,29 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       await showSource.press('Enter')
       await expect(image).toBeVisible()
 
+      // Reduced motion: the card draws the same and nothing in it, or in the viewer, takes longer than an instant to move.
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
+      const moving = (locator: Locator): Promise<string[]> => locator.evaluate(element => {
+        const seconds = (value: string): number => Math.max(...value.split(',').map(part => part.trim().endsWith('ms') ? parseFloat(part) / 1000 : parseFloat(part)))
+        const slow: string[] = []
+        for (const node of [element, ...element.querySelectorAll('*')]) for (const pseudo of [null, '::before', '::after']) {
+          const style = getComputedStyle(node, pseudo)
+          if (seconds(style.transitionDuration) > 0.001 || seconds(style.animationDuration) > 0.001) slow.push(`${node.className}${pseudo ?? ''}`)
+        }
+        return slow
+      })
+      await expect(image).toBeVisible()
+      expect(await moving(card)).toEqual([])
+      await expand.press('Enter')
+      await expect(viewer).toBeVisible()
+      expect(await moving(viewer)).toEqual([])
+      expect(await viewer.evaluate(element => getComputedStyle(element, '::backdrop').transitionDuration)).toMatch(/^(?:0s|0\.001s|1ms)$/u)
+      await page.keyboard.press('Escape')
+      await expect(viewer).toBeHidden()
+      await expect(expand).toBeFocused()
+      await page.emulateMedia({ reducedMotion: null })
+
       // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card.
       let appearance: 'dark' | 'light' = 'dark'
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {

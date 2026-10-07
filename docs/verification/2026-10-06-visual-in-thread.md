@@ -14,7 +14,7 @@ is from that run, at a display scale of 150 percent.
 
 The fake providers were checked beneath the window too: `tests/integration/visualProviders.test.ts` has Codex,
 Claude Code and Grok Build each call the endpoint they were given at launch, and the card lands after the reply
-before the call and before the reply after it.
+before the call and before the reply after it, including when the call comes in the middle of a reply.
 
 ## What the captures show
 
@@ -40,6 +40,10 @@ before the call and before the reply after it.
   that order, and the card is not inside the fold.
 - Show source, Copy source and Expand follow each other in the Tab order. A keyboard arrival draws a solid focus
   ring. Show source toggles `aria-pressed` and shows the Mermaid source.
+- Under reduced motion (the spec emulates `prefers-reduced-motion: reduce`), the card draws the same diagram, and no
+  element in it, or in the expanded viewer, has a transition or animation longer than the app's 1 ms reduced-motion
+  floor, the viewer's backdrop included. Expand opens and Escape closes the viewer
+  with focus back on Expand. There is no capture of it: the card has no motion of its own, so it looks as above.
 - At each size and appearance, the card's title, kind, intro and steps measure at least 4.5:1 against the surface
   they sit on, composited over the room. The card is no wider than the window, and its controls are inside it.
 - With **Let agents draw visuals in threads** off, the setting survives the save. A call is refused with "Visuals
