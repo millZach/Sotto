@@ -47,7 +47,10 @@ export function ClientUpdateCard(): ReactNode {
   useEffect(() => {
     if (!shown.length || updating) return
     const close = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && card.current?.contains(document.activeElement)) void dismiss()
+      if (event.key !== 'Escape' || !card.current?.contains(document.activeElement)) return
+      // Claim the press, so the Dictate room does not also dismiss its error with it.
+      event.preventDefault()
+      void dismiss()
     }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)

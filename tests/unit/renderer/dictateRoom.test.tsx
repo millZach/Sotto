@@ -235,24 +235,38 @@ describe('DictateRoom', () => {
     await user.keyboard('{Escape}')
     expect(onDismiss).not.toHaveBeenCalled()
 
-    // Escape with focus in another part of the window is that part's.
+    // A part of the window that claims Escape, as the client-update card does, keeps it.
+    const settle = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     rerender(<>
-      <button type="button">Put away update</button>
+      <button type="button" onKeyDown={(event) => { if (event.key === 'Escape') event.preventDefault() }}>Put away update</button>
       <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
     </>)
     screen.getByRole('button', { name: 'Put away update' }).focus()
     await user.keyboard('{Escape}')
+    await settle()
     expect(onDismiss).not.toHaveBeenCalled()
+
+    // Focus on Sotto's own navigation, outside the room, still counts.
+    rerender(<>
+      <button type="button" role="tab" aria-selected="true">Dictate</button>
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    screen.getByRole('tab', { name: 'Dictate' }).focus()
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledOnce()
 
     rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />)
     now.mockReturnValue(9_000)
     screen.getByRole('button', { name: 'Try again' }).focus()
     await user.keyboard('{Escape}')
-    expect(onDismiss).toHaveBeenCalledOnce()
+    await settle()
+    expect(onDismiss).toHaveBeenCalledTimes(2)
 
     rerender(<DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} />)
     await user.keyboard('{Escape}')
-    expect(onDismiss).toHaveBeenCalledOnce()
+    await settle()
+    expect(onDismiss).toHaveBeenCalledTimes(2)
     now.mockRestore()
   })
 

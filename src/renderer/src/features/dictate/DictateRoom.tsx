@@ -205,12 +205,12 @@ export function DictateRoom({
       if (Date.now() - shownAt < ESCAPE_GRACE_MS) return
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
-      // Escape belongs to Dictate only when focus is in it or nowhere in
-      // particular; elsewhere, such as the client-update card, it is theirs.
-      if (target !== null && target !== document.body && target !== document.documentElement && target.closest('.dictate') === null) return
       if (document.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return
-      event.preventDefault()
-      void dismiss()
+      // Decide once every other handler has had the press: one that claimed it,
+      // such as the client-update card closing, keeps it.
+      setTimeout(() => {
+        if (!event.defaultPrevented) void dismiss()
+      }, 0)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
