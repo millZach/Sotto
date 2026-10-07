@@ -49,7 +49,7 @@ export interface AdapterFixture {
     starts(threadId: string): Promise<number>
     stopped(threadId: string): Promise<boolean>
   }
-  /** `sendStages`: the adapter does not yet mark a send's prompt written and acknowledged (#763). */
+  /** `sendStages`: the host writes no prompt to a client, so it has none to mark written and acknowledged (#763). */
   skips?: Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages', string>>
   /**
    * Sotto's side writing on this provider's own client (ADR-0026): script the next answer, and read back

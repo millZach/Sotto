@@ -120,6 +120,12 @@ it('words the row and every failure for the host it is on', () => {
   }
 })
 
+it('says which ports are taken: only 8443 on a host from before the fallback, both ports on one that tried 10000 too', () => {
+  const taken = { phase: 'failed', serve: { status: 'failed', reason: 'port-taken' } } as const
+  expect(hostPhonesFailure(phones(taken), 'forge')).toBe('Another app on forge already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on forge, then press Try again.')
+  expect(hostPhonesFailure(phones({ ...taken, servePort: null }), 'forge')).toBe('Other apps on forge already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on forge, then press Try again.')
+})
+
 it('shows an admin connection’s Tailscale approval at the top of the dialog while it waits, and opens the page on a press (ADR-0053)', async () => {
   const user = userEvent.setup()
   const { sent } = fixture(undefined, host({ prefer: 'tailnet', via: 'tailnet', adminSignIn: true, tailscale: { waiting: true, url: 'https://login.tailscale.com/a/l1fixture2b3c' } }))

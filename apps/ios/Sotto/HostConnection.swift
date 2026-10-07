@@ -64,18 +64,27 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard pairing.hostId == expectedHostID else { throw ClientError.invalidIdentity }
         return pairing
     }
-    func revoke(endpoint: HostEndpoint, pairing: Pairing) async throws {
-        let health = try await health(endpoint: endpoint, reconnecting: true)
-        guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+    func revoke(endpoint saved: HostEndpoint, pairing: Pairing) async throws {
+        // Phone access can come back on its other Serve port; only the paired host is used there.
+        let endpoint = try await HostFinder.reconnect(saved) { candidate -> Health in
+            let health = try await self.health(endpoint: candidate, reconnecting: true)
+            guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+            return health
+        }.endpoint
         let result = try await post(endpoint: endpoint, route: "/v1/revoke", token: pairing.token)
         guard result["revoked"].bool == true else { throw ClientError.invalidProtocol }
     }
-    func connect(endpoint: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
+    func connect(endpoint saved: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
         disconnect()
         let current = generation
-        let health = try await health(endpoint: endpoint, reconnecting: true)
+        // Phone access can come back on its other Serve port; only the paired host is used there.
+        let endpoint = try await HostFinder.reconnect(saved) { candidate -> Health in
+            let health = try await self.health(endpoint: candidate, reconnecting: true)
+            guard current == self.generation else { throw CancellationError() }
+            guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+            return health
+        }.endpoint
         guard current == generation else { throw CancellationError() }
-        guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
         let result = try await post(endpoint: endpoint, route: "/v1/session", token: pairing.token)
         guard current == generation else { throw CancellationError() }
         let access = try result.decode(HostSession.self); try access.validate(pairing: pairing)
