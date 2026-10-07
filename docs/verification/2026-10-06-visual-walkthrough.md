@@ -64,8 +64,8 @@ and a flowchart with a subgraph inside another, captured by `capture.mjs` in Chr
   fake clock, not here: it lasts 180 ms, too short to assert on without racing it.
 - At 1600x1000, 1280x800 and 820x560, in light and dark, the flowchart and sequence cards are no wider than the window,
   and their header buttons, walkthrough buttons, picture and words are inside the card. The count, the step's words,
-  Read all and the walkthrough's buttons measure at least 4.5:1 on the surface they sit on, and so do Step
-  through, the intro and the numbered steps.
+  Read all and the walkthrough's buttons measure at least 4.5:1 on the surface they sit on, and so do Back on step 1
+  (a muted colour, not opacity), Step through, the intro and the numbered steps.
 - No page errors were raised.
 
 `tests/e2e/visuals.spec.ts` (#792) now opens its card as a walkthrough and presses Read all before checking the intro
@@ -84,8 +84,9 @@ step 3 the Browser and the Server with the last answer, with **Start over** in p
 ## Not verified here
 
 - The dimmed parts are at 30 percent, a little stronger than the prototype's 22. Dimmed words in the drawing fall
-  under 4.5:1 on purpose, the exception ADR-0056 records: the lit part, the step's words and the controls meet 4.5:1,
-  the drawing's words are also in the step text and its accessible name, and Read all shows the drawing undimmed.
+  under 4.5:1 on purpose, the exception ADR-0056 records: they are de-emphasis while a step is shown, Read all and Show
+  source show every word at full contrast, and the step's words and the controls, Back on step 1 included, measure
+  4.5:1 or more. The lit labels were not measured.
 - Codex and Grok Build were not asked to draw a walkthrough; both drew visuals with steps for #800.
 - Diagram kinds and shapes beyond the five fixtures (flowchart shapes other than boxes and diamonds, sequence boxes and
   notes over participants, class namespaces) were not captured; unknown parts stay dimmed and never break a step.

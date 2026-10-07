@@ -255,7 +255,11 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
           expect(fits, `${visual.title} at ${width}x${height} ${mode}`).toEqual({ right: true, overflow: true, page: true, header: true, stepper: true, picture: true, text: true })
           for (const ratio of await textContrasts(target, ['.visual-stepper__count', '.visual-stepper__text', '.visual-card__read-all', '.visual-stepper__button'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
         }
+        // Back on the first step is quieter, and still meets 4.5:1.
         await scrollToCard(flow, 60)
+        await flow.getByRole('button', { name: 'Go to step 1' }).click()
+        for (const ratio of await textContrasts(flow, ['.visual-stepper__button[aria-disabled="true"]'])) expect(ratio, `Back on step 1 at ${width}x${height} ${mode}`).toBeGreaterThanOrEqual(4.5)
+        await flow.getByRole('button', { name: 'Go to step 2' }).click()
         if (width !== 1280 || mode === 'light') await quietShot(page, join(SHOTS, `flowchart-step-${width}x${height}-${mode}.png`))
         // The sequence diagram is taller than the minimum window, so its capture shows the lit arrow and the stepper.
         if (width === 820) { await scrollToCard(sequence, -230); await quietShot(page, join(SHOTS, `sequence-step-${width}x${height}-${mode}.png`)) }
