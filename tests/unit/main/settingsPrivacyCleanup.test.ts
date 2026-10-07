@@ -26,3 +26,15 @@ it.each([false, true])('preserves privacy failure priority when notification fai
   expect(agents.privacyChanged).toHaveBeenCalledOnce()
   expect(notify).toHaveBeenCalledOnce()
 })
+
+it('attempts thread, retired-chat and retired-answer cleanup independently and still publishes saved Settings', async () => {
+  const agentFailure = new Error('thread storage unavailable')
+  const agents = { privacyChanged: vi.fn(async () => { throw agentFailure }) }
+  const retiredChats = vi.fn(async () => { throw new Error('chat storage unavailable') })
+  const requestDrafts = vi.fn(async () => undefined)
+  const notify = vi.fn(async () => undefined)
+  await expect(cleanSettingsHistory(agents, notify, [retiredChats, requestDrafts])).rejects.toBe(agentFailure)
+  expect(retiredChats).toHaveBeenCalledOnce()
+  expect(requestDrafts).toHaveBeenCalledOnce()
+  expect(notify).toHaveBeenCalledOnce()
+})

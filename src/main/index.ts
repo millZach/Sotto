@@ -1,4 +1,5 @@
 import { cleanSettingsHistory } from './settings/privacyCleanup'
+import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { parseHostEntityKey } from '../shared/clientIdentity'
@@ -565,6 +566,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
+  const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
   // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
   // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
@@ -802,6 +804,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId)
   })
   await requestDrafts.start()
+  const cleanRetiredHistory = async (): Promise<void> => {
+    try {
+      await cleanSettingsHistory(retiredChatHistory, undefined, [() => requestDrafts.privacyChanged(agentHistoryEnabled)])
+    } catch (error) {
+      recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
+      throw error
+    }
+  }
+  // Retired records never start a provider. Apply the saved privacy preference once,
+  // and keep startup available when inaccessible storage needs a later Settings retry.
+  await cleanRetiredHistory().catch(() => undefined)
   await requestDrafts.reconcile().catch(() => undefined)
   const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
 
@@ -1049,7 +1062,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
         if (!delivered) logOperational('native-main-send-failed')
-      })
+      }, [cleanRetiredHistory])
     },
   })
   const trayController = new TrayController(trayAdapter, {

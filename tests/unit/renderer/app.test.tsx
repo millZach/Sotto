@@ -343,6 +343,15 @@ describe('shared main-window frame', () => {
 })
 
 describe('Sotto application onboarding integration', () => {
+  it('explains that retired chat data remains when privacy cleanup fails', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Restart Sotto to try again.')).toBeVisible()
+  })
+
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
     let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined
     const bridge = createBridge({

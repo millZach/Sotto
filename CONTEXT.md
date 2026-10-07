@@ -288,7 +288,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## Retired conversations
 
-**Personal chat (retired).** A former project-free conversation, distinct from a project-bound thread. It is no longer opened, resumed or connected by Sotto; retained records are not thread drafts (ADR-0010).
+**Personal chat (retired).** A former project-free conversation, distinct from a project-bound thread, which Sotto no longer opens, resumes or connects. Its retained Sotto records follow Keep local history and are not thread drafts (ADR-0010).
 
 ## Coordination
 

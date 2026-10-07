@@ -1,7 +1,9 @@
 /** Settings saves also retry privacy cleanup that failed on an earlier save. */
-export async function cleanSettingsHistory(agentControl: { privacyChanged(): Promise<void> }, notify: () => Promise<void> = async () => undefined): Promise<void> {
+export async function cleanSettingsHistory(agentControl: { privacyChanged(): Promise<void> }, notify: () => Promise<void> = async () => undefined,
+  additionalCleanup: readonly (() => Promise<void>)[] = []): Promise<void> {
   const results = await Promise.allSettled([
     Promise.resolve().then(() => agentControl.privacyChanged()),
+    ...additionalCleanup.map(cleanup => Promise.resolve().then(cleanup)),
   ])
   // The saved settings already apply, even when a store must retry redaction.
   const notification = await Promise.allSettled([Promise.resolve().then(notify)])

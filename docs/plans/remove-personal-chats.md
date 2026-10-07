@@ -6,14 +6,16 @@
 - [x] Confirm that removal means standalone Chats, keeping project Threads.
 - [x] Preview the existing desktop shell without Chats.
 - [x] Remove chat-only UI, services, native adapter paths and bridges.
-- [x] Preserve shared thread behavior and old on-disk data.
+- [x] Preserve shared thread behavior and honor local-history retention for old data.
 - [x] Update current documentation and the personal-chat decision.
 - [x] Run relevant Electron journeys and inspect their rendered captures.
 - [x] Review standards and scope separately; resolve findings.
 - [x] Integrate current main and exclude unrelated inherited commits.
-- [ ] Finish the full gates and refreshed design verification.
+- [x] Finish the initial CI gates and refreshed design verification.
 - [x] Agree the verified Electron tests and screenshots as the fallback with Zach.
-- [ ] Open the PR, resolve feedback, and merge when all checks are green.
+- [x] Open PR #795 and address the retained-history privacy finding.
+- [x] Verify the privacy correction locally and review it independently.
+- [ ] Merge when the updated PR checks are green.
 
 ## Acceptance checks
 
@@ -39,11 +41,19 @@ skills, browser tools, images, dictation, memory gates and coordinator gates.
 Remove personal provider auto-connections. Do not remove OpenRouter reasoning
 or native side calls that other features use.
 
-Confirmed retained-data policy: leave existing `personal-chat/` files and native
-provider history untouched. No migration into Threads and no auto-resume.
-Legacy personal request drafts must not stop thread draft recovery or cause
-draft files to be replaced as corrupt. This is a feature removal, not a request
-to erase historical user data.
+Confirmed retained-data policy: preserve existing chats while Keep local history
+is on. After review found that retiring the service also removed its privacy
+cleanup, Zach explicitly selected honoring the existing history setting. When
+off, startup and Settings saves redact old transcripts and submitted answers;
+unsent drafts and delivery identities remain. Invalid originals remain intact
+with a visible failure notice. Native provider history stays untouched. There
+is no migration into Threads or auto-resume. Legacy personal request drafts
+must not interfere with thread draft recovery.
+
+The failure notice reuses the existing recovery toast. Its minimum-size preview
+is archived on `prototype/remove-chat-privacy-notice` at
+`c0f7e2145963b52e167ee157c2e7a60ee8320752`, in the same prototype HTML path.
+The preview confirms the copy fits without proposing a new surface.
 
 ## Verification scope
 
@@ -66,11 +76,14 @@ working files are retained in `.cache/inherited-launch-video`.
 - All 16 affected Electron journeys pass together on the integrated build.
 - Separate GPT-6.1 Sol reviews find no remaining standards or scope issues.
 - Design capture and verification each pass 10 journeys and 146 tuples.
-- The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. The artifact deadline fix passes; 57 boot checks pass without reproducing the original failures. Final CI remains the merge gate.
+- The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. The artifact deadline fix passes; 57 boot checks pass without reproducing the original failures. Initial PR CI passed with 7,810 Windows tests and the Linux host checks. The privacy correction requires fresh CI before merge.
+- Privacy correction: 115 focused unit/renderer tests, the artifact-ignore check, all four new privacy Electron journeys and eight removal/recovery neighbors pass. Typecheck, lint, notices and build pass. The failure notice fits at minimum size.
 - Native and browser computer-use runtimes still fail at startup with
   `apply deny-read ACLs`, including after the permission change and reset.
-  Native inspection is not claimed; Zach selected the verified Electron checks and screenshots as the fallback.
-- The PR and merge remain pending. No release or installed-app update is part
+  A later retry again failed before reaching a window: the native kernel exited
+  and the browser runtime reported the same ACL error. Native inspection is not
+  claimed; Zach selected the verified Electron checks and screenshots as the fallback.
+- [PR #795](https://github.com/millZach/Sotto/pull/795) is open. Merge remains pending. No release or installed-app update is part
   of this request.
 
 The detailed evidence and test adaptations are recorded in

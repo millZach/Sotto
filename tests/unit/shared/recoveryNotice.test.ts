@@ -11,6 +11,7 @@ const ALL_CODES = [
   { code: 'ACCESSIBILITY_PERMISSION_REQUIRED' },
   { code: 'AUTOMATION_PERMISSION_REQUIRED' },
   { code: 'OPENROUTER_KEY_UNREADABLE' },
+  { code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' },
 ] as const
 
 describe('recoveryNoticeSchema', () => {

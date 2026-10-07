@@ -39,7 +39,7 @@ If Codex asks for an approval Sotto cannot show, Sotto refuses it and tells you.
 
 Thread drafts save automatically while you type, including while other threads are working.
 
-Standalone Chats, including Talk and Generate prompt, has been removed. Existing `personal-chat/` files and personal records in `request-drafts.json` stay on disk, but Sotto does not open them, reconnect their providers or show their old drafts. Provider-owned history is untouched; nothing is migrated into Threads.
+Standalone Chats, including Talk and Generate prompt, has been removed. With **Keep local history** on, existing `personal-chat/` files and personal records in `request-drafts.json` are preserved without reopening conversations, reconnecting providers or showing old drafts. Turning history off clears Sotto's retained personal transcripts and submitted answers; startup applies the same cleanup when history is already off. Provider-owned history is untouched; nothing is migrated into Threads.
 
 After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work.
 

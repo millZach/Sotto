@@ -14,6 +14,7 @@ const savedSchema = z.object({ version: z.literal(1), drafts: z.array(requestDra
 type Saved = z.infer<typeof savedSchema>
 const unreadable = 'Answer draft storage could not be read. The original request-drafts.json is unchanged. Repair it and restart before saving answers.'
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
+const privacyFailed = 'Local history is off, but retired submitted answers could not be removed. Nothing was changed. Restore local storage access and save Settings again.'
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
 export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string, answers: AgentQuestionAnswers | undefined) => Promise<void>
@@ -92,6 +93,18 @@ export class RequestDraftService {
         || !this.lookup(draft.target)?.completed?.some(item => item.requestId === draft.target.requestId
           && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
       if (drafts.length !== this.saved.drafts.length) await this.commit(drafts)
+    })
+  }
+
+  /** Retired submitted answers follow local history; unsent forms and thread recovery keep their own retention. */
+  privacyChanged(historyEnabled: boolean): Promise<void> {
+    if (historyEnabled) return Promise.resolve()
+    return this.serial(async () => {
+      // A held form is a submitted copy even before its native attempt is bound. An attempt identity is also
+      // submission evidence: retain no answer or question text just because a legacy form lost its held flag.
+      const drafts = this.saved.drafts.filter(draft => draft.target.kind !== 'personal' || !draft.held && !draft.decisionId)
+      if (drafts.length === this.saved.drafts.length) return
+      try { await this.commit(drafts) } catch { throw new Error(privacyFailed) }
     })
   }
 

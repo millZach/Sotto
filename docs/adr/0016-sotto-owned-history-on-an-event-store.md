@@ -1,8 +1,6 @@
 # Sotto's own history, on an event store the host owns and a client reads
 
-Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal-chat readers describe historical behavior; those provider and history paths are removed. The thread history, before-send checks and event-store decisions remain in force.
-
-Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
+Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal-chat readers describe historical behavior; Sotto no longer opens or connects those conversations. Their retained Sotto copies still follow Keep local history: retirement preserves them while it is on, and local cleanup removes transcripts and submitted answers while it is off. The thread history, before-send checks, event-store decisions and beta gates remain in force.
 
 Accepted September 19, 2026, so that a thread's history stops being something a provider is asked to rebuild, and so the same split serves a machine the user is not sitting at. Transport beyond loopback — which remote path ships first, and what the pairing flow looks like to the user — is left open for the owner to decide and is marked as open below.
 

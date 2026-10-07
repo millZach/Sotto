@@ -40,6 +40,7 @@ import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
 const recoveryMessages = {
+  RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Restart Sotto to try again.',
   OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.',
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',

@@ -21,10 +21,10 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
   const legacyFile = join(legacyDirectory, 'chats.json')
   const legacy = '{"version":1,"chats":[],"retained":"Existing chat data"}\n'
   try {
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ onboardingComplete: true, historyEnabled: true }) })
     await mkdir(legacyDirectory, { recursive: true })
     await writeFile(legacyFile, legacy, 'utf8')
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true, historyEnabled: false })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
