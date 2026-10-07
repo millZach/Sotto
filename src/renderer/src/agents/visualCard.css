@@ -81,9 +81,9 @@
 .visual-card__steps li { margin: 4px 0; padding-left: 2px; white-space: pre-wrap; }
 .visual-card__steps li::marker { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 
-/* Read all is a switch: pressed, the walkthrough gives way to the intro and the numbered steps. */
+/* Read all swaps the walkthrough for the intro and the numbered steps, and reads Step through while they show. */
 .visual-card__read-all { min-height: 30px; margin-right: 4px; padding: 0 12px; font-size: 13px; }
-.visual-card__read-all[aria-pressed='true'] { border-color: transparent; background: var(--tt-hover-strong); color: var(--tt-text); }
+.visual-card__read-all[data-reading-all] { border-color: transparent; background: var(--tt-hover-strong); color: var(--tt-text); }
 
 /* A walkthrough's step pictures share one place; each step's picture has the same size as the drawing. */
 .visual-card__frames { display: grid; min-width: 0; max-width: 100%; }

@@ -47,9 +47,9 @@ function useWalkthrough(id: string): [{ readonly step: number; readonly readAll:
 }
 
 /**
- * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Read all when it has steps, Show
- * source, Copy source and Expand; the diagram, drawn by the same safe renderer and frame as a diagram in an answer;
- * and its explanation. A visual with steps is a walkthrough (#793): one step at a time, its part of the diagram lit and
+ * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Read all (Step through while it
+ * shows every step) when it has steps, Show source, Copy source and Expand; the diagram, drawn by the same safe
+ * renderer and frame as a diagram in an answer; and its explanation. A visual with steps is a walkthrough (#793): one step at a time, its part of the diagram lit and
  * the rest dimmed, in the card and in Expand. Read all swaps the walkthrough for the intro and the numbered steps, with
  * the whole diagram lit. When the diagram cannot be drawn, its source and the reason take its place and the steps stay
  * readable.
@@ -76,8 +76,9 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
       </div>
       <DiagramCopyStatus frame={frame} />
       <div className="visual-card__actions">
-        {steps.length > 0 && <button type="button" className="tt-button visual-card__read-all tt-focusable" aria-pressed={readAll}
-          onClick={() => walk({ readAll: !readAll })}>Read all</button>}
+        {/* Named for what a press does: Read all shows every step, Step through goes back to the walkthrough. */}
+        {steps.length > 0 && <button type="button" className="tt-button visual-card__read-all tt-focusable" data-reading-all={readAll || undefined}
+          onClick={() => walk({ readAll: !readAll })}>{readAll ? 'Step through' : 'Read all'}</button>}
         <DiagramActions frame={frame} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} />
       </div>
     </header>

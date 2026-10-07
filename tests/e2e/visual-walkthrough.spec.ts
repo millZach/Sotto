@@ -214,13 +214,14 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await expect(expand).toBeFocused()
 
     // Read all, from the keyboard: the intro and the numbered steps instead of the walkthrough, nothing dimmed. Its
-    // place in the header is before Show source.
+    // place in the header is before Show source, and while every step shows it reads Step through.
     const readAll = flow.getByRole('button', { name: 'Read all' })
     await readAll.focus()
     await page.keyboard.press('Tab')
     await expect(flow.getByRole('button', { name: 'Show source' })).toBeFocused()
     await readAll.press('Space')
-    await expect(readAll).toHaveAttribute('aria-pressed', 'true')
+    const stepThrough = flow.getByRole('button', { name: 'Step through' })
+    await expect(stepThrough).toBeFocused()
     await expect(stepper(FLOW.title)).toHaveCount(0)
     await expect(flow.getByRole('listitem')).toHaveCount(4)
     await expect(flow).toContainText(FLOW.intro)
@@ -229,7 +230,8 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     for (const ratio of await contrasts(flow, ['.visual-card__read-all', '.visual-card__intro', '.visual-card__steps li'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
     await scrollTo(flow)
     await shot(page, 'flowchart-read-all-1280x800-dark.png')
-    await readAll.press('Space')
+    await stepThrough.press('Space')
+    await expect(readAll).toBeFocused()
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
 
     // A sequence diagram: participants by name, and arrows counted from 1 past the loop, each with its two participants.

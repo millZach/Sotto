@@ -43,7 +43,7 @@ describe('the visual card', () => {
     expect(within(card).getByRole('group', { name: 'Walkthrough' })).toHaveTextContent('Step 1 of 2')
     expect(within(card).getByText('You send.')).toBeInTheDocument()
     expect(within(card).queryByRole('listitem')).toBeNull()
-    await userEvent.click(within(card).getByRole('button', { name: 'Read all', pressed: false }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Read all' }))
     expect(within(card).getByText('Sotto shows your message first.')).toBeInTheDocument()
     expect(within(card).getAllByRole('listitem').map(item => item.textContent)).toEqual(['You send.', 'Codex runs it.'])
     expect(card).toHaveAttribute('data-state', 'drawn')

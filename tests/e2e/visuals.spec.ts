@@ -192,8 +192,8 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       await page.emulateMedia({ reducedMotion: null })
 
       // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card, under Read all.
-      // Finishing the turn drew the card again in its place by the fold, and Read all stayed pressed.
-      await expect(card.getByRole('button', { name: 'Read all' })).toHaveAttribute('aria-pressed', 'true')
+      // Finishing the turn drew the card again in its place by the fold, and it still shows every step.
+      await expect(card.getByRole('button', { name: 'Step through' })).toBeVisible()
       await expect(card.getByRole('listitem')).toHaveCount(4)
       let appearance: 'dark' | 'light' = 'dark'
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {

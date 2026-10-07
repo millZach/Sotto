@@ -37,8 +37,8 @@ drawing of each kind, and a second sequence diagram with numbered arrows and an 
 - `flowchart-edge-1280x800-dark.png`: the second step, `B->C`. Ready?, Send and the "yes" edge between them are lit,
   in the theme's accent.
 - `flowchart-expanded-1280x800-dark.png`: Expand, opened from the keyboard on that step, shows the same lighting.
-- `flowchart-read-all-1280x800-dark.png`: Read all pressed. The walkthrough gives way to the intro and the four
-  numbered steps, and nothing is dimmed.
+- `flowchart-read-all-1280x800-dark.png`: after Read all. The walkthrough gives way to the intro and the four
+  numbered steps, nothing is dimmed, and the button reads Step through.
 - `flowchart-reduced-motion-1280x800-dark.png`: under reduced motion, the next step's picture in place at once.
 - `sequence-step-1280x800-dark.png`: arrow 3, `turn/start` inside the loop, lit with Sotto and Codex.
 - `flowchart-step-1600x1000-dark.png`, `flowchart-step-1600x1000-light.png`, `flowchart-step-1280x800-light.png`,
@@ -52,18 +52,18 @@ drawing of each kind, and a second sequence diagram with numbered arrows and an 
 - Each kind lights the parts listed above, and every step's picture has the drawing's size.
 - The keyboard path: Tab reaches the dots, then Back, then Next, with a solid focus ring. Left and Right step while the
   focus is in the walkthrough and stop at the ends. Next on the last step reads Start over and goes back to step 1.
-  Back on the first step stays focusable and does nothing. Read all sits before Show source in the header and
-  toggles `aria-pressed` with Space. Expand opens the viewer and Escape closes it with the focus back on Expand.
+  Back on the first step stays focusable and does nothing. Read all sits before Show source in the header; Space
+  shows every step and the button, still focused, reads Step through, and Space again goes back. Expand opens the viewer and Escape closes it with the focus back on Expand.
 - Under reduced motion the card holds one picture after a step and nothing in it moves for longer than the app's
   1 ms floor. With motion, the step before fades out under the next, and only the new picture stays.
 - At 1600x1000, 1280x800 and 820x560, in light and dark, the flowchart and sequence cards are no wider than the window,
   and their header buttons, walkthrough buttons, picture and words are inside the card. The count, the step's words,
-  Read all and the walkthrough's buttons measure at least 4.5:1 on the surface they sit on, and so do Read all
-  pressed, the intro and the numbered steps.
+  Read all and the walkthrough's buttons measure at least 4.5:1 on the surface they sit on, and so do Step
+  through, the intro and the numbered steps.
 - No page errors were raised.
 
 `tests/e2e/visuals.spec.ts` (#792) now opens its card as a walkthrough and presses Read all before checking the intro
-and steps; Read all stays pressed when the finished turn draws the card again by its fold. Its captures in
+and steps; they still show, under Step through, when the finished turn draws the card again by its fold. Its captures in
 `artifacts/visual-in-thread/` were not taken again for this note.
 
 ## Not verified here
