@@ -5,30 +5,16 @@
  *
  *   npm run build && npx playwright test tests/e2e/early-start.spec.ts
  */
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { fakeClaudeLaunches, fakeClaudePrompts as prompts, fakeClaudeSessionFiles as sessionFiles } from '../fixtures/fakeClaudeRecords'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 /** The fake CLI's thread launches, each by the session ID it was started on. */
-async function launches(root: string): Promise<{ session: string; resume: boolean }[]> {
-  const lines = (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
-  return lines.map(line => JSON.parse(line) as { method?: string; params?: { frame?: { args?: string[] } } })
-    .filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame?.args ?? [])
-    .filter(args => args.includes('--session-id') || args.includes('--resume'))
-    .map(args => ({ resume: args.includes('--resume'), session: args[args.indexOf(args.includes('--resume') ? '--resume' : '--session-id') + 1]! }))
-}
-/** The session IDs the fake CLI has written a session file for. */
-async function sessionFiles(root: string): Promise<string[]> {
-  const projects = join(root, 'home', 'projects')
-  const folders = await readdir(projects).catch(() => [] as string[])
-  return (await Promise.all(folders.map(folder => readdir(join(projects, folder)).catch(() => [] as string[])))).flat()
-    .filter(name => name.endsWith('.jsonl')).map(name => name.slice(0, -'.jsonl'.length))
-}
-const prompts = async (root: string): Promise<number> => (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
-  .trim().split('\n').filter(Boolean).filter(line => (JSON.parse(line) as { method?: string }).method === 'user').length
+const launches = async (root: string) => (await fakeClaudeLaunches(root)).map(({ resume, session }) => ({ resume, session }))
 
 test('typing in a new Claude thread starts its CLI before Send, and Send starts no other', async () => {
   test.setTimeout(180_000)
