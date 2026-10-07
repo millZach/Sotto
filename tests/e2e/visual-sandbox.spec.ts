@@ -56,13 +56,15 @@ function page(port: number): string {
         record.steps = JSON.stringify([...JSON.parse(record.steps), { step: message.step, total: message.total }])
         document.getElementById('state').textContent = 'Step ' + message.step + ' of ' + message.total
       }
-      if (message && message.type === 'sotto-visual-theme') record.theme = message.mode + ' ' + message.tokens['--sotto-background']
+      if (message && message.type === 'sotto-visual-theme') { record.theme = message.mode + ' ' + message.tokens['--sotto-background']; record.reduced = String(message.reducedMotion) }
     })
     fetch('${listener}/data.json').then(() => { record.fetch = 'answered' }, () => { record.fetch = 'failed' })
   </script>
 </body></html>`
 }
 const TALL = '<!doctype html><body style="margin:0"><div style="height:2000px">A tall page.</div><script>document.body.dataset.script = "ran"</script></body>'
+// A page whose body fills the frame, with 300 pixels of content: Sotto measures the content, not the frame.
+const FULL = '<!doctype html><style>html, body { height: 100%; margin: 0 }</style><div style="height:300px">A full-height page.</div>'
 
 type ToolReply = { content: { type: string; text?: string }[]; isError?: boolean }
 const visualize = (target: Page, args: unknown): Promise<ToolReply> => target.evaluate(request => window.sottoE2E!.visualTool!(request), { threadId: 'workshop', arguments: args }) as Promise<ToolReply>
@@ -104,7 +106,7 @@ async function guestRecord(launched: LaunchedSotto, index = 0): Promise<Record<s
     const guests = webContents.getAllWebContents().filter(contents => contents.getType() === 'webview' && !contents.isDestroyed()).sort((a, b) => a.id - b.id)
     const guest = guests[which]
     if (!guest) return {}
-    return guest.executeJavaScript('({ ...document.body.dataset, url: location.href, background: getComputedStyle(document.documentElement).backgroundColor, scheme: getComputedStyle(document.documentElement).colorScheme })') as Promise<Record<string, string>>
+    return guest.executeJavaScript('({ ...document.body.dataset, url: location.href, background: getComputedStyle(document.documentElement).backgroundColor, scheme: getComputedStyle(document.documentElement).colorScheme, still: String(document.getElementById("sotto-visual-theme").textContent.includes("animation-duration:0s")) })') as Promise<Record<string, string>>
   }, index)
 }
 const inGuest = (launched: LaunchedSotto, script: string): Promise<unknown> => launched.app.evaluate(async ({ webContents }, code) => {
@@ -163,7 +165,10 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
 
     // The page drew and ran its script, cannot see Sotto's bridge, and was given the read-all step and the theme.
     await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
-    await expect.poll(async () => (await guestRecord(launched!)).steps).toBe(JSON.stringify([{ step: 0, total: 2 }]))
+    // Sent once the page's script has run and again once its load finished: each time step 0 of 2, every step shown.
+    await expect.poll(async () => (JSON.parse((await guestRecord(launched!)).steps ?? '[]') as unknown[]).length).toBeGreaterThan(0)
+    const steps = JSON.parse((await guestRecord(launched)).steps!) as unknown[]
+    for (const step of steps) expect(step).toEqual({ step: 0, total: 2 })
     await expect.poll(async () => (await guestRecord(launched!)).theme ?? '').toMatch(/^dark #[0-9a-f]{6}$/u)
     const first = await guestRecord(launched)
     expect(first.sotto).toBe('undefined')
@@ -188,7 +193,16 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     const sessionFetch = await launched.app.evaluate(async ({ session }, target) => {
       try { await session.fromPartition('sotto-visual').fetch(target); return 'answered' } catch (error) { return String((error as Error).message) }
     }, `http://127.0.0.1:${listener.port}/from-session`)
-    expect(sessionFetch).not.toBe('answered')
+    expect(sessionFetch).toContain('ERR_BLOCKED_BY_CLIENT')
+
+    // The session sends a loopback address to its proxy, never directly, and the guest's WebRTC may use only the proxy.
+    const sealing = await launched.app.evaluate(async ({ session, webContents }, port) => ({
+      proxy: await session.fromPartition('sotto-visual').resolveProxy(`http://127.0.0.1:${port}/`),
+      webrtc: webContents.getAllWebContents().filter(contents => contents.getType() === 'webview' && !contents.isDestroyed()).map(contents => contents.getWebRTCIPHandlingPolicy()),
+    }), listener.port)
+    expect(sealing.proxy).not.toContain('DIRECT')
+    expect(sealing.proxy).toMatch(/^SOCKS5 127\.0\.0\.1:\d+$/u)
+    expect(sealing.webrtc).toEqual(['disable_non_proxied_udp'])
 
     // The page's address was good for one load: asked again, it is gone.
     const again = await launched.app.evaluate(async ({ session }, target) => {
@@ -196,9 +210,15 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     }, url)
     expect(again).not.toBe(200)
 
-    // Escape inside the page gives focus back to the card.
-    // The key is pressed in the guest itself, as a key typed while the page has focus reaches it.
+    // An Escape the page makes itself moves nothing.
     await view.locator('.interactive-visual__page').focus()
+    await inGuest(launched, 'for (let i = 0; i < 20; i++) dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); true')
+    await view.waitForTimeout(300)
+    await expect(card).not.toBeFocused()
+    await expect(view.locator('.interactive-visual__page')).toBeFocused()
+
+    // The user's Escape inside the page gives focus back to the card, with its ring showing where focus went. The key
+    // is pressed in the guest itself, as a key typed while the page has focus reaches it.
     await launched.app.evaluate(({ webContents }) => {
       const guest = webContents.getAllWebContents().find(contents => contents.getType() === 'webview' && !contents.isDestroyed())!
       guest.focus()
@@ -206,6 +226,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
       guest.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
     })
     await expect(card).toBeFocused()
+    await expect(card).toHaveCSS('outline-style', 'solid')
 
     // Show source shows the page's HTML in place of the page, and back; Expand opens it over the window and Escape
     // closes it, back on Expand. The page runs once at a time: the card's stops while Expand shows it.
@@ -229,7 +250,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await expect(frame).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
 
     // Light and dark at the sizes the window supports; the theme reaches the page by message and by its style.
-    for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
       for (const mode of ['light', 'dark'] as const) {
         await view.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), mode)
@@ -245,18 +266,36 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
       }
     }
 
-    // A page taller than 640 pixels is held to 640 and scrolls inside.
+    // With Reduce motion on, the page is told and its style stops movement.
     await resizeWindow(launched, 1280, 800)
+    await view.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect.poll(async () => (await guestRecord(launched!)).reduced, { timeout: 15_000 }).toBe('true')
+    expect((await guestRecord(launched)).still).toBe('true')
+    await scrollTo(card)
+    await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await view.screenshot({ path: join(SHOTS, 'page-1280x800-dark-reduced-motion.png'), animations: 'disabled' })
+    await view.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+    await expect.poll(async () => (await guestRecord(launched!)).reduced, { timeout: 15_000 }).toBe('false')
+
+    // A page taller than 640 pixels is held to 640 and scrolls inside.
     expect((await visualize(view, { title: 'A tall page', kind: 'interactive', source: TALL })).isError).not.toBe(true)
     const tall = log.getByRole('region', { name: 'Visual: A tall page' }).locator('.interactive-visual')
     await scrollTo(tall)
     await expect.poll(() => tall.evaluate(element => Math.round(element.getBoundingClientRect().height)), { timeout: 15_000 }).toBe(640)
 
+    // A page whose body fills the frame grows to its 300 pixels of content rather than staying at the frame's 160.
+    expect((await visualize(view, { title: 'A full-height page', kind: 'interactive', source: FULL })).isError).not.toBe(true)
+    const full = log.getByRole('region', { name: 'Visual: A full-height page' }).locator('.interactive-visual')
+    await scrollTo(full)
+    await expect.poll(() => full.evaluate(element => Math.round(element.getBoundingClientRect().height)), { timeout: 15_000 }).toBe(300)
+
     // Nothing left the session: every request it saw that was not a page failed, none completed but the pages, no page
     // navigated after its load, no window opened and nothing downloaded. And the listener was never reached.
     const seen = await observed(launched)
     expect(seen.completed.every(item => item.startsWith('sotto-visual://page/'))).toBe(true)
-    expect(seen.failed.filter(item => item.url.includes(`127.0.0.1:${listener.port}`)).every(item => /BLOCKED|ABORTED|FAILED/u.test(item.error))).toBe(true)
+    const toListener = seen.failed.filter(item => item.url.includes(`127.0.0.1:${listener.port}`))
+    expect(toListener.length).toBeGreaterThan(0)
+    expect(toListener.every(item => item.error === 'net::ERR_BLOCKED_BY_CLIENT')).toBe(true)
     expect(seen.navigations.every(item => item.startsWith('sotto-visual://page/'))).toBe(true)
     expect(seen.navigations.length).toBe(seen.guests)
     expect(seen.popups).toBe(0)
