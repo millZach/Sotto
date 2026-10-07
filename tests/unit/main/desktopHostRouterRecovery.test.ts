@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
+import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import type { RequestDraft, RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
@@ -45,24 +45,24 @@ function accept(recovery: RequestAnswerRecovery, decisionId: string) {
 }
 
 describe('independent answer receipt recovery', () => {
-  it('retires known local and personal acceptance while a remote receipt is pending', async () => {
+  it('retires known local acceptance for independent provider owners while a remote receipt is pending', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const local = host(LOCAL, 'local'), remote = host(REMOTE_A, 'remote')
     router.add(local.connection); router.add(remote.connection)
-    const personal: RequestDraftTarget = { ...target(LOCAL), kind: 'personal', ownerId: 'chat' }
-    let personalState: RequestDraftOwnerState = { connected: true, ready: true,
-      requests: local.state.host.threads[0]!.requests, completed: [] }
-    const drafts = new RequestDraftService(tmpdir(), owner => owner.kind === 'personal' ? personalState : router.requestDraftState(owner), async () => {}, { write: async () => {} })
-    await hold(drafts, target(REMOTE_A), 'remote'); await hold(drafts, target(LOCAL), 'local'); await hold(drafts, personal, 'personal')
-    accept(local.recovery, 'local')
-    personalState = { ...personalState, completed: [{ requestId: 'request', decisionId: 'personal', questionsDigest: requestQuestionsDigest(questions) }] }
+    local.state.host.threads.push({ ...local.state.host.threads[0]!, id: 'other-thread', providerId: 'grok' })
+    const other: RequestDraftTarget = { ...target(LOCAL), ownerId: hostEntityKey(LOCAL, 'other-thread'), providerId: 'grok' }
+    const otherRecovery: RequestAnswerRecovery = { uncertainRequestIds: [], completed: [] }
+    local.connection.service.requestAnswerRecovery = threadId => threadId === 'other-thread' ? otherRecovery : local.recovery
+    const drafts = new RequestDraftService(tmpdir(), owner => router.requestDraftState(owner), async () => {}, { write: async () => {} })
+    await hold(drafts, target(REMOTE_A), 'remote'); await hold(drafts, target(LOCAL), 'local'); await hold(drafts, other, 'other-local')
+    accept(local.recovery, 'local'); accept(otherRecovery, 'other-local')
     const started = deferred(), gate = deferred()
     remote.read.mockImplementation(async () => { started.resolve(); await gate.promise })
     const running = router.reconcileRequestDrafts(drafts)
     try {
       await started.promise
       expect(await drafts.get(target(LOCAL))).toBeNull()
-      expect(await drafts.get(personal)).toBeNull()
+      expect(await drafts.get(other)).toBeNull()
       expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
       expect(local.command).not.toHaveBeenCalled(); expect(remote.command).not.toHaveBeenCalled()
     } finally { gate.resolve(); await running; router.dispose() }

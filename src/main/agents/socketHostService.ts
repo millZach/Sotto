@@ -23,6 +23,8 @@ import { requestDraftProvider, requestDraftQuestions } from '../../shared/reques
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as clientVersion } from '../../../package.json'
 
+export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.'
+
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
 export class HostConnectionError extends Error {
   constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
@@ -359,8 +361,8 @@ export class SocketHostService implements HostService {
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     if (!this.supportsAtomicSend) {
-      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept.' }
-      if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: 'Update the host before saving this draft. Your draft is kept.' }
+      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your text is only in this window.' }
+      if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
     commandId ??= randomUUID()
@@ -376,6 +378,8 @@ export class SocketHostService implements HostService {
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
     this.publish(state)
     const acknowledged = this.state()
+    // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
+    if (command.type === 'compose') return { ...acknowledged, error: state.error }
     // Receipt evidence is optional after acknowledgement. A failed read preserves the command-local
     // outcome and leaves its saved answer held until an exact positive receipt is recovered later.
     if (answer) await this.refreshRequestAnswer(commandId, answer).catch(() => undefined)
@@ -397,10 +401,9 @@ export class SocketHostService implements HostService {
       }
     }
     const refreshed = generation === this.generation ? this.state() : acknowledged
-    // State refreshes cannot replace this command's own answer or targeted draft outcome.
+    // State refreshes cannot replace this command's own answer outcome.
     return accepted ? { ...refreshed, error: null }
-      : command.type === 'answer' || command.type === 'send' || command.type === 'compose' && command.threadId !== undefined
-        ? { ...refreshed, error: state.error } : refreshed
+      : command.type === 'answer' || command.type === 'send' ? { ...refreshed, error: state.error } : refreshed
   }
   async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
     return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))

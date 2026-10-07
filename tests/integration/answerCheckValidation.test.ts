@@ -13,6 +13,78 @@ const questions = [{ id: 'q', question: 'Which color?', options: [], multiSelect
 const request: AgentRequest = { id: 'question', kind: 'question', text: '', options: [], questions, delivery: 'uncertain' }
 const target = { threadId: 'workshop', providerId: 'claude' as const, requestId: request.id, questionsDigest: requestQuestionsDigest(questions) }
 
+it.each([['local', 'saved'], ['socket', 'saved'], ['local', 'empty-active'], ['socket', 'empty-active']] as const)(
+  'keeps an explicit null-bound %s %s prompt separate from a newly arrived question', async (route, binding) => {
+  const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+    mayGrant: client => ({ allowed: true, reason: client.transport === 'socket' ? 'paired-client' : 'local-window' }) })
+  try {
+    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
+    if (binding === 'saved') await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId: '00000000-0000-4000-8000-000000000080', text: 'Plain prompt', requestId: null })
+    else {
+      await f.command({ type: 'compose', text: '' })
+      expect(f.control.get()).toMatchObject({ composing: true, draftThreadId: target.threadId, draftRequestId: null })
+      expect(f.control.get().threadDrafts?.some(item => item.threadId === target.threadId)).toBe(false)
+    }
+    f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
+    const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
+    const result = await f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'Updated plain prompt', attachments: [] } }, client)
+    expect(result.error).toContain('pending question')
+    expect(f.attempts.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
+    expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: target.threadId, text: 'Updated plain prompt', requestId: null }))
+  } finally { await f.close() }
+})
+
+it.each([['local', 'add'], ['socket', 'add'], ['local', 'remove'], ['socket', 'remove']] as const)(
+  'keeps a queued %s image %s when a later text-only Compose inherits omitted fields', async (route, change) => {
+  const f = await draftHandoffFixture()
+  let release: () => void = () => undefined
+  const pending: Promise<unknown>[] = []
+  try {
+    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
+    const image = await f.control.stageAttachment({ name: 'synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId: '00000000-0000-4000-8000-000000000081', text: 'Initial',
+      requestId: null, attachments: change === 'remove' ? [image] : [] })
+    let entered: () => void = () => undefined
+    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
+    vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    pending.push(f.command({ type: 'compose', text: 'Initial' })); await started
+    const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
+    const expected = change === 'add' ? [image] : []
+    pending.push(f.control.commandShell({ type: 'compose', threadId: target.threadId, text: 'Image edit', attachments: expected }, client))
+    pending.push(f.control.commandShell({ type: 'compose', threadId: target.threadId, text: 'Newest text' }, client))
+    release(); await Promise.all(pending)
+    expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: target.threadId, text: 'Newest text', attachments: expected, requestId: null }))
+    expect(f.attempts.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { release(); await Promise.allSettled(pending); vi.restoreAllMocks(); await f.close() }
+})
+
+it.each(['local', 'socket'] as const)('validates the actual second question form captured by a queued atomic %s answer', async route => {
+  const f = await draftHandoffFixture(undefined, { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+    mayGrant: client => ({ allowed: true, reason: client.transport === 'socket' ? 'paired-client' : 'local-window' }) })
+  let release: () => void = () => undefined, predecessor: Promise<unknown> | undefined, sending: Promise<unknown> | undefined
+  try {
+    await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
+    f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, id: 'first-question', delivery: undefined } })
+    f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
+    await f.command({ type: 'save-thread-draft', threadId: target.threadId, draftId: '00000000-0000-4000-8000-000000000082', text: 'Saved answer', requestId: request.id })
+    let entered: () => void = () => undefined
+    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
+    vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
+    predecessor = f.command({ type: 'compose', text: 'Saved answer' }); await started
+    const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
+    sending = f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'Blue', attachments: [] } }, client)
+    const changed = await f.host.snapshot()
+    changed.threads.find(thread => thread.id === target.threadId)!.requests.find(item => item.id === request.id)!.questions = [{ ...questions[0]!, question: 'Different second question?' }]
+    vi.spyOn(f.host, 'snapshot').mockResolvedValue(changed)
+    await f.command({ type: 'refresh', provider: 'claude' })
+    release(); await predecessor
+    expect(await sending).toMatchObject({ error: expect.stringContaining('changed') })
+    expect(f.attempts.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
+  } finally { release(); await Promise.allSettled([predecessor, sending]); vi.restoreAllMocks(); await f.close() }
+})
+
 it('validates every exact answer Check identity and current authority before any native read', async () => {
   const f = await draftHandoffFixture()
   try {
@@ -418,6 +490,9 @@ it('keeps an edit made during Send with its explicit owner after queue progressi
     await f.command({ type: 'assign', threadId: 'docs', instruction: 'Documentation' })
     f.host.event({ type: 'question', threadId: 'docs', text: '', request: { ...request, id: 'docs-question', delivery: undefined } })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
+    const image = await f.control.stageAttachment({ name: 'docs.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    await f.command({ type: 'save-thread-draft', threadId: 'docs', draftId: '00000000-0000-4000-8000-000000000083', text: 'Retained Docs edit',
+      requestId: 'docs-question', attachments: [image], skills: [{ name: 'docs', path: 'C:/synthetic/docs' }], files: [{ path: 'notes.md' }] })
     await f.command({ type: 'select-thread', threadId: target.threadId })
     let entered: () => void = () => undefined
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
@@ -428,8 +503,12 @@ it('keeps an edit made during Send with its explicit owner after queue progressi
     editing = f.command({ type: 'compose', threadId: target.threadId, text: 'Newer edit for Workshop' })
     release(); await sending; await editing
     expect(f.control.get().activeThreadId).toBe('docs')
-    expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: target.threadId, text: 'Newer edit for Workshop', requestId: request.id }))
-    expect((await f.disk()).threadDrafts).not.toContainEqual(expect.objectContaining({ threadId: 'docs', text: 'Newer edit for Workshop' }))
+    const drafts = (await f.disk()).threadDrafts
+    expect(drafts).toContainEqual(expect.objectContaining({ threadId: target.threadId, text: 'Newer edit for Workshop', requestId: request.id, attachments: [] }))
+    const workshop = drafts.find((draft: { threadId: string }) => draft.threadId === target.threadId)
+    expect(workshop.skills).toBeUndefined(); expect(workshop.files).toBeUndefined()
+    expect(drafts).toContainEqual(expect.objectContaining({ threadId: 'docs', text: 'Retained Docs edit', attachments: [image],
+      skills: [{ name: 'docs', path: 'C:/synthetic/docs' }], files: [{ path: 'notes.md' }] }))
   } finally { release(); await Promise.allSettled([sending, editing]); vi.restoreAllMocks(); await f.close() }
 })
 
@@ -439,12 +518,12 @@ it.each(['local', 'socket'] as const)('never converts a queued atomic %s answer 
   let release: () => void = () => undefined, predecessor: Promise<unknown> | undefined, sending: Promise<unknown> | undefined
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
+    f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     let entered: () => void = () => undefined
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     predecessor = f.command({ type: 'compose', text: '' }); await started
-    f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
     sending = f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'Blue', attachments: [] } }, client)
     const closed = await f.host.snapshot(); closed.threads.find(thread => thread.id === target.threadId)!.requests = []

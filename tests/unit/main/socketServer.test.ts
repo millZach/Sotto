@@ -352,3 +352,25 @@ it('returns a targeted Compose refusal as its own outcome when the shared shell 
     .toMatchObject({ ok: true, result: { error: 'The draft could not be saved. Your earlier draft is kept.' } })
   expect(service.shell().error).toBe('A different command changed the shared error.')
 })
+
+it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as const)('keeps targeted Compose answer authority bound to the exact %s draft', async binding => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  const saved = binding.startsWith('saved')
+  const plain = binding.endsWith('plain')
+  const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [
+    { id: 'native-question', kind: 'question', text: 'Question', options: [] }] }], models: [] }, queue: [], draft: 'Active draft',
+    composing: true, draftThreadId: 'thread', draftRequestId: saved ? plain ? 'native-question' : null : plain ? null : 'native-question',
+    threadDrafts: saved ? [{ threadId: 'thread', requestId: plain ? null : 'native-question', text: 'Retained draft', attachments: [] }] : [] }
+  Object.assign(service, { supportsAtomicSend: true, shell: () => state })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => false })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const command = { type: 'compose', threadId: 'thread', text: 'A new edit' }
+  expect(await desktop.call('targeted', { op: 'command', command })).toMatchObject(plain ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
+  expect(commands).toEqual(plain ? [{ command, clientId: paired.clientId }] : [])
+  // Only the exact targeted save keeps its binding; legacy Compose and Send retain their native-question gate.
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', text: 'Legacy edit' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await desktop.call('send', { op: 'command', command: { type: 'send', draft: { threadId: 'thread', text: 'Prompt' } } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+})

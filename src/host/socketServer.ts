@@ -402,8 +402,13 @@ export async function startSocketServer(options: SocketServerOptions) {
     const draftRequestId = nativeQuestion?.id ?? (state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId
       : savedDraft ? savedDraft.requestId
         : state.queue.find(item => item.threadId === targetThreadId && item.kind === 'question' && item.requestId)?.requestId)
+    // A targeted save keeps its existing binding, including an ordinary prompt's explicit null.
+    const retainedDraft = state.threadDrafts?.find(draft => draft.threadId === targetThreadId)
+    const composeRequestId = retainedDraft ? retainedDraft.requestId
+      : state.composing && state.draftThreadId === targetThreadId ? state.draftRequestId : draftRequestId
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
-      draftRequestId: input.type === 'send' || input.type === 'compose' ? draftRequestId : undefined,
+      draftRequestId: input.type === 'compose' && input.threadId !== undefined ? composeRequestId
+        : input.type === 'send' || input.type === 'compose' ? draftRequestId : undefined,
       selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {

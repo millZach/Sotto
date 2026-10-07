@@ -1657,12 +1657,16 @@ export class AgentControl {
         const thread = this.thread(packet.threadId!)
         if (client.transport === 'socket' && client.selectedThreadId !== thread.id) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
         const saved = this.state.threadDrafts?.find(item => item.threadId === thread.id)
-        const question = thread.requests.find(item => item.kind === 'question')
-        const requestId = saved?.requestId ?? question?.id ?? null
+        const requestId = saved ? saved.requestId
+          : this.state.composing && this.state.draftThreadId === thread.id ? this.state.draftRequestId
+            : thread.requests.find(item => item.kind === 'question')?.id ?? null
+        const question = thread.requests.find(item => item.kind === 'question' && item.id === requestId)
         if (requestId) this.guardClientGrant(client)
         composer = { order: ++this.nextDraftAdmission, composition: { type: 'save-thread-draft', threadId: thread.id,
-          draftId: randomUUID(), text: packet.text, attachments: structuredClone(packet.attachments ?? saved?.attachments ?? []),
-          skills: saved?.skills, files: saved?.files, requestId },
+          draftId: randomUUID(), text: packet.text,
+          attachments: command.type === 'send' ? structuredClone(packet.attachments ?? saved?.attachments ?? [])
+            : packet.attachments === undefined ? undefined : structuredClone(packet.attachments),
+          skills: command.type === 'send' ? saved?.skills : undefined, files: command.type === 'send' ? saved?.files : undefined, requestId },
         ...(saved ? { previousDraftId: saved.draftId } : {}),
         ...(question && question.id === requestId ? { questionsDigest: requestQuestionsDigest(requestDraftQuestions(question)) } : {}),
         ...(this.outbox.find(item => item.threadId === thread.id)?.id ? { retryId: this.outbox.find(item => item.threadId === thread.id)!.id } : {}) }
@@ -2189,7 +2193,11 @@ export class AgentControl {
     }
     if (command.type === 'compose' && composer) {
       this.activateComposition(composer, client)
-      await this.stageThreadDraft(composer.composition, composer.order)
+      // Omitted fields inherit from earlier edits in this owner's lane, never from another thread or binding.
+      const previous = this.state.threadDrafts?.find(item => item.threadId === composer.composition.threadId
+        && item.requestId === (composer.composition.requestId ?? null))
+      await this.stageThreadDraft({ ...composer.composition, attachments: composer.composition.attachments ?? previous?.attachments ?? [],
+        skills: previous?.skills, files: previous?.files }, composer.order)
       return
     }
     if (client.transport === 'socket' && ['compose', 'send', 'cancel-draft', 'pause-draft', 'cancel-request'].includes(command.type)) {

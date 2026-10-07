@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import type { FileListRequest, FileRequest } from '../../../src/shared/files'
 import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
-import { hostVersionMismatch } from '../../../src/shared/hostProtocol'
+import { hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
@@ -27,6 +27,25 @@ function fixture(hostId: string, kind: 'local' | 'remote') {
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail, observe, preview: () => null }
   return { state, command, detail, observe, connection }
 }
+function unsupportedComposer() {
+  const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+  remote.state.activeThreadId = 'thread'; remote.state.draftThreadId = 'thread'
+  remote.state.draft = 'Previously saved text'; remote.state.composing = true
+  const onPushError = vi.fn()
+  const socket = () => {
+    const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false, onPushError })
+    const call = vi.fn(async (operation: HostOperation) => operation.op === 'detail' ? null : remote.state)
+    Object.assign(service, { cached: remote.state, features: [], call })
+    return { service, call, connection: { ...remote.connection, service } }
+  }
+  const first = socket()
+  router.add(first.connection); router.select(REMOTE)
+  const notifications: { error: string | null; title: string }[] = []
+  router.subscribe(state => notifications.push({ error: state.error, title: state.host.threads[0]?.title ?? '' }))
+  const save = (text: string) => router.command({ type: 'compose', threadId: hostEntityKey(REMOTE, 'thread'), text }, desktopWindowClient())
+  return { router, remote, ...first, notifications, save, socket, onPushError }
+}
+
 describe('desktop host routing', () => {
   it.each(['send', 'compose'] as const)('returns fixed update guidance for targeted %s to an older host without sending or losing its draft', async type => {
     const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
@@ -41,8 +60,8 @@ describe('desktop host routing', () => {
     router.select(REMOTE)
     const draft = { threadId: hostEntityKey(REMOTE, 'thread'), text: 'The retained prompt', attachments: [] }
     const result = await router.command(type === 'send' ? { type, draft } : { type, ...draft }, desktopWindowClient())
-    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your draft is kept.'
-      : 'Update the host before saving this draft. Your draft is kept.')
+    expect(result.error).toBe(type === 'send' ? 'Update the host before sending this draft. Your text is only in this window.'
+      : 'This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.')
     expect(result.draft).toBe('The retained prompt')
     expect(result.draftThreadId).toBe(hostEntityKey(REMOTE, 'thread'))
     expect(result.composing).toBe(true)
@@ -50,6 +69,66 @@ describe('desktop host routing', () => {
     expect(service.state()).toEqual(remote.state)
     expect(router.shell().error).toBe(result.error)
     router.dispose()
+  })
+
+  it('notifies unsupported autosave once while every edit remains refused and unsaved', async () => {
+    const f = unsupportedComposer()
+    try {
+      for (const text of ['New edit', 'New edit two', 'New edit three']) {
+        const result = await f.save(text)
+        expect(result.error).toBe('This host cannot save this draft yet. Your text is only in this window and has not been saved on the host. Update the host.')
+      }
+      expect(f.notifications).toHaveLength(1)
+      expect(f.notifications[0]!.error).toBe(f.router.shell().error)
+      expect(f.call).not.toHaveBeenCalled(); expect(f.onPushError).not.toHaveBeenCalled()
+      expect(f.service.state().draft).toBe('Previously saved text')
+    } finally { f.router.dispose() }
+  })
+
+  it.each(['error', 'selection', 'shell', 'reconnect'] as const)('does not suppress a refused autosave notice after an intervening %s while its reply is held', async intervening => {
+    const f = unsupportedComposer()
+    let release!: () => void, started!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve }), entered = new Promise<void>(resolve => { started = resolve })
+    const actual = f.service.command.bind(f.service)
+    let running: Promise<ReturnType<typeof f.router.shell>> | undefined
+    try {
+      const first = await f.save('First unsaved edit')
+      const held = vi.spyOn(f.service, 'command').mockImplementationOnce(async (command, client, id) => {
+        const result = await actual(command, client, id)
+        started(); await gate
+        return result
+      })
+      running = f.save('A newer unsaved edit')
+      await entered
+      if (intervening === 'error') {
+        f.call.mockResolvedValueOnce({ ...f.remote.state, error: 'Another action failed.' })
+        await f.router.command({ type: 'configure', patch: { followupLimit: 2 } }, desktopWindowClient())
+        expect(f.notifications.some(item => item.error === 'Another action failed.')).toBe(true)
+      } else if (intervening === 'selection') {
+        await f.router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
+      } else if (intervening === 'shell') {
+        const state = structuredClone(f.remote.state)
+        state.host.threads[0]!.title = 'Changed while the save reply was held'
+        const receiver = f.service as unknown as { receive(text: string): void }
+        receiver.receive(JSON.stringify({ v: 1, event: 'shell', state }))
+        expect(f.notifications.at(-1)!.title).toBe('Changed while the save reply was held')
+      } else {
+        f.router.replace(f.socket().connection)
+      }
+      const before = f.notifications.length
+      release()
+      expect((await running).error).toBe(first.error)
+      expect(f.notifications).toHaveLength(before + 1)
+      expect(f.notifications.at(-1)!.error).toBe(first.error)
+      held.mockRestore()
+      if (intervening === 'reconnect') {
+        const reconnected = f.notifications.length
+        expect((await f.save('Edit on the reconnected host')).error).toBe(first.error)
+        expect(f.notifications).toHaveLength(reconnected + 1)
+      }
+      expect(f.call.mock.calls.every(([operation]) => operation.op !== 'command' || operation.command.type !== 'compose')).toBe(true)
+      expect(f.onPushError).not.toHaveBeenCalled()
+    } finally { release(); await running; f.router.dispose() }
   })
 
   it.each(['disconnected', 'unavailable', 'version_mismatch'] as const)('keeps %s failures on the uncertain command path', async code => {

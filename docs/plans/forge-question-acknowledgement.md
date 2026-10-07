@@ -33,6 +33,7 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Protect Send before queued Compose creates its draft, refuse queued local thread changes without sending, and verify both failing and ordinary same-thread journeys with independent reviews.
 - [x] Close the shipped composer's Compose/Send gap with one admitted Send carrying its draft; preserve the original question, exact text and newer edits through queued work, and gate the additive remote capability.
 - [x] Integrate main at `7d071b62`, preserving the removal of standalone Chats and the saved-answer format and privacy rules.
+- [x] Address the five subsequent composer findings: preserve null prompt bindings and the actual question form, inherit queued metadata only for the same draft binding, settle Compose without history reads, and report unsaved old-host text without repeated notices.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `7d071b62`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.

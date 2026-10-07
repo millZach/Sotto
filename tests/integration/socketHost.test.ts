@@ -45,6 +45,23 @@ async function pair(name = 'Socket test', onPushError?: (message: string) => voi
   await client.connect(); return { client, result }
 }
 describe('authenticated host socket', () => {
+  it('acknowledges a targeted draft save over the real socket without reading history or reporting a read failure', async () => {
+    const onPushError = vi.fn(), { client } = await pair('Autosave client', onPushError)
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
+    await client.command({ type: 'select-thread', threadId })
+    const detail = vi.spyOn(client, 'readThreadDetail').mockRejectedValue(new Error('A history read must not delay typing.'))
+    const events = vi.spyOn(client, 'readEvents').mockRejectedValue(new Error('An event read must not delay typing.'))
+    const command = vi.spyOn(host.service, 'command')
+    const result = await client.command({ type: 'compose', threadId, text: 'An acknowledged saved edit' })
+    expect(result.error).toBeNull()
+    expect(result.threadDrafts?.find(draft => draft.threadId === threadId)).toMatchObject({ text: 'An acknowledged saved edit', requestId: null })
+    expect(host.service.shell().threadDrafts?.find(draft => draft.threadId === threadId)).toMatchObject({ text: 'An acknowledged saved edit', requestId: null })
+    expect(command.mock.calls.filter(([input]) => input.type === 'compose')).toHaveLength(1)
+    expect(detail).not.toHaveBeenCalled(); expect(events).not.toHaveBeenCalled(); expect(onPushError).not.toHaveBeenCalled()
+  })
+
   it.each(['missing-thread', 'wrong-provider', 'missing-request', 'changed-form', 'changed-during-read', 'closed-during-read', 'disconnected-provider', 'revoked-during-read', 'unexpected-native-error'] as const)('keeps safe answer Check guidance across the socket for %s', async scenario => {
     const { client, result } = await pair()
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })

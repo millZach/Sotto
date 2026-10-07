@@ -14,14 +14,14 @@ import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } fr
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
-import { HostConnectionError } from '../agents/socketHostService'
+import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
 export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer'>
+  service: Pick<HostService, 'shell' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -77,6 +77,8 @@ export function hostAbsolutePath(root: string, path: string): string {
   return `${root.endsWith(separator) ? root.slice(0, -1) : root}${separator}${path.split('/').join(separator)}`
 }
 
+type RouterNotice = { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget }; unsupportedCompose?: DesktopHostConnection }
+
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
 export class DesktopHostRouter {
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
@@ -85,7 +87,9 @@ export class DesktopHostRouter {
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
-  private notice: { message: string; answer?: { hostId: string; decisionId: string; target: HostAnswerTarget } } | undefined
+  private notice: RouterNotice | undefined
+  /** The visible notice, updated only when a snapshot actually reaches subscribers. */
+  private publishedNotice: RouterNotice | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
@@ -467,6 +471,7 @@ export class DesktopHostRouter {
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     let refused = false
+    let repeatedUnsupportedCompose = false
     try {
       let decisionId: string | undefined
       let answerTarget: HostAnswerTarget | undefined
@@ -488,7 +493,13 @@ export class DesktopHostRouter {
         : connection.service.command(command as AgentCommand, client))
       if (result.error) {
         refused = true
-        this.notice = { message: this.refusal(connection, result.error), ...(decisionId && answerTarget
+        const unsupportedCompose = command.type === 'compose' && command.threadId !== undefined
+          && connection.kind === 'remote' && connection.service.supportsAtomicSend === false && result.error === REMOTE_COMPOSE_UNSAVED
+        const message = this.refusal(connection, result.error)
+        // Compare what is visible now, after the reply. An intervening error or connection change wins.
+        repeatedUnsupportedCompose = unsupportedCompose && this.publishedNotice?.unsupportedCompose === connection
+          && this.publishedNotice.message === message
+        this.notice = { message, ...(unsupportedCompose ? { unsupportedCompose: connection } : {}), ...(decisionId && answerTarget
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {
@@ -505,7 +516,7 @@ export class DesktopHostRouter {
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
       await this.openCreated(connection, command.threadId, client)
     }
-    this.emit()
+    if (!repeatedUnsupportedCompose) this.emit()
     return agentShell(this.shell())
   }
   /**
@@ -545,6 +556,6 @@ export class DesktopHostRouter {
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
     return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
   }
-  private emit(): void { const state = this.shell(); for (const listener of this.listeners) listener(state) }
+  private emit(): void { const state = this.shell(); this.publishedNotice = this.notice; for (const listener of this.listeners) listener(state) }
   dispose(): void { for (const hostId of [...this.hosts.keys()]) this.remove(hostId); this.listeners.clear(); this.detailListeners.clear() }
 }
