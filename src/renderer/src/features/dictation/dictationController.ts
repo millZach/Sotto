@@ -117,6 +117,8 @@ interface ActiveSession {
   keptAfterRetry: boolean
   /** Counts each wait for the parts, so a cancelled Try again's late answers are ignored. */
   attempt: number
+  /** The cleanup pass under way for this recording's text, kept for a Try again after a cancel. */
+  cleanup?: { readonly text: string; readonly result: Promise<TranscriptPolishResult> }
 }
 
 /**
@@ -421,6 +423,16 @@ export class DictationController {
       part.result = this.sendPart(session, part.audio!, index === waiting.length - 1)
     })
     const processing = this.finishRecording(session)
+    // Each answer is kept as it arrives, so a part that came back before a
+    // cancel is not sent, and paid for, again on the next Try again.
+    const attempt = session.attempt
+    for (const part of waiting) {
+      part.result?.then((transcript) => {
+        if (session.attempt !== attempt || part.transcript !== undefined) return
+        part.transcript = transcript
+        part.audio = null
+      }, () => undefined)
+    }
     session.processing = processing
     return processing
   }
@@ -647,14 +659,21 @@ export class DictationController {
 
     let rawText = repairedText
     if (session.settings.llmFormatting && this.dependencies.polishTranscript !== undefined) {
-      try {
-        const polished = await this.dependencies.polishTranscript(rawText, {
+      // A cleanup call cannot be stopped, so one left running by a cancelled
+      // Try again is reused by the next rather than paid for twice.
+      if (session.cleanup?.text !== rawText) {
+        const pending = this.dependencies.polishTranscript(rawText, {
           segmentWords,
           segmentRms,
           durationMs: Number.isFinite(session.durationMs)
             ? Math.max(0, Math.round(session.durationMs))
             : 0,
         })
+        void pending.catch(() => undefined)
+        session.cleanup = { text: rawText, result: pending }
+      }
+      try {
+        const polished = await session.cleanup.result
         if (polished.applied && polished.text.trim().length > 0) {
           rawText = polished.text
           normalized = formatTranscript(polished.text)
@@ -669,6 +688,7 @@ export class DictationController {
 
     // Delivery cannot be cancelled, so the recording's parts are let go only here.
     parts.length = 0
+    delete session.cleanup
     session.cancellable = false
     session.processingStage = 'delivering-output'
     session.progress = 1

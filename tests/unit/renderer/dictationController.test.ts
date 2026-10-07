@@ -1289,16 +1289,55 @@ describe('kept recordings', () => {
 
     await harness.controller.cancel()
     expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })
-    cleanup.resolve({ text: 'too late', applied: true })
+    cleanup.resolve({ text: 'Cleaned words.', applied: true })
     await retry
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
     expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
 
-    // The text that came back is kept, so the next Try again sends nothing.
+    // The text that came back is kept, so the next Try again sends nothing to
+    // transcription, and it reuses the cleanup call the cancel left running.
     await harness.controller.retry()
     expect(call).toBe(2)
-    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'kept words' }))
+    expect(polishes).toBe(1)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'Cleaned words.' }))
+  })
+
+  it('keeps the parts a cancelled Try again had already got back', async () => {
+    const lastPart = deferred<TranscriptionResult>()
+    const sent: number[] = []
+    let retrying = false
+    const harness = createHarness({
+      currentSettings: settings({ streamingAsr: true }),
+      transcribe: async (options) => {
+        const part = options.audio[0]!
+        sent.push(part)
+        if (!retrying && part !== 1) throw new TranscriptionError('rate-limited')
+        if (retrying && part === 3 && sent.filter((value) => value === 3).length === 2) return lastPart.promise
+        return { text: `part-${part}`, language: 'en' }
+      },
+      recorder: {
+        stop: vi.fn(async () => ({ samples: new Float32Array([3]), sourceSampleRate: 16_000, durationMs: 18_000 })),
+      },
+    })
+    await harness.controller.start()
+    const options = recorderOptions(harness)
+    options.onSegment?.({ samples: new Float32Array([1]), sourceSampleRate: 16_000, durationMs: 6_000 })
+    options.onSegment?.({ samples: new Float32Array([2]), sourceSampleRate: 16_000, durationMs: 6_000 })
+    await harness.controller.stop()
+    expect(sent).toEqual([1, 2, 3])
+
+    retrying = true
+    void harness.controller.retry()
+    await vi.waitFor(() => expect(sent).toEqual([1, 2, 3, 2, 3]))
+    await Promise.resolve()
+    await harness.controller.cancel()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
+
+    // Part 2 came back before the cancel, so only part 3 goes again.
+    await harness.controller.retry()
+    expect(sent).toEqual([1, 2, 3, 2, 3, 3])
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'part-1 part-2 part-3' }))
   })
 
   it('still says Try again failed when a later Try again is cancelled', async () => {
