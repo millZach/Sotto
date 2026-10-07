@@ -1,22 +1,8 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { useReducedMotion } from '../../state/reducedMotion'
 
 /** How long one picture takes to fade into the next. The stylesheet's animations match it. */
 export const CROSS_FADE_MS = 180
-
-/** Whether motion is reduced, by the system or by Sotto's own Reduce motion setting. */
-export function useReducedMotion(): boolean {
-  const read = (): boolean => (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) || document.documentElement.dataset.reducedMotion === 'on'
-  const [reduced, setReduced] = useState(read)
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-    const update = (): void => setReduced(read())
-    const observer = new MutationObserver(update)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
-    media?.addEventListener?.('change', update)
-    return () => { observer.disconnect(); media?.removeEventListener?.('change', update) }
-  }, [])
-  return reduced
-}
 
 interface Layer { readonly src: string; readonly key: number }
 
