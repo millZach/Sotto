@@ -106,7 +106,8 @@ function peerDevice(item: TailscalePeer): Draft {
  * and Sotto connects through the first such alias so the user's user and key settings apply. A known host that is
  * one of a device's names only adds its tag. Usable devices come first (online tailnet devices by name,
  * then the configuration in the order it is written, then known hosts); then the offline devices, most
- * recently seen first, and phones.
+ * recently seen first, and phones. An SSH entry that goes to this computer, or to a Git service such as
+ * github.com, is listed but cannot be picked, with the reason.
  */
 export function mergeDevices(reading: TailscaleReading, suggestions: readonly SshHostSuggestion[], thisComputer: readonly string[] = []): HostDevice[] {
   const peers = reading.peers.map(item => ({ device: peerDevice(item), aliased: false }))
@@ -175,9 +176,11 @@ export interface HostTailscaleOptions {
   readonly thisComputer?: () => readonly string[]
 }
 
-/** The addresses of this computer's network interfaces. */
+/** The addresses of this computer's network interfaces, or none when the system will not say. */
 function localAddresses(): string[] {
-  return Object.values(networkInterfaces()).flatMap(entries => (entries ?? []).map(entry => entry.address)).filter(Boolean)
+  try {
+    return Object.values(networkInterfaces()).flatMap(entries => (entries ?? []).map(entry => entry.address)).filter(Boolean)
+  } catch { return [] }
 }
 
 /** One `tailscale up`, from the press that started it until the program ends. */
@@ -209,7 +212,10 @@ export class HostTailscale {
 
   async devices(): Promise<HostDeviceList> {
     const [reading, suggestions] = await Promise.all([this.read(), this.options.suggestions().catch(() => [])])
-    return { tailscale: reading.summary, devices: mergeDevices(reading, suggestions, (this.options.thisComputer ?? localAddresses)()) }
+    // Without this computer's addresses only its full tailnet name marks it, which still leaves the list usable.
+    let thisComputer: readonly string[] = []
+    try { thisComputer = (this.options.thisComputer ?? localAddresses)() } catch { /* listed without them */ }
+    return { tailscale: reading.summary, devices: mergeDevices(reading, suggestions, thisComputer) }
   }
 
   /**

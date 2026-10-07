@@ -169,6 +169,11 @@ describe('what Add host cannot use: this computer and Git services', () => {
     const tailscale = new HostTailscale({ invoke: async () => 'missing', suggestions: async () => [{ alias: 'sun', source: 'config', hostname: '10.10.100.235' }], openExternal: vi.fn(), thisComputer: () => ['10.10.100.235'] })
     expect((await tailscale.devices()).devices).toEqual([expect.objectContaining({ target: 'sun', unavailable: 'this-computer' })])
   })
+  it('still lists the devices when this computer cannot say its addresses', async () => {
+    const tailscale = new HostTailscale({ invoke: async () => 'missing', suggestions: async () => [{ alias: 'sun', source: 'config', hostname: '10.10.100.235' }], openExternal: vi.fn(), thisComputer: () => { throw new Error('uv_interface_addresses') } })
+    const devices = (await tailscale.devices()).devices
+    expect(devices.map(device => [device.target, device.unavailable])).toEqual([['sun', undefined]])
+  })
 })
 
 describe('Tailscale on this computer', () => {
