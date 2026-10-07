@@ -14,9 +14,9 @@ public enum HostFinder {
     /// Every name the system resolver gives for a machine name: its canonical name and the
     /// reverse-lookup name of each address. Injected so tests need no network.
     public typealias Lookup = @Sendable (String) async -> [String]
-    /// The ports to try for a name, in order: the desktop's Tailscale Serve port, then the usual HTTPS
-    /// port a host without a screen is served on.
-    public static let ports = [8443, 443]
+    /// The ports to try for a name, in order: the Tailscale Serve ports phone access uses (8443, or
+    /// 10000 when another app holds 8443), then the usual HTTPS port a host run by hand is served on.
+    public static let ports = [8443, 10000, 443]
 
     public static func read(_ typed: String) throws -> Input {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -47,7 +47,7 @@ public enum HostFinder {
         ports.compactMap { try? HostEndpoint("https://\(fullName):\($0)") }
     }
 
-    /// The addresses to check, in order: the one typed with its port, or 8443 then 443 on the
+    /// The addresses to check, in order: the one typed with its port, or 8443, 10000, then 443 on the
     /// computer's full name.
     public static func candidates(_ typed: String, lookup: Lookup = SystemLookup.names) async throws -> [HostEndpoint] {
         switch try read(typed) {

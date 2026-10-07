@@ -17,6 +17,7 @@ final class PhoneTests: XCTestCase {
         XCTAssertEqual(try HostFinder.read("https://forge.tail5c2e.ts.net"), .fullName("forge.tail5c2e.ts.net"))
         XCTAssertEqual(try HostFinder.read("forge.tail5c2e.ts.net:443"), .address(try HostEndpoint("https://forge.tail5c2e.ts.net")))
         XCTAssertEqual(try HostFinder.read("https://forge.tail5c2e.ts.net:8443"), .address(try HostEndpoint("https://forge.tail5c2e.ts.net:8443")))
+        XCTAssertEqual(try HostFinder.read("forge.tail5c2e.ts.net:10000"), .address(try HostEndpoint("https://forge.tail5c2e.ts.net:10000")))
         for typed in ["", "forge.example.com", "http://forge.tail5c2e.ts.net", "-forge", "for ge", "forge_1", "https://forge.tail5c2e.ts.net/path", "forge.tail5c2e.ts.net:8080", "forge:8443"] {
             XCTAssertThrowsError(try HostFinder.read(typed), typed)
         }
@@ -28,13 +29,17 @@ final class PhoneTests: XCTestCase {
         XCTAssertNil(HostFinder.fullName(machine: "forge", resolvedName: "other.tail5c2e.ts.net"))
         XCTAssertNil(HostFinder.fullName(machine: "forge", resolvedName: "forge"))
     }
-    func testANameIsTriedOn8443ThenOn443() async throws {
+    func testTheSearchOrderIsPhoneAccessPortsThen443() {
+        XCTAssertEqual(HostFinder.ports, [8443, 10000, 443])
+        XCTAssertEqual(HostEndpoint.ports, [443, 8443, 10000])
+    }
+    func testANameIsTriedOn8443Then10000ThenOn443() async throws {
         let found = try await HostFinder.candidates("forge") { _ in ["forge", "100.101.102.103", "forge.tail5c2e.ts.net"] }
-        XCTAssertEqual(found.map(\.url.absoluteString), ["https://forge.tail5c2e.ts.net:8443", "https://forge.tail5c2e.ts.net"])
+        XCTAssertEqual(found.map(\.url.absoluteString), ["https://forge.tail5c2e.ts.net:8443", "https://forge.tail5c2e.ts.net:10000", "https://forge.tail5c2e.ts.net"])
         do { _ = try await HostFinder.candidates("forge") { _ in ["forge.lan"] }; XCTFail("A name off the tailnet must not be used") }
         catch { XCTAssertEqual(error as? ClientError, .hostNotFound("forge")) }
         let full = try await HostFinder.candidates("forge.tail5c2e.ts.net") { _ in XCTFail("A full address needs no lookup"); return [] }
-        XCTAssertEqual(full.map(\.port), [8443, 443])
+        XCTAssertEqual(full.map(\.port), [8443, 10000, 443])
         let typed = try await HostFinder.candidates("https://forge.tail5c2e.ts.net:443") { _ in XCTFail("A typed port needs no lookup"); return [] }
         XCTAssertEqual(typed.map(\.port), [443])
     }
@@ -43,11 +48,19 @@ final class PhoneTests: XCTestCase {
         var asked: [Int] = []
         let desktop = try await HostFinder.probe(candidates) { endpoint -> Int in asked.append(endpoint.port); return endpoint.port }
         XCTAssertEqual(desktop.endpoint.port, 8443); XCTAssertEqual(asked, [8443])
-        let headless = try await HostFinder.probe(candidates) { endpoint -> Int in
-            if endpoint.port == 8443 { throw ClientError.hostUnreachable("forge") }
+        // Another app on 8443, so phone access fell back to 10000.
+        asked = []
+        let fallback = try await HostFinder.probe(candidates) { endpoint -> Int in
+            asked.append(endpoint.port)
+            if endpoint.port == 8443 { throw ClientError.notASottoHost("forge") }
             return endpoint.port
         }
-        XCTAssertEqual(headless.endpoint.port, 443)
+        XCTAssertEqual(fallback.endpoint.port, 10000); XCTAssertEqual(asked, [8443, 10000])
+        let byHand = try await HostFinder.probe(candidates) { endpoint -> Int in
+            if endpoint.port != 443 { throw ClientError.hostUnreachable("forge") }
+            return endpoint.port
+        }
+        XCTAssertEqual(byHand.endpoint.port, 443)
     }
     func testWhenNoAddressAnswersTheMostTellingErrorIsKept() async {
         let candidates = HostFinder.endpoints(fullName: "forge.tail5c2e.ts.net")
@@ -75,7 +88,7 @@ final class PhoneTests: XCTestCase {
                     if endpoint.port == 8443 { throw refusal }
                     return endpoint.port
                 }
-                XCTFail("Sotto answered on 8443, so 443 must not be used")
+                XCTFail("Sotto answered on 8443, so no other port may be used")
             } catch { XCTAssertEqual(error as? ClientError, refusal) }
             XCTAssertEqual(asked, [8443])
         }
