@@ -30,6 +30,7 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Preserve Check for actual Claude/Grok re-asks, reach the provider through explicit remote recovery, protect pending writes, and version the saved-answer format; repeat both review axes and all 27 Electron journeys.
 - [ ] Finish the complete local two-worker gate on frozen source; record the result on PR #796.
 - [x] Resolve the final Check findings: independent threads, safe remote refusal guidance, and exact confirmation arriving during Check; protect queued direct, local/remote Send and voice answers, and repeat focused tests and both independent review axes.
+- [x] Protect Send before queued Compose creates its draft, refuse queued local thread changes without sending, and verify both failing and ordinary same-thread journeys with independent reviews.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
 The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `3bc5efa1`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.

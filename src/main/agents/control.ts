@@ -1619,23 +1619,25 @@ export class AgentControl {
     }
     const sendsDraft = command.type === 'send' || command.type === 'utterance'
       && command.text.trim().toLocaleLowerCase().replace(/[.!?,]+$/u, '').trim() === 'send it'
-    const socketDraft = command.type === 'send' && client.transport === 'socket'
-      ? this.state.threadDrafts?.find(draft => draft.threadId === client.selectedThreadId) : undefined
+    const draftOwner = () => command.type === 'send' && client.transport === 'socket'
+      ? client.selectedThreadId ?? null : this.state.draftThreadId ?? this.state.activeThreadId
     const answerThreadId = command.type === 'answer' ? command.threadId
-      : command.type === 'send' && client.transport === 'socket' ? socketDraft?.requestId ? socketDraft.threadId : null
-      : sendsDraft && this.state.draftRequestId ? this.state.draftThreadId : null
+      : sendsDraft ? draftOwner() : null
+    const validateDraftOwner = sendsDraft ? () => {
+      if (draftOwner() !== answerThreadId) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
+    } : undefined
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
     let pending: Promise<AgentState>
-    try { pending = this.commandWhileRunning(command, client, answerDecisionId) }
+    try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner) }
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
     const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
     void pending.then(settled, settled)
     return pending
   }
-  private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState> {
-    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId)
+  private commandWhileRunning(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string, validateDraftOwner?: () => void): Promise<AgentState> {
+    if (command.type !== 'manual-send' && command.type !== 'steer' && command.type !== 'queue-followup') return this.commandUnreserved(command, client, answerDecisionId, validateDraftOwner)
     const prompt = structuredClone({ ...command, draftId: command.draftId ?? randomUUID() })
     const { threadId, draftId } = prompt
     const key = JSON.stringify([threadId, draftId])
@@ -1666,7 +1668,7 @@ export class AgentControl {
     void task.finally(() => this.promptAdmissions.delete(key)).catch(() => undefined)
     return task
   }
-  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
+  private commandUnreserved(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string, validateDraftOwner?: () => void): Promise<AgentState> {
     if (this.retirementFailure) { this.state.error = this.retirementFailure; return Promise.resolve(this.shell()) }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -1771,6 +1773,7 @@ export class AgentControl {
       try {
         const admissionError = admission ? await admission : undefined
         if (admissionError instanceof Error) throw admissionError
+        validateDraftOwner?.()
         await this.execute(command, turn, manualRetryId, selectionRevision, client, answerDecisionId)
       } catch (error) {
         if (error instanceof AnswerDeliveryUnconfirmed) unconfirmedAnswer = error

@@ -373,6 +373,8 @@ it.each([false, true])('confirms its pending remote write when it completes duri
     f.native.event({ type: 'history', threadId: 'workshop', text: '', messages: [] })
     settle(true)
     await expect.poll(() => f.router.requestDraftState(f.owner)?.completed?.some(item => item.decisionId === held.decisionId)).toBe(true)
+    // The receipt arrives before coalesced state frames. This case requires the original native question to close too.
+    await expect.poll(() => f.router.requestDraftState(f.owner)?.requests.some(item => item.id === question.id)).toBe(false)
     await f.drafts.reconcile()
     if (fails) throw new Error('Synthetic native Check failure after acceptance')
     return f.native.snapshot()

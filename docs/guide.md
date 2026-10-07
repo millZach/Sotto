@@ -73,7 +73,7 @@ When a thread runs on another computer, its saved answer clears after that host 
 
 A provider can ask the same question again after its process restarts. Sotto keeps **Check again** available even when the earlier answer was accepted. Check reads the provider's current request; it never sends an answer. If that read permits another answer, the new form starts blank when the earlier text has already been removed. Choose and send the new answer yourself. Remote checking requires the host's `answer-check` support; an older host asks for an update rather than treating cached detail as a fresh check.
 
-If an answer is queued or still being sent, wait for it to finish before checking again. Check keeps saved answers when the question changes, the provider disconnects or permission to answer is removed, and explains what happened.
+If an answer is queued or still being sent, wait for it to finish before checking again. Check keeps saved answers when the question changes, the provider disconnects or permission to answer is removed, and explains what happened. If a queued Send would use a different thread than the one you sent from, Sotto keeps the draft and asks you to review it before sending again.
 
 Saved answers use version 2 of `request-drafts.json`. Current Sotto reads earlier version 1 files and upgrades them on the next successful save. Older builds cannot read version 2. If an older build reports unreadable answer storage after a downgrade, return to the updated build; keep the file intact so saved answers remain recoverable.
 
