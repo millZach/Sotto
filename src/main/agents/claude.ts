@@ -1,7 +1,7 @@
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
-import { openedCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -180,7 +180,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.view())
     this.activityListeners.publish(historyFromEvents => this.activityView(historyFromEvents))
-  }, () => openedCount(this.messageLog, this.threads.values()))
+  }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
   /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
   private readonly recordUnechoed = new Map<string, () => void>()

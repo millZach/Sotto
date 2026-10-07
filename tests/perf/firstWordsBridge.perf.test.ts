@@ -2,7 +2,8 @@
 /**
  * From a reply's first streamed chunk to the window's bridge (#771). The chain is main's own, with real timers:
  * an event-sourced provider using the adapters' message log and snapshot publisher, the workspace host, the
- * coordinator, and the IPC boundary's per-thread detail coalescer, whose send stands for the window's bridge.
+ * coordinator, and the desktop's shell publisher and per-thread detail lane wired as `src/main/index.ts` wires them
+ * (the held shell goes just ahead of a detail that opens a message), whose sends stand for the window's bridge.
  *
  * Each trial lets every window close, publishes a prompt's echo the way an adapter does (an event and an immediate
  * snapshot), waits `gap` ms, then publishes the first chunk of the reply (a message-added event and a streamed
@@ -17,9 +18,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { afterAll, describe, expect, it } from 'vitest'
-import { AgentControl, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
+import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
-import { ProviderSnapshotPublisher } from '../../src/main/agents/providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from '../../src/main/agents/providerSnapshotPublisher'
 import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
@@ -35,9 +36,7 @@ const FOLLOWING_CHUNKS = 40
 /** A provider that records through the adapters' own log and publishes through their own publisher. */
 class StreamingProvider extends FakeProviderHost {
   readonly log = new ThreadMessageLog()
-  // The count is what `openedCount` reads in an adapter; a publisher without that argument ignores it.
-  private readonly publisher = new ProviderSnapshotPublisher(() => super.emit(),
-    () => (this.log as unknown as { recorded?: () => number }).recorded?.() ?? 0)
+  private readonly publisher = new ProviderSnapshotPublisher(() => super.emit(), () => adapterItemCount(this.log, this.state.threads))
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   publish(streaming: boolean): void { this.publisher.publish(streaming) }
 }
@@ -67,7 +66,9 @@ describe.skipIf(!PERF_BENCH)('first streamed chunk to the window’s bridge', ()
     const threadId = provider.state.threads[0]!.id
     await control.command({ type: 'observe-threads', threadIds: [threadId] })
     const sends: { at: number; update: AgentThreadDetailUpdate }[] = []
-    const bridge = coalesceAgentThreadDetailPublishes(update => sends.push({ at: performance.now(), update }))
+    const shell = coalesceAgentStatePublishes(() => undefined)
+    const bridge = coalesceAgentThreadDetailPublishes(update => sends.push({ at: performance.now(), update }), { beforeOpening: () => shell.flush() })
+    const unsubscribeShell = control.subscribe(state => shell.publish(state))
     const unsubscribe = control.subscribeThreadDetail(update => bridge.publish(update))
     control.threadDetail(threadId)
 
@@ -109,6 +110,6 @@ describe.skipIf(!PERF_BENCH)('first streamed chunk to the window’s bridge', ()
     }
     console.log(`first words to bridge: ${JSON.stringify(results)}`)
     expect(Object.keys(results)).toHaveLength(GAPS.length)
-    unsubscribe(); bridge.dispose(); control.dispose(); workspace.dispose()
+    unsubscribe(); unsubscribeShell(); bridge.dispose(); shell.dispose(); control.dispose(); workspace.dispose()
   }, 180_000)
 })

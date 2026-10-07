@@ -159,6 +159,8 @@ export class WorkspaceHost implements AgentHost {
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
+  /** Whether an opening change already cut the open publish window short. */
+  private publishCut = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
   private readonly organizationLanes = new Map<string, Promise<unknown>>()
@@ -1549,19 +1551,23 @@ export class WorkspaceHost implements AgentHost {
    * still feels immediate, and everything inside the window behind it becomes one publish at its
    * end with the last state. No adapter can make the host copy the workspace per event.
    *
-   * `opening` is a change that starts something the window has not seen: a message's first words or a
-   * new activity record. It goes out at once even inside a window, and opens a fresh one behind it, so
-   * the first words of a reply never wait behind the echo of the prompt that asked for it. Later chunks
-   * of the same message still ride the window.
+   * `opening` is an opening change: a message's first words or a new activity record. It goes out at once
+   * even inside a window, and starts a fresh one behind it, so the first words of a reply never wait behind
+   * the echo of the prompt that asked for it. The fresh window lets no second opening change through: a read
+   * that records a hundred messages in one task costs two publishes and a trailing one, not a hundred, and a
+   * window never holds more than two. Later chunks of the same message ride the window as before.
    */
   private publishSoon(opening = false): void {
+    const cutting = this.publishTimer !== undefined
     if (this.publishTimer) {
-      if (!opening) { this.publishPending = true; return }
+      if (!opening || this.publishCut) { this.publishPending = true; return }
       clearTimeout(this.publishTimer); this.publishTimer = undefined; this.publishPending = false
     }
     this.publish()
+    this.publishCut = cutting
     this.publishTimer = setTimeout(() => {
       this.publishTimer = undefined
+      this.publishCut = false
       if (this.publishPending) { this.publishPending = false; this.publishSoon() }
     }, PUBLISH_WINDOW_MS)
     this.publishTimer.unref?.()

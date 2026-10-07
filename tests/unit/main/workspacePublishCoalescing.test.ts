@@ -195,21 +195,43 @@ describe('workspace publish coalescing', () => {
     let published = 0
     f.host.subscribe(() => { published += 1 })
     const at = new Date().toISOString()
-    // Everything below runs inside one task, so no window can close while it does.
+    // Everything below up to the first wait runs inside one task, so no window can close while it does.
     f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'prompt', role: 'user', text: 'Which colour?', createdAt: at } })
     expect(published).toBe(1)
     f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'reply', role: 'assistant', text: 'Ind', createdAt: at } })
     expect(published).toBe(2)
     for (const appendText of ['igo', ' it', ' is.']) f.adapter.publish(id, { kind: 'message-text-appended', at, messageId: 'reply', appendText })
     expect(published).toBe(2)
-    // A new activity record is an opening too; a change to it is not.
+    // The reply's first words already cut this window short, so a new record waits for its end with the chunks.
     f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running' }]
     f.adapter.emit()
-    expect(published).toBe(3)
-    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running', output: 'ok' }]
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(3)
+    // In the window the trailing publish started, a new record is an opening change and goes at once; a change to it is not.
+    f.adapter.state.threads[0]!.activities = [...f.adapter.state.threads[0]!.activities!, { id: 'read', turnId: 'prompt', sequence: 1, kind: 'command', title: 'Read', status: 'running' }]
     f.adapter.emit()
+    expect(published).toBe(4)
+    f.adapter.state.threads[0]!.activities = f.adapter.state.threads[0]!.activities!.map(record => ({ ...record, output: 'ok' }))
+    f.adapter.emit()
+    expect(published).toBe(4)
+    await expect.poll(() => published).toBe(5)
+  })
+
+  it('publishes a read that records hundreds of messages in one task twice, not once a message', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    // A transcript catch-up or a history read hands the log every unseen message in the same task.
+    for (let index = 0; index < 300; index++) {
+      f.adapter.publish(id, { kind: 'message-added', at, message: { id: `read-${index}`, role: index % 2 ? 'assistant' : 'user', text: `Message ${index}`, createdAt: at } })
+    }
+    // The first opens a window and the second cuts it short; the other 298 ride its end.
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(3)
+    await tick(); await new Promise<void>(resolve => { setTimeout(resolve, 40) })
     expect(published).toBe(3)
-    // The held chunks and the record's change leave on the window's trailing publish, with the last state.
-    await expect.poll(() => published).toBe(4)
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.at(-1)?.id).toBe('read-299')
   })
 })

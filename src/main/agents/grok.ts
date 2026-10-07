@@ -3,7 +3,7 @@ import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer
 import type { ScopedThreadTools } from './threadToolServer'
 import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { openedCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { NativeUsage } from './nativeUsage'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
@@ -185,9 +185,9 @@ export class GrokAcpHost implements AgentHost {
   private readonly answeredRequests = new Set<string>()
   private readonly deliveries = new Map<string, { resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
-  /** Live replies by stream. `logged` is how much of the live text the message log holds as this message's
+  /** Live replies by stream. `recordedLength` is how much of the live text the message log holds as this message's
    * words, when it holds exactly that and nothing else; a chunk on top of it is an append, not a re-read. */
-  private readonly streams = new Map<string, { threadId: string; userId: string; message: AgentMessage; logged?: number }>()
+  private readonly streams = new Map<string, { threadId: string; userId: string; message: AgentMessage; recordedLength?: number }>()
   private readonly authored = new Map<string, { threadId: string; message: AgentMessage }>()
   private readonly liveStatus = new Map<string, { eventKey: string; status: AgentThread['status'] }>()
   private readonly selections = new Map<string, { model: string; effort: string | undefined }>()
@@ -197,7 +197,7 @@ export class GrokAcpHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  }, () => openedCount(this.log, this.threads.values()))
+  }, () => adapterItemCount(this.log, this.threads.values()))
   /**
    * One ACP process per thread session, the way T3 Code runs Grok. The provider itself holds none between a
    * connect and the next: each thread's live work and requests go to its own process, one process exiting
@@ -758,7 +758,7 @@ export class GrokAcpHost implements AgentHost {
         const streamKey = [...this.streams].find(([, entry]) => entry.message === live)?.[0]
         if (!streamKey) continue
         const stream = this.streams.get(streamKey)!
-        delete stream.logged
+        delete stream.recordedLength
         const userId = stream.userId
         const userIndex = messages.findIndex(message => message.id === userId)
         if (userIndex < 0) continue
@@ -772,7 +772,7 @@ export class GrokAcpHost implements AgentHost {
           if (status === 'idle' && !this.activePrompts.has(id)) this.streams.delete(streamKey)
         } else if (live.text.startsWith(persisted.text)) persisted.text = live.text
         // The log is handed the live words for this message unless the durable rail says more than they do.
-        if (!persisted || persisted.text === live.text) stream.logged = live.text.length
+        if (!persisted || persisted.text === live.text) stream.recordedLength = live.text.length
       }
     }
     this.log.set(id, messages)
@@ -784,10 +784,10 @@ export class GrokAcpHost implements AgentHost {
    */
   private appendLive(id: string, streamId: string, text: string): boolean {
     const stream = this.streams.get(streamId)
-    if (stream?.logged === undefined || stream.logged !== stream.message.text.length - text.length) return false
+    if (stream?.recordedLength === undefined || stream.recordedLength !== stream.message.text.length - text.length) return false
     if (this.log.lastMessageId(id) !== streamId || !this.log.has(id, streamId)) return false
     this.log.appendText(id, streamId, text)
-    stream.logged = stream.message.text.length
+    stream.recordedLength = stream.message.text.length
     return true
   }
   personalSnapshot(): PersonalConversation[] {

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
-import { PROVIDER_PUBLISH_WINDOW_MS, ProviderSnapshotPublisher, openedCount } from '../../../src/main/agents/providerSnapshotPublisher'
+import { PROVIDER_PUBLISH_WINDOW_MS, ProviderSnapshotPublisher, adapterItemCount } from '../../../src/main/agents/providerSnapshotPublisher'
 
 afterEach(() => vi.useRealTimers())
 
@@ -8,7 +8,7 @@ it('publishes the first streamed frame at once, then keeps a bounded window whil
   vi.useFakeTimers()
   let revision = 0
   const seen: number[] = []
-  const publisher = new ProviderSnapshotPublisher(() => seen.push(revision))
+  const publisher = new ProviderSnapshotPublisher(() => seen.push(revision), () => 0)
   for (revision = 1; revision <= 16; revision++) {
     publisher.publish(true)
     vi.advanceTimersByTime(1)
@@ -47,11 +47,29 @@ it('publishes a message’s first words at once inside a window, and still coale
   expect(seen).toEqual(['prompt', 'Hel', 'Hello there'])
 })
 
+it('lets one opening change cut a window short, so a burst of new messages costs two publishes, not one each', () => {
+  vi.useFakeTimers()
+  let messages = 0
+  const seen: number[] = []
+  const publisher = new ProviderSnapshotPublisher(() => seen.push(messages), () => messages)
+  // A read that records three hundred messages, each frame publishing as it lands.
+  for (messages = 1; messages <= 300; messages++) publisher.publish(true)
+  messages = 300
+  // The first frame opened the window and the second cut it short; the rest wait for the end of the fresh one.
+  expect(seen).toEqual([1, 2])
+  vi.advanceTimersByTime(PROVIDER_PUBLISH_WINDOW_MS)
+  expect(seen).toEqual([1, 2, 300])
+  // The window the trailing publish started has not been cut, so the next message's first words go at once.
+  messages = 301
+  publisher.publish(true)
+  expect(seen).toEqual([1, 2, 300, 301])
+})
+
 it('flushes a permission or turn boundary synchronously and cancels the redundant trailing update', () => {
   vi.useFakeTimers()
   let state = 'streaming'
   const seen: string[] = []
-  const publisher = new ProviderSnapshotPublisher(() => seen.push(state))
+  const publisher = new ProviderSnapshotPublisher(() => seen.push(state), () => 0)
   publisher.publish(true)
   state = 'streaming more'
   publisher.publish(true)
@@ -65,7 +83,7 @@ it('flushes a permission or turn boundary synchronously and cancels the redundan
 it('cancels a former connection without blocking updates on its replacement', () => {
   vi.useFakeTimers()
   const emit = vi.fn()
-  const publisher = new ProviderSnapshotPublisher(emit)
+  const publisher = new ProviderSnapshotPublisher(emit, () => 0)
   publisher.publish(true)
   publisher.publish(true)
   expect(emit).toHaveBeenCalledTimes(1)
@@ -78,5 +96,5 @@ it('cancels a former connection without blocking updates on its replacement', ()
 
 it('counts recorded messages and activity records, not the words in them', () => {
   const log = { recorded: () => 3 }
-  expect(openedCount(log, [{ activities: [1, 2] }, {}, { activities: undefined }])).toBe(5)
+  expect(adapterItemCount(log, [{ activities: [1, 2] }, {}, { activities: undefined }])).toBe(5)
 })
