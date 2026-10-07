@@ -125,6 +125,8 @@ export interface AppSettings {
   showBrowserPreviews: boolean
   /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
   browserWithoutAsking: boolean
+  /** On by default (ADR-0056): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
+  visualsInThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -276,6 +278,7 @@ const fieldSchemas = {
   responseStreaming: z.enum(['live', 'complete']),
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
+  visualsInThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -358,6 +361,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   responseStreaming: 'live',
   showBrowserPreviews: true,
   browserWithoutAsking: true,
+  visualsInThreads: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -482,6 +486,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
+    visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

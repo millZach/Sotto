@@ -19,6 +19,8 @@ export function unavailableReason(device: HostDevice, saved: readonly SavedHostN
   const existing = saved.find(item => names.has(item.host.toLowerCase()))
   if (existing) return `Already added as ${existing.name}`
   if (device.unavailable === 'phone') return 'A phone cannot run the host'
+  if (device.unavailable === 'this-computer') return 'This computer runs its own local host'
+  if (device.unavailable === 'git-service') return 'A Git service, not a computer'
   if (device.unavailable === 'offline') return device.tailscale?.lastSeen ? `Offline, last seen ${timeAgo(device.tailscale.lastSeen, now)}` : 'Offline'
   return undefined
 }

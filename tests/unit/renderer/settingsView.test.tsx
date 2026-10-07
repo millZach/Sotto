@@ -374,6 +374,19 @@ describe('SettingsView', () => {
     expect(update).toHaveBeenCalledWith({ browserWithoutAsking: false })
   })
 
+  it('turns letting agents draw visuals in threads off through the ordinary patch flow (ADR-0056)', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
+
+    const toggle = screen.getByRole('switch', { name: 'Let agents draw visuals in threads' })
+    expect(toggle).toBeChecked()
+    await user.click(toggle)
+
+    expect(update).toHaveBeenCalledWith({ visualsInThreads: false })
+  })
+
   it("offers the off switches for generated text and no writing model, since each thread's own model writes", async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)

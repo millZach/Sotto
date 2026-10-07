@@ -20,7 +20,7 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     // Main wires Git actions to the local host at start, so these two must not refuse, or Sotto quits on launch.
     expect(() => runtime.agentHost.setMutationGuard(() => true)).not.toThrow()
     // Main offers the host setup's tools and requests whichever host runs; with none here, they do nothing (ADR-0035).
-    expect(() => runtime.agentHost.useHostSetupTools({ name: 'sotto_host_setup', definitions: [], mcpServer: async () => undefined })).not.toThrow()
+    expect(() => runtime.agentHost.useThreadTools([{ name: 'sotto_host_setup', definitions: [], mcpServer: async () => undefined }])).not.toThrow()
     expect(() => runtime.agentControl.useSottoRequests({ requests: () => new Map(), answer: () => undefined, subscribe: () => () => undefined })).not.toThrow()
     await expect(runtime.agentHost.gitActionFinished('thread')).resolves.toBeUndefined()
     await expect(runtime.worktreeCleanup.close()).resolves.toBeUndefined()
