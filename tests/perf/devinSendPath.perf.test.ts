@@ -7,7 +7,7 @@
  * reports the time from Send until the fake records `session/prompt`, the time until the send is accepted, the
  * processes started before the prompt and the observer reads (`session/load`) made through the reconciliation read. The fake starts streaming
  * the reply as soon as it has the prompt. It then leaves one streamed turn running for four seconds at the
- * production poll pace and counts the observer reads in that time.
+ * production poll pace and counts the observer reads in that time, from once the send was accepted.
  *
  * With `SOTTO_DEVIN_PIECES=1` it also times the pieces of a send against the installed Devin CLI without sending
  * any prompt: `plugins list` and `mcp list` one after the other and side by side, and an ACP process started,
@@ -82,7 +82,7 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
   }, 300_000)
 
   it('counts observer reads while a streamed turn runs at the production poll pace', async () => {
-    const f = await devinFixture(undefined, 15_000, null, {}, undefined, { acceptanceGraceMs: 1_500 })
+    const f = await devinFixture(undefined, 15_000, undefined, {}, undefined, { acceptanceGraceMs: 1_500, productionPace: true })
     try {
       await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -91,8 +91,9 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
       f.host.observeThreads([id])
       await f.script({ streamOnPrompt: 'Synthetic first words' })
       const loads = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'session/load').length
-      const before = await loads()
       await f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: 'Synthetic long turn' })
+      // Counted from once the send is accepted, so the send's own reads are not among them.
+      const before = await loads()
       // A real wait on purpose: what is counted is what the poll timer does while the turn runs.
       await new Promise(resolve => setTimeout(resolve, 4_000))
       console.info('devin-running-turn', { observerReadsIn4s: (await loads()) - before })
@@ -107,8 +108,13 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
     try {
       const profile = await prepareDevinPolicy(join(root, 'sotto'), 'nothing', root)
       const environment = devinEnvironment()
+      // Counts the runs that wrote anything to stderr, which two lists run side by side must not do more than one after the other.
+      let wroteStderr = 0
       const list = (...args: string[]): Promise<void> => new Promise((resolve, reject) => {
-        execFile(executable, ['--config', profile.path, ...args], { cwd: root, env: environment, windowsHide: true, timeout: 30_000 }, error => error ? reject(new Error('list failed')) : resolve())
+        execFile(executable, ['--config', profile.path, ...args], { cwd: root, env: environment, windowsHide: true, timeout: 30_000 }, (error, _stdout, stderr) => {
+          if (stderr.length) wroteStderr++
+          if (error) reject(new Error('list failed')); else resolve()
+        })
       })
       const timed = async (work: () => Promise<unknown>): Promise<number> => { const started = performance.now(); await work(); return performance.now() - started }
       const sequential: number[] = []; const parallel: number[] = []; const acp: number[] = []
@@ -123,7 +129,7 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
           } finally { rpc.close(); await rpc.closed }
         }))
       }
-      console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(acp)) })
+      console.info('devin-pieces', { listsOneAfterOtherMs: round(median(sequential)), listsSideBySideMs: round(median(parallel)), acpStartReadCloseMs: round(median(acp)), listRunsWithStderr: wroteStderr })
     } finally { await rm(root, { recursive: true, force: true }) }
   }, 300_000)
 })

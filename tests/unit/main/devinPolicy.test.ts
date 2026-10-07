@@ -162,19 +162,25 @@ it('runs both integration lists side by side and names the plugin refusal first 
   const profile = join(root, 'profile.json')
   const log = join(root, 'runs.log')
   await writeFile(profile, '{}')
-  // Each run notes when it starts and ends; the plugin list is the slower one and also refuses.
-  await writeFile(script, `const { appendFileSync } = require('node:fs')
+  // Each run marks that it started, then answers only once the other has started too, so two lists run one after the
+  // other never meet: the first gives up waiting, well inside the lists' own deadline, and says it ran alone. Both
+  // refuse and the plugin list answers last, so the refusal named is the one judged first, not the one that finished first.
+  await writeFile(script, `const { appendFileSync, existsSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
 const kind = process.argv.includes('plugins') ? 'plugins' : 'mcp'
-appendFileSync(${JSON.stringify(log)}, 'start ' + kind + '\\n')
-setTimeout(() => {
-  appendFileSync(${JSON.stringify(log)}, 'end ' + kind + '\\n')
-  console.log(kind === 'plugins' ? 'Installed plugins: one' : 'Configured MCP servers:\\n\\n  \\u2022 enabled\\n    Command: synthetic')
-}, kind === 'plugins' ? 400 : 0)`)
+const other = kind === 'plugins' ? 'mcp' : 'plugins'
+writeFileSync(join(${JSON.stringify(root)}, 'started-' + kind), '')
+const answer = () => console.log(kind === 'plugins' ? 'Installed plugins: one' : 'Configured MCP servers:\\n\\n  \\u2022 enabled\\n    Command: synthetic')
+const began = Date.now()
+const wait = setInterval(() => {
+  const met = existsSync(join(${JSON.stringify(root)}, 'started-' + other))
+  if (!met && Date.now() - began < 10000) return
+  clearInterval(wait)
+  appendFileSync(${JSON.stringify(log)}, (met ? 'met ' : 'alone ') + kind + '\\n')
+  setTimeout(answer, kind === 'plugins' ? 50 : 0)
+}, 5)`)
   await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow(/plugins/u)
-  const runs = (await readFile(log, 'utf8')).trim().split('\n')
-  // The MCP list started before the plugin list ended: they overlapped rather than ran one after the other.
-  expect(runs.indexOf('start mcp')).toBeLessThan(runs.indexOf('end plugins'))
-  expect(runs).toHaveLength(4)
+  expect((await readFile(log, 'utf8')).trim().split('\n').sort()).toEqual(['met mcp', 'met plugins'])
 })
 
 it('accepts native version-one normalization and formatting without accepting new policy fields', async () => {
