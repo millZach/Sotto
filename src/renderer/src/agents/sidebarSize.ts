@@ -2,8 +2,6 @@ import { useCallback, useSyncExternalStore } from 'react'
 
 /** The Threads sidebar's key; Terminal mode and the pages beside it share it. */
 export const THREADS_SIDEBAR_KEY = 'sotto.threadWorkspace.sidebar'
-/** The Chats list keeps a width and a collapse of its own. */
-export const CHATS_SIDEBAR_KEY = 'sotto.chats.sidebar'
 const CHANGED = 'sotto-sidebar-size'
 const DEFAULT = '{"width":320,"collapsed":false}'
 /** The last value this window saved for each key, and the keys whose last write storage refused. */

@@ -33,13 +33,12 @@ import {
   type DictationRecorder,
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
-import { captureDictationDestination } from '../features/dictation/dictationDestination'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'chats' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'memory' | 'settings' | 'help'
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
@@ -106,7 +105,6 @@ export function createProductionDictationController(
     cuePlayer: factories.createCuePlayer(),
     getSettings: bindings.getSettings,
     deliverOutput: bindings.deliverOutput,
-    captureOutput: captureDictationDestination,
     addHistory: bindings.addHistory,
     ...(bindings.retainOutput ? { retainOutput: bindings.retainOutput } : {}),
     publishWidgetState: bindings.publishWidgetState,

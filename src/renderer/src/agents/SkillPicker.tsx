@@ -42,7 +42,7 @@ export function useSkillPicker({ threadId, state, command, enabled, text }: {
 }
 
 /**
- * The same picker over any owner's catalog: a thread's from the agent state, or a personal chat's read from its bridge.
+ * The picker shows the thread's catalog from the agent state.
  * `load` asks for the catalog (a reload when forced) and resolves false when the request itself failed.
  */
 export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }: {

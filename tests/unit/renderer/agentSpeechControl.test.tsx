@@ -59,7 +59,7 @@ describe('speech interruption from the renderer', () => {
     command.mockClear()
     rendered.rerender(view(false))
     expect(controls.voice.status).toBe('off')
-    await act(async () => { finishRelease(); await controls.waitForPersonalAudio() })
+    await act(async () => { finishRelease(); await release })
     expect(command).not.toHaveBeenCalled()
     rendered.rerender(view(true))
     await waitFor(() => expect(controls.voice.status).toBe('muted'))
@@ -70,7 +70,7 @@ describe('speech interruption from the renderer', () => {
     await waitFor(() => expect(controls.voice.status).toBe('wake'))
     expect(start).toHaveBeenCalledTimes(2)
   })
-  it.each([false, true])('waits for microphone release before restoring voice with personal audio owner=%s', async personalOwner => {
+  it('waits for microphone release before restoring voice', async () => {
     const state = stateFixture()
     let finishRelease!: () => void
     const pendingRelease = new Promise<void>(resolve => { finishRelease = resolve })
@@ -91,26 +91,17 @@ describe('speech interruption from the renderer', () => {
     const rendered = render(view(true))
     await waitFor(() => expect(controls.voice.status).toBe('wake'))
     await waitFor(() => expect(start).toHaveBeenCalledTimes(1))
-    let releasePersonal!: () => void
-    if (personalOwner) act(() => { releasePersonal = controls.claimPersonalAudio() })
     command.mockClear()
     rendered.rerender(view(false))
     expect(controls.voice.status).toBe('off')
     expect(stopCapture).toHaveBeenCalledTimes(1)
-    let released = false
-    const waiting = controls.waitForPersonalAudio().then(() => { released = true })
     await act(async () => { await Promise.resolve() })
-    expect(released).toBe(false)
     expect(command).not.toHaveBeenCalled()
     rendered.rerender(view(null))
     rendered.rerender(view(true))
     await act(async () => { await Promise.resolve() })
     expect(start).toHaveBeenCalledTimes(1)
-    await act(async () => { finishRelease(); await waiting })
-    if (personalOwner) {
-      expect(start).toHaveBeenCalledTimes(1)
-      act(() => releasePersonal())
-    }
+    await act(async () => { finishRelease(); await pendingRelease })
     await waitFor(() => expect(start).toHaveBeenCalledTimes(2))
     expect(controls.voice.status).toBe('wake')
   })

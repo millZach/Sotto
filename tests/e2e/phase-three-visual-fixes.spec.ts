@@ -6,10 +6,9 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
-// Two visual review findings in the complete app: the native browser page beside a minimized theme editor, and a personal
-// message Codex did not take. AppShell, renderer, preload, IPC, the theme editor and the production browser and personal
-// chat services are real. Coding providers and the personal Codex connection are the unpackaged E2E fixtures; no native
-// account or installed client runs. Profiles, working copies and the local page are owned temporaries.
+// The native browser page beside a minimized theme editor, in the complete app.
+// AppShell, renderer, preload, IPC, theme editor and browser services are real.
+// Coding providers use the unpackaged E2E fixtures; profiles and working copies are owned temporaries.
 // Page captures omit the native WebContentsView, so every image here is the composed window from desktopCapturer.
 
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-visual-fixes')
@@ -94,7 +93,7 @@ test('shows the live page beside a minimized theme editor, and steps aside under
       const agents = window.sotto!.agents!
       await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
       const state = await agents.command({ type: 'connect' })
-      const thread = state.host.threads.find(item => item.id === 'workshop')!
+      const thread = state.host.threads.find(item => item.id.replace(/^host:[0-9a-f-]+:/iu, '') === 'workshop')!
       return state.host.projects.find(project => project.id === thread.projectId)!.path
     })
     expect(folder.startsWith(launched.userData)).toBe(true)
@@ -257,101 +256,5 @@ test('shows the live page beside a minimized theme editor, and steps aside under
     await closeSotto(launched)
     await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
     await new Promise(done => server.close(done))
-  }
-})
-
-test('keeps a failed personal message and Edit in composer ahead of a long diagnostic, which stays under Details', async () => {
-  test.setTimeout(180_000)
-  const profile = await ownedProfile('sotto-e2e-phase3-visual-fixes-chat-')
-  const launched = await launchSotto('success', profile)
-  const { page } = launched
-  const diagnostic = String.raw`Codex App Server turn/start failed: EPERM: operation not permitted, open 'C:\Users\reader\AppData\Roaming\Sotto\personal-chats\codex-home\sessions\2026\09\13\rollout-2026-09-13T14-10-00-019a4c1e-7d2b-7c11-9d4e-51f0f5c7b2aa.jsonl.tmp-4812-1757790000000'`
-  try {
-    await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-    })
-    await resize(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await page.getByRole('region', { name: 'Chat' }).getByRole('button', { name: 'New chat' }).click()
-    const composer = page.getByRole('textbox', { name: 'Message' })
-    await expect(composer).toBeFocused()
-    await page.keyboard.type('Plan a quiet weekend near the coast')
-    await page.keyboard.press('Enter')
-    const transcript = page.getByLabel('Chat transcript', { exact: true })
-    await expect(transcript.getByRole('heading', { name: 'A saved conversation' })).toBeVisible()
-
-    // The fixture refuses the next native send with the long diagnostic, after the service has saved the submission.
-    await page.evaluate(async text => {
-      const chatId = (await window.sotto!.personalChats!.get()).chats[0]!.id
-      await window.sottoE2E!.agentEvent!({ scope: 'personal', type: 'reject', threadId: chatId, text })
-    }, diagnostic)
-    await page.keyboard.type('Book the ferry with $brai')
-    await expect(page.getByRole('listbox', { name: 'Skills' }).getByRole('option')).toContainText('$brainstorm')
-    await page.keyboard.press('Enter')
-    await page.keyboard.type('for Saturday')
-    const original = 'Book the ferry with $brainstorm for Saturday'
-    await expect(composer).toHaveValue(original)
-    await page.keyboard.press('Enter')
-    await expect(composer).toHaveValue('')
-    const pending = transcript.getByRole('article', { name: 'Pending message' })
-    await expect(pending.locator('.thread-message__status')).toHaveText('Not sent', { timeout: 15_000 })
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.personalChats!.get()).chats[0]!.submissions.at(-1)!.error)).toBe(diagnostic)
-    await page.keyboard.type('Also check the weather')
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.personalChats!.get()).chats[0]!.draft.text)).toBe('Also check the weather')
-
-    const reason = pending.getByText('Codex did not take this message.', { exact: true })
-    const edit = pending.getByRole('button', { name: 'Edit in composer' })
-    const summary = pending.locator('summary', { hasText: 'Details' })
-    const raw = pending.locator('.personal-chat__diagnostic pre')
-    await expect(reason).toBeVisible()
-    await expect(raw).toBeHidden()
-    await composed(launched, 'chat-not-sent-1280-dark')
-
-    await resize(launched, 820, 560)
-    for (const mode of ['dark', 'light'] as const) {
-      await appearance(page, mode)
-      await transcript.evaluate(element => { element.scrollTop = element.scrollHeight })
-      await expect(pending.getByText(original)).toBeInViewport()
-      await expect(pending.locator('.thread-message__status')).toBeInViewport()
-      await expect(reason).toBeInViewport()
-      await expect(edit).toBeInViewport()
-      await composed(launched, `chat-not-sent-820x560-${mode}`)
-    }
-    await appearance(page, 'dark')
-
-    // Keyboard: Details follows Edit in composer, opens with Enter, and holds the whole diagnostic as selectable text.
-    await edit.focus()
-    await page.keyboard.press('Tab')
-    await expect(summary).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(pending.locator('details')).toHaveAttribute('open', '')
-    await expect(raw).toBeVisible()
-    await expect(raw).toHaveText(diagnostic)
-    expect(await raw.evaluate(element => getComputedStyle(element).userSelect)).not.toBe('none')
-    expect(await pending.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
-    await expect(summary).toBeInViewport()
-    await expect(edit).toBeInViewport()
-    await composed(launched, 'chat-not-sent-details-820x560-dark')
-    await appearance(page, 'light')
-    await composed(launched, 'chat-not-sent-details-820x560-light')
-    await appearance(page, 'dark')
-
-    // Opening Details sent nothing; Edit in composer adds the message and its skill after the newer draft, still unsent.
-    await page.keyboard.press('Shift+Tab')
-    await expect(edit).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(composer).toHaveValue(`Also check the weather\n\n${original}`)
-    await expect(composer).toBeFocused()
-    await expect(pending.getByText('It is in the composer.')).toBeVisible()
-    await expect(raw).toHaveText(diagnostic)
-    await expect.poll(() => page.evaluate(async () => {
-      const chat = (await window.sotto!.personalChats!.get()).chats[0]!
-      return { text: chat.draft.text, skills: chat.draft.skills.map(skill => skill.name), sends: chat.submissions.filter(item => item.text.startsWith('Book the ferry')).length }
-    })).toEqual({ text: `Also check the weather\n\n${original}`, skills: ['brainstorm'], sends: 1 })
-    await expect(page.getByRole('button', { name: 'Send message' })).toBeInViewport()
-    await composed(launched, 'chat-not-sent-recovered-820x560-dark')
-  } finally {
-    await closeSotto(launched)
-    await rm(profile, { recursive: true, force: true }).catch(() => undefined)
   }
 })
