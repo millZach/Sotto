@@ -213,7 +213,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
         <li data-step={serveStep}>
           <StepMark step={serveStep} />
           <div className="phones-step__copy"><b>Tailscale Serve on port {state.servePort ?? 8443}</b>
-            <p>{serveStep === 'ok' ? `Sotto added it on ${name}${state.servePort === 10000 ? ', on 10000 because another app uses 8443' : ''}. It stays on your tailnet; Funnel is never used.` : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
+            <p>{serveStep === 'ok' ? `Sotto added it on ${name}${state.servePort === 10000 ? ', on 10000 because another app had 8443' : ''}. It stays on your tailnet; Funnel is never used.` : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
             {denied ? <span className="host-phones-command">
               <code className="phones-mono">{TAILSCALE_OPERATOR_COMMAND}</code>
               <Button variant="ghost" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy(TAILSCALE_OPERATOR_COMMAND, 'command')}>{copied === 'command' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'command' ? 'Copied' : 'Copy command'}</Button>

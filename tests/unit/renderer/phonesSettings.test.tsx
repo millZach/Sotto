@@ -163,7 +163,7 @@ it('ports taken: says Sotto left the other apps’ settings on 8443 and 10000 al
 it('8443 held by another app: names port 10000, says why, and shows that address', async () => {
   show({ ...READY, servePort: 10000, address: `https://${DNS}:10000` })
   await screen.findByText(`https://${DNS}:10000`)
-  expect(step('Tailscale Serve on port 10000').textContent).toContain('Sotto added it on 10000, because another app uses 8443. Port 443 stays free for other apps.')
+  expect(step('Tailscale Serve on port 10000').textContent).toContain('Sotto added it on 10000, because another app had 8443. Port 443 stays free for other apps.')
 })
 
 it('Serve not turned on for the tailnet: offers the page that turns it on', async () => {

@@ -171,7 +171,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
       <li data-step={serveStep}>
         <StepMark step={serveStep} />
         <div className="phones-step__copy"><b>Tailscale Serve on port {state?.servePort ?? 8443}</b>
-          <p>{serveStep === 'ok' ? (state?.servePort === 10000 ? 'Sotto added it on 10000, because another app uses 8443. Port 443 stays free for other apps.' : 'Sotto added it. Port 443 stays free for other apps.') : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
+          <p>{serveStep === 'ok' ? (state?.servePort === 10000 ? 'Sotto added it on 10000, because another app had 8443. Port 443 stays free for other apps.' : 'Sotto added it. Port 443 stays free for other apps.') : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
         </div>
         {serveStep === 'failed' ? <span className="phones-step__actions">
           {state?.serve.status === 'failed' && state.serve.canOpenSetup ? <Button variant="secondary" onClick={() => void run({ type: 'open-serve-setup' })}>Turn on Serve in Tailscale</Button> : null}

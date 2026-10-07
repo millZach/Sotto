@@ -5,8 +5,8 @@ export const PHONES_COMMAND = 'phones:command'
 export const PHONES_CHANGED = 'phones:changed'
 
 /**
- * The Tailscale Serve ports phone access may use, in the order it tries them: 8443, or 10000 when another
- * app already holds 8443. 443 is left to other apps (ADR-0033). Serve offers HTTPS on these three only.
+ * The Tailscale Serve ports phone access may use: 8443, or 10000 when another app already holds 8443. Setup
+ * tries the port it last used first, so phones keep their address. 443 is left to other apps (ADR-0033). Serve offers HTTPS on these three only.
  */
 export const PHONE_ACCESS_SERVE_PORTS = [8443, 10000] as const
 export type PhoneAccessServePort = (typeof PHONE_ACCESS_SERVE_PORTS)[number]
@@ -61,7 +61,7 @@ export interface PhonesState {
   readonly tailscale: TailscaleCheck
   readonly serve: ServeCheck
   /**
-   * The Serve port phones use: 8443, or 10000 when another app holds 8443. Null until Sotto has chosen; absent from
+   * The Serve port phones use: 8443, or 10000 when another app held 8443 when Sotto chose. Null until Sotto has chosen; absent from
    * a host from before the 10000 fallback, which only ever uses 8443.
    */
   readonly servePort?: PhoneAccessServePort | null | undefined
