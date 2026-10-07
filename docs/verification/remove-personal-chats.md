@@ -164,3 +164,17 @@ the notice enum during that run: its cached eight-code schema met the updated
 nine-code test. This mixed-revision run is diagnostic, not final-head
 validation. The final focused schema checks pass; clean CI on the published
 commit remains the delivery gate, with its result recorded in the PR.
+
+Revision `12294d69` then passed Windows CI with 7,833 tests passed and 159
+skipped, plus typecheck, lint and 174 notices. Linux passed 387 host/socket
+tests with one platform skip, archive verification and the real SSH journey
+([run 37555901762](https://github.com/millZach/Sotto/actions/runs/37555901762)).
+Main advanced to `6607fec5` during the merge attempt, bringing Thinking rows
+and the read-before-send changes. Three provider adapters and the Codex
+newest-turn test needed conflict resolution. The incoming thread behavior and
+its test cases are retained; standalone personal methods remain removed and
+legacy personal aliases remain guarded. The combined revision receives fresh
+verification and CI before merge, recorded in the PR.
+The seven focused read/send/thinking suites pass all 97 cases with two workers,
+including all 22 Codex newest-turn project cases. An independent Standards and
+Spec review of the four conflict resolutions found no actionable issues.

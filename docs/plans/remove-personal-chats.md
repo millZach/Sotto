@@ -66,8 +66,8 @@ from mixed suites. Current docs change; historical verification stays history.
 ## Delivery state
 
 Zach subsequently requested computer use, a PR and merge after all checks
-are green. Current main through `3bc5efa1` is integrated, including its host-lock
-PID-reuse fix. The original `13c6da89` checkout contained unrelated launch-video
+are green. Current main through `6607fec5` is integrated, including its host-lock
+PID-reuse fix, Thinking rows and read-before-send changes. The original `13c6da89` checkout contained unrelated launch-video
 and Claude-label commits; those are excluded from the final product branch.
 The originals remain on `backup/remove-chats-inherited-base`, and the video
 working files are retained in `.cache/inherited-launch-video`.
@@ -78,6 +78,7 @@ working files are retained in `.cache/inherited-launch-video`.
 - Design capture and verification each pass 10 journeys and 146 tuples.
 - The full local two-worker run finished: 7,763 passed, 162 skipped, three failures in unchanged boot fixtures and the artifact-ignore setup deadline. The artifact deadline fix passes; 57 boot checks pass without reproducing the original failures. Initial PR CI passed with 7,810 Windows tests and the Linux host checks. The privacy correction requires fresh CI before merge.
 - Final privacy correction: 120 focused unit/renderer tests, the artifact-ignore check, all five new privacy Electron journeys and eight removal/recovery neighbors pass. Typecheck, lint, notices and build pass. The failure notice fits at minimum size.
+- Revision `12294d69` passed Windows CI with 7,833 tests and the Linux host/SSH checks. Main advanced during the merge attempt; four adapter/test conflicts were resolved to preserve the incoming thread behavior and Chats retirement. The combined revision requires fresh CI before merge.
 - Native and browser computer-use runtimes still fail at startup with
   `apply deny-read ACLs`, including after the permission change and reset.
   A later retry again failed before reaching a window: the native kernel exited

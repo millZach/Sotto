@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
+      'artifacts/show-thinking/**',
       'artifacts/hidden-player-typing/**',
       'artifacts/computer-use-guidance/**',
       'artifacts/pkg-17-hostconnection/**',

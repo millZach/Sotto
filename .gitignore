@@ -146,3 +146,6 @@ artifacts/hidden-player-typing/
 
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
+
+# Thinking row verification; the captures the note cites are committed.
+artifacts/show-thinking/
