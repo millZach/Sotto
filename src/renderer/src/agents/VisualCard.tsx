@@ -42,7 +42,7 @@ function DiagramVisualCard({ visual }: { readonly visual: AgentVisual }): ReactN
   const { walking, current, highlight } = walkthroughView(steps, place)
   const drawn = rendering.drawing
   // The step's picture, lit for it and cross-fading in from the last, in the card and in Expand.
-  const stepPicture = useMemo(() => drawn ? { dataUrl: stepImage(drawn, highlight), crossFade: true } : undefined, [drawn, highlight])
+  const stepPicture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
 
   return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(rendering)}>
     <header className="visual-card__bar">

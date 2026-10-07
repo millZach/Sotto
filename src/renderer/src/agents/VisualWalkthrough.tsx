@@ -1,6 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { keepRecent, readRecent } from '../../../shared/recentMap'
 import type { AgentVisual } from '../../../shared/visuals'
+import { clampStep } from './VisualStepper'
 
 /**
  * A visual's walkthrough place (#793), shared by every card that shows one: a diagram's and an interactive page's
@@ -30,7 +31,7 @@ export function walkthroughView(steps: NonNullable<AgentVisual['steps']>, place:
   readonly walking: boolean; readonly current: number; readonly highlight: readonly string[] | undefined
 } {
   const walking = steps.length > 0 && !place.readAll
-  const current = Math.min(place.step, Math.max(steps.length - 1, 0))
+  const current = clampStep(place.step, steps.length)
   return { walking, current, highlight: walking ? steps[current]?.highlight : undefined }
 }
 

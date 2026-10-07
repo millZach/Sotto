@@ -50,7 +50,7 @@ export function lightDiagramStep(svg: string, names: readonly string[] | undefin
 }
 
 /** How many step pictures one drawing keeps: one for every step a kept visual can have. */
-export const MAX_STEP_IMAGES = VISUAL_KEPT_STEPS_MAX
+const MAX_STEP_IMAGES = VISUAL_KEPT_STEPS_MAX
 const stepImages = new WeakMap<object, Map<string, string>>()
 
 /**

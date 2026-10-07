@@ -19,6 +19,8 @@ const ask = (title: string) => [
   // The way a user asks: by what they want, not by the tool's name, which some clients then call without its server.
   `Draw this as a visual in the thread with Sotto's visual tool, exactly once: kind "diagram", title "${title}", a one-sentence intro and three steps.`,
   'The source is a Mermaid sequence diagram with participants Browser, Server and Database and four arrows: the browser asks the server, the server queries the database, the database answers, the server answers the browser.',
+  // Without this the agent often sends steps as words alone, and the walkthrough has nothing to light.
+  'Give every step a highlight list naming the participants or arrow numbers it is about.',
   `Before you call the tool, write exactly: ${BEFORE} After the tool answers, write exactly: ${AFTER}`,
   'Do not read or change any files and do not use any other tool.',
 ].join(' ')
@@ -119,6 +121,19 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       await page.screenshot({ path: join(artifacts, 'settled.png') })
 
       if (provider !== 'claude') return
+      // The walkthrough: step 2 lights what Claude named for it, and its capture is kept.
+      const walkthrough = card.getByRole('group', { name: 'Walkthrough' })
+      await expect(walkthrough).toContainText('Step 1 of 3')
+      await card.getByRole('button', { name: 'Next', exact: true }).click()
+      await expect(walkthrough).toContainText('Step 2 of 3')
+      const lit = (): Promise<number> => card.locator('.visual-card__layers img[data-layer]:not([data-layer="leaving"])').evaluate(element => {
+        const svg = new TextDecoder().decode(Uint8Array.from(atob((element as HTMLImageElement).src.split(',')[1]!), char => char.charCodeAt(0)))
+        return new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('.sotto-step-lit').length
+      })
+      await expect.poll(lit).toBeGreaterThan(0)
+      await card.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(artifacts, 'walkthrough-step-2.png'), animations: 'disabled' })
+
       // Off: the running session's call is refused and nothing is drawn. On again: it draws.
       await page.evaluate(async () => { await window.sotto!.updateSettings({ visualsInThreads: false }) })
       await send(page, ask('Switched off'))

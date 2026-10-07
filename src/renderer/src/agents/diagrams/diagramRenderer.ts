@@ -49,7 +49,8 @@ const SECURE_KEYS = [
   'flowchart', 'sequence', 'state', 'class', 'er', 'elk', 'markdownAutoWrap', 'logLevel',
 ]
 
-function configFor(palette: DiagramPalette): MermaidConfig {
+/** The Mermaid settings every drawing is made with. tests/fixtures/mermaidSteps/sources.mjs copies the layout ones. */
+export function configFor(palette: DiagramPalette): MermaidConfig {
   return {
     startOnLoad: false,
     securityLevel: 'strict',

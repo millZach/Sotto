@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { ViewerDialog } from './ViewerDialog'
+import { DiagramImage } from './DiagramImage'
 
 export interface DiagramViewerProps {
   readonly dataUrl: string
@@ -153,7 +154,7 @@ export function DiagramViewer({ dataUrl, width, height, name, description, copyF
       onPointerUp={() => { drag.current = null; setDragging(false) }}
       onPointerCancel={() => { drag.current = null; setDragging(false) }}
       onDoubleClick={event => zoomTo(scale => scale * STEP * STEP, pointerFocus(event.clientX, event.clientY))}>
-      <img className="rich-diagram-viewer__image" src={dataUrl} alt={name} draggable={false}
+      <DiagramImage className="rich-diagram-viewer__image" src={dataUrl} alt={name}
         width={Math.round(width * view.scale)} height={Math.round(height * view.scale)}
         style={{ transform: `translate(calc(-50% + ${view.x}px), calc(-50% + ${view.y}px))` }} />
       {description && <p id={descriptionId} className="tt-visually-hidden">{description}</p>}

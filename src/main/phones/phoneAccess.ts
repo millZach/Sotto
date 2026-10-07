@@ -7,17 +7,19 @@ import { startSocketServer, type SocketServerOptions, type TailnetAdmission } fr
 import type { ClientIdentity, HostService } from '../agents/hostService'
 import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { PHONE_ACCESS_SERVE_PORT, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
+import { PHONE_ACCESS_SERVE_PORTS, type PhoneAccessServePort, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
 import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
 
 /**
  * Phone access (ADR-0033): while the `phoneAccess` setting is on and the local host runs, the desktop
  * opens the host protocol listener over its own host service, on loopback, and asks Tailscale Serve
- * to carry HTTPS port 8443 on the tailnet to it. Paired phones then see exactly this window's threads.
+ * to carry HTTPS port 8443 on the tailnet to it, or 10000 when another app already holds 8443. Paired
+ * phones then see exactly this window's threads.
  *
- * Only this computer's own Serve setting is ever changed: one Sotto put on 8443 itself, proxying to a
- * loopback port Sotto remembers. Anything else on 8443 is left alone and the Phones page says so. The
- * setting is removed when phone access turns off and when Sotto quits, and put back at the next start.
+ * Only this computer's own Serve setting is ever changed: one Sotto put on 8443 or 10000 itself, proxying
+ * to a loopback port Sotto remembers. Anything else on those ports is left alone; when other apps hold both,
+ * the Phones page says so. The setting is removed when phone access turns off and when Sotto quits, and put
+ * back at the next start on the Serve port it was last on while that port is free, since phones keep its address.
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
@@ -101,8 +103,19 @@ const recordSchema = z.object({
   port: z.number().int().min(1).max(65535).nullable(),
   /** Set before Sotto asks for the Serve setting and cleared once it is gone, so a crash is cleaned up at the next start. */
   mapped: z.boolean(),
+  /**
+   * The Serve port the setting is on, or was last on, which the next start tries first so paired phones keep their
+   * address. Absent means 8443, as in every record from before the fallback.
+   */
+  servePort: z.literal(10000).optional(),
 }).strict()
 type PhoneAccessRecord = z.infer<typeof recordSchema>
+
+/** The Serve port a record's setting is on, or was last on. */
+const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.servePort ?? 8443
+/** A record naming a Serve port, written the way records from before the fallback read: 8443 is left implicit. */
+const onPort = (record: Omit<PhoneAccessRecord, 'servePort'>, servePort: PhoneAccessServePort): PhoneAccessRecord =>
+  servePort === 8443 ? record : { ...record, servePort }
 
 const ANSWERS_NOTE = 'The user turned on Can answer for this paired phone on the Phones page.'
 const WAITING = { status: 'waiting' } as const
@@ -120,6 +133,7 @@ export class PhoneAccess {
   private tailscaleCheck: TailscaleCheck = WAITING
   private serveCheck: ServeCheck = WAITING
   private address: string | null = null
+  private servePort: PhoneAccessServePort | null = null
   private enableUrl: string | undefined
   private readonly formerPorts = new Set<number>()
   private code: { code: string; expiresAt: string } | null = null
@@ -217,7 +231,7 @@ export class PhoneAccess {
     return {
       enabled: settings.phoneAccess, localHostRunning: this.options.service !== undefined,
       phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
-      tailscale: this.tailscaleCheck, serve: this.serveCheck, address: this.listenerStopped ? null : this.address,
+      tailscale: this.tailscaleCheck, serve: this.serveCheck, servePort: this.servePort, address: this.listenerStopped ? null : this.address,
       computerName: this.computerName(), defaultName,
       code: this.code, phones, answersAvailable: this.options.policy !== undefined,
     }
@@ -371,11 +385,20 @@ export class PhoneAccess {
     }
     this.tailscaleCheck = { status: 'ok', hostName: status.hostName, dnsName: status.dnsName }
     this.publish()
-    let owner: ReturnType<typeof servePortOwner>
-    try { owner = servePortOwner(await this.options.tailscale.serveStatus(), PHONE_ACCESS_SERVE_PORT, this.ourPorts()) }
-    catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
-    if (owner === 'ours') this.record.mapped = true
-    if (owner === 'taken') { await this.failServe('port-taken'); return }
+    let owners: { port: PhoneAccessServePort; owner: ReturnType<typeof servePortOwner> }[]
+    try {
+      const config = await this.options.tailscale.serveStatus()
+      // The port phones last used comes first: they keep its address, so a restart must not move them while it is free.
+      const last = servePortOf(this.record)
+      const ports = [last, ...PHONE_ACCESS_SERVE_PORTS.filter(port => port !== last)]
+      owners = ports.map(port => ({ port, owner: servePortOwner(config, port, this.ourPorts()) }))
+    } catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
+    // A setting that is already Sotto's wins; else the first free port, the one phones last used if it is free.
+    const chosen = owners.find(entry => entry.owner === 'ours') ?? owners.find(entry => entry.owner === 'free')
+    if (!chosen) { await this.failServe('port-taken'); return }
+    const owner = chosen.owner, servePort = chosen.port
+    this.servePort = servePort
+    if (owner === 'ours') this.record = onPort({ ...this.record, mapped: true }, servePort)
     if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     if (!this.listener) {
       // Paired phones that cannot be read are never replaced: the listener stays shut until they can be.
@@ -385,21 +408,21 @@ export class PhoneAccess {
     }
     if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     const port = this.listener.descriptor.port
-    if (!await this.save({ port, mapped: true })) { await this.failServe('record'); return }
+    if (!await this.save(onPort({ port, mapped: true }, servePort))) { await this.failServe('record'); return }
     if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     let result: ServeResult
-    try { result = await this.options.tailscale.serve(PHONE_ACCESS_SERVE_PORT, port) } catch { result = { ok: false, reason: 'failed' } }
+    try { result = await this.options.tailscale.serve(servePort, port) } catch { result = { ok: false, reason: 'failed' } }
     if (!result.ok) {
       this.options.log?.(result.reason === 'not-enabled' ? 'phone-access-serve-not-enabled' : result.reason === 'denied' ? 'phone-access-serve-denied' : 'phone-access-serve-failed')
       this.enableUrl = result.reason === 'not-enabled' ? result.enableUrl : undefined
       // A consent request or a refusal made no new setting. Other failures keep cleanup pending until Serve is checked.
-      if (result.reason !== 'failed') await this.save({ port, mapped: owner === 'ours' })
+      if (result.reason !== 'failed') await this.save(onPort({ port, mapped: owner === 'ours' }, servePort))
       await this.failServe(result.reason)
       return
     }
     if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     this.serveCheck = { status: 'ok' }
-    this.address = `https://${status.dnsName}:${PHONE_ACCESS_SERVE_PORT}`
+    this.address = `https://${status.dnsName}:${servePort}`
     this.phase = 'on'
     this.options.log?.('phone-access-on')
     this.publish()
@@ -407,7 +430,7 @@ export class PhoneAccess {
 
   private reset(phase: PhonesState['phase']): void {
     if (phase === 'off') this.listenerStopped = false
-    this.phase = phase; this.tailscaleCheck = WAITING; this.serveCheck = WAITING; this.address = null; this.enableUrl = undefined
+    this.phase = phase; this.tailscaleCheck = WAITING; this.serveCheck = WAITING; this.address = null; this.servePort = null; this.enableUrl = undefined
   }
 
   private async failServe(reason: 'port-taken' | 'not-enabled' | 'denied' | 'listener' | 'failed' | 'record'): Promise<void> {
@@ -446,7 +469,10 @@ export class PhoneAccess {
     this.publish()
   }
 
-  /** Removes Sotto's own Serve setting when the record says one may be there. Anyone else's on 8443 is never touched. */
+  /**
+   * Removes Sotto's own Serve setting when the record says one may be there. Anyone else's is never touched.
+   * Without a readable record Sotto cannot say which port it used, so it checks both.
+   */
   private async removeMapping(): Promise<boolean> {
     if (!this.record.mapped) return true
     try {
@@ -459,10 +485,16 @@ export class PhoneAccess {
         } catch { /* Still check Serve, even when the saved record remains unreadable. */ }
         if (this.recordUncertain && readable) await this.save(this.record)
       }
-      const owner = servePortOwner(await this.options.tailscale.serveStatus(), PHONE_ACCESS_SERVE_PORT, this.ourPorts())
-      if (owner === 'ours' && !await this.options.tailscale.unserve(PHONE_ACCESS_SERVE_PORT)) { this.options.log?.('phone-access-serve-remove-failed'); return false }
+      const config = await this.options.tailscale.serveStatus()
+      const ports: readonly PhoneAccessServePort[] = this.recordUncertain ? PHONE_ACCESS_SERVE_PORTS : [servePortOf(this.record)]
+      let unattributed = false
+      for (const port of ports) {
+        const owner = servePortOwner(config, port, this.ourPorts())
+        if (owner === 'ours' && !await this.options.tailscale.unserve(port)) { this.options.log?.('phone-access-serve-remove-failed'); return false }
+        if (owner === 'taken') unattributed = true
+      }
       // Without a readable record, an occupied mapping cannot be attributed to Sotto.
-      if (this.recordUncertain && owner !== 'free') return false
+      if (this.recordUncertain && unattributed) return false
       if (!await this.save({ ...this.record, mapped: false })) return false
       this.recordUncertain = false
       return true

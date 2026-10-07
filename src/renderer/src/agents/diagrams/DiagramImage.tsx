@@ -6,9 +6,6 @@ export const CROSS_FADE_MS = 180
 /** How long past the fade the leaving picture stays when its animation does not report its end. */
 const FADE_GRACE_MS = 120
 
-/** A picture of a drawing to show in its place, such as a visual's lit step, and whether a new one cross-fades in. */
-export interface DiagramPicture { readonly dataUrl: string; readonly crossFade: boolean }
-
 interface DiagramImageProps {
   readonly src: string
   /** The drawing's accessible name; empty for a picture kept out of the accessibility tree. */
@@ -19,12 +16,18 @@ interface DiagramImageProps {
   readonly hidden?: boolean
   readonly layer?: 'shown' | 'arriving' | 'leaving'
   readonly onAnimationEnd?: (() => void) | undefined
+  /** Where the image is placed, for the expanded viewer, which zooms and pans it. */
+  readonly className?: string
+  readonly style?: CSSProperties
 }
 
-/** One drawing as an image: its own size, never dragged, decoded off the main thread. Every diagram image is this. */
-export function DiagramImage({ src, alt, width, height, describedBy, hidden, layer, onAnimationEnd }: DiagramImageProps): ReactNode {
+/**
+ * One drawing as an image: never dragged, decoded off the main thread. Every diagram image is this: an answer's, a
+ * visual's step pictures, and the expanded viewer's.
+ */
+export function DiagramImage({ src, alt, width, height, describedBy, hidden, layer, onAnimationEnd, className, style }: DiagramImageProps): ReactNode {
   return <img src={src} alt={alt} width={width} height={height} draggable={false} decoding="async" aria-describedby={describedBy}
-    aria-hidden={hidden || undefined} data-layer={layer} onAnimationEnd={onAnimationEnd} />
+    aria-hidden={hidden || undefined} data-layer={layer} onAnimationEnd={onAnimationEnd} className={className} style={style} />
 }
 
 interface Layer { readonly src: string; readonly key: number }
@@ -35,7 +38,7 @@ interface Layer { readonly src: string; readonly key: number }
  * same size, so nothing moves. Under reduced motion the new picture replaces the old at once. Only the picture on top
  * is in the accessibility tree. `className` lays the pictures over each other.
  */
-export function CrossFadeImage({ src, alt, width, height, describedBy, className }: Omit<DiagramImageProps, 'hidden' | 'layer' | 'onAnimationEnd'> & {
+export function CrossFadeImage({ src, alt, width, height, describedBy, className }: Omit<DiagramImageProps, 'hidden' | 'layer' | 'onAnimationEnd' | 'className' | 'style'> & {
   readonly className: string
 }): ReactNode {
   const reduced = useReducedMotion()
@@ -54,7 +57,7 @@ export function CrossFadeImage({ src, alt, width, height, describedBy, className
   }, [fading, layers])
   useEffect(() => { if (reduced) setLayers(current => current.length > 1 ? current.slice(-1) : current) }, [reduced])
 
-  return <span className={className} data-fading={fading || undefined} style={{ '--diagram-fade': `${CROSS_FADE_MS}ms` } as CSSProperties}>
+  return <span className={className} style={{ '--diagram-fade': `${CROSS_FADE_MS}ms` } as CSSProperties}>
     {layers.map((layer, index) => {
       const shown = index === layers.length - 1
       return <DiagramImage key={layer.key} src={layer.src} alt={shown ? alt : ''} hidden={!shown} width={width} height={height}

@@ -24,7 +24,7 @@ An agent explaining how something works writes a wall of words, or a Mermaid fen
 
 **Private.** A visual is made on this computer from what the agent sent and contacts no host: the card draws Mermaid through the same sandboxed renderer as an answer's diagram, as an `<img>`. Nothing about a visual is logged. Every socket client is sent visual messages without the `visual` field, so the iPhone, an older desktop and anything reading a host's threads get the words and the line saying the drawing is on the computer.
 
-**A walkthrough dims the rest of the drawing, on purpose.** A visual with steps shows one step at a time, with the parts of the drawing the step names lit and the rest at 30 percent opacity (#793, the walkthrough Zach picked). That is a deliberate exception to "text meets 4.5:1": the dimmed words are de-emphasis inside a drawing, not text to be read in that state. The lit parts, the step's words and every control around them meet 4.5:1; the words in the drawing are also in the step text and the image's accessible name; and **Read all** shows the whole drawing undimmed. A step whose names match nothing dims nothing.
+**A walkthrough dims the rest of the drawing, on purpose.** A visual with steps shows one step at a time, with the parts of the drawing the step names lit and the rest at 30 percent opacity (#793, the walkthrough Zach picked). That is a deliberate exception to "text meets 4.5:1": the dimmed words are de-emphasis while a step is shown, not text to be read in that state. **Read all** and **Show source** show every word of the drawing at full contrast, and the step's own words and the walkthrough's controls, Back on the first step included, meet 4.5:1. A step whose names match nothing dims nothing.
 
 ## Consequences
 
