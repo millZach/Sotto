@@ -59,6 +59,7 @@ They do not prove that nothing else gets out. No test tries WebRTC with STUN or 
 ## Consequences
 
 - The README's "Privacy and cost" stays true: a visual is made on this computer and contacts no one. The dead proxy is a port on this computer that Sotto holds, not a host.
+- Turning off **Let agents draw visuals in threads** stops new visuals, as ADR-0055 says. A page already in a thread still shows, as a diagram does.
 - The main window has `webviewTag` on. Any later use of `<webview>` must pass the same admission in main; today a guest is admitted for a live visual page address and nothing else.
 - A page has an opaque origin, so `localStorage` and cookies throw or are empty; the tool's description says it has no storage.
 - A page's script runs in its own renderer process. A page that spins costs that process, not Sotto's window. Sotto does not measure or stop it.

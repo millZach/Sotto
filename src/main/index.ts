@@ -763,7 +763,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   agentHost.useThreadTools([hostSetupTools, visualTools])
   // An interactive visual runs in a sealed page (ADR-0056): main serves it from this store, once per address.
   const disposeVisualSandbox = await installVisualSandbox({ read: (threadId, visualId) => agentHost.visual(parseHostEntityKey(threadId)?.id ?? threadId, visualId),
-    enabled: () => workingCopySettings.visualsInThreads, mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
+    mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
     preloadDirectory: join(__dirname, '../preload') })
   app.on('will-quit', disposeVisualSandbox)
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))

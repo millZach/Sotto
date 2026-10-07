@@ -23,7 +23,7 @@ const diagram: AgentVisual = { id: 'diagram-1', title: 'A flow', kind: 'diagram'
 function pages(overrides: Partial<ConstructorParameters<typeof VisualPages>[0]> = {}) {
   let now = 1_000
   const store: Record<string, AgentVisual[]> = { 'thread-1': [page, diagram] }
-  const created = new VisualPages({ read: (threadId, visualId) => store[threadId]?.find(item => item.id === visualId), enabled: () => true, sealed: () => true,
+  const created = new VisualPages({ read: (threadId, visualId) => store[threadId]?.find(item => item.id === visualId), sealed: () => true,
     fontCss: '@font-face{font-family:"Figtree"}', now: () => now, ...overrides })
   return { pages: created, store, advance: (ms: number) => { now += ms } }
 }
@@ -61,14 +61,12 @@ describe('an interactive visual\'s page address', () => {
       expect(target.open({ threadId: 'thread-1', visualId: 'page-1', theme, ...request })).toEqual({ ok: false, reason: 'Sotto no longer has this visual. The visual is not shown. Its steps are below.' })
   })
 
-  it('is refused while visuals are off, or while the session is not sealed', () => {
-    expect(pages({ enabled: () => false }).pages.open({ threadId: 'thread-1', visualId: 'page-1', theme }))
-      .toEqual({ ok: false, reason: 'Visuals are turned off in Settings. The visual is not shown. Its steps are below.' })
+  it('is refused while the session is not sealed', () => {
     expect(pages({ sealed: () => false }).pages.open({ threadId: 'thread-1', visualId: 'page-1', theme }))
       .toEqual({ ok: false, reason: 'Sotto could not seal this page from the network. The visual is not shown. Its steps are below.' })
   })
 
-  it('lapses unloaded after its time, and serves nothing once its visual is gone or visuals are off', () => {
+  it('lapses unloaded after its time, and serves nothing once its visual is gone', () => {
     const lapsed = pages()
     const url = opened(lapsed.pages)
     lapsed.advance(VISUAL_PAGE_TOKEN_TTL_MS)
@@ -79,12 +77,6 @@ describe('an interactive visual\'s page address', () => {
     const kept = opened(rewound.pages)
     rewound.store['thread-1'] = [diagram]
     expect(rewound.pages.serve(kept).status).toBe(404)
-
-    let on = true
-    const switched = pages({ enabled: () => on })
-    const before = opened(switched.pages)
-    on = false
-    expect(switched.pages.serve(before).status).toBe(404)
   })
 
   it('keeps at most a few addresses waiting, dropping the oldest', () => {

@@ -15,7 +15,6 @@ const FIGTREE_CSS = [
 
 export interface VisualSandboxOptions {
   read(threadId: string, visualId: string): AgentVisual | undefined
-  enabled(): boolean
   /** Sotto's main window, the only renderer that may hold a visual's guest. */
   mainWebContents(): unknown
   senders(): readonly TrustedIpcSender[]
@@ -31,7 +30,7 @@ export interface VisualSandboxOptions {
 export async function installVisualSandbox(options: VisualSandboxOptions): Promise<() => void> {
   let proxy: Awaited<ReturnType<typeof startDeadProxy>> | undefined
   let sealed = false
-  const pages = new VisualPages({ read: options.read, enabled: options.enabled, sealed: () => sealed, fontCss: FIGTREE_CSS })
+  const pages = new VisualPages({ read: options.read, sealed: () => sealed, fontCss: FIGTREE_CSS })
   const visualSession = session.fromPartition(VISUAL_PARTITION)
   try {
     proxy = await startDeadProxy()

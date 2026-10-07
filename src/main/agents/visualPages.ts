@@ -43,8 +43,6 @@ const PAGE_ADDRESS = new RegExp(`^${VISUAL_SCHEME}://page/([A-Za-z0-9_-]{43})$`,
 export interface VisualPagesDependencies {
   /** The visual this thread holds under this ID, from main's own store; undefined when it holds none. */
   read(threadId: string, visualId: string): AgentVisual | undefined
-  /** Let agents draw visuals in threads. */
-  enabled(): boolean
   /** Whether the session is sealed: its dead proxy holds a port. Nothing is shown in a session that is not. */
   sealed(): boolean
   /** The Figtree faces, as `@font-face` rules with data URLs. */
@@ -68,9 +66,12 @@ export class VisualPages {
   constructor(private readonly dependencies: VisualPagesDependencies) {}
   private now(): number { return this.dependencies.now?.() ?? Date.now() }
 
-  /** A one-time address for a visual this thread holds and that is an interactive page; why not, otherwise. */
+  /**
+   * A one-time address for a visual this thread holds and that is an interactive page; why not, otherwise. Turning off
+   * Let agents draw visuals in threads stops new visuals, not these: a page already in a thread still shows, as a
+   * diagram does (ADR-0055).
+   */
   open(request: VisualPageRequest): VisualPageResult {
-    if (!this.dependencies.enabled()) return { ok: false, reason: `Visuals are turned off in Settings. ${NOT_SHOWN}` }
     if (!this.dependencies.sealed()) return { ok: false, reason: `Sotto could not seal this page from the network. ${NOT_SHOWN}` }
     let visual: AgentVisual | undefined
     try { visual = this.dependencies.read(request.threadId, request.visualId) } catch { visual = undefined }
@@ -94,7 +95,7 @@ export class VisualPages {
     const token = PAGE_ADDRESS.exec(url)?.[1]
     const entry = token === undefined ? undefined : this.pending.get(token)
     if (token !== undefined) this.pending.delete(token)
-    if (!entry || entry.expires <= this.now() || !this.dependencies.enabled()) return notFound()
+    if (!entry || entry.expires <= this.now()) return notFound()
     let visual: AgentVisual | undefined
     try { visual = this.dependencies.read(entry.threadId, entry.visualId) } catch { visual = undefined }
     if (visual?.kind !== 'interactive') return notFound()
