@@ -47,6 +47,12 @@ describe('a flowchart step', () => {
     expect(lit('flowchart', ['Provider'])).toEqual(sorted(['edge:L_C_D_0', 'edge:L_D_E_0', 'Provider', 'edgeLabel:L_C_D_0', 'edgeLabel:L_D_E_0', 'flowchart-C-3', 'flowchart-D-7', 'flowchart-E-9']))
   })
 
+  it('lights a subgraph with the subgraphs nested in it, and a nested one alone', () => {
+    expect(lit('flowchart-nested', ['Outer'])).toEqual(sorted(['Inner', 'Outer', 'edge:L_A_B_0', 'edge:L_B_C_0', 'edge:L_C_D_0', 'edgeLabel:L_A_B_0', 'edgeLabel:L_B_C_0', 'edgeLabel:L_C_D_0',
+      'flowchart-A-0', 'flowchart-B-1', 'flowchart-C-2', 'flowchart-D-3']))
+    expect(lit('flowchart-nested', ['Inner'])).toEqual(sorted(['Inner', 'edge:L_C_D_0', 'edgeLabel:L_C_D_0', 'flowchart-C-2', 'flowchart-D-3']))
+  })
+
   it('ignores names it does not know', () => {
     expect(lit('flowchart', ['Draft', 'Z', 'A->Z', 'A'])).toEqual(sorted(['flowchart-A-0']))
   })

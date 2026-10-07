@@ -94,7 +94,9 @@ function graphTargets(root: Element, kind: GraphKind, names: readonly string[]):
     for (const cluster of clusters) {
       if (cluster.getAttribute('data-id') !== name && own(root, cluster) !== name) continue
       litClusters.add(cluster)
-      for (const node of clusterNodes(cluster, nodes.map(item => item.element))) litNodes.add(nodes.find(item => item.element === node)!)
+      const inside = clusterContents(cluster, [...nodes.map(item => item.element), ...clusters])
+      for (const node of nodes) if (inside.includes(node.element)) litNodes.add(node)
+      for (const nested of clusters) if (inside.includes(nested)) litClusters.add(nested)
     }
     const arrow = named.length ? null : EDGE_NAME.exec(name)
     if (!arrow) continue
@@ -122,22 +124,35 @@ function graphTargets(root: Element, kind: GraphKind, names: readonly string[]):
 }
 
 /**
- * The nodes inside a subgraph or composite state. One drawn as its own layout (a composite state) holds its nodes in
- * the nested root it sits in; one drawn in its parent's layout (a flowchart subgraph) holds the nodes whose centre is
- * inside its box.
+ * The nodes and nested subgraphs inside a subgraph or composite state. One drawn as its own layout (a composite state)
+ * holds them in the nested root it sits in; one drawn in its parent's layout (a flowchart subgraph) holds those whose
+ * centre is inside its box.
  */
-function clusterNodes(cluster: Element, nodes: readonly Element[]): Element[] {
+function clusterContents(cluster: Element, candidates: readonly Element[]): Element[] {
   const home = nearestRoot(cluster)
-  if (home && nearestRoot(home)) return nodes.filter(node => home.contains(node))
-  const box = cluster.querySelector('rect')
+  if (home && nearestRoot(home)) return candidates.filter(item => item !== cluster && home.contains(item))
+  const box = boxOf(cluster)
   if (!box) return []
-  const [x, y, width, height] = ['x', 'y', 'width', 'height'].map(name => Number(box.getAttribute(name)))
-  if (![x, y, width, height].every(Number.isFinite)) return []
-  return nodes.filter(node => {
-    if (nearestRoot(node) !== home) return false
-    const centre = translation(node)
-    return !!centre && centre.x >= x! && centre.x <= x! + width! && centre.y >= y! && centre.y <= y! + height!
+  return candidates.filter(item => {
+    if (item === cluster || nearestRoot(item) !== home) return false
+    const centre = centreOf(item)
+    return !!centre && centre.x >= box.x && centre.x <= box.x + box.width && centre.y >= box.y && centre.y <= box.y + box.height
   })
+}
+
+/** A subgraph's box: its first rect, in the layout's coordinates. */
+function boxOf(cluster: Element): { x: number; y: number; width: number; height: number } | null {
+  const rect = cluster.querySelector('rect')
+  if (!rect) return null
+  const [x, y, width, height] = ['x', 'y', 'width', 'height'].map(name => Number(rect.getAttribute(name))) as [number, number, number, number]
+  return [x, y, width, height].every(Number.isFinite) ? { x, y, width, height } : null
+}
+
+/** Where a node or subgraph sits: a node's translation, or the middle of a subgraph's box. */
+function centreOf(element: Element): { x: number; y: number } | null {
+  if (element.matches('g.node')) return translation(element)
+  const box = boxOf(element)
+  return box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null
 }
 
 const NOT_DRAWN = new Set(['style', 'defs', 'title', 'desc', 'marker', 'symbol', 'lineargradient', 'radialgradient', 'filter', 'clippath', 'mask', 'pattern'])
