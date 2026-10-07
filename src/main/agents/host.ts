@@ -58,13 +58,28 @@ export function confirmedSettingsSnapshot(result: AgentHostResult): [Omit<AgentH
 }
 /**
  * What a thread read is for, and what its reader keeps for itself. `beforeSend` is the read immediately before a
- * send: an adapter that can show nothing changed without reading the whole transcript may do that instead (Codex's
- * newest-turn check, ADR-0005), and reads it whole whenever it cannot. Every other read omits it.
+ * send: an adapter brings the thread up to date from what is new (Codex's newest-turn check, ADR-0005), and reads
+ * it whole whenever it cannot show nothing changed. A host above it writes and publishes nothing when the read
+ * changed nothing (#765). Every other read omits it.
  */
 export interface ThreadReadPurpose {
   readonly beforeSend?: boolean
-  /** An explicit Check again may reopen an uncertain Claude answer for a fresh user choice. */
+  /**
+   * The message ID of the send a read before a send is for. That read stands for the adapter's own read at the start
+   * of that send and no other, which the adapter then skips while the thread has not moved (`readsBeforeSend.ts`,
+   * #765). A read before a send without it stands for none.
+   */
+  readonly sendMessageId?: string
+  /**
+   * The read after a host accepted a send, made only to find the provider's echo of the sent message. A host that
+   * already holds the thread newer than it has published (the workspace, between publishes) answers from what it
+   * holds without asking the provider; the caller reads again, whole, when the echo is not there (#765).
+   */
+  readonly afterSend?: boolean
+  /** An explicit Check may reopen a native re-offer for a fresh user choice. */
   readonly retryUncertainAnswers?: boolean
+  /** Restricts an explicit answer Check to the exact request the user selected. */
+  readonly retryUncertainAnswerId?: string
   /**
    * The reader keeps each thread's history from the host's `subscribeEvents` and reads none from what the read
    * hands back, as an activity subscriber that asks for it does. A host that publishes events then hands back
@@ -77,6 +92,8 @@ export interface ThreadReadPurpose {
  * pull request text (ADR-0026). The instruction and the material stay apart so a client that takes a
  * system prompt keeps them apart too, and the material is always something to describe, never to obey.
  */
+/** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
+export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
 export interface ShortTextPrompt { readonly instruction: string; readonly material: string }
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
@@ -121,8 +138,11 @@ export interface ActivitySubscriptionOptions {
 export interface AgentHost {
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
-  /** Inject the host setup tools, which only a host setup thread is given (ADR-0035), before connecting. */
-  useHostSetupTools?(tools: ScopedThreadTools): void
+  /**
+   * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
+   * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.
+   */
+  useThreadTools?(tools: readonly ScopedThreadTools[]): void
   rollbackCapability?(threadId: string): { supported: boolean; reason?: string }
   /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
    * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */
@@ -142,7 +162,7 @@ export interface AgentHost {
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
-  renameThread?(threadId: string, title: string, source?: 'user' | 'generated'): Promise<AgentHostSnapshot>
+  renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
@@ -201,7 +221,9 @@ export interface AgentHost {
   connect(provider?: ProviderId): Promise<AgentHostSnapshot>
   snapshot(provider?: ProviderId): Promise<AgentHostSnapshot>
   /** Refresh only this thread's authoritative history/status, returning the full cached snapshot, with every
-   * thread's messages unless `purpose.historyFromEvents` says the caller reads none from it. A result without
+   * thread's messages unless `purpose.historyFromEvents` says the caller reads none from it. A read with
+   * `purpose.afterSend` may be answered from what a host above the adapter already holds, without asking the
+   * provider (#765). A result without
    * messages may share frozen activity trees, as an activity snapshot does; the provider switch copies it.
    * Native adapters must not join a refresh blocked on another thread or model discovery. */
   refreshThread?(threadId: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot>

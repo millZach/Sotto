@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../../shared/hosts'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
-import { useHostsModalOpen } from './HostDialog'
+import { useHostsModalOpen } from './HostsModal'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
 import './hosts.css'
 
@@ -99,17 +99,25 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   }
   if (!prompt) return null
   const hostKey = prompt.kind === 'host-key'
+  // An admin connection's sign-in (ADR-0053) is for a press the user made, not the host's own connect: stopping it
+  // changes nothing on the host and leaves the switch alone.
+  const admin = host.adminSignIn === true
+  const why = admin ? `Sotto is signing in to ${host.name} for a change you asked for there` : `Sotto is connecting to ${host.name}`
   return <ConfirmationDialog key={savedKey} danger={false} confirmFirst submitOnEnter={!hostKey} initialFocus={hostKey ? hostKeyRef : answerRef} fallbackFocusRef={fallbackFocusRef}
     title={hostKey ? `Trust the SSH host ${host.name}?` : `Unlock the SSH connection to ${host.name}`}
-    confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Switch it off"
+    confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel={admin ? 'Stop signing in' : 'Switch it off'}
     onDismiss={dismiss}
-    onCancel={() => { setAnswer(''); void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`) }}
+    onCancel={() => {
+      setAnswer('')
+      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, `Sotto could not stop signing in to ${host.name}. Try again in Settings > Hosts.`)
+      else void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`)
+    }}
     // The dialog stays until main clears the question, which it does once SSH has the answer.
     onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Switch the host off and on to try again.'); setAnswer(''); return false }}
     {...(error ? { failureMessage: error } : {})}
     description={<div className="hosts-dialog__fields">
-      <p>{hostKey ? `Sotto is connecting to ${host.name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
-        : `Sotto is connecting to ${host.name}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`}</p>
+      <p>{hostKey ? `${why}, and SSH has not seen this host before. Check its key, then trust it to continue.`
+        : `${why}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`}</p>
       <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? 'SSH host key' : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
       {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
         <input ref={answerRef} id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}

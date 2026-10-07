@@ -20,6 +20,17 @@ function projectHostId(state: AgentState, project: AgentProject): string | undef
   return project.hostId ?? parseHostEntityKey(project.id)?.hostId ?? state.hostId
 }
 
+/**
+ * A remote host's thread as the desktop router publishes it: what reads `remoteHost` (the cloud iPhone, the browser,
+ * the terminal) must not treat the draft as this computer's in the moment before main's state carries it.
+ */
+function draftHost(state: AgentState, project: AgentProject): Pick<AgentThread, 'hostId' | 'hostLabel' | 'remoteHost'> | undefined {
+  const hostId = projectHostId(state, project)
+  const connection = hostId === undefined ? undefined : state.connections?.find(item => item.hostId === hostId)
+  if (connection === undefined) return undefined
+  return { hostId, remoteHost: connection.kind === 'remote', ...((state.connections?.length ?? 0) > 1 ? { hostLabel: connection.name } : {}) }
+}
+
 /** What creation says when Settings would not say which working copy a thread starts in. */
 export const WORKING_COPY_READ_ERROR = 'Could not read your working-copy default from Settings → Agents. Check your connection and try again.'
 
@@ -84,7 +95,7 @@ export async function beginNewThread(state: AgentState, command: AgentConnection
   const title = 'New thread'
   const thread = draftThread({ id: threadId, projectId: project.id, title, modelId, workingCopy, ...worktreeChoices,
     ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
-    reasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode })
+    reasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode, host: draftHost(state, project) })
   const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', managed, workingCopy, ...worktreeChoices })
     .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
   return { thread, created }

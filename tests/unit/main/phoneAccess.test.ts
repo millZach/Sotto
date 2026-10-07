@@ -8,24 +8,39 @@ import type { HostService } from '../../../src/main/agents/hostService'
 import { PhoneAccess, type PhoneAccessOptions, type PhoneAccessTailscale } from '../../../src/main/phones/phoneAccess'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { serveTarget, type ServeConfig, type ServeResult, type TailscaleStatus } from '../../../src/main/phones/tailscale'
+import { HOST_START_RETRY_WINDOW_MS } from '../../../src/host/phones'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-phone-access-')) })
 afterEach(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-phone-access-')) await rm(root, { recursive: true, force: true }) })
 
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
-/** A stand-in Tailscale: its Serve setting is one proxy on 8443, or someone else's. */
-function fakeTailscale(options: { status?: TailscaleStatus; other?: string; serve?: ServeResult } = {}) {
+/** A stand-in Tailscale: its Serve settings, one proxy per port (8443 or 10000), Sotto's or someone else's. */
+function fakeTailscale(options: { status?: TailscaleStatus; other?: string; others?: Record<number, string>; serve?: ServeResult } = {}) {
   let status: TailscaleStatus = options.status ?? { state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' }
-  let proxy: string | undefined = options.other
+  const proxies = new Map<number, string>(Object.entries(options.others ?? {}).map(([port, target]) => [Number(port), target]))
+  if (options.other) proxies.set(8443, options.other)
   const calls: string[] = []
+  // 8443 keeps the call names the tests have always read; another port names itself.
+  const on = (port: number) => port === 8443 ? '' : ` on ${port}`
   const tailscale: PhoneAccessTailscale = {
     status: vi.fn(async () => { calls.push('status'); return status }),
-    serveStatus: vi.fn(async (): Promise<ServeConfig> => { calls.push('serve-status'); return proxy ? { TCP: { 8443: { HTTPS: true } }, Web: { [`${DNS}:8443`]: { Handlers: { '/': { Proxy: proxy } } } } } : {} }),
-    serve: vi.fn(async (_port: number, loopback: number): Promise<ServeResult> => { calls.push(`serve ${loopback}`); const result = options.serve ?? { ok: true }; if (result.ok) proxy = serveTarget(loopback); return result }),
-    unserve: vi.fn(async () => { calls.push('unserve'); proxy = undefined; return true }),
+    serveStatus: vi.fn(async (): Promise<ServeConfig> => {
+      calls.push('serve-status')
+      if (proxies.size === 0) return {}
+      const entries = [...proxies]
+      return {
+        TCP: Object.fromEntries(entries.map(([port]) => [String(port), { HTTPS: true }])),
+        Web: Object.fromEntries(entries.map(([port, target]) => [`${DNS}:${port}`, { Handlers: { '/': { Proxy: target } } }])),
+      }
+    }),
+    serve: vi.fn(async (port: number, loopback: number): Promise<ServeResult> => { calls.push(`serve ${loopback}${on(port)}`); const result = options.serve ?? { ok: true }; if (result.ok) proxies.set(port, serveTarget(loopback)); return result }),
+    unserve: vi.fn(async (port: number) => { calls.push(`unserve${on(port)}`); proxies.delete(port); return true }),
   }
-  return { tailscale, calls, proxy: () => proxy, setStatus: (next: TailscaleStatus) => { status = next }, setOther: (target: string) => { proxy = target } }
+  return {
+    tailscale, calls, proxy: (port = 8443) => proxies.get(port),
+    setStatus: (next: TailscaleStatus) => { status = next }, setOther: (target: string, port = 8443) => { proxies.set(port, target) },
+  }
 }
 /** A stand-in listener: its port, the clients connected to it, and whether it was closed. */
 function fakeServer(options: { refusePort?: number } = {}) {
@@ -45,7 +60,7 @@ function create(options: Partial<PhoneAccessOptions> & { tailscale: PhoneAccessT
   const access = new PhoneAccess({ directory: root, service: {} as HostService, settings: () => current, openExternal: vi.fn(async () => undefined), hostname: () => 'LAPTOP', retryMs: 60_000, ...options })
   return { access, settings: current }
 }
-const record = async () => JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8')) as { port: number | null; mapped: boolean }
+const record = async () => JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8')) as { port: number | null; mapped: boolean; servePort?: number }
 
 it('turns on: checks Tailscale, opens a loopback listener with no admin routes, then asks Serve for 8443', async () => {
   const fake = fakeTailscale(), server = fakeServer()
@@ -56,6 +71,30 @@ it('turns on: checks Tailscale, opens a loopback listener with no admin routes, 
   expect(access.get()).toMatchObject({ enabled: true, phase: 'on', tailscale: { status: 'ok', dnsName: DNS }, serve: { status: 'ok' }, address: `https://${DNS}:8443`, computerName: 'laptop-russh2j5' })
   expect(await record()).toEqual({ port: 41000, mapped: true })
   await access.close()
+})
+
+it('honours tailnetConnections only when told which clients are desktops, so a desktop’s settings file never raises its phone listener', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  // The desktop's own phone access: a hand-edited settings file naming the headless host's setting changes nothing.
+  const desktop = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  await desktop.access.start()
+  expect(server.started).toEqual([])
+  expect(fake.calls).toEqual([])
+  expect(desktop.access.get()).toMatchObject({ enabled: false, phase: 'off' })
+  await desktop.access.close()
+
+  // A headless host's, told its desktops: the listener and Serve come up for them with phone access off.
+  const host = create({ tailscale: fake.tailscale, startServer: server.startServer, listener: { desktops: { refresh: async () => undefined, has: () => false } } },
+    { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  // A watcher, which the host's descriptor follows, is told the brief state as each change lands.
+  const briefs: unknown[] = []
+  host.access.watch(brief => briefs.push(brief))
+  await host.access.start()
+  expect(server.started).toHaveLength(1)
+  expect(host.access.get()).toMatchObject({ enabled: false, phase: 'on' })
+  expect(host.access.brief()).toEqual({ enabled: false, phase: 'on', address: `https://${DNS}:8443`, phones: 0 })
+  expect(briefs.at(-1)).toEqual(host.access.brief())
+  await host.access.close()
 })
 
 it('turns off: removes only its own Serve setting and closes the listener, so phones lose their sockets', async () => {
@@ -72,8 +111,24 @@ it('turns off: removes only its own Serve setting and closes the listener, so ph
   expect(access.get()).toMatchObject({ address: null, tailscale: { status: 'waiting' }, serve: { status: 'waiting' } })
 })
 
-it('leaves another app’s setting on 8443 alone, and says the port is taken', async () => {
+it('leaves another app’s setting on 8443 alone and serves phones on 10000 instead', async () => {
   const fake = fakeTailscale({ other: 'http://127.0.0.1:3773' }), server = fakeServer()
+  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000 on 10000'])
+  expect(access.get()).toMatchObject({ phase: 'on', serve: { status: 'ok' }, address: `https://${DNS}:10000`, servePort: 10000 })
+  expect(await record()).toEqual({ port: 41000, mapped: true, servePort: 10000 })
+  settings.phoneAccess = false
+  access.settingsChanged()
+  await vi.waitFor(() => expect(access.get().phase).toBe('off'))
+  expect(fake.calls.slice(3)).toEqual(['serve-status', 'unserve on 10000'])
+  expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(fake.proxy(10000)).toBeUndefined()
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
+})
+
+it('says the ports are taken, and changes nothing, when other apps hold both 8443 and 10000', async () => {
+  const fake = fakeTailscale({ others: { 8443: 'http://127.0.0.1:3773', 10000: 'http://127.0.0.1:3774' } }), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
   await access.start()
   expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'ok' }, serve: { status: 'failed', reason: 'port-taken' }, address: null })
@@ -84,6 +139,17 @@ it('leaves another app’s setting on 8443 alone, and says the port is taken', a
   await vi.waitFor(() => expect(access.get().phase).toBe('off'))
   expect(fake.tailscale.unserve).not.toHaveBeenCalled()
   expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(fake.proxy(10000)).toBe('http://127.0.0.1:3774')
+})
+
+it('removes a setting a crash left on 10000 at the next start, and never touches 8443', async () => {
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: true, servePort: 10000 }))
+  const fake = fakeTailscale({ others: { 8443: 'http://127.0.0.1:3773', 10000: serveTarget(41000) } }), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '' })
+  await access.start()
+  expect(fake.calls).toEqual(['serve-status', 'unserve on 10000'])
+  expect(fake.proxy()).toBe('http://127.0.0.1:3773')
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
 })
 
 it('does not remove a setting someone else put on 8443 after Sotto’s, when phone access turns off', async () => {
@@ -108,6 +174,62 @@ it('says Tailscale is not running, changes nothing, and looks again later', asyn
     expect(fake.tailscale.serveStatus).not.toHaveBeenCalled()
     expect(server.started).toEqual([])
     fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+// A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+it('looks again at a Tailscale that is missing during a host\'s start window, until it is there', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('stops looking at a missing Tailscale once the start window has passed, and leaves it to Try again', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    await vi.advanceTimersByTimeAsync(HOST_START_RETRY_WINDOW_MS + 60_000)
+    const looks = vi.mocked(fake.tailscale.status).mock.calls.length
+    expect(looks).toBeGreaterThan(1)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(vi.mocked(fake.tailscale.status).mock.calls.length).toBe(looks)
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await access.close()
+    // Without a window, as on the desktop, a missing Tailscale waits for Try again from the start.
+    const later = fakeTailscale({ status: { state: 'missing' } })
+    const { access: desktop } = create({ tailscale: later.tailscale, startServer: fakeServer().startServer })
+    await desktop.start()
+    later.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(desktop.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await desktop.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('looks again at a Serve setting that failed during a start window, every retry, until it works', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(vi.mocked(fake.tailscale.serve).mock.calls.length).toBe(2))
+    await vi.waitFor(() => expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } }))
+    vi.mocked(fake.tailscale.serve).mockImplementation(async () => ({ ok: true }))
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(access.get().phase).toBe('on'))
     await access.close()
@@ -176,6 +298,36 @@ it('removes the Serve setting and closes the listener on quit, and keeps the set
   expect(server.started[0]!.closed).toBe(true)
   expect(settings.phoneAccess).toBe(true)
   expect(await record()).toEqual({ port: 41000, mapped: false })
+})
+
+it('serves phones on 10000 again after a restart, even once 8443 is free, so a phone paired there keeps reaching it', async () => {
+  const fake = fakeTailscale({ other: 'http://127.0.0.1:3773' }), server = fakeServer()
+  const first = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await first.access.start()
+  expect(first.access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:10000` })
+  await first.access.close()
+  expect(await record()).toEqual({ port: 41000, mapped: false, servePort: 10000 })
+  // The other app let go of 8443 while Sotto was closed.
+  fake.tailscale.unserve(8443)
+  fake.calls.length = 0
+  const next = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await next.access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000 on 10000'])
+  expect(next.access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:10000`, servePort: 10000 })
+  expect(await record()).toEqual({ port: 41000, mapped: true, servePort: 10000 })
+  await next.access.close()
+})
+
+it('falls back to 8443 after a restart when another app took the 10000 it last used', async () => {
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: false, servePort: 10000 }))
+  const fake = fakeTailscale({ others: { 10000: 'http://127.0.0.1:3774' } }), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status', 'serve 41000'])
+  expect(access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:8443`, servePort: 8443 })
+  expect(fake.proxy(10000)).toBe('http://127.0.0.1:3774')
+  expect(await record()).toEqual({ port: 41000, mapped: true })
+  await access.close()
 })
 
 it('serves the name phones show: the setting, or the Tailscale machine name', async () => {

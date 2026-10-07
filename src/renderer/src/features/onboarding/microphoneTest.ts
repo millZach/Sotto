@@ -1,3 +1,9 @@
+import {
+  AudioRecorder,
+  AudioRecorderError,
+  type AudioRecorderOptions,
+} from '../../audio/audioRecorder'
+import { ensureMicrophoneAccess } from '../../audio/ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from '../../audio/microphoneConstraints'
 
 export type MicrophoneTestState =
@@ -25,6 +31,10 @@ interface AudioNodeLike {
   disconnect(): void
 }
 
+interface GainLike extends AudioNodeLike {
+  gain: { value: number }
+}
+
 interface AnalyserLike extends AudioNodeLike {
   fftSize: number
   getFloatTimeDomainData(samples: Float32Array): void
@@ -32,13 +42,16 @@ interface AnalyserLike extends AudioNodeLike {
 
 interface AudioContextLike {
   readonly state?: string
+  readonly destination: AudioNodeLike
   createMediaStreamSource(stream: MediaStreamLike): AudioNodeLike
   createAnalyser(): AnalyserLike
+  createGain(): GainLike
   resume?(): Promise<void>
   close(): Promise<void>
 }
 
 export interface MicrophoneTestDependencies {
+  readonly ensureAccess?: () => Promise<boolean>
   readonly getUserMedia: (constraints: MicrophoneTestConstraints) => Promise<MediaStreamLike>
   readonly createAudioContext: () => AudioContextLike
   readonly requestFrame: (callback: () => void) => number
@@ -64,6 +77,7 @@ function productionDependencies(): MicrophoneTestDependencies {
     cancelAnimationFrame(handle: number): void
   }
   return {
+    ensureAccess: () => ensureMicrophoneAccess(),
     getUserMedia: (constraints) => {
       const mediaDevices = browser.navigator.mediaDevices
       return mediaDevices === undefined
@@ -89,6 +103,7 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
   private context: AudioContextLike | null = null
   private source: AudioNodeLike | null = null
   private analyser: AnalyserLike | null = null
+  private mute: GainLike | null = null
   private frame: number | null = null
   private generation = 0
   private trackListeners: Array<{ track: MediaTrackLike; listener: () => void }> = []
@@ -103,27 +118,57 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     let context: AudioContextLike | null = null
     let source: AudioNodeLike | null = null
     let analyser: AnalyserLike | null = null
+    let mute: GainLike | null = null
     try {
+      // Open the context in this turn, before getUserMedia. macOS shows a TCC
+      // dialog that consumes the click's user gesture; a context created after
+      // that dialog stays suspended and the analyser reports silence.
+      context = this.dependencies.createAudioContext()
+      this.context = context
+      if (context.state === 'suspended') await context.resume?.()
+      if (generation !== this.generation) {
+        await this.abandon(context)
+        return 'error'
+      }
+      // Chromium's check handler cannot prompt: false is a denial. Ask the OS
+      // here so getUserMedia runs only after a grant.
+      const allowed = await (this.dependencies.ensureAccess?.() ?? Promise.resolve(true))
+      if (generation !== this.generation) {
+        await this.abandon(context)
+        return 'error'
+      }
+      if (!allowed) {
+        await this.abandon(context)
+        return 'denied'
+      }
       stream = await this.dependencies.getUserMedia(microphoneConstraints(selectedDeviceId))
       if (generation !== this.generation) {
         this.stopTracks(stream)
+        await this.abandon(context)
         return 'error'
       }
-      context = this.dependencies.createAudioContext()
       if (context.state === 'suspended') await context.resume?.()
       if (generation !== this.generation) {
         this.stopTracks(stream)
-        await this.safeClose(context)
+        await this.abandon(context)
         return 'error'
       }
       source = context.createMediaStreamSource(stream)
       analyser = context.createAnalyser()
       analyser.fftSize = 512
+      mute = context.createGain()
+      mute.gain.value = 0
+      // Chromium does not pull a MediaStream through an analyser unless the
+      // node is in a graph that reaches destination. Mute the tap so the test
+      // cannot play back through the speakers. Dictation uses the same shape.
       source.connect(analyser)
+      analyser.connect(mute)
+      mute.connect(context.destination)
       this.stream = stream
       this.context = context
       this.source = source
       this.analyser = analyser
+      this.mute = mute
       for (const track of stream.getTracks()) {
         const listener = (): void => {
           if (generation !== this.generation) return
@@ -138,8 +183,9 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     } catch (error: unknown) {
       this.safeDisconnect(source)
       this.safeDisconnect(analyser)
+      this.safeDisconnect(mute)
       if (stream !== null) this.stopTracks(stream)
-      if (context !== null) await this.safeClose(context)
+      await this.abandon(context)
       if (generation === this.generation) this.clearOwnedResources()
       return classifyMicrophoneFailure(error)
     }
@@ -154,6 +200,7 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     const frame = this.frame
     const analyser = this.analyser
     const source = this.source
+    const mute = this.mute
     const stream = this.stream
     const context = this.context
     this.clearOwnedResources()
@@ -162,6 +209,7 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     }
     this.safeDisconnect(source)
     this.safeDisconnect(analyser)
+    this.safeDisconnect(mute)
     if (stream !== null) this.stopTracks(stream)
     if (context !== null) await this.safeClose(context)
   }
@@ -196,6 +244,7 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
     this.frame = null
     this.analyser = null
     this.source = null
+    this.mute = null
     this.stream = null
     this.context = null
   }
@@ -215,5 +264,73 @@ export class BrowserMicrophoneTest implements MicrophoneTestController {
 
   private async safeClose(context: AudioContextLike): Promise<void> {
     try { await context.close() } catch { /* test resources are best-effort */ }
+  }
+
+  /** Close a context only if this instance still owns it; stop() may have already. */
+  private async abandon(context: AudioContextLike | null): Promise<void> {
+    if (context === null || this.context !== context) return
+    this.context = null
+    await this.safeClose(context)
+  }
+}
+
+type LevelRecorder = {
+  start(): Promise<void>
+  cancel(): Promise<void>
+}
+
+/** Live meter used in the app: same capture graph as dictation, not AnalyserNode. */
+export class WorkletMicrophoneTest implements MicrophoneTestController {
+  private recorder: LevelRecorder | null = null
+  private generation = 0
+
+  constructor(
+    private readonly createRecorder: (options: AudioRecorderOptions) => LevelRecorder = (options) =>
+      new AudioRecorder(options),
+  ) {}
+
+  async start(onLevel: (level: number) => void, selectedDeviceId?: string, onEnded?: (outcome: 'missing') => void): Promise<MicrophoneTestOutcome> {
+    const generation = ++this.generation
+    await this.stopRecorder()
+    if (generation !== this.generation) return 'error'
+    const recorder: LevelRecorder = this.createRecorder({
+      onLevel,
+      levelsOnly: true,
+      // The recorder has already released the input; drop it and say so once.
+      onDeviceUnavailable: () => {
+        if (generation !== this.generation || this.recorder !== recorder) return
+        this.recorder = null
+        onEnded?.('missing')
+      },
+      ...(selectedDeviceId ? { selectedDeviceId } : {}),
+    })
+    this.recorder = recorder
+    try {
+      await recorder.start()
+      if (generation !== this.generation) {
+        await this.stopRecorder()
+        return 'error'
+      }
+      return 'ready'
+    } catch (error: unknown) {
+      if (this.recorder === recorder) this.recorder = null
+      await recorder.cancel().catch(() => undefined)
+      if (generation !== this.generation) return 'error'
+      if (error instanceof AudioRecorderError) {
+        return classifyMicrophoneFailure({ name: error.startFailureName ?? error.name })
+      }
+      return classifyMicrophoneFailure(error)
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.generation += 1
+    await this.stopRecorder()
+  }
+
+  private async stopRecorder(): Promise<void> {
+    const recorder = this.recorder
+    this.recorder = null
+    if (recorder !== null) await recorder.cancel().catch(() => undefined)
   }
 }

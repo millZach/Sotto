@@ -44,6 +44,16 @@ while IFS="$(printf '\t')" read -r size device_type runtime; do
         grep -qi 'accessibility-large' "$run_dir/large-content-size.txt"
     fi
     xcrun simctl status_bar "$device_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+    # Warm the freshly booted simulator: its first launch of the app can outlast XCTest's launch deadline and fail
+    # whichever journey runs first. Install and launch the app verify.sh built once, with the fixture, then quit it.
+    app=.build-native/Build/Products/Debug-iphonesimulator/Sotto.app
+    if [ -d "$app" ]; then
+        xcrun simctl install "$device_id" "$app" || echo "Warm-up: installing the app on the $size simulator failed; the journeys install it again."
+        xcrun simctl launch "$device_id" com.millzach.sotto.ios --ui-fixture >/dev/null || echo "Warm-up: launching the app on the $size simulator failed."
+        # The first launch's own work; the journeys' launches wait for the app on their own.
+        sleep 8
+        xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
+    fi
     result="$run_dir/$size.xcresult"
     status=0
     xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Debug -sdk iphonesimulator \

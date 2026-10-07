@@ -33,13 +33,12 @@ import {
   type DictationRecorder,
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
-import { captureDictationDestination } from '../features/dictation/dictationDestination'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
 import { createUnconfiguredTranscriber, OpenRouterTranscriber, type TranscriptionBridge } from '../transcription/openRouterTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'chats' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'history' | 'agents' | 'threads' | 'memory' | 'settings' | 'help'
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
@@ -54,8 +53,15 @@ export interface AppController {
   start(): Promise<void>
   stop(): Promise<void>
   toggle(): Promise<void>
+  /** Stops listening or processing, or returns a cancelled Try again to its kept recording. */
   cancel(): Promise<void>
+  /** Sends a kept recording again. */
+  retry?(): Promise<void>
+  /** Clears an error, letting go of a kept recording. */
+  dismiss?(): Promise<void>
   prewarm?(): Promise<void>
+  /** Tells main the new controller holds no session, so a widget left over from a reload returns to idle. */
+  announceIdle?(): void
   dispose(): void
 }
 
@@ -106,7 +112,6 @@ export function createProductionDictationController(
     cuePlayer: factories.createCuePlayer(),
     getSettings: bindings.getSettings,
     deliverOutput: bindings.deliverOutput,
-    captureOutput: captureDictationDestination,
     addHistory: bindings.addHistory,
     ...(bindings.retainOutput ? { retainOutput: bindings.retainOutput } : {}),
     publishWidgetState: bindings.publishWidgetState,
@@ -126,6 +131,8 @@ export interface AppActions {
   stop(): Promise<void>
   toggle(): Promise<void>
   cancel(): Promise<void>
+  retry(): Promise<void>
+  dismiss(): Promise<void>
   navigate(destination: AppNavigation): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
@@ -477,6 +484,7 @@ export function AppProvider({
           controller = createController(bindings)
           localController = controller
           controllerRef.current = controller
+          controller.announceIdle?.()
           unsubscribeSettings = bridge.onSettingsChanged((authoritativeSettings) => {
             if (!isCurrentGeneration(generation) || localController !== controller) return
             ++settingsVersionRef.current
@@ -489,6 +497,8 @@ export function AppProvider({
               case 'start': void invokeController(controller, (value) => value.start()); break
               case 'stop': void invokeController(controller, (value) => value.stop()); break
               case 'cancel': void invokeController(controller, (value) => value.cancel()); break
+              case 'retry': void invokeController(controller, (value) => value.retry?.() ?? Promise.resolve()); break
+              case 'dismiss': void invokeController(controller, (value) => value.dismiss?.() ?? Promise.resolve()); break
             }
           })
           setDictation(controller.getState())
@@ -540,6 +550,8 @@ export function AppProvider({
     stop: () => invokeController(controllerRef.current, (controller) => controller.stop()),
     toggle: () => invokeController(controllerRef.current, (controller) => controller.toggle()),
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
+    retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
+    dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: setNavigation,
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)

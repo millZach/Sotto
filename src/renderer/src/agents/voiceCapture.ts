@@ -1,5 +1,6 @@
 import type { AgentVoiceTiming } from '../../../shared/agents'
 import { calculateRms, resampleMono } from '../audio/audioMath'
+import { ensureMicrophoneAccess } from '../audio/ensureMicrophoneAccess'
 import {
   AUDIO_CAPTURE_PROCESSOR_NAME,
   LEVEL_EMIT_INTERVAL_MS,
@@ -51,10 +52,7 @@ interface CaptureSession {
   ended?: () => void
 }
 
-interface VoiceAudioContext extends AudioContextAdapter {
-  readonly state?: string
-  resume?(): Promise<void>
-}
+type VoiceAudioContext = AudioContextAdapter
 
 interface VoiceBrowser {
   readonly document: { readonly baseURI: string }
@@ -100,6 +98,12 @@ export class BrowserVoiceCapture implements VoiceCapture {
       session.gain.gain.value = 0
       session.worklet.connect(session.gain)
       session.gain.connect(context.destination)
+      if (!await ensureMicrophoneAccess()) {
+        // Named as getUserMedia names a refusal, so callers classify it as denied.
+        const error = new Error('Microphone access is blocked.')
+        error.name = 'NotAllowedError'
+        throw error
+      }
       session.stream = await browser.navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: this.options.selectedDeviceId === undefined

@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os'
 import { tailscaleInvoker, type TailscaleInvoke } from '../phones/tailscale'
 import type { SshHostSuggestion } from '../../shared/hosts'
 import { TAILSCALE_DOWNLOAD_URL, type HostDevice, type HostDeviceList, type TailscaleConnectOutcome, type TailscaleSummary } from '../../shared/hostDevices'
@@ -22,7 +23,8 @@ export interface TailscalePeer {
   readonly lastSeen?: string
   readonly addresses: readonly string[]
 }
-export interface TailscaleReading { readonly summary: TailscaleSummary; readonly peers: readonly TailscalePeer[] }
+/** `self` is this computer's full MagicDNS name and tailnet addresses, when it is running: the names that can only be this computer. */
+export interface TailscaleReading { readonly summary: TailscaleSummary; readonly peers: readonly TailscalePeer[]; readonly self?: readonly string[] }
 
 const OFF: TailscaleReading = { summary: { state: 'off' }, peers: [] }
 const DNS_NAME = /^[A-Za-z0-9.-]{1,253}$/u
@@ -31,6 +33,10 @@ const ADDRESS = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-f:]{2,39})$/iu
 const MULLVAD = /\.mullvad\.ts\.net$/iu
 /** Operating systems that cannot run the host. */
 const PHONES = new Set(['ios', 'android'])
+/** Loopback names and addresses: they reach this computer, or a VM through a port forwarded to it. */
+const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|::1|::ffff:127(?:\.\d{1,3}){3})$/u
+/** Git hosting services people reach over SSH for repositories; an alias to one is an account there, not a machine that can run the host. */
+const GIT_SERVICES = new Set(['github.com', 'ssh.github.com', 'gitlab.com', 'altssh.gitlab.com', 'bitbucket.org', 'altssh.bitbucket.org', 'ssh.dev.azure.com', 'vs-ssh.visualstudio.com', 'codeberg.org', 'git.sr.ht'])
 const OS_WORDS: Record<string, string> = { linux: 'Linux', windows: 'Windows', macos: 'macOS', ios: 'iOS', android: 'Android', freebsd: 'FreeBSD', openbsd: 'OpenBSD', illumos: 'illumos', tvos: 'tvOS' }
 
 const text = (value: unknown, limit = 253): string => typeof value === 'string' ? value.trim().slice(0, limit) : ''
@@ -70,7 +76,9 @@ export function readTailscaleStatus(output: string): TailscaleReading {
   const self = status.User?.[String(status.Self?.UserID)]
   const loginName = text(self?.LoginName, 128)
   const user = text(self?.DisplayName, 128) || loginName.split('@')[0]!
-  return { summary: { state: 'running', user, loginName, deviceCount: peers.length }, peers }
+  const thisComputer = peer(status.Self)
+  const own = thisComputer ? [...new Set([thisComputer.dnsName, ...thisComputer.addresses].filter(Boolean).map(lower))] : []
+  return { summary: { state: 'running', user, loginName, deviceCount: peers.length }, peers, ...(own.length ? { self: own } : {}) }
 }
 
 const lower = (value: string): string => value.toLowerCase().replace(/\.$/u, '')
@@ -98,10 +106,22 @@ function peerDevice(item: TailscalePeer): Draft {
  * and Sotto connects through the first such alias so the user's user and key settings apply. A known host that is
  * one of a device's names only adds its tag. Usable devices come first (online tailnet devices by name,
  * then the configuration in the order it is written, then known hosts); then the offline devices, most
- * recently seen first, and phones.
+ * recently seen first, and phones. An SSH entry that goes to this computer, or to a Git service such as
+ * github.com, is listed but cannot be picked, with the reason.
  */
-export function mergeDevices(reading: TailscaleReading, suggestions: readonly SshHostSuggestion[]): HostDevice[] {
+export function mergeDevices(reading: TailscaleReading, suggestions: readonly SshHostSuggestion[], thisComputer: readonly string[] = []): HostDevice[] {
   const peers = reading.peers.map(item => ({ device: peerDevice(item), aliased: false }))
+  // An SSH entry is this computer when where it goes is one of this computer's addresses or its full tailnet name.
+  // A bare host name never counts, the alias least of all: two machines that kept a default name such as pop-os
+  // share it, and only a lookup could say which one answers. Loopback never counts either: a VM such as Colima,
+  // Lima or WSL is reached through a port forwarded to it, and is a machine of its own.
+  // A jump is the other exception for an address. `ProxyJump bastion` with `HostName 192.168.1.10` connects to
+  // that address from the bastion, which can be a different machine. Any `ProxyCommand` counts the same way, because
+  // the command decides where the connection goes. The full tailnet name still names this computer, jump or not.
+  // A Git service is that destination, not the alias: an entry named github.com can go to an ordinary computer.
+  const own = new Set([...(reading.self ?? []), ...thisComputer].map(lower).filter(name => !LOOPBACK.test(name)))
+  const unusable = (goesTo: string, jump = false): HostDevice['unavailable'] =>
+    own.has(goesTo) && !(jump && ADDRESS.test(goesTo)) ? 'this-computer' : GIT_SERVICES.has(goesTo) ? 'git-service' : undefined
   const configured: HostDevice[] = []
   const known: HostDevice[] = []
   for (const suggestion of suggestions) {
@@ -116,7 +136,9 @@ export function mergeDevices(reading: TailscaleReading, suggestions: readonly Ss
         match.device.names = [...new Set([...match.device.names, lower(suggestion.alias)])]
         continue
       }
-      configured.push({ target: suggestion.alias, name: suggestion.alias, sshConfiguration: true, names: [...new Set([suggestion.alias, suggestion.hostname ?? ''].filter(Boolean).map(lower))], ...(suggestion.detail ? { detail: suggestion.detail } : {}) })
+      const names = [...new Set([suggestion.alias, suggestion.hostname ?? ''].filter(Boolean).map(lower))]
+      const unavailable = unusable(goesTo, suggestion.jump === true)
+      configured.push({ target: suggestion.alias, name: suggestion.alias, sshConfiguration: true, names, ...(suggestion.detail ? { detail: suggestion.detail } : {}), ...(unavailable ? { unavailable } : {}) })
       continue
     }
     const match = peers.find(item => item.device.names.includes(lower(suggestion.alias)))
@@ -126,14 +148,16 @@ export function mergeDevices(reading: TailscaleReading, suggestions: readonly Ss
       if (suggestion.port && !match.aliased) match.device.port = suggestion.port
       continue
     }
-    known.push({ target: suggestion.alias, name: suggestion.alias, knownHost: true, names: [lower(suggestion.alias)], ...(suggestion.port ? { port: suggestion.port } : {}), ...(suggestion.detail ? { detail: suggestion.detail } : {}) })
+    const unavailable = unusable(lower(suggestion.alias))
+    known.push({ target: suggestion.alias, name: suggestion.alias, knownHost: true, names: [lower(suggestion.alias)], ...(suggestion.port ? { port: suggestion.port } : {}), ...(suggestion.detail ? { detail: suggestion.detail } : {}), ...(unavailable ? { unavailable } : {}) })
   }
   const byName = (left: HostDevice, right: HostDevice): number => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
   const devices: HostDevice[] = peers.map(item => item.device)
   const online = devices.filter(item => !item.unavailable).sort(byName)
   const offline = devices.filter(item => item.unavailable === 'offline').sort((left, right) => (right.tailscale?.lastSeen ?? '').localeCompare(left.tailscale?.lastSeen ?? '') || byName(left, right))
   const phones = devices.filter(item => item.unavailable === 'phone').sort(byName)
-  return [...online, ...configured, ...known, ...offline, ...phones]
+  const setup = [...configured, ...known]
+  return [...online, ...setup.filter(item => !item.unavailable), ...offline, ...phones, ...setup.filter(item => item.unavailable)]
 }
 
 /** The sign-in page `tailscale up` prints, taken only once whitespace ends it so a half-printed URL is never opened. */
@@ -148,6 +172,15 @@ export interface HostTailscaleOptions {
   /** The SSH configuration and known hosts, read on each request so an alias added a moment ago is listed. */
   readonly suggestions: () => Promise<SshHostSuggestion[]>
   readonly openExternal: (url: string) => Promise<void>
+  /** This computer's own addresses off the tailnet, read when Add host asks. */
+  readonly thisComputer?: () => readonly string[]
+}
+
+/** The addresses of this computer's network interfaces, or none when the system will not say. */
+function localAddresses(): string[] {
+  try {
+    return Object.values(networkInterfaces()).flatMap(entries => (entries ?? []).map(entry => entry.address)).filter(Boolean)
+  } catch { return [] }
 }
 
 /** One `tailscale up`, from the press that started it until the program ends. */
@@ -179,7 +212,10 @@ export class HostTailscale {
 
   async devices(): Promise<HostDeviceList> {
     const [reading, suggestions] = await Promise.all([this.read(), this.options.suggestions().catch(() => [])])
-    return { tailscale: reading.summary, devices: mergeDevices(reading, suggestions) }
+    // Without this computer's addresses only its full tailnet name marks it, which still leaves the list usable.
+    let thisComputer: readonly string[] = []
+    try { thisComputer = (this.options.thisComputer ?? localAddresses)() } catch { /* listed without them */ }
+    return { tailscale: reading.summary, devices: mergeDevices(reading, suggestions, thisComputer) }
   }
 
   /**

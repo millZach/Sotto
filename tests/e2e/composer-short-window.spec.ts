@@ -14,7 +14,7 @@ const agents = (page: Page) => page.evaluate(async () => window.sotto!.agents!.g
 
 async function start(launched: LaunchedSotto): Promise<void> {
   await launched.page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'teal' })
+    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'teal', threadTitles: false })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })

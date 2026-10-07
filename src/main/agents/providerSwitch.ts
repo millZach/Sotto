@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
+import { sameSnapshot } from './sameSnapshot'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
@@ -63,8 +64,8 @@ export class ConfiguredProviderHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useBrowserTools?.(tools)
   }
-  useHostSetupTools(tools: ScopedThreadTools): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useHostSetupTools?.(tools)
+  useThreadTools(tools: readonly ScopedThreadTools[]): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useThreadTools?.(tools)
   }
   useThreadHistory(source: ThreadHistorySource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
@@ -256,7 +257,11 @@ export class ConfiguredProviderHost implements AgentHost {
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
     const whole = await this.whole(id, read?.historyFromEvents === true)
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
-    this.accept(id, whole ?? snapshot); this.publish(); return cloneHostSnapshot(this.aggregate())
+    const before = { snapshot: slot.snapshot, status: slot.status }
+    this.accept(id, whole ?? snapshot)
+    // A read before a send that changed nothing publishes nothing (#765): every send makes one.
+    if (!read?.beforeSend || !sameSnapshot(before.snapshot, slot.snapshot) || !sameSnapshot(before.status, slot.status)) this.publish()
+    return cloneHostSnapshot(this.aggregate())
   }
   rollbackCapability(threadId: string) {
     const provider = this.providerForThread(threadId)

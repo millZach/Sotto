@@ -95,7 +95,8 @@ describe('listHostFolders', () => {
     async path => { await expect(listHostFolders({ path }, { platform: 'win32' })).resolves.toEqual({ status: 'unreadable', path }) },
   )
 
-  it('includes the real system drive in the drives view on win32', async () => {
+  // The drives view probes real drive roots, which only a Windows machine has.
+  it.runIf(process.platform === 'win32')('includes the real system drive in the drives view on win32', async () => {
     const result = await listHostFolders({ path: null }, { platform: 'win32' })
     expect(result.status).toBe('listed')
     if (result.status !== 'listed') return

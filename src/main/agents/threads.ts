@@ -133,14 +133,15 @@ export class SottoThreadHost implements AgentHost {
       mcpServer: id => tools.mcpServer(thread(id)),
     })
   }
-  /** A native session asks for the host setup tools by its own ID; only its Sotto thread's setup can be given them. */
-  useHostSetupTools(tools: ScopedThreadTools): void {
-    this.inner.useHostSetupTools?.({ name: tools.name, definitions: tools.definitions,
-      mcpServer: async id => {
+  /** A native session asks for Sotto's scoped tools by its own ID; each server answers for its Sotto thread alone. */
+  useThreadTools(tools: readonly ScopedThreadTools[]): void {
+    this.inner.useThreadTools?.(tools.map(entry => ({ name: entry.name, definitions: entry.definitions,
+      ...(entry.timeoutMs === undefined ? {} : { timeoutMs: entry.timeoutMs }),
+      mcpServer: async (id: string) => {
         const binding = this.registry.bySession(this.provider, id)
-        return binding ? tools.mcpServer(binding.threadId) : undefined
+        return binding ? entry.mcpServer(binding.threadId) : undefined
       },
-    })
+    })))
   }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
@@ -186,6 +187,10 @@ export class SottoThreadHost implements AgentHost {
     await this.registry.load()
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
+    // The read after an accepted send is answered from what the adapter holds, and the caller reads whole when the
+    // echo is not in it (#765). In the app the workspace above answers it first; this is where a stack without one
+    // does, so that it reads the thread whole once at most, as it did before.
+    if (purpose?.afterSend) return this.read(() => this.inner.snapshot())
     return this.read(() => this.inner.refreshThread?.(binding.sessionId, purpose) ?? this.inner.snapshot())
   }
 

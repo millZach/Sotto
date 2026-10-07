@@ -1,35 +1,43 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, Copy, Info, Plus } from 'lucide-react'
-import { PHONE_ACCESS_SERVE_PORT, type HostPhonesCommand, type PhonesState } from '../../../../shared/phones'
+import { type HostPhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { HostPhonesView, HostsBridge, HostStatus } from '../../../../shared/hosts'
+import type { HostPhoneAccessSummary } from '../../../../shared/hostProtocol'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
-import { HostsModal } from './HostDialog'
+import { HostSshQuestion } from './HostSshQuestion'
+import { HostsModal } from './HostsModal'
 import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
+import { TAILSCALE_GUIDE_URL, TAILSCALE_OPERATOR_COMMAND } from './hostTailnetWords'
 import './hosts.css'
 import './phones.css'
 
-/** What Tailscale needs on Linux before an account that is not root may change Serve. Shown for the owner to run; Sotto never runs it. */
-export const TAILSCALE_OPERATOR_COMMAND = 'sudo tailscale set --operator=$USER'
 /** How often an open dialog tells main it is still open, well inside main's minute (HOST_PHONES_WATCH_MS). */
 const RENEW_WATCH_MS = 30_000
 
-/** A remote host's phone access in a few words, for the end of its row: off, on and how many phones, or that it needs the owner. */
+/** A host's phone access in the row's words: off, starting, on and how many phones, or that it needs the owner. */
+export function phoneWords(summary: HostPhoneAccessSummary): string {
+  if (summary.status === 'off') return 'Phones off'
+  if (summary.status === 'starting') return 'Phones starting…'
+  if (summary.status === 'needs-you') return 'Phones need you'
+  return summary.phones ? `Phones on, ${summary.phones} paired` : 'Phones on'
+}
+
+/** A remote host's phone access in a few words, for the end of its row, as the Phones dialog last read it. */
 export function hostPhonesLabel(view: HostPhonesView | undefined): string | null {
   const state = view?.state
   if (!state) return null
-  if (!state.enabled) return 'Phones off'
-  if (state.phase === 'failed' || state.phase === 'cleanup-failed') return 'Phones need you'
-  if (state.phase === 'starting') return 'Phones starting…'
-  if (state.phase !== 'on') return 'Phones off'
-  return state.phones.length ? `Phones on, ${state.phones.length} paired` : 'Phones on'
+  if (!state.enabled) return phoneWords({ status: 'off', phones: 0 })
+  if (state.phase === 'failed' || state.phase === 'cleanup-failed') return phoneWords({ status: 'needs-you', phones: 0 })
+  if (state.phase === 'starting') return phoneWords({ status: 'starting', phones: 0 })
+  return phoneWords({ status: state.phase === 'on' ? 'on' : 'off', phones: state.phase === 'on' ? state.phones.length : 0 })
 }
 
 /** What a failed step on a remote host says: what happened there, that nothing was changed, and what to do. */
 export function hostPhonesFailure(state: PhonesState, name: string): string | null {
   if (state.phase === 'cleanup-failed') return state.serve.status === 'failed' && state.serve.reason === 'cleanup-record'
-    ? `Phones can’t connect. The host on ${name} couldn’t read its saved cleanup record, so it can’t tell which Tailscale Serve setting is its own. Remove the setting on port ${PHONE_ACCESS_SERVE_PORT} in Tailscale on ${name}, then press Try again.`
+    ? `Phones can’t connect. The host on ${name} couldn’t read its saved cleanup record, so it can’t tell which Tailscale Serve setting is its own. Remove Sotto’s setting on port 8443 or 10000 in Tailscale on ${name}, then press Try again.`
     : `Phones can’t connect. The host on ${name} is still removing its Tailscale Serve setting and tries again while it runs. Check Tailscale on ${name}, then press Try again.`
   if (state.tailscale.status === 'failed') {
     return state.tailscale.reason === 'missing'
@@ -38,12 +46,15 @@ export function hostPhonesFailure(state: PhonesState, name: string): string | nu
   }
   if (state.serve.status !== 'failed') return null
   switch (state.serve.reason) {
-    case 'port-taken': return `Another app on ${name} already uses port ${PHONE_ACCESS_SERVE_PORT} in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port ${PHONE_ACCESS_SERVE_PORT} on ${name}, then press Try again.`
+    // A host from before the 10000 fallback sends no servePort, and for it only 8443 was tried.
+    case 'port-taken': return state.servePort === undefined
+      ? `Another app on ${name} already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on ${name}, then press Try again.`
+      : `Other apps on ${name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on ${name}, then press Try again.`
     case 'not-enabled': return 'Tailscale Serve isn’t turned on for your tailnet. Nothing was changed. Turn it on in Tailscale, then press Try again.'
     case 'denied': return `Tailscale on ${name} won’t let the account Sotto signs in with change Tailscale Serve. Nothing was changed. Run this command on ${name}, then press Try again.`
     case 'listener': return `The host on ${name} couldn’t open its listener for phones. Nothing was changed. Press Try again, or stop the host and connect again.`
     case 'record': return `The host on ${name} couldn’t save its phone access settings. Phone access wasn’t started. Check that its data folder can be written to, then press Try again.`
-    case 'failed': return `Tailscale Serve couldn’t be set up on port ${PHONE_ACCESS_SERVE_PORT} on ${name}. Nothing was changed. Check Tailscale on ${name}, then press Try again.`
+    case 'failed': return `Tailscale Serve couldn’t be set up on port ${state.servePort ?? 8443} on ${name}. Nothing was changed. Check Tailscale on ${name}, then press Try again.`
     case 'cleanup':
     case 'cleanup-record': return null
   }
@@ -111,7 +122,16 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
   }
 
   const live = connected && state !== undefined
-  const busy = view?.busy === true
+  const approving = host.adminSignIn === true && host.tailscale?.waiting === true
+  // SSH's question for that admin connection, asked here because the question over the page waits while this dialog is open.
+  const asking = host.adminSignIn === true ? host.prompt : undefined
+  // What the dialog last read stays on show while Tailscale or SSH holds a new admin connection, but nothing is pressed
+  // through it until the user approves or answers: a change would only wait behind the sign-in.
+  const busy = view?.busy === true || approving || asking !== undefined
+  const answer = async (prompt: NonNullable<HostStatus['prompt']>, value: string): Promise<void> => {
+    try { await bridge.command({ type: 'ssh-answer', id, promptId: prompt.id, answer: value }) }
+    catch { setError(`SSH did not take the answer. Close Phones on ${name} and open it again to sign in again.`) }
+  }
   const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
   const failure = state ? hostPhonesFailure(state, name) : null
@@ -153,15 +173,34 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
     footer={<Button onClick={onClose}>Done</Button>}>
     <div className="hosts-settings phones-settings host-phones">
       <p className="host-phones__intro">Reach {name}’s threads from Sotto on your iPhone, over Tailscale.</p>
-      <div className="phones-switch">
+      {/* On a tailnet connection the dialog reads and changes phone access over an admin connection, whose sign-in Tailscale may hold (ADR-0053). */}
+      {approving ? <div className="hosts-notice host-phones-approval" role="status">
+        <Info size={16} aria-hidden="true" />
+        <div className="host-phones-approval__copy">
+          <p>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</p>
+          <span className="host-phones-approval__actions">
+            {host.tailscale?.url ? <Button aria-label={`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>Open approval page</Button> : null}
+            <button type="button" className="host-setup__link tt-focusable" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>Why Tailscale asks</button>
+          </span>
+        </div>
+      </div> : null}
+      {asking ? <HostSshQuestion prompt={asking} onAnswer={value => answer(asking, value)}
+        actions={<Button variant="secondary" onClick={() => void bridge.command({ type: 'stop-admin-sign-in', id }).catch(() => undefined)}>Stop signing in</Button>} /> : null}
+      {/* Until the host is read, nothing here is known: the switch shows once it is, rather than reading off. */}
+      {connected && !state ? <ol className="phones-steps host-phones-steps host-phones-unread" aria-label={`Phone access on ${name}`} aria-busy={!view?.error || undefined}>
+        <li data-step="waiting"><StepMark step="waiting" /><div className="phones-step__copy"><b>Let phones reach {name}</b>
+          <p role="status">{view?.error ? 'Not read.' : approving || asking ? `Not read yet. The switch shows once Sotto reaches ${name} over SSH.` : `Reading phone access on ${name}…`}</p></div></li>
+        {[`Tailscale on ${name}`, 'Tailscale Serve on port 8443', 'Paired phones'].map(title => <li key={title} data-step="waiting"><StepMark step="waiting" />
+          <div className="phones-step__copy"><b>{title}</b><p>Waits for the step above.</p></div></li>)}
+      </ol> : <div className="phones-switch">
         <Toggle label={`Let phones reach ${name}`} checked={state?.enabled ?? false} disabled={!live || busy}
           onCheckedChange={enabled => void run({ type: 'set-enabled', enabled })}
-          description={`Sotto runs Tailscale Serve on ${name}, port ${PHONE_ACCESS_SERVE_PORT}, so Sotto on your iPhone can reach ${name}’s threads over your tailnet. Only phones you pair can connect. Phones reach ${name} while its host runs. Turning this off removes the setting and disconnects them.`} />
-      </div>
+          description={`Sotto runs Tailscale Serve on ${name}, port 8443, or 10000 when another app uses 8443, so Sotto on your iPhone can reach ${name}’s threads over your tailnet. Only phones you pair can connect. Phones reach ${name} while its host runs. Turning this off removes the setting and disconnects them.`} />
+      </div>}
       {!connected ? <div className="hosts-notice">
         <Info size={16} aria-hidden="true" />
         <p>Connect to {name} to change phone access or pair a phone. Phones already paired keep reaching it while its host runs.</p>
-      </div> : !state ? <p className="host-phones__reading" role="status">{view?.error ? '' : `Reading phone access on ${name}…`}</p> : null}
+      </div> : null}
       {view?.error ? <div className="hosts-notice hosts-notice--error" role="alert"><AlertTriangle size={16} aria-hidden="true" /><p>{view.error}</p></div> : null}
       {live && state.enabled ? <ol className="phones-steps host-phones-steps" aria-label={`Phone access on ${name}`} aria-busy={starting || undefined}>
         <li data-step={tailscaleStep}>
@@ -173,8 +212,8 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
         </li>
         <li data-step={serveStep}>
           <StepMark step={serveStep} />
-          <div className="phones-step__copy"><b>Tailscale Serve on port {PHONE_ACCESS_SERVE_PORT}</b>
-            <p>{serveStep === 'ok' ? `Sotto added it on ${name}. It stays on your tailnet; Funnel is never used.` : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
+          <div className="phones-step__copy"><b>Tailscale Serve on port {state.servePort ?? 8443}</b>
+            <p>{serveStep === 'ok' ? `Sotto added it on ${name}${state.servePort === 10000 ? ', on 10000 because another app had 8443' : ''}. It stays on your tailnet; Funnel is never used.` : serveStep === 'failed' ? failure : tailscaleStep === 'failed' ? 'Waits for Tailscale.' : starting ? 'Setting it up…' : notYet}</p>
             {denied ? <span className="host-phones-command">
               <code className="phones-mono">{TAILSCALE_OPERATOR_COMMAND}</code>
               <Button variant="ghost" aria-label={`Copy the command to run on ${name}`} onClick={() => void copy(TAILSCALE_OPERATOR_COMMAND, 'command')}>{copied === 'command' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied === 'command' ? 'Copied' : 'Copy command'}</Button>

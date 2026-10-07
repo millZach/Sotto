@@ -64,18 +64,27 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard pairing.hostId == expectedHostID else { throw ClientError.invalidIdentity }
         return pairing
     }
-    func revoke(endpoint: HostEndpoint, pairing: Pairing) async throws {
-        let health = try await health(endpoint: endpoint, reconnecting: true)
-        guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+    func revoke(endpoint saved: HostEndpoint, pairing: Pairing) async throws {
+        // Phone access can come back on its other Serve port; only the paired host is used there.
+        let endpoint = try await HostFinder.reconnect(saved) { candidate -> Health in
+            let health = try await self.health(endpoint: candidate, reconnecting: true)
+            guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+            return health
+        }.endpoint
         let result = try await post(endpoint: endpoint, route: "/v1/revoke", token: pairing.token)
         guard result["revoked"].bool == true else { throw ClientError.invalidProtocol }
     }
-    func connect(endpoint: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
+    func connect(endpoint saved: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
         disconnect()
         let current = generation
-        let health = try await health(endpoint: endpoint, reconnecting: true)
+        // Phone access can come back on its other Serve port; only the paired host is used there.
+        let endpoint = try await HostFinder.reconnect(saved) { candidate -> Health in
+            let health = try await self.health(endpoint: candidate, reconnecting: true)
+            guard current == self.generation else { throw CancellationError() }
+            guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
+            return health
+        }.endpoint
         guard current == generation else { throw CancellationError() }
-        guard health.hostId == pairing.hostId else { throw ClientError.invalidIdentity }
         let result = try await post(endpoint: endpoint, route: "/v1/session", token: pairing.token)
         guard current == generation else { throw CancellationError() }
         let access = try result.decode(HostSession.self); try access.validate(pairing: pairing)
@@ -226,13 +235,15 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard let response = response as? HTTPURLResponse, response.url == endpoint.route(route) else { throw ClientError.disconnected }
         // Retrying Forget after revocation succeeded but local deletion failed is safe.
         if route == "/v1/revoke" && response.statusCode == 401 { return .object(["v": .number(1), "revoked": .bool(true)]) }
-        guard (200..<300).contains(response.statusCode) else { throw Self.refusal(route: route, status: response.statusCode, name: endpoint.machine) }
+        guard (200..<300).contains(response.statusCode) else {
+            let failure = try? Wire.decode(data)["error"].decode(WireFailure.self)
+            throw Self.refusal(route: route, status: response.statusCode, name: endpoint.machine, failure: failure)
+        }
         return try Wire.decode(data)
     }
 }
 extension HostConnection {
-    /// What a refused request means. Only 401 and 403 say the pairing is gone; anything else from a
-    /// computer that answered means Sotto isn't running, apart from a rate limit's explicit wait.
+    /// What a request that failed means: a timeout's cause, by what the request was for.
     nonisolated static func requestFailure(operation: String) -> ClientError {
         switch operation {
         case "hello": return .connectionTimedOut
@@ -240,8 +251,15 @@ extension HostConnection {
         default: return .readTimedOut
         }
     }
-    nonisolated static func refusal(route: String, status: Int, name: String) -> ClientError {
+    /// What a refused request means. Only 401 and 403 say the pairing is gone; anything else from a
+    /// computer that answered means Sotto isn't running, apart from a rate limit's explicit wait. A 403
+    /// whose body is `forbidden` with a sentence is the computer keeping the pairing but not letting this
+    /// iPhone in now, such as a host with phone access off: the iPhone shows the sentence and keeps trying.
+    nonisolated static func refusal(route: String, status: Int, name: String, failure: WireFailure? = nil) -> ClientError {
         if status == 429 { return .rateLimited }
+        if status == 403, let failure, failure.code == "forbidden", !failure.message.isEmpty, failure.message.count <= 500 {
+            return .hostRefused(failure.message)
+        }
         if route == "/v1/pair" && (400..<500).contains(status) {
             return .rejected("That code didn't work. Codes work once and last five minutes; get a new one on that computer.")
         }

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { externalLinkSchema } from '../../shared/externalLinks'
+import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
 import {
   APP_HIDE,
@@ -10,6 +11,7 @@ import {
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
+  SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
   HISTORY_ADD,
   HISTORY_CLEAR,
@@ -23,6 +25,7 @@ import {
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
+  MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
   SETTINGS_GET,
   SETTINGS_RESET,
@@ -133,6 +136,7 @@ const settingKeys = [
   'phoneAccessName',
   'showBrowserPreviews',
   'browserWithoutAsking',
+  'visualsInThreads',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
@@ -140,7 +144,9 @@ const settingKeys = [
 ] as const satisfies readonly (keyof SettingsPatch)[]
 
 const looseSettingsPatchSchema = settingsSchema
-  .omit({ hotkey: true, launchAtStartup: true })
+  // `tailnetConnections` is a headless host's own, written by its administrative route; nothing on a desktop sets it,
+  // so a payload naming it is refused rather than dropped (ADR-0053).
+  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011).
@@ -294,6 +300,8 @@ export interface RegisterIpcDependencies {
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
+  /** Present only on macOS, where a permission lives in a System Settings pane. */
+  readonly openSystemSettings?: (pane: SystemSettingsPane) => Promise<void>
   readonly dictation?: DictationIpcService
   readonly output?: OutputIpcService
   readonly transcriptPolish?: TranscriptPolishIpcService
@@ -301,6 +309,7 @@ export interface RegisterIpcDependencies {
   readonly updates?: UpdateIpcService
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
+  readonly microphoneAccess?: { ensure(): Promise<boolean> }
 }
 
 export interface WidgetIpcService {
@@ -513,6 +522,10 @@ export function registerIpc(
       if (!dependencies.openExternalLink) return UNAVAILABLE
       try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
     })
+    register(SYSTEM_SETTINGS_OPEN, systemSettingsPaneSchema, 1, async pane => {
+      if (!dependencies.openSystemSettings) return UNAVAILABLE
+      try { await dependencies.openSystemSettings(pane); return OK } catch { return UNAVAILABLE }
+    })
     register(APP_HIDE, noPayloadSchema, 0, () => dependencies.app.hide())
     register(APP_RELOAD, noPayloadSchema, 0, () => dependencies.app.reload())
     register(APP_MINIMIZE, noPayloadSchema, 0, () => dependencies.app.minimize())
@@ -525,8 +538,9 @@ export function registerIpc(
       dictationCommandSchema,
       1,
       async (command, role): Promise<CommandResult> => {
-        // The widget may toggle (click-to-dictate), stop, and cancel; only the
-        // explicit 'start' command stays a main-renderer privilege.
+        // The widget may toggle (click-to-dictate), stop, cancel, and retry or
+        // dismiss a kept recording; only the explicit 'start' command stays a
+        // main-renderer privilege.
         if (role === 'widget' && command.type === 'start') {
           throw new UnauthorizedIpcSenderError()
         }
@@ -611,6 +625,10 @@ export function registerIpc(
     register(TRANSCRIPTION_CHECK_KEY, noPayloadSchema, 0, async (): Promise<TranscriptionKeyCheck> => {
       if (dependencies.transcription === undefined) return { ok: false, reason: 'unconfigured' }
       return dependencies.transcription.checkKey()
+    })
+    register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
+      if (dependencies.microphoneAccess === undefined) return true
+      return dependencies.microphoneAccess.ensure()
     })
     register(OUTPUT_DELIVER, outputDeliveryRequestSchema, 1, async (request): Promise<OutputResult> => {
       if (dependencies.output === undefined) {

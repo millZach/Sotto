@@ -1,0 +1,47 @@
+/* Start at boot (ADR-0054): the consent modal's checks, the busy-host question, the change as it runs, and the offer on
+   Add host's connected card. It sits inside the Hosts settings, so .hosts-settings rules for paragraphs are matched on
+   purpose; every colour is a theme role. */
+.host-boot-dialog { width: min(520px, 100%); }
+/* The busy-host question's three answers wrap at the narrowest window rather than run off the dialog. */
+.host-boot-dialog .tt-dialog__actions { flex-wrap: wrap; }
+.host-boot { display: grid; gap: 4px; }
+.hosts-settings .host-boot__lead { margin: 8px 0 0; color: var(--tt-text); font-size: 13.5px; }
+.hosts-settings .host-boot__quiet { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.host-boot__mono { font-family: var(--tt-font-mono); font-size: 12.5px; }
+
+/* What Sotto found on the host, and what changes there: a mark, a name, and a sentence. */
+.host-boot__checks { display: grid; gap: 8px; margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--tt-hairline); list-style: none; }
+.host-boot__checks > li { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 2px 10px; }
+.host-boot__mark { display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; color: var(--tt-text-faint); }
+.host-boot__checks [data-mark='ok'] .host-boot__mark { color: var(--tt-success); }
+.host-boot__checks [data-mark='fail'] .host-boot__mark { color: var(--tt-error); }
+.host-boot__checks [data-mark='act'] .host-boot__mark { color: var(--tt-accent-text); }
+.host-boot__check { display: grid; gap: 6px; min-width: 0; }
+.hosts-settings .host-boot__check p { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.host-boot__check b { color: var(--tt-text); font-weight: 500; }
+
+/* The change as it runs, and Tailscale's approval when an admin connection waits for it. */
+.host-boot__work { align-items: flex-start; }
+.host-boot__work-copy { display: grid; flex: 1 1 auto; gap: 8px; min-width: 0; }
+.hosts-settings .host-boot__done { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; color: var(--tt-text); font-size: 13px; }
+.host-boot__done > svg { flex: 0 0 auto; margin-top: 2px; color: var(--tt-success); }
+.host-boot__failure { display: grid; gap: 10px; }
+
+/* The offer on Add host's connected card, under the sentence that says the host is connected. */
+.host-boot-offer { display: grid; gap: 8px; border-top: 1px solid var(--tt-hairline); padding-top: 10px; }
+.hosts-settings .host-boot-offer p { margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-settings .host-boot-offer p.host-boot__quiet { color: var(--tt-text-muted); font-size: 12.5px; }
+.host-boot-offer b { font-weight: 600; }
+.hosts-settings .host-boot-offer .host-boot__done { margin: 0; }
+.hosts-settings .host-boot-offer .host-boot__failed { display: flex; align-items: flex-start; gap: 8px; }
+.host-boot__failed > svg { flex: 0 0 auto; margin-top: 2px; color: var(--tt-error-text); }
+.host-boot__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.host-boot__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
+
+/* The More menu's lines: below start at boot, and above Forget. */
+.hosts-menu__list [role='separator'] { margin: 4px 2px; border-top: 1px solid var(--tt-hairline); }
+
+/* A change that failed after its modal or card was closed, on its host's row until it is dismissed. */
+.hosts-settings .host-boot-result { flex: 1 0 100%; margin-top: 0; }
+.host-boot-result > svg { color: var(--tt-error-text); }
+.hosts-settings .host-boot-result p { overflow-wrap: anywhere; }

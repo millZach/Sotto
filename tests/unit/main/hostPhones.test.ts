@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
 import { HOST_PHONES_WATCH_MS, HostPhones, type HostPhonesLink } from '../../../src/main/hosts/hostPhones'
+import { ADMIN_IDLE_MS, AdminConnection, type PressConnection } from '../../../src/main/hosts/adminConnection'
 import type { SshHostConnection } from '../../../src/main/hosts/sshLauncher'
 import type { PhonesState } from '../../../src/shared/phones'
 
@@ -14,7 +15,12 @@ const state = (patch: Partial<PhonesState> = {}): PhonesState => ({
 /** A connected host behind a stand-in for the forwarded port: what each request asked for, and what the host says next. */
 function fixture() {
   let tokens = 0
-  const connection = { url: 'http://127.0.0.1:4500', hostId: HOST_ID, hostAdminToken: vi.fn(async () => `token-${++tokens}-0000000000000000`) } as unknown as SshHostConnection
+  const sshConnection = (): PressConnection => ({ url: 'http://127.0.0.1:4500', hostId: HOST_ID, hostAdminToken: vi.fn(async () => `token-${++tokens}-0000000000000000`) }) as unknown as PressConnection
+  const connection = sshConnection()
+  /** What each request goes over: the connection the host is on, until a test hands out another, or none is open. */
+  let current: PressConnection | undefined = connection
+  /** How many times a request had to open a connection because none was open. */
+  let signIns = 0
   const requests: { route: string; token: string; body: unknown }[] = []
   let answer: (route: string, body: unknown) => { status?: number; body?: unknown } = () => ({ body: { v: 1, hostId: HOST_ID, state: state() } })
   const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -24,16 +30,39 @@ function fixture() {
     const reply = answer(route, body)
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 })
   }) as unknown as typeof globalThis.fetch
-  let links: HostPhonesLink[] = [{ id: ID, name: 'forge', connection }]
+  const press = vi.fn(async <T>(request: (connection: PressConnection) => Promise<T>): Promise<T> => {
+    if (!current) { signIns++; current = sshConnection() }
+    return request(current)
+  })
+  const pressIfOpen = vi.fn(async <T>(request: (connection: PressConnection) => Promise<T>): Promise<T | undefined> => current ? request(current) : undefined)
+  let links: HostPhonesLink[] = [{ id: ID, name: 'forge', hostId: HOST_ID, generation: 1, press: press as HostPhonesLink['press'], pressIfOpen: pressIfOpen as HostPhonesLink['pressIfOpen'] }]
   const listeners = new Set<() => void>()
   const opened: string[] = []
   const phones = new HostPhones({ hosts: { links: () => links, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) } },
     openExternal: async url => { opened.push(url) }, fetch, pollMs: 1000 })
   return {
-    phones, requests, opened, connection,
+    phones, requests, opened, connection, press,
     answer: (next: typeof answer) => { answer = next },
+    /** The admin connection closed while idle, and the next press opened another. */
+    reopen: () => { current = sshConnection(); return current },
+    /** The host's socket is on no SSH connection and its admin connection is closed, so a request has to open one. */
+    closeAll: () => { current = undefined },
+    signIns: () => signIns,
     disconnect: () => { links = []; for (const listener of listeners) listener() },
   }
+}
+
+/** A host whose socket is on no SSH connection, behind a real admin connection that counts its sign-ins. */
+function adminFixture() {
+  let signIns = 0, closes = 0
+  const admin = new AdminConnection({
+    open: async () => { signIns++; return { url: 'http://127.0.0.1:4500', hostId: HOST_ID, hostAdminToken: async () => `token-${signIns}-0000000000000000`, close: async () => undefined } as unknown as SshHostConnection },
+    close: async () => { closes++ },
+  })
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ v: 1, hostId: HOST_ID, state: state() }))) as unknown as typeof globalThis.fetch
+  const link: HostPhonesLink = { id: ID, name: 'forge', hostId: HOST_ID, generation: 1, press: request => admin.run(request), pressIfOpen: request => admin.runIfOpen(request) }
+  const phones = new HostPhones({ hosts: { links: () => [link], subscribe: () => () => undefined }, openExternal: async () => undefined, fetch, pollMs: 2000 })
+  return { phones, fetch, signIns: () => signIns, closes: () => closes }
 }
 
 afterEach(() => { vi.useRealTimers() })
@@ -91,6 +120,64 @@ it('asks the connection for the token again once when the host no longer takes t
   await phones.command(ID, { type: 'set-enabled', enabled: true })
   expect(connection.hostAdminToken).toHaveBeenCalledTimes(2)
   expect(phones.state()[0]!.state).toMatchObject({ enabled: true })
+  phones.close()
+})
+
+it('asks the connection each request runs over for its token, and keeps none of it', async () => {
+  const { phones, requests, press, connection, reopen } = fixture()
+  await vi.waitFor(() => expect(phones.state()[0]?.state).toBeDefined())
+  await phones.command(ID, { type: 'retry' })
+  expect(press).toHaveBeenCalledTimes(1)
+  expect(connection.hostAdminToken).toHaveBeenCalledTimes(2)
+  // Another connection, after the admin connection closed while idle: its own launch's token, and none of the old one's.
+  const next = reopen()
+  await phones.command(ID, { type: 'retry' })
+  expect(next.hostAdminToken).toHaveBeenCalledTimes(1)
+  expect(connection.hostAdminToken).toHaveBeenCalledTimes(2)
+  expect(requests.map(item => item.token)).toEqual(['Bearer token-1-0000000000000000', 'Bearer token-2-0000000000000000', 'Bearer token-3-0000000000000000'])
+  phones.close()
+})
+
+it('never signs in for a read nobody asked for, and signs in for the open dialog', async () => {
+  vi.useFakeTimers()
+  const { phones, closeAll, signIns, requests } = fixture()
+  closeAll()
+  // A host that has just connected over a connection with no SSH beside it is not read.
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(signIns()).toBe(0)
+  expect(requests).toEqual([])
+  expect(phones.state()).toEqual([{ id: ID }])
+  phones.watch(ID, true)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(signIns()).toBe(1)
+  expect(phones.state()[0]!.state).toBeDefined()
+  phones.close()
+})
+
+it('keeps one admin connection open while the dialog reads its host every couple of seconds, and lets it close after', async () => {
+  vi.useFakeTimers()
+  const { phones, fetch, signIns, closes } = adminFixture()
+  phones.watch(ID, true)
+  // The dialog says it is still open every half minute, for three times the idle time.
+  for (let elapsed = 0; elapsed < 3 * ADMIN_IDLE_MS; elapsed += 30_000) {
+    await vi.advanceTimersByTimeAsync(30_000)
+    phones.watch(ID, true)
+  }
+  expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(80)
+  expect(signIns()).toBe(1)
+  expect(closes()).toBe(0)
+  phones.watch(ID, false)
+  await vi.advanceTimersByTimeAsync(ADMIN_IDLE_MS)
+  expect(closes()).toBe(1)
+  phones.close()
+})
+
+it('says the host cannot be reached when no connection to it opens, and changes nothing', async () => {
+  const { phones, press, requests } = fixture()
+  await vi.waitFor(() => expect(phones.state()[0]?.state).toBeDefined())
+  press.mockRejectedValueOnce(new Error('SSH could not reach the host.'))
+  await expect(phones.command(ID, { type: 'set-enabled', enabled: true })).rejects.toThrow('Phone access on forge could not be reached. Nothing was changed.')
+  expect(requests).toHaveLength(1)
   phones.close()
 })
 

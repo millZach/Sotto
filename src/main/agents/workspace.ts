@@ -6,21 +6,25 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { sameSnapshot } from './sameSnapshot'
 import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose } from './host'
-import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore } from './threadStore'
+import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
+import { placeVisuals } from './visualPlacement'
+import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
@@ -31,6 +35,7 @@ import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitCh
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { markSendStage } from './sendStages'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -78,6 +83,14 @@ const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local sto
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
 /** Said when the thread history database could not be opened at all. This run keeps its messages in memory. */
 const HISTORY_OPEN_ERROR = 'Thread messages could not be opened. Restore access to local storage and restart Sotto.'
+
+/**
+ * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
+ * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
+ */
+export type VisualAddition =
+  | { readonly added: true; readonly visual: AgentVisual; readonly anchor: 'assistant' | 'user' | 'none' }
+  | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
 
 /** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
 interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string }
@@ -129,7 +142,7 @@ const WRITE_WINDOW_MS = 250
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
-  useHostSetupTools(tools: ScopedThreadTools): void { this.inner.useHostSetupTools?.(tools) }
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   private readonly store: AtomicJsonStore<Workspace>
@@ -151,11 +164,16 @@ export class WorkspaceHost implements AgentHost {
   /** Once retention is disabled, the live timeline must never become a plaintext fallback. */
   private activityJsonFallbackAllowed = true
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
+  private readonly settledThreadListeners = new Set<(ids: readonly string[]) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private publishPending = false
+  /** Whether the open publish window lets no opening change cut it short: one already did, or it carries a flood. */
+  private publishCut = false
+  /** Whether an opening change is among what waits for the end of the open publish window. */
+  private publishHeldOpening = false
   private writeTimer: ReturnType<typeof setTimeout> | undefined
   private readonly lanes = new Map<string, Promise<unknown>>()
   private readonly organizationLanes = new Map<string, Promise<unknown>>()
@@ -792,8 +810,16 @@ export class WorkspaceHost implements AgentHost {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    // Threads often share a project folder. Discover that exact path once for this
+    // decision; the next rename/removal must revalidate every path from scratch.
+    const identities = new Map<string, Promise<string>>()
+    const identify = (path: string): Promise<string> => {
+      let pending = identities.get(path)
+      if (!pending) { pending = this.worktrees.checkoutIdentity(path); identities.set(path, pending) }
+      return pending
+    }
     try {
-      const identity = await this.worktrees.checkoutIdentity(metadata.path)
+      const identity = await identify(metadata.path)
       const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
@@ -802,7 +828,7 @@ export class WorkspaceHost implements AgentHost {
           ?? this.state.snapshot.projects.find(project => project.id === other.projectId)?.path
         if (!path) return false
         try {
-          if (await this.worktrees.checkoutIdentity(path) === identity) return false
+          if (await identify(path) === identity) return false
         } catch (error) {
           // Resolve missing subfolders through their nearest available parent. Other failures leave ownership unproven.
           const cause = error instanceof Error ? error.cause : undefined
@@ -810,7 +836,7 @@ export class WorkspaceHost implements AgentHost {
           let parent = dirname(path)
           while (true) {
             try {
-              if (await this.worktrees.checkoutIdentity(parent) === identity) return false
+              if (await identify(parent) === identity) return false
               break
             } catch (parentError) {
               const parentCause = parentError instanceof Error ? parentError.cause : undefined
@@ -865,8 +891,57 @@ export class WorkspaceHost implements AgentHost {
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
-      return this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      const result = await this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0056). An uncertain one
+      // keeps them: a visual whose turn did go is left out of every window anyway, having no place to sit.
+      if (result.accepted && !result.uncertain && removedUserMessages > 0) this.forgetVisuals(threadId, expectedUserMessageIds.slice(-removedUserMessages))
+      return result
     })
+  }
+  /** Removes the visuals drawn in these turns, and shows the thread without them. */
+  private forgetVisuals(threadId: string, userMessageIds: readonly string[]): void {
+    if (this.storeUnavailable) return
+    try { if (this.threadStore.deleteVisualsForTurns(threadId, userMessageIds) === 0) return }
+    catch { this.saveError = HISTORY_SAVE_ERROR; return }
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+  }
+  /**
+   * Keeps a visual an agent drew in this thread and shows it where the thread stood when the call arrived: under the
+   * newest message the store holds, in the newest user message's turn (ADR-0056). Whatever the provider said before the
+   * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
+   * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
+   */
+  async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
+    await this.initialize()
+    if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
+    this.writeEvents()
+    if (!this.historyWritable() || this.failedEventThreads.has(threadId) || this.pendingEvents.has(threadId)) return { added: false, reason: 'history-unavailable' }
+    let stored: StoredVisual
+    try {
+      const newest = this.threadStore.newestMessages(threadId)
+      const visuals = this.threadStore.readVisuals(threadId)
+      if (visuals.length >= VISUALS_PER_THREAD_MAX) return { added: false, reason: 'thread-limit' }
+      if (visuals.filter(item => item.anchorUserMessageId === newest.userMessageId).length >= VISUALS_PER_TURN_MAX) return { added: false, reason: 'turn-limit' }
+      stored = { visual: visualFromInput(randomUUID(), input), createdAt: new Date().toISOString(), anchorMessageId: newest.messageId, anchorUserMessageId: newest.userMessageId }
+      this.threadStore.addVisual(threadId, stored)
+    } catch { return { added: false, reason: 'history-unavailable' } }
+    const anchor = stored.anchorMessageId === null ? 'none' : this.threadStore.message(threadId, stored.anchorMessageId)?.role ?? 'none'
+    this.eventChanged.add(threadId)
+    this.publishSoon()
+    return { added: true, visual: stored.visual, anchor }
+  }
+  /** Whether a thread may draw a visual: one this host holds, on a provider that offers Sotto's tools (Devin does not). */
+  admitsVisuals(threadId: string): boolean {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread !== undefined && thread.providerId !== 'devin'
+  }
+  /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
+  private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
+    if (this.storeUnavailable) return [...messages]
+    let visuals: readonly StoredVisual[]
+    try { visuals = this.threadStore.readVisuals(threadId) } catch { return [...messages] }
+    return placeVisuals(messages, visuals, windowStartsThread)
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
@@ -882,9 +957,10 @@ export class WorkspaceHost implements AgentHost {
     this.eventSourced = typeof inner.subscribeEvents === 'function'
     this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
       if (!this.ready || this.deliveryStopped) return
+      const records = this.watchedRecordCount()
       this.accept(snapshot)
       this.writeSoon()
-      this.publishSoon()
+      this.publishSoon(this.watchedRecordCount() > records)
     }, { historyFromEvents: this.eventSourced }))
     const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
       if (!this.deliveryStopped) this.recordEvent(threadId, event)
@@ -1102,7 +1178,7 @@ export class WorkspaceHost implements AgentHost {
     if (waiting) waiting.push(event)
     else this.pendingEvents.set(threadId, [event])
     this.eventChanged.add(threadId)
-    if (this.ready) this.publishSoon()
+    if (this.ready) this.publishSoon(event.kind === 'message-added' && this.inView(threadId))
   }
   /** Write what the events said. Called before anything reads the store, and at every publish. */
   private writeEvents(force = false): void {
@@ -1217,10 +1293,10 @@ export class WorkspaceHost implements AgentHost {
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
     }
-    if (!this.watched.has(thread.id)) return this.declared ? [] : [...messages]
+    if (!this.watched.has(thread.id)) return this.declared ? [] : this.withVisuals(thread.id, messages, true)
     const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
     if (hidden > 0) thread.earlierAvailable = true
-    return hidden > 0 ? messages.slice(hidden) : [...messages]
+    return this.withVisuals(thread.id, hidden > 0 ? messages.slice(hidden) : messages, hidden === 0)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -1241,7 +1317,7 @@ export class WorkspaceHost implements AgentHost {
     const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
     if (!window) return
     this.hidden.set(threadId, Math.max(0, window.firstPosition))
-    thread.messages = window.messages
+    thread.messages = this.withVisuals(threadId, window.messages, !window.earlierAvailable)
     if (window.earlierAvailable) thread.earlierAvailable = true
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
@@ -1390,7 +1466,7 @@ export class WorkspaceHost implements AgentHost {
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
-    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear()
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
     this.subagentInputs.clear()
     this.ready = false
   }
@@ -1496,6 +1572,10 @@ export class WorkspaceHost implements AgentHost {
     }
   }
   private publish(): void {
+    if (this.settledThreadListeners.size) {
+      const ids = this.settledThreadIds()
+      for (const listener of this.settledThreadListeners) listener(ids)
+    }
     for (const listener of this.listeners) listener(this.workspaceSnapshot())
     if (this.activityListeners.size) {
       this.applyEvents()
@@ -1532,15 +1612,44 @@ export class WorkspaceHost implements AgentHost {
    * A publish the providers asked for. The first of a burst goes out at once, so a reply appearing
    * still feels immediate, and everything inside the window behind it becomes one publish at its
    * end with the last state. No adapter can make the host copy the workspace per event.
+   *
+   * `opening` is an opening change in a thread a window may be looking at: a message's first words or a new
+   * activity record. It goes out at once even inside a window, and starts a fresh one behind it, so the first
+   * words of a reply never wait behind the echo of the prompt that asked for it. The fresh window lets no second
+   * opening change through: a read that records a hundred messages in one task costs two publishes and a trailing
+   * one, not a hundred. Nor does a window whose trailing publish carried opening changes held back, so a flood
+   * that goes on across tasks, such as a long transcript read in chunks, costs one publish a window like any
+   * other burst. Later chunks of the same message ride the window as before.
    */
-  private publishSoon(): void {
-    if (this.publishTimer) { this.publishPending = true; return }
+  private publishSoon(opening = false): void {
+    if (this.publishTimer) {
+      if (!opening || this.publishCut) { this.publishPending = true; this.publishHeldOpening ||= opening; return }
+      clearTimeout(this.publishTimer); this.publishTimer = undefined; this.publishPending = false
+      this.publishNow(true)
+      return
+    }
+    this.publishNow(false)
+  }
+  /** Publish now and open a window behind it; `closed` is whether that window lets no opening change cut it. */
+  private publishNow(closed: boolean): void {
     this.publish()
+    this.publishCut = closed
+    this.publishHeldOpening = false
     this.publishTimer = setTimeout(() => {
       this.publishTimer = undefined
-      if (this.publishPending) { this.publishPending = false; this.publishSoon() }
+      this.publishCut = false
+      if (this.publishPending) { this.publishPending = false; this.publishNow(this.publishHeldOpening) }
     }, PUBLISH_WINDOW_MS)
     this.publishTimer.unref?.()
+  }
+  /** Whether a window may be looking at this thread: one it said it watches, or any while none has said. */
+  private inView(threadId: string): boolean { return !this.declared || this.watched.has(threadId) }
+  /** The activity records of the threads a window may be looking at, so a provider snapshot that brought one
+   * there can say so. A record in a thread nobody is looking at has nothing to paint and rides the window. */
+  private watchedRecordCount(): number {
+    let count = 0
+    for (const thread of this.state.snapshot.threads) if (this.inView(thread.id)) count += thread.activities?.length ?? 0
+    return count
   }
   /** A cache write the providers asked for: never more than one waiting, and the state it finds
    * when it runs is the one that is written. */
@@ -1580,8 +1689,9 @@ export class WorkspaceHost implements AgentHost {
       // project remains the workspace/memory scope for a thread created beneath it.
       const merged: AgentThread = { ...thread,
         subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
-        // A name the user set by hand, or one Sotto wrote for this thread, outranks whatever the provider still calls it.
-        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource } : {}),
+        // A name the user set by hand, or one Sotto gave this thread, outranks whatever the provider still calls it.
+        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource }
+          : old?.titledFromFirstMessage ? { title: old.title, titleSource: 'default' as const, titledFromFirstMessage: true } : {}),
         ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
@@ -1802,7 +1912,11 @@ export class WorkspaceHost implements AgentHost {
         this.known.clear()
         this.hidden.clear()
         this.storedAnchors.clear()
-        for (const thread of this.state.snapshot.threads) delete thread.earlierAvailable
+        // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
+        for (const thread of this.state.snapshot.threads) {
+          delete thread.earlierAvailable
+          if (thread.messages.some(isVisualMessage)) thread.messages = thread.messages.filter(message => !isVisualMessage(message))
+        }
       }
     }
     this.dirty = true
@@ -1822,9 +1936,25 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const thread = this.thread(threadId)
     if (thread.nativeSessionStarted === false || !isThreadProviderConnected(this.state.snapshot, thread)) return this.workspaceSnapshot()
+    // The read after an accepted send looks for the provider's echo, which reached this workspace as an event and
+    // may be waiting for the end of a publish window. What is held here answers it; the caller reads whole when the
+    // echo is not in it (#765).
+    if (purpose?.afterSend) return this.workspaceSnapshot()
     const creation = this.state.creations.find(item => item.threadId === threadId)
-    this.accept(await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
-      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId)))
+    const read = await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
+      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
+    // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
+    // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
+    const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty }
+    this.accept(read)
+    // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
+    if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot) && sameSnapshot(before.organization, [this.state.projectAliases, this.state.creations])) {
+      // `accept` marks the workspace for writing whatever it was handed; nothing changed, so that mark is taken back.
+      // A mark something else left is written in the usual window rather than on the way to the send.
+      this.dirty = before.dirty
+      if (this.dirty) this.writeSoon()
+      return this.workspaceSnapshot()
+    }
     await this.flush(); this.publish(); return this.workspaceSnapshot()
   }
   /**
@@ -1878,15 +2008,24 @@ export class WorkspaceHost implements AgentHost {
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
    * title stops overwriting this one. A blank name is the caller's to refuse before it gets here.
    */
-  async renameThread(threadId: string, title: string, source: 'user' | 'generated' = 'user'): Promise<AgentHostSnapshot> {
+  async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
-    const previous = { title: thread.title, titleSource: thread.titleSource }
+    const previous = { title: thread.title, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
     thread.title = title
-    thread.titleSource = source
+    // A first-message title is still a `default` name to everything that reads one; only its flag tells it apart.
+    thread.titleSource = source === 'first-message' ? 'default' : source
+    if (source === 'first-message') thread.titledFromFirstMessage = true
+    else delete thread.titledFromFirstMessage
     this.dirty = true
     try { await this.flush() }
-    catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+    catch (error) {
+      const restored = this.thread(threadId)
+      Object.assign(restored, { title: previous.title, titleSource: previous.titleSource })
+      if (previous.titledFromFirstMessage) restored.titledFromFirstMessage = true
+      else delete restored.titledFromFirstMessage
+      throw error
+    }
     this.publish(); return this.workspaceSnapshot()
   }
   private thread(id: string): AgentThread {
@@ -2226,6 +2365,7 @@ export class WorkspaceHost implements AgentHost {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
       const dispatched = command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills }
         : command.type === 'configure-thread' ? this.hostRead(command) : command
+      if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       const result = await this.inner.execute(dispatched)
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
       if (command.type === 'configure-thread') {
@@ -2305,6 +2445,16 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
+  }
+  private settledThreadIds(): readonly string[] {
+    const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
+    return this.state.snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id)
+  }
+  /** Settlement metadata, immediately and on publication, without materializing thread histories. */
+  subscribeSettledThreads(listener: (ids: readonly string[]) => void): () => void {
+    this.settledThreadListeners.add(listener)
+    listener(this.settledThreadIds())
+    return () => this.settledThreadListeners.delete(listener)
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.activityListeners.add(listener); return () => this.activityListeners.delete(listener) }

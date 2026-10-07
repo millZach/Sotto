@@ -4,6 +4,7 @@ import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkil
 import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
+import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
@@ -241,6 +242,12 @@ export const agentMessageSchema = z.object({
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
+  /**
+   * Set on a message Sotto made for a visual an agent drew (ADR-0056), whose ID starts `visual:` and whose text is the
+   * visual's words. A visual this reader cannot read is dropped and the text stands in; an older reader drops the field.
+   * Either way the message is then its words alone: `isVisualMessage` says no.
+   */
+  visual: agentVisualSchema.optional().catch(undefined),
 })
 /**
  * What the sidebar reads about a thread's history without holding that history. The shell stream
@@ -313,6 +320,12 @@ export const agentThreadSchema = z.object({
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
+  /**
+   * The title is a first-message title: the opening words of the thread's first message, held until its generated
+   * title lands. Its `titleSource` stays `default`, the value host protocol v1 carries for it; this optional field
+   * is what keeps a provider's own name from overwriting it.
+   */
+  titledFromFirstMessage: z.boolean().optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
@@ -540,7 +553,7 @@ export const agentConfigurationSchema = z.object({
   reasoningEffort: z.string().max(64).default(''),
   checkClientUpdates: z.boolean().default(true),
   /**
-   * What a new thread in a project starts on, apart from personal chats' reasoning model and effort
+   * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
    * is empty the same way, meaning the chosen model's own default; `newThreadRuntimeMode` is absent the same
@@ -603,6 +616,8 @@ export const agentDeliverySchema = z.object({
   status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   commandId: id.optional(), messageId: id.optional(),
+  /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
+  packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -627,6 +642,8 @@ export const agentStateSchema = z.object({
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
   draftAttachments: agentAttachmentHandlesSchema.optional(),
   deliveredDrafts: agentDeliveryReceiptsSchema.optional(),
+  /** Exact revisions superseded or explicitly cleared. This is not native delivery evidence. */
+  obsoleteDrafts: agentDeliveryReceiptsSchema.optional(),
   threadDrafts: z.array(agentThreadDraftSchema).optional(),
   /** Main-only, ephemeral evidence for these exact revisions, including empty draft clears.
    * Missing evidence never confirms persistence. It is rebuilt from disk on startup. */
@@ -769,9 +786,27 @@ export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
 
-/** The sidebar's facts about a thread's history, derived from the history itself. */
+/**
+ * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
+ * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
+ * titles and supervision. A `visual:` message without a visual it can read (a shape this reader does not know, or a
+ * socket client's copy, which never carries one) is its words alone, and counts as a reply everywhere. The `visual`
+ * field is asked first, so a pass over a long history reads no other message's ID.
+ */
+export function isVisualMessage<T extends Pick<AgentMessage, 'id' | 'visual'>>(message: T): message is T & { visual: AgentVisual } {
+  return message.visual !== undefined && message.id.startsWith(VISUAL_MESSAGE_PREFIX)
+}
+/** The newest message that is not a visual: the last thing the agent or the user wrote. */
+export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>>(messages: readonly T[]): T | undefined {
+  return messages.findLast(message => !isVisualMessage(message))
+}
+/**
+ * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
+ * agent's words, so it is left out: sidebar rows and search keep what the agent wrote.
+ */
 export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
-  const { messages, activities = [] } = thread
+  const { activities = [] } = thread
+  const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')
@@ -796,7 +831,7 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list, so a Devin thread keeps its placeholder and is offered no Regenerate that could do nothing.
+ * list, so a Devin thread keeps its first-message title or stand-in and is offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin'
@@ -838,11 +873,17 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
-  z.object({ type: z.literal('compose'), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
-  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
+  z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
+  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
+    attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
+    questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(), composer: z.literal('manual').optional() }).strict()
+    .refine(value => value.questionsDigest === undefined || Boolean(value.requestId), 'Use the original question ID with its form digest.'),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
-  z.object({ type: z.literal('send') }).strict(),
+  z.object({ type: z.literal('send'), draft: z.object({ threadId: id, draftId: z.uuid().optional(), text,
+    attachments: agentAttachmentHandlesSchema.optional(),
+    binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
+      .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),
+  }).strict().optional() }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
@@ -984,6 +1025,25 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
+const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok'] as const
+/**
+ * The clients to connect when the current selection is not installed.
+ * Codex remains the default when its CLI is present; otherwise Claude Code, then Grok Build.
+ * A provider the user turned off stays off. Devin is included only when it was already enabled and its CLI is present.
+ * Returns null when the current selection can already connect, or when every installed client was turned off.
+ */
+export function selectInstalledProviders(configuration: AgentConfiguration, installed: readonly ProviderId[]): Pick<AgentConfiguration, 'provider' | 'enabledProviders'> | null {
+  const present = new Set(installed)
+  const enabled = enabledThreadProviders(configuration)
+  if (present.has(configuration.provider) && enabled.some(id => present.has(id))) return null
+  const off = new Set(configuration.disconnectedProviders ?? [])
+  const enabledProviders: ProviderId[] = INSTALLED_PROVIDER_ORDER.filter(id => present.has(id) && !off.has(id))
+  if (enabled.includes('devin') && present.has('devin') && !off.has('devin')) enabledProviders.push('devin')
+  const provider = enabledProviders[0]
+  if (!provider) return null
+  if (provider === configuration.provider && enabled.length === enabledProviders.length && enabled.every((id, index) => id === enabledProviders[index])) return null
+  return { provider, enabledProviders }
+}
 export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThread): AgentCapabilities {
   host = hostForThread(host, thread)
   if (!host.providers || !thread.providerId) return host.capabilities
@@ -1019,7 +1079,7 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
 }
 /**
  * The model a new thread in a project starts on (issue #347): the model chosen in Settings → Agents' "New
- * threads start with" row, or, unset, the same reasoning-based default a personal chat starts on
+ * threads start with" row, or, unset, the coordinator's reasoning-based default
  * (`defaultThreadModelId`), which is today's behaviour for an install made before the setting existed.
  */
 export function defaultNewThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[], accounts: readonly SubscriptionAccount[] = []): string {

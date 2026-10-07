@@ -8,10 +8,10 @@ import type { PairedPhone, PhonesBridge, PhonesCommand, PhonesState } from '../.
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
 const OFF: PhonesState = {
-  enabled: false, localHostRunning: true, phase: 'off', tailscale: { status: 'waiting' }, serve: { status: 'waiting' }, address: null,
+  enabled: false, localHostRunning: true, phase: 'off', tailscale: { status: 'waiting' }, serve: { status: 'waiting' }, servePort: null, address: null,
   computerName: 'LAPTOP-RUSSH2J5', defaultName: 'LAPTOP-RUSSH2J5', code: null, phones: [], answersAvailable: true,
 }
-const READY: PhonesState = { ...OFF, enabled: true, phase: 'on', tailscale: { status: 'ok', hostName: 'laptop-russh2j5', dnsName: DNS }, serve: { status: 'ok' }, address: `https://${DNS}:8443`, defaultName: 'laptop-russh2j5', computerName: 'laptop-russh2j5' }
+const READY: PhonesState = { ...OFF, enabled: true, phase: 'on', tailscale: { status: 'ok', hostName: 'laptop-russh2j5', dnsName: DNS }, serve: { status: 'ok' }, servePort: 8443, address: `https://${DNS}:8443`, defaultName: 'laptop-russh2j5', computerName: 'laptop-russh2j5' }
 const PHONE: PairedPhone = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-09-26T10:00:00.000Z', connected: true, canAnswer: false }
 
 function fixture(initial: PhonesState, answer?: (command: PhonesCommand, state: PhonesState) => PhonesState) {
@@ -153,11 +153,17 @@ it('Tailscale not running: the first step fails in plain words, the rest wait, a
   expect(command).toHaveBeenCalledWith({ type: 'retry' })
 })
 
-it('port taken: says Sotto left the other app’s setting alone', async () => {
+it('ports taken: says Sotto left the other apps’ settings on 8443 and 10000 alone', async () => {
   show({ ...READY, phase: 'failed', serve: { status: 'failed', reason: 'port-taken' }, address: null })
   await screen.findByRole('img', { name: 'Failed' })
-  expect(step('Tailscale Serve on port 8443').textContent).toContain('Another app already uses port 8443 in Tailscale Serve on this computer. Sotto left that setting alone, and nothing was changed.')
+  expect(step('Tailscale Serve on port 8443').textContent).toContain('Other apps already use ports 8443 and 10000 in Tailscale Serve on this computer. Sotto left those settings alone, and nothing was changed.')
   expect(within(step('Tailscale Serve on port 8443')).queryByRole('button', { name: 'Turn on Serve in Tailscale' })).toBeNull()
+})
+
+it('8443 held by another app: names port 10000, says why, and shows that address', async () => {
+  show({ ...READY, servePort: 10000, address: `https://${DNS}:10000` })
+  await screen.findByText(`https://${DNS}:10000`)
+  expect(step('Tailscale Serve on port 10000').textContent).toContain('Sotto added it on 10000, because another app had 8443. Port 443 stays free for other apps.')
 })
 
 it('Serve not turned on for the tailnet: offers the page that turns it on', async () => {
@@ -220,7 +226,7 @@ it('explains when phone access settings could not be saved', async () => {
 it('explains cleanup when the saved record could not be read', async () => {
   show({ ...OFF, phase: 'cleanup-failed', serve: { status: 'failed', reason: 'cleanup-record' } })
   expect(await screen.findByText(/couldn’t read its saved cleanup record/)).toBeVisible()
-  expect(screen.getByText(/Remove the setting on port 8443 in Tailscale, then press Try again/)).toBeVisible()
+  expect(screen.getByText(/Remove Sotto’s setting on port 8443 or 10000 in Tailscale, then press Try again/)).toBeVisible()
 })
 
 

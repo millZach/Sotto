@@ -4,8 +4,12 @@ export const PHONES_GET = 'phones:get'
 export const PHONES_COMMAND = 'phones:command'
 export const PHONES_CHANGED = 'phones:changed'
 
-/** The Tailscale Serve port phone access uses. 443 is left to other apps (ADR-0033). */
-export const PHONE_ACCESS_SERVE_PORT = 8443
+/**
+ * The Tailscale Serve ports phone access may use: 8443, or 10000 when another app already holds 8443. Setup
+ * tries the port it last used first, so phones keep their address. 443 is left to other apps (ADR-0033). Serve offers HTTPS on these three only.
+ */
+export const PHONE_ACCESS_SERVE_PORTS = [8443, 10000] as const
+export type PhoneAccessServePort = (typeof PHONE_ACCESS_SERVE_PORTS)[number]
 
 /** The first row of the Phones checklist: whether Tailscale is up on this computer. */
 export type TailscaleCheck =
@@ -13,14 +17,14 @@ export type TailscaleCheck =
   | { readonly status: 'ok'; readonly hostName: string; readonly dnsName: string }
   | { readonly status: 'failed'; readonly reason: 'missing' | 'not-running' }
 
-/** The second row: whether Sotto's Tailscale Serve setting on port 8443 is in place. */
+/** The second row: whether Sotto's Tailscale Serve setting, on 8443 or 10000, is in place. */
 export type ServeCheck =
   | { readonly status: 'waiting' }
   | { readonly status: 'ok' }
   | {
       readonly status: 'failed'
       /**
-       * `port-taken`: port 8443 already carries another Serve setting, which Sotto leaves alone.
+       * `port-taken`: ports 8443 and 10000 both carry another app's Serve setting, which Sotto leaves alone.
        * `not-enabled`: the tailnet has not turned Serve on; `canOpenSetup` says whether Sotto has the page that turns it on.
        * `cleanup`: phones cannot connect while Sotto finishes removing its Serve setting.
        * `cleanup-record`: cleanup cannot identify an occupied setting because its saved record is unreadable.
@@ -48,11 +52,20 @@ export interface PhonesState {
   readonly enabled: boolean
   /** Phone access serves the local host's threads, so it needs the local host running. */
   readonly localHostRunning: boolean
-  /** `starting` checks setup; `on` accepts phones; `failed` stops setup; `cleanup-failed` denies connections while cleanup retries. */
+  /**
+   * `starting` checks setup; `on` means the listener is up and Serve carries it, admitting phones only while `enabled` (a
+   * headless host keeps it up for desktops with phone access off, ADR-0053); `failed` stops setup; `cleanup-failed` denies
+   * connections while cleanup retries.
+   */
   readonly phase: 'off' | 'starting' | 'on' | 'failed' | 'cleanup-failed'
   readonly tailscale: TailscaleCheck
   readonly serve: ServeCheck
-  /** `https://<name>.<tailnet>.ts.net:8443`, once Serve is in place. */
+  /**
+   * The Serve port phones use: 8443, or 10000 when another app held 8443 when Sotto chose. Null until Sotto has chosen; absent from
+   * a host from before the 10000 fallback, which only ever uses 8443.
+   */
+  readonly servePort?: PhoneAccessServePort | null | undefined
+  /** `https://<name>.<tailnet>.ts.net:8443` (or `:10000`), once Serve is in place. */
   readonly address: string | null
   /** The name phones show for this computer: the setting, or `defaultName` when it is empty. */
   readonly computerName: string
@@ -105,6 +118,7 @@ export const phonesStateSchema = z.object({
     z.object({ status: z.literal('ok') }),
     z.object({ status: z.literal('failed'), reason: z.enum(['port-taken', 'not-enabled', 'denied', 'listener', 'failed', 'cleanup', 'cleanup-record', 'record']), canOpenSetup: z.boolean().optional() }),
   ]),
+  servePort: z.union([z.literal(8443), z.literal(10000)]).nullable().optional(),
   address: z.string().max(512).nullable(),
   computerName: z.string().max(256), defaultName: z.string().max(256),
   code: z.object({ code: z.string().min(1).max(32), expiresAt: z.iso.datetime() }).nullable(),

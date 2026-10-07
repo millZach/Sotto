@@ -12,6 +12,8 @@ export interface WorktreeCleanupHost {
   workspaceSnapshot(): AgentHostSnapshot
   reclaimThreadWorktree(threadId: string, options: { automatic: true; expectedMergedTip?: string }): Promise<unknown>
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
+  /** Reports the current IDs immediately, then on publication, without copying histories. */
+  subscribeSettledThreads?(listener: (ids: readonly string[]) => void): () => void
   setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: { expectedMergedTip: string; expectedMergedBranch: string }): Promise<unknown>
 }
 export interface WorktreeCleanupDependencies {
@@ -65,13 +67,24 @@ export class WorktreeCleanup {
     this.now = dependencies.now ?? Date.now
   }
   start(): void {
-    this.settled = this.settledThreads(this.dependencies.host.workspaceSnapshot())
-    this.unsubscribe = this.dependencies.host.subscribe(snapshot => {
-      const settled = this.settledThreads(snapshot)
+    const changed = (ids: Iterable<string>) => {
+      const settled = new Set(ids)
       const newlySettled = [...settled].some(id => !this.settled.has(id))
       this.settled = settled
       if (newlySettled && this.dependencies.rules().onSettle) this.request()
-    })
+    }
+    const host = this.dependencies.host
+    if (host.subscribeSettledThreads) {
+      let initial = true
+      this.unsubscribe = host.subscribeSettledThreads(ids => {
+        // The immediate delivery seeds existing settlement; start requests its own sweep below.
+        if (initial) { initial = false; this.settled = new Set(ids) }
+        else changed(ids)
+      })
+    } else {
+      this.settled = this.settledThreads(host.workspaceSnapshot())
+      this.unsubscribe = host.subscribe(snapshot => changed(this.settledThreads(snapshot)))
+    }
     this.timer = setInterval(() => this.request(), this.dependencies.intervalMs ?? HOUR_MS)
     this.timer.unref?.()
     this.request()

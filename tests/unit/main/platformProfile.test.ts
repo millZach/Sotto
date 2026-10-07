@@ -13,7 +13,6 @@ describe('platformProfile', () => {
     expect(profile.mainWindowChrome).toBe('frameless')
     expect(profile.trafficLightPosition).toBeNull()
     expect(profile.applicationMenu).toBe('none')
-    expect(profile.dockPresence).toBe('regular')
     expect(profile.widgetAlwaysOnTopLevel).toBe('normal')
     expect(profile.widgetFocusable).toBe(false)
     expect(profile.widgetVisibleOnAllWorkspaces).toBe(false)
@@ -30,10 +29,10 @@ describe('platformProfile', () => {
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
       applicationMenu: 'none',
-      dockPresence: 'regular',
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
+      widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
@@ -48,10 +47,10 @@ describe('platformProfile', () => {
       mainWindowChrome: 'hidden-inset',
       trafficLightPosition: { x: 16, y: 16 },
       applicationMenu: 'macos',
-      dockPresence: 'dynamic',
       widgetAlwaysOnTopLevel: 'floating',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: true,
+      widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,

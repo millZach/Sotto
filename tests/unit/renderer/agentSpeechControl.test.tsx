@@ -24,6 +24,87 @@ function stateFixture(): AgentState {
 }
 
 describe('speech interruption from the renderer', () => {
+  it.each([
+    { source: 'control', pending: false }, { source: 'control', pending: true },
+    { source: 'spoken', pending: false }, { source: 'spoken', pending: true },
+  ])('keeps $source microphone mute across disabling with release pending=$pending', async ({ source, pending }) => {
+    let state = stateFixture()
+    let receive!: (state: AgentState) => void
+    let utterance!: (audio: Float32Array) => void
+    let finishRelease!: () => void
+    const release = new Promise<void>(resolve => { finishRelease = resolve })
+    const start = vi.fn(async () => undefined)
+    const stop = vi.fn(async () => { if (pending) await release })
+    external.dependencies = {
+      createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: true, endSeconds: 0 }), dispose() {} }),
+      createCapture: options => { utterance = options.onUtterance; return { start, stop, setSuppressed() {} } },
+      createTranscriber: () => ({ load: async () => undefined, transcribe: async () => ({ text: 'mute microphone', language: 'en' }), cancel() {}, dispose() {} }),
+      speech: { speak: vi.fn(async () => undefined), stop: vi.fn() }, createId: () => 'test', setTimer: (callback, delay) => setTimeout(callback, delay), clearTimer: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    }
+    const command = vi.fn<AgentBridge['command']>(async request => {
+      if (request.type === 'voice') state = { ...state, voice: { ...state.voice, action: request.action, revision: state.voice.revision + 1 } }
+      if (request.type === 'voice-state') state = { ...state, voice: { ...state.voice, status: request.status, error: request.error ?? null } }
+      return state
+    })
+    vi.stubGlobal('sottoE2E', {})
+    vi.stubGlobal('sotto', { agents: agentWireBridge({ get: async () => state, onState: listener => { receive = listener; return () => undefined }, command }) })
+    let controls!: ReturnType<typeof useAgents>
+    function Controls() { controls = useAgents(); return null }
+    const view = (enabled: boolean) => <AgentProvider settings={{ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: enabled }} dictation={{ status: 'idle' }}><Controls /></AgentProvider>
+    const rendered = render(view(true))
+    await waitFor(() => expect(controls.voice.status).toBe('wake'))
+    act(() => { if (source === 'control') controls.muteVoice(); else utterance(new Float32Array(160).fill(0.1)) })
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1))
+    if (!pending) await waitFor(() => expect(controls.voice.status).toBe('muted'))
+    command.mockClear()
+    rendered.rerender(view(false))
+    expect(controls.voice.status).toBe('off')
+    await act(async () => { finishRelease(); await release })
+    expect(command).not.toHaveBeenCalled()
+    rendered.rerender(view(true))
+    await waitFor(() => expect(controls.voice.status).toBe('muted'))
+    expect(start).toHaveBeenCalledTimes(1)
+    // A fresh ordinary host state cannot replay the already consumed mute.
+    await act(async () => { receive({ ...state }) })
+    act(() => controls.muteVoice())
+    await waitFor(() => expect(controls.voice.status).toBe('wake'))
+    expect(start).toHaveBeenCalledTimes(2)
+  })
+  it('waits for microphone release before restoring voice', async () => {
+    const state = stateFixture()
+    let finishRelease!: () => void
+    const pendingRelease = new Promise<void>(resolve => { finishRelease = resolve })
+    const start = vi.fn(async () => undefined)
+    const stopCapture = vi.fn(() => pendingRelease)
+    external.dependencies = {
+      createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: false, endSeconds: 0 }), dispose() {} }),
+      createCapture: () => ({ start, stop: stopCapture, setSuppressed() {} }),
+      createTranscriber: () => ({ load: async () => undefined, transcribe: async () => ({ text: '', language: 'en' }), cancel() {}, dispose() {} }),
+      speech: { speak: vi.fn(async () => undefined), stop: vi.fn() }, createId: () => 'test', setTimer: (callback, delay) => setTimeout(callback, delay), clearTimer: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    }
+    const command = vi.fn<AgentBridge['command']>(async () => state)
+    vi.stubGlobal('sottoE2E', {})
+    vi.stubGlobal('sotto', { agents: agentWireBridge({ get: async () => state, onState: () => () => undefined, command }) })
+    let controls!: ReturnType<typeof useAgents>
+    function Controls() { controls = useAgents(); return null }
+    const view = (enabled: boolean | null) => <AgentProvider settings={enabled === null ? null : { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: enabled }} dictation={{ status: 'idle' }}><Controls /></AgentProvider>
+    const rendered = render(view(true))
+    await waitFor(() => expect(controls.voice.status).toBe('wake'))
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+    command.mockClear()
+    rendered.rerender(view(false))
+    expect(controls.voice.status).toBe('off')
+    expect(stopCapture).toHaveBeenCalledTimes(1)
+    await act(async () => { await Promise.resolve() })
+    expect(command).not.toHaveBeenCalled()
+    rendered.rerender(view(null))
+    rendered.rerender(view(true))
+    await act(async () => { await Promise.resolve() })
+    expect(start).toHaveBeenCalledTimes(1)
+    await act(async () => { finishRelease(); await pendingRelease })
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(2))
+    expect(controls.voice.status).toBe('wake')
+  })
   it('keeps Review Next, reopen, legacy Next and spoken permission targets aligned through the real controller', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-review-context-'))
     const host = new E2EAgentHost()
@@ -79,7 +160,7 @@ describe('speech interruption from the renderer', () => {
     await act(async () => { state = { ...state, queue: state.queue.slice(0, 1) }; receive(state) })
     expect(controls.attention.show).toBe(false)
     expect(controls.state?.host.threads[0]?.requests).toHaveLength(2)
-    expect(command.mock.calls.every(([request]) => (request as { type: string }).type === 'voice' || (request as { type: string }).type === 'voice-state')).toBe(true)
+    expect(command).not.toHaveBeenCalled()
     await act(async () => { state = { ...state, queue: state.queue.map(item => ({ ...item, text: 'New permission details' })) }; receive(state) })
     expect(controls.attention.show).toBe(true)
     act(() => controls.attention.reopen())

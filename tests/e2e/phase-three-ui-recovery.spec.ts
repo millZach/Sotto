@@ -9,11 +9,9 @@ import { BUILT_IN_THEMES, getThemeColorsForMode } from '../../src/shared/themes/
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
 
-// Recovery states of the Phase 3 tools and Chats in the complete app. AppShell, renderer, preload, IPC and the production
-// browser, terminal and personal chat services are real. Coding providers and the personal Codex connection come from the
-// explicit unpackaged E2E fixtures; no native account or installed client runs. Each refusal is produced for real: the
-// browser's working folder is moved away, and the personal fixture's own storage is made unwritable so its send fails
-// after the service has accepted it. The terminal selection check writes explicit Nocturne roles to isolate color conversion
+// Recovery states of the Phase 3 tools in the complete app. AppShell, renderer, preload, IPC and production browser
+// and terminal services are real. Coding providers use the unpackaged E2E fixtures; no native account runs.
+// The browser's working folder is moved away to produce its refusal. The terminal selection check writes explicit Nocturne roles to isolate color conversion
 // and contrast. phase-three-ui-final-fixes.spec.ts separately verifies the retained terminal through real theme controls.
 
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-ui-recovery')
@@ -59,7 +57,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
     const agents = window.sotto!.agents!
     await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
     const state = await agents.command({ type: 'connect' })
-    const thread = state.host.threads.find(item => item.id === 'workshop')!
+    const thread = state.host.threads.find(item => item.id.replace(/^host:[0-9a-f-]+:/iu, '') === 'workshop')!
     return state.host.projects.find(project => project.id === thread.projectId)!.path
   })
   expect(folder.startsWith(launched.userData)).toBe(true)
@@ -127,77 +125,6 @@ test('explains a page main refused to show, and shows it again on Try again once
   }
 })
 
-test('recovers a message Codex did not take into the composer, after a newer draft, without sending it again', async () => {
-  test.setTimeout(180_000)
-  const profile = await ownedProfile('sotto-e2e-phase3-ui-failed-send-')
-  const launched = await launchSotto('success', profile)
-  const { page } = launched
-  const native = join(profile, 'e2e-personal-native.json')
-  try {
-    await page.evaluate(async () => {
-      const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-    })
-    await resize(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await page.getByRole('region', { name: 'Chat' }).getByRole('button', { name: 'New chat' }).click()
-    const composer = page.getByRole('textbox', { name: 'Message' })
-    await expect(composer).toBeFocused()
-    await page.keyboard.type('Plan a quiet weekend near the coast')
-    await page.keyboard.press('Enter')
-    const transcript = page.getByLabel('Chat transcript', { exact: true })
-    await expect(transcript.getByRole('heading', { name: 'A saved conversation' })).toBeVisible()
-
-    // The fixture provider can no longer save its conversation, so the next send fails after main accepted it.
-    await rm(native, { force: true })
-    await mkdir(native)
-    await page.keyboard.type('Book the ferry with $brai')
-    await expect(page.getByRole('listbox', { name: 'Skills' }).getByRole('option')).toContainText('$brainstorm')
-    await page.keyboard.press('Enter')
-    await page.keyboard.type('for Saturday')
-    const original = 'Book the ferry with $brainstorm for Saturday'
-    await expect(composer).toHaveValue(original)
-    await page.keyboard.press('Enter')
-    await expect(composer).toHaveValue('')
-    const pending = transcript.getByRole('article', { name: 'Pending message' })
-    await expect(pending.locator('.thread-message__status')).toHaveText('Not sent', { timeout: 15_000 })
-    await expect(pending).toContainText(original)
-    await expect(pending).not.toContainText('Edit it in the composer')
-    await expect(composer).toHaveValue('')
-
-    // A newer draft, typed after the failure.
-    await composer.click()
-    await page.keyboard.type('Also check the weather')
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.personalChats!.get()).chats[0]!.draft.text)).toBe('Also check the weather')
-    const recover = pending.getByRole('button', { name: 'Edit in composer' })
-    await expect(recover).toBeVisible()
-    await shoot(page, 'chat-not-sent-1280')
-    await recover.click()
-
-    await expect(composer).toHaveValue(`Also check the weather\n\n${original}`)
-    await expect(composer).toBeFocused()
-    await expect(pending.getByText('It is in the composer.')).toBeVisible()
-    await expect.poll(() => page.evaluate(async () => {
-      const chat = (await window.sotto!.personalChats!.get()).chats[0]!
-      return { text: chat.draft.text, skills: chat.draft.skills.map(skill => skill.name), sends: chat.submissions.filter(item => item.text.startsWith('Book the ferry')).length }
-    })).toEqual({ text: `Also check the weather\n\n${original}`, skills: ['brainstorm'], sends: 1 })
-    await shoot(page, 'chat-not-sent-recovered-1280')
-    await resize(launched, 820, 560)
-    await expect(pending.getByText('It is in the composer.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Send message' })).toBeInViewport()
-    await shoot(page, 'chat-not-sent-recovered-820x560', ['dark'])
-
-    // Sending it again is the reader's choice, and goes through once the provider can save again.
-    await rm(native, { recursive: true, force: true })
-    await page.getByRole('button', { name: 'Send message' }).click()
-    await expect(composer).toHaveValue('')
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.personalChats!.get()).chats[0]!.submissions.at(-1)!.status), { timeout: 15_000 }).toBe('accepted')
-  } finally {
-    await rm(native, { recursive: true, force: true }).catch(() => undefined)
-    await closeSotto(launched)
-    await rm(profile, { recursive: true, force: true }).catch(() => undefined)
-  }
-})
 
 /** Nocturne's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
 function nocturneTerminal(mode: Mode): Record<string, string> {

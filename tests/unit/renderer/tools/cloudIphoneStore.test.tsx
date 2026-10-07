@@ -50,6 +50,28 @@ describe('the cloud iPhone store', () => {
     expect(bridge.sessions).toHaveBeenCalledWith({ threadId: 'workshop' })
   })
 
+  it('reads a thread this computer’s bridge refuses as it is asked, as a remote host’s is, as having no sessions', () => {
+    const { bridge } = fakeBridge([session()])
+    // The preload bridge throws before it returns a promise for a thread on another host.
+    vi.mocked(bridge.sessions).mockImplementationOnce(() => { throw new Error('This action belongs to another host. Select that host before trying again.') })
+    const store = new CloudIphoneStore()
+    render(<Probe store={store} threadId="forge-thread" />)
+    expect(() => act(() => store.watch(bridge, 'forge-thread'))).not.toThrow()
+    expect(screen.getByText('none / no-status')).toBeInTheDocument()
+  })
+
+  it('reads a listing that fails as no sessions, and asks again on the next watch', async () => {
+    const { bridge } = fakeBridge([session()])
+    vi.mocked(bridge.sessions).mockRejectedValueOnce(new Error('The bridge went away.'))
+    const store = new CloudIphoneStore()
+    render(<Probe store={store} threadId="workshop" />)
+    await act(async () => { store.watch(bridge, 'workshop'); await Promise.resolve() })
+    expect(store.sessionsFor('workshop')).toEqual([])
+    act(() => store.watch(bridge, 'workshop'))
+    await screen.findByText('asking:0 / no-status')
+    expect(bridge.sessions).toHaveBeenCalledTimes(2)
+  })
+
   it('watches a bridge once, and a session event updates the thread’s newest session', async () => {
     const { bridge, emit } = fakeBridge()
     const store = new CloudIphoneStore()

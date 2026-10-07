@@ -36,7 +36,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   const host = {
     workspaceSnapshot: () => structuredClone(state.host), snapshot: async () => structuredClone(state.host),
     subscribe: unsubscribe, subscribeSubagents: unsubscribe, setCheckpointHooks: idle,
-    useBrowserTools: idle, useHostSetupTools: idle,
+    useBrowserTools: idle, useThreadTools: idle,
     // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
     setMutationGuard: idle, gitActionFinished: async () => undefined,
     dispose: idle, disconnect: idle, close: async () => undefined,
@@ -49,7 +49,10 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
   return {
     agentControl: refuseMissing(control), agentHost: refuseMissing(host), threadRegistry: null,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
-    hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined },
+    hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined,
+      // No local thread here has Files, Changes or Agents to read.
+      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), gitChanges: async () => unavailable(),
+      gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),
     // No worktrees are owned here, so the cleanup has nothing to sweep and every call does nothing.

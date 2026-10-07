@@ -60,9 +60,10 @@ export function filesResultSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), value }).strict(),
     z.object({ ok: z.literal(false), error: filesErrorSchema }).strict()])
 }
+/** Files' reads and path actions. A thread on a paired host gets one without `reveal`: its folder is on that host. */
 export interface FilesBridge {
   list(request: FileListRequest): Promise<FilesResult<FileListing>>
   preview(request: FileRequest): Promise<FilesResult<FilePreview>>
   copyPath(request: FileRequest): Promise<FilesResult<FilePath>>
-  reveal(request: FileRequest): Promise<FilesResult<FilePath>>
+  reveal?(request: FileRequest): Promise<FilesResult<FilePath>>
 }
