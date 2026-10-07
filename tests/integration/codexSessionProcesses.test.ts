@@ -65,7 +65,8 @@ describe('Codex app-server per thread session', () => {
 
     await f.driver.completeTurn(kept, 'Kept reply')
     await expect.poll(() => replied(kept, 'Kept reply')).toBe(true)
-    expect((await thread(kept)).status).toBe('idle')
+    // The reply and the turn ending arrive as separate native notifications.
+    await expect.poll(async () => (await thread(kept)).status).toBe('idle')
 
     // The next action starts the thread's session again, on a new app-server, and it carries on.
     expect(await send(lost, 'Carry on')).toEqual({ accepted: true })

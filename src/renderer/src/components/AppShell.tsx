@@ -22,7 +22,7 @@ export interface AppShellProps {
   /**
    * `strip` is the shell of the loading, onboarding and voice surfaces. `page`
    * hands the whole window to a page that owns its own chrome (Threads,
-   * Settings, Chats): its navigation, its window controls and the update
+   * Settings): its navigation, its window controls and the update
    * control live inside it. `sidebar` seats the Threads sidebar beside the
    * page (Dictate, History, Help), with the window controls on the room's top
    * edge and the page's sentence at its foot.
@@ -54,28 +54,27 @@ const withoutCoordinator: ReadonlyArray<Room> = [dictate, threads]
 
 const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
   { id: 'threads', label: 'Threads' },
-  { id: 'chats', label: 'Chats' },
   { id: 'history', label: 'History' },
   { id: 'memory', label: 'Memory' },
   { id: 'settings', label: 'Settings' },
   { id: 'help', label: 'Help' },
 ]
 
-/** Which switch tab a page lights: Chats and Memory are the Threads room's other conversations, so they count as Threads. */
+/** Which switch tab a page lights: Memory belongs to the Threads room. */
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
   if (navigation === 'agents') return 'agents'
-  if (navigation === 'threads' || navigation === 'chats' || navigation === 'memory') return 'threads'
+  if (navigation === 'threads' || navigation === 'memory') return 'threads'
   return null
 }
 
 /**
- * Which layout a page takes. Threads, Settings and Chats own the window, their left column wearing the sidebar's
+ * Which layout a page takes. Threads and Settings own the window, their left column wearing the sidebar's
  * frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain for the
  * voice surfaces. `threadsPage` says whether the navigation lands on the Threads page, the beta gates included.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
-  if (threadsPage || navigation === 'settings' || navigation === 'chats') return 'page'
+  if (threadsPage || navigation === 'settings') return 'page'
   if (navigation === 'home' || navigation === 'history' || navigation === 'help') return 'sidebar'
   return 'strip'
 }

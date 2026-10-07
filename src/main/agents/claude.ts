@@ -1,9 +1,9 @@
+import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
-import { personalContext, type NativeConversation, type PersonalConversation, type PersonalCreateCommand, type PersonalMemory } from './personalConversation'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage } from './nativeUsage'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
@@ -151,9 +151,8 @@ export interface ClaudeStreamJsonHostOptions {
   logEvent?: (event: ClaudeAdapterEvent) => void
 }
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; contextMemoryIds: Set<string>; clientRevision: number }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number }
 
-/** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
   /** True until a read has run to the end of the transcript. */
@@ -167,6 +166,7 @@ interface Replay {
   words?: ReadonlyMap<string, string>
 }
 
+/** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
@@ -177,10 +177,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private readonly client: ClaudeSubscriptionClient
   private aliases: Record<string, Alias> = {}
-  private readonly threads = new Map<string, NativeConversation>()
-  private readonly personalMemories = new Map<string, readonly PersonalMemory[]>()
-  private readonly revokedContexts = new Set<string>()
-  private readonly personalContexts = new Map<string, string>()
+  private readonly threads = new Map<string, AgentThread>()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly starting = new Map<string, Promise<Runtime>>()
   /**
@@ -221,7 +218,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly replays = new Map<string, Replay>()
   /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
-  private readonly staleMemoryContexts = new Set<string>()
   private readonly nativeTakeovers = new Set<string>()
   private readonly completedOrigins = new Set<string>()
   /** The prompt each thread's running turn answers when Claude Code gave it to itself; its result need not name it. */
@@ -263,7 +259,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, compact: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'claude')
-    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'claude-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'claude-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.client = new ClaudeSubscriptionClient(options.userDataPath, { ...(options.executable ? { executable: options.executable } : {}), ...(options.args ? { prefixArgs: options.args } : {}), ...(options.environment ? { environment: options.environment } : {}) })
     this.reaper = new SessionReaper({
@@ -354,14 +350,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // compared against what its channel publishes (ADR-0042).
     this.state.version = await this.client.version(executable) || this.state.version
     this.executable = executable; this.aliases = aliases; this.state.projects = projects
-    for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
+    for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     // Reconnecting keeps what this process already projected, so its stored cursor stays usable.
     const held = new Map([...this.threads].map(([id, thread]) => [id, {
       threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.staleMemoryContexts.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
+      if (stored.kind === 'personal') continue
       let alias = stored
       if (alias.rollbackPending?.targetSessionId) {
         try { alias = await this.finishRollback(id, alias) }
@@ -371,23 +368,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.seedHistory(id, alias, held.get(id) ?? this.restoredHistory.get(id))
       // Handed back for this connect only; a later one is seeded again or reads from the first byte.
       this.restoredHistory.delete(id)
-      if (alias.kind === 'personal' && alias.origins.length && !await this.log(id).exists()) {
-        this.threads.get(id)!.historyStatus = 'error'; this.threads.get(id)!.historyError = 'Claude native history is unavailable. Cached messages are retained; restore its session before continuing.'
-      }
       await this.readLog(id)
       // A connect that another one replaced stops here, before it seeds or reads anything the new one owns.
       if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-      // Personal connections own only these aliases; reattach their native
-      // request channel on reconnect without waiting for a new user prompt.
-      if (alias.kind === 'personal') this.observed.add(id)
     }
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.connected = true
     this.reaper.start()
-    // Lazy sessions: connecting starts a CLI only for the watched set (and the personal chats added above).
+    // Lazy sessions: connecting starts a CLI only for the watched set.
     // Every other known thread is in the snapshot from its alias, and starts on its first action.
     for (const id of this.observed) {
-      if (!aliases[id] || aliases[id].rollbackPending) continue
+      if (!aliases[id] || aliases[id].kind === 'personal' || aliases[id].rollbackPending) continue
       try { await this.start(id) } catch { this.threads.get(id)!.status = 'error'; this.state.error = 'A Claude thread could not resume. Check its native session before sending again.' }
       if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     }
@@ -448,6 +439,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async snapshot(): Promise<AgentHostSnapshot> { await this.pollSessionLogs(); return this.view() }
   async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    if (this.aliases[threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     void _forceReload // Native discovery is always fresh; no account/directory cache can leak across threads.
     const cwd = this.aliases[threadId]?.cwd ?? (scope?.providerId === 'claude' ? scope.workingDirectory : undefined)
     if (!this.state.connected || !cwd) throw new Error('Reconnect this Claude thread before browsing skills.')
@@ -464,6 +456,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * its transcript never sees the prompt.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)
@@ -487,19 +480,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * `refreshThread`.
    */
   private async sync(id: string, purpose?: ThreadReadPurpose): Promise<void> {
+    if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (!this.aliases[id]) throw new Error('That Claude thread is unavailable.')
     const generation = this.generation
-    const alias = this.aliases[id]!, thread = this.threads.get(id)!
-    const firstReservedPrompt = this.dispatching.has(id) && alias.origins.length === 1 && this.messageLog.count(id) === 0 && this.runtimes.has(id)
-    if (alias.kind === 'personal' && alias.origins.length && !firstReservedPrompt && !await this.log(id).exists()) {
-      thread.historyStatus = 'error'; thread.historyError = 'Claude native history is unavailable. Cached messages are retained; restore its session before continuing.'
-      this.emit(); throw new Error(thread.historyError)
-    }
     // Reading a thread is opening it, so a reaped or never-started session starts here. A start that
     // cannot happen is reported by the action that needs it, not by a read.
     await this.start(id).catch(() => undefined)
     await this.readLog(id)
-    if (alias.kind === 'personal') { thread.historyStatus = 'ready'; delete thread.historyError }
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
     if (purpose?.retryUncertainAnswers) {
       const runtime = this.runtimes.get(id)
@@ -518,24 +505,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.messageLog.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   observeThreads(ids: readonly string[]): void {
-    this.observed.clear(); for (const id of ids) this.observed.add(id)
+    this.observed.clear(); for (const id of ids) if (this.aliases[id]?.kind !== 'personal') this.observed.add(id)
     this.messageLog.observe([...this.observed])
     if (!this.state.connected) return
-    for (const id of ids) if (this.aliases[id]) void this.start(id).catch(() => {
+    for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(() => {
       const thread = this.threads.get(id); if (thread) thread.status = 'error'
       this.state.error = 'A Claude thread could not resume. Check the native client.'; this.emit()
     })
   }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {
     const alias = this.aliases[id]
-    if (!alias || alias.kind === 'personal') return { supported: false, reason: 'Choose an owned Claude project thread.' }
+    if (!alias || !this.threads.has(id)) return { supported: false, reason: 'Choose an owned Claude project thread.' }
     return alias.rollbackPending ? { supported: false, reason: 'Claude rollback is unconfirmed. Review its native sessions before continuing.' }
       : { supported: true }
   }
   async rollbackThread(id: string, removeTurns: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     const alias = this.aliases[id], thread = this.threads.get(id)
     if (!alias || !thread || !this.state.connected) throw new Error('Connect this Claude thread before rewinding.')
-    if (alias.kind === 'personal') throw new Error('Personal chats do not have project checkpoints.')
     if (alias.rollbackPending) throw new Error('Claude rollback is unconfirmed; it will not be replayed.')
     if (!Number.isSafeInteger(removeTurns) || removeTurns < 1 || removeTurns > expectedUserMessageIds.length) throw new Error('Choose an exact Claude turn boundary.')
     if (thread.status === 'running' || thread.requests.length || this.dispatching.has(id)) throw new Error('Wait for Claude and answer its requests before rewinding.')
@@ -571,7 +557,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const next = await this.finishRollback(id, alias)
       // A confirmed rewind is the one change that takes words back: the thread's record starts again.
       this.messageLog.reset(id, next.historyEpoch)
-      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id); this.staleMemoryContexts.delete(id); this.nativeTakeovers.delete(id)
+      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id); this.nativeTakeovers.delete(id)
       for (const key of this.assistantBlocks.keys()) if (key.startsWith(`${id}:`)) this.assistantBlocks.delete(key)
       this.ensureThread(id, next); await this.readLog(id)
       if (generation !== this.generation || !this.state.connected) return { accepted: false, uncertain: true }
@@ -609,40 +595,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try { await this.persist() } catch (error) { this.aliases[id] = alias; throw error }
     return next
   }
-  personalSnapshot(): PersonalConversation[] {
-    return structuredClone([...this.threads.values()].filter((thread): thread is PersonalConversation => 'kind' in thread && thread.kind === 'personal')
-      .map(thread => this.messageLog.publishedThread(thread)))
-  }
-  async createPersonalConversation(command: PersonalCreateCommand, memories: readonly PersonalMemory[] = []): Promise<AgentHostResult> {
-    this.personalMemories.set(command.threadId, [...memories])
-    this.personalContexts.set(command.threadId, personalContext(memories))
-    return this.executeNative({ ...command, type: 'create-personal' })
-  }
-  async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>, memories: readonly PersonalMemory[]): Promise<AgentHostResult> {
-    if (this.aliases[command.threadId]?.kind !== 'personal') throw new Error('This is not an owned personal conversation.')
-    const context = personalContext(memories)
-    if (this.personalContexts.get(command.threadId) !== context) this.staleMemoryContexts.add(command.threadId)
-    this.personalMemories.set(command.threadId, [...memories])
-    this.personalContexts.set(command.threadId, context)
-    return this.execute(command)
-  }
-  /** Deletion is a user action, distinct from preferences falling out of retrieval. */
-  forgetPersonalMemories(ids: readonly string[]): void {
-    const deleted = new Set(ids)
-    for (const [id, memories] of this.personalMemories) {
-      const remaining = memories.filter(memory => !deleted.has(memory.id))
-      if (remaining.length !== memories.length) {
-        this.personalMemories.set(id, remaining); this.personalContexts.set(id, personalContext(remaining)); this.staleMemoryContexts.add(id)
-      }
-      if ([...(this.runtimes.get(id)?.contextMemoryIds ?? [])].some(memoryId => deleted.has(memoryId))) this.revokedContexts.add(id)
-    }
-  }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
-  private async executeNative(command: AgentHostCommand | (PersonalCreateCommand & { type: 'create-personal' })): Promise<AgentHostResult> {
+  private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
     // A command that ends (an answer, a stop, a dispatch let go) may leave an outdated CLI free to stop.
     try { return await this.dispatchNative(command) } finally { this.scheduleOutdatedStop() }
   }
-  private async dispatchNative(command: AgentHostCommand | (PersonalCreateCommand & { type: 'create-personal' })): Promise<AgentHostResult> {
+  private async dispatchNative(command: AgentHostCommand): Promise<AgentHostResult> {
+    if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (command.type === 'steer') throw new Error('This provider does not support native steering. Queue a follow-up instead.')
     if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
     if (command.type === 'create-project') {
@@ -651,12 +610,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
       projects.push({ id: command.projectId, title: command.title, path: command.path })
       await this.projectStore.write(projects); this.state.projects = projects; this.emit(); return { accepted: true }
     }
-    if (command.type === 'create-thread' || command.type === 'create-personal') {
+    if (command.type === 'create-thread') {
       if (this.aliases[command.threadId]) return { accepted: true }
       validateThreadOptions(this.state, command)
-      const project = command.type === 'create-thread' ? this.state.projects.find(candidate => candidate.id === command.projectId) : undefined
-      if (command.type === 'create-thread' && !project) throw new Error('Choose an existing project.')
-      const alias: Alias = { sessionId: randomUUID(), ...(command.type === 'create-personal' ? { kind: 'personal' as const } : { projectId: project!.id }), cwd: await existingWorkingDirectory(command.workingDirectory ?? project!.path), title: command.title, modelId: command.modelId,
+      const project = this.state.projects.find(candidate => candidate.id === command.projectId)
+      if (!project) throw new Error('Choose an existing project.')
+      const alias: Alias = { sessionId: randomUUID(), projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, modelId: command.modelId,
         reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
@@ -706,15 +665,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (thread.requests.length) throw new Error('Answer the pending Claude request before sending another prompt.')
       this.dispatching.add(id)
       try {
-        if (this.nativeTakeovers.has(id) || this.revokedContexts.has(id) || this.staleMemoryContexts.has(id) && !thread.backgroundWork?.length) {
+        if (this.nativeTakeovers.has(id)) {
           const stale = this.runtimes.get(id)
           if (stale) {
             await this.denyPending(id, stale)
             const ended = await this.stopRuntime(id, stale)
-            if (ended.length) this.report(workStopped(this.revokedContexts.has(id) ? 'A memory in this provider session was deleted' : 'The native conversation changed', ended,
+            if (ended.length) this.report(workStopped('The native conversation changed', ended,
               'The provider session resumes with the updated context before this message is sent.'))
           }
-          this.staleMemoryContexts.delete(id); this.revokedContexts.delete(id); this.nativeTakeovers.delete(id)
+          this.nativeTakeovers.delete(id)
         }
         const runtime = await this.start(id)
         verifyFileMentions(command.text, command.files)
@@ -998,6 +957,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   async closed(): Promise<void> { while (this.closures.size) await Promise.all(this.closures); await this.usage.flushed() }
   private async start(id: string): Promise<Runtime> {
+    if (this.aliases[id]?.kind === 'personal') throw new Error('That thread is unavailable.')
     this.reaper.touch(id)
     const pending = this.starting.get(id); if (pending) return pending
     const runtime = this.runtimes.get(id); if (runtime) return runtime
@@ -1014,10 +974,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const resume = await this.log(id).exists()
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     if (!resume && alias.origins.length) throw new Error('Claude native history is unavailable. Restore its session before continuing; Sotto will not recreate or resend an uncertain turn.')
-    const browser = alias.kind !== 'personal' ? await this.browserTools?.mcpServer(id) : undefined
+    const browser = await this.browserTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // A host setup thread also gets the host setup tools, while its setup runs; every other thread gets none.
-    const setup = alias.kind !== 'personal' ? await this.hostSetupTools?.mcpServer(id) : undefined
+    const setup = await this.hostSetupTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     const servers = [...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
       ...(setup ? [{ server: setup, definitions: this.hostSetupTools?.definitions ?? [] }] : [])]
@@ -1033,10 +993,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
-      ...(alias.kind === 'personal' ? ['--append-system-prompt', this.personalContexts.get(id) ?? personalContext()] : []),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), contextMemoryIds: new Set(this.personalMemories.get(id)?.map(memory => memory.id)), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(setup ? { MCP_TOOL_TIMEOUT: '600000' } : browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(setup ? { MCP_TOOL_TIMEOUT: '600000' } : browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => { if (this.runtimes.get(id) === runtime) this.frame(id, frame) }, () => {
         if (this.runtimes.get(id) !== runtime) return
         // Each thread has its own CLI, so one ending is this thread's failure, not the provider's: the others
@@ -1333,10 +1292,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.cursorTimer.unref()
   }
   private ensureThread(id: string, alias: Alias): void {
-    this.threads.set(id, { id, ...(alias.kind === 'personal' ? { kind: 'personal' as const } : { projectId: alias.projectId! }), ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [], activities: [] })
+    this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
-    this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.resumeCompactionDismissed)
+    this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.kind !== 'personal' && value.resumeCompactionDismissed)
   }
   private observeCompaction(id: string, frame: ClaudeFrame, fromLog: boolean): void {
     if (frame.parent_tool_use_id || frame.isSidechain || frame.type !== 'system' || !(frame.subtype === 'compact_boundary' || frame.subtype === 'status' && ['success', 'failed'].includes(String(frame.compact_result)))) return
