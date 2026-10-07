@@ -1,5 +1,5 @@
 // The diagrams captured into this folder, and the Mermaid settings they are drawn with. Data only: capture.mjs draws
-// them, and tests/unit/renderer/diagramSteps.test.ts checks the settings still match the app's renderer.
+// them, and tests/unit/renderer/mermaidStepFixtures.test.tsx checks the settings still match the app's renderer.
 
 export const SOURCES = {
   flowchart: [
