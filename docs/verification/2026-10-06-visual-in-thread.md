@@ -52,9 +52,29 @@ before the call and before the reply after it, including when the call comes in 
 - The window's copy of the thread holds the visual's text, ending "The visual is in Sotto on your computer."
 - No page errors were raised.
 
+## Real providers
+
+On October 6, `tests/e2e/visuals-live.spec.ts` ran the production app over an isolated profile with the real clients
+on this computer (`SOTTO_VISUALS_LIVE=1`, one provider at a time). Each thread was asked for one sequence diagram
+between two fixed sentences.
+
+- **Claude Code** (its default model, Ask for approval): the visual message sat between "Here is the round trip." and "That
+  is the whole trip.", and no request appeared ([live-claude-dark.png](../../artifacts/visual-in-thread/live-claude-dark.png)).
+  With the setting turned off, the next call drew nothing and asked nothing. Turned back on, the next call drew, and
+  that visual was there after a restart ([live-claude-restarted-dark.png](../../artifacts/visual-in-thread/live-claude-restarted-dark.png)).
+- **Codex** (GPT-6.1-Sol): the first run found a real defect. Codex sent its steps as a list of sentences, the tool
+  refused the call, and Codex went on without drawing. A step may now be a sentence; the rerun drew between the two
+  sentences with no request ([live-codex-dark.png](../../artifacts/visual-in-thread/live-codex-dark.png)).
+- **Grok Build** (Grok 4.7, Ask for approval): drew between the two sentences with no request in five of seven runs
+  ([live-grok-dark.png](../../artifacts/visual-in-thread/live-grok-dark.png)). In the other two the model called
+  `use_tool` with a name it guessed ("visualize", then "visual") instead of searching first. Grok asks before it
+  resolves such a name, and Sotto answers that question only for a name tied to its own server, so Grok's prompt
+  showed. The server's instructions now tell agents to search and use `sotto_visual__visualize`; of the five runs after
+  that change, four searched first and drew with no prompt, and one guessed "visual". A guessed name still shows
+  Grok's prompt, on purpose: Sotto cannot tell it from another server's tool of the same name.
+
 ## Not verified here
 
 - The iPhone app was not run. The socket strips the `visual` field for every client, which
   `tests/integration/socketHost.test.ts` checks for a whole detail, a delta and a read.
-- No real provider was asked to draw. The fake providers stand in for Claude Code, Codex and Grok Build, as they do
-  for the browser and host setup tools.
+- The packaged app was not run; the live runs used the built app from this branch.
