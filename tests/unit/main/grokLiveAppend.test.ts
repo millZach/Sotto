@@ -55,7 +55,7 @@ async function threadHolding(held: number) {
 
 describe('a Grok reply streaming onto a thread', () => {
   it('records each chunk after the first as an append, at a cost that does not grow with the messages held', async () => {
-    const work: Record<number, { set: number; add: number; appends: number }> = {}
+    const work: Record<number, { set: number; add: number; appends: number; searched: number }> = {}
     for (const held of [10, 2_000]) {
       const f = await threadHolding(held)
       await f.chunk('Ind')
@@ -63,15 +63,18 @@ describe('a Grok reply streaming onto a thread', () => {
       const set = vi.spyOn(ThreadMessageLog.prototype, 'set')
       const add = vi.spyOn(ThreadMessageLog.prototype, 'add')
       const appendText = vi.spyOn(ThreadMessageLog.prototype, 'appendText')
+      // Any list searched while a chunk lands: the held messages are never walked to find the reply.
+      const find = vi.spyOn(Array.prototype, 'find')
       for (const text of ['igo', ' it', ' is', '.']) await f.chunk(text)
-      work[held] = { set: set.mock.calls.length, add: add.mock.calls.length, appends: appendText.mock.calls.length }
+      const searched = Math.max(0, ...find.mock.contexts.map(list => (list as unknown[]).length))
+      work[held] = { set: set.mock.calls.length, add: add.mock.calls.length, appends: appendText.mock.calls.length, searched: searched >= held ? held : 0 }
       expect(f.events.slice(1).map(item => item.event)).toEqual(['igo', ' it', ' is', '.'].map(appendText => expect.objectContaining({ kind: 'message-text-appended', appendText })))
       expect((await f.adapter.snapshot()).threads.find(thread => thread.id === 'thread')?.messages.at(-1)?.text).toBe('Indigo it is.')
       vi.restoreAllMocks()
       f.internals.disconnect(); await f.internals.usage.flushed()
     }
     // No re-read of the thread for any chunk: the same work whether the thread holds ten messages or two thousand.
-    expect(work[10]).toEqual({ set: 0, add: 0, appends: 4 })
+    expect(work[10]).toEqual({ set: 0, add: 0, appends: 4, searched: 0 })
     expect(work[2_000]).toEqual(work[10])
   })
 

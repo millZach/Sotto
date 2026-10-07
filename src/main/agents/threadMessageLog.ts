@@ -67,6 +67,13 @@ function fnv(text: string, hash = 0x811c9dc5): number {
   return hash
 }
 
+/** A message in the held window. A streaming reply is nearly always the newest, so that one is looked at
+ * first and a chunk on it costs the same however long the thread is. */
+function heldMessage(track: Track, messageId: string): AgentMessage | undefined {
+  const last = track.messages?.at(-1)
+  return last?.id === messageId ? last : track.messages?.find(value => value.id === messageId)
+}
+
 /** True when the two messages differ in anything but their text. */
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
   return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId
@@ -242,7 +249,7 @@ export class ThreadMessageLog {
   /** `add`, with the held messages already indexed by a caller recording a whole list. */
   private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
-    const existing = held ? held.get(message.id) : track.messages?.find(value => value.id === message.id)
+    const existing = held ? held.get(message.id) : heldMessage(track, message.id)
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!message.text.length) { if (existing) Object.assign(existing, message); return }
@@ -286,7 +293,7 @@ export class ThreadMessageLog {
   appendText(threadId: string, messageId: string, appendText: string): void {
     if (!appendText.length) return
     const track = this.track(threadId)
-    const existing = track.messages?.find(value => value.id === messageId)
+    const existing = heldMessage(track, messageId)
     if (track.empty.has(messageId) && !track.ids.has(messageId)) {
       const opened = existing ?? { id: messageId, role: 'assistant' as const, text: '', createdAt: new Date().toISOString() }
       this.add(threadId, { ...opened, text: appendText })
