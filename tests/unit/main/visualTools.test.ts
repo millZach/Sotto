@@ -40,7 +40,7 @@ describe('the visualize tool', () => {
   })
 
   it('takes an interactive page and tells the agent how the page hears steps and the theme (ADR-0057)', async () => {
-    for (const phrase of ['kind "interactive"', '60,000 characters', 'cannot load anything', 'sotto-visual-step', 'sotto-visual-theme', '--sotto-accent', '--sotto-font', 'between 160 and 640 pixels'])
+    for (const phrase of ['kind "interactive"', '60,000 characters', 'cannot load anything', 'sotto-visual-step', 'sotto-visual-theme', '--sotto-accent', '--sotto-font', 'between 160 and 640 pixels', 'Size the page by its content', "at the top of the page's script", 'once the page has loaded'])
       expect(visualizeDefinition.description).toContain(phrase)
     const { tools, add } = server()
     const page = { title: 'A queue', kind: 'interactive', source: '<svg width="10" height="10"></svg>', steps: [{ text: 'It fills.', highlight: ['queue'] }] }

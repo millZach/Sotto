@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  clampVisualPageHeight, readVisualStep, readVisualTheme, VISUAL_PAGE_HEIGHT_MAX, VISUAL_PAGE_HEIGHT_MIN, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme,
+  clampVisualPageHeight, measuredPageHeight, readVisualStep, readVisualTheme, VISUAL_PAGE_HEIGHT_MAX, VISUAL_PAGE_HEIGHT_MIN, VISUAL_THEME_TOKENS, visualThemeCss, type VisualTheme,
 } from '../../../src/shared/visualGuest'
 import { visualPageRequestSchema, visualPageResultSchema } from '../../../src/shared/visualPages'
 
@@ -16,6 +16,13 @@ describe('the height Sotto gives a page', () => {
     'is %s measured, %s given', (measured, given) => {
       expect(clampVisualPageHeight(measured)).toBe(given)
     })
+  it('is measured from the content, even when the body is set to fill the frame', () => {
+    // Content of 300 pixels in a body that fills a 160-pixel frame: the body's scroll height says 300.
+    expect(measuredPageHeight(160, 300)).toBe(300)
+    // An ordinary page: its root's own box.
+    expect(measuredPageHeight(260, 244)).toBe(260)
+    expect(measuredPageHeight(200, undefined)).toBe(200)
+  })
   it('stays between 160 and 640 pixels', () => {
     expect([VISUAL_PAGE_HEIGHT_MIN, VISUAL_PAGE_HEIGHT_MAX]).toEqual([160, 640])
   })

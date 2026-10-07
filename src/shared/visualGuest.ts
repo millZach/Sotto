@@ -48,6 +48,15 @@ export interface VisualThemeMessage extends VisualTheme {
 export const VISUAL_PAGE_HEIGHT_MIN = 160
 export const VISUAL_PAGE_HEIGHT_MAX = 640
 /**
+ * How tall a page's content is: the larger of the root's own box and the body's scroll height. A body set to fill the
+ * frame (`height: 100%`) still reports content that runs past it, so a page so sized grows to its content rather than
+ * staying at the frame's height. Content sized by `vh` follows the frame and cannot be measured; the tool's description
+ * tells agents to size by content.
+ */
+export function measuredPageHeight(rootHeight: number, bodyScrollHeight: number | undefined): number {
+  return Math.max(rootHeight, bodyScrollHeight ?? 0)
+}
+/**
  * Whether a key gives focus back to Sotto: Escape, pressed by the user. A key the page made itself (`isTrusted` false)
  * moves nothing, so a page cannot take focus away from it, close Expand or flood Sotto with messages (ADR-0057).
  */

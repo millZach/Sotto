@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron'
 import {
   VISUAL_IPC_ESCAPE, VISUAL_IPC_HEIGHT, VISUAL_IPC_STEP, VISUAL_IPC_THEME, VISUAL_THEME_MESSAGE,
-  clampVisualPageHeight, readVisualStep, readVisualTheme, returnsFocus, visualThemeCss,
+  clampVisualPageHeight, measuredPageHeight, readVisualStep, readVisualTheme, returnsFocus, visualThemeCss,
 } from '../shared/visualGuest'
 
 // Sotto's preload for an interactive visual's sealed page (ADR-0057). It runs in an isolated world: the page sees none
@@ -9,7 +9,7 @@ import {
 // theme's style current, measures the page for Sotto, and gives Escape back to Sotto. It exposes nothing.
 
 // The node project types this file without the DOM library, so the few page objects it touches are named here.
-interface PageElement { textContent: string | null; setAttribute(name: string, value: string): void; getBoundingClientRect(): { height: number } }
+interface PageElement { textContent: string | null; readonly scrollHeight: number; setAttribute(name: string, value: string): void; getBoundingClientRect(): { height: number } }
 interface PageKeyEvent { readonly key: string; readonly repeat: boolean; readonly isTrusted: boolean }
 declare const window: {
   postMessage(message: unknown, targetOrigin: string): void
@@ -43,7 +43,7 @@ window.addEventListener('keydown', event => {
 
 let sent = 0
 const measure = (): void => {
-  const height = clampVisualPageHeight(document.documentElement.getBoundingClientRect().height)
+  const height = clampVisualPageHeight(measuredPageHeight(document.documentElement.getBoundingClientRect().height, document.body?.scrollHeight))
   if (height === sent) return
   sent = height
   ipcRenderer.sendToHost(VISUAL_IPC_HEIGHT, height)
