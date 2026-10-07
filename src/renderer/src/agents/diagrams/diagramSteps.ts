@@ -5,6 +5,7 @@
 
 import type { DiagramPalette } from './diagramPalette'
 import { svgDataUrl } from './diagramSvg'
+import { keepRecent, readRecent } from '../../../../shared/recentMap'
 
 /** On a part a step names, and on what lights with it. */
 export const LIT_CLASS = 'sotto-step-lit'
@@ -275,12 +276,8 @@ export function stepImage(drawn: { readonly svg: string; readonly dataUrl: strin
   let images = stepImages.get(drawn)
   if (!images) stepImages.set(drawn, images = new Map())
   const key = JSON.stringify(names)
-  let image = images.get(key)
-  if (image === undefined) {
-    const svg = lightDiagramStep(drawn.svg, names)
-    image = svg ? svgDataUrl(svg) : drawn.dataUrl
-  } else images.delete(key)
-  images.set(key, image)
-  if (images.size > MAX_STEP_IMAGES) images.delete(images.keys().next().value!)
-  return image
+  const kept = readRecent(images, key)
+  if (kept !== undefined) return kept
+  const svg = lightDiagramStep(drawn.svg, names)
+  return keepRecent(images, key, svg ? svgDataUrl(svg) : drawn.dataUrl, MAX_STEP_IMAGES)
 }

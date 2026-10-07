@@ -6,6 +6,7 @@ import figtreeLatin from '../../assets/fonts/figtree-latin.woff2?inline'
 import figtreeLatinExt from '../../assets/fonts/figtree-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
 import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
+import { keepRecent, readRecent } from '../../../../shared/recentMap'
 import { assertDiagramSafe } from './diagramSafety'
 import { diagramStepCss } from './diagramSteps'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
@@ -236,12 +237,8 @@ const MAX_CACHED_RESULTS = 24
  */
 export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs = DIAGRAM_RENDER_TIMEOUT_MS): Promise<DiagramRenderResult> {
   const cacheKey = `${paletteKey(palette)}\n${code}`
-  const cached = results.get(cacheKey)
-  if (cached) {
-    results.delete(cacheKey)
-    results.set(cacheKey, cached)
-    return cached
-  }
+  const cached = readRecent(results, cacheKey)
+  if (cached) return cached
   const previous = queue
   const run = previous.then(async () => {
     const started = performance.now()
@@ -257,7 +254,5 @@ export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs =
   ])).finally(() => clearTimeout(timer))
   // A slow render is not cached, so a later view can try again once Mermaid is free.
   void settled.then(result => { if (!result.ok && result.reason === TOO_SLOW) results.delete(cacheKey) })
-  results.set(cacheKey, settled)
-  if (results.size > MAX_CACHED_RESULTS) results.delete(results.keys().next().value!)
-  return settled
+  return keepRecent(results, cacheKey, settled, MAX_CACHED_RESULTS)
 }

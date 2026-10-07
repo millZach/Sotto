@@ -3,6 +3,7 @@ import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagr
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
 import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
+import { keepRecent } from '../../../../shared/recentMap'
 import './diagrams.css'
 
 export interface MermaidDiagramProps {
@@ -28,10 +29,7 @@ const drawn = new Map<string, MermaidDrawn>()
 const MAX_DRAWN = 24
 const drawnKey = (palette: DiagramPalette, code: string): string => `${JSON.stringify(palette)}\n${code}`
 function rememberDrawing(key: string, result: DiagramRenderResult): void {
-  if (!result.ok) return
-  drawn.delete(key)
-  drawn.set(key, result)
-  if (drawn.size > MAX_DRAWN) drawn.delete(drawn.keys().next().value!)
+  if (result.ok) keepRecent(drawn, key, result, MAX_DRAWN)
 }
 
 /** One Mermaid source as a reader sees it: what it is, its drawing once made, and what to say while there is none. */
