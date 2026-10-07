@@ -9,12 +9,16 @@ import { grokFixture } from './fakeGrokThreadFixture'
 import { devinFixture } from './devinFixture'
 import type { AdapterSessionOptions } from '../integration/adapterContract'
 import type { ProviderId } from '../../src/shared/agents'
+import { standInTailscale } from './standInTailscale'
 
 async function main(): Promise<void> {
-  const [provider, root, sessionJson] = process.argv.slice(2) as [ProviderId, string, string]
+  const [provider, root, sessionJson, mode] = process.argv.slice(2) as [ProviderId, string, string, string | undefined]
   const session = JSON.parse(sessionJson) as AdapterSessionOptions
+  // With `tailnet`, the host's Tailscale is a stand-in whose Serve setting points at the host's tailnet listener (ADR-0053).
+  const tailscale = mode === 'tailnet' ? standInTailscale() : undefined
   const native = await ({ codex: () => codexFixture(root, false, 2000, session), claude: () => claudeFixture(root, 2000, undefined, session), grok: () => grokFixture(root, 2000, 20, session), devin: () => devinFixture(root, 2000, 20, session) }[provider]())
-  const host = await startHeadlessHost({ dataDirectory: root, port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: native.host }, reasoner: e2eAgentReasoner })
+  const host = await startHeadlessHost({ dataDirectory: root, port: 0, providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: native.host }, reasoner: e2eAgentReasoner,
+    ...(tailscale ? { tailscale: tailscale.tailscale } : {}) })
   await host.service.command({ type: 'configure', patch: { enabledProviders: [provider], provider } }, desktopWindowClient('socket-fixture'))
   const binding = async (id: string): Promise<string | undefined> => {
     try { return (JSON.parse(await readFile(join(root, 'threads.json'), 'utf8')) as { bindings: { threadId: string; sessionId: string }[] }).bindings.find(item => item.threadId === id)?.sessionId }
@@ -27,6 +31,7 @@ async function main(): Promise<void> {
       const [id = '', text = ''] = request.args
       if (request.method === 'stop') { await host.close(); process.send?.({ id: request.id, result: null }, () => process.disconnect?.()); return }
       if (request.method === 'pair') result = host.pairing.issuePairingCode()
+      else if (request.method === 'tailnetPort') result = tailscale?.proxied() ?? null
       else if (request.method === 'nativeStarted') result = (await binding(id)) !== undefined
       else if (request.method === 'delayNextAck') result = await native.driver.delayNextAck(id)
       else if (request.method === 'requests') result = await native.driver.requests()

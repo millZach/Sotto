@@ -6,6 +6,7 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { sameSnapshot } from './sameSnapshot'
 import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -32,6 +33,7 @@ import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitCh
 import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { markSendStage } from './sendStages'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -1837,9 +1839,25 @@ export class WorkspaceHost implements AgentHost {
     await this.initialize()
     const thread = this.thread(threadId)
     if (thread.nativeSessionStarted === false || !isThreadProviderConnected(this.state.snapshot, thread)) return this.workspaceSnapshot()
+    // The read after an accepted send looks for the provider's echo, which reached this workspace as an event and
+    // may be waiting for the end of a publish window. What is held here answers it; the caller reads whole when the
+    // echo is not in it (#765).
+    if (purpose?.afterSend) return this.workspaceSnapshot()
     const creation = this.state.creations.find(item => item.threadId === threadId)
-    this.accept(await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
-      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId)))
+    const read = await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
+      : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
+    // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
+    // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
+    const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty }
+    this.accept(read)
+    // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
+    if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot) && sameSnapshot(before.organization, [this.state.projectAliases, this.state.creations])) {
+      // `accept` marks the workspace for writing whatever it was handed; nothing changed, so that mark is taken back.
+      // A mark something else left is written in the usual window rather than on the way to the send.
+      this.dirty = before.dirty
+      if (this.dirty) this.writeSoon()
+      return this.workspaceSnapshot()
+    }
     await this.flush(); this.publish(); return this.workspaceSnapshot()
   }
   /**
@@ -2250,6 +2268,7 @@ export class WorkspaceHost implements AgentHost {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
       const dispatched = command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills }
         : command.type === 'configure-thread' ? this.hostRead(command) : command
+      if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       const result = await this.inner.execute(dispatched)
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
       if (command.type === 'configure-thread') {

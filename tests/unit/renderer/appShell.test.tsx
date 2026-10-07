@@ -59,8 +59,8 @@ describe('AppShell', () => {
     expect(screen.getByText('Sotto')).toBeInTheDocument()
     const links = screen.getByRole('navigation', { name: 'Pages' })
     // Memory is hidden for the beta, so its link is not among them.
-    expect(links.querySelectorAll('a')).toHaveLength(5)
-    for (const name of ['Threads', 'Chats', 'History', 'Settings', 'Help']) {
+    expect(links.querySelectorAll('a')).toHaveLength(4)
+    for (const name of ['Threads', 'History', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name })).not.toHaveAttribute('aria-current')
     }
     expect(screen.queryByRole('link', { name: /home|dictionary|agents|dictate/i })).not.toBeInTheDocument()
@@ -78,7 +78,7 @@ describe('AppShell', () => {
     memory.enabled = true
     render(<AppShell {...chrome} navigation="home"><p /></AppShell>)
     const links = screen.getByRole('navigation', { name: 'Pages' })
-    expect(links.querySelectorAll('a')).toHaveLength(6)
+    expect(links.querySelectorAll('a')).toHaveLength(5)
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
   })
 
@@ -95,10 +95,10 @@ describe('AppShell', () => {
     expect(threads).toHaveAttribute('aria-selected', 'false')
     expect(threads).toHaveAttribute('tabindex', '-1')
 
-    rerender(<AppShell {...chrome} navigation="chats"><p /></AppShell>)
+    rerender(<AppShell {...chrome} navigation="threads"><p /></AppShell>)
     expect(screen.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Threads' })).toHaveAttribute('tabindex', '0')
-    expect(screen.getByRole('link', { name: 'Chats' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('link', { name: 'Chats' })).not.toBeInTheDocument()
 
     rerender(<AppShell {...chrome} navigation="settings"><p /></AppShell>)
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'false')
@@ -210,7 +210,6 @@ describe('AppShell', () => {
     expect(roomFor('home')).toBe('dictate')
     expect(roomFor('agents')).toBe('agents')
     expect(roomFor('threads')).toBe('threads')
-    expect(roomFor('chats')).toBe('threads')
     expect(roomFor('memory')).toBe('threads')
     expect(roomFor('history')).toBeNull()
     expect(roomFor(null)).toBeNull()

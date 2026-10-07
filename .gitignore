@@ -1,4 +1,10 @@
 node_modules/
+artifacts/remove-personal-chats/*
+!artifacts/remove-personal-chats/threads-1600x1000-dark.png
+!artifacts/remove-personal-chats/threads-820x560-light.png
+!artifacts/remove-personal-chats/settings-820x560-light-reduced-motion.png
+!artifacts/remove-personal-chats/question-820x560-light-reduced-motion.png
+!artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png
 out/
 dist/
 dist-electron/
@@ -80,6 +86,7 @@ artifacts/agents-view/
 
 artifacts/agent-browser/
 artifacts/browser-grant/
+artifacts/remote-thread-tools/
 artifacts/test-iphone/
 artifacts/cloud-iphone/
 artifacts/new-thread-setup/
@@ -139,3 +146,6 @@ artifacts/hidden-player-typing/
 
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
+
+# Thinking row verification; the captures the note cites are committed.
+artifacts/show-thinking/

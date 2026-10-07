@@ -9,8 +9,10 @@ struct FoundHost: Equatable {
     var name: String { health.computerName ?? endpoint.machine }
 }
 
-/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved.
-struct Live {
+/// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Equatable, so a state
+/// that changes nothing is never published: a working thread's computer sends its shell up to twenty times a second,
+/// and most of those change nothing this iPhone reads.
+struct Live: Equatable {
     var status = ComputerStatus.connecting
     var shell: Shell?
     var mayAnswer = false
@@ -66,6 +68,19 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     func post(_ alert: ThreadAlert, sound: Bool)
 }
 
+/// The reply boxes' words, by `ThreadRef.id`. A store of its own so that typing publishes here and not on `AppModel`,
+/// which nearly every view watches: with the words on the model, each keystroke made the thread page, its conversation
+/// and the Threads list underneath it evaluate their bodies again.
+@MainActor final class DraftStore: ObservableObject {
+    @Published var text: [String: String] = [:]
+}
+
+/// The open thread's history. A store of its own for the same reason: a working thread's message arrives a few words at
+/// a time, up to twenty times a second, and only the conversation and the Working now cards watch it.
+@MainActor final class DetailStore: ObservableObject {
+    @Published var detail: ThreadDetail?
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
@@ -98,8 +113,33 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     private var deliveryChecks: [String: Int] = [:]
     /// What went wrong while finding or pairing a computer.
     @Published var pairFeedback: String?
-    /// Unsent replies, by `ThreadRef.id`.
-    @Published var drafts: [String: String] = [:]
+    /// Unsent replies, by `ThreadRef.id`. They live in `draftStore`, which publishes on its own: only the reply box and
+    /// what depends on it watch that, so a keystroke redraws the reply box, not every view that watches the model.
+    let draftStore = DraftStore()
+    var drafts: [String: String] {
+        get { draftStore.text }
+        set { draftStore.text = newValue; publishOnModelIfComparing() }
+    }
+    /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
+    let detailStore = DetailStore()
+    private var openDetail: ThreadDetail? {
+        get { detailStore.detail }
+        set { detailStore.detail = newValue; publishOnModelIfComparing() }
+    }
+    /// Why the open thread could not be read. It changes rarely, so it stays on the model. Every new revision clears it,
+    /// so a revision sets it only when it holds something, and an unchanged nil publishes nothing.
+    @Published private(set) var detailProblem: String?
+    #if DEBUG && os(iOS)
+    /// The measuring journeys' comparison (`--ui-publish-everything`): every change published on the whole model, as the
+    /// app did before the draft and detail stores, and before a computer's unchanged state was left unpublished.
+    private static let publishesEverything = ProcessInfo.processInfo.arguments.contains("--ui-publish-everything")
+    #else
+    private static let publishesEverything = false
+    #endif
+    /// Called after a store publishes a change. Only the comparison publishes it on the model too.
+    private func publishOnModelIfComparing() {
+        if Self.publishesEverything { objectWillChange.send() }
+    }
     @Published private(set) var submitted: [String: String] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
     /// Photos in each thread's reply box, by `ThreadRef.id`, in the order they were chosen.
@@ -156,8 +196,6 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     private var watches: [String: ThreadWatch] = [:]
     /// Whether the app is on screen now, rather than inactive or in the background.
     private var foreground = false
-    @Published private var openDetail: ThreadDetail?
-    @Published private(set) var detailProblem: String?
     private let keychain: KeychainStore
     private var computerIndexAccount: String? = ComputerStore.indexAccount
     /// Finds and pairs computers; each paired computer gets its own connection.
@@ -182,6 +220,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     #if DEBUG && os(iOS)
     /// Simulator journeys use in-memory display data; this code is absent from Release.
     private var isUIFixture = false
+    /// The fixture hands a thread's messages over a moment after it opens, as a computer does over the network.
+    private var fixtureSlowDetail = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     private func loadUIFixture() {
@@ -266,6 +306,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         ]
         fixtureDetails[laptop + "/iphone"] = decode(ThreadDetail.self, ["threadId": "iphone", "revision": 2,
             "messages": conversation, "activities": steps])
+        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once.
+        if arguments.contains("--ui-long-thread") {
+            let (longMessages, longSteps) = Self.fixtureLongThread(at)
+            fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
+                "messages": longMessages, "activities": longSteps])
+        }
+        fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
             let answers = asking && host == laptop
             let hostCaps = answers ? answeringCaps : caps
@@ -282,9 +329,56 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: ["host-folders"])
         }
         storageReady = true
+        if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+    }
+    /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
+    /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
+    private func streamFixture(host: String) {
+        guard let object = fixtureShells[host],
+              let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: object)) else { return }
+        let ref = ThreadRef(hostID: host, threadID: "iphone")
+        let words = "The drawer’s chord is next, then the tests run again and the branch is ready for review.".split(separator: " ")
+        Task { [weak self] in
+            var sequence = 0
+            while true {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard let self else { return }
+                sequence += 1
+                push(.shell(shell), from: host, sequence: sequence)
+                guard selected == ref, let detail = openDetail else { continue }
+                let delta: [String: Any] = ["threadId": ref.threadID, "baseRevision": detail.revision, "revision": detail.revision + 1,
+                                            "messageDeltas": [["id": "update", "appendText": " " + String(words[sequence % words.count])]],
+                                            "activityDeltas": [[String: Any]]()]
+                guard let change = try? JSONDecoder().decode(ThreadDetailDelta.self, from: JSONSerialization.data(withJSONObject: delta)),
+                      let next = detail.applying(change) else { continue }
+                openDetail = next; detailVersion += 1
+            }
+        }
+    }
+    /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
+    private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
+        var messages: [[String: Any]] = []
+        var steps: [[String: Any]] = []
+        for turn in 0..<12 {
+            let base = Double(12 - turn) * 600
+            messages.append(["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
+                             "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."])
+            steps.append(["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
+                          "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)])
+            let lead = turn == 11 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
+            let bullets: [String] = (0..<(3 + turn % 4)).map { point in
+                "- **Point \(point + 1):** the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered."
+            }
+            let text = "**\(lead)**\n" + bullets.joined(separator: "\n")
+                + "\n\n1. Check the breaker.\n2. Check the conduit fill.\n\n```sh\npython compare_drives.py --option \(turn + 1) --report\n```"
+            messages.append(["id": "reply-\(turn)", "role": "assistant", "createdAt": at(base - 120), "text": text])
+        }
+        steps.append(["id": "long-final", "sequence": 13, "kind": "command", "status": "completed", "title": "Ran",
+                      "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
+        return (messages, steps)
     }
     /// The working thread's worktree record, as a host sends it: its own branch, uncommitted changes and a draft pull request.
     private static var fixtureWorktree: [String: Any] {
@@ -642,7 +736,11 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     }
     private func update(_ hostID: String, _ change: (inout Live) -> Void) {
         guard computer(hostID) != nil else { return }
-        var state = live[hostID] ?? Live(); change(&state); live[hostID] = state
+        let before = live[hostID]
+        var state = before ?? Live(); change(&state)
+        // Setting `live` publishes on the whole model, so a state that changed nothing is left as it was.
+        if state == before && !Self.publishesEverything { return }
+        live[hostID] = state
     }
 
     // MARK: Adding a computer
@@ -791,7 +889,12 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         selected = ref; openDetail = nil; detailProblem = nil; detailVersion += 1
         #if DEBUG && os(iOS)
         if isUIFixture {
-            openDetail = ref.flatMap { fixtureDetails[$0.id] }
+            let detail = ref.flatMap { fixtureDetails[$0.id] }
+            if fixtureSlowDetail, let ref {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                guard selected == ref else { return }
+            }
+            openDetail = detail
             return
         }
         #endif
@@ -856,7 +959,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                                     incomingRevision: next?.revision, currentRevision: openDetail?.revision,
                                     changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return }
         if let next, next.revision == openDetail?.revision { return }
-        openDetail = next; detailProblem = nil; detailVersion += 1
+        openDetail = next; detailVersion += 1
+        if detailProblem != nil { detailProblem = nil }
     }
     func earlier(_ ref: ThreadRef) async {
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }

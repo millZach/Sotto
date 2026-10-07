@@ -7,12 +7,11 @@ import { promisify } from 'node:util'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer } from './support/terminal'
 
-// Phase 3 UI in the complete app: AppShell, renderer, preload, IPC and the production tools and personal chat services
-// are real. Coding providers and the personal Codex connection come from the explicit unpackaged E2E provider fixtures;
-// no native account or installed client runs. Profiles, working copies and the local page are owned temporaries.
+// Phase 3 UI in the complete app: AppShell, renderer, preload, IPC and production tools are real.
+// Coding providers use the unpackaged E2E fixtures; profiles, working copies and the local page are owned temporaries.
 
 const run = promisify(execFile)
 const SHOTS = resolve(process.cwd(), 'artifacts/phase-three-ui')
@@ -52,7 +51,7 @@ async function expectContained(page: Page, selectors: readonly string[]): Promis
 async function smallestText(page: Page): Promise<{ size: number; where: string }> {
   return page.evaluate(() => {
     let smallest = { size: Infinity, where: '' }
-    for (const element of document.querySelectorAll<HTMLElement>('.tools-panel *, .personal-chats *, [role="menu"] *')) {
+    for (const element of document.querySelectorAll<HTMLElement>('.tools-panel *, [role="menu"] *')) {
       const text = [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent ?? '').join('').trim()
       const box = element.getBoundingClientRect()
       if (!text || box.width === 0 || box.height === 0 || getComputedStyle(element).visibility === 'hidden' || element.closest('[aria-hidden="true"], .xterm-accessibility, .xterm-helpers')) continue
@@ -142,6 +141,8 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await expect(panel.locator('.changes-files')).toContainText('CHANGELOG.md')
     await expect(panel.locator('.changes-files')).toContainText('old.txt')
     const diff = panel.getByRole('group', { name: 'src/app.ts' })
+    // New comparisons start folded; expand the comparison before reviewing and scrolling its files.
+    await panel.getByRole('button', { name: 'Expand all files', exact: true }).click()
     await expect(diff).toContainText('return `Hello, ${name}!`')
     await expect(diff).toContainText("return 'Hello ' + name")
     await expectContained(page, ['.tools-panel', '.thread-workspace__compose'])
@@ -254,114 +255,4 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
     await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
     await new Promise<void>(done => server.close(() => done()))
   }
-})
-
-test('starts, continues and resumes a project-free chat, by keyboard, across disconnect, restart and changed defaults', async () => {
-  test.setTimeout(240_000)
-  const profile = await ownedProfile('sotto-e2e-phase3-ui-chats-')
-  // Coordinator settings open the Agents room, a voice surface the beta hides behind the coordinator setting.
-  await enableVoiceCoordinator(profile)
-  let launched = await launchSotto('success', profile)
-  try {
-    let page = launched.page
-    const before = await page.evaluate(async () => {
-      const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-      const state = await agents.command({ type: 'connect' })
-      return { projects: state.host.projects.map(project => project.id), threads: state.host.threads.map(thread => thread.id) }
-    })
-    await resize(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await expect(page.getByRole('link', { name: 'Chats', exact: true })).toHaveAttribute('aria-current', 'page')
-    // Chats are conversations with Sotto, so the switch's Threads half lights for them.
-    await expect(page.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('heading', { name: 'Talk it through with Sotto' })).toBeVisible()
-    await expectContained(page, ['.personal-chats .thread-nav', '.personal-chat'])
-    await shoot(page, 'chats-empty-1280')
-
-    const start = page.getByRole('region', { name: 'Chat' }).getByRole('button', { name: 'New chat' })
-    await start.focus()
-    await page.keyboard.press('Enter')
-    const composer = page.getByRole('textbox', { name: 'Message' })
-    await expect(composer).toBeFocused()
-    await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible()
-    await page.keyboard.type('Plan a quiet weekend near the coast')
-    await page.keyboard.press('Enter')
-    const transcript = page.getByLabel('Chat transcript', { exact: true })
-    await expect(transcript.getByRole('heading', { name: 'A saved conversation' })).toBeVisible()
-    await expect(transcript.locator('.thread-message[data-role="user"]')).toHaveCount(1)
-    await expect(composer).toHaveValue('')
-    await expect(page.getByRole('heading', { name: 'Plan a quiet weekend near the coast', level: 2 })).toBeVisible()
-
-    await page.keyboard.type('Second thought: $brai')
-    const skills = page.getByRole('listbox', { name: 'Skills' })
-    await expect(skills.getByRole('option')).toContainText('$brainstorm')
-    await page.keyboard.press('Enter')
-    await expect(composer).toHaveValue('Second thought: $brainstorm ')
-    await page.keyboard.type('the trains')
-    await expect.poll(() => page.evaluate(async () => {
-      const state = await window.sotto!.personalChats!.get()
-      const chat = state.chats.find(item => item.id === state.selectedChatId)!
-      return { text: chat.draft.text, skills: chat.draft.skills.map(skill => skill.name) }
-    })).toEqual({ text: 'Second thought: $brainstorm the trains', skills: ['brainstorm'] })
-    await expectContained(page, ['.thread-prompt', '.personal-chats .thread-nav'])
-    await shoot(page, 'chat-conversation-1280')
-    await resize(launched, 1600, 1000)
-    await shoot(page, 'chat-conversation-1600', ['dark'])
-    await resize(launched, 820, 560)
-    await expectContained(page, ['.thread-prompt', '.thread-prompt__actions'])
-    await expect(transcript).toBeVisible()
-    expect(await transcript.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(150)
-    await shoot(page, 'chat-conversation-820x560')
-    await composer.fill('Second thought: $brai')
-    await expect(skills).toBeVisible()
-    await expectContained(page, ['.composer-picker', '.thread-prompt'])
-    await page.screenshot({ path: join(SHOTS, 'chat-composer-picker-820x560-dark.png'), animations: 'disabled' })
-    await page.keyboard.press('Escape')
-    await composer.fill('Second thought: the trains')
-    await resize(launched, 1280, 860)
-
-    // Disconnecting only ends the personal connection: the draft stays and sending says why it waits.
-    await page.getByRole('button', { name: 'Disconnect' }).click()
-    await expect(page.locator('.thread-workspace__tag', { hasText: 'Codex disconnected' })).toBeVisible()
-    await expect(page.getByText('Connect Codex to send. Your draft stays here.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Send message' })).toBeDisabled()
-    await page.keyboard.press('Enter')
-    await shoot(page, 'chat-disconnected-1280', ['dark'])
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.personalChats!.get()).chats[0]!.draft.text)).toBe('Second thought: the trains')
-
-    // Restart: the chat, its history and its draft come back; nothing became project work.
-    await closeSotto(launched)
-    launched = await launchSotto('success', profile)
-    page = launched.page
-    await resize(launched, 1280, 860)
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Plan a quiet weekend near the coast', level: 2 })).toBeVisible()
-    await expect(page.getByLabel('Chat transcript', { exact: true }).getByRole('heading', { name: 'A saved conversation' })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'Message' })).toHaveValue('Second thought: the trains')
-    // A restart lifts the session's Disconnect: the chat's provider connects at launch with no press.
-    await expect(page.getByRole('button', { name: 'Send message' })).toBeEnabled()
-    await expect(page.getByRole('button', { name: 'Connect Codex' })).toHaveCount(0)
-    const after = await page.evaluate(async () => {
-      const state = await window.sotto!.agents!.command({ type: 'connect' })
-      return { projects: state.host.projects.map(project => project.id), threads: state.host.threads.map(thread => thread.id), assignments: state.assignments.length }
-    })
-    expect(after).toEqual({ ...before, assignments: 0 })
-
-    // A different coordinator: saved chats stay readable and stay with Codex; new chats explain where to change it.
-    await page.evaluate(async () => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'changed-default' } }))
-    await openThreads(page)
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await expect(page.getByRole('navigation', { name: 'Chats' }).getByRole('button', { name: 'New chat' })).toBeDisabled()
-    await expect(page.getByText(/Select Codex, Claude or Grok in coordinator settings for new chats/u)).toBeVisible()
-    await expect(page.getByText('Codex · test')).toBeVisible()
-    await expectContained(page, ['.personal-chats .thread-nav', '.thread-prompt'])
-    await shoot(page, 'chats-unsupported-default-1280')
-    await resize(launched, 820, 560)
-    await shoot(page, 'chats-unsupported-default-820x560')
-    await page.getByRole('button', { name: 'Coordinator settings' }).click()
-    // A fresh profile meets the working-preferences questions first; the agent configuration waits behind them.
-    await page.getByRole('button', { name: 'Not now' }).click()
-    await expect(page.getByRole('dialog', { name: 'Agent configuration' })).toBeVisible()
-  } finally { await closeSotto(launched); await rm(profile, { recursive: true, force: true }).catch(() => undefined) }
 })

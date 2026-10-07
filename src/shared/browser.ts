@@ -5,6 +5,9 @@ import { toolTargetSchema, type ToolsResult } from './tools'
 
 export const BROWSER_CHANNEL = 'sotto:browser:'
 export const BROWSER_EVENT = `${BROWSER_CHANNEL}event`
+/** What a page an agent asked to open says until it is opened: by the user's answer, the browser grant, or the user loading it. */
+export const BROWSER_WAITING_TO_OPEN = 'Waiting for you to open and share this page.'
+
 export function safeBrowserUrl(input: string): string | null {
   if (UNSAFE_URL_CHARACTERS.test(input) || input.length > 8192) return null
   try {

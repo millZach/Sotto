@@ -8,6 +8,7 @@ import type { HostService } from '../../../src/main/agents/hostService'
 import { PhoneAccess, type PhoneAccessOptions, type PhoneAccessTailscale } from '../../../src/main/phones/phoneAccess'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { serveTarget, type ServeConfig, type ServeResult, type TailscaleStatus } from '../../../src/main/phones/tailscale'
+import { HOST_START_RETRY_WINDOW_MS } from '../../../src/host/phones'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-phone-access-')) })
@@ -56,6 +57,30 @@ it('turns on: checks Tailscale, opens a loopback listener with no admin routes, 
   expect(access.get()).toMatchObject({ enabled: true, phase: 'on', tailscale: { status: 'ok', dnsName: DNS }, serve: { status: 'ok' }, address: `https://${DNS}:8443`, computerName: 'laptop-russh2j5' })
   expect(await record()).toEqual({ port: 41000, mapped: true })
   await access.close()
+})
+
+it('honours tailnetConnections only when told which clients are desktops, so a desktop’s settings file never raises its phone listener', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  // The desktop's own phone access: a hand-edited settings file naming the headless host's setting changes nothing.
+  const desktop = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  await desktop.access.start()
+  expect(server.started).toEqual([])
+  expect(fake.calls).toEqual([])
+  expect(desktop.access.get()).toMatchObject({ enabled: false, phase: 'off' })
+  await desktop.access.close()
+
+  // A headless host's, told its desktops: the listener and Serve come up for them with phone access off.
+  const host = create({ tailscale: fake.tailscale, startServer: server.startServer, listener: { desktops: { refresh: async () => undefined, has: () => false } } },
+    { phoneAccess: false, phoneAccessName: '', tailnetConnections: true } as { phoneAccess: boolean; phoneAccessName: string })
+  // A watcher, which the host's descriptor follows, is told the brief state as each change lands.
+  const briefs: unknown[] = []
+  host.access.watch(brief => briefs.push(brief))
+  await host.access.start()
+  expect(server.started).toHaveLength(1)
+  expect(host.access.get()).toMatchObject({ enabled: false, phase: 'on' })
+  expect(host.access.brief()).toEqual({ enabled: false, phase: 'on', address: `https://${DNS}:8443`, phones: 0 })
+  expect(briefs.at(-1)).toEqual(host.access.brief())
+  await host.access.close()
 })
 
 it('turns off: removes only its own Serve setting and closes the listener, so phones lose their sockets', async () => {
@@ -108,6 +133,62 @@ it('says Tailscale is not running, changes nothing, and looks again later', asyn
     expect(fake.tailscale.serveStatus).not.toHaveBeenCalled()
     expect(server.started).toEqual([])
     fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+// A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+it('looks again at a Tailscale that is missing during a host\'s start window, until it is there', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    fake.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(access.get().phase).toBe('on'))
+    await access.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('stops looking at a missing Tailscale once the start window has passed, and leaves it to Try again', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ status: { state: 'missing' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    await vi.advanceTimersByTimeAsync(HOST_START_RETRY_WINDOW_MS + 60_000)
+    const looks = vi.mocked(fake.tailscale.status).mock.calls.length
+    expect(looks).toBeGreaterThan(1)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(vi.mocked(fake.tailscale.status).mock.calls.length).toBe(looks)
+    expect(access.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await access.close()
+    // Without a window, as on the desktop, a missing Tailscale waits for Try again from the start.
+    const later = fakeTailscale({ status: { state: 'missing' } })
+    const { access: desktop } = create({ tailscale: later.tailscale, startServer: fakeServer().startServer })
+    await desktop.start()
+    later.setStatus({ state: 'running', dnsName: DNS, hostName: 'laptop-russh2j5' })
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(desktop.get()).toMatchObject({ phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+    await desktop.close()
+  } finally { vi.useRealTimers() }
+})
+
+it('looks again at a Serve setting that failed during a start window, every retry, until it works', async () => {
+  vi.useFakeTimers()
+  try {
+    const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } })
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(vi.mocked(fake.tailscale.serve).mock.calls.length).toBe(2))
+    await vi.waitFor(() => expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } }))
+    vi.mocked(fake.tailscale.serve).mockImplementation(async () => ({ ok: true }))
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(access.get().phase).toBe('on'))
     await access.close()

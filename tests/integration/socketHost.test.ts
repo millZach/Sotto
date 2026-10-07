@@ -6,6 +6,7 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
+import { CommandReceipts } from '../../src/host/commandReceipts'
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -417,6 +418,49 @@ describe('socket client isolation and reconnect', () => {
     await expect(client.gitPullRequest({ threadId })).resolves.toBeNull()
     await expect(client.gitPullRequest({ threadId: 'no-such-thread' })).rejects.toThrow()
   })
+  it('reads a thread\'s Files, Changes and Agents over the socket the way the desktop\'s own tools read them (ADR-0025, October 5 amendment)', async () => {
+    await native.initializeWorkingFolders(join(root, 'workspaces'))
+    const folder = join(root, 'workspaces', 'project')
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: folder, windowsHide: true, encoding: 'utf8' })
+    git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'commit.gpgSign', 'false')
+    await mkdir(join(folder, 'notes'))
+    await writeFile(join(folder, 'work.txt'), 'first\n'); await writeFile(join(folder, 'notes', 'plan.md'), '# Plan\n'); git('add', '.'); git('commit', '-qm', 'First')
+    const { client } = await pair()
+    await client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const threadId = client.shell().host.threads[0]!.id
+    await client.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic prompt' })
+    // Files: the working folder's root, a folder in it and a file's preview, each against the workspace the root named.
+    const listing = await client.threadFiles({ threadId, path: '' })
+    if (!listing.ok) throw new Error(listing.error.message)
+    expect(listing.value).toMatchObject({ path: '', truncated: false, workspace: { threadId, workingDirectory: folder } })
+    expect(listing.value.entries.filter(entry => !entry.name.startsWith('.'))).toEqual([{ name: 'notes', path: 'notes', kind: 'directory' }, { name: 'work.txt', path: 'work.txt', kind: 'file' }])
+    const { workspaceId } = listing.value.workspace
+    await expect(client.threadFiles({ threadId, path: 'notes', workspaceId })).resolves.toMatchObject({ ok: true, value: { entries: [{ name: 'plan.md', path: 'notes/plan.md', kind: 'file' }] } })
+    await expect(client.threadFilePreview({ threadId, path: 'notes/plan.md', workspaceId })).resolves.toMatchObject({ ok: true, value: { name: 'plan.md', content: { kind: 'markdown', text: '# Plan\n' } } })
+    // A refusal is an answer, as it is to the window: a stale workspace, and a thread the host does not have.
+    await expect(client.threadFiles({ threadId, path: '', workspaceId: 'f'.repeat(64) })).resolves.toMatchObject({ ok: false, error: { code: 'workspace-changed' } })
+    await expect(client.threadFiles({ threadId: 'no-such-thread', path: '' })).resolves.toMatchObject({ ok: false, error: { code: 'thread-unavailable' } })
+    // The host keeps a paired client inside the thread's working copy: a path leaving it is not even a request the host
+    // reads (the desktop's own IPC refuses it the same way before sending). Previews keep the desktop's size limit.
+    for (const path of ['..', '../outside.txt', join(folder, 'work.txt')]) {
+      await expect(client.threadFilePreview({ threadId, path, workspaceId })).rejects.toThrow()
+    }
+    await expect(client.threadFiles({ threadId, path: '..', workspaceId })).rejects.toThrow()
+    await writeFile(join(folder, 'large.txt'), 'x'.repeat(512 * 1024 + 1))
+    await expect(client.threadFilePreview({ threadId, path: 'large.txt', workspaceId })).resolves.toMatchObject({ ok: false, error: { code: 'too-large' } })
+    await rm(join(folder, 'large.txt'))
+    // Changes: the change list, then the working tree and the branch, read from the host's own Git.
+    await writeFile(join(folder, 'work.txt'), 'first\nsecond\n')
+    await expect(client.gitChanges({ threadId, workspaceId })).resolves.toMatchObject({ ok: true, value: { branch: 'main', files: [{ path: 'work.txt', status: 'modified' }], truncated: false } })
+    const working = await client.gitReview({ threadId, workspaceId, scope: { kind: 'working' } })
+    expect(working).toMatchObject({ ok: true, value: { scope: { kind: 'working' }, files: [{ path: 'work.txt', status: 'modified', additions: 1, deletions: 0, content: { kind: 'text' } }] } })
+    await expect(client.gitReview({ threadId, workspaceId, scope: { kind: 'branch', base: null } })).resolves.toMatchObject({ ok: true, value: { scope: { kind: 'branch', base: null, head: 'main' }, files: [] } })
+    // Agents: the roster and an agent's assignments, empty for a thread that has spawned none.
+    await expect(client.subagentPage({ threadId })).resolves.toMatchObject({ threadId, rows: [], summary: { total: 0 } })
+    await expect(client.subagentAssignments({ threadId, agentId: 'agent' })).resolves.toEqual({ threadId, agentId: 'agent', assignments: [] })
+    await expect(client.subagentPage({ threadId: 'no-such-thread' })).rejects.toMatchObject({ code: 'unavailable' })
+  })
   it('carries the finished-unread mark to a paired client and clears it for every client when one opens the thread (ADR-0046)', async () => {
     const phone = await pair('Phone'), desktop = await pair('Desktop')
     await phone.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
@@ -672,7 +716,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
     command: async (command, identity) => { if (command.type === 'interrupt') await new Promise<void>(resolve => release.push(resolve)); return host.service.command(command, identity) },
     events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit), subscribe: listener => host.service.subscribe(listener),
   }
-  const server = await startSocketServer({ service, pairing: host.pairing, receipts: { lifetimeMs: 1000, limit: 2, now: () => now } })
+  const server = await startSocketServer({ service, pairing: host.pairing, receipts: new CommandReceipts({ lifetimeMs: 1000, limit: 2, now: () => now }) })
   const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'Receipts')
   const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); clients.push(client)
   try {
@@ -902,7 +946,7 @@ describe('thread detail over the socket', () => {
       // A client from before the freeze says nothing about deltas in its hello, and keeps getting whole threads.
       const legacy = await rawPeer(server.descriptor.port, session())
       try {
-        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision'] } })
+        expect(await legacy.call('hello', { op: 'hello', afterSeq: 0 })).toMatchObject({ ok: true, result: { sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] } })
         await legacy.call('observe', { op: 'observe', threadIds: ['streaming'] })
         stream.current = { threadId: 'streaming', revision: 3, messages: [message('Hello, world!')] }
         stream.emit(delta(2, 3, '!'))
@@ -1134,11 +1178,11 @@ describe('staged images over the socket (ADR-0031)', () => {
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] })
     const listener = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'], capabilities: { mayAnswer: false } })
   })
 
   it('runs client updates only where it offers them: the headless host does, the phone listener does not (#480)', async () => {

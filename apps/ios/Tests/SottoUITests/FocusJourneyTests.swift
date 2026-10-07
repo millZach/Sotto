@@ -180,7 +180,8 @@ import XCTest
             matches = shown ? matches + 1 : 0
             return matches >= 2
         }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 20)
+        // With the keyboard up, one reading of the four elements can take the simulator ten seconds or more.
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: inView, object: nil)], timeout: 60)
         if result != .completed { explain("conversation-end-not-in-view", seen) }
         XCTAssertEqual(result, .completed, message + " (" + seen + ")")
     }
@@ -252,7 +253,20 @@ import XCTest
         capture("new-thread-conversation-dark")
     }
 
-    func testCreateThreadByBrowsingANewFolder() {
+    func testCreateThreadByBrowsingANewFolder() { browseANewFolder() }
+    /// Return closes search's keyboard on Threads, where the page's looping lights and wash run in Core Animation.
+    func testSearchClosesOnReturn() {
+        let search = app.textFields["thread-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
+        search.typeText("Sim")
+        search.typeText("\n")
+        XCTAssertTrue(waitUntilGone(keyboard), "Return closes search's keyboard")
+    }
+
+    private func browseANewFolder() {
         app.tabBars.buttons["Settings"].tap()
         app.buttons["setting-light"].tap()
         app.tabBars.buttons["Threads"].tap()
@@ -353,11 +367,16 @@ import XCTest
         capture("settled-expanded")
         row("settings").tap()
         XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
-        let step = byID("step-read")
-        XCTAssertTrue(step.waitForExistence(timeout: 5), "Steps sit in the conversation; there is no Activity tab")
-        XCTAssertTrue(step.label.contains("Read project notes"))
+        let run = byID("steps-run-read")
+        XCTAssertTrue(run.waitForExistence(timeout: 5), "Steps sit in the conversation, folded into one line; there is no Activity tab")
+        XCTAssertEqual(run.label, "Show 1 step")
+        XCTAssertFalse(byID("step-read").exists, "A finished run's steps stay folded until its line is pressed")
         XCTAssertFalse(app.buttons["thread-pane-activity"].exists)
         capture("thread-messages")
+        run.tap()
+        let step = byID("step-read")
+        XCTAssertTrue(step.waitForExistence(timeout: 5), "Pressing the line opens its steps")
+        XCTAssertTrue(step.label.contains("Read project notes"))
         back()
         reveal(settled, swipingDown: true)
         settled.tap()
@@ -398,6 +417,25 @@ import XCTest
         capture("computers")
     }
 
+    /// A long thread whose messages arrive a moment after it opens shows its end at once. On the phone a thread sometimes
+    /// opened black until scrolled; a lazy list landing over rows it had not drawn is the likely cause. The simulator did
+    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix.
+    func testALongThreadShowsItsEndWithoutAScroll() {
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-long-thread", "--ui-slow-detail"])
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        // The thread ends on its last run of steps, folded into one line.
+        let end = byID("steps-run-long-final")
+        // The last reply is taller than the screen, so its heading sits above the view at the end; its closing command
+        // is what must be on screen.
+        let last = threadText("python compare_drives.py --option 12 --report")
+        waitForEnd(end, last: last, above: reply, "A long thread opens showing its end, with no scroll needed")
+        capture("thread-long-open")
+    }
+
     /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
     /// title block and Git chips scroll away with it; messages read as Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
@@ -409,8 +447,8 @@ import XCTest
         XCTAssertEqual(title.label, "Refine the iPhone thread view")
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let running = byID("step-drawer-test")
-        XCTAssertTrue(running.waitForExistence(timeout: 5), "The running step sits at the end of the conversation")
+        let running = byID("steps-run-drawer-test")
+        XCTAssertTrue(running.waitForExistence(timeout: 5), "The working run's line sits at the end of the conversation")
         let update = threadText("Still working through the review fixes")
         waitForEnd(running, last: update, above: reply, "The thread opens at the end of its conversation")
         XCTAssertLessThanOrEqual(title.frame.maxY, threadTop + 1, "A long thread opens at its end, not its title")
@@ -450,6 +488,49 @@ import XCTest
         capture("thread-glow-top")
     }
 
+    /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
+    /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
+    func testARunOfStepsOpensInPlaceAndFoldsAgain() {
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let working = byID("steps-run-drawer-test")
+        XCTAssertTrue(working.waitForExistence(timeout: 5), "The working run is one line at the end of the conversation")
+        XCTAssertEqual(working.label, "Show 1 step", "The line's name says what a press does")
+        XCTAssertEqual(working.value as? String,
+                       "Working: Running npm test -- tests/unit/renderer/terminalDrawer.test.ts, 1 step so far",
+                       "The working line names the step running now")
+        XCTAssertFalse(byID("step-drawer-test").exists, "The working run's steps stay folded until its line is pressed")
+
+        let finished = byID("steps-run-edit-tooltips")
+        XCTAssertTrue(finished.waitForExistence(timeout: 5))
+        scrollThread(to: finished, towardStart: true)
+        XCTAssertEqual(finished.label, "Show 3 steps")
+        // From the first edit's start to the end of the typecheck: three and a half minutes, give or take a second.
+        let summary = finished.value as? String ?? ""
+        XCTAssertTrue(summary.hasPrefix("3 steps, 3 minutes"), "A finished run says how many steps and how long (\(summary))")
+        XCTAssertFalse(finished.isSelected)
+        let typecheck = byID("step-typecheck")
+        XCTAssertFalse(typecheck.exists, "A finished run's steps stay folded until its line is pressed")
+        capture("thread-steps-folded")
+
+        finished.tap()
+        XCTAssertTrue(typecheck.waitForExistence(timeout: 5), "Pressing the line opens the run's steps in place")
+        XCTAssertTrue(byID("step-edit-tooltips").exists)
+        XCTAssertTrue(byID("step-edit-drawer").exists)
+        XCTAssertEqual(finished.label, "Hide steps")
+        XCTAssertTrue(finished.isSelected, "An open run is marked as open")
+        XCTAssertFalse(byID("step-think").exists, "Opening one run leaves the others folded")
+        capture("thread-steps-open")
+
+        scrollThread(to: finished, towardStart: true)
+        finished.tap()
+        XCTAssertTrue(waitUntilGone(typecheck), "Pressing the line again folds the steps")
+        XCTAssertEqual(finished.label, "Show 3 steps")
+        XCTAssertTrue(working.exists, "Folding a run leaves the working run's line in place")
+    }
+
     /// A question answered from its sheet leaves the conversation where the user was reading: at its end.
     func testAnsweringAQuestionKeepsTheConversationAtItsEnd() {
         launch(Self.fixture + ["--ui-question-while-reading"])
@@ -464,7 +545,7 @@ import XCTest
         XCTAssertTrue(waitUntilGone(send), "Not now closes the question")
         let ask = app.buttons["Answer the question"]
         XCTAssertTrue(ask.waitForExistence(timeout: 5), "The reply box offers the question again")
-        let running = byID("step-drawer-test")
+        let running = byID("steps-run-drawer-test")
         let update = threadText("Still working through the review fixes")
         XCTAssertTrue(running.waitForExistence(timeout: 5))
         waitForEnd(running, last: update, above: ask, "The conversation stays at its end under a waiting question")
@@ -538,7 +619,7 @@ import XCTest
         reveal(thread)
         thread.tap()
         XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
-        XCTAssertTrue(byID("step-drawer-test").waitForExistence(timeout: 5))
+        XCTAssertTrue(byID("steps-run-drawer-test").waitForExistence(timeout: 5))
         capture("thread-glow-compact-large")
     }
 
@@ -578,6 +659,90 @@ import XCTest
         XCTAssertTrue(app.buttons["open-new-thread"].isEnabled)
         capture("new-thread-glow-options")
     }
+
+    /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
+    /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
+    private func idleCPU(_ arguments: [String], openThread: Bool) throws {
+        try skipUnlessMeasuring()
+        if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
+        measureCPUForThreeSeconds(openThread: openThread)
+    }
+    func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
+    func testIdleCPUOnThreadsWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: false) }
+    func testIdleCPUInAThread() throws { try idleCPU([], openThread: true) }
+    func testIdleCPUInAThreadWithoutLoopingAnimations() throws { try idleCPU(["--ui-still"], openThread: true) }
+    /// The same still thread with the reply keyboard open and nothing typed: the page must not keep itself busy there either.
+    func testIdleCPUInAThreadWithTheKeyboardOpen() throws {
+        try skipUnlessMeasuring()
+        openWorkingThread()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box opens the keyboard")
+        measureCPUForThreeSeconds()
+    }
+
+    /// The app's CPU while the working thread streams a message, a word every 50 milliseconds with the thread list sent
+    /// again unchanged each time, on Threads and in that thread. The comparison passes --ui-publish-everything, which
+    /// publishes every change on the whole model as the app did before its stores.
+    private func streamingCPU(_ arguments: [String], openThread: Bool) throws {
+        try skipUnlessMeasuring()
+        launch(["--ui-fixture", "--reset-ui-preferences", "--ui-streaming"] + arguments)
+        measureCPUForThreeSeconds(openThread: openThread)
+    }
+    func testStreamingCPUOnThreads() throws { try streamingCPU([], openThread: false) }
+    func testStreamingCPUOnThreadsPublishingEverything() throws { try streamingCPU(["--ui-publish-everything"], openThread: false) }
+    func testStreamingCPUInTheThread() throws { try streamingCPU([], openThread: true) }
+    func testStreamingCPUInTheThreadPublishingEverything() throws { try streamingCPU(["--ui-publish-everything"], openThread: true) }
+
+    /// The CPU journeys are timing benchmarks, run by hand:
+    /// TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh (docs/ci.md).
+    private func skipUnlessMeasuring() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SOTTO_IOS_PERF"] == "1", "CPU is measured by hand")
+    }
+
+    /// Opens the working thread, or stays on Threads, and measures the app's CPU over three seconds, three times.
+    private func measureCPUForThreeSeconds(openThread: Bool) {
+        if openThread {
+            openWorkingThread()
+        } else {
+            XCTAssertTrue(byID("thread-counts").waitForExistence(timeout: 5))
+        }
+        measureCPUForThreeSeconds()
+    }
+    private func measureCPUForThreeSeconds() {
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTCPUMetric(application: app)], options: options) {
+            Thread.sleep(forTimeInterval: 3)
+        }
+    }
+
+    private func openWorkingThread() {
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-title").waitForExistence(timeout: 5))
+    }
+
+    /// The app's CPU while a sentence is typed into a thread's reply box, three times. The comparison passes
+    /// --ui-publish-everything, which publishes each keystroke on the whole model as the app did before the draft store.
+    private func typingCPU(_ arguments: [String]) throws {
+        try skipUnlessMeasuring()
+        launch(["--ui-fixture", "--reset-ui-preferences"] + arguments)
+        openWorkingThread()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box opens the keyboard")
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTCPUMetric(application: app)], options: options) {
+            reply.typeText("The tooltips look right now, ship it. ")
+        }
+    }
+    func testTypingCPUInAReply() throws { try typingCPU([]) }
+    func testTypingCPUInAReplyPublishingEverything() throws { try typingCPU(["--ui-publish-everything"]) }
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {

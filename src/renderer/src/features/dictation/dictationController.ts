@@ -62,8 +62,6 @@ export type DictationOutputResult =
   | Readonly<{ ok: false; reason: 'unavailable' }>
 
 export interface DictationControllerDependencies {
-  /** Capture the destination synchronously before opening audio; never resolve it at delivery. */
-  readonly captureOutput?: () => DictationControllerDependencies['deliverOutput'] | undefined
   readonly createRecorder: (options: AudioRecorderOptions) => DictationRecorder
   readonly transcriber: DictationTranscriber
   readonly getSettings: () => AppSettings
@@ -311,7 +309,7 @@ export class DictationController {
     }
 
     const session: ActiveSession = {
-      deliverOutput: this.dependencies.captureOutput?.() ?? this.dependencies.deliverOutput,
+      deliverOutput: this.dependencies.deliverOutput,
       id: this.createId(),
       token: ++this.lifecycleToken,
       settings,

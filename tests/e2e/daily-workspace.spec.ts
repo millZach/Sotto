@@ -81,7 +81,8 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
       const projectId = project.host.projects.find(project => project.title === 'Daily workspace')!.id
       const created = []
       for (const [title, modelId] of [['Daily implementation', 'codex:gpt'], ['Daily review', 'claude:sonnet']]) {
-        const state = await agents.command({ type: 'create-thread', projectId, title: title!, modelId: modelId!, managed: false, workingCopy: 'independent' })
+        // Named the way New thread names a thread the user typed a name for, so the first message does not rename it.
+        const state = await agents.command({ type: 'create-thread', projectId, title: title!, titleSource: 'user', modelId: modelId!, managed: false, workingCopy: 'independent' })
         if (state.error) throw new Error(state.error)
         created.push(state.host.threads.find(thread => thread.id === state.activeThreadId)!)
       }

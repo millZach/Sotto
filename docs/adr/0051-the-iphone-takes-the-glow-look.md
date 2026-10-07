@@ -31,3 +31,21 @@ Working cards show the step running now only for a thread whose detail this iPho
 ## What this does not change
 
 No host, listener, protocol version, runtime dependency or command is added. Authority stays where ADR-0004 and ADR-0033 put it: nothing here answers a request for the user.
+
+## October 5 amendment: steps fold into one line
+
+On a busy thread the inline steps buried the messages: dozens of "Reasoning summary" and "Command" lines between two replies. Zach asked for them to shrink to one line that shows the thread is working and opens to show them all, and chose **B · Pulse** from three live effects in `steps-folded.html` on `prototype/iphone-glow-redesign`.
+
+Each run of steps between two messages is now one line. While the run is the thread's working one, the line shows the step running now (its verb, its subject and how long it has run) in the accent, or Thinking between steps, since a provider reports its tool calls and not the thinking between them, with a breathing dot, the step rolling up like a ticker as the next replaces it, and the number of steps so far. Once the run has ended, the line reads how many steps it had and how long it took ("14 steps · 1m 32s") in quiet type. A failed step changes nothing on the folded line; it shows as it did, in the opened list. A press opens the run's steps in place, as the guide-and-lines trail above, and another press folds them. Under Reduce Motion the line is a still accent line that crossfades. What this paragraph replaces is only how steps are shown: they are still placed by time between messages, and nothing new crosses the protocol.
+
+## October 5 amendment: thinking is a step
+
+Claude Code, Grok Build and Devin threads now report their thinking as it streams, as a reasoning record titled Thinking (#768), so for them the reason above no longer holds: their thinking is a step of its own, and the line shows it with the verb the phone already gives a reasoning step, Thinking. Between other steps the line still reads Thinking. Nothing new crosses the protocol; the step reaches the phone as an activity summary, without its text.
+
+## October 6 amendment: what the look may cost
+
+Scrolling grew laggy with the Glow look, and Zach chose to keep the look and make it cheap. The rules that came out of it: no SwiftUI `.shadow` (it redraws its blur whenever its view moves, even for a clear colour; `SoftShadow` draws one once instead), no `repeatForever` SwiftUI animation (it evaluates its views every frame; loops run in Core Animation through `LoopingView`), and no `UIHostingController` inside the app's views for them. Measured in [the idle CPU note](../perf/2026-10-06-iphone-idle-cpu.md), a still thread fell from 0.32 s of CPU in three seconds to 0.05 s and Threads from 0.54 s to 0.02 s, with the look unchanged.
+
+## October 6 amendment: what an update may redraw
+
+The look's cost was not the only lag. Every change published on `AppModel` redraws every view that watches it, and a working thread's computer sends up to forty updates a second, so while any thread worked the whole app was redrawn that often. The rules that came out of it: state that changes many times a second lives in a store of its own that only its readers watch (`DraftStore` for the reply boxes' words, `DetailStore` for the open thread's history); the model publishes a computer's state only when it changed; a view handed a closure says with `Equatable` what it draws from, so its parent's redraw can skip it; and a looping layer is given its colours only when they change. On iOS 18 and later the thread page never follows new words while the user drags or flicks it, and catches up when they let go at the bottom. Measured in [the publishing note](../perf/2026-10-06-iphone-publishing.md), a streaming thread fell from about 2.8 seconds of CPU in three seconds to between 0.03 and 0.3 on Threads and to between 1 and 2 in the thread, with the look unchanged.

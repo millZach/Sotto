@@ -4,8 +4,9 @@ import SottoCore
 
 /// One thread, as thread page B draws it (ADR-0051): only a slim bar stays pinned (back, the thread's state, and its
 /// title once the big one has scrolled off). The big title, where the thread runs and its branch chips scroll away with
-/// the conversation, and the agent's steps sit between the messages in time order. A waiting question or permission
-/// opens as a sheet; dismissed, the reply box offers it again. Everything here goes to the thread's own computer.
+/// the conversation, and the agent's steps sit between the messages in time order, each run folded into one line that
+/// opens in place. A waiting question or permission opens as a sheet; dismissed, the reply box offers it again.
+/// Everything here goes to the thread's own computer.
 struct ThreadView: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
@@ -132,6 +133,12 @@ private final class FollowBox {
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
     var atBottom = true
+    /// The user is dragging the page or letting a flick run out, so it never moves under them.
+    var userScrolling = false
+    /// The page was asked to follow while the user moved it, and owes that once they let go.
+    var missedFollow = false
+    /// Counts requests to follow, so requests made in the same moment scroll once.
+    var followRequests = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -140,9 +147,11 @@ private struct ConversationRow: Identifiable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
     let showsWho: Bool
+    /// How long a run of steps took, for its folded line; nil for a message or when nothing says.
+    var seconds: TimeInterval? = nil
     var id: String { item.id }
 
-    static func make(_ items: [TimelineItem]) -> [ConversationRow] {
+    static func make(_ items: [TimelineItem], date: (String) -> Date?) -> [ConversationRow] {
         var lastRole: String?
         return items.map { item -> ConversationRow in
             switch item {
@@ -150,8 +159,8 @@ private struct ConversationRow: Identifiable {
                 let shows = message.role == "assistant" && lastRole != "assistant"
                 lastRole = message.role
                 return ConversationRow(item: item, showsWho: shows)
-            case .steps:
-                return ConversationRow(item: item, showsWho: false)
+            case .steps(let steps):
+                return ConversationRow(item: item, showsWho: false, seconds: StepRun.seconds(steps, date: date))
             }
         }
     }
@@ -174,7 +183,7 @@ private final class TimelineCache {
         if dates.count > 10_000 { dates = [:] }
         let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
                                          earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-        cached = ConversationRow.make(items)
+        cached = ConversationRow.make(items, date: { self.date($0) })
         return cached
     }
     private func date(_ stamp: String) -> Date? {
@@ -200,6 +209,8 @@ private struct Tail: Equatable {
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so each new revision of the thread redraws the conversation; it is read through `model.detail(for:)`.
+    @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     @Binding var stuck: Bool
     @Binding var titled: Bool
@@ -210,7 +221,10 @@ private struct Conversation: View {
     @State private var timeline = TimelineCache()
     /// The height between the bar and the reply box, so a short conversation still fills it from the top.
     @State private var visible: CGFloat = 0
+    /// The runs of steps opened on this page, by run, kept while the thread is on screen.
+    @State private var openRuns: Set<String> = []
     @Environment(\.sottoDensity) private var density
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
 
     var body: some View {
@@ -221,13 +235,23 @@ private struct Conversation: View {
                         failed: model.failedReplies[ref.id] != nil)
         ScrollViewReader { proxy in
             ScrollView {
-                page(detail: detail, rows: rows, pending: pending)
+                page(detail: detail, rows: rows, pending: pending, scroll: proxy)
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onUserScrolling { scrolling in
+                follow.userScrolling = scrolling
+                guard !scrolling, follow.missedFollow else { return }
+                follow.missedFollow = false
+                // What arrived while they moved the page is followed once they let go at the bottom. A page that
+                // only moved is left where they put it.
+                follow.settle()
+                if follow.atBottom { toBottom(proxy) }
+            }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)
+                    .equatable()
                     .background(dockReader(proxy))
             }
             .onChange(of: tail) { _, _ in
@@ -241,14 +265,15 @@ private struct Conversation: View {
         } message: { Text("It may already have reached \(model.name(ref.hostID)). Nothing is sent again.") }
     }
 
-    private func page(detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation]) -> some View {
+    private func page(detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation], scroll: ScrollViewProxy) -> some View {
         let thread = model.thread(ref)
         let state = thread.map { ThreadState($0) } ?? .done
         return VStack(alignment: .leading, spacing: 0) {
             ThreadHero(ref: ref, thread: thread,
                        topMoved: { top in follow.heroTop = top; refreshBar() },
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
-            entries(thread: thread, detail: detail, rows: rows, pending: pending)
+                .equatable()
+            entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
@@ -265,10 +290,14 @@ private struct Conversation: View {
         return state == .failed ? .failed : .quiet
     }
 
-    private func entries(thread: ThreadSummary?, detail: ThreadDetail?, rows: [ConversationRow], pending: [PendingOperation]) -> some View {
+    private func entries(thread: ThreadSummary?, state: ThreadState, detail: ThreadDetail?, rows: [ConversationRow],
+                         pending: [PendingOperation], scroll: ScrollViewProxy) -> some View {
         let online = model.online(ref.hostID)
         let provider = Words.provider(thread?.providerId)
-        return LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+        let working = workingRun(rows, state)
+        // The row the conversation ends on, when nothing waits under it.
+        let last = pending.isEmpty && model.failedReplies[ref.id] == nil ? rows.last?.id : nil
+        return VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
             if detail?.earlierAvailable == true || thread?.earlierAvailable == true {
                 Button("Show earlier messages") { Task { await model.earlier(ref) } }
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
@@ -284,7 +313,7 @@ private struct Conversation: View {
                         .padding(.vertical, Space.s7)
                 }
                 ForEach(rows) { row in
-                    rowView(row, provider: provider)
+                    rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
                 }
             } else if model.detailProblem == nil || !online {
                 Text(model.status(ref.hostID) == .unreachable ? "Reconnect to read this thread." : "Reading this thread…")
@@ -302,13 +331,33 @@ private struct Conversation: View {
         .padding(.top, Space.s3)
     }
 
-    @ViewBuilder private func rowView(_ row: ConversationRow, provider: String) -> some View {
+    @ViewBuilder private func rowView(_ row: ConversationRow, provider: String, working: Bool, last: Bool,
+                                      scroll: ScrollViewProxy) -> some View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref) { viewing = $0 }.equatable()
         case .steps(let steps):
-            StepTrail(steps: steps)
+            FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
+                      open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
+                .equatable()
         }
+    }
+
+    /// The run the thread is working through now: the run the conversation ends on, while the thread works, whether or
+    /// not one of its steps is running at this moment (between tool calls it is thinking).
+    private func workingRun(_ rows: [ConversationRow], _ state: ThreadState) -> String? {
+        guard state.workInProgress, let last = rows.last, case .steps = last.item else { return nil }
+        return last.id
+    }
+
+    /// Opens or folds a run in place with a spring. A reader at the bottom stays at the bottom; one who has scrolled up
+    /// is left where they are.
+    private func toggleRun(_ run: String, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.82)) {
+            openRuns.formSymmetricDifference([run])
+        }
+        if wasAtBottom { toBottom(scroll) }
     }
 
     // MARK: Keeping the user's place
@@ -368,14 +417,34 @@ private struct Conversation: View {
         if nowTitled != titled { titled = nowTitled }
     }
 
-    /// Scrolls to the end once the new layout is in, and once more after a lazy list has measured what it brought in.
+    /// Scrolls to the end once the new layout is in, and once more a moment later, after photos have settled their height.
+    /// Requests made in the same moment scroll once, and only the latest looks again. None scrolls while the user moves
+    /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
+        guard !box.userScrolling else { box.missedFollow = true; return }
+        box.followRequests += 1
+        let request = box.followRequests
         Task { @MainActor in
             await Task.yield()
+            guard box.followRequests == request else { return }
+            guard !box.userScrolling else { box.missedFollow = true; return }
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            if box.atBottom { scroll.scrollTo(Self.end, anchor: .bottom) }
+            if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+        }
+    }
+}
+
+private extension View {
+    /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
+    /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
+    /// page follows as it did before.
+    @ViewBuilder func onUserScrolling(_ changed: @escaping (Bool) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollPhaseChange { _, phase in changed(phase == .interacting || phase == .decelerating) }
+        } else {
+            self
         }
     }
 }
@@ -383,12 +452,15 @@ private struct Conversation: View {
 // MARK: - Title block
 
 /// The big title, where the thread runs, and its branch chips, at the top of the conversation.
-private struct ThreadHero: View {
+private struct ThreadHero: View, Equatable {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let thread: ThreadSummary?
     let topMoved: (CGFloat) -> Void
     let titleMoved: (CGFloat) -> Void
+    /// Drawn again only when its thread changes, not for each new revision of the conversation under it; its readers
+    /// report to the same page every time.
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref && a.thread == b.thread }
     var body: some View {
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
@@ -757,12 +829,191 @@ private enum InlineStyle {
 
 // MARK: - Steps
 
+/// A run of steps between two messages, folded into one line (ADR-0051, October 5 amendment). While the thread works
+/// through it, the line shows the step running now in the accent; once it has ended, how many steps it had and how
+/// long they took, quietly. A press opens the steps in place under their guide, and another folds them.
+private struct FoldedRun: View, Equatable {
+    let runID: String
+    let steps: [Activity]
+    let seconds: TimeInterval?
+    let working: Bool
+    let open: Bool
+    /// The conversation ends on this run, so the line's reach stays inside the page's end.
+    let last: Bool
+    let toggle: () -> Void
+    /// Drawn again only when what it shows changes; a press does the same for its run every time.
+    static func == (a: Self, b: Self) -> Bool {
+        a.runID == b.runID && a.steps == b.steps && a.seconds == b.seconds && a.working == b.working && a.open == b.open
+            && a.last == b.last
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggle) {
+                if working {
+                    WorkingLine(step: StepRun.running(steps), live: StepRun.now(steps), count: steps.count, open: open)
+                } else {
+                    summaryLine
+                }
+            }
+            .buttonStyle(FoldLineStyle())
+            .accessibilityLabel(StepRun.press(count: steps.count, open: open))
+            .accessibilityValue(spoken)
+            .accessibilityAddTraits(open ? .isSelected : [])
+            .accessibilityIdentifier("steps-run-\(runID)")
+            if open {
+                StepTrail(steps: steps)
+                    .padding(.top, working ? Space.s2 : Space.s1)
+                    .padding(.bottom, Space.s3 + Space.s1)
+                    .transition(trailTransition)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The line is 44 points tall for the finger; its words sit closer to the messages than that.
+        .padding(.top, -Space.s3)
+        .padding(.bottom, last ? 0 : -Space.s3)
+    }
+
+    /// What the line says to VoiceOver: "Working: Running npm test, 12 steps so far", or "14 steps, 1 minute 32 seconds".
+    private var spoken: String {
+        guard working else { return StepRun.spokenSummary(count: steps.count, seconds: seconds) }
+        return StepRun.spokenWorking(StepRun.now(steps), count: steps.count)
+    }
+
+    /// "14 steps · 1m 32s", muted, and in ink while its steps are open.
+    private var summaryLine: some View {
+        HStack(spacing: Space.s2) {
+            Text(StepRun.summary(count: steps.count, seconds: seconds))
+                .font(.sotto(.small, .semibold).monospacedDigit())
+                .foregroundStyle(open ? Palette.ink : Palette.muted)
+                .lineLimit(1)
+            FoldChevron(open: open)
+        }
+    }
+
+    /// The steps spring open from under the line; under Reduce Motion they fade in.
+    private var trailTransition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return AnyTransition.opacity
+            .combined(with: .scale(scale: 0.97, anchor: .topLeading))
+            .combined(with: .offset(y: -8))
+    }
+}
+
+/// The working run's line: a breathing light, the step running now in the accent with its command or file in monospace,
+/// how long it has run and how many steps so far. Each new step rolls up into place like a ticker and the count ticks
+/// with it; under Reduce Motion the light holds still and the words crossfade.
+private struct WorkingLine: View {
+    /// The step running now; nil between steps, when the line reads Thinking.
+    let step: Activity?
+    let live: StepRun.Live
+    let count: Int
+    let open: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Light(tone: .accent, size: 7, breathing: true)
+                .frame(width: 16, height: 16)
+            ZStack(alignment: .leading) {
+                LiveStepWords(live: live)
+                    .id(step?.id ?? "thinking")
+                    .transition(roll)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.46), value: step?.id)
+            if let since = Words.date(step?.startedAt) {
+                ElapsedText(since: since)
+                    .font(.sotto(.small).monospacedDigit())
+                    .foregroundStyle(Palette.accentText)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            ZStack {
+                Text("\(count)")
+                    .id(count)
+                    .transition(tick)
+            }
+            .font(.sotto(.caption, .bold).monospacedDigit())
+            .foregroundStyle(Palette.accentText)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .frame(minWidth: 26, minHeight: 22)
+            .clipped()
+            .background(Palette.accent.opacity(Tint.accentPill), in: Capsule())
+            .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.24), lineWidth: 1))
+            .fixedSize()
+            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .spring(response: 0.42, dampingFraction: 0.62), value: count)
+            FoldChevron(open: open)
+        }
+    }
+
+    /// The old step leaves upward as the new one rises into its place.
+    private var roll: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity),
+                           removal: AnyTransition.move(edge: .top).combined(with: .opacity))
+    }
+
+    private var tick: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity), removal: .opacity)
+    }
+}
+
+/// The running step's verb, then what it works on in monospace, cut in the middle when it is long.
+private struct LiveStepWords: View {
+    let live: StepRun.Live
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(live.verb)
+                .font(.sotto(.small, .semibold))
+                .lineLimit(1)
+                .layoutPriority(1)
+            if let subject = live.subject {
+                Text(subject)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .foregroundStyle(Palette.accentText)
+    }
+}
+
+/// The small chevron at the end of a folded line, turned down while its steps are open.
+private struct FoldChevron: View {
+    let open: Bool
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Palette.muted)
+            .rotationEffect(.degrees(open ? 90 : 0))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A folded line's press: 44 points tall, with a soft highlight that reaches a little past its words on both sides.
+private struct FoldLineStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return configuration.label
+            .padding(.horizontal, Space.s2)
+            .frame(minHeight: 44)
+            .background(shape.fill(configuration.isPressed ? Palette.fillSofter : ThemeRole.clear))
+            .contentShape(shape)
+            .padding(.horizontal, -Space.s2)
+    }
+}
+
 /// A run of steps between two messages: small muted lines under a faint guide, quieter than the messages.
 private struct StepTrail: View {
     let steps: [Activity]
     @Environment(\.sottoTheme) private var theme
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(steps) { record in
                 StepLine(record: record)
             }
@@ -943,6 +1194,8 @@ private struct UnconfirmedRow: View {
 /// A reply the computer refused, with a way to put it back in the reply box.
 private struct FailedReplyCard: View {
     @EnvironmentObject var model: AppModel
+    /// Watched so Put it back follows what the reply box holds; typing publishes here, not on the model.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let text: String
     var body: some View {
@@ -967,10 +1220,15 @@ private struct FailedReplyCard: View {
 
 /// The reply box in glass over the bottom of the page, with what the computer or the thread needs said above it.
 /// While a request waits, the box offers it instead of the field.
-private struct ReplyDock: View {
+private struct ReplyDock: View, Equatable {
     @EnvironmentObject var model: AppModel
+    /// The reply box's words, watched here alone: a keystroke redraws the reply box and nothing else.
+    @EnvironmentObject var draftStore: DraftStore
     let ref: ThreadRef
     let openRequest: (AgentRequest) -> Void
+    /// Drawn again for what it watches itself, not for each new revision of the conversation above it; a request it
+    /// offers opens the same way every time.
+    static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1007,7 +1265,7 @@ private struct ReplyDock: View {
             requestButton(request, requests)
                 .padding(6)
                 .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .shadow(color: Color.black.opacity(0.22), radius: 16, x: 0, y: 8)
+                .softShadow(RoundedRectangle(cornerRadius: 26, style: .continuous), color: Color.black.opacity(0.22), radius: 16, y: 8)
         } else {
             replyField
         }
@@ -1069,7 +1327,13 @@ private struct ReplyDock: View {
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
-        .shadow(color: focused ? theme.color(.accent).opacity(0.35) : Color.black.opacity(0.22), radius: focused ? 18 : 16, x: 0, y: focused ? 0 : 8)
+        // Two shadows drawn once each and crossfaded, rather than one live shadow redrawn as the conversation moves under it.
+        .background {
+            ZStack {
+                SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
+                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+            }
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
@@ -1475,7 +1739,7 @@ private struct OptionLabel: View {
                 .opacity(chosen ? 1 : 0)
         }
         .frame(width: 22, height: 22)
-        .shadow(color: chosen ? theme.color(.accent).opacity(0.6) : Color.clear, radius: 6)
+        .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
     }
@@ -1496,7 +1760,7 @@ private struct PermissionCommand: View {
         .padding(Space.s4)
         .background(Palette.code, in: shape)
         .overlay(shape.strokeBorder(theme.color(.warning).opacity(0.3), lineWidth: 1))
-        .shadow(color: theme.color(.warning).opacity(0.3), radius: 16, x: 0, y: 8)
+        .softShadow(shape, color: theme.color(.warning).opacity(0.3), radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Command: \(command)")
     }
@@ -1517,7 +1781,7 @@ private struct SheetBackdrop: View {
                 Rectangle().fill(.ultraThinMaterial)
                 fill.opacity(0.86)
             }
-            if wash { Wash(warm: true, height: 300) }
+            if wash { Wash(warm: true, height: 300, drifts: false) }
         }
         .ignoresSafeArea()
     }
