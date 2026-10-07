@@ -140,6 +140,18 @@ describe('a visual in a turn', () => {
     expect(placement.after.get('visual:place')?.flatMap(group => group.records.map(record => record.id))).toEqual(['after'])
   })
 
+  it('folds a visual: message whose visual it could not read, as the words it is', async () => {
+    const { visual: _dropped, ...words } = visualMessage(visual({ id: 'unread' }), clock(20))
+    void _dropped
+    const messages = [say('u1', 'user', 0), say('a1', 'assistant', 10, 'Here is the flow.'), words, say('a2', 'assistant', 40, 'That is all of it.')]
+    const activities = [command('c1', 0, clock(12), 'npm run before')]
+    render(<MessageList messages={messages} provider="Claude" running={false} placement={placeActivities(messages, messages, activities)} context={context} />)
+    expect(document.body.textContent).not.toContain('The visual is in Sotto on your computer.')
+    await userEvent.click(screen.getByRole('button', { name: /Worked for/u }))
+    expect(within(screen.getByRole('region', { name: /Worked for/u })).getByText('The visual is in Sotto on your computer.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /^Visual:/u })).toBeNull()
+  })
+
   it('is drawn as its text when this window does not know its kind', () => {
     const unknown = { ...visualMessage(visual({ id: 'unknown' })), visual: { ...visual({ id: 'unknown' }), kind: 'hologram' } }
     const messages = [say('u1', 'user', 0), unknown]

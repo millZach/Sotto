@@ -1,18 +1,18 @@
 import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, CircleAlert, CodeXml, Copy, Maximize2 } from 'lucide-react'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
-import { VISUAL_KINDS, type AgentVisual } from '../../../shared/visuals'
+import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { DiagramViewer } from './diagrams/DiagramViewer'
 import { useMermaidDrawing } from './diagrams/MermaidDiagram'
 import './visualCard.css'
 
 /**
- * Whether a message is a visual this window can draw (ADR-0055): Sotto's own `visual:` message carrying a visual of a
- * kind this version knows. Any other visual message is drawn as its text, which says what the visual showed.
+ * Whether a message is a visual this window can draw (ADR-0055): a visual message of a kind this version knows. Any
+ * other visual message is drawn as its text, which says what the visual showed.
  */
 export function isDrawableVisual(message: AgentMessage): message is AgentMessage & { visual: AgentVisual } {
-  return isVisualMessage(message) && message.visual !== undefined && (VISUAL_KINDS as readonly string[]).includes(message.visual.kind)
+  return isVisualMessage(message) && isKnownVisualKind(message.visual.kind)
 }
 
 /**

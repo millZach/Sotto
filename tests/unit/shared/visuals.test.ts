@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { agentMessageSchema, summarizeThread, type AgentMessage } from '../../../src/shared/agents'
-import { agentVisualSchema, checkVisualInput, isVisualMessageId, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
+import { agentMessageSchema, isVisualMessage, lastWrittenMessage, summarizeThread, type AgentMessage } from '../../../src/shared/agents'
+import { agentVisualSchema, checkVisualInput, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
 
 const FLOW = 'flowchart LR\n  A[Draft] --> B{Send}\n  B --> C[Running]'
 const valid = { title: 'How a send moves', kind: 'diagram', source: FLOW, intro: 'Sotto shows the message first.', steps: [{ text: 'You send.', highlight: ['A'] }, { text: 'Codex runs it.', highlight: ['B->C'] }] }
@@ -95,9 +95,36 @@ describe('a visual on a message', () => {
     expect(agentVisualSchema.safeParse({ title: 42 }).success).toBe(false)
   })
 
-  it('names visual messages by their prefix', () => {
-    expect(isVisualMessageId('visual:abc')).toBe(true)
-    expect(isVisualMessageId('assistant-1')).toBe(false)
+  it('is a visual message only as Sotto\'s own visual: message carrying a visual', () => {
+    const drawn = { id: visualMessageId('v1'), visual: { id: 'v1', title: 'T', kind: 'diagram', source: FLOW } }
+    expect(isVisualMessage(drawn)).toBe(true)
+    expect(isVisualMessage({ id: visualMessageId('v1') })).toBe(false)
+    expect(isVisualMessage({ ...drawn, id: 'assistant-1' })).toBe(false)
+    // A newer kind is still a visual; this reader shows its words in its place.
+    expect(isVisualMessage({ ...drawn, visual: { ...drawn.visual, kind: 'hologram' } })).toBe(true)
+  })
+
+  it('asks for the visual before it reads an ID', () => {
+    let reads = 0
+    const message = { get id() { reads++; return 'assistant-1' }, role: 'assistant' as const, text: 'words', createdAt: '2026-10-06T10:00:00.000Z' }
+    expect(isVisualMessage(message)).toBe(false)
+    expect(reads).toBe(0)
+  })
+
+  it('counts a visual: message whose visual it cannot read as words, in the summary as everywhere', () => {
+    const at = '2026-10-06T10:00:00.000Z'
+    const unreadable = agentMessageSchema.parse({ id: visualMessageId('v1'), role: 'assistant', text: visualFallbackText(valid), createdAt: at, visual: { title: 42 } })
+    const summary = summarizeThread({ messages: [{ id: 'u1', role: 'user', text: 'Show me', createdAt: at }, unreadable] })
+    expect(summary.messageCount).toBe(2)
+    expect(summary.lastAssistant?.text).toBe(visualFallbackText(valid))
+    expect(lastWrittenMessage([unreadable])).toBe(unreadable)
+  })
+
+  it('finds the last message someone wrote past any visuals', () => {
+    const words = { id: 'a1', role: 'assistant' as const, text: 'Here it is.', createdAt: '2026-10-06T10:00:00.000Z' }
+    const drawn = { id: visualMessageId('v1'), role: 'assistant' as const, text: 'T', createdAt: '2026-10-06T10:00:05.000Z', visual: { id: 'v1', title: 'T', kind: 'diagram', source: FLOW } }
+    expect(lastWrittenMessage([words, drawn, drawn])).toBe(words)
+    expect(lastWrittenMessage([drawn])).toBeUndefined()
   })
 
   it('leaves visuals out of the sidebar facts, so rows and search keep the agent\'s words', () => {

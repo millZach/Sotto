@@ -4,7 +4,7 @@ import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkil
 import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
-import { agentVisualSchema, isVisualMessageId } from './visuals'
+import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
@@ -245,6 +245,7 @@ export const agentMessageSchema = z.object({
   /**
    * Set on a message Sotto made for a visual an agent drew (ADR-0055), whose ID starts `visual:` and whose text is the
    * visual's words. A visual this reader cannot read is dropped and the text stands in; an older reader drops the field.
+   * Either way the message is then its words alone: `isVisualMessage` says no.
    */
   visual: agentVisualSchema.optional().catch(undefined),
 })
@@ -781,9 +782,19 @@ export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
 export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
 
-/** Whether a message is one Sotto made for a visual an agent drew (ADR-0055), rather than words someone wrote. */
-export function isVisualMessage(message: Pick<AgentMessage, 'id'>): boolean {
-  return isVisualMessageId(message.id)
+/**
+ * Whether a message is a visual an agent drew (ADR-0055): Sotto's own `visual:` message, carrying the visual. This is
+ * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
+ * titles and supervision. A `visual:` message without a visual it can read (a shape this reader does not know, or a
+ * socket client's copy, which never carries one) is its words alone, and counts as a reply everywhere. The `visual`
+ * field is asked first, so a pass over a long history reads no other message's ID.
+ */
+export function isVisualMessage<T extends Pick<AgentMessage, 'id' | 'visual'>>(message: T): message is T & { visual: AgentVisual } {
+  return message.visual !== undefined && message.id.startsWith(VISUAL_MESSAGE_PREFIX)
+}
+/** The newest message that is not a visual: the last thing the agent or the user wrote. */
+export function lastWrittenMessage<T extends Pick<AgentMessage, 'id' | 'visual'>>(messages: readonly T[]): T | undefined {
+  return messages.findLast(message => !isVisualMessage(message))
 }
 /**
  * The sidebar's facts about a thread's history, derived from the history itself. A visual's message is Sotto's, not the
@@ -791,9 +802,7 @@ export function isVisualMessage(message: Pick<AgentMessage, 'id'>): boolean {
  */
 export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activities'>): AgentThreadSummary {
   const { activities = [] } = thread
-  // A visual's message carries its visual; asking that first keeps a summary from reading every message's ID.
-  const drawnVisual = (message: AgentMessage): boolean => message.visual !== undefined && isVisualMessage(message)
-  const messages = thread.messages.some(drawnVisual) ? thread.messages.filter(message => !drawnVisual(message)) : thread.messages
+  const messages = thread.messages.some(isVisualMessage) ? thread.messages.filter(message => !isVisualMessage(message)) : thread.messages
   const cut = (message: AgentMessage): z.infer<typeof threadExcerptSchema> =>
     ({ id: message.id, text: message.text.slice(0, AGENT_THREAD_EXCERPT_MAX), createdAt: message.createdAt })
   const lastUser = messages.findLast(message => message.role === 'user')

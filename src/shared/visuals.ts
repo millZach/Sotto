@@ -19,6 +19,8 @@ export const VISUALS_PER_THREAD_MAX = 100
 /** The kinds an agent may send. Interactive pages are a later kind (#794). */
 export const VISUAL_KINDS = ['diagram'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
+/** Whether this version draws a visual of this kind; a visual of any other kind is shown as its words. */
+export const isKnownVisualKind = (kind: string): kind is VisualKind => (VISUAL_KINDS as readonly string[]).includes(kind)
 /** The prefix every visual message's ID starts with, so nothing mistakes one for a provider's message. */
 export const VISUAL_MESSAGE_PREFIX = 'visual:'
 /** The last line of every visual's text: where the drawing is for a reader that cannot show it. */
@@ -112,9 +114,8 @@ export function visualRefusalText(refusal: VisualRefusal): string {
   return `${refusal.reason} ${VISUAL_NOTHING_DRAWN} ${refusal.next}`
 }
 
-/** A message's ID for a visual, and the reverse. */
+/** A message's ID for a visual. Whether a message is a visual is `isVisualMessage`'s to say, not the ID's alone. */
 export const visualMessageId = (visualId: string): string => `${VISUAL_MESSAGE_PREFIX}${visualId}`
-export const isVisualMessageId = (messageId: string): boolean => messageId.startsWith(VISUAL_MESSAGE_PREFIX)
 
 /** Indents every line after the first, so a step with line breaks stays one numbered item. */
 const listItem = (index: number, text: string): string => `${index + 1}. ${text.trim().split(/\r?\n/u).join('\n   ')}`
