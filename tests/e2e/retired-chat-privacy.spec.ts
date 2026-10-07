@@ -8,7 +8,7 @@ import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
 const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Save Settings or restart Sotto to try again.'
-const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Save Settings or restart Sotto to try again.'
+const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.'
 const crashCopy = 'chats.json.tmp-123-12345678-1234-1234-1234-123456789abc'
 
 function savedChats() {
@@ -127,7 +127,7 @@ test.describe('retired Chats follow Keep local history', () => {
     await withProfile(false, sourceChats, expectRedacted)
   })
 
-  test('malformed answer storage stays intact and reports answer cleanup without claiming Chats failed', async () => {
+  test('malformed answer storage is preserved until repair and restart allow cleanup', async () => {
     const invalid = '{"version":1,"drafts":[{"retained":"Private unparsed answer"}]}\n'
     await withProfile(false, null, async ({ launched, chatsFile, formsFile }) => {
       await expect(launched.page.getByRole('status').filter({ hasText: answerNotice })).toBeVisible()
@@ -135,6 +135,35 @@ test.describe('retired Chats follow Keep local history', () => {
       expect(await readFile(formsFile, 'utf8')).toBe(invalid)
       expect((await readdir(launched.userData)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
       await expect(readFile(chatsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      await launched.app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(820, 560)
+      })
+      await expect.poll(() => launched.page.evaluate(() => Math.max(Math.abs(innerWidth - 820), Math.abs(innerHeight - 560)))).toBeLessThanOrEqual(2)
+      await expect.poll(() => launched.page.evaluate(() => [
+        Math.max(0, document.documentElement.scrollWidth - innerWidth),
+        Math.max(0, document.documentElement.scrollHeight - innerHeight),
+      ])).toEqual([0, 0])
+      await expect(launched.page.getByRole('status').filter({ hasText: answerNotice })).toBeVisible()
+      await mkdir('artifacts/remove-personal-chats', { recursive: true })
+      await launched.page.screenshot({ path: 'artifacts/remove-personal-chats/answer-cleanup-notice-820x560.png',
+        clip: { x: 0, y: 0, width: 820, height: 560 }, scale: 'css' })
+
+      await writeFile(formsFile, sourceForms, 'utf8')
+      // A Settings save cannot reread a store held read-only for this process.
+      expect(await launched.page.evaluate(async () => {
+        const saved = await window.sotto!.updateSettings({ appearance: 'light' })
+        return saved.appearance
+      })).toBe('light')
+      expect(await readFile(formsFile, 'utf8')).toBe(sourceForms)
+      await closeSotto(launched)
+      const restarted = await launchSotto('success', launched.userData)
+      try {
+        await expect(restarted.page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+        expect(JSON.parse(await readFile(formsFile, 'utf8'))).toEqual({ version: 1, drafts: [unsent, thread] })
+        await expect(restarted.page.getByText(answerNotice, { exact: true })).toHaveCount(0)
+        await expect(restarted.page.getByText(notice, { exact: true })).toHaveCount(0)
+        await expect(readFile(chatsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      } finally { await closeSotto(restarted) }
     }, invalid)
   })
 

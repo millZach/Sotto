@@ -358,7 +358,7 @@ describe('Sotto application onboarding integration', () => {
       listRecoveryNotices: vi.fn(async () => [{ code: 'ANSWER_HISTORY_NOT_CLEARED' as const }]),
     })
     renderApp(bridge)
-    expect(await screen.findByText('Saved answer cleanup could not finish. The original file was preserved. Save Settings or restart Sotto to try again.')).toBeVisible()
+    expect(await screen.findByText('Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.')).toBeVisible()
     expect(screen.queryByText(/Saved chat history could not be fully cleared/)).not.toBeInTheDocument()
   })
 

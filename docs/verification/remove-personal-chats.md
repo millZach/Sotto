@@ -134,7 +134,9 @@ A second review tightened the cleanup: canonical output comparison avoids
 repeated writes, including after restart, while still removing unknown retained
 content. Exact abandoned temporary copies are removed when the primary is
 missing without creating a replacement. Shared answer-store failures have
-their own notice, and retry copy names both Settings saves and restarts.
+their own notice. Chat cleanup and failed answer writes can retry on Settings
+saves; an answer store that was unreadable at startup stays read-only for the
+session, so its notice directs the user to repair storage and restart.
 The recovery notices describe the failed attempt and remain available for the
 session, like the app's existing recovery notices. The final focused checks
 cover 57 runtime cases and 63 notice/schema/renderer cases. All five privacy
@@ -142,3 +144,20 @@ Electron journeys pass on the final build, including an unreadable answer store
 with no retired Chats file; only the answer notice appears. Typecheck, lint,
 notices and build pass again. Standards and Spec reviews find no remaining
 actionable issues, and the final three-line notice screenshot is inspected.
+
+The answer-store recovery journey also repairs a malformed file, confirms that
+a Settings save commits without reopening the read-only store, and restarts
+Electron against the same profile. Startup then clears the submitted personal
+form while retaining unsent and thread forms. The answer notice therefore says
+to repair storage and restart. All five journeys and the 51 renderer tests pass
+with this final copy; typecheck, lint and build pass again.
+
+A later local full run began before the review edits and finished with 7,825
+passed, 162 skipped and five failures. Three were deadlines in unchanged
+fixtures: a 30-second Git command in the retained-submodule test and two host
+readiness failures in boot setup, before their scenarios began. The exact
+worktree scenario passes separately. Two schema failures came from editing
+the notice enum during that run: its cached eight-code schema met the updated
+nine-code test. This mixed-revision run is diagnostic, not final-head
+validation. The final focused schema checks pass; clean CI on the published
+commit remains the delivery gate, with its result recorded in the PR.
