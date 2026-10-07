@@ -54,6 +54,8 @@ import { wrapAgentBridge } from '../agents/agentStateCatalogs'
 import { WidgetThreads } from './WidgetThreads'
 
 const IDLE_HOVER_SETTLE_MS = 220
+/** How long after an error appears a click on its × is still taken as aimed at the esc before it. */
+const DISMISS_GRACE_MS = 500
 const PREVIEW_NOW = 13_340
 
 const processingLabels: Record<WidgetProcessingStage, string> = {
@@ -350,6 +352,11 @@ export function WidgetApp({
 }: WidgetAppProps): ReactNode {
   const isIdle = snapshot.status === 'idle'
   const kept = snapshot.status === 'error' && snapshot.kept === true
+  // The × takes the place esc held while the work ran. A click in its first
+  // half second was aimed at esc, so it does not discard what was just kept.
+  const errorKey = snapshot.status === 'error' ? `${snapshot.sessionId ?? ''}:${snapshot.code}:${String(snapshot.retried)}` : ''
+  const errorShownAt = useRef(0)
+  useEffect(() => { if (errorKey !== '') errorShownAt.current = Date.now() }, [errorKey])
   const orientation = useWidgetOrientation()
   // The coordinator is hidden for the beta, and with it every control on the
   // widget that speaks, listens or hands a thread to Sotto. Dictation is what
@@ -544,7 +551,10 @@ export function WidgetApp({
   // An error stays until it is dismissed. Escape is not claimed for it, since
   // holding the key system-wide while an error waits would take it from every app.
   const dismissAction = snapshot.status === 'error' && (
-    <WidgetAction label={kept ? 'Discard recording' : 'Dismiss'} onClick={onDismiss}>
+    <WidgetAction
+      label={kept ? 'Discard recording' : 'Dismiss'}
+      onClick={() => { if (Date.now() - errorShownAt.current >= DISMISS_GRACE_MS) onDismiss?.() }}
+    >
       <X aria-hidden="true" size={11} strokeWidth={2.6} />
     </WidgetAction>
   )

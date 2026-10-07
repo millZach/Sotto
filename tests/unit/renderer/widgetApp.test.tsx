@@ -226,6 +226,7 @@ describe('WidgetApp', () => {
     const onCancel = vi.fn()
     const onDismiss = vi.fn()
     const onStop = vi.fn()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const { container } = render(
       <WidgetApp
         snapshot={snapshot({ status: 'error', sessionId: 'kept', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })}
@@ -241,11 +242,18 @@ describe('WidgetApp', () => {
     expect(onRetry).toHaveBeenCalledOnce()
     expect(onStop).not.toHaveBeenCalled()
 
+    // A click in the first half second was aimed at the esc this × replaced.
+    now.mockReturnValue(1_300)
+    fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }))
+    expect(onDismiss).not.toHaveBeenCalled()
+
     // Discarding is its own command; cancel is only for work in progress.
+    now.mockReturnValue(2_000)
     fireEvent.click(screen.getByRole('button', { name: 'Discard recording' }))
     expect(onDismiss).toHaveBeenCalledOnce()
     expect(onCancel).not.toHaveBeenCalled()
     expect(onRetry).toHaveBeenCalledOnce()
+    now.mockRestore()
   })
 
   it.each([
