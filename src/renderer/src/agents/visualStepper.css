@@ -72,3 +72,4 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.visual-stepper__text--only { min-height: 0; margin-top: 0; }

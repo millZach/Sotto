@@ -13,8 +13,8 @@ export interface VisualStepperProps {
 /**
  * A visual's walkthrough (ADR-0056, #793): "Step n of N", a dot for each step, Back and Next ("Start over" on the last
  * step), and the step's words in larger type, read out as they change. Left and Right step while focus is anywhere in
- * it. It holds no state of its own, so whatever shows the visual (a diagram's card, an interactive page's card) keeps
- * the step and lights it.
+ * it. A visual with one step shows its words alone. It holds no state of its own, so whatever shows the visual (a
+ * diagram's card, an interactive page's card) keeps the step and lights it.
  */
 export function VisualStepper({ steps, index, onStep }: VisualStepperProps): ReactNode {
   const count = steps.length
@@ -22,6 +22,10 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
   const current = Math.min(Math.max(Math.trunc(index) || 0, 0), count - 1)
   const first = current === 0
   const last = current === count - 1
+  // One step has nowhere to go: its words alone, under its lit part of the visual.
+  if (count === 1) return <div className="visual-stepper" role="group" aria-label="Walkthrough">
+    <p className="visual-stepper__text visual-stepper__text--only">{steps[0]!.text}</p>
+  </div>
   const go = (next: number): void => { if (next >= 0 && next < count && next !== current) onStep(next) }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return

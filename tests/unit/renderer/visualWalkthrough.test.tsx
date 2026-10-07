@@ -169,6 +169,16 @@ describe('a walkthrough in the card', () => {
     expect(litIn(within(viewer).getByRole('img'))).toEqual(['sotto-diagram-flowchart-flowchart-A-0'])
   })
 
+  it('shows a single step as its words under its lit part, with no count, dots, Back or Next', async () => {
+    render(<VisualCard visual={visual({ steps: [{ text: 'You write a draft.', highlight: ['A'] }] })} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    const walkthrough = within(card).getByRole('group', { name: 'Walkthrough' })
+    expect(walkthrough).toHaveTextContent(/^You write a draft\.$/u)
+    expect(within(walkthrough).queryAllByRole('button')).toEqual([])
+    expect(litIn(shown(card))).toEqual(['sotto-diagram-flowchart-flowchart-A-0'])
+  })
+
   it('shows no stepper and no Read all for a visual without steps, and its intro', async () => {
     render(<VisualCard visual={visual({ steps: undefined })} />)
     const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
