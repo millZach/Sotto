@@ -24,6 +24,7 @@ handoff/
 artifacts/agent-control-smoke/
 artifacts/natural-voice-qa/
 artifacts/native-threads-live/
+artifacts/visuals-live/
 artifacts/provider-recovery/
 artifacts/native-providers/
 artifacts/voice-journey/
