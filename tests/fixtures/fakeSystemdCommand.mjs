@@ -105,7 +105,16 @@ async function systemctl(state, words) {
       // Another client's host takes the lock first; the unit's host finds it held and stops with its own code.
       const other = runUnit(null)
       const lock = join(state.data, 'host-listener.lock')
-      for (let tries = 0; tries < 200 && !existsSync(lock); tries++) await delay(25)
+      let held = false
+      for (let tries = 0; tries < 200; tries++) {
+        // Exit 75 means a parsed lease names a live holder. An exclusively created file
+        // can still be empty while its host writes it; that is not this unit outcome yet.
+        try { if (JSON.parse(readFileSync(lock, 'utf8')).pid === other && alive(other)) { held = true; break } }
+        catch { /* the replacement has not published its lease yet */ }
+        if (!alive(other)) throw new Error('The competing fake host exited before publishing its lease.')
+        await delay(25)
+      }
+      if (!held) throw new Error('The competing fake host did not publish a live lease.')
       record({ otherHost: other })
       state.unit = { ActiveState: 'failed', SubState: 'failed', Result: 'exit-code', NRestarts: '0', ExecMainStatus: '75' }
     } else { state.mainPid = runUnit(); state.unit = { ActiveState: 'active', SubState: 'running', Result: 'success', NRestarts: '0', ExecMainStatus: '0' } }

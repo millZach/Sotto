@@ -303,8 +303,9 @@ describe.skipIf(process.platform === 'darwin')('start at boot in the launch scri
       const configuration = await installed()
       await run(configuration, { op: 'stop-host', hostId: HOST_ID })
       await systemd!.set({ afterStart: 'lost-lock' })
-      // The other host holds the lock for a while before it listens, so the unit has given up before that host answers.
-      const launch = await run(configuration, { op: 'launch' }, { FAKE_HOST_START_DELAY_MS: '1500' })
+      // A new lock file can exist before its lease is written. Exit 75 requires that live lease;
+      // the other host then holds it for a while before listening, so the launcher must wait for it.
+      const launch = await run(configuration, { op: 'launch' }, { FAKE_HOST_LOCK_WRITE_DELAY_MS: '1500', FAKE_HOST_START_DELAY_MS: '1500' })
       expect(launch.result).toMatchObject({ type: 'ready', owned: false })
       expect((await descriptor(configuration)).startedBy).toBeUndefined()
     })
