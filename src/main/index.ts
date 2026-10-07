@@ -762,7 +762,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
   agentHost.useThreadTools([hostSetupTools, visualTools])
-  // An interactive visual runs in a sealed page (ADR-0057): main serves it from this store, once per address. The session
+  // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const onVisualContents = new Map<(event: unknown, contents: VisualContentsLike) => void, (event: ElectronEvent, contents: WebContents) => void>()
   const disposeVisualSandbox = installVisualSandbox({
@@ -1457,7 +1457,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 }
 
 // Electron takes one list of privileged schemes. An interactive visual's page is standard, so it has an origin to
-// seal, and nothing more: not secure, no fetch, no CORS, no service workers (ADR-0057).
+// seal, and nothing more: not secure, no fetch, no CORS, no service workers (ADR-0060).
 registerModelSchemesAsPrivileged({ registerSchemesAsPrivileged: schemes => protocol.registerSchemesAsPrivileged([
   ...schemes as Parameters<typeof protocol.registerSchemesAsPrivileged>[0], { scheme: VISUAL_SCHEME, privileges: { standard: true } }]) })
 enableWasmThreadSupport(app.commandLine)

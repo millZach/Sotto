@@ -50,7 +50,7 @@ const ELSEWHERE = 'This page belongs to a thread on another computer, so it is n
 
 /**
  * Answers the window's request for an interactive visual's page, admits a `<webview>` guest only for an address
- * awaiting its load in the main window, and seals every guest (ADR-0057). The session is sealed, and its proxy started,
+ * awaiting its load in the main window, and seals every guest (ADR-0060). The session is sealed, and its proxy started,
  * the first time a page is asked for, so a launch that shows none sets up nothing. If the proxy cannot hold a port, no
  * page is shown; the next request tries again.
  */

@@ -3,7 +3,7 @@ import { VISUAL_PARTITION, VISUAL_SCHEME } from '../../shared/visualPages'
 import type { VisualPageStore } from './visualPageStore'
 
 /**
- * What seals an interactive visual from the network (ADR-0057): the session every page runs in, the proxy that session
+ * What seals an interactive visual from the network (ADR-0060): the session every page runs in, the proxy that session
  * points at, and the `<webview>` guest that shows a page.
  */
 

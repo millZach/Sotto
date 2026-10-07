@@ -7,7 +7,7 @@ import type { MermaidRendering } from './MermaidDiagram'
 
 /**
  * What a visual's frame keeps while it is on screen, whatever it shows: whether its source is shown instead, whether it
- * is expanded, and how the last copy went. A drawn diagram and an interactive visual's page (ADR-0057) both use it.
+ * is expanded, and how the last copy went. A drawn diagram and an interactive visual's page (ADR-0060) both use it.
  */
 export interface FrameControls {
   readonly source: string

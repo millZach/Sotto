@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * How Sotto's window asks for an interactive visual's page (ADR-0057). The window names a visual by its thread and ID
+ * How Sotto's window asks for an interactive visual's page (ADR-0060). The window names a visual by its thread and ID
  * and sends the theme to start it in; main reads the page from its own store and answers with a one-time address on
  * the `sotto-visual:` scheme. The window never sends a page. This file does not import `visualGuest.ts`, so the two
  * preloads share no module (see that file).

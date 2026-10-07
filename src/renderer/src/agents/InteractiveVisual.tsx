@@ -10,7 +10,7 @@ import { useVisualPageSlot } from './visualPageSlots'
 import './interactiveVisual.css'
 
 /**
- * An interactive visual's page in its card (ADR-0057). The page is an agent's own HTML, so it never runs in this
+ * An interactive visual's page in its card (ADR-0060). The page is an agent's own HTML, so it never runs in this
  * window: main serves it once, from its own store, into a `<webview>` guest on a sealed in-memory session. This side
  * only asks for the page's address, sizes the guest to the height Sotto's guest preload measured, and sends the
  * walkthrough's step and the theme in. Which pages run is `visualPageSlots.ts`'s to say.

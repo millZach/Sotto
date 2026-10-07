@@ -1,4 +1,4 @@
-/* An interactive visual's page in its card (ADR-0057). The page paints its own background from the theme Sotto gives
+/* An interactive visual's page in its card (ADR-0060). The page paints its own background from the theme Sotto gives
    it; until it does, and when it is not running, the frame shows the card's surface and a quiet line. */
 
 .interactive-visual {

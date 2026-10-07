@@ -4,7 +4,7 @@ import {
   clampVisualPageHeight, measuredPageHeight, readVisualStep, readVisualTheme, returnsFocus, visualThemeCss,
 } from '../shared/visualGuest'
 
-// Sotto's preload for an interactive visual's sealed page (ADR-0057). It runs in an isolated world: the page sees none
+// Sotto's preload for an interactive visual's sealed page (ADR-0060). It runs in an isolated world: the page sees none
 // of it and nothing of Electron. It hands the page the walkthrough's steps and the theme as window messages, keeps the
 // theme's style current, measures the page for Sotto, and gives Escape back to Sotto. It exposes nothing.
 

@@ -1,5 +1,5 @@
 /**
- * Sotto's preload in an interactive visual's sealed page (ADR-0057): it passes steps and the theme on as window
+ * Sotto's preload in an interactive visual's sealed page (ADR-0060): it passes steps and the theme on as window
  * messages, and only the user's own Escape gives focus back to Sotto. A key the page dispatches itself moves nothing.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'

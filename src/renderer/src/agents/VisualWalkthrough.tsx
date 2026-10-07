@@ -5,7 +5,7 @@ import { clampStep } from './VisualStepper'
 
 /**
  * A visual's walkthrough place (#793), shared by every card that shows one: a diagram's and an interactive page's
- * (ADR-0057). The stepper itself is `VisualStepper`, which holds no state; this keeps where the reader is.
+ * (ADR-0060). The stepper itself is `VisualStepper`, which holds no state; this keeps where the reader is.
  */
 
 /** Where a reader is in one visual's walkthrough: the step shown, and whether every step is shown instead. */

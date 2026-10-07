@@ -18,14 +18,14 @@ export const VISUAL_HIGHLIGHT_MAX = 120
 /** How many visuals one turn may draw, and one thread may hold. */
 export const VISUALS_PER_TURN_MAX = 6
 export const VISUALS_PER_THREAD_MAX = 100
-/** The longest page an interactive visual may be: an agent's own HTML, served sealed (ADR-0057). */
+/** The longest page an interactive visual may be: an agent's own HTML, served sealed (ADR-0060). */
 export const VISUAL_PAGE_SOURCE_MAX = 60_000
 /**
  * The longest source a kept visual is read with, well past any kind's input limit (a diagram's 12,000 characters, an
  * interactive page's 60,000), so a visual a newer version kept is not refused on the way to a window.
  */
 export const VISUAL_KEPT_SOURCE_MAX = 200_000
-/** The kinds an agent may send: Mermaid source, or its own HTML page run sealed from the network (ADR-0057). */
+/** The kinds an agent may send: Mermaid source, or its own HTML page run sealed from the network (ADR-0060). */
 export const VISUAL_KINDS = ['diagram', 'interactive'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
 /** Whether this version draws a visual of this kind; a visual of any other kind is shown as its words. */
@@ -124,7 +124,7 @@ export const INTERACTIVE_VISUAL_LABEL = 'Interactive page'
 
 /**
  * The schema, then for a diagram the source checks, in that order: the same checks the card makes before drawing. An
- * interactive page is not inspected; it is contained instead (ADR-0057), so what it says cannot reach anything.
+ * interactive page is not inspected; it is contained instead (ADR-0060), so what it says cannot reach anything.
  */
 export function checkVisualInput(args: unknown): VisualCheck {
   const parsed = visualInputSchema.safeParse(args)

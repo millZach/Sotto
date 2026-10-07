@@ -6,7 +6,7 @@ import type { VisualTheme } from '../../shared/visualGuest'
 import { visualPageNotFound, visualPageResponse } from './visualPagePolicy'
 
 /**
- * Who gets an interactive visual's page, and when (ADR-0057). Main keeps the page in its own visual store; the window
+ * Who gets an interactive visual's page, and when (ADR-0060). Main keeps the page in its own visual store; the window
  * asks for a visual by thread and ID and is given a one-time address on the `sotto-visual:` scheme, which a guest
  * loads once.
  */

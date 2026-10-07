@@ -1,5 +1,5 @@
 /**
- * What passes between Sotto and the sealed page of an interactive visual (ADR-0057). Sotto's guest preload imports this
+ * What passes between Sotto and the sealed page of an interactive visual (ADR-0060). Sotto's guest preload imports this
  * file and nothing else, so it has no imports of its own: a sandboxed preload is one file, and a module it shared with
  * the window's preload would be split into a chunk it cannot load.
  */
@@ -58,7 +58,7 @@ export function measuredPageHeight(rootHeight: number, bodyScrollHeight: number 
 }
 /**
  * Whether a key gives focus back to Sotto: Escape, pressed by the user. A key the page made itself (`isTrusted` false)
- * moves nothing, so a page cannot take focus away from it, close Expand or flood Sotto with messages (ADR-0057).
+ * moves nothing, so a page cannot take focus away from it, close Expand or flood Sotto with messages (ADR-0060).
  */
 export function returnsFocus(event: { readonly key: string; readonly repeat: boolean; readonly isTrusted: boolean }): boolean {
   return event.isTrusted && event.key === 'Escape' && !event.repeat

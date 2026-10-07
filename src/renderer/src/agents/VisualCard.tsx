@@ -27,7 +27,7 @@ export function isDrawableVisual(message: AgentMessage): message is AgentMessage
  * readable.
  */
 export const VisualCard = memo(function VisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId?: string | undefined }): ReactNode {
-  // An agent's own page runs sealed (ADR-0057), in a card with the same header, walkthrough and explanation.
+  // An agent's own page runs sealed (ADR-0060), in a card with the same header, walkthrough and explanation.
   return visual.kind === 'interactive' ? <InteractiveVisualCard visual={visual} threadId={threadId} /> : <DiagramVisualCard visual={visual} />
 })
 

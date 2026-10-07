@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type RefObject } from 'react'
 
 /**
- * Which interactive visuals' pages run (ADR-0057). A page runs while its card is near the view or while it is shown
+ * Which interactive visuals' pages run (ADR-0060). A page runs while its card is near the view or while it is shown
  * expanded, and at most three run at once. An expanded page always runs and counts toward the three; the cards in view
  * share what is left, in the order they came into view.
  */

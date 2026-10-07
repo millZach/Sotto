@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * An interactive visual's sealed page (ADR-0057): the one-time address main gives the window, the page it serves once
+ * An interactive visual's sealed page (ADR-0060): the one-time address main gives the window, the page it serves once
  * and the headers it serves it with, the session every page runs in, and the guest that shows one. The session and the
  * guest are recorded fakes here; the running app proves them in tests/e2e/visual-sandbox.spec.ts.
  */

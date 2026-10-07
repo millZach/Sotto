@@ -27,7 +27,7 @@ export function pageOtherwise(visual: Pick<AgentVisual, 'intro' | 'steps'>): str
 }
 
 /**
- * An interactive visual in its card (ADR-0057): the same header and controls as a diagram's (title, kind, Read all when
+ * An interactive visual in its card (ADR-0060): the same header and controls as a diagram's (title, kind, Read all when
  * it has steps, Show source, Copy source, Expand), the agent's page running sealed in the middle, and under it the same
  * walkthrough as a diagram's (#793), or the intro and every step under Read all. Each step the reader moves to goes to
  * the page as a step message with the names that step is about, so the page can show it. Escape inside the page gives

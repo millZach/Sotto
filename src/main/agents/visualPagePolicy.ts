@@ -1,7 +1,7 @@
 import { visualThemeCss, type VisualTheme } from '../../shared/visualGuest'
 
 /**
- * What an interactive visual's page is served as (ADR-0057): its headers, and the document Sotto wraps the agent's
+ * What an interactive visual's page is served as (ADR-0060): its headers, and the document Sotto wraps the agent's
  * page in. Nothing here decides who gets a page; `visualPageStore.ts` does.
  */
 

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * What passes between Sotto and an interactive visual's sealed page (ADR-0057): the height Sotto gives it, the step and
+ * What passes between Sotto and an interactive visual's sealed page (ADR-0060): the height Sotto gives it, the step and
  * theme messages the guest preload passes on, the CSS it writes, and the window's request for a page.
  */
 import { describe, expect, it } from 'vitest'

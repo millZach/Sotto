@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The gates around an interactive visual's sealed page (ADR-0057), with every Electron piece stood in for: only the main
+ * The gates around an interactive visual's sealed page (ADR-0060), with every Electron piece stood in for: only the main
  * window may ask for a page, a paired host's thread is never read from this computer's store, nothing is set up until a
  * page is asked for, a guest attaches only in the main window for an address awaiting its load, and a guest on any
  * other session is closed.

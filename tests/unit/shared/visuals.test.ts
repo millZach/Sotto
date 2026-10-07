@@ -86,7 +86,7 @@ describe('a visual as Sotto keeps it', () => {
   })
 })
 
-describe('checking an interactive visual (ADR-0057)', () => {
+describe('checking an interactive visual (ADR-0060)', () => {
   const page = '<!doctype html><svg width="40" height="40"><circle cx="20" cy="20" r="18"/></svg><script>addEventListener("message", () => {})</script>'
 
   it('takes a page of up to 60,000 characters and names it for the reply', () => {

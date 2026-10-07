@@ -331,7 +331,7 @@ export function createSottoBridge(
       assignments: request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, SUBAGENTS_CHANGED, subagentChangeSchema, listener),
     }),
-    // An interactive visual's sealed page (ADR-0057): the window names the visual, main reads the page from its store.
+    // An interactive visual's sealed page (ADR-0060): the window names the visual, main reads the page from its store.
     visuals: Object.freeze<VisualPagesBridge>({
       open: request => invokeParsed(renderer, VISUAL_PAGE_OPEN, visualPageResultSchema, visualPageRequestSchema.parse(request)),
     }),
