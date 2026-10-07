@@ -6,7 +6,7 @@ Accepted September 27, 2026, by the owner's pick of round 3 of `prototype/host-s
 
 Amended September 30, 2026: an SSH entry that goes to this computer, and one for a Git service such as `github.com`, is greyed under **Can't use now** too, since neither is a machine to add. An entry is this computer only when it goes to one of this computer's addresses or its full tailnet name; a bare name or alias never decides it, and loopback never counts.
 
-Amended October 1, 2026: a jump is not this computer just because its `HostName` matches an address here. `ProxyJump`, and a `ProxyCommand` that forwards with `ssh` the same way (`ssh -W %h:%p bastion`), connects to that address from the jump host, so the alias stays selectable; a direct alias to this computer is still greyed. The full tailnet name still means this computer, jump or not. A Git service is the host SSH connects to, the `HostName` or the name itself when there is none, so an alias named `github.com` whose `HostName` is an ordinary computer stays selectable.
+Amended October 1, 2026: a jump is not this computer just because its `HostName` matches an address here. `ProxyJump` connects to that address from the jump host, and any `ProxyCommand` other than `none` decides for itself where the connection goes, so the alias stays selectable; a direct alias to this computer is still greyed. The full tailnet name still means this computer, jump or not. A Git service is the host SSH connects to, the `HostName` or the name itself when there is none, so an alias named `github.com` whose `HostName` is an ordinary computer stays selectable.
 
 ## Context
 

@@ -35,7 +35,7 @@ describe('parseSshConfig', () => {
   it('expands %h in a HostName to the alias', () => {
     expect(parseSshConfig('Host lab\n  HostName %h.example.net\n').hosts).toEqual([{ alias: 'lab', hostname: 'lab.example.net' }])
   })
-  it('keeps a jump, and a ProxyCommand that forwards with ssh the same way, and lets the first one win', () => {
+  it('keeps a jump, counts any ProxyCommand but none as one, and lets the first one win', () => {
     const parsed = parseSshConfig([
       'Host lan',
       '  HostName 192.168.1.10',
@@ -46,8 +46,10 @@ describe('parseSshConfig', () => {
       '  ProxyCommand "ssh -J bastion %h"',
       'Host path',
       '  ProxyCommand /usr/bin/ssh -W %h:%p user@bastion',
-      'Host direct',
+      'Host proxied',
       '  ProxyCommand nc -X connect %h %p',
+      'Host direct',
+      '  ProxyCommand none',
       '  ProxyJump bastion',
       'Host off',
       '  ProxyJump none',
@@ -58,6 +60,7 @@ describe('parseSshConfig', () => {
       { alias: 'forwarded', jump: true },
       { alias: 'quoted', jump: true },
       { alias: 'path', jump: true },
+      { alias: 'proxied', jump: true },
       { alias: 'direct' },
       { alias: 'off' },
     ])

@@ -115,8 +115,8 @@ export function mergeDevices(reading: TailscaleReading, suggestions: readonly Ss
   // share it, and only a lookup could say which one answers. Loopback never counts either: a VM such as Colima,
   // Lima or WSL is reached through a port forwarded to it, and is a machine of its own.
   // A jump is the other exception for an address. `ProxyJump bastion` with `HostName 192.168.1.10` connects to
-  // that address from the bastion, which can be a different machine; the same is true of a `ProxyCommand` that
-  // forwards with `ssh` (`ssh -W %h:%p bastion`). The full tailnet name still names this computer, jump or not.
+  // that address from the bastion, which can be a different machine. Any `ProxyCommand` counts the same way, because
+  // the command decides where the connection goes. The full tailnet name still names this computer, jump or not.
   // A Git service is that destination, not the alias: an entry named github.com can go to an ordinary computer.
   const own = new Set([...(reading.self ?? []), ...thisComputer].map(lower).filter(name => !LOOPBACK.test(name)))
   const unusable = (goesTo: string, jump = false): HostDevice['unavailable'] =>
