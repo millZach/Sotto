@@ -3,10 +3,14 @@ import { dirname } from 'node:path'
 import { hasErrorCode } from '../storage/atomicJsonStore'
 import { retryWindowsFileOperation } from '../storage/windowsFileRetry'
 
-/** One origin as the journal holds it: the Sotto thread it belongs to, and the record itself. */
+/**
+ * One origin as the journal holds it: the Sotto thread it belongs to, the record itself, and the journal generation
+ * it was appended under. A line from before generations were recorded has none.
+ */
 export interface JournaledOrigin<Origin> {
   readonly threadId: string
   readonly origin: Origin
+  readonly generation?: number | undefined
 }
 
 /** What the journal held when it was read. */
@@ -25,12 +29,16 @@ export interface JournalContents<Origin> {
  * clears the journal each time it writes the store whole, which then holds every origin in it, and folds it into
  * the store and clears it when it connects, so a new connection never appends after an old line.
  *
+ * Clearing is tidying, not what keeps a removed origin out. Every whole write moves the journal generation on and
+ * stamps the store with it, and each line carries the generation it was appended under. The adapter folds only
+ * lines of the store's generation or later: an older line was written before the store was, so the store holds its
+ * origin or dropped it on purpose, such as a prompt the adapter refused to send at the last moment. So a journal a
+ * failed clear left behind is harmless, and so is a line an append wrote before failing on the sync or the close:
+ * the adapter writes the store whole after a failed append.
+ *
  * The caller orders appends, reads and clears against its own writes of the store. A line a crash cut short is
  * therefore the last one, and its prompt was never sent, so a line that does not parse is skipped. The origin
- * schema is the thread store's own, so a line it rejects is one the store would reject too. An append that fails
- * after its line was written (the sync or the close) may still leave the line, for a prompt the adapter then
- * refuses to send: a record of a send that never happened, which no reconciliation matches. The other way, a sent
- * prompt with no record, cannot happen.
+ * schema is the thread store's own, so a line it rejects is one the store would reject too.
  */
 export class ClaudeOriginJournal<Origin> {
   constructor(

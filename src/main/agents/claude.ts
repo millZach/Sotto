@@ -53,7 +53,9 @@ const cursorSchema = z.object({ sessionId: z.string().uuid(), offset: z.number()
 const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), createdAt: z.string(),
   compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
-  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
+  reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
+  /** The journal generation of the whole write that wrote this record; see `ClaudeOriginJournal`. A record written before there was one has none. */
+  journalGeneration: z.number().int().nonnegative().optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 // Native CLI permission modes. Aliases without a stored mode keep the original
 // approval-required behaviour.
@@ -164,6 +166,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   /** Origins recorded since `claude-threads.json` was last written whole; see `ClaudeOriginJournal`. */
   private readonly originJournal: ClaudeOriginJournal<Alias['origins'][number]>
+  /** The journal generation the next origin line is appended under; every whole write of the store moves it on. */
+  private journalGeneration = 0
   /** Every write of the thread store and of the origin journal, in order: a clear never passes an append it did not write. */
   private aliasWrites: Promise<void> = Promise.resolve()
   /** The whole-store write queued behind `aliasWrites` and not yet started, which later calls share. */
@@ -251,7 +255,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.usage = new NativeUsage(options.userDataPath, 'claude')
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
-    const journalLine = z.object({ threadId: z.string(), origin: originSchema })
+    const journalLine = z.object({ threadId: z.string(), origin: originSchema, generation: z.number().int().nonnegative().optional() })
     this.originJournal = new ClaudeOriginJournal(join(options.userDataPath, 'claude-origins.jsonl'), value => {
       const entry = journalLine.safeParse(value)
       return entry.success ? entry.data : undefined
@@ -716,7 +720,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
           ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
         alias.origins.push(origin)
-        try { await this.recordOrigin(id, origin) } catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); throw error }
+        try { await this.recordOrigin(id, origin) } catch (error) {
+          alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
+          // The line may be on disk though its sync or close failed. A whole write moves the generation past it, so
+          // the next connect never folds back the origin of a prompt that was not sent.
+          await this.persist().catch(() => undefined)
+          throw error
+        }
         const content: unknown = images.length ? [
           ...images,
           ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
@@ -1401,11 +1411,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return queued
   }
   /**
-   * Writes the thread store whole and clears the journal, which the store now holds. Run in alias order only. The
-   * store holding the state is what the caller waits for: a journal left behind by a failed clear is harmless,
-   * because reading it back finds every origin in it already in the store, and the next whole write clears it.
+   * Writes the thread store whole under a new journal generation and clears the journal, which the store now holds.
+   * Run in alias order only. The store holding the state is what the caller waits for: a journal left behind by a
+   * failed clear is harmless, because its lines are of an older generation than the store, which a connect never
+   * folds, and the next whole write clears it.
    */
   private async writeWhole(aliases: Record<string, Alias>): Promise<void> {
+    // Moved on before the write rather than after it succeeds: lines appended after a write that failed are then
+    // newer than the store whichever way it failed, so a connect folds them.
+    const generation = ++this.journalGeneration
+    for (const alias of Object.values(aliases)) alias.journalGeneration = generation
     await this.aliasStore.write(aliases)
     try { await this.originJournal.clear() }
     catch { this.options.logEvent?.('claude-origin-journal-clear-failed') }
@@ -1415,15 +1430,24 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * a rewrite of every thread's record.
    */
   private recordOrigin(threadId: string, origin: Alias['origins'][number]): Promise<void> {
-    return this.inAliasOrder(() => this.originJournal.append({ threadId, origin }))
+    return this.inAliasOrder(() => this.originJournal.append({ threadId, origin, generation: this.journalGeneration }))
   }
-  /** The thread store with the journal's origins over it, read in order with the writes of both. */
+  /**
+   * The thread store with the journal's origins over it, read in order with the writes of both. Only lines of the
+   * store's journal generation or later are folded: an older one was in the store's hands when it was written whole.
+   * A store with no generation, from before there was one, folds every line once.
+   */
   private async readAliases(): Promise<Record<string, Alias>> {
-    const { aliases, journal } = await this.inAliasOrder(async () => ({ aliases: await this.aliasStore.read(), journal: await this.originJournal.read() }))
+    const { aliases, journal, stored } = await this.inAliasOrder(async () => {
+      const aliases = await this.aliasStore.read()
+      const stored = Object.values(aliases).reduce((newest, alias) => Math.max(newest, alias.journalGeneration ?? 0), 0)
+      this.journalGeneration = Math.max(this.journalGeneration, stored)
+      return { aliases, journal: await this.originJournal.read(), stored }
+    })
     let merged = false
-    for (const { threadId, origin } of journal.entries) {
+    for (const { threadId, origin, generation } of journal.entries) {
       const alias = aliases[threadId]
-      if (!alias || alias.origins.some(candidate => candidate.uuid === origin.uuid)) continue
+      if (!alias || (generation ?? 0) < stored || alias.origins.some(candidate => candidate.uuid === origin.uuid)) continue
       alias.origins.push(origin); merged = true
     }
     // Folded into the store and cleared at once, so this connection's appends never follow a line a crash cut short.

@@ -164,6 +164,52 @@ describe('Claude recovery and safety', () => {
     await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: other, projectId: f.projectId, title: 'Other', modelId: f.modelId })).resolves.toEqual({ accepted: true })
     expect(Object.keys(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, unknown>)).toContain(other)
   })
+  it('starts a thread whose first send was refused at the dispatch check, when the journal behind its rollback could not be cleared', async () => {
+    // Claude Code stops after the origin is journaled and before the prompt is written: nothing is sent. The
+    // rollback writes the store whole without the origin, and the journal line it leaves cannot be removed.
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementation(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      if ((entry.origin as { messageId: string }).messageId === 'refused') await (f.adapter as unknown as { stopSession(id: string): Promise<void> }).stopSession(id)
+    })
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    await expect(f.host.execute({ type: 'send', commandId: 'refused', messageId: 'refused', threadId: id, text: 'Must not send' })).rejects.toThrow('Nothing was sent')
+    expect(await readFile(join(f.root, 'claude-origins.jsonl'), 'utf8')).toContain('refused')
+    vi.restoreAllMocks()
+    // Sotto stops before another whole write. The leftover line is from before the rollback, so it stays out.
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Synthetic prompt after the refusal' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
+  it('folds every line of a journal into a store written before there were journal generations, then stamps the store', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'unstamped', messageId: 'unstamped', threadId: id, text: 'Synthetic unstamped prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[]; journalGeneration?: number }>
+    const store = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    for (const alias of Object.values(store)) delete alias.journalGeneration
+    await writeFile(storePath, JSON.stringify(store))
+    const lines = (await readFile(journalPath, 'utf8')).split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as { generation?: number })
+    for (const line of lines) delete line.generation
+    await writeFile(journalPath, lines.map(line => `\n${JSON.stringify(line)}\n`).join(''))
+    f = await claudeFixture(f.root); await f.host.connect()
+    const folded = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    expect(folded[id]!.origins.map(origin => origin.messageId)).toContain('unstamped')
+    expect(folded[id]!.journalGeneration).toBeGreaterThan(0)
+  })
+  it('starts a thread whose first origin line was written before its append failed', async () => {
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementationOnce(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      throw Object.assign(new Error('Synthetic sync failure'), { code: 'EIO' })
+    })
+    await expect(f.host.execute({ type: 'send', commandId: 'unsynced', messageId: 'unsynced', threadId: id, text: 'Must not send' })).rejects.toThrow('Synthetic sync failure')
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Synthetic prompt after the failure' })).toEqual({ accepted: true })
+  })
   it('reconciles image-only native frames over 1 MiB and restores references without persisting image bytes', async () => {
     const image = Buffer.alloc(1024 * 1024); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(image)
     const attachment = promptImageOf(image, 'image', 'image.png')
