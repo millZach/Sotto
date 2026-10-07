@@ -7,7 +7,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
-import { VisualToolServer } from './agents/visualTools'
+import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -1355,7 +1355,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
         const request = e2eVisualToolSchema.parse(payload)
         // The window names a thread by its host-qualified ID; the tool hears the Sotto thread, as a provider's call does.
-        return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, 'visualize', request.arguments)
+        return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, VISUALIZE_TOOL, request.arguments)
       })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')

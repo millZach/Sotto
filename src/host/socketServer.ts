@@ -341,7 +341,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const threadId = update.threadId
     waiting.delete(threadId)
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
-    let deltaWithoutVisual: AgentThreadDetailDelta | undefined
+    let strippedDelta: AgentThreadDetailDelta | undefined
     let summaries: AgentThreadDetailDelta | undefined
     for (const peer of peers) {
       if (!peer.observed.has(threadId)) continue
@@ -349,8 +349,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       const held = peer.held.get(threadId)
       if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
       if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
-      deltaWithoutVisual ??= deltaWithoutVisuals(update)
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(deltaWithoutVisual)) : deltaWithoutVisual }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+      strippedDelta ??= deltaWithoutVisuals(update)
+      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
       else peer.held.delete(threadId)
     }
   })
