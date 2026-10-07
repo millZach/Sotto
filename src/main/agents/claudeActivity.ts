@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { MAX_ACTIVITY_TEXT, compactAgentIdentity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
 import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
@@ -47,6 +48,20 @@ function workflowAgent(entry: Record<string, unknown>, workflow: ObservedAgent, 
     ...(model && model !== '<synthetic>' ? { model: model.slice(0, 512) } : {}),
     ...(startedAt ? { startedAt, timingSource: 'provider' as const } : {}), ...(durationMs !== undefined ? { durationMs } : {}),
     ...(completedAt ? { completedAt } : {}), ...(observedAt ? { observedAt } : {}) }
+}
+
+/**
+ * The records after this frame, or `previous` itself when the frame changed none of them. Most frames of a
+ * streamed reply are text and change no record; a new array for each of them would tell every cache that
+ * reuses a thread's records by identity (the workspace's merge, the pane's view, the detail signature)
+ * that everything changed.
+ */
+function mergeChanged(previous: AgentActivity[], rows: readonly AgentActivity[]): AgentActivity[] {
+  if (!rows.length) return previous
+  const merged = mergeAgentActivities(previous, rows)
+  if (merged.length !== previous.length) return merged
+  for (const [index, record] of merged.entries()) if (record !== previous[index] && !isDeepStrictEqual(record, previous[index])) return merged
+  return previous
 }
 
 /** How far a workflow's agents have got, as its row's count and strip show it. */
@@ -263,7 +278,7 @@ export class ClaudeActivity {
           this.agentsByTask.delete(frame.task_id)
           this.closedTasks.delete(frame.task_id)
           if (old?.kind === 'subagent') rows.push({ ...old, taskUpdatesExcluded: true })
-          return mergeAgentActivities(previous, rows)
+          return mergeChanged(previous, rows)
         }
         this.closedTasks.delete(frame.task_id)
         // Clearing historical classification must survive the terminal-status merge guard.
@@ -272,13 +287,13 @@ export class ClaudeActivity {
       // A shell notification can finish its known command even when its task start was missed.
       if (owner?.kind === 'command') {
         if (frame.subtype === 'task_notification' && status !== 'unknown') rows.push({ ...owner, status })
-        return mergeAgentActivities(previous, rows)
+        return mergeChanged(previous, rows)
       }
-      if (frame.subtype !== 'task_started' && (old?.taskUpdatesExcluded || this.closedTasks.has(frame.task_id) || (old?.kind !== 'subagent' && !this.agentsByTask.has(frame.task_id)))) return mergeAgentActivities(previous, rows)
+      if (frame.subtype !== 'task_started' && (old?.taskUpdatesExcluded || this.closedTasks.has(frame.task_id) || (old?.kind !== 'subagent' && !this.agentsByTask.has(frame.task_id)))) return mergeChanged(previous, rows)
       if (frame.subtype === 'task_notification' && old) {
         // Persist closure even if an unknown outcome is rejected by the terminal-status guard.
         rows.push({ ...old, taskUpdatesExcluded: true })
-        if (isTerminalActivity(old.status) && old.taskUpdatesExcluded !== false) return mergeAgentActivities(previous, rows)
+        if (isTerminalActivity(old.status) && old.taskUpdatesExcluded !== false) return mergeChanged(previous, rows)
       }
       const toolId = typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id)
       const prior = this.agentsByTask.get(frame.task_id) ?? (toolId ? this.agentsByTool.get(toolId) : undefined) ?? old?.agents?.[0]
@@ -299,7 +314,7 @@ export class ClaudeActivity {
         ...(isTerminalActivity(status) && observedAt ? { completedAt: prior?.completedAt ?? observedAt } : {}),
       }
       // A status-free progress update cannot restart an already completed assignment.
-      if (prior && isTerminalActivity(prior.status as AgentActivity['status']) && status === 'running' && frame.subtype !== 'task_started') return mergeAgentActivities(previous, rows)
+      if (prior && isTerminalActivity(prior.status as AgentActivity['status']) && status === 'running' && frame.subtype !== 'task_started') return mergeChanged(previous, rows)
       if (frame.subtype === 'task_notification') this.closedTasks.add(frame.task_id)
       if (taskModel && taskModel !== prior?.model) this.patchModel(previous, rows, child.id, taskModel)
       const run = toolId ? this.runsByTool.get(toolId) : undefined
@@ -320,7 +335,7 @@ export class ClaudeActivity {
         ...(text(frame.summary ?? frame.last_tool_name) ? { text: text(frame.summary ?? frame.last_tool_name) } : {}),
         agents: [child, ...agents] })
     }
-    return mergeAgentActivities(previous, rows)
+    return mergeChanged(previous, rows)
   }
   /**
    * A workflow's agents after this frame. Each progress frame lists every agent the run has queued; one without

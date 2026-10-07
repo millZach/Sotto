@@ -1,0 +1,197 @@
+# A reply's first words to the window - October 6, 2026
+
+Issue #771, part of #762. Once a provider streamed its first words, main held them behind timers before the window
+could paint them. Every layer between an adapter and the window gathers a streaming burst in a publish window
+(`CONTEXT.md`), and the echo of the prompt starts each layer's publish window just before the reply starts, so the
+first words usually waited for its end:
+
+- the adapter's snapshot publisher was trailing-only: even the first streamed frame waited 16 ms;
+- the workspace host's publish and the coordinator's broadcast send the first change of a burst at once, then hold a
+  16 ms publish window;
+- the IPC boundary's per-thread detail coalescer does the same with a 50 ms publish window, and that is the one the
+  first words waited for.
+
+Now each of those layers sends an opening change (`CONTEXT.md`: a message's first words or a new activity record) at
+once, inside an open publish window, and starts a fresh one: the publisher when the count of recorded messages and
+activity records has moved since its last publish, the workspace when an event adds a message or a provider snapshot
+adds a record, the coordinator when a thread a window is looking at ends in a message or record that window was not
+sent, and the detail coalescer when an update carries a message or record it has not sent. The adapter's publisher
+also sends the first frame of a burst at once now, as the others already did. Later chunks of the same message ride
+the publish windows as before.
+
+The adapters' publishers, the workspace and the detail coalescer let only one opening change cut a given publish
+window short; the next waits for that fresh window's end. Nor may one cut the window after a trailing publish that
+itself carried an opening change held back. A read that records many messages in one go (a Claude transcript
+catch-up, a Grok or Codex history read that finds messages written outside Sotto) would otherwise copy the whole
+workspace once per message: a review measured 300 messages in one task as 300 publishes in 1.2 s. It is now two
+publishes and a trailing one, and a read that goes on across tasks, as a transcript read in 64 KB chunks does, costs
+one publish a window like any other burst (`tests/unit/main/workspacePublishCoalescing.test.ts`,
+`tests/unit/main/providerSnapshotPublisher.test.ts`, `tests/unit/main/agentShellDetail.test.ts`). In the workspace
+only a thread a window may be looking at has opening changes: a history read in a thread nobody has open has nothing
+to paint and rides the window. The coordinator has no rule of its own, since it cuts only for a thread a window holds
+and sees no more than the workspace sends it. The cost of the rule is that a second opening change within one publish
+window of one that cut it, say a tool record just after the reply's first words, waits for that window's end.
+
+A reply whose first chunk is only whitespace, a line break before the words, is held the way an empty one is, so its
+first words are what opens it rather than the blank in front of them. The detail coalescer remembers what it sent each
+of the last 64 threads after a lane goes quiet, so a record from an earlier turn that changes after a pause is not
+taken for a new one.
+
+In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged.
+The shell waiting in its own window now goes just ahead of a detail that opens a message, so the two are painted in
+one commit. "The window's commit" below has both, and why an urgent commit was tried and taken back.
+
+## First chunk to the bridge
+
+`tests/perf/firstWordsBridge.perf.test.ts` runs main's own chain with real timers: a provider that records through
+the adapters' `ThreadMessageLog` and publishes through their `ProviderSnapshotPublisher`, the `WorkspaceHost`, the
+`AgentControl` coordinator with the thread observed, and the desktop's shell publisher and
+`coalesceAgentThreadDetailPublishes` wired as `src/main/index.ts` wires them, whose sends stand for the window's
+bridge. The workspace is the fixture provider's two short threads, so the work each layer does on the chunk's own task
+is near nothing here; on a large workspace, where one copy is 4.5 ms (`state-pipeline.md`) and a shell 12-15 ms, that
+same-task work is the floor. Each trial lets every window close, publishes a prompt's echo the way an adapter does, waits a
+gap, then publishes the reply's first chunk and times it to the first send that carries the reply. Fifteen trials
+per gap, two runs of each version alternating, Windows 11, the development machine with another build running.
+"Before" is `origin/main` at `be3e7946`, run by putting its sources back under the same benchmark. These first
+runs had the detail coalescer alone at the end of the chain, with no shell publisher; the runs after review below
+have both.
+
+| Gap after the echo | Before, median | After, median |
+| ---: | ---: | ---: |
+| 0 ms | 50.1-50.2 ms | 1.7-2.3 ms |
+| 5 ms | 44.9-45.0 ms | 1.8-2.2 ms |
+| 10 ms | 39.2-40.3 ms | 1.6-2.1 ms |
+| 30 ms | 20.1-21.6 ms | 2.0 ms |
+
+Before, the wait was the detail coalescer's 50 ms publish window, started by the echo, less the gap. After, no trial waited on a
+timer: the benchmark also times how much of each trial came after the chunk's own task had returned, and that was
+0 ms in every one of the 120 trials. What the 2 ms is, and the occasional slow trial (68 ms and 116 ms at most across
+both runs), is work done inside the chunk's task, almost all of it the workspace writing the chunk's event to
+`threads.sqlite`; a timed run of that layer put 1-5 ms in `writeEvents` on most trials and 93 ms on one. #767 owns
+the writes between provider events.
+
+Forty more chunks, 2 ms apart, became a median of 3 sends to the bridge in both versions (at most 4): later chunks
+still coalesce.
+
+After review, with the one-cut rule above and the benchmark wired with the shell publisher and its flush ahead of an
+opening detail, two more runs, same machine, another build running:
+
+| Gap after the echo | Median | Most |
+| ---: | ---: | ---: |
+| 0 ms | 2.2-2.6 ms | 3.7-173 ms |
+| 5 ms | 2.4-2.5 ms | 26-39 ms |
+| 10 ms | 2.2-2.4 ms | 6.1-236 ms |
+| 30 ms | 2.3-3.7 ms | 31-166 ms |
+
+Again no trial waited on a timer (0 ms after the chunk's own task in all 120), and forty chunks still became a median
+of 3 sends (at most 6). The slow trials are work inside the chunk's task, as above. The first runs recorded only the
+"after" maxima; the "before" waits were bounded by the 50 ms publish window plus the same task's work.
+
+## The render and state pipeline benchmarks
+
+Run before and after, alternating, against a copy of the local data folder (165 threads, 7,504 messages, the open
+thread holding 347), `SOTTO_PERF_BENCH=1` with `SOTTO_PERF_DATA`. Two runs of each:
+
+| Benchmark | Figure | Before | After |
+| --- | --- | ---: | ---: |
+| `threadsRender` | ms per update | 63.0, 33.8 | 31.9, 31.4 |
+| `longTranscript` | ms per update | 63.6, 45.5 | 59.8, 30.0 |
+| `markdownRender` | incremental median ms per chunk | 0.99, 1.86 | 1.37, 1.02 |
+| `statePipeline` | full state, ms per publish | 44.6, 60.5 | 49.4, 46.0 |
+| `statePipeline` | shell alone, ms per publish | 11.8, 14.5 | 14.8, 12.5 |
+| `statePipeline` | streaming delta, ms per flush | 0.07, 0.08 | 0.08, 0.09 |
+| `shellDetailCommits` | commits per chunk, shell first | 1 | 1 |
+
+No regression that these can see, which is less than it sounds. The spread between runs of one version is wider
+than any gap between versions: the machine was running another build throughout. The render benchmarks mount the
+Threads page with a mocked connection, so they measure what a commit costs, which this change leaves alone.
+`shellDetailCommits`, which drives the real connection hook, still makes one commit per streamed chunk. The one row
+on the changed path, `statePipeline`'s streaming delta, moved within its noise. What this change adds in main is a
+publish per opening change, and the one-cut rule above bounds that at two per publish window, and one per window in
+a flood that goes on; none of these benchmarks times it.
+
+## The window's commit
+
+The issue asked for the thread on screen to commit its detail promptly without letting a long transcript make
+typing lag. The render benchmarks above do not go through the connection, so this part was checked in the running
+app with `tests/e2e/workspace-performance.spec.ts`, which streams into four panes over 80 and 2,000 messages of
+history while sending, typing and switching panes, and holds frame and staleness budgets (100, 200 and 300 ms).
+
+- **An urgent commit of the first words was tried and taken back.** Committing the delta that brought a new
+  message or record to the active thread urgently, and everything else as a transition, missed a budget in each
+  of three runs: a four-pane stream's next frame at p95 296 ms against 200, a stream's visible update gap of
+  368 ms against 200, a send's next frame at 173 ms against 100. An urgent commit renders the whole Threads page
+  without yielding, and each send and each finished reply in the spec made one. The window still commits a detail
+  as a transition the moment it arrives, which lands within the next frames when nothing urgent is waiting.
+- **The shell now goes just ahead of an opening detail.** A detail that opens a message left the IPC boundary at
+  once while the shell from the same broadcast could still be waiting in its own 50 ms window, so the window
+  painted twice, once for each. The desktop now delivers its held shell just before such a detail
+  (`beforeOpening` on the detail coalescer), and the window paints them in one commit, as it does every other chunk.
+  The phone's socket keeps its own shell and detail pushes apart, as before; a phone draws them separately anyway.
+
+Runs of this spec on one machine shared with another build vary more than any change here moves them, so the
+final comparison interleaved the two builds, rebuilding between each run: four of `origin/main` (which moved
+from `be3e7946` to `2e47e2d6` while they ran) and four of this branch.
+
+| Build | Runs | Runs that missed a frame budget | Worst four-pane staleness, 2,000 messages |
+| --- | ---: | ---: | ---: |
+| `origin/main` | 4 | 1 (309 ms against 300) | 218-309 ms |
+| this branch | 4 | 0 | 178-281 ms |
+
+Every run of every build, `origin/main` included, failed the spec's `messageCount <= 81` check, which this change
+does not touch. Serial runs of this branch before the shell pairing, done while the machine was busier, missed a
+budget more often than serial runs of `origin/main` done at other times; interleaved, the difference did not hold.
+
+## Per-chunk work in main
+
+- **Grok** handed every live chunk to `record()`, which copied each durable message and gave the whole list to
+  the message log, which looked each one up in the held window: a cost that grew with the square of the thread.
+  A chunk on a reply the log already holds as its newest message, at exactly the words before the chunk, is now an
+  append. `tests/perf/grokChunkAppend.perf.test.ts` times 200 chunks after the first on threads holding 10, 500 and
+  2,000 messages:
+
+  Two runs of each, 20-character chunks on a thread of 400-character messages, "before" being `grok.ts`, the message log and the publisher from `be3e7946`:
+
+  | Messages held | Median per chunk, before | after | 200 chunks, before | after |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 10 | 0.024-0.026 ms | 0.010-0.011 ms | 5.7-6.6 ms | 3.4-3.9 ms |
+  | 500 | 0.44-0.86 ms | 0.012 ms | 123-180 ms | 2.8-3.3 ms |
+  | 2,000 | 5.8-7.0 ms | 0.020-0.025 ms | 1,233-1,583 ms | 4.9-7.6 ms |
+
+  After review the message log also looks at the newest held message first when it appends, rather than searching
+  the held window from the front, which the 2,000-message row still showed as about 5 ns a message. Two runs after
+  that put every row at a median of 0.007-0.008 ms a chunk and 1.9-2.3 ms for 200 chunks, at 10, 500 and 2,000 held.
+
+  `tests/unit/main/grokLiveAppend.test.ts` holds the shape: the four chunks after the first make no `set` or `add`
+  call and four appends, and search no list as long as the thread, at 10 and at 2,000 held messages alike. Anything else, a chunk on a reply the durable
+  history says more about for instance, still goes through `record()`, whose `set` now indexes the held window once
+  rather than searching it per message.
+- **Claude** ran the activity merge on every frame and swapped in a new array even when nothing changed. A frame
+  that changes no record now hands back the records it was given, so the workspace's merge, the pane's view and the
+  detail signature, which reuse a thread's records by identity, see nothing changed.
+- **Every provider**: the message log re-hashed the whole growing reply on every delta to keep its mark. The hash is
+  FNV-1a, which carries on from where it stopped, so it is now kept as the reply grows and each delta hashes only
+  itself. The mark is the same string it was; `tests/unit/main/threadMessageLog.test.ts` reads a re-read of a
+  streamed reply against it.
+
+## What the numbers are not
+
+- The benchmark stops at the IPC boundary's send. The window's own frame (a shell held for its animation frame, the
+  React commit) comes after it, and so does Electron's IPC.
+- The provider in the benchmark is a fake that publishes through the real log and publisher; no provider CLI ran, and
+  nothing was sent to a model. The time a provider takes to send its first words is not in it.
+- The provider switch sits between the workspace and the coordinator in the app, and the desktop host router after
+  the coordinator, rebuilding the shell before the detail goes out. Neither holds a timer on this path, and neither
+  is in the benchmark.
+- The socket server for remote clients uses the same detail coalescer, so a phone gets the same change; it was not
+  measured separately.
+
+## Re-run
+
+```sh
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/firstWordsBridge.perf.test.ts --maxWorkers=1 --disable-console-intercept
+SOTTO_PERF_BENCH=1 npx vitest run tests/perf/grokChunkAppend.perf.test.ts --maxWorkers=1 --disable-console-intercept
+SOTTO_PERF_BENCH=1 SOTTO_PERF_DATA=<folder with workspace.json> npx vitest run tests/perf/threadsRender.perf.test.tsx tests/perf/longTranscript.perf.test.tsx tests/perf/markdownRender.perf.test.tsx tests/perf/statePipeline.perf.test.ts tests/perf/shellDetailCommits.perf.test.tsx --maxWorkers=1 --disable-console-intercept
+```
+
+"Before" is the same commands with the source files this change touched taken from `be3e7946`.

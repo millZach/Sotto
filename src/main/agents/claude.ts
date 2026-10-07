@@ -2,7 +2,7 @@ import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage } from './nativeUsage'
@@ -15,7 +15,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, StoredMessageIdentity, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -153,6 +153,19 @@ export interface ClaudeStreamJsonHostOptions {
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number }
 
+/** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
+interface Replay {
+  /** True until a read has run to the end of the transcript. */
+  reading: boolean
+  /** The user messages the read has reached, the newest of which is `userId`. */
+  readonly seen: Set<string>
+  userId?: string
+  /** The newest message with words the read has reached. */
+  textId?: string
+  /** The stored words of each message, when the store handed them over, while the read runs. */
+  words?: ReadonlyMap<string, string>
+}
+
 /** One native coding CLI per thread. Credentials and transcript persistence remain native. */
 export class ClaudeStreamJsonHost implements AgentHost {
   private browserTools: BrowserAgentTools | undefined
@@ -178,7 +191,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.view())
     this.activityListeners.publish(historyFromEvents => this.activityView(historyFromEvents))
-  })
+  }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
   /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
   private readonly recordUnechoed = new Map<string, () => void>()
@@ -195,6 +208,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly assistantErrors = new Map<string, string>()
   private readonly logOrigins = new Map<string, Set<string>>()
   private readonly lastLogDigest = new Map<string, string>()
+  /**
+   * Threads whose transcript is read from its first byte into a log already told what the store holds.
+   * The seeded log knows every stored user message before the read reaches it, so while the read runs a
+   * replayed record takes its turn and anchor from how far the read has got, as it would from an empty log.
+   * The note stays `reading` until a read of the transcript has run to its end; after that it only remembers
+   * the message the read ended on, for a record that comes before any new message says something.
+   */
+  private readonly replays = new Map<string, Replay>()
   /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly nativeTakeovers = new Set<string>()
@@ -335,7 +356,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       threadId: id, messages: this.messageLog.messages(id), activities: thread.activities ?? [], ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
+    this.threads.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       if (stored.kind === 'personal') continue
       let alias = stored
@@ -347,7 +368,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.seedHistory(id, alias, held.get(id) ?? this.restoredHistory.get(id))
       // Handed back for this connect only; a later one is seeded again or reads from the first byte.
       this.restoredHistory.delete(id)
-      await this.log(id).poll()
+      await this.readLog(id)
+      // A connect that another one replaced stops here, before it seeds or reads anything the new one owns.
+      if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     }
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.state.connected = true
@@ -463,7 +486,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Reading a thread is opening it, so a reaped or never-started session starts here. A start that
     // cannot happen is reported by the action that needs it, not by a read.
     await this.start(id).catch(() => undefined)
-    await this.log(id).poll()
+    await this.readLog(id)
     if (generation !== this.generation || !this.state.connected) throw new Error('Claude connection changed while reading the thread.')
     if (purpose?.retryUncertainAnswers) {
       const runtime = this.runtimes.get(id)
@@ -534,9 +557,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const next = await this.finishRollback(id, alias)
       // A confirmed rewind is the one change that takes words back: the thread's record starts again.
       this.messageLog.reset(id, next.historyEpoch)
-      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.nativeTakeovers.delete(id)
+      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id); this.nativeTakeovers.delete(id)
       for (const key of this.assistantBlocks.keys()) if (key.startsWith(`${id}:`)) this.assistantBlocks.delete(key)
-      this.ensureThread(id, next); await this.log(id).poll()
+      this.ensureThread(id, next); await this.readLog(id)
       if (generation !== this.generation || !this.state.connected) return { accepted: false, uncertain: true }
       await this.start(id); this.emit(); return { accepted: true }
     } catch (error) {
@@ -883,7 +906,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (this.queuedPoll === work) this.queuedPoll = undefined
     }
   }
-  private async readSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await log.poll(); await this.readSubagentModels(id, log) } }
+  private async readSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await this.readLog(id, log); await this.readSubagentModels(id, log) } }
+  /**
+   * Read the rest of a thread's transcript. A replay ends once a read has run to the end of the file: not when the
+   * read found no transcript yet or failed partway, since the next read still starts from where this one stopped,
+   * and not when a later connect has put a note of its own in place of the one this read began with.
+   */
+  private async readLog(id: string, log = this.log(id)): Promise<void> {
+    const replay = this.replays.get(id)
+    await log.poll()
+    if (!replay?.reading || this.replays.get(id) !== replay || log.cursor() === undefined) return
+    replay.reading = false; replay.seen.clear(); delete replay.words
+  }
   /**
    * A subagent's model from its own transcript, for the workflow and background agents the stream never
    * named one for. Read on the transcript's cadence, bounded per thread, and only until each row has one.
@@ -1220,19 +1254,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private seedHistory(id: string, alias: Alias, restored: RestoredThreadHistory | undefined): void {
     const cursor = alias.transcriptCursor
     const matching = restored?.historyEpoch === alias.historyEpoch ? restored : undefined
-    const stored = (): readonly (StoredMessageIdentity | AgentMessage)[] => matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
-    if (!cursor) {
-      // No read of the transcript was recorded, as when Sotto stopped after a first send and before any read
-      // reached its echo. The transcript is read from the first byte, and what the store already holds, which the
-      // stream recorded, is not said a second time (#765).
-      this.messageLog.seed(id, stored())
-      return
+    const stored = matching?.messages.length ? matching.messages : this.history?.messageIdentities(id) ?? []
+    // Without a usable cursor the transcript is read from its first byte. The log still learns which messages the
+    // store holds, so that read recognises them instead of recording each one a second time: a restart before the
+    // first read of a new turn's transcript had saved a cursor showed its prompt twice. Its records are still
+    // placed by how far the read has got (`replays`), not by the newest stored message.
+    const replayAll = (): void => {
+      delete alias.transcriptCursor
+      if (!stored.length) return
+      this.messageLog.seed(id, stored)
+      const words = new Map<string, string>()
+      for (const message of stored) if ('text' in message && typeof message.text === 'string') words.set(message.id, message.text)
+      this.replays.set(id, { reading: true, seen: new Set(), ...(words.size ? { words } : {}) })
     }
-    if (cursor.sessionId !== alias.sessionId) { delete alias.transcriptCursor; return }
+    if (!cursor || cursor.sessionId !== alias.sessionId) { replayAll(); return }
     const activities = matching?.activities ?? this.history?.activities?.(id, alias.historyEpoch)
-    const held = stored()
-    if (!held.length || activities === undefined) { delete alias.transcriptCursor; return }
-    this.messageLog.seed(id, held)
+    if (!stored.length || activities === undefined) { replayAll(); return }
+    this.messageLog.seed(id, stored)
     this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES))
     // A later block of an assistant message already projected must add to its text, not replace it.
     for (const message of matching?.messages ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
@@ -1289,9 +1327,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** A compaction is not a turn and not a tool: the transcript says so on its own line. */
   private markCompaction(id: string, key: string, before: number | undefined, after: number | undefined, at: number | undefined): void {
     const thread = this.threads.get(id); if (!thread) return
-    const anchor = this.messageLog.lastTextMessageId(id)
+    const anchor = this.lastTextMessageId(id)
     thread.activities = markCompactionActivity(thread.activities, { provider: 'claude', key,
-      turnId: this.messageLog.lastUserMessageId(id) ?? 'native-history',
+      turnId: this.lastUserMessageId(id) ?? 'native-history',
       ...(anchor !== undefined ? { afterMessageId: anchor } : {}),
       ...(before !== undefined ? { before } : {}), ...(after !== undefined ? { after } : {}), ...(at !== undefined ? { at } : {}) })
   }
@@ -1321,13 +1359,40 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.threads.get(id)!
     let projector = this.activity.get(id)
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
-    const turnId = this.messageLog.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.messageLog.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
+    const turnId = this.lastUserMessageId(id) ?? 'native-history'
+    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
     if (rows.length) thread.activities = rows
+  }
+  /** The turn a record read now belongs to: the newest user message, or the newest one a replay has reached. */
+  private lastUserMessageId(id: string): string | undefined {
+    const replay = this.replays.get(id)
+    return replay?.reading ? replay.userId : this.messageLog.lastUserMessageId(id)
+  }
+  /**
+   * The message a record read now follows: the newest with words, or the newest a replay has reached. A log seeded
+   * with identities alone learns no newest message from a replay, so once it ends the replay's own last one stands
+   * until a new message says something.
+   */
+  private lastTextMessageId(id: string): string | undefined {
+    const replay = this.replays.get(id)
+    return replay?.reading ? replay.textId : this.messageLog.lastTextMessageId(id) ?? replay?.textId
   }
   /** The one place a Claude message reaches the record: the transcript tail, a streamed reply, or a
    * takeover typed into the CLI. The log works out whether it is an addition, an append or a change. */
-  private addMessage(id: string, message: AgentMessage): void { this.messageLog.add(id, message) }
+  private addMessage(id: string, message: AgentMessage): void {
+    const replay = this.replays.get(id)
+    if (replay?.reading) {
+      // What an empty log would have made of the same message: a user message is a turn the first time it is
+      // read, and any message with words becomes the one the next record follows; an empty reply is not yet.
+      if (message.role === 'user' && !replay.seen.has(message.id)) { replay.seen.add(message.id); replay.userId = message.id }
+      if (message.text.length) replay.textId = message.id
+      // An assistant message written over several transcript lines is read back a block at a time. While the store
+      // holds it whole, an earlier block is not a change to it: recording one would shrink the reply on screen.
+      const held = replay.words?.get(message.id)
+      if (held !== undefined && held.length > message.text.length && held.startsWith(message.text)) return
+    }
+    this.messageLog.add(id, message)
+  }
   private reply(runtime: Runtime, id: string, response: ClaudeFrame): Promise<void> {
     return runtime.protocol.write({ type: 'control_response', response: { subtype: 'success', request_id: id, response } })
   }
