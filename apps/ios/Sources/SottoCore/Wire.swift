@@ -58,11 +58,12 @@ public enum ClientError: Error, LocalizedError, Equatable {
     }
 }
 
-/// A computer's private HTTPS origin on the tailnet: `https://<machine>.<tailnet>.ts.net`, on port 443
-/// or 8443 only. The desktop serves its host through Tailscale Serve on 8443 so 443 stays free for
-/// other apps; a host without a screen is usually on 443. Certificate validation is the platform's.
+/// A computer's private HTTPS origin on the tailnet: `https://<machine>.<tailnet>.ts.net`, on port 443,
+/// 8443 or 10000 only. Phone access serves its host through Tailscale Serve on 8443, or on 10000 when
+/// another app holds 8443, so 443 stays free for other apps; a host run by hand is usually on 443.
+/// Certificate validation is the platform's.
 public struct HostEndpoint: Equatable, Sendable {
-    public static let ports: Set<Int> = [443, 8443]
+    public static let ports: Set<Int> = [443, 8443, 10000]
     public let url: URL
     public init(_ input: String) throws {
         guard var c = URLComponents(string: input.trimmingCharacters(in: .whitespacesAndNewlines)),
