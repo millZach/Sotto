@@ -118,6 +118,23 @@ describe('a send and Git', () => {
     expect((await send(f, 3)).git).toBe(0)
   })
 
+  it('leaves a ready record as it is when a refresh cannot get Git to confirm the folder, and asks Git before the next send', async () => {
+    const f = await repository()
+    await startedThread(f, 'local', 'independent')
+    const watch = inspections()
+    watch.inspect.mockRejectedValueOnce(new Error('The working folder no longer belongs to the original repository.'))
+    await f.host.updateThreadWorktree('local', false)
+    // A refresh refuses nothing: Git may have failed for a moment, and the folder's own files still say it is sound.
+    expect(record(f).worktree?.status).toBe('ready')
+    expect(record(f).worktree?.error).toBeUndefined()
+    watch.inspect.mockClear()
+    const sent = await send(f, 1)
+    // The send asked Git before the provider heard it, found the folder sound, and went.
+    expect(sent.heard).toBe(true)
+    expect(sent.git).toBeGreaterThan(0)
+    expect(watch.inspect).toHaveBeenCalled()
+  })
+
   it('refuses a send into a worktree Git has locked, as it did before', async () => {
     const f = await repository()
     await startedThread(f, 'local', 'independent')

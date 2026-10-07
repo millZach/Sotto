@@ -207,7 +207,7 @@ export class WorkspaceHost implements AgentHost {
   private readonly threadLaneWork = new Map<string, { mark: number; running: number }>()
   /** Threads whose send has queued Git's inspection of the folder for after its own lane work, not yet begun. */
   private readonly inspectionsQueued = new Set<string>()
-  /** Threads whose folder an inspection after a send or a turn could not confirm: their next send asks Git before the prompt. */
+  /** Threads whose folder an inspection after a send or a turn, or a refresh, could not confirm: their next send asks Git before the prompt. */
   private readonly fullCheckDue = new Set<string>()
   /** In-flight working-copy setup per thread, so a send waits for it instead of starting a second one. */
   private readonly preparations = new Map<string, Promise<void>>()
@@ -2146,9 +2146,11 @@ export class WorkspaceHost implements AgentHost {
     void this.queueStatusRead(threadId, true).catch(() => undefined)
   }
   /**
-   * A refresh of a folder that is there, from the thread's status lane: Git's inspection of it onto the record, or
-   * the reason it is not the thread's folder any more as an error the next send tries to repair. A reclaimed
-   * folder's record stays when it is still gone.
+   * A refresh of a folder that is there, from the thread's status lane: Git's inspection of it onto the record. A
+   * refresh refuses nothing: when Git will not confirm a ready or still pending folder, which it also will not
+   * while a send puts the folder back or setup makes it, the record stays and the next send asks Git before its
+   * prompt. A record that is already an error takes the newer reason. A reclaimed folder's record stays when it is
+   * still gone.
    */
   private async refreshFolderRecord(threadId: string, mark: number): Promise<StatusLaneRecord> {
     const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
@@ -2157,7 +2159,9 @@ export class WorkspaceHost implements AgentHost {
     try { next = await this.worktrees.inspect(worktree) }
     catch (error) {
       if (!this.threadLaneQuiet(threadId, mark)) return 'overtaken'
-      next = worktree.reclaimedAt ? worktree : { ...worktree, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' }
+      if (worktree.reclaimedAt) return 'nothing'
+      if (worktree.status === 'ready' || worktree.status === 'pending') { this.fullCheckDue.add(threadId); return 'unconfirmed' }
+      next = { ...worktree, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' }
     }
     if (!await this.adoptWorktreeRecord(threadId, worktree, next, mark)) return 'overtaken'
     if (next.status === 'ready') this.fullCheckDue.delete(threadId)
