@@ -1,5 +1,7 @@
 # Effort levels run lowest first, and a Grok thread starts on Grok's flagged default
 
+Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
+
 Accepted September 22, 2026, in the fix for issue #223. Grok reports a model's reasoning effort levels highest first (`xhigh, high, medium, low` from Grok 1.0.5), and both Grok adapters passed that order through. Every effort control reads a model's levels least to most thorough and treats the last as the highest level (ADR-0019), so the slider ran backwards and Low wore the highest-level outline. Fixing it meant deciding where the order is set, and the same change moved what a new Grok thread starts on. Both are recorded here because they were decided, not followed.
 
 ## Decision

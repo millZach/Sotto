@@ -123,7 +123,7 @@ const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 // Each process numbers its own requests, as Codex's do; starting from its own base keeps them apart in requests.jsonl.
-let requestId = process.pid * 1000
+let requestId = read('script.json', {}).requestIdBase ?? process.pid * 1000
 const pending = new Map()
 const heldReplies = new Map()
 /** One agent message item in the newest turn, streamed and completed, as Codex writes before a tool call. */
@@ -197,7 +197,13 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   }
   if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
   if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
-  if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (script.reject === method) {
+    delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script))
+    // A held rejection waits for `release-reply` the way a held answer does.
+    const rejection = { id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }
+    if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
+    return
+  }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }

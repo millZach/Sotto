@@ -1,6 +1,6 @@
 # A visualize tool for threads
 
-An agent in a project thread calls `visualize` to show how something works. Sotto draws the visual in the thread itself, with steps that walk through it one part at a time. Claude Code, Codex and Grok Build get the tool; Devin does not (its client ignores supplied MCP servers, ADR-0020, ADR-0035), personal chats do not, and threads on a remote host do not (a host runs no Sotto tool servers).
+An agent in a project thread calls `visualize` to show how something works. Sotto draws the visual in the thread itself, with steps that walk through it one part at a time. Claude Code, Codex and Grok Build get the tool; Devin does not (its client ignores supplied MCP servers, ADR-0020, ADR-0035), and threads on a remote host do not (a host runs no Sotto tool servers).
 
 ## Decisions with Zach (2026-10-06)
 
@@ -27,7 +27,7 @@ An agent in a project thread calls `visualize` to show how something works. Sott
 
 ## Tool contract
 
-- Input (strict): `title` 1-120 characters; `kind` `diagram` (and `interactive` from ticket 3); `source` up to 12,000 characters passing the diagram source checks (interactive: up to 60,000); `intro` up to 2,000; `steps` up to 12 of `{ text: 1-1,000, highlight?: up to 12 names }`. The worst case fits the server's 128 KiB request cap.
+- Input (strict): `title` 1-120 characters; `kind` `diagram` (and `interactive` from ticket 3); `source` up to 12,000 characters passing the diagram source checks (interactive: up to 60,000); `intro` up to 2,000; `steps` up to 12 of `{ text: 1-1,000, highlight?: up to 12 names }`, or of sentences alone (a live Codex turn sent its steps that way). The visual server takes requests up to 512 KiB, which fits the worst case with interactive sources; the browser and host setup servers keep 128 KiB.
 - Main checks the schema, the source checks, the thread, the switch, at most 6 visuals per turn and 100 per thread, and that history can be written. Only the renderer learns of a Mermaid syntax error or which highlight names matched; the card then shows the source with the reason and keeps the steps readable.
 - Every refusal says what happened and that nothing was drawn.
 

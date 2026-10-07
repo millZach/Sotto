@@ -4,7 +4,10 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/visuals-live/**',
+      'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
+      'artifacts/show-thinking/**',
       'artifacts/hidden-player-typing/**',
       'artifacts/computer-use-guidance/**',
       'artifacts/pkg-17-hostconnection/**',
@@ -12,6 +15,8 @@ export default tseslint.config(
       'artifacts/main-infra-bundle/**',
       'artifacts/pkg-18-e2e/**',
       'artifacts/windows-askpass/**',
+
+      'artifacts/forge-question-ack/**',
       'artifacts/codex-restored-replies/**',
       'artifacts/workspace-picker/**',
       'artifacts/ios-focus/**',

@@ -1,7 +1,58 @@
-import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpThinkingActivities, settledThinking, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 
-export function grokActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string | undefined; cwd: string }, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
+
+export const GROK_THINKING_ID_PREFIX = 'grok-thinking-'
+/** Updates that say the model has moved on from a thought: its reply, a new tool, a plan, or a new prompt or agent. */
+const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan', 'user_message_chunk', 'subagent_spawned'])
+const GROK_THINKING: AcpThinking = {
+  idPrefix: GROK_THINKING_ID_PREFIX,
+  settles: update => update.sessionUpdate === 'turn_completed'
+    ? thinkingSettledAs((update.stop_reason ?? update.stopReason) === 'end_turn' ? 'completed' : 'interrupted')
+    : MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined,
+}
+
+/**
+ * Grok's activity for one update, live or read from its history. A thought (`agent_thought_chunk`) streams into one
+ * Thinking row per stream: Grok gives a thought and the reply that follows it the same `streamStartMs` in `_meta`, and
+ * its history keeps both, so the row a live thought made is the row a read of history finds.
+ */
+export function grokActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false,
+  stream: { promptId?: string | undefined; streamStartMs?: number | undefined } = {}): AgentActivity[] {
+  const key = stream.streamStartMs === undefined ? undefined : `${stream.promptId ?? context.turnId}-${stream.streamStartMs}`
+  return acpThinkingActivities(GROK_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
+    () => grokWork(update, context, previous, live))
+}
+
+/**
+ * Every Grok thought still running, cut off. Its process ended, or a history read found its turn had ended with no end
+ * recorded: Grok writes none for a turn its process took down, so the next prompt would otherwise read as the model
+ * moving on and settle the thought as completed.
+ */
+export function cutThinking(rows: readonly AgentActivity[], live: boolean): AgentActivity[] {
+  const cut = settledThinking(GROK_THINKING_ID_PREFIX, rows, 'interrupted', live)
+  return cut.length ? mergeAgentActivities(rows, cut) : [...rows]
+}
+
+/**
+ * A history read can trail the live stream it describes. Its copy of a thought still being written is a prefix of the
+ * one the stream has shown, and must not take the stream's later words back. A thought Sotto saw cut off stays
+ * interrupted, whatever the read made of it.
+ */
+export function keepStreamedThinking(history: readonly AgentActivity[], shown: readonly AgentActivity[] | undefined): AgentActivity[] {
+  if (!shown?.length) return [...history]
+  const streamed = new Map(shown.filter(row => row.id.startsWith(GROK_THINKING_ID_PREFIX)).map(row => [row.id, row]))
+  return history.map(row => {
+    const seen = streamed.get(row.id); if (!seen) return row
+    const longer = seen.text !== undefined && seen.text.length > (row.text?.length ?? 0) && seen.text.startsWith(row.text ?? '') ? { text: seen.text } : {}
+    const cut = seen.status === 'interrupted' && row.status === 'completed' ? { status: seen.status } : {}
+    return { ...row, ...longer, ...cut }
+  })
+}
+
+function grokWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
   let truncated = false
   const bounded = (value: string) => { if (value.length > MAX_ACTIVITY_TEXT) truncated = true; return value.slice(0, MAX_ACTIVITY_TEXT) }
   if (['subagent_spawned', 'subagent_progress', 'subagent_finished'].includes(String(update.sessionUpdate)) && typeof update.subagent_id === 'string') {

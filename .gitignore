@@ -1,4 +1,10 @@
 node_modules/
+artifacts/remove-personal-chats/*
+!artifacts/remove-personal-chats/threads-1600x1000-dark.png
+!artifacts/remove-personal-chats/threads-820x560-light.png
+!artifacts/remove-personal-chats/settings-820x560-light-reduced-motion.png
+!artifacts/remove-personal-chats/question-820x560-light-reduced-motion.png
+!artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png
 out/
 dist/
 dist-electron/
@@ -18,6 +24,7 @@ handoff/
 artifacts/agent-control-smoke/
 artifacts/natural-voice-qa/
 artifacts/native-threads-live/
+artifacts/visuals-live/
 artifacts/provider-recovery/
 artifacts/native-providers/
 artifacts/voice-journey/
@@ -140,3 +147,7 @@ artifacts/hidden-player-typing/
 
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
+
+artifacts/forge-question-ack/
+# Thinking row verification; the captures the note cites are committed.
+artifacts/show-thinking/

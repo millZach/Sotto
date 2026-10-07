@@ -35,12 +35,18 @@ export const VISUAL_FALLBACK_NOTE = 'The visual is in Sotto on your computer.'
 
 const notBlank = (value: string): boolean => value.trim().length > 0
 
-const visualStepInputSchema = z.object({
-  text: z.string().min(1).max(VISUAL_STEP_TEXT_MAX).refine(notBlank, 'A step needs words.')
-    .describe('What this step says, in one or two sentences.'),
+const visualStepTextSchema = z.string().min(1).max(VISUAL_STEP_TEXT_MAX).refine(notBlank, 'A step needs words.')
+const visualStepObjectSchema = z.object({
+  text: visualStepTextSchema.describe('What this step says, in one or two sentences.'),
   highlight: z.array(z.string().min(1).max(VISUAL_HIGHLIGHT_MAX)).max(VISUAL_HIGHLIGHTS_MAX).optional()
     .describe('The parts of the visual this step is about, by name. A diagram ignores unknown names; an interactive page is sent them with the step.'),
 }).strict()
+/**
+ * A step as an object, or as its words alone. Codex sent its steps as a list of sentences in a live turn, and a sentence
+ * is a step's text, so it is taken as one rather than refused.
+ */
+const visualStepInputSchema = z.union([visualStepTextSchema.describe('A step as its words alone, with nothing to highlight.'), visualStepObjectSchema])
+  .transform(step => typeof step === 'string' ? { text: step } : step)
 
 /** What the `visualize` tool takes. Strict: a field it does not know is refused rather than dropped. */
 export const visualInputSchema = z.object({
@@ -92,8 +98,14 @@ function inputProblem(error: z.ZodError): string {
   if (issue.path[0] === 'kind') return `The kind must be one of: ${VISUAL_KINDS.join(', ')}.`
   if (issue.path[0] === 'steps' && issue.path.length > 1) {
     const step = Number(issue.path[1]) + 1
-    if (issue.path[2] === 'highlight') return `Step ${step}'s highlight takes up to ${VISUAL_HIGHLIGHTS_MAX} names of 1 to ${VISUAL_HIGHLIGHT_MAX} characters.`
-    return `Step ${step} needs text of 1 to ${VISUAL_STEP_TEXT_MAX.toLocaleString('en-US')} characters.`
+    // An object step's own problem arrives as itself, under the step. A step that is neither a sentence nor an object
+    // arrives as the union's, which holds what each shape found: an object's own problem is the one to name.
+    const [asSentence, asObject] = issue.code === 'invalid_union' ? issue.errors : []
+    const objectIssue = asObject?.[0] && !(asObject[0].code === 'invalid_type' && asObject[0].path.length === 0) ? asObject[0] : undefined
+    const inner = issue.code === 'invalid_union' ? objectIssue ?? asSentence?.[0] : { ...issue, path: issue.path.slice(2) }
+    if (inner?.path[0] === 'highlight') return `Step ${step}'s highlight takes up to ${VISUAL_HIGHLIGHTS_MAX} names of 1 to ${VISUAL_HIGHLIGHT_MAX} characters.`
+    if (inner?.code === 'unrecognized_keys') return `Step ${step} has fields it does not take: ${inner.keys.join(', ')}.`
+    return `Step ${step} needs text of 1 to ${VISUAL_STEP_TEXT_MAX.toLocaleString('en-US')} characters, as a sentence or as { "text": "..." }.`
   }
   if (issue.code === 'too_big') return issue.path[0] === 'steps' ? `There are too many steps. Send up to ${VISUAL_STEPS_MAX}.`
     : `${field} is too long. It takes up to ${Number(issue.maximum).toLocaleString('en-US')} characters.`

@@ -34,13 +34,16 @@ import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
-import { PersonalChatsView } from './agents/personal/PersonalChatsView'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
 const recoveryMessages = {
+  RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.',
+  ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
+  REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
+  REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
   OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Transcription.',
   SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
   CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
@@ -102,7 +105,6 @@ function FooterStatus({ navigation, settings, historyKept }: {
 }): ReactNode {
   switch (navigation) {
     case 'agents': return <AgentAppearance />
-    case 'chats': return 'Chats are saved on this computer.'
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
@@ -385,13 +387,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
       case 'threads':
         view = threadWorkspace
         break
-      case 'chats':
-        view = <PersonalChatsView statusText={statusText} onOpenCoordinatorSettings={() => {
-          if (!voiceCoordinator) { app.actions.navigate('settings'); return }
-          setAgentSheet('settings')
-          app.actions.navigate('agents')
-        }} />
-        break
       case 'history':
         view = <HistoryView
           entries={app.history}
@@ -443,6 +438,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           historyStatus={app.historyStatus}
           onStart={app.actions.start}
           onStop={app.actions.stop}
+          onRetry={app.actions.retry}
+          onDismiss={app.actions.dismiss}
           onOpenSettings={() => app.actions.navigate('settings')}
           onCopy={app.actions.copyHistory}
         />

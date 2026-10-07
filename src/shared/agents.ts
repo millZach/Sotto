@@ -553,7 +553,7 @@ export const agentConfigurationSchema = z.object({
   reasoningEffort: z.string().max(64).default(''),
   checkClientUpdates: z.boolean().default(true),
   /**
-   * What a new thread in a project starts on, apart from personal chats' reasoning model and effort
+   * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
    * is empty the same way, meaning the chosen model's own default; `newThreadRuntimeMode` is absent the same
@@ -616,6 +616,8 @@ export const agentDeliverySchema = z.object({
   status: z.enum(['queued', 'submitting', 'accepted', 'failed', 'uncertain']),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   commandId: id.optional(), messageId: id.optional(),
+  /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
+  packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -640,6 +642,8 @@ export const agentStateSchema = z.object({
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
   draftAttachments: agentAttachmentHandlesSchema.optional(),
   deliveredDrafts: agentDeliveryReceiptsSchema.optional(),
+  /** Exact revisions superseded or explicitly cleared. This is not native delivery evidence. */
+  obsoleteDrafts: agentDeliveryReceiptsSchema.optional(),
   threadDrafts: z.array(agentThreadDraftSchema).optional(),
   /** Main-only, ephemeral evidence for these exact revisions, including empty draft clears.
    * Missing evidence never confirms persistence. It is rebuilt from disk on startup. */
@@ -869,11 +873,17 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
   z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
   z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
-  z.object({ type: z.literal('compose'), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
-  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), text,
-    attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(), composer: z.literal('manual').optional() }).strict(),
+  z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
+  z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
+    attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
+    questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(), composer: z.literal('manual').optional() }).strict()
+    .refine(value => value.questionsDigest === undefined || Boolean(value.requestId), 'Use the original question ID with its form digest.'),
   z.object({ type: z.literal('recover-draft'), threadId: id }).strict(),
-  z.object({ type: z.literal('send') }).strict(),
+  z.object({ type: z.literal('send'), draft: z.object({ threadId: id, draftId: z.uuid().optional(), text,
+    attachments: agentAttachmentHandlesSchema.optional(),
+    binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
+      .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),
+  }).strict().optional() }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
@@ -1069,7 +1079,7 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
 }
 /**
  * The model a new thread in a project starts on (issue #347): the model chosen in Settings → Agents' "New
- * threads start with" row, or, unset, the same reasoning-based default a personal chat starts on
+ * threads start with" row, or, unset, the coordinator's reasoning-based default
  * (`defaultThreadModelId`), which is today's behaviour for an install made before the setting existed.
  */
 export function defaultNewThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[], accounts: readonly SubscriptionAccount[] = []): string {

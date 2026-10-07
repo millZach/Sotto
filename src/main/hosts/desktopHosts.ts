@@ -5,6 +5,7 @@ import { remoteHostSchema, type HostAddTailnet, type HostForgotten, type HostFor
 import type { HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, SocketHostService } from '../agents/socketHostService'
 import { afterTailnetFailure, classifyTailnetFailure, connectOrder, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
@@ -149,6 +150,7 @@ function validateConnection(host: Connection): void {
 
 /** Configuration contains no credentials; tokens use the desktop's existing OS-encrypted store. */
 export class DesktopHosts {
+  private readonly retainedDrafts: RetainedDraftStore
   private readonly store: AtomicJsonStore<SavedHost[]>
   private saved: SavedHost[] = []
   private readonly status = new Map<string, HostStatus>()
@@ -216,6 +218,7 @@ export class DesktopHosts {
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
+    retainedDrafts?: RetainedDraftStore;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
@@ -231,6 +234,7 @@ export class DesktopHosts {
     /** The clock that times a boot host's tailnet-only first minute of retries; the system clock unless a test moves it. */
     now?: () => number;
   }) {
+    this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore()
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
@@ -243,6 +247,7 @@ export class DesktopHosts {
    */
   async start(): Promise<void> {
     this.saved = await this.store.read()
+    this.retainedDrafts.setSavedHosts(this.saved.flatMap(host => host.hostId ? [{ hostId: host.hostId, registrationId: host.id }] : []))
     await this.tailnet.load()
     for (const host of this.saved) this.status.set(host.id, { ...this.fields(host), ...(host.hostId ? { hostId: host.hostId } : {}), ...(host.clientId ? { clientId: host.clientId } : {}), phase: 'disconnected' })
     for (const host of this.saved) if (host.enabled !== false) this.keepConnected(host, true)
@@ -653,6 +658,7 @@ export class DesktopHosts {
     await this.options.credentials.set(`remote-host:${host.id}`, '')
     this.saved = this.saved.filter(item => item.id !== host.id)
     await this.save()
+    if (host.hostId) await this.retainedDrafts.forgetHost(host.hostId)
     await this.forgetTailnet(host.id)
     this.status.delete(host.id)
     const revoke = cause && host.clientId ? { cause, command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
@@ -804,6 +810,7 @@ export class DesktopHosts {
     delete host.enabled
     this.saved = [...this.saved, host]
     await this.save()
+    if (host.hostId) this.retainedDrafts.allowHost(host.hostId, host.id)
     this.emit()
   }
   /**
@@ -1096,7 +1103,7 @@ export class DesktopHosts {
       throw error
     }
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
-    if (this.saved.includes(host)) await this.save()
+    if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
   }
   /** Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version. */
   private final(error: Error): boolean {
@@ -1145,7 +1152,7 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ getSelectedThreadId: () => {
+    const socket = new SocketHostService({ retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1174,13 +1181,14 @@ export class DesktopHosts {
     if (!active.ssh) { if (hello.capabilities.mayAnswer) this.grantPending.delete(host.id); else this.grantPending.add(host.id) }
     this.update(host.id, { version: hello.sottoVersion })
     host.hostId = hello.hostId; host.clientId = hello.clientId
-    if (this.saved.includes(host)) await this.save()
+    if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
     await this.learnAddress(host, hello)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
     if (!connected) throw new Error('The host disconnected while connecting. Try connecting again.')
     // A move to the tailnet gives way to an update that began while it ran, before it takes the threads' place on the page.
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
+      refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
@@ -1550,17 +1558,19 @@ export class DesktopHosts {
    * live: a retry that fired during the quit drain would spawn ssh and register with a disposed router.
    */
   async close(): Promise<void> {
-    this.closed = true
-    this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
-    for (const id of [...this.retries.keys()]) this.clearRetry(id)
-    for (const id of [...this.returns.keys()]) this.clearReturn(id)
-    // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
-    // the quit drain does not end before its credential is cleared and its pairing revoked.
-    if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
-    if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
-    await Promise.all([this.pendingAdd, this.pendingSetup])
-    await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
-    await Promise.allSettled([...this.leaving].map(item => item.launcher?.disconnect())); this.leaving.clear()
-    await this.admins.closeAll(); await this.writing; await this.tailnet.flush()
+    try {
+      this.closed = true
+      this.unsubscribeSetup?.(); this.unsubscribeProviderJob?.(); this.unsubscribeUpdates?.(); this.unsubscribePhones?.(); this.unsubscribeBoot?.()
+      for (const id of [...this.retries.keys()]) this.clearRetry(id)
+      for (const id of [...this.returns.keys()]) this.clearReturn(id)
+      // A host still being added is cancelled as its dialog's Cancel would, and its connect is waited for, so
+      // the quit drain does not end before its credential is cleared and its pairing revoked.
+      if (this.adding) await this.cancelAdd(this.adding.id).catch(() => undefined)
+      if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id).catch(() => undefined)
+      await Promise.all([this.pendingAdd, this.pendingSetup])
+      await Promise.allSettled([...this.live.keys()].map(id => this.disconnect(id)))
+      await Promise.allSettled([...this.leaving].map(item => item.launcher?.disconnect())); this.leaving.clear()
+      await this.admins.closeAll(); await this.writing; await this.tailnet.flush()
+    } finally { await this.retainedDrafts.close() }
   }
 }

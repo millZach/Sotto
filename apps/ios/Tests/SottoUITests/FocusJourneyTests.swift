@@ -336,6 +336,7 @@ import XCTest
         XCTAssertTrue(waitUntilGone(keyboard), "A tap outside search closes its keyboard")
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard again")
+        capture("search-before-scroll-keyboard")
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
         // iOS 26 draws its suggestion bar above the frame XCTest reports for the keyboard, so start well clear of it.
@@ -345,7 +346,9 @@ import XCTest
         origin.withOffset(CGVector(dx: x, dy: low - window.frame.minY))
             .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: high - window.frame.minY)),
                    withVelocity: .slow, thenHoldForDuration: 0.1)
-        XCTAssertTrue(waitUntilGone(keyboard), "Scrolling the list closes search's keyboard")
+        let keyboardClosed = app.keyboards.firstMatch.waitForNonExistence(timeout: 5)
+        XCTAssertTrue(keyboardClosed, "Scrolling the list closes search's keyboard")
+        capture("search-after-scroll-keyboard")
         reveal(search, swipingDown: true)
 
         search.tap()

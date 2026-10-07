@@ -1,4 +1,5 @@
 import { cleanSettingsHistory } from './settings/privacyCleanup'
+import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { parseHostEntityKey } from '../shared/clientIdentity'
@@ -6,7 +7,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
-import { VisualToolServer } from './agents/visualTools'
+import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { installVisualSandbox } from './agents/visualSandbox'
 import { VISUAL_SCHEME } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
@@ -31,16 +32,12 @@ import { PHONES_CHANGED } from '../shared/phones'
 import { discoverSshHosts } from './hosts/sshSuggestions'
 import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
-import { PersonalChatService } from './agents/personalChats'
-import { ChatPromptService } from './agents/chatPrompts'
-import { registerChatPromptIpc } from './agents/chatPromptIpc'
 import { connectCheckpoints } from './tools/checkpointIntegration'
-import { RequestDraftService, personalRequestDraftState } from './agents/requestDrafts'
+import { RequestDraftService } from './agents/requestDrafts'
+import { RetainedDraftStore } from './agents/retainedDraftStore'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { isThreadProviderConnected, type ProviderId } from '../shared/agents'
-import { requestDraftProvider } from '../shared/requestDrafts'
-import { registerPersonalChatIpc } from './agents/personalChatIpc'
-import { PERSONAL_CHAT_STATE } from '../shared/personalChats'
+import { isThreadProviderConnected } from '../shared/agents'
+import { REQUEST_DRAFT_CHANGED, requestDraftProvider } from '../shared/requestDrafts'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -174,10 +171,6 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
-import { ConfiguredAgentReasoner } from './agents/reasoning'
-import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
-import { GrokSubscriptionClient } from './agents/subscriptionGrok'
-import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { registerAgentIpc } from './agents/ipc'
 import { desktopWindowClient } from './agents/hostService'
 import { createAgentRuntime } from './agents/runtime'
@@ -212,7 +205,7 @@ import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
-import { E2EPersonalChatHost } from './e2e/personalChatHost'
+import { installRemoteHostE2E } from './e2e/remoteHost'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -578,6 +571,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
+  const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
   // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
   // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
@@ -650,11 +644,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
-  // Personal chats start after the runtime; until they do, a client update has nothing of theirs to tell.
-  const personalClients: { updated?: (provider: ProviderId) => Promise<void> } = {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
-    clientUpdated: async provider => { await personalClients.updated?.(provider) },
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
@@ -707,7 +698,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId))
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+    bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+  })
   quitHandles.hostRouter = hostRouter
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.get().hostId!, name: 'This computer', kind: 'local', service: hostService,
@@ -727,7 +720,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, historyEnabled: () => agentHistoryEnabled,
+    onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
+    onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -736,6 +732,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.desktopHosts = desktopHosts
   await desktopHosts.start()
+  // Saved host identities filter recovery before disk drafts load. Unread originals stay untouched.
+  await retainedDrafts.load()
   // Have my agent set this up (ADR-0035): a host setup thread on this computer, with the host setup tools while it
   // runs. The thread reaches the device through this computer's SSH setup, so it needs the local host.
   // Have my agent install it, update it or fix it on a host's provider tile runs the same way, in the same project, and
@@ -798,6 +796,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   desktopHosts.usePhones(hostPhones)
   quitHandles.hostPhones = hostPhones
+  const remoteHostE2E = e2eConfiguration !== null && !app.isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts) : undefined
+  if (remoteHostE2E) quitHandles.desktopHosts = { close: async () => {
+    try { await desktopHosts.close() }
+    finally { try { await remoteHostE2E.close() } finally { await retainedDrafts.close() } }
+  } }
   // Phone access serves the local host's own threads to paired phones over the tailnet (ADR-0033). Its
   // Tailscale checks can take seconds, so they run beside startup rather than in front of the window.
   const phoneAccess = new PhoneAccess({ directory: userDataPath,
@@ -809,59 +812,50 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
-  const testPersonalChatHosts = e2eConfiguration ? {
-    codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
-  } : undefined
-  const personalChats = new PersonalChatService({ userDataPath,
-    ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}), bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.configuration(),
-    ...(memoryProfile && agentMemoryEnabled ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
-    ...(testPersonalChatHosts ? { hosts: testPersonalChatHosts } : {}) })
-  quitHandles.personalChats = personalChats
-  await personalChats.start()
-  personalClients.updated = provider => personalChats.clientUpdated(provider)
-  const promptSubscriptions = {
-    claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude-prompts')),
-    codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex-prompts')),
-    grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok-prompts')),
-  }
-  // Transform text through the chat's original provider. Defaults cannot move
-  // an existing discussion to another account, and this path has no host tools.
-  const chatPrompts = new ChatPromptService(personalChats, async (system, input, chat) => {
-    if (e2eConfiguration) {
-      const source = input.messages.filter(message => message.role === 'user').at(-1)!
-      return { objective: [{ text: source.text, evidence: [{ messageId: source.id, quote: source.text }] }],
-        context: [], decisions: [], constraints: [], deliverables: [], acceptanceChecks: [], unresolvedQuestions: [], suggestions: [] }
-    }
-    return new ConfiguredAgentReasoner(() => ({ ...agentControl.configuration(),
-      reasoning: chat.providerId, reasoningModel: chat.modelId.replace(/^(?:codex|claude|grok):/u, ''), reasoningEffort: chat.reasoningEffort ?? '',
-    }), credentials, promptSubscriptions).transformText(system, input)
-  })
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
-    if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
+    if (owner.kind !== 'thread') return undefined
     const key = parseHostEntityKey(owner.ownerId)
     const remote = key !== null && key.hostId !== agentControl.get().hostId
-    const state = remote ? hostRouter.shell() : agentControl.shell()
-    const id = remote ? owner.ownerId : key?.id ?? owner.ownerId
+    if (remote) return hostRouter.requestDraftState(owner)
+    const state = agentControl.shell()
+    const id = key?.id ?? owner.ownerId
     const thread = state.host.threads.find(item => item.id === id
       && requestDraftProvider(state.host, item, state.configuration.provider) === owner.providerId)
-    const recovery = remote ? { completed: [], uncertainRequestIds: thread?.requests.filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [] } : agentControl.requestAnswerRecovery(id, owner.providerId)
+    const recovery = agentControl.requestAnswerRecovery(id, owner.providerId)
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
-  }, async owner => {
-    if (owner.kind === 'personal') await personalChats.refresh(owner.ownerId)
-    else { const key = parseHostEntityKey(owner.ownerId); if (key && key.hostId !== agentControl.get().hostId) await hostRouter.threadDetail(owner.ownerId); else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId) }
+  }, async (target, decisionId) => {
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    const key = parseHostEntityKey(target.ownerId)
+    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.refreshRequestDraft(target, decisionId)
+    else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
   })
   await requestDrafts.start()
-  await requestDrafts.reconcile().catch(() => undefined)
-  const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
-  const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
+  const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
+  const cleanRetiredHistory = async (): Promise<void> => {
+    const [chats, answers, remoteDrafts] = await Promise.allSettled([
+      Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
+      Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
+      Promise.resolve().then(() => retainedDrafts.privacyChanged()),
+    ])
+    if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
+    if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
+    if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
+    if (chats.status === 'rejected') throw chats.reason
+    if (answers.status === 'rejected') throw answers.reason
+    if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
+  }
+  // Retired records never start a provider. Apply the saved privacy preference once,
+  // and keep startup available when inaccessible storage needs a later Settings retry.
+  await cleanRetiredHistory().catch(() => undefined)
+  await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
+  const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
   // nothing more. Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
-    personalChats.configurationChanged()
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
     agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
     agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
@@ -872,7 +866,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
   quitHandles.stopPublishing = () => {
-    unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
+    unsubscribeRequestDrafts(); unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
   }
   const showTurnRecords = (): void => {
@@ -995,10 +989,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
   // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error.
+  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
+  // also records whether the provider or OpenRouter set it, and a request that was rate
+  // limited and then went through is recorded too, so the retries can be seen working.
+  const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
   const transcription = new OpenRouterTranscriptionService({
     getSettings: () => settings.forFormatting(),
-    onFailure: diagnosticsAppender('transcription-diagnostics.jsonl'),
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
@@ -1087,7 +1085,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (grantDefaultChanged) browserService?.settingChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
-      await cleanSettingsHistory(agentControl, personalChats, async () => {
+      await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
         if (!dictationLifecycle.isIdle()) {
@@ -1101,7 +1099,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
         if (!delivered) logOperational('native-main-send-failed')
-      })
+      }, [cleanRetiredHistory])
     },
   })
   const trayController = new TrayController(trayAdapter, {
@@ -1192,8 +1190,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
-      const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
-      const cleanupChatPrompts = registerChatPromptIpc(ipcMain, chatPrompts, () => windows.getTrustedRenderers(), copyOutput)
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
         resolveBinding: threadId => agentControl.filesBinding(threadId),
@@ -1301,7 +1297,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
-          reload: () => windows.reloadMain(),
+          // A reload ends the main renderer's dictation session as a crash does,
+          // so the widget returns to idle instead of offering an error, or a
+          // kept recording, that no controller holds any more.
+          reload: () => {
+            dictationLifecycle.rendererProcessGone('main')
+            return windows.reloadMain()
+          },
           toggleMaximize: () => windows.toggleMaximizeMain(),
           isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),
@@ -1354,8 +1356,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupAgents()
         cleanupHosts()
         cleanupPhones()
-        cleanupPersonalChats()
-        cleanupChatPrompts()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
@@ -1391,16 +1391,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
         const request = e2eVisualToolSchema.parse(payload)
         // The window names a thread by its host-qualified ID; the tool hears the Sotto thread, as a provider's call does.
-        return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, 'visualize', request.arguments)
+        return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, VISUALIZE_TOOL, request.arguments)
       })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
         const parsed = e2eAgentEventSchema.parse(payload)
-        if (parsed.scope === 'personal') {
-          const chat = personalChats.get().chats.find(chat => chat.id === parsed.threadId)
-          if (!chat || !testPersonalChatHosts) throw new Error('E2E_PERSONAL_CHAT_UNAVAILABLE')
-          return testPersonalChatHosts[chat.providerId].event(parsed)
-        }
         testAgentHost?.event(parsed)
       })
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {

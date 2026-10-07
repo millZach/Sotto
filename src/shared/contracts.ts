@@ -15,7 +15,7 @@ const boundedSessionId = z.string().min(1).max(128)
 const widgetErrorCodeSchema = z.enum(WIDGET_ERROR_CODES)
 
 export const dictationCommandSchema = z
-  .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel']) })
+  .object({ type: z.enum(['toggle', 'start', 'stop', 'cancel', 'retry', 'dismiss']) })
   .strict()
 
 const widgetMetadataSchema = {
@@ -81,6 +81,8 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('error'),
       sessionId: boundedSessionId.optional(),
       code: widgetErrorCodeSchema,
+      kept: z.boolean().optional(),
+      retried: z.boolean().optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -203,8 +205,13 @@ export const TRANSCRIPTION_PRIVACY_NOTICE = 'The audio you dictate is uploaded t
 /** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
 const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
+/**
+ * How long one transcription may take, retries included. The 15-second floor
+ * leaves room to wait out the provider's short rate-limit bursts (about one,
+ * two and four seconds) before the dictation is given up on.
+ */
 export function transcriptionTimeoutMs(audioSeconds: number): number {
-  return Math.min(30_000, Math.max(8_000, 8_000 + 300 * audioSeconds))
+  return Math.min(30_000, Math.max(15_000, 8_000 + 300 * audioSeconds))
 }
 
 export const transcriptionRequestSchema = z.object({
@@ -287,7 +294,8 @@ export type HotkeyChangeResult =
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
 
 export type DictationCommand = Readonly<{
-  type: 'toggle' | 'start' | 'stop' | 'cancel'
+  /** `cancel` stops work in progress; `dismiss` clears an error and a kept recording; `retry` sends it again. */
+  type: 'toggle' | 'start' | 'stop' | 'cancel' | 'retry' | 'dismiss'
 }>
 
 export interface StartupState {
@@ -303,9 +311,7 @@ export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 export interface SottoBridge {
   readonly hosts?: import('./hosts').HostsBridge
   readonly phones?: import('./phones').PhonesBridge
-  readonly chatPrompts?: import('./chatPrompts').ChatPromptBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
-  readonly personalChats?: import('./personalChats').PersonalChatBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly terminals?: import('./terminalWorkspace').TerminalWorkspaceBridge
   readonly browser?: import('./browser').BrowserBridge
@@ -389,6 +395,8 @@ export interface SottoWidgetBridge {
   requestToggle(): Promise<CommandResult>
   requestStop(): Promise<CommandResult>
   requestCancel(): Promise<CommandResult>
+  requestRetry(): Promise<CommandResult>
+  requestDismiss(): Promise<CommandResult>
   setPresentation(payload: WidgetPresentationPayload): Promise<CommandResult>
   reportDrag(payload: WidgetDragPayload): Promise<CommandResult>
 }

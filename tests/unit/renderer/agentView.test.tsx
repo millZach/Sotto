@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
@@ -153,6 +153,46 @@ describe('one pill with agent controls', () => {
 })
 
 describe('AgentView user workflows', () => {
+  it('does not restore an older autosave reply after atomic Send succeeds', async () => {
+    const state = stateFixture()
+    let finishCompose!: (value: AgentState) => void
+    const compose = new Promise<AgentState>(resolve => { finishCompose = resolve })
+    const cleared = { ...state, draft: '', draftThreadId: null, composing: false }
+    const command = vi.fn((request: AgentCommand) => request.type === 'compose' ? compose : Promise.resolve(cleared))
+    render(<AgentComposer state={state} command={command} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Older edit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send it' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
+    await act(async () => { finishCompose({ ...state, draft: 'Older edit', draftThreadId: 'thread', composing: true }) })
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('')
+  })
+
+  it('keeps edits made while an atomic Send reply is pending', async () => {
+    const state = stateFixture()
+    state.draft = 'Text at Send'; state.draftThreadId = 'thread'; state.composing = true
+    let finishSend!: (value: AgentState) => void
+    const sent = new Promise<AgentState>(resolve => { finishSend = resolve })
+    const command = vi.fn((request: AgentCommand) => request.type === 'send' ? sent
+      : Promise.resolve({ ...state, draft: request.type === 'compose' ? request.text : state.draft }))
+    render(<AgentComposer state={state} command={command} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Send it' }))
+    await act(async () => { fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Newer edit' } }) })
+    await act(async () => { finishSend({ ...state, draft: '', draftThreadId: null, composing: false }) })
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Newer edit')
+  })
+
+  it('sends the managed composer text and attachments in one exact-target command', async () => {
+    const state = stateFixture()
+    state.composing = true; state.draftThreadId = 'thread'; state.draft = 'Text at Send'
+    state.draftAttachments = [handleOf(Uint8Array.of(1, 2, 3), 'saved-image')]
+    state.host.models[0]!.supportsImages = true
+    const command = vi.fn(async () => state)
+    render(<AgentComposer state={state} command={command} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Send it' }))
+    await waitFor(() => expect(command).toHaveBeenCalledTimes(1))
+    expect(command).toHaveBeenCalledWith({ type: 'send', draft: { threadId: 'thread', text: 'Text at Send', attachments: state.draftAttachments } })
+  })
+
   it('merges a delayed screenshot read with the newest managed prompt text', async () => {
     const state = stateFixture()
     state.draft = 'Original text'; state.draftThreadId = 'thread'; state.composing = true
@@ -170,11 +210,11 @@ describe('AgentView user workflows', () => {
       render(<AgentComposer state={state} command={command} />)
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File(['image'], 'slow.png', { type: 'image/png' })] } })
       fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Newer text while reading' } })
-      await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'compose', text: 'Newer text while reading' }))
+      await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'compose', threadId: 'thread', text: 'Newer text while reading' }))
       await waitFor(() => expect(finishRead).toBeDefined())
       if (!finishRead) throw new Error('Staging did not start')
       finishRead()
-      await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'compose', text: 'Newer text while reading', attachments: [expect.objectContaining({ name: 'slow.png' })] }))
+      await waitFor(() => expect(command).toHaveBeenLastCalledWith({ type: 'compose', threadId: 'thread', text: 'Newer text while reading', attachments: [expect.objectContaining({ name: 'slow.png' })] }))
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Newer text while reading')
     } finally { vi.unstubAllGlobals() }
   })
