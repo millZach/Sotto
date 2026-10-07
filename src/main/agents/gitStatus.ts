@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -104,19 +104,21 @@ export interface GitStatusSource {
    * The slow half of a remote read on its own: a `git fetch` of `origin` when the last one is stale, then GitHub's
    * answer for the pull request of the branch the last read of `cwd` found, when the cached one is stale. Both run in
    * `cwd`, as a read does, so Git and gh resolve the folder's remotes, `safe.directory` and relative URLs the way a
-   * terminal there would; the fetch writes no `FETCH_HEAD`, which belongs to whoever fetched last and which Sotto
-   * never reads. What they bring shows in the next `read` of the folder, remote or not. False, having asked nothing,
-   * when the folder has not been read since the last `invalidate`: the caller reads it and asks again. A folder held
-   * for removal (`hold`) is not asked about. Absent on a source that has no remote half to give.
+   * terminal there would. The fetch writes no `FETCH_HEAD`: Sotto never reads it, and one written beside a pull in
+   * the same checkout could leave that pull two heads to choose from. What they bring shows in the next `read` of
+   * the folder, remote or not. False, having asked nothing, when the folder has not been read since the last
+   * `invalidate`: the caller reads it and asks again. True, having asked nothing, for a folder held for removal
+   * (`hold`) or one inside it. Absent on a source that has no remote half to give.
    */
   readRemote?(cwd: string): Promise<boolean>
   /**
-   * Holds `cwd` while it is removed: no remote half starts in it until the returned function is called. With
-   * `idle`, a worktree is never removed while a Git or gh process this source started still runs in it, which on
-   * Windows could leave the folder part-deleted (issue #766).
+   * Holds `cwd`, and every folder inside it, while it is removed: no remote half starts in them until the returned
+   * function is called. With `idle`, a worktree is never removed while a Git or gh process this source started still
+   * runs in it or a folder inside it (a project that is a subfolder of its repository works there), which on Windows
+   * could leave the folder part-deleted (issue #766).
    */
   hold?(cwd: string): () => void
-  /** Resolves once no Git or gh process this source started runs in `cwd`. */
+  /** Resolves once no Git or gh process this source started runs in `cwd` or a folder inside it. */
   idle?(cwd: string): Promise<void>
   /**
    * A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches, and
@@ -154,6 +156,9 @@ interface PullRequestRecord { epoch: number; failures: number; nextAt: number; v
 interface KnownFolder { readonly epoch: number; readonly common: string | null; readonly hasRemote: boolean; readonly branch: string | null; readonly upstream: string | null; readonly isDefaultBranch: boolean }
 
 const EMPTY: Omit<GitStatus, 'readAt'> = { isRepository: false, branch: null, upstream: null, hasRemote: false, defaultBranch: null, isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null }
+
+/** Whether folder key `key` is `parent` or a folder inside it; both are `folderKey`s. */
+const within = (key: string, parent: string): boolean => key === parent || key.startsWith(parent.endsWith(sep) ? parent : parent + sep)
 
 /**
  * Reads a working copy's Git status the way T3 Code does. The local half (`status --porcelain=2
@@ -209,8 +214,14 @@ export class GitStatusReader implements GitStatusSource {
   }
   async idle(cwd: string): Promise<void> {
     const key = this.folderKey(cwd)
-    for (let running = this.running.get(key); running?.size; running = this.running.get(key)) await Promise.allSettled([...running])
+    for (;;) {
+      const inside = [...this.running].filter(([folder]) => within(folder, key)).flatMap(([, running]) => [...running])
+      if (!inside.length) return
+      await Promise.allSettled(inside)
+    }
   }
+  /** Whether `key` is a held folder or inside one. */
+  private isHeld(key: string): boolean { return [...this.held.keys()].some(held => within(key, held)) }
 
   invalidate(): void {
     this.epoch++
@@ -328,7 +339,7 @@ export class GitStatusReader implements GitStatusSource {
    * folder as the last read found it; a read after it shows what it brought.
    */
   readRemote(cwd: string): Promise<boolean> {
-    if (this.held.has(this.folderKey(cwd))) return Promise.resolve(true)
+    if (this.isHeld(this.folderKey(cwd))) return Promise.resolve(true)
     const known = this.known.get(cwd)
     if (!known || known.epoch !== this.epoch) return Promise.resolve(false)
     const key = `${known.epoch}\0${cwd}`
@@ -420,8 +431,8 @@ export class GitStatusReader implements GitStatusSource {
 
   /**
    * A `git fetch` of `origin`, one per repository at a time, run in the folder that asked so Git resolves its remote
-   * as a terminal there would, and writing no `FETCH_HEAD`: run beside a pull in another checkout of the repository,
-   * a written one could leave that pull two heads to choose from. A fetch begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
+   * as a terminal there would, and writing no `FETCH_HEAD`: a fetch that wrote it beside a pull in the same checkout
+   * could leave that pull two heads to choose from. A fetch begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
    * when the next one is due, and a caller after the `invalidate` waits for it and fetches again rather than share it
    * or run beside it.
    */

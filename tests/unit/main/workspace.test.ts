@@ -511,6 +511,28 @@ describe('durable project/thread organization', () => {
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.sentBranch).toBe('sotto/thread-fixture')
   })
 
+  it('reads the folder again and asks once more when a Git action lands between the read and the remote half of a round', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 5 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const status: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
+    const steps: string[] = []
+    let refused = false
+    const source = {
+      read: vi.fn(async () => { steps.push('read'); return status }),
+      // The first ask finds the folder not read since a Git action, as one landing just after the round's read leaves it.
+      readRemote: vi.fn(async () => { steps.push('remote'); if (refused) return true; refused = true; return false }),
+      invalidate: vi.fn(),
+    }
+    f.host.setGitStatus(source, { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    await f.host.updateThreadWorktree('local', false)
+    await vi.waitFor(() => expect(source.readRemote).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(steps.slice(-5)).toEqual(['read', 'remote', 'read', 'remote', 'read']))
+  })
+
   it('carries the Git status of the folder on the worktree record: the remote on a refresh, the timer while a window looks, and again after an action', async () => {
     const f = await fixture({ worktreeRefreshDelayMs: 5 })
     const snapshot = await f.host.connect()

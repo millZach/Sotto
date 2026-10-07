@@ -698,10 +698,14 @@ export class WorkspaceHost implements AgentHost {
       const source = this.gitStatus
       if (!source || this.statusFolder(threadId) === undefined || this.stopping) return
       if (source.readRemote) {
-        await this.onLane(threadId, () => this.readGitStatus(threadId, false))
-        const folder = this.statusFolder(threadId)
-        if (folder === undefined || this.stopping) return
-        await source.readRemote(folder)
+        // A Git action anywhere can land between the read and the remote half, which then has not been told the
+        // folder; it is read once more and asked again rather than skipping the round.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await this.onLane(threadId, () => this.readGitStatus(threadId, false))
+          const folder = this.statusFolder(threadId)
+          if (folder === undefined || this.stopping) return
+          if (await source.readRemote(folder)) break
+        }
       }
       await this.onLane(threadId, () => this.readGitStatus(threadId, true))
     })().catch(() => undefined)
