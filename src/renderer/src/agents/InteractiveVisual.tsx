@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  VISUAL_GUEST_ESCAPE, VISUAL_GUEST_HEIGHT, VISUAL_GUEST_STEP, VISUAL_GUEST_THEME, VISUAL_PAGE_HEIGHT_MIN, VISUAL_STEP_MESSAGE,
+  VISUAL_IPC_ESCAPE, VISUAL_IPC_HEIGHT, VISUAL_IPC_STEP, VISUAL_IPC_THEME, VISUAL_PAGE_HEIGHT_MIN, VISUAL_STEP_MESSAGE,
   clampVisualPageHeight, type VisualStepMessage, type VisualTheme,
 } from '../../../shared/visualGuest'
 import { VISUAL_PARTITION } from '../../../shared/visualPages'
@@ -125,8 +125,8 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, fill = 
     const onReady = (): void => setReady(true)
     const onMessage = (event: Event): void => {
       const { channel, args } = event as GuestIpcEvent
-      if (channel === VISUAL_GUEST_HEIGHT) setHeight(clampVisualPageHeight(args[0]))
-      else if (channel === VISUAL_GUEST_ESCAPE) latest.current.onEscape()
+      if (channel === VISUAL_IPC_HEIGHT) setHeight(clampVisualPageHeight(args[0]))
+      else if (channel === VISUAL_IPC_ESCAPE) latest.current.onEscape()
     }
     const onGone = (): void => { setReady(false); setPage({ phase: 'refused', reason: 'The page stopped. Its steps are below.' }) }
     element.addEventListener('dom-ready', onReady)
@@ -140,10 +140,10 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, fill = 
   }, [page])
 
   useEffect(() => {
-    if (ready) void guest.current?.send(VISUAL_GUEST_THEME, latest.current.theme).catch(() => undefined)
+    if (ready) void guest.current?.send(VISUAL_IPC_THEME, latest.current.theme).catch(() => undefined)
   }, [ready, themeKey])
   useEffect(() => {
-    if (ready) void guest.current?.send(VISUAL_GUEST_STEP, { type: VISUAL_STEP_MESSAGE, ...latest.current.step }).catch(() => undefined)
+    if (ready) void guest.current?.send(VISUAL_IPC_STEP, { type: VISUAL_STEP_MESSAGE, ...latest.current.step }).catch(() => undefined)
   }, [ready, stepKey])
 
   return <div ref={frame} className="interactive-visual" data-state={page.phase === 'open' ? (ready ? 'running' : 'loading') : page.phase}

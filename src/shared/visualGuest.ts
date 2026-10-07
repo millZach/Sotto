@@ -5,11 +5,11 @@
  */
 
 /** Sotto's window to its guest preload, through the `<webview>` element. */
-export const VISUAL_GUEST_STEP = 'sotto-visual:step'
-export const VISUAL_GUEST_THEME = 'sotto-visual:theme'
+export const VISUAL_IPC_STEP = 'sotto-visual:step'
+export const VISUAL_IPC_THEME = 'sotto-visual:theme'
 /** The guest preload to Sotto's window: the page's measured height, and Escape pressed inside the page. */
-export const VISUAL_GUEST_HEIGHT = 'sotto-visual:height'
-export const VISUAL_GUEST_ESCAPE = 'sotto-visual:escape'
+export const VISUAL_IPC_HEIGHT = 'sotto-visual:height'
+export const VISUAL_IPC_ESCAPE = 'sotto-visual:escape'
 
 /** The message types a page listens for with `addEventListener('message', ...)`. */
 export const VISUAL_STEP_MESSAGE = 'sotto-visual-step'
@@ -38,6 +38,8 @@ export interface VisualStepMessage {
   readonly total: number
   readonly highlight: readonly string[]
 }
+/** Where the walkthrough stands, as the card holds it: a step message without its type. */
+export type VisualStepPlace = Omit<VisualStepMessage, 'type'>
 export interface VisualThemeMessage extends VisualTheme {
   readonly type: typeof VISUAL_THEME_MESSAGE
 }
@@ -45,6 +47,13 @@ export interface VisualThemeMessage extends VisualTheme {
 /** The height Sotto gives a page, whatever the page measures: at least 160 pixels, at most 640, whole pixels. */
 export const VISUAL_PAGE_HEIGHT_MIN = 160
 export const VISUAL_PAGE_HEIGHT_MAX = 640
+/**
+ * Whether a key gives focus back to Sotto: Escape, pressed by the user. A key the page made itself (`isTrusted` false)
+ * moves nothing, so a page cannot take focus away from it, close Expand or flood Sotto with messages (ADR-0057).
+ */
+export function returnsFocus(event: { readonly key: string; readonly repeat: boolean; readonly isTrusted: boolean }): boolean {
+  return event.isTrusted && event.key === 'Escape' && !event.repeat
+}
 export function clampVisualPageHeight(measured: unknown): number {
   if (typeof measured !== 'number' || !Number.isFinite(measured)) return VISUAL_PAGE_HEIGHT_MIN
   return Math.min(VISUAL_PAGE_HEIGHT_MAX, Math.max(VISUAL_PAGE_HEIGHT_MIN, Math.ceil(measured)))

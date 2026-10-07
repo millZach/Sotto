@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron'
 import {
-  VISUAL_GUEST_ESCAPE, VISUAL_GUEST_HEIGHT, VISUAL_GUEST_STEP, VISUAL_GUEST_THEME, VISUAL_THEME_MESSAGE,
-  clampVisualPageHeight, readVisualStep, readVisualTheme, visualThemeCss,
+  VISUAL_IPC_ESCAPE, VISUAL_IPC_HEIGHT, VISUAL_IPC_STEP, VISUAL_IPC_THEME, VISUAL_THEME_MESSAGE,
+  clampVisualPageHeight, readVisualStep, readVisualTheme, returnsFocus, visualThemeCss,
 } from '../shared/visualGuest'
 
 // Sotto's preload for an interactive visual's sealed page (ADR-0057). It runs in an isolated world: the page sees none
@@ -10,7 +10,7 @@ import {
 
 // The node project types this file without the DOM library, so the few page objects it touches are named here.
 interface PageElement { textContent: string | null; setAttribute(name: string, value: string): void; getBoundingClientRect(): { height: number } }
-interface PageKeyEvent { readonly key: string; readonly repeat: boolean }
+interface PageKeyEvent { readonly key: string; readonly repeat: boolean; readonly isTrusted: boolean }
 declare const window: {
   postMessage(message: unknown, targetOrigin: string): void
   addEventListener(type: 'keydown', listener: (event: PageKeyEvent) => void, capture: true): void
@@ -21,12 +21,12 @@ declare class ResizeObserver { constructor(callback: () => void); observe(target
 
 const post = (message: unknown): void => window.postMessage(message, '*')
 
-ipcRenderer.on(VISUAL_GUEST_STEP, (_event, value: unknown) => {
+ipcRenderer.on(VISUAL_IPC_STEP, (_event, value: unknown) => {
   const step = readVisualStep(value)
   if (step) post(step)
 })
 
-ipcRenderer.on(VISUAL_GUEST_THEME, (_event, value: unknown) => {
+ipcRenderer.on(VISUAL_IPC_THEME, (_event, value: unknown) => {
   const theme = readVisualTheme(value)
   if (!theme) return
   const style = document.getElementById('sotto-visual-theme')
@@ -35,9 +35,10 @@ ipcRenderer.on(VISUAL_GUEST_THEME, (_event, value: unknown) => {
   post({ type: VISUAL_THEME_MESSAGE, ...theme })
 })
 
-// Registered before any script on the page runs, so the page's own listeners cannot stop it.
+// Registered before any script on the page runs, so the page's own listeners cannot stop it. Only the user's own
+// Escape counts: a key the page dispatches itself is not trusted, and moves nothing.
 window.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !event.repeat) ipcRenderer.sendToHost(VISUAL_GUEST_ESCAPE)
+  if (returnsFocus(event)) ipcRenderer.sendToHost(VISUAL_IPC_ESCAPE)
 }, true)
 
 let sent = 0
@@ -45,7 +46,7 @@ const measure = (): void => {
   const height = clampVisualPageHeight(document.documentElement.getBoundingClientRect().height)
   if (height === sent) return
   sent = height
-  ipcRenderer.sendToHost(VISUAL_GUEST_HEIGHT, height)
+  ipcRenderer.sendToHost(VISUAL_IPC_HEIGHT, height)
 }
 window.addEventListener('DOMContentLoaded', () => {
   measure()
