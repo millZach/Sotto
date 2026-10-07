@@ -2861,7 +2861,8 @@ export class AgentControl {
       this.state.draftAttachments = attachments
       this.manualDraftId = draftId ?? null
       this.state.draft = text; this.state.draftThreadId = threadId; this.state.draftRequestId = null; this.state.composing = true
-      // Admission already persisted the complete per-thread draft before entering this lane.
+      // Admission put the complete per-thread draft in place before this lane, and saved it then if the lane was busy;
+      // otherwise the write that makes the outbox entry durable saves it.
     }
     this.canAct()
     this.observe(threadId)
