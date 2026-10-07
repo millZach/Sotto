@@ -136,6 +136,7 @@ const settingKeys = [
   'phoneAccessName',
   'showBrowserPreviews',
   'browserWithoutAsking',
+  'visualsInThreads',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',

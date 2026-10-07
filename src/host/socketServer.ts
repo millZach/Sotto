@@ -8,7 +8,7 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
-import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, detailWithActivitySummaries, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
+import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
@@ -279,12 +279,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     for (const id of peer.held.keys()) if (!peer.observed.has(id)) peer.held.delete(id)
     for (const id of peer.opening) if (!peer.observed.has(id)) peer.opening.delete(id)
   }
-  /** Each whole detail's activity summaries, made once however many peers accept them (#701); every other peer is sent it whole. */
+  /**
+   * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0056), and a client
+   * that accepts activity summaries is sent them (#701). Each is made once however many peers are sent it.
+   */
+  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
-    if (!peer.activitySummaries || detail === null) return detail
+    if (detail === null) return detail
+    let withoutVisuals = withoutVisualsOf.get(detail)
+    if (!withoutVisuals) withoutVisualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail))
+    if (!peer.activitySummaries) return withoutVisuals
     let summary = summarised.get(detail)
-    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(detail))
+    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return summary
   }
   const sendWhole = (peer: Peer, threadId: string, detail: AgentThreadDetail | null): void => {
@@ -340,6 +347,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const threadId = update.threadId
     waiting.delete(threadId)
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
+    let strippedDelta: AgentThreadDetailDelta | undefined
     let summaries: AgentThreadDetailDelta | undefined
     for (const peer of peers) {
       if (!peer.observed.has(threadId)) continue
@@ -347,7 +355,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       const held = peer.held.get(threadId)
       if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
       if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(update)) : update }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+      strippedDelta ??= deltaWithoutVisuals(update)
+      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
       else peer.held.delete(threadId)
     }
   })

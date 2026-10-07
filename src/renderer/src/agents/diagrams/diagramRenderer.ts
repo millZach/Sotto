@@ -5,7 +5,7 @@ import mermaid, { type MermaidConfig } from 'mermaid'
 import figtreeLatin from '../../assets/fonts/figtree-latin.woff2?inline'
 import figtreeLatinExt from '../../assets/fonts/figtree-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
-import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from './diagramSource'
+import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
 import { assertDiagramSafe } from './diagramSafety'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
 

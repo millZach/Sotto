@@ -22,6 +22,11 @@ export interface DiagramSourceInspection {
   readonly title: string | null
   /** Why the source is shown instead of a drawing, or null when it can be drawn. */
   readonly problem: string | null
+  /**
+   * The bound the source is over, when that is the problem: its length, or the parser work it would take. The problem
+   * is the card's wording, which says the source is shown; a caller with nothing to show words it its own way.
+   */
+  readonly exceeds: 'length' | 'work' | null
 }
 
 const KINDS: readonly { kind: DiagramKind; label: string; pattern: RegExp }[] = [
@@ -77,23 +82,23 @@ function firstStatement(code: string): string {
 
 export function inspectDiagramSource(source: string): DiagramSourceInspection {
   if (source.length > MAX_DIAGRAM_SOURCE_LENGTH) {
-    return { kind: null, label: 'Diagram', code: '', title: null, problem: `Too long to draw. Diagrams over ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters are shown as source.` }
+    return { kind: null, label: 'Diagram', code: '', title: null, problem: `Too long to draw. Diagrams over ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters are shown as source.`, exceeds: 'length' }
   }
   const { code, title } = stripDiagramConfiguration(source)
   // Mermaid's state parser builds/expands its database before returning it. Bound that work too.
   // Count word runs and individual punctuation even inside labels; this is deliberately a
   // conservative source budget, not a claimed Mermaid tokenizer or an edge/node counter.
   if ([...code.matchAll(/[\p{L}\p{N}_]+|[^\s]/gu)].length > MAX_DIAGRAM_SOURCE_UNITS) {
-    return { kind: null, label: 'Diagram', code, title, problem: 'Too complex to draw safely. The source exceeds the parser work limit; it is shown as source.' }
+    return { kind: null, label: 'Diagram', code, title, problem: 'Too complex to draw safely. The source exceeds the parser work limit; it is shown as source.', exceeds: 'work' }
   }
   const statement = firstStatement(code)
-  if (!statement) return { kind: null, label: 'Diagram', code, title, problem: 'This diagram is empty.' }
+  if (!statement) return { kind: null, label: 'Diagram', code, title, problem: 'This diagram is empty.', exceeds: null }
   const match = KINDS.find(entry => entry.pattern.test(statement))
   if (!match) {
     const keyword = statement.split(/[\s:;{]/u)[0]!.replace(CONTROL_CHARACTERS, '').slice(0, 32)
-    return { kind: null, label: 'Diagram', code, title, problem: `Sotto doesn't draw “${keyword}” diagrams. Sequence, flow, state, class and entity diagrams are drawn.` }
+    return { kind: null, label: 'Diagram', code, title, problem: `Sotto doesn't draw “${keyword}” diagrams. Sequence, flow, state, class and entity diagrams are drawn.`, exceeds: null }
   }
-  return { kind: match.kind, label: match.label, code, title, problem: null }
+  return { kind: match.kind, label: match.label, code, title, problem: null, exceeds: null }
 }
 
 const CLOSING_FENCE = /^(?:[ \t]*>)*[ \t]*(`{3,}|~{3,})[ \t]*$/u

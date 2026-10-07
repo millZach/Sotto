@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readDiagramPalette, mixHex } from '../../../src/renderer/src/agents/diagrams/diagramPalette'
 import {
   MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource, isFenceClosed, stripDiagramConfiguration,
-} from '../../../src/renderer/src/agents/diagrams/diagramSource'
+} from '../../../src/shared/diagramSource'
 import { svgDataUrl, toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
 import { clampPan, clampScale, fitScale } from '../../../src/renderer/src/agents/diagrams/DiagramViewer'
 
