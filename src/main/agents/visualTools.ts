@@ -24,7 +24,8 @@ const DESCRIPTION = [
  * an interactive page's 60,000-character source (#794), about 270 KiB as a whole call.
  */
 export const VISUAL_REQUEST_MAX_BYTES = 512 * 1024
-const INSTRUCTIONS = 'visualize draws a diagram in this thread, under your last message. It changes nothing outside the thread and asks the user nothing. Use it to show how something works, or when the user asks for a visual. If a call is refused, nothing was drawn: explain in text instead.'
+// Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full name is answered.
+const INSTRUCTIONS = 'visualize draws a diagram in this thread, under your last message. It changes nothing outside the thread and asks the user nothing. Use it to show how something works, or when the user asks for a visual. If a call is refused, nothing was drawn: explain in text instead. Where tools are found by search and called through use_tool, search for it first and call it by its full name, sotto_visual__visualize.'
 export const visualizeDefinition: ThreadToolDefinition = { name: VISUALIZE_TOOL, description: DESCRIPTION, inputSchema: z.toJSONSchema(visualInputSchema, { io: 'input' }) as Record<string, unknown> }
 
 /** What the tool asks of Sotto for the thread that called. */
