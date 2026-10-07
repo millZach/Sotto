@@ -1026,6 +1026,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     const adopted = resume ? undefined : await this.adoptSpare(id, alias)
     if (adopted) return adopted
+    if (!resume) {
+      // A spare on this session that was let go while this start passed the wait above is exiting now; it is waited for too.
+      await this.closing.get(id)
+      if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
+    }
     const { runtime, initialized } = await this.spawn(id, alias, resume)
     this.settleStart(id, runtime, alias, initialized)
     return runtime
@@ -1147,12 +1152,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private async adoptSpare(id: string, alias: Alias): Promise<Runtime | undefined> {
     const spare = this.spares.get(id)
     if (!spare) return undefined
+    const generation = this.generation
     // It stays the spare while it finishes starting, so what it says meanwhile is kept for this thread too.
     const started = await spare.ready?.catch(() => undefined)
     if (this.spares.get(id) !== spare) return undefined
     this.spares.delete(id)
     if (!started) return undefined
     const setup = !!await this.hostSetupTools?.mcpServer(id)
+    // It is in neither map now, so a disconnect meanwhile did not stop it; this does, and the start then reports the cancel.
+    if (generation !== this.generation) { await this.stopSpare(id, spare, started.runtime); return undefined }
     // Checked again: a client update, or the host setup tools coming or going, can make a spare unfit after creation chose it.
     if (spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || setup !== spare.setupTools
       || started.runtime.clientRevision !== this.clientRevision || this.runtimes.has(id)) {
@@ -1172,6 +1180,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.spares.delete(id)
     const stopped = (spare.ready ?? Promise.resolve(undefined)).catch(() => undefined).then(started => started ? this.stopSpare(id, spare, started.runtime) : undefined)
     this.trackClosure(stopped)
+    // A thread already created on the spare's session ID waits from now, not only once the spare has finished starting,
+    // so its own start cannot run before `stopSpare` has its exit to wait for.
+    if (this.aliases[id]?.sessionId === spare.sessionId) {
+      this.closing.set(id, stopped)
+      const release = () => { if (this.closing.get(id) === stopped) this.closing.delete(id) }
+      void stopped.then(release, release)
+    }
     return stopped
   }
   /**

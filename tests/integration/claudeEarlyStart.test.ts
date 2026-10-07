@@ -43,6 +43,14 @@ async function stack(session: AdapterSessionOptions = {}) {
   const send = (threadId: string, text = 'Synthetic first prompt') => workspace.execute({ type: 'send', threadId, commandId: randomUUID(), messageId: randomUUID(), text })
   return { f, registry, workspace, draft, send }
 }
+/** The Claude adapter alone, connected, with one project on the fixture's folder: for timing a spare against a send. */
+async function adapterStack(): Promise<Fixture> {
+  const f = await claudeFixture()
+  cleanup.push(() => f.cleanup())
+  await f.adapter.connect()
+  await f.adapter.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+  return f
+}
 
 describe('Claude early start', () => {
   it('runs a new thread’s first send on the CLI typing started, so the send starts none', async () => {
@@ -149,6 +157,50 @@ describe('Claude early start', () => {
     expect(order).toEqual(['launch', 'spare exit', 'resume'])
     await rm(join(f.root, 'exit-delay.json'))
     expect(await violations(f)).toBe('')
+  })
+
+  it('waits for a spare let go while its thread’s first send was adopting it before starting that session’s own CLI', async () => {
+    const f = await adapterStack()
+    const threadId = randomUUID()
+    // The spare holds its answer to `initialize`, so the send's creation is still waiting to adopt it when it goes.
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true }))
+    const early = f.adapter.startThreadSession(threadId, { workingDirectory: f.root, modelId: f.modelId })
+    await expect.poll(async () => (await launches(f)).length).toBe(1)
+    const [spare] = await launches(f)
+    const created = f.adapter.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Typed into', modelId: f.modelId })
+    await expect.poll(async () => { try { return await f.realId(threadId) } catch { return undefined } }).toBe(spare!.session)
+    // A client update lets every spare go, this one included, after creation chose it.
+    await writeFile(join(f.root, 'version.txt'), '2.1.2')
+    await f.adapter.clientUpdated()
+    await writeFile(join(f.root, 'exit-delay.json'), JSON.stringify({ ms: 300 }))
+    await writeFile(join(f.root, 'initialize-release'), '')
+    expect(await created).toEqual({ accepted: true })
+    await early
+    const order = (await fakeClaudeRecords(f.root)).flatMap(record => {
+      const launch = fakeClaudeLaunch(record)
+      return launch ? ['launch'] : record.method === 'exit' && record.params?.frame?.session === spare!.session ? ['exit'] : []
+    })
+    expect(order).toEqual(['launch', 'exit', 'launch'])
+    await rm(join(f.root, 'exit-delay.json'))
+    expect(await violations(f)).toBe('')
+  })
+
+  it('starts no CLI for a thread whose first send was adopting a spare when the provider disconnected', async () => {
+    const f = await adapterStack()
+    const threadId = randomUUID()
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ gate: true }))
+    const early = f.adapter.startThreadSession(threadId, { workingDirectory: f.root, modelId: f.modelId })
+    await expect.poll(async () => (await launches(f)).length).toBe(1)
+    const created = f.adapter.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Typed into', modelId: f.modelId })
+    await expect.poll(async () => { try { return await f.realId(threadId) } catch { return undefined } }).toBeTruthy()
+    f.adapter.disconnect()
+    await writeFile(join(f.root, 'initialize-release'), '')
+    expect(await created).toEqual({ accepted: false, uncertain: true })
+    await early
+    await f.adapter.closed()
+    // The disconnect stopped the spare; nothing started a CLI for the thread after it.
+    expect(await launches(f)).toHaveLength(1)
+    expect((await f.adapter.snapshot()).threads.find(thread => thread.id === threadId)?.providerSessionOpen).toBeUndefined()
   })
 
   it('lets go of the session ID an early start held when the provider disconnects', async () => {
