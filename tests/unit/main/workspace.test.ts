@@ -552,9 +552,13 @@ describe('durable project/thread organization', () => {
     await f.host.configureThreadWorkingCopy('second', { workingCopy: 'independent', startFromOrigin: true })
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git).toBeUndefined() // nothing to read yet
     current = { ...base, ahead: 4 }
+    // The timer starts no round while the window is behind, so the last read is the one the change made: a round's
+    // remote half runs outside the thread's lane and could otherwise be the last one listed.
+    inFront = false
     await f.host.configureThreadWorkingCopy('second', { workingCopy: 'shared' })
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git?.ahead).toBe(4)
     expect(reads.at(-1)).toEqual({ cwd: project.path, remote: false })
+    inFront = true
     f.host.observeThreads(['local'])
     current = { ...base, ahead: 2 }
     await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2)) // the timer's next round puts the watched thread back where the checks below expect it
