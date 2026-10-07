@@ -120,6 +120,19 @@ describe('Claude early start', () => {
     expect(await sessionFiles(f)).not.toContain(spare!.session)
   })
 
+  it('stops a spare whose scoped tool server closed before its thread’s first send could adopt it', async () => {
+    const { f, workspace, draft, send } = await stack()
+    let closed = false
+    workspace.useThreadTools([{ name: 'fixture_tools', definitions: [], mcpServer: async () => { if (closed) throw new Error('The tool server is closed.'); return undefined } }])
+    const threadId = await draft()
+    await workspace.startThreadSession(threadId)
+    const [spare] = await launches(f)
+    // Sotto is quitting: its tool servers close, and a send already on its way finds them closed.
+    closed = true
+    await send(threadId).catch(() => undefined)
+    await expect.poll(() => exited(f, spare!.session)).toBe(true)
+  })
+
   it('starts the thread’s own CLI without waiting for a spare it did not adopt to exit', async () => {
     const { f, registry, workspace, draft, send } = await stack()
     const threadId = await draft({ reasoningEffort: 'low' })

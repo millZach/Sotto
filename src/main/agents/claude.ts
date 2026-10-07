@@ -1164,7 +1164,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.spares.get(id) !== spare) return undefined
     this.spares.delete(id)
     if (!started) return undefined
-    const scoped = scopedNames(await scopedThreadServers(this.threadTools, id))
+    let scoped: string
+    // A tool server closed meanwhile, as Sotto quitting closes them, throws; the spare, in neither map now, is stopped first.
+    try { scoped = scopedNames(await scopedThreadServers(this.threadTools, id)) }
+    catch (error) { await this.stopSpare(id, spare, started.runtime); throw error }
     // It is in neither map now, so a disconnect meanwhile did not stop it; this does, and the start then reports the cancel.
     if (generation !== this.generation) { await this.stopSpare(id, spare, started.runtime); return undefined }
     // Checked again: a client update, or one of Sotto's scoped servers coming or going for the thread, can make a spare unfit after creation chose it.
