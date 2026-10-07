@@ -15,6 +15,7 @@ import type { ProviderId } from '../../src/shared/agents'
 import { VISUAL_MCP_SERVER, VisualToolServer, type VisualToolHandlers } from '../../src/main/agents/visualTools'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
 import type { PersonalCreateCommand } from '../../src/main/agents/personalConversation'
+import { callVisualize } from '../fixtures/visualToolCall'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -125,12 +126,6 @@ describe('grok browser admission', () => {
 // The visual tool (ADR-0055) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
 // `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin's client
 // ignores supplied servers and a personal chat is given none, and a switch turned off gives new launches nothing.
-type McpReply = { result: { content: { type: string; text: string }[]; isError?: boolean } }
-async function callVisualize(server: Pick<ThreadMcpServer, 'url' | 'headers'>, args: unknown): Promise<McpReply['result']> {
-  const response = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...Object.fromEntries(server.headers.map(header => [header.name, header.value])) },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'visualize', arguments: args } }) })
-  return (await response.json() as McpReply).result
-}
 const DIAGRAM = { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.', highlight: ['A->B'] }] }
 
 describe.each(factories)('%s visual tool', (provider, factory) => {

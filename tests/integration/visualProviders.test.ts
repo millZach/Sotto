@@ -18,16 +18,13 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AdapterFixture } from './adapterContract'
 import type { RecordedRpc } from '../fixtures/codexFixture'
+import { callVisualize } from '../fixtures/visualToolCall'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
 
-type McpReply = { result: { content: { type: string; text: string }[]; isError?: boolean } }
-async function visualize(server: Pick<ThreadMcpServer, 'url' | 'headers'>, title: string): Promise<McpReply['result']> {
-  const response = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...Object.fromEntries(server.headers.map(header => [header.name, header.value])) },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'visualize', arguments: { title, kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.' }] } } }) })
-  return (await response.json() as McpReply).result
-}
+const visualize = (server: Pick<ThreadMcpServer, 'url' | 'headers'>, title: string): ReturnType<typeof callVisualize> =>
+  callVisualize(server, { title, kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.' }] })
 
 /** The endpoint the provider was given for the visual tool, read from what the adapter sent it at launch. */
 async function given(provider: ProviderId, records: readonly RecordedRpc[]): Promise<Pick<ThreadMcpServer, 'url' | 'headers'>> {
