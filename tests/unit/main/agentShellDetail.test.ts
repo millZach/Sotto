@@ -318,6 +318,9 @@ describe('detail deltas while a thread streams', () => {
     // Activity arriving for the first time is a whole detail of its own; the window then holds one to diff.
     f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build')] })
     clock.tick()
+    // A new record goes out at once, so the window it opened has closed by now. The first change after a
+    // quiet window leads one of its own and opens the window the rest ride.
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build', { output: '' })] })
     details.length = 0
     // The coalescing window is open from the run above; every update below rides its trailing run.
     for (const output of ['a', 'ab', 'abc', 'abcd', 'abcde']) {
@@ -535,5 +538,155 @@ describe('coalesced thread detail at the IPC boundary', () => {
     publisher.publish(detail('docs', 1))
     publisher.dispose()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('the first streamed words of a message', () => {
+  it('reach the window’s bridge without waiting for a timer, and later chunks still coalesce', async () => {
+    const coordinator = new TestClock()
+    const f = await fixture(coordinator.schedule)
+    const ipc = new TestClock()
+    const bridge: AgentThreadDetailUpdate[] = []
+    const publisher = coalesceAgentThreadDetailPublishes(update => bridge.push(update), { schedule: ipc.schedule })
+    f.control.subscribeThreadDetail(update => publisher.publish(update))
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    // Let every window from setting up close, so the prompt below opens fresh ones as a send does.
+    for (let round = 0; round < 4; round++) { coordinator.tick(); ipc.tick() }
+    const before = bridge.length
+
+    // The prompt's echo goes out at once and opens the coordinator's window and the IPC lane's.
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'Which colour for the header?' })
+    expect(bridge).toHaveLength(before + 1)
+    expect(coordinator.pending + ipc.pending).toBeGreaterThan(0)
+
+    // The reply's first words arrive inside both windows, and reach the bridge with no clock moved.
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'Ind', status: 'running' })
+    expect(bridge).toHaveLength(before + 2)
+    expect(delta(bridge.at(-1)).messageDeltas).toEqual([{ message: expect.objectContaining({ id: 'reply', text: 'Ind' }) }])
+
+    // Later chunks of the same message wait for the windows, and arrive as one append.
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'Indigo', status: 'running' })
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'reply', text: 'Indigo it is.', status: 'running' })
+    expect(bridge).toHaveLength(before + 2)
+    coordinator.tick()
+    expect(bridge).toHaveLength(before + 2)
+    ipc.tick()
+    expect(bridge).toHaveLength(before + 3)
+    expect(delta(bridge.at(-1)).messageDeltas).toEqual([{ id: 'reply', appendText: 'igo it is.' }])
+    publisher.dispose()
+  })
+})
+
+describe('an opening at the IPC boundary', () => {
+  const base: AgentThreadDetail = { threadId: 'workshop', revision: 1, messages: [{ id: 'prompt', role: 'user', text: 'Go', createdAt: '2026-01-01T00:00:00.000Z' }] }
+  const added = (baseRevision: number, id: string, text: string): AgentThreadDetailDelta =>
+    ({ threadId: 'workshop', baseRevision, revision: baseRevision + 1, messageDeltas: [{ message: { id, role: 'assistant', text, createdAt: '2026-01-01T00:00:01.000Z' } }], activityDeltas: [] })
+  const record = (id: string, output: string): AgentActivity =>
+    ({ id, turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running', output })
+  it('sends a new message with what was waiting ahead of it, in order, and keeps coalescing after it', () => {
+    const sent: AgentThreadDetailUpdate[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(item), { schedule: clock.schedule })
+    publisher.publish(base)
+    publisher.publish({ ...added(1, 'prompt-2', 'Again'), messageDeltas: [{ id: 'prompt', appendText: ' on' }] })
+    expect(sent).toHaveLength(1)
+    publisher.publish(added(2, 'reply', 'Su'))
+    // The append ahead of it went in the same send, folded into one delta from the revision already sent.
+    expect(sent).toHaveLength(2)
+    expect(delta(sent[1])).toMatchObject({ baseRevision: 1, revision: 3, messageDeltas: [{ id: 'prompt', appendText: ' on' }, { message: { id: 'reply', text: 'Su' } }] })
+    publisher.publish({ threadId: 'workshop', baseRevision: 3, revision: 4, messageDeltas: [{ id: 'reply', appendText: 're' }], activityDeltas: [] })
+    expect(sent).toHaveLength(2)
+    clock.tick()
+    expect(sent).toHaveLength(3)
+  })
+  it('sends a new activity record at once, and holds the changes to it that follow', () => {
+    const sent: AgentThreadDetailUpdate[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(item), { schedule: clock.schedule })
+    publisher.publish({ ...base, activities: [] })
+    publisher.publish({ threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [], activityDeltas: [{ record: record('run', '') }] })
+    expect(sent).toHaveLength(2)
+    publisher.publish({ threadId: 'workshop', baseRevision: 2, revision: 3, messageDeltas: [], activityDeltas: [{ record: record('run', 'ok') }] })
+    expect(sent).toHaveLength(2)
+    clock.tick()
+    expect(sent).toHaveLength(3)
+  })
+  it('lets the caller deliver its held shell just before an opening, and only then', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish(base)
+    publisher.publish({ threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [{ id: 'prompt', appendText: '!' }], activityDeltas: [] })
+    publisher.publish(added(2, 'reply', 'Hi'))
+    clock.tick()
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:3'])
+  })
+  it('delivers the held shell ahead of an opening that starts a quiet lane too', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish(base)
+    clock.tick(); clock.tick()
+    // The lane went quiet and was dropped; the reply's first words start a fresh one.
+    publisher.publish(added(1, 'reply', 'Hi'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+  })
+  it('lets one opening cut a lane’s window short, and none the window after a send that carried one held back', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish(base)
+    // A run of new messages, as a transcript read on a watched thread brings them.
+    publisher.publish(added(1, 'read-1', 'One'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+    publisher.publish(added(2, 'read-2', 'Two'))
+    publisher.publish(added(3, 'read-3', 'Three'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+    // The held ones go at the window's end with the shell ahead of them, and the window that send starts is closed too.
+    clock.tick()
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2', 'shell', 'detail:4'])
+    publisher.publish(added(4, 'read-4', 'Four'))
+    expect(sent).toHaveLength(5)
+    clock.tick()
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2', 'shell', 'detail:4', 'shell', 'detail:5'])
+    // A window whose send carried no opening lets the next one through at once.
+    publisher.publish({ threadId: 'workshop', baseRevision: 5, revision: 6, messageDeltas: [{ id: 'read-4', appendText: '!' }], activityDeltas: [] })
+    clock.tick()
+    expect(sent.at(-1)).toBe('detail:6')
+    publisher.publish(added(6, 'reply', 'Done'))
+    expect(sent.slice(-2)).toEqual(['shell', 'detail:7'])
+    publisher.dispose()
+  })
+  it('remembers what a thread was sent after its lane goes quiet, so an older record’s change is not new', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish({ ...base, activities: [record('monitor', '')] })
+    clock.tick(); clock.tick()
+    // The lane went quiet; a record from the earlier turn changes. It leads a fresh lane, without the shell.
+    publisher.publish({ threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [], activityDeltas: [{ record: record('monitor', 'tick') }] })
+    expect(sent).toEqual(['detail:1', 'detail:2'])
+    clock.tick(); clock.tick()
+    // Removed and brought back under the same ID, a record is new to the window again.
+    publisher.publish({ threadId: 'workshop', baseRevision: 2, revision: 3, messageDeltas: [], activityDeltas: [{ id: 'monitor', removed: true }] })
+    clock.tick(); clock.tick()
+    publisher.publish({ threadId: 'workshop', baseRevision: 3, revision: 4, messageDeltas: [], activityDeltas: [{ record: record('monitor', '') }] })
+    expect(sent).toEqual(['detail:1', 'detail:2', 'detail:3', 'shell', 'detail:4'])
+    publisher.dispose()
+  })
+  it('sends an opening published while the lane is sending in that same flush, after the update being sent', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => {
+      sent.push(`first:${item.revision}`)
+      if (item.revision === 1) publisher.publish(added(1, 'reply', 'Hi'))
+      sent.push(`second:${item.revision}`)
+    }, { schedule: clock.schedule })
+    publisher.publish(base)
+    expect(sent).toEqual(['first:1', 'second:1', 'first:2', 'second:2'])
   })
 })

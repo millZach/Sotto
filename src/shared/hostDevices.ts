@@ -40,8 +40,13 @@ export type TailscaleConnectOutcome =
   | 'failed'
   | 'missing'
 
-/** Why a device is listed under "Can't use now". "Already added" is decided in the window, which knows the saved hosts. */
-export type HostDeviceUnavailable = 'offline' | 'phone'
+/**
+ * Why a device is listed under "Can't use now". "Already added" is decided in the window, which knows the saved hosts.
+ * `this-computer` is an SSH entry that goes to the computer Sotto runs on, whose host is the local one. A jump to an
+ * address that matches one here is not: SSH connects to that address from the jump host. `git-service` is an SSH
+ * entry whose destination is a Git host such as github.com, an account on a service rather than a machine.
+ */
+export type HostDeviceUnavailable = 'offline' | 'phone' | 'this-computer' | 'git-service'
 
 /**
  * A machine Add host offers: a device on this computer's tailnet, an entry in the SSH configuration or

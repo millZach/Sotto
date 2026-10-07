@@ -64,6 +64,8 @@ const processingLabels: Record<WidgetProcessingStage, string> = {
   transcribing: 'Transcribing',
   'delivering-output': 'Delivering text',
 }
+/** Before the upload starts nothing has left the computer, so only these stages say where the audio went. */
+const AUDIO_SENT_STAGES: ReadonlySet<WidgetProcessingStage> = new Set(['transcribing', 'delivering-output'])
 
 function errorCopyFor(
   copy: PlatformCopy,
@@ -226,7 +228,8 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       }
     case 'processing':
       return {
-        tone: 'processing', title: processingLabels[snapshot.stage], detail: copy.widgetProcessingDetail,
+        tone: 'processing', title: processingLabels[snapshot.stage],
+        detail: AUDIO_SENT_STAGES.has(snapshot.stage) ? copy.widgetProcessingDetail : 'Audio is never saved',
         icon: <CircleEllipsis aria-hidden="true" size={23} strokeWidth={2.1} />,
       }
     case 'success':

@@ -854,7 +854,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
     if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
   })
-  const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail))
+  // A detail that opens a message goes out at once; the shell waiting in its window goes just ahead of it, so the
+  // window paints the two in one commit (issue #771).
+  const agentDetailPublisher = coalesceAgentThreadDetailPublishes(detail => windows.sendToMain(AGENT_THREAD_DETAIL, detail),
+    { beforeOpening: () => agentStatePublisher.flush() })
   const unsubscribeAgents = hostRouter.subscribe(state => agentStatePublisher.publish(state))
   const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.

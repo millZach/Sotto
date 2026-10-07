@@ -9,14 +9,27 @@ import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../../src/shared/settings'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import type { ThreadHostEvent } from '../../../src/main/agents/host'
+import type { ThreadEvent } from '../../../src/shared/threadEvents'
 import { expectWithinBudget, PERF_ASSERT } from '../../fixtures/perfBudget'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
 
-async function fixture() {
+/** A provider that says what changed, the way every adapter's message log does. */
+class EventProviderHost extends FakeProviderHost {
+  private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
+  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void {
+    this.eventListeners.add(listener)
+    return () => { this.eventListeners.delete(listener) }
+  }
+  publish(threadId: string, event: ThreadEvent): void {
+    for (const listener of this.eventListeners) listener({ threadId, event })
+  }
+}
+
+async function fixture<T extends FakeProviderHost = FakeProviderHost>(adapter: T = new FakeProviderHost() as T) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-workspace-flood-'))
-  const adapter = new FakeProviderHost()
   const host = new WorkspaceHost(adapter, root)
   cleanup.push(async () => {
     host.disconnect()
@@ -174,5 +187,92 @@ describe('workspace publish coalescing', () => {
     expect(published.at(-1)).toBe('Named by hand')
     expect(write).toHaveBeenCalledTimes(1) // the waiting provider write was covered by this one
     expect(JSON.parse(await readFile(join(f.root, 'workspace.json'), 'utf8')).snapshot.threads[0].title).toBe('Named by hand')
+  })
+
+  it('publishes a message’s first words at once inside a window, and holds the chunks after them for it', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    // Everything below up to the first wait runs inside one task, so no window can close while it does.
+    f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'prompt', role: 'user', text: 'Which colour?', createdAt: at } })
+    expect(published).toBe(1)
+    f.adapter.publish(id, { kind: 'message-added', at, message: { id: 'reply', role: 'assistant', text: 'Ind', createdAt: at } })
+    expect(published).toBe(2)
+    for (const appendText of ['igo', ' it', ' is.']) f.adapter.publish(id, { kind: 'message-text-appended', at, messageId: 'reply', appendText })
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(3)
+    // The trailing publish carried chunks alone, so in the window it started a new record is an opening change
+    // and goes at once; a change to it is not.
+    f.adapter.state.threads[0]!.activities = [{ id: 'run', turnId: 'prompt', sequence: 0, kind: 'command', title: 'Run', status: 'running' }]
+    f.adapter.emit()
+    expect(published).toBe(4)
+    f.adapter.state.threads[0]!.activities = f.adapter.state.threads[0]!.activities!.map(record => ({ ...record, output: 'ok' }))
+    f.adapter.emit()
+    expect(published).toBe(4)
+    await expect.poll(() => published).toBe(5)
+  })
+
+  it('holds an opening change in a window it already cut short, and in the one after a trailing publish that carried one', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    const at = new Date().toISOString()
+    const add = (index: number): void => f.adapter.publish(id, { kind: 'message-added', at, message: { id: `read-${index}`, role: 'assistant', text: `Part ${index}`, createdAt: at } })
+    // A transcript read in chunks: each chunk is its own task, run here just after a publish, inside its window.
+    const counts: number[] = []
+    let published = 0
+    const nextChunk = new Map<number, () => void>([
+      [3, () => { add(3); counts.push(published) }],
+      [4, () => { add(4); counts.push(published) }],
+    ])
+    f.host.subscribe(() => { published += 1; const chunk = nextChunk.get(published); if (chunk) queueMicrotask(chunk) })
+    add(0); add(1); add(2)
+    // The first opens a window, the second cuts it short and the third waits for its end.
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(5)
+    // That trailing publish carried a held opening change, so the window it started is a flood's: the next chunk's
+    // message waited for its end, and so did the one after.
+    expect(counts).toEqual([3, 4])
+    // Once a window closes with nothing waiting, the next opening change goes at once again.
+    await new Promise<void>(resolve => { setTimeout(resolve, 40) })
+    expect(published).toBe(5)
+    add(5)
+    expect(published).toBe(6)
+  })
+
+  it('lets only a thread a window may be looking at cut a window short', async () => {
+    const f = await fixture(new EventProviderHost())
+    const [watched, other] = f.adapter.state.threads
+    f.host.observeThreads([watched!.id])
+    await new Promise<void>(resolve => { setTimeout(resolve, 40) })
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    f.adapter.publish(other!.id, { kind: 'message-added', at, message: { id: 'background-1', role: 'assistant', text: 'One', createdAt: at } })
+    expect(published).toBe(1)
+    // A history read in a thread nobody is looking at has nothing to paint, and leaves the window's one cut alone.
+    f.adapter.publish(other!.id, { kind: 'message-added', at, message: { id: 'background-2', role: 'assistant', text: 'Two', createdAt: at } })
+    expect(published).toBe(1)
+    f.adapter.publish(watched!.id, { kind: 'message-added', at, message: { id: 'first-words', role: 'assistant', text: 'Here', createdAt: at } })
+    expect(published).toBe(2)
+  })
+
+  it('publishes a read that records hundreds of messages in one task twice, not once a message', async () => {
+    const f = await fixture(new EventProviderHost())
+    const id = f.adapter.state.threads[0]!.id
+    let published = 0
+    f.host.subscribe(() => { published += 1 })
+    const at = new Date().toISOString()
+    // A transcript catch-up or a history read hands the log every unseen message in the same task.
+    for (let index = 0; index < 300; index++) {
+      f.adapter.publish(id, { kind: 'message-added', at, message: { id: `read-${index}`, role: index % 2 ? 'assistant' : 'user', text: `Message ${index}`, createdAt: at } })
+    }
+    // The first opens a window and the second cuts it short; the other 298 ride its end.
+    expect(published).toBe(2)
+    await expect.poll(() => published).toBe(3)
+    await tick(); await new Promise<void>(resolve => { setTimeout(resolve, 40) })
+    expect(published).toBe(3)
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.at(-1)?.id).toBe('read-299')
   })
 })
