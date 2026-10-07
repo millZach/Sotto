@@ -118,6 +118,13 @@ const act = () => {
     const request = { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: action.payload }
     pending.set(action.requestId, request); output({ type: 'control_request', request_id: action.requestId, request }); return
   }
+  // One API message of a turn that goes on, as Claude writes before a tool call: the next message has its own ID.
+  if (action.type === 'say') {
+    const id = randomUUID()
+    output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
+    output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
+    output(persist({ type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } })); return
+  }
   if (action.type === 'complete') {
     const id = randomUUID()
     // A turn that leaves a subagent running launches it from a root tool call, as Claude 2.1.280 does with

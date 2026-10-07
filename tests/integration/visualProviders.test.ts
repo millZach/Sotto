@@ -18,16 +18,13 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AdapterFixture } from './adapterContract'
 import type { RecordedRpc } from '../fixtures/codexFixture'
+import { callVisualize } from '../fixtures/visualToolCall'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
 
-type McpReply = { result: { content: { type: string; text: string }[]; isError?: boolean } }
-async function visualize(server: Pick<ThreadMcpServer, 'url' | 'headers'>, title: string): Promise<McpReply['result']> {
-  const response = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...Object.fromEntries(server.headers.map(header => [header.name, header.value])) },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'visualize', arguments: { title, kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.' }] } } }) })
-  return (await response.json() as McpReply).result
-}
+const visualize = (server: Pick<ThreadMcpServer, 'url' | 'headers'>, title: string): ReturnType<typeof callVisualize> =>
+  callVisualize(server, { title, kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.' }] })
 
 /** The endpoint the provider was given for the visual tool, read from what the adapter sent it at launch. */
 async function given(provider: ProviderId, records: readonly RecordedRpc[]): Promise<Pick<ThreadMcpServer, 'url' | 'headers'>> {
@@ -47,9 +44,19 @@ async function given(provider: ProviderId, records: readonly RecordedRpc[]): Pro
   return servers.find(server => server.name === VISUAL_MCP_SERVER)!
 }
 
-const factories: [ProviderId, () => Promise<AdapterFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture]]
+type ScriptedFixture = AdapterFixture & { action(id: string, value: Record<string, unknown>): Promise<unknown> }
+/**
+ * How each fake writes words in a turn that goes on, as its provider does before a tool call: Codex an agent message
+ * item, Claude an API message, Grok a chunk of a new stream.
+ */
+const SAY: Record<'codex' | 'claude' | 'grok', (text: string) => Record<string, unknown>> = {
+  codex: text => ({ type: 'say', text }),
+  claude: text => ({ type: 'say', text }),
+  grok: text => ({ type: 'chunk', text, meta: { streamStartMs: Date.now() } }),
+}
+const factories: ['codex' | 'claude' | 'grok', () => Promise<ScriptedFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture]]
 describe.each(factories)('%s visualize call', (provider, factory) => {
-  it('draws the card live between the words before the call and the words after it', async () => {
+  it('draws the card live between the words before the call and the words after it, after a reply, before one and mid-reply', async () => {
     const fixture = await factory(); cleanup.push(fixture.cleanup)
     const registry = new ThreadRegistry(fixture.root)
     const threads = new SottoThreadHost(provider, fixture.host, registry)
@@ -91,5 +98,13 @@ describe.each(factories)('%s visualize call', (provider, factory) => {
     expect((await visualize(endpoint, 'Before a reply')).content[0]!.text).toContain('under the user\'s message')
     await fixture.driver.completeTurn(sessionId, 'After the visual.')
     await expect.poll(() => texts(), { timeout: 20_000 }).toEqual(['Show me how a send moves.', 'Before the visual.', '[After a reply]', 'And the reply?', '[Before a reply]', 'After the visual.'])
+
+    // Called mid-reply, the way an agent draws while it explains: words, the call, then more words in the same turn.
+    await send('third-prompt', 'Walk me through it.')
+    await fixture.action(sessionId, SAY[provider]('First, the words before the call.'))
+    await expect.poll(() => texts().includes('First, the words before the call.'), { timeout: 20_000 }).toBe(true)
+    expect((await visualize(endpoint, 'Mid reply')).content[0]!.text).toContain('under your last message')
+    await fixture.driver.completeTurn(sessionId, 'Then the words after it.')
+    await expect.poll(() => texts().slice(6), { timeout: 20_000 }).toEqual(['Walk me through it.', 'First, the words before the call.', '[Mid reply]', 'Then the words after it.'])
   })
 })
