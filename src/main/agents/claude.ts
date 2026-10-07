@@ -1378,7 +1378,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     // Folded into the store and cleared at once, so this connection's appends never follow a line a crash cut short.
     if (merged) await this.inAliasOrder(() => this.writeWhole(aliases))
-    else if (journal.present) await this.inAliasOrder(() => this.originJournal.clear())
+    else if (journal.present) {
+      // As in a whole write, a journal that cannot be cleared is harmless: every origin in it is already in the store.
+      try { await this.inAliasOrder(() => this.originJournal.clear()) }
+      catch { this.options.logEvent?.('claude-origin-journal-clear-failed') }
+    }
     return aliases
   }
   private inAliasOrder<Result>(operation: () => Promise<Result>): Promise<Result> {

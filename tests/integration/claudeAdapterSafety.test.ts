@@ -143,6 +143,21 @@ describe('Claude recovery and safety', () => {
     await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins.filter(candidate => candidate.messageId === 'journaled')).toHaveLength(1)
   })
+  it('still connects when a leftover journal holding nothing new cannot be cleared', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'kept', messageId: 'kept', threadId: id, text: 'Synthetic kept prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    f.host.disconnect(); await f.adapter.closed()
+    // The store holds the origin now; a journal left behind repeats it, and the file cannot be removed.
+    const journalPath = join(f.root, 'claude-origins.jsonl')
+    const stored = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, { origins: { messageId: string }[] }>
+    const origin = stored[id]!.origins.find(candidate => candidate.messageId === 'kept')!
+    await writeFile(journalPath, `\n${JSON.stringify({ threadId: id, origin })}\n`)
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    f = await claudeFixture(f.root)
+    await f.host.connect()
+    expect((await f.host.snapshot()).connected).toBe(true)
+  })
   it('counts a whole write of the thread store as saved when the journal behind it cannot be cleared', async () => {
     vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
     const other = randomUUID()
