@@ -148,7 +148,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     for (const visual of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES]) expect((await visualize(page, visual)).isError).not.toBe(true)
 
     const card = (title: string): Locator => log.getByRole('region', { name: `Visual: ${title}` })
-    const image = (title: string): Locator => card(title).locator('.visual-card__frames img[data-layer]:not([data-layer="leaving"])')
+    const image = (title: string): Locator => card(title).locator('.visual-card__layers img[data-layer]:not([data-layer="leaving"])')
     const stepper = (title: string): Locator => card(title).getByRole('group', { name: 'Walkthrough' })
     for (const title of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES].map(visual => visual.title)) await expect(card(title).getByRole('img')).toBeVisible({ timeout: 20_000 })
 
@@ -162,7 +162,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     expect(await lit(image(FLOW.title))).toEqual(['flowchart-A-0'])
     expect(await dimmed(image(FLOW.title))).toBeGreaterThan(10)
     await shot(page, 'flowchart-step-1280x800-dark.png')
-    const base = await flow.evaluate(element => (element.querySelector('.visual-card__frames img') as HTMLImageElement).naturalWidth)
+    const base = await flow.evaluate(element => (element.querySelector('.visual-card__layers img') as HTMLImageElement).naturalWidth)
 
     // The keyboard path: Tab goes from Expand past the dots, which are for the pointer, to Back; the arrow keys step
     // while the focus is in the walkthrough.
@@ -182,7 +182,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await expect(stepper(FLOW.title)).toContainText('Step 3 of 4')
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_C_D_0', 'L_D_E_0', 'Provider', 'edgeLabel:L_C_D_0', 'edgeLabel:L_D_E_0', 'flowchart-C-3', 'flowchart-D-7', 'flowchart-E-9'])
     // Every step's picture is the drawing's size.
-    expect(await flow.evaluate(element => (element.querySelector('.visual-card__frames img:last-child') as HTMLImageElement).naturalWidth)).toBe(base)
+    expect(await flow.evaluate(element => (element.querySelector('.visual-card__layers img:last-child') as HTMLImageElement).naturalWidth)).toBe(base)
     await page.keyboard.press('Tab')
     await expect(flow.getByRole('button', { name: 'Next' })).toBeFocused()
     await page.keyboard.press('Enter')
@@ -266,7 +266,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
       return slow
     })
     await flow.getByRole('button', { name: 'Next' }).click()
-    expect(await flow.locator('.visual-card__frames img').evaluateAll(images => images.map(item => (item as HTMLElement).dataset.layer))).toEqual(['shown'])
+    expect(await flow.locator('.visual-card__layers img').evaluateAll(images => images.map(item => (item as HTMLElement).dataset.layer))).toEqual(['shown'])
     expect(await moving(flow)).toEqual([])
     await shot(page, 'flowchart-reduced-motion-1280x800-dark.png')
     await page.emulateMedia({ reducedMotion: null })
@@ -292,7 +292,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
               return rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5 && rect.width > 0
             })
             return { right: box.right <= innerWidth, overflow: element.scrollWidth <= element.clientWidth + 1, page: document.documentElement.scrollWidth <= innerWidth,
-              header: inside('.visual-card__actions button'), stepper: inside('.visual-stepper button'), picture: inside('.visual-card__frames img'),
+              header: inside('.visual-card__actions button'), stepper: inside('.visual-stepper button'), picture: inside('.visual-card__layers img'),
               text: inside('.visual-stepper__text') }
           })
           expect(fits, `${visual.title} at ${width}x${height} ${mode}`).toEqual({ right: true, overflow: true, page: true, header: true, stepper: true, picture: true, text: true })

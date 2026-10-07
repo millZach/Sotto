@@ -66,7 +66,8 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
   const current = Math.min(step, Math.max(steps.length - 1, 0))
   const drawn = rendering.drawing
   const highlight = walking ? steps[current]?.highlight : undefined
-  const picture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
+  // The step's picture, lit for it and cross-fading in from the last, in the card and in Expand.
+  const stepPicture = useMemo(() => drawn ? { dataUrl: stepImage(drawn, highlight), crossFade: true } : undefined, [drawn, highlight])
 
   return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(rendering)}>
     <header className="visual-card__bar">
@@ -83,10 +84,10 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
       </div>
     </header>
     <DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage"
-      dataUrl={picture} crossFade />
+      picture={stepPicture} />
     {walking
       ? <VisualStepper steps={steps} index={current} onStep={index => movePlace({ step: index })} />
       : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
-    <DiagramExpanded frame={frame} name={name} dataUrl={picture} />
+    <DiagramExpanded frame={frame} name={name} picture={stepPicture} />
   </section>
 })

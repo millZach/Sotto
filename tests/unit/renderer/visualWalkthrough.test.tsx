@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentVisual } from '../../../src/shared/visuals'
 import { VisualCard } from '../../../src/renderer/src/agents/VisualCard'
 import { VisualStepper } from '../../../src/renderer/src/agents/VisualStepper'
-import { CROSS_FADE_MS } from '../../../src/renderer/src/agents/diagrams/CrossFadeImage'
+import { CROSS_FADE_MS } from '../../../src/renderer/src/agents/diagrams/DiagramImage'
 import type { DiagramRenderResult } from '../../../src/renderer/src/agents/diagrams/diagramRenderer'
 import { LIT_CLASS } from '../../../src/renderer/src/agents/diagrams/diagramSteps'
 import { svgDataUrl, toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
@@ -201,14 +201,16 @@ describe('a walkthrough in the card', () => {
     const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
     await within(card).findByRole('img')
     await userEvent.click(within(card).getByRole('button', { name: 'Next' }))
-    const frames = card.querySelector('.visual-card__frames')!
-    const layers = [...frames.querySelectorAll('img')]
-    expect(layers.map(layer => layer.dataset.layer)).toEqual(['leaving', 'arriving'])
-    expect(layers[0]).toHaveAttribute('aria-hidden', 'true')
-    expect(layers[0]).toHaveAttribute('alt', '')
+    const stage = card.querySelector('.visual-card__layers')!
+    // The stylesheet's fade takes its length from the same constant as the timer that ends it.
+    expect((stage as HTMLElement).style.getPropertyValue('--diagram-fade')).toBe(`${CROSS_FADE_MS}ms`)
+    const pictures = [...stage.querySelectorAll('img')]
+    expect(pictures.map(layer => layer.dataset.layer)).toEqual(['leaving', 'arriving'])
+    expect(pictures[0]).toHaveAttribute('aria-hidden', 'true')
+    expect(pictures[0]).toHaveAttribute('alt', '')
     expect(within(card).getAllByRole('img')).toHaveLength(1)
     await act(async () => { vi.advanceTimersByTime(CROSS_FADE_MS + 200) })
-    expect([...frames.querySelectorAll('img')].map(layer => layer.dataset.layer)).toEqual(['shown'])
+    expect([...stage.querySelectorAll('img')].map(layer => layer.dataset.layer)).toEqual(['shown'])
   })
 
   it('replaces the picture at once under reduced motion', async () => {
@@ -217,7 +219,7 @@ describe('a walkthrough in the card', () => {
     const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
     await within(card).findByRole('img')
     await userEvent.click(within(card).getByRole('button', { name: 'Next' }))
-    expect([...card.querySelectorAll('.visual-card__frames img')].map(layer => (layer as HTMLElement).dataset.layer)).toEqual(['shown'])
+    expect([...card.querySelectorAll('.visual-card__layers img')].map(layer => (layer as HTMLElement).dataset.layer)).toEqual(['shown'])
   })
 
   it('stays on its step when the card is drawn again, as when its turn folds', async () => {
