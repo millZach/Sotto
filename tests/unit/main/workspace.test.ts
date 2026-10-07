@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
@@ -353,6 +353,9 @@ describe('durable project/thread organization', () => {
     await local(f)
     await f.host.execute(send())
     await started.promise
+    // Git's inspection after the send runs in the thread's lane; a refresh waits there behind it, so the switch
+    // below is made once it has finished.
+    await f.host.updateThreadWorktree('local', false)
     expect(writer).toHaveBeenCalledTimes(1)
     // The branch is named by the thread whose first prompt it is, so its own provider is the one asked.
     expect(writer).toHaveBeenCalledWith('local', send().text)
@@ -361,11 +364,10 @@ describe('durable project/thread organization', () => {
     await f.host.updateThreadWorktree('local', false)
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'feat/agent-choice', temporaryBranch: false })
     finish('sotto/generated-name')
-    // The rename joins the thread lane, so this read waits for it rather than sleeping.
+    // The rename joins the thread lane, so the next send waits for it rather than sleeping.
     await Promise.resolve(); await Promise.resolve()
-    await f.host.updateThreadWorktree('local', false)
-    expect((await git(thread.workingDirectory!, ['branch', '--show-current'])).trim()).toBe('feat/agent-choice')
     await f.host.execute({ ...send(), commandId: 'next', messageId: 'next' })
+    expect((await git(thread.workingDirectory!, ['branch', '--show-current'])).trim()).toBe('feat/agent-choice')
     expect(writer).toHaveBeenCalledTimes(1)
   })
 
@@ -509,6 +511,28 @@ describe('durable project/thread organization', () => {
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.sentBranch).toBe('sotto/thread-fixture')
   })
 
+  it('reads the folder again and asks once more when a Git action lands between the read and the remote half of a round', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 5 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const status: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
+    const steps: string[] = []
+    let refused = false
+    const source = {
+      read: vi.fn(async () => { steps.push('read'); return status }),
+      // The first ask finds the folder not read since a Git action, as one landing just after the round's read leaves it.
+      readRemote: vi.fn(async () => { steps.push('remote'); if (refused) return true; refused = true; return false }),
+      invalidate: vi.fn(),
+    }
+    f.host.setGitStatus(source, { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    await f.host.updateThreadWorktree('local', false)
+    await vi.waitFor(() => expect(source.readRemote).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(steps.slice(-5)).toEqual(['read', 'remote', 'read', 'remote', 'read']))
+  })
+
   it('carries the Git status of the folder on the worktree record: the remote on a refresh, the timer while a window looks, and again after an action', async () => {
     const f = await fixture({ worktreeRefreshDelayMs: 5 })
     const snapshot = await f.host.connect()
@@ -516,16 +540,22 @@ describe('durable project/thread organization', () => {
     const model = snapshot.models.find(model => model.providerId === 'codex')!
     const base: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
     let current = base, inFront = true
+    // A remote half is listed as a read with `remote: true`; every read the host makes itself is local.
     const reads: Array<{ cwd: string; remote: boolean }> = []
-    const source = { read: vi.fn(async (cwd: string, options: { remote: boolean }) => { reads.push({ cwd, remote: options.remote }); return current }), invalidate: vi.fn() }
+    const source = {
+      read: vi.fn(async (cwd: string, options: { remote: boolean }) => { reads.push({ cwd, remote: options.remote }); return current }),
+      readRemote: vi.fn(async (cwd: string) => { reads.push({ cwd, remote: true }); return true }),
+      invalidate: vi.fn(),
+    }
     f.host.setGitStatus(source, { pollIntervalMs: () => 10, tickMs: 5, foreground: () => inFront })
     await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
     await f.host.execute(send())
     const record = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
-    // A refresh is an ask, so it reads the remote half too.
+    // A refresh is an ask, so it reads the remote half too, once it has answered, and then the folder.
     await f.host.updateThreadWorktree('local', false)
-    expect(record()?.git).toMatchObject({ branch: 'main', ahead: 0 })
-    expect(reads.at(-1)).toEqual({ cwd: project.path, remote: true })
+    await vi.waitFor(() => expect(record()?.git).toMatchObject({ branch: 'main', ahead: 0 }))
+    expect(reads.slice(-2)).toEqual([{ cwd: project.path, remote: true }, { cwd: project.path, remote: false }])
+    expect(source.read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
     // The timer reads only the threads a window is looking at.
     current = { ...base, ahead: 2 }
     await new Promise(resolve => setTimeout(resolve, 40))
@@ -544,9 +574,13 @@ describe('durable project/thread organization', () => {
     await f.host.configureThreadWorkingCopy('second', { workingCopy: 'independent', startFromOrigin: true })
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git).toBeUndefined() // nothing to read yet
     current = { ...base, ahead: 4 }
+    // The timer starts no round while the window is behind, so the last read is the one the change made: a round's
+    // remote half runs outside the thread's lane and could otherwise be the last one listed.
+    inFront = false
     await f.host.configureThreadWorkingCopy('second', { workingCopy: 'shared' })
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.worktree?.git?.ahead).toBe(4)
     expect(reads.at(-1)).toEqual({ cwd: project.path, remote: false })
+    inFront = true
     f.host.observeThreads(['local'])
     current = { ...base, ahead: 2 }
     await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2)) // the timer's next round puts the watched thread back where the checks below expect it
@@ -596,6 +630,75 @@ describe('durable project/thread organization', () => {
     expect(record_()?.worktree?.git?.branch).toBe('topic')
   })
 
+  it('lets a send go while the remote half of a status read fetches, and takes what it brought in the thread\'s lane after it', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main', ahead = 0
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: null, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    // The next remote half stands for a fetch and a GitHub lookup that take as long as the test holds them.
+    let held: { fetching: ReturnType<typeof deferred>; fetched: ReturnType<typeof deferred> } | undefined
+    const readRemote = vi.fn(async () => {
+      const hold = held
+      if (hold) { held = undefined; hold.fetching.release(); await hold.fetched.promise }
+      return true
+    })
+    const read = vi.fn(async () => status())
+    f.host.setGitStatus({ read, readRemote, invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    f.host.setGitActions({ switchBranch: vi.fn(async (_cwd: string, ref: string) => { branch = ref; return { branch: ref } }) } as never)
+    const url = 'https://github.com/o/r/pull/74'
+    const view = { number: 74, url, title: 'Pull 74', body: '', state: 'open' as const, draft: false, baseBranch: 'main', headBranch: 'feat/74', crossRepository: false, headOwner: 'o', reviewDecision: null, mergeable: 'mergeable' as const, checks: [], mergeMethods: ['merge' as const], autoMerge: null, behindBy: 0, canUpdateBranch: true }
+    f.host.setGitPullRequests({ view: vi.fn(async () => view), act: vi.fn(async () => ({ ...view, state: 'merged' as const })) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    const sends = () => f.adapters.codex.commands.filter(command => command.type === 'send').length
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    const idle = async () => {
+      f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+      await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    }
+    const hold = () => { held = { fetching: deferred(), fetched: deferred() }; return held }
+    // A refresh answers once the record is read, and its remote half fetches while a send goes.
+    await idle()
+    let fetch = hold()
+    await f.host.updateThreadWorktree('local', false)
+    await fetch.fetching.promise
+    await f.host.execute({ ...send(), commandId: 'after-refresh', messageId: 'after-refresh' })
+    expect(sends()).toBe(2)
+    // Once the fetch is done, a local read in the thread's lane takes what it brought.
+    ahead = 3
+    fetch.fetched.release()
+    await vi.waitFor(() => expect(worktree()?.git?.ahead).toBe(3))
+    // A branch switch: the switch, and the local read of the folder after it, are made in the thread's lane, and
+    // its remote half fetches outside it while a send goes.
+    await idle()
+    fetch = hold()
+    const switched = f.host.switchThreadBranch('local', 'topic', true)
+    await fetch.fetching.promise
+    expect(worktree()).toMatchObject({ branch: 'topic', git: { branch: 'topic' } })
+    await f.host.execute({ ...send(), commandId: 'after-switch', messageId: 'after-switch' })
+    expect(sends()).toBe(3)
+    fetch.fetched.release()
+    expect(await switched).toBeDefined()
+    // A pull request action, the same way.
+    await idle()
+    fetch = hold()
+    await f.host.linkThreadPullRequest('local', '#74')
+    const acted = f.host.runPullRequestAction({ threadId: 'local', url, action: 'merge', method: 'merge' })
+    await fetch.fetching.promise
+    await f.host.execute({ ...send(), commandId: 'after-pull-request', messageId: 'after-pull-request' })
+    expect(sends()).toBe(4)
+    fetch.fetched.release()
+    expect((await acted).notice).toBe('Pull request merged.')
+    // Nothing the host read itself was a remote read: the fetch and the lookup are the remote half's alone.
+    expect(read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
+  })
+
   it('pulls a clean default branch that is only behind as its remote status is read, only while Automatically pull is on', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
@@ -616,19 +719,209 @@ describe('durable project/thread organization', () => {
     session.status = 'idle'; f.adapters.codex.emit()
     const git = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git
     await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // A refresh answers before the read that takes its remote half; a second refresh waits in the thread's lane behind that read.
+    const refreshed = async () => { await f.host.updateThreadWorktree('local', false); await f.host.updateThreadWorktree('local', false) }
     // Off: behind stays behind.
-    await f.host.updateThreadWorktree('local', false)
+    await refreshed()
     expect(pull).not.toHaveBeenCalled()
     expect(git()?.behind).toBe(2)
     // On, with work in the tree: never.
     autoPull = true; dirty = true
-    await f.host.updateThreadWorktree('local', false)
+    await refreshed()
     expect(pull).not.toHaveBeenCalled()
     // On and clean: fast-forwarded, and the record shows the status read after the pull.
     dirty = false
     await f.host.updateThreadWorktree('local', false)
+    await vi.waitFor(() => expect(git()?.behind).toBe(0))
     expect(pull).toHaveBeenCalledExactlyOnceWith(project.path, { automatic: true })
-    expect(git()?.behind).toBe(0)
+  })
+
+  it('decides an automatic pull in the thread\'s lane once the fetch is done, so a switch made while it fetched is seen', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    // Each read answers what the folder is when it is asked: behind on main, and a branch of its own after the switch.
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: `origin/${branch}`, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 2, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    const read = vi.fn(async () => status())
+    // The first remote half is held, as a slow fetch would be.
+    const fetching = deferred(), fetched = deferred()
+    let holdNext = true
+    const readRemote = vi.fn(async () => {
+      if (holdNext) { holdNext = false; fetching.release(); await fetched.promise }
+      return true
+    })
+    f.host.setGitStatus({ read, readRemote, invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
+    const pull = vi.fn(async () => ({ status: 'pulled' as const, branch, upstream: `origin/${branch}` }))
+    f.host.setGitActions({ pull, switchBranch: vi.fn(async (_cwd: string, ref: string) => { branch = ref; return { branch: ref } }) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // A refresh's fetch is under way while the folder is a clean main behind its upstream, and the user switches to
+    // a branch of their own meanwhile. The switch does not wait for the fetch.
+    await f.host.updateThreadWorktree('local', false)
+    await fetching.promise
+    await f.host.switchThreadBranch('local', 'topic', true)
+    const readsBefore = read.mock.calls.length
+    fetched.release()
+    // The read that takes what the fetch brought runs in the thread's lane after the switch, finds the folder on a
+    // branch of its own, and pulls nothing.
+    await vi.waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(readsBefore))
+    await f.host.updateThreadWorktree('local', false)
+    expect(pull).not.toHaveBeenCalled()
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'topic', git: { branch: 'topic' } })
+  })
+
+  it('decides an automatic pull again from a read of its own, not one shared with a read begun before the folder moved', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 600_000 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: `origin/${branch}`, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 2, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    // Like the status reader, a caller asking for the folder while a read of it is under way shares that read, unless
+    // it asks for a fresh one. Each read answers for the folder as it was when it began.
+    let underWay: Promise<GitStatus> | undefined
+    const earlierRead = deferred(), joined = deferred()
+    let holdLocal = false
+    const read = vi.fn((_cwd: string, options: { remote: boolean; fresh?: boolean }): Promise<GitStatus> => {
+      if (!options.fresh && underWay) { joined.release(); return underWay }
+      const answer = status(), hold = holdLocal
+      holdLocal = false
+      const task = (async () => { if (hold) await earlierRead.promise; return answer })()
+      if (!options.fresh) { underWay = task; void task.finally(() => { if (underWay === task) underWay = undefined }) }
+      return task
+    })
+    f.host.setGitStatus({ read, readRemote: vi.fn(async () => true), invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
+    const pull = vi.fn(async () => ({ status: 'pulled' as const, branch, upstream: `origin/${branch}` }))
+    f.host.setGitActions({ pull } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // Another thread in the same folder began a read while the folder was a clean main behind its upstream, and it
+    // is still running when an agent's terminal moves the folder to a branch of its own.
+    holdLocal = true
+    const earlier = read(project.path, { remote: false })
+    branch = 'topic'
+    // A refresh's remote half is done, and the read that takes it shares the earlier one.
+    await f.host.updateThreadWorktree('local', false)
+    await joined.promise
+    earlierRead.release()
+    // The pull is decided again from a read of its own, which finds the folder on its own branch.
+    await vi.waitFor(() => expect(read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
+    await f.host.updateThreadWorktree('local', false)
+    await earlier
+    expect(pull).not.toHaveBeenCalled()
+  })
+
+  it('runs a refresh, a switch and the status read after them one at a time in the thread\'s lane, so the switch moves the sent branch', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 600_000 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    // What reads or moves the folder, in the order it happened. The first inspection the test holds waits to be let go.
+    const events: string[] = []
+    let holding = false
+    const held = deferred(), reached = deferred()
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
+      events.push(`inspect ${branch}`)
+      if (holding) { holding = false; reached.release(); await held.promise }
+      return { ...metadata, status: 'ready', branch }
+    })
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    f.host.setGitStatus({ read: vi.fn(async () => { events.push(`status ${branch}`); return status() }), readRemote: vi.fn(async () => true), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    f.host.setGitActions({ switchBranch: vi.fn(async (_cwd: string, ref: string) => { events.push(`switch ${ref}`); branch = ref; return { branch: ref } }) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    expect(worktree()).toMatchObject({ branch: 'main', sentBranch: 'main' })
+    // The refresh a draft starts is inspecting the folder when the user switches branch and a Git status read is asked for.
+    holding = true; events.length = 0
+    const refreshed = f.host.updateThreadWorktree('local', false)
+    await reached.promise
+    const switched = f.host.switchThreadBranch('local', 'feature', true)
+    const statusRead = f.host.gitActionFinished('local')
+    held.release()
+    await Promise.all([refreshed, switched, statusRead])
+    // Neither lands inside the refresh's inspection: the switch checks its folder once the refresh is done, and every
+    // read after the switch finds the new branch.
+    expect(events.slice(0, 4)).toEqual(['inspect main', 'inspect main', 'switch feature', 'inspect feature'])
+    expect(events.slice(4).length).toBeGreaterThan(0)
+    expect(events.slice(4).every(event => event.endsWith('feature'))).toBe(true)
+    // The switch is the user's own, so the sent branch follows it and no branch notice shows (ADR-0014).
+    expect(worktree()).toMatchObject({ branch: 'feature', sentBranch: 'feature', git: { branch: 'feature' } })
+  })
+
+  it('reads a folder for a refresh only once a send has set it up or put it back, so the refresh marks no error', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 600_000 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const checkout = join(project.path, 'own-worktree')
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: checkout, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    const present = () => stat(checkout).then(() => true, () => false)
+    // `git worktree add` makes the folder first and keeps the worktree locked until it is done, so an inspection
+    // in between would be refused. The test holds Git there.
+    let locked = false
+    let gitAtWork: { started: ReturnType<typeof deferred>; finish: ReturnType<typeof deferred> } | undefined
+    const worktreeAdd = async () => {
+      const hold = gitAtWork
+      await mkdir(checkout, { recursive: true })
+      if (!hold) return
+      locked = true; hold.started.release(); await hold.finish.promise; locked = false
+    }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => { await worktreeAdd(); return record })
+    vi.spyOn(ThreadWorktrees.prototype, 'restore').mockImplementation(async metadata => {
+      if (!await present()) await worktreeAdd()
+      return { ...metadata, status: 'ready', error: undefined }
+    })
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
+      if (locked || !await present()) throw new Error('Git has locked this worktree. Unlock it in Git, then send again.')
+      return { ...metadata, status: 'ready', branch: 'sotto/thread-fixture', dirty: false }
+    })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id, workingCopy: 'independent' })
+    const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
+    const sends = () => f.adapters.codex.commands.filter(command => command.type === 'send').length
+    // The first send sets the worktree up, and the window asks for a refresh while Git is making it.
+    let hold = gitAtWork = { started: deferred(), finish: deferred() }
+    const first = f.host.execute(send())
+    await hold.started.promise
+    const refreshed = f.host.updateThreadWorktree('local', false)
+    gitAtWork = undefined; hold.finish.release()
+    await Promise.all([first, refreshed])
+    expect(worktree()?.status).toBe('ready'); expect(worktree()?.error).toBeUndefined()
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // The folder is deleted; the next send puts it back, and a refresh is asked for while Git is doing so.
+    await rm(checkout, { recursive: true })
+    hold = gitAtWork = { started: deferred(), finish: deferred() }
+    const again = f.host.execute({ ...send(), commandId: 'again', messageId: 'again' })
+    await hold.started.promise
+    const refreshedAgain = f.host.updateThreadWorktree('local', false)
+    gitAtWork = undefined; hold.finish.release()
+    // The send goes to the folder it put back, and the refresh after it finds that folder sound.
+    await expect(again).resolves.toMatchObject({ accepted: true })
+    await refreshedAgain
+    expect(sends()).toBe(2)
+    expect(worktree()?.status).toBe('ready'); expect(worktree()?.error).toBeUndefined()
   })
 
   it('refuses a Git action on the same folder while an automatic pull runs, rather than racing it', async () => {
@@ -670,7 +963,7 @@ describe('durable project/thread organization', () => {
     pulling.release()
     await refresh
     // The pull shows only as the status changing.
-    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git?.behind).toBe(0)
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git?.behind).toBe(0))
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.gitAction).toBeUndefined()
   })
 
@@ -817,7 +1110,7 @@ describe('durable project/thread organization', () => {
     vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
     vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: 'main' }))
     const base = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: true, changedFiles: 1, insertions: 1, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
-    const source = { read: vi.fn(async () => base), invalidate: vi.fn() }
+    const source = { read: vi.fn(async () => base), readRemote: vi.fn(async () => true), invalidate: vi.fn() }
     f.host.setGitStatus(source, { pollIntervalMs: () => 0 })
     const seen: string[] = []
     const actions = {
@@ -847,7 +1140,12 @@ describe('durable project/thread organization', () => {
     expect(published.some(entry => entry.startsWith('running:Committing...'))).toBe(true)
     expect(published.some(entry => entry === 'running:Committing...:checking')).toBe(true)
     expect(source.invalidate).toHaveBeenCalled()
-    expect(source.read).toHaveBeenCalledWith(project.path, { remote: true })
+    // The folder is read in the thread's lane once the action is done, so the remote half outside the lane asks about
+    // the branch it is on now; a read of its own after it takes what the remote half brought.
+    expect(source.read).toHaveBeenCalledWith(project.path, { remote: false })
+    expect(source.readRemote).toHaveBeenCalledWith(project.path)
+    expect(source.read.mock.invocationCallOrder[0]).toBeLessThan(source.readRemote.mock.invocationCallOrder[0]!)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
     // The record is Sotto's: a provider snapshot that follows keeps it.
     f.adapters.codex.emit()
     await vi.waitFor(() => expect(record_()?.gitAction).toMatchObject({ actionId: 'action-1', status: 'done' }))
@@ -899,29 +1197,31 @@ describe('durable project/thread organization', () => {
     const snapshot = await f.host.connect()
     const project = snapshot.projects.find(project => project.providerId === 'codex')!
     const model = snapshot.models.find(model => model.providerId === 'codex')!
-    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
-    let missing = false
+    // A folder of its own that really goes away, since a refresh looks at the disk to know whether it must put one back.
+    const checkout = join(project.path, 'own-worktree'); await mkdir(checkout)
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: checkout, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    const present = () => stat(checkout).then(() => true, () => false)
     vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
     vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
-    const restore = vi.spyOn(ThreadWorktrees.prototype, 'restore').mockImplementation(async metadata => { missing = false; return { ...metadata, status: 'ready', error: undefined } })
+    const restore = vi.spyOn(ThreadWorktrees.prototype, 'restore').mockImplementation(async metadata => { await mkdir(checkout, { recursive: true }); return { ...metadata, status: 'ready', error: undefined } })
     const inspect = vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
-      if (missing) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
+      if (!await present()) throw new Error('The working folder is no longer this thread’s Git worktree. Restore its checkout before continuing.')
       return { ...metadata, status: 'ready', branch: 'sotto/thread-fixture', dirty: false }
     })
     await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
     await f.host.execute(send())
     const worktree = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree
     // Typing in the pane asks for one refresh; with the folder gone it is put back rather than marked as an error.
-    missing = true; restore.mockClear(); inspect.mockClear()
+    await rm(checkout, { recursive: true }); restore.mockClear(); inspect.mockClear()
     await f.host.updateThreadWorktree('local', false)
     expect(restore.mock.invocationCallOrder[0]).toBeLessThan(inspect.mock.invocationCallOrder[0]!)
     expect(worktree()).toMatchObject({ status: 'ready', branch: 'sotto/thread-fixture' })
     // A record an earlier read left as an error is given the same chance on the next send.
     restore.mockImplementationOnce(async metadata => metadata)
-    missing = true
+    await rm(checkout, { recursive: true })
     await f.host.updateThreadWorktree('local', false)
     expect(worktree()?.status).toBe('error')
-    await expect(f.host.threadWorkingDirectory('local')).resolves.toBe(project.path)
+    await expect(f.host.threadWorkingDirectory('local')).resolves.toBe(checkout)
     expect(worktree()).toMatchObject({ status: 'ready', error: undefined })
   })
 
@@ -962,7 +1262,12 @@ describe('durable project/thread organization', () => {
     if (kind === 'reclaimed') expect(identity).not.toHaveBeenCalledWith(missing)
     if (blocked) await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Another thread works in this folder')
     else {
+      // The removal holds the folder off the remote half of status reads and waits for one already running in it.
+      const order: string[] = []
+      f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('Not read here.') }), invalidate: vi.fn(),
+        hold: vi.fn(() => { order.push('hold'); return () => { order.push('released') } }), idle: vi.fn(async () => { order.push('idle') }) }, { pollIntervalMs: () => 0 })
       await f.host.reclaimThreadWorktree('local', { automatic: kind === 'reclaimed' })
+      expect(order).toEqual(['hold', 'idle', 'released'])
       expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.reclaimedAt).toBeDefined()
     }
   })

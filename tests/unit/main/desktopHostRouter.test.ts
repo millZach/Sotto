@@ -162,6 +162,27 @@ describe('desktop host routing', () => {
     router.dispose()
   })
 
+  it('takes an early start to the thread’s own host and says nothing when that host refuses it or is away (#769)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const publish = vi.fn(); router.subscribe(publish); publish.mockClear()
+    await router.command({ type: 'start-thread-session', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
+    expect(remote.command).toHaveBeenCalledWith({ type: 'start-thread-session', threadId: 'thread' }, expect.anything())
+    expect(local.command).not.toHaveBeenCalled()
+    // An older host cannot read a command it does not know, which this client names as version skew; a host may also
+    // refuse it, or drop and not answer. None of it is the user's to hear about.
+    for (const error of [new HostConnectionError('This host runs another version of Sotto.', 'version_mismatch'), new HostConnectionError('This host refused the command.', 'forbidden')]) {
+      remote.command.mockRejectedValueOnce(error)
+      const refused = await router.command({ type: 'start-thread-session', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
+      expect(refused.error).toBeNull()
+    }
+    remote.command.mockRejectedValueOnce(new HostConnectionError('The host did not confirm the command.', 'disconnected'))
+    await expect(router.command({ type: 'start-thread-session', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    expect(router.shell().error).toBeNull()
+    expect(publish).not.toHaveBeenCalled()
+    router.dispose()
+  })
+
   it('names the host in its no-provider refusal by the name this computer saved it under (#459)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add({ ...remote.connection, name: 'forge' })

@@ -521,3 +521,17 @@ it('keeps background work on the live shell but never caches or restores it', ()
   expect(readShellCache()!.host.threads[0]!.backgroundWork).toBeUndefined()
   expect(working.backgroundWork).toHaveLength(1)
 })
+
+it('keeps an open provider session on the live shell but never caches or restores it (#769)', () => {
+  const open = thread('workshop', [])
+  open.providerSessionOpen = true
+  const live = fullState([open])
+  expect(agentShell(live).host.threads[0]!.providerSessionOpen).toBe(true)
+  writeShellCache(live)
+  expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('providerSessionOpen')
+  expect(readShellCache()!.host.threads[0]!.providerSessionOpen).toBeUndefined()
+  // A restored shell is disconnected, so no session in it is open, even from an older cache that kept the flag.
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
+  expect(readShellCache()!.host.threads[0]!.providerSessionOpen).toBeUndefined()
+  expect(open.providerSessionOpen).toBe(true)
+})

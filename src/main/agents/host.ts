@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
-import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -121,6 +121,17 @@ export interface ThreadHistorySource {
   activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
   /** Indexed text-free classification for a native task older than the activity window. */
   activity?(threadId: string, activityId: string, historyEpoch?: string): AgentActivity | undefined
+}
+/**
+ * What a thread whose native session has not started will be created with on its first send, for an early start of
+ * the client that send would use (#769). The working directory is the folder the thread already has. A draft whose
+ * worktree the first send makes has none, and an adapter whose client runs in the thread's folder starts nothing for it.
+ */
+export interface ThreadSessionDraft {
+  readonly modelId: string
+  readonly workingDirectory?: string | undefined
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
 }
 /** What an activity subscriber asks of the host it subscribes to. */
 export interface ActivitySubscriptionOptions {
@@ -250,6 +261,14 @@ export interface AgentHost {
   /** Hand the adapter a way to ask what the event store already holds, before it reads a provider. */
   useThreadHistory?(source: ThreadHistorySource): void
   observeThreads?(threadIds: readonly string[]): void
+  /**
+   * Early start (#769): start this thread's provider session now, the way its next action would, because the user began
+   * typing in its composer. A thread whose native session has not started yet has none to start; with `draft` the
+   * adapter may instead start the client that thread's first send would use, but it never creates a provider session,
+   * a worktree or a branch, and sends nothing to a model. Counts as activity for the session reaper. Resolves once the
+   * start has settled either way; callers ignore a rejection, since the send reports its own.
+   */
+  startThreadSession?(threadId: string, draft?: ThreadSessionDraft): Promise<void>
   disconnect(provider?: ProviderId): void
   /**
    * A new client for `provider` is on disk (ADR-0042). The adapter finds it again, reads its version, stops each
