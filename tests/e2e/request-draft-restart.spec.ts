@@ -5,7 +5,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { hostEntityKey } from '../../src/shared/clientIdentity'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native restart fixture', options: [], questions: [
   { id: 'place', question: 'Where should we go?', multiSelect: false, allowFreeText: true, options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] },
@@ -14,11 +15,12 @@ const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native
 ] }
 const second: AgentRequest = { ...form, id: 'separate-form', questions: [{ id: 'place', question: 'A separate request', multiSelect: false, allowFreeText: false,
   options: [{ id: 'coast', label: 'Separate coast' }, { id: 'hills', label: 'Separate hills' }] }] }
-type Owner = 'thread' | 'personal'
 declare global { var draftAnswerCalls: number; var draftAnswerPayloads: unknown[]; var holdDraftAnswer: boolean }
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 const card = (page: Page) => page.locator('.agent-request').filter({ has: page.getByRole('group', { name: 'Where should we go?' }) })
-async function record(launched: LaunchedSotto, owner: Owner, hold = false): Promise<void> {
+const clientThreadId = async (page: Page, id: string): Promise<string> => hostEntityKey(
+  await page.evaluate(async () => { const state = await window.sotto!.agents!.get(); return state.hostId ?? state.host.hostId }), id)
+async function record(launched: LaunchedSotto, hold = false): Promise<void> {
   await launched.app.evaluate(({ ipcMain }, { channel, hold }) => {
     const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, payload: { type?: string }) => unknown> })._invokeHandlers
     const original = handlers.get(channel)!
@@ -31,46 +33,34 @@ async function record(launched: LaunchedSotto, owner: Owner, hold = false): Prom
       }
       return original(event, payload)
     })
-  }, { channel: owner === 'thread' ? 'sotto:agents:command' : 'personal-chat:command', hold })
+  }, { channel: 'sotto:agents:command', hold })
 }
-async function emit(page: Page, owner: Owner, id: string): Promise<void> {
-  for (const request of [form, second]) await page.evaluate(async ({ owner, id, request }) => {
-    await window.sottoE2E!.agentEvent!({ ...(owner === 'personal' ? { scope: 'personal' as const } : {}), type: 'question', threadId: id, text: request.text, request })
-  }, { owner, id, request })
+async function emit(page: Page, id: string): Promise<void> {
+  for (const request of [form, second]) await page.evaluate(async ({ id, request }) => {
+    await window.sottoE2E!.agentEvent!({ type: 'question', threadId: id, text: request.text, request })
+  }, { id, request })
 }
-async function open(page: Page, owner: Owner): Promise<void> {
-  if (owner === 'personal') await openPage(page, 'Chats')
-  else await openThreads(page)
-  if (owner === 'thread') await page.getByRole('button', { name: 'Workshop', exact: true }).click()
+async function open(page: Page): Promise<void> {
+  await openThreads(page)
+  await page.getByRole('button', { name: 'Workshop', exact: true }).click()
 }
 
-for (const owner of ['thread', 'personal'] as const) test(`${owner} structured text and selections survive a full app restart with history disabled and independent composer/request drafts`, async () => {
+test(`thread structured text and selections survive a full app restart with history disabled and independent composer/request drafts`, async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-request-draft-${owner}-`))
+  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-request-draft-thread-`))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
   let launched = await launchSotto('success', profile)
   try {
     let page = launched.page
-    const id = await page.evaluate(async owner => {
+    const id = await page.evaluate(async () => {
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-      if (owner === 'thread') {
-        await window.sotto!.agents!.command({ type: 'connect' })
-        await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent threaded composer' })
-        return 'workshop'
-      }
-      const api = window.sotto!.personalChats!
-      await api.connect()
-      const id = (await api.create()).selectedChatId!
-      await api.saveDraft({ chatId: id, revision: 1, text: 'Create fixture conversation', skills: [] })
-      await api.send({ chatId: id, revision: 1 })
-      return id
-    }, owner)
-    if (owner === 'personal') {
-      await expect.poll(() => page.evaluate(async id => (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)?.submissions[0]?.status, id)).toBe('accepted')
-      await page.evaluate(async id => window.sotto!.personalChats!.saveDraft({ chatId: id, revision: 3, text: 'Independent personal composer', skills: [] }), id)
-    }
-    await record(launched, owner)
-    await emit(page, owner, id); await open(page, owner)
+
+      await window.sotto!.agents!.command({ type: 'connect' })
+      await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent threaded composer' })
+      return 'workshop'
+    })
+    await record(launched)
+    await emit(page, id); await open(page)
     const first = card(page)
     await first.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
     await first.getByRole('textbox', { name: 'Other answer to: Where should we go?' }).fill('A quiet shore')
@@ -85,16 +75,15 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
     await closeSotto(launched)
 
     launched = await launchSotto('success', profile); page = launched.page
-    await record(launched, owner)
-    await open(page, owner)
+    await record(launched)
+    await open(page)
     // Startup intentionally supplies no native request. The service must keep the original file intact.
     expect(await drafts(profile)).toEqual(before)
-    if (owner === 'personal') await page.evaluate(() => window.sotto!.personalChats!.connect())
-    else {
+    {
       await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
       expect(await drafts(profile)).toEqual(before)
       // Thread fixture effects are in memory; simulate the provider returning the exact requests on reconnect.
-      await emit(page, owner, id)
+      await emit(page, id)
     }
     await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Unsent notes survive restart')
     await expect(card(page).getByRole('radio', { name: 'Write my own answer', exact: true })).toBeChecked()
@@ -103,13 +92,11 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
     await expect(card(page).getByRole('checkbox', { name: 'Type checks' })).toBeChecked()
     await expect(page.getByRole('radio', { name: 'Separate hills' })).toBeChecked()
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    const composer = await page.evaluate(async ({ owner, id }) => owner === 'personal'
-      ? (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)!.draft.text
-      : (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, { owner, id })
-    expect(composer).toBe(`Independent ${owner === 'thread' ? 'threaded' : 'personal'} composer`)
+    const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, id))
+    expect(composer).toBe('Independent threaded composer')
     await mkdir('artifacts/request-drafts', { recursive: true })
     await card(page).getByRole('textbox', { name: 'Travel notes' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `artifacts/request-drafts/${owner}-restarted.png` })
+    await page.screenshot({ path: `artifacts/request-drafts/thread-restarted.png` })
     // Only this explicit click delivers. Accepted content is removed without touching the other request or composer.
     await card(page).getByRole('button', { name: 'Send answers' }).click()
     await expect(card(page)).toHaveCount(0)
@@ -118,41 +105,36 @@ for (const owner of ['thread', 'personal'] as const) test(`${owner} structured t
   } finally { await closeSotto(launched) }
 })
 
-for (const owner of ['thread', 'personal'] as const) test(`${owner} full-process restart restores an interrupted answer as held and never replays it`, async () => {
+test(`thread full-process restart restores an interrupted answer as held and never replays it`, async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-held-draft-${owner}-`))
+  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-held-draft-thread-`))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
   let launched = await launchSotto('success', profile)
   try {
     let page = launched.page
-    const id = await page.evaluate(async owner => {
+    const id = await page.evaluate(async () => {
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-      if (owner === 'thread') { await window.sotto!.agents!.command({ type: 'connect' }); return 'workshop' }
-      const api = window.sotto!.personalChats!; await api.connect()
-      const id = (await api.create()).selectedChatId!
-      await api.saveDraft({ chatId: id, revision: 1, text: 'Fixture only', skills: [] }); await api.send({ chatId: id, revision: 1 }); return id
-    }, owner)
-    if (owner === 'personal') await expect.poll(() => page.evaluate(async id => (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)?.submissions[0]?.status, id)).toBe('accepted')
-    await emit(page, owner, id); await open(page, owner)
+      await window.sotto!.agents!.command({ type: 'connect' }); return 'workshop'
+    })
+    await emit(page, id); await open(page)
     await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
     await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
     await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Held through restart')
-    await record(launched, owner, true)
+    await record(launched, true)
     await card(page).getByRole('button', { name: 'Send answers' }).click()
     await expect.poll(() => launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(1)
     expect((await drafts(profile))[0]?.held).toBe(true)
     await closeSotto(launched)
-    launched = await launchSotto('success', profile); page = launched.page; await record(launched, owner)
-    if (owner === 'personal') await page.evaluate(() => window.sotto!.personalChats!.connect())
-    else { await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' })); await emit(page, owner, id) }
-    await open(page, owner)
+    launched = await launchSotto('success', profile); page = launched.page; await record(launched)
+    { await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' })); await emit(page, id) }
+    await open(page)
     await expect(card(page)).toHaveAttribute('data-phase', 'unconfirmed')
     await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
     await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Held through restart')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
     await mkdir('artifacts/request-drafts', { recursive: true })
     await card(page).getByRole('button', { name: 'Check again' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `artifacts/request-drafts/${owner}-held-restarted.png` })
+    await page.screenshot({ path: `artifacts/request-drafts/thread-held-restarted.png` })
     await card(page).getByRole('button', { name: 'Check again' }).click()
     await expect(card(page)).toHaveAttribute('data-phase', 'idle')
     expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
@@ -169,7 +151,7 @@ test('a real atomic save failure retains the visible answer, blocks sending and 
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
-    await emit(page, 'thread', 'workshop'); await open(page, 'thread'); await record(launched, 'thread')
+    await emit(page, 'workshop'); await open(page); await record(launched)
     // An empty directory at the exact owned fixture file path forces the real atomic rename to fail.
     await mkdir(join(profile, 'request-drafts.json'))
     await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
@@ -203,7 +185,7 @@ test('invalid request draft storage remains unchanged and is honestly shown as u
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
-    await emit(page, 'thread', 'workshop'); await open(page, 'thread'); await record(launched, 'thread')
+    await emit(page, 'workshop'); await open(page); await record(launched)
     await expect(card(page).getByRole('alert')).toContainText('original request-drafts.json is unchanged')
     await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Preserve newer local text too')
     await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
@@ -240,10 +222,10 @@ test('legacy option choices survive a full restart, stay bound to the original q
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent legacy follow-up draft' })
     })
-    await record(launched, 'thread')
+    await record(launched)
     await showRequest(page, original)
     await showRequest(page, reused)
-    await open(page, 'thread')
+    await open(page)
     await live(page, original).getByRole('radio', { name: /Coast/u }).click()
     await live(page, reused).getByRole('radio', { name: 'Hills', exact: true }).click()
     await expect(live(page, original)).toHaveAttribute('data-save', 'saved')
@@ -255,13 +237,13 @@ test('legacy option choices survive a full restart, stay bound to the original q
 
     launched = await launchSotto('success', profile)
     page = launched.page
-    await record(launched, 'thread')
+    await record(launched)
     expect(await drafts(profile)).toEqual(before)
     await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
     await showRequest(page, original)
     // Reusing both request and option IDs does not authorize a saved choice for different question text.
     await showRequest(page, changed)
-    await open(page, 'thread')
+    await open(page)
     await expect(live(page, original).getByRole('radio', { name: /Coast/u })).toBeChecked()
     await expect(live(page, original).getByRole('button', { name: 'Send answer', exact: true })).toBeEnabled()
     await expect(live(page, changed).getByRole('radio', { name: 'Hills', exact: true })).toBeEnabled()
@@ -292,14 +274,14 @@ test('legacy option choices survive a full restart, stay bound to the original q
     await live(page, original).getByRole('button', { name: 'Send answer', exact: true }).click()
     await expect(live(page, original)).toHaveCount(0)
     expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([
-      { type: 'answer', threadId: 'workshop', requestId: original.id, answer: original.options[0]!.id },
+      { type: 'answer', threadId: await clientThreadId(page, 'workshop'), requestId: original.id, answer: original.options[0]!.id },
     ])
     await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['legacy-reused'])
     // Successful delivery leaves no orphaned saved answer; the unrelated changed question remains recoverable.
     await expect(recovery).toHaveCount(1)
     await expect(recovery).not.toContainText(original.text)
     await expect(recovery).toContainText(reused.text)
-    const composer = await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === 'workshop')!.text)
+    const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, 'workshop'))
     expect(composer).toBe('Independent legacy follow-up draft')
   } finally { await closeSotto(launched) }
 })

@@ -1,5 +1,7 @@
 # Provider client updates
 
+Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
+
 Accepted September 21, 2026. Sotto drives four installed clients and until now said nothing when they fell behind. Two of them, Grok Build and Devin, refused every version but the one they were verified against, so the installed Grok client stayed on 1.0.5 while x.ai published 1.0.40. The pin was keeping the client old, and nothing in the app said so.
 
 **Sotto asks the npm registry what is published.** Once an hour at most, per provider, `registry.npmjs.org` answers with the version its package's `latest` tag points at. The request carries a package name and nothing else: no key, no prompt, no transcript, no identifier beyond the ordinary web request any computer makes. This adds one host to the README's list, alongside the GitHub check the app already makes for itself, and it obeys the same shape: on by default, one line in Settings that turns it off, nothing installed behind the user's back. A provider that is not connected has no known installed version, so it is not compared.

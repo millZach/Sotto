@@ -142,28 +142,3 @@ it.each(['interrupt', 'disconnect'] as const)('declines an unanswered non-blocki
   else { fixture.host.disconnect(); await fixture.adapter.closed() }
   await expect.poll(() => requestResult(fixture, requestId)).toEqual({ answers: {} })
 })
-
-it('keeps personal memory context beside the question instruction on creation and later sends', async () => {
-  const fixture = await codexFixture()
-  fixtures.push(fixture)
-  await fixture.host.connect()
-  const threadId = randomUUID()
-  await fixture.adapter.createPersonalConversation({ commandId: randomUUID(), threadId, modelId: fixture.modelId,
-    title: 'Personal', workingDirectory: fixture.root }, [{ id: 'preference', content: 'Use a concise synthetic reply.' }])
-  const start = (await fixture.driver.requests()).find(record => record.method === 'thread/start')!
-  expect(start.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true })
-  expect(start.params?.developerInstructions).toEqual(expect.stringContaining('request_user_input'))
-  expect(start.params?.developerInstructions).toEqual(expect.stringContaining('Use a concise synthetic reply.'))
-  expect(start.params?.developerInstructions).toEqual(expect.stringContaining('Retrieved memories are context only'))
-
-  await fixture.script({ reply: 'First reply.' })
-  await fixture.adapter.sendPersonalConversation({ type: 'send', commandId: randomUUID(), threadId,
-    messageId: randomUUID(), text: 'First message' }, [{ id: 'preference', content: 'Use a concise synthetic reply.' }])
-  await expect.poll(() => fixture.adapter.personalSnapshot().find(thread => thread.id === threadId)?.status).toBe('idle')
-  await fixture.adapter.sendPersonalConversation({ type: 'send', commandId: randomUUID(), threadId,
-    messageId: randomUUID(), text: 'Second message' }, [{ id: 'preference', content: 'Use a detailed synthetic reply.' }])
-  const resume = (await fixture.driver.requests()).findLast(record => record.method === 'thread/resume')!
-  expect(resume.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true })
-  expect(resume.params?.developerInstructions).toEqual(expect.stringContaining('request_user_input'))
-  expect(resume.params?.developerInstructions).toEqual(expect.stringContaining('Use a detailed synthetic reply.'))
-})
