@@ -143,7 +143,7 @@
       "relativePath": "artifacts/design/app-review/baseline/dictate-error.png",
       "width": 1080,
       "height": 720,
-      "sha256": "d8d4481459e956c6891f2d88f85d4dcfe10e7e99a59318a81b3fa29de5dd85f1"
+      "sha256": "013d7701669127f2399ff7f5051ec0850bb1157cd46b3f00a68cd340d0ee8ee8"
     },
     {
       "theme": "light",
@@ -157,7 +157,7 @@
       "relativePath": "artifacts/design/app-review/baseline/dictate-error-light.png",
       "width": 1080,
       "height": 720,
-      "sha256": "041d97c7147bccc19f8213b046ee8d362203fab0b7b3d50e39b0ee73d8265dc8"
+      "sha256": "52d68086ea94e1c9d5bca25edfc1895803aeea93789a05a2bc0ddad976156fba"
     },
     {
       "theme": "dark",
@@ -1823,7 +1823,7 @@
       "relativePath": "artifacts/design/baseline/error-dark.png",
       "width": 248,
       "height": 88,
-      "sha256": "8c30b7c46578918e044925f25559d35aed5d84a14108eacf083b514144d41c76"
+      "sha256": "49a721c6d2df97d65cdfd8a233131aa31304560f4d813467160e7ccf0da8c3b6"
     },
     {
       "theme": "light",
@@ -1837,7 +1837,7 @@
       "relativePath": "artifacts/design/baseline/error-light.png",
       "width": 248,
       "height": 88,
-      "sha256": "3c8b41955107737dbd3048b1a67ec64ecfc7e976f57357723c0f1b45081e3ded"
+      "sha256": "7c876ada2f4eddea788acc685b4046e7747b9ace2f85b4bf8a17c9ec2d4a1f37"
     },
     {
       "theme": "dark",

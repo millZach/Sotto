@@ -166,6 +166,13 @@ describe('multi-provider workspace update replay', () => {
     const f = await fixture(optimized)
     await vi.advanceTimersByTimeAsync(100) // Drain connection publishes before observing the replay.
     const ids = { codex: f.id('codex'), claude: f.id('claude'), grok: f.id('grok') }
+    // A new activity record is published at once even inside a window (#771), so each provider's record exists
+    // before the burst; the burst below only changes them, which is what a window coalesces.
+    for (const provider of ['claude', 'grok', 'codex'] as const) {
+      f.adapters[provider].state.threads[0]!.activities = [activity(`${provider}-tool`, '')]
+      f.adapters[provider].emit()
+    }
+    await vi.advanceTimersByTimeAsync(100)
     const published: AgentHostSnapshot[] = []
     f.workspace.subscribe(snapshot => { published.push(snapshot) })
     try {

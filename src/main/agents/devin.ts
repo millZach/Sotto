@@ -11,7 +11,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, cloneActivitySnapshot, immutableActivities, isImmutableActivities } from './activitySnapshots'
-import { ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -200,7 +200,7 @@ export class DevinAcpHost implements AgentHost {
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
-  })
+  }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly reaper: SessionReaper
   private state: AgentHostSnapshot = {
     connected: false, name: 'Devin', version: '', projects: [], models: [], threads: [],
