@@ -1,6 +1,6 @@
 # Signing in to Tailscale from the Android app: two routes tried
 
-Tried October 4, 2026, for the proposed Android client (ADR-0052). The question: can the phone app list the owner's computers from Tailscale, so the owner signs in once instead of typing each computer's name? [PR #357](https://github.com/millZach/Sotto/pull/357) (ADR-0031, proposed) weighed signing in on the phone and rejected it, mainly because Tailscale's OAuth apps are alpha. This note adds what was measured since. Nothing here is a decision.
+Tried October 4, 2026, for the proposed Android client (ADR-0057). The question: can the phone app list the owner's computers from Tailscale, so the owner signs in once instead of typing each computer's name? [PR #357](https://github.com/millZach/Sotto/pull/357) (ADR-0031, proposed) weighed signing in on the phone and rejected it, mainly because Tailscale's OAuth apps are alpha. This note adds what was measured since. Nothing here is a decision.
 
 ## Route 1: Tailscale OAuth apps cannot list devices
 
