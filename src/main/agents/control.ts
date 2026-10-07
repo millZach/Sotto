@@ -1245,6 +1245,22 @@ export class AgentControl {
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
       ...this.followupStore.peek().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
   }
+  /**
+   * Early start (#769): the user began typing in this thread's composer, so its provider session starts now rather
+   * than inside the send. It takes its place in the thread's own lane, so a send typed meanwhile waits behind it and
+   * finds the session it started, but it marks nothing busy, publishes nothing, writes nothing and reports nothing: a
+   * start that fails leaves the send to start the session and say what went wrong, as it always has.
+   */
+  private startThreadSession(threadId: string): Promise<AgentState> {
+    const host = this.dependencies.host
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.shell())
+    const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
+      .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
+    this.threadActions.set(threadId, task)
+    void task.finally(() => { if (this.threadActions.get(threadId) === task) this.threadActions.delete(threadId) })
+    return task.then(() => this.shell())
+  }
   private thread(id: string | null): AgentThread {
     const thread = this.state.host.threads.find(t => t.id === id)
     if (!thread) throw new Error('Select an available thread first.')
@@ -1881,6 +1897,7 @@ export class AgentControl {
     // disconnect, never on the one global lane, which would lock every other surface while it ran.
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
+    if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
       if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })

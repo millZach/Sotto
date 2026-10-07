@@ -340,6 +340,9 @@ export const agentThreadSchema = z.object({
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
   nativeSessionStarted: z.boolean().optional(),
+  /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
+   * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
+  providerSessionOpen: z.literal(true).optional(),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
   updatedAt: z.string().optional(),
   /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
@@ -493,6 +496,16 @@ export type AgentProject = z.infer<typeof agentProjectSchema>
 export type AgentRequest = z.infer<typeof agentRequestSchema>
 export type AgentMessage = z.infer<typeof agentMessageSchema>
 export type AgentThread = z.infer<typeof agentThreadSchema>
+/**
+ * What a thread says about its provider only while the host that said it is connected: its monitors, its background
+ * work and whether its provider session is open. Gone wherever a thread outlives that connection (a disconnect, a
+ * provider a snapshot no longer reaches, the window's startup cache), and never saved.
+ */
+export const NO_LIVE_THREAD_STATE = { monitoring: undefined, backgroundWork: undefined, providerSessionOpen: undefined } as const
+/** Drop a thread's live state in place: see `NO_LIVE_THREAD_STATE`. */
+export function dropLiveThreadState(thread: AgentThread): void {
+  delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen
+}
 export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>
 export function supportsAgentSupervision(capabilities: AgentCapabilities): boolean {
   return capabilities.observe && capabilities.questions && capabilities.permissions
@@ -954,6 +967,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
+  /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than
+   * inside the next send. Starts nothing a send would not, creates no provider session, worktree or branch, sends no
+   * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
+  z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
   z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
   z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
   z.object({ type: z.literal('unassign'), threadId: id }).strict(),

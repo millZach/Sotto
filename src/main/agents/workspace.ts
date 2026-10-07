@@ -11,7 +11,7 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -119,8 +119,8 @@ function retainedActivities(activities: AgentActivity[]): AgentActivity[] {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -1071,7 +1071,7 @@ export class WorkspaceHost implements AgentHost {
       snapshot.models.forEach(model => { model.ready = false })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads) { delete thread.monitoring; delete thread.backgroundWork }
+      for (const thread of snapshot.threads) dropLiveThreadState(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads) {
@@ -1748,7 +1748,7 @@ export class WorkspaceHost implements AgentHost {
       }
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
-    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, monitoring: undefined, backgroundWork: undefined } as AgentThread]))
+    const threads = new Map(previous.threads.map(thread => [thread.id, { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread]))
     for (const thread of snapshot.threads) {
       const old = threads.get(thread.id)
       const connected = isThreadProviderConnected(snapshot, thread)
@@ -1795,7 +1795,7 @@ export class WorkspaceHost implements AgentHost {
     const models = new Map(previous.models.map(model => [model.id, { ...model, ready: false }]))
     for (const model of snapshot.models) models.set(model.id, model)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: [...models.values()], projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) { delete thread.monitoring; delete thread.backgroundWork }
+    for (const thread of this.state.snapshot.threads) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads) {
       const old = previousThreads.get(thread.id)
@@ -2569,6 +2569,32 @@ export class WorkspaceHost implements AgentHost {
     }
     if (changed) this.publish()
   }
+  /**
+   * Early start (#769), on the thread's own lane so it orders with its sends. A started thread's provider session is
+   * started the way its next action would. A thread whose native session has not started gets its first send's client,
+   * and the draft names the thread's folder only when that folder already exists and is the one the send would use,
+   * the project checkout it shares. A new worktree is made by the first send and by nothing before it (ADR-0014), so
+   * that thread's draft names no folder: a client that runs outside the thread's folder still starts, one that runs in
+   * it does not.
+   */
+  startThreadSession(threadId: string): Promise<void> {
+    const start = this.inner.startThreadSession
+    if (!start) return Promise.resolve()
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      if (!thread || thread.archivedAt || thread.providerSessionOpen) return
+      if (thread.nativeSessionStarted !== false) return start.call(this.inner, threadId)
+      const creation = this.state.creations.find(item => item.threadId === threadId)
+      if (creation?.phase !== 'unstarted') return
+      const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+      const shared = thread.worktree?.mode === 'shared' && thread.worktree.status === 'ready'
+      const workingDirectory = shared ? await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project)) : undefined
+      return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
+        ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
+        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
+    })
+  }
   async clientUpdated(provider: ProviderId): Promise<void> { await this.inner.clientUpdated?.(provider) }
   disconnect(provider?: ProviderId): void {
     this.inner.disconnect(provider)
@@ -2578,7 +2604,7 @@ export class WorkspaceHost implements AgentHost {
     snapshot.models.filter(model => !provider || model.providerId === provider).forEach(model => { model.ready = false })
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads) if (!provider || thread.providerId === provider) {
-      delete thread.monitoring; delete thread.backgroundWork
+      dropLiveThreadState(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }

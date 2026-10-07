@@ -183,6 +183,8 @@ lines.on('line', line => {
       const script = !metadata && existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
       const respond = () => {
         initialized = !script.fail
+        // Recorded so a test can count the CLIs started and not yet answered at any point.
+        if (initialized && !metadata) record('initialize-answered', { session })
         output({ type: 'control_response', response: script.fail
           ? { subtype: 'error', request_id: frame.request_id, error: 'Synthetic initialization rejected' }
           : { subtype: 'success', request_id: frame.request_id, response: { models, commands: existsSync(join(root, 'skills.json')) ? JSON.parse(readFileSync(join(root, 'skills.json'), 'utf8')) : [], session_state: 'idle' } } })

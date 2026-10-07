@@ -56,6 +56,18 @@ describe('atomic socket Send', () => {
   })
 })
 
+describe('socket early start', () => {
+  it('sends the start and reads nothing after it, so a failed read can show no error (#769)', async () => {
+    const state = emptyDesktopState(hostId), onPushError = vi.fn()
+    const call = vi.fn(async (operation: HostOperation) => { if (operation.op === 'command') return state; throw new Error('The link dropped.') })
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', onPushError })
+    Object.assign(client, { features: [], cached: state, call })
+    await client.command({ type: 'start-thread-session', threadId: 'thread' }, undefined, 'early-start')
+    expect(call).toHaveBeenCalledExactlyOnceWith({ op: 'command', command: { type: 'start-thread-session', threadId: 'thread' } }, 'early-start')
+    expect(onPushError).not.toHaveBeenCalled()
+  })
+})
+
 describe('targeted socket Compose', () => {
   const command = { type: 'compose' as const, threadId: 'thread', text: 'An edit while Send was running', attachments: [] }
   it('keeps revision fields off an older atomic-send host and preserves the full local copy', async () => {
