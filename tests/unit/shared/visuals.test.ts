@@ -21,6 +21,12 @@ describe('checking a visualize call', () => {
     expect(checkVisualInput({ title: 'T', kind: 'diagram', source: FLOW }).ok).toBe(true)
   })
 
+  // Codex sent its steps as a list of sentences in a live turn; each sentence is a step's text.
+  it('takes steps sent as sentences, beside steps sent as objects', () => {
+    const checked = checkVisualInput({ ...valid, steps: ['Browser asks Server.', { text: 'Server answers.', highlight: ['B'] }] })
+    expect(checked.ok && checked.input.steps).toEqual([{ text: 'Browser asks Server.' }, { text: 'Server answers.', highlight: ['B'] }])
+  })
+
   it.each([
     [{ ...valid, title: '' }, 'The title is empty.'],
     [{ ...valid, title: '   ' }, 'The title is empty.'],
@@ -29,12 +35,14 @@ describe('checking a visualize call', () => {
     [{ ...valid, source: 'x'.repeat(12_001) }, 'The source is too long. It takes up to 12,000 characters.'],
     [{ ...valid, intro: 'x'.repeat(2_001) }, 'The intro is too long. It takes up to 2,000 characters.'],
     [{ ...valid, steps: Array.from({ length: 13 }, () => ({ text: 'Step' })) }, 'There are too many steps. Send up to 12.'],
-    [{ ...valid, steps: [{ text: '' }] }, 'Step 1 needs text of 1 to 1,000 characters.'],
-    [{ ...valid, steps: [{ text: 'ok' }, { text: 'x'.repeat(1_001) }] }, 'Step 2 needs text of 1 to 1,000 characters.'],
+    [{ ...valid, steps: [{ text: '' }] }, 'Step 1 needs text of 1 to 1,000 characters, as a sentence or as { "text": "..." }.'],
+    [{ ...valid, steps: [{ text: 'ok' }, { text: 'x'.repeat(1_001) }] }, 'Step 2 needs text of 1 to 1,000 characters, as a sentence or as { "text": "..." }.'],
+    [{ ...valid, steps: ['ok', 'x'.repeat(1_001)] }, 'Step 2 needs text of 1 to 1,000 characters, as a sentence or as { "text": "..." }.'],
+    [{ ...valid, steps: [42] }, 'Step 1 needs text of 1 to 1,000 characters, as a sentence or as { "text": "..." }.'],
     [{ ...valid, steps: [{ text: 'ok', highlight: Array.from({ length: 13 }, () => 'A') }] }, 'Step 1\'s highlight takes up to 12 names of 1 to 120 characters.'],
     [{ ...valid, steps: [{ text: 'ok', highlight: [''] }] }, 'Step 1\'s highlight takes up to 12 names of 1 to 120 characters.'],
     [{ ...valid, colour: 'red' }, 'The visual has fields it does not take: colour.'],
-    [{ ...valid, steps: [{ text: 'ok', extra: true }] }, 'The visual has fields it does not take: extra.'],
+    [{ ...valid, steps: [{ text: 'ok', extra: true }] }, 'Step 1 has fields it does not take: extra.'],
   ])('refuses %j in plain words', (args, reason) => {
     const check = checkVisualInput(args)
     expect(check).toEqual({ ok: false, reason, next: 'Fix it and call visualize again, or explain in text.' })
