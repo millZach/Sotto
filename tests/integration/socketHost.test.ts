@@ -109,7 +109,7 @@ describe('authenticated host socket', () => {
     } finally { release(); await Promise.allSettled(pending); spy.mockRestore() }
   })
 
-  it('retains the latest Send packet as a null-bound prompt when both Compose slots are held and its pending save is refused', async () => {
+  it('recovers the latest null-bound edit after saturated Compose and exact-binding Send are refused', async () => {
     const { client, result } = await pair('Full autosave slots')
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })
@@ -141,13 +141,16 @@ describe('authenticated host socket', () => {
       pending.push(latest)
       await expect.poll(() => admitted.filter(input => input.type === 'compose').length).toBe(2)
       const send = client.command({ type: 'send', draft: { threadId, text: 'Latest packet', attachments: [] } }); pending.push(send)
-      expect((await latest).error).toContain('Your latest text is only in this window.')
+      expect((await latest).error).toBe('The host is still saving earlier edits. Your draft is kept on this computer until it can be saved on the host.')
       await expect.poll(() => admitted.some(input => input.type === 'send')).toBe(true)
       expect(nativeWrites.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])
       release(); await Promise.all(pending)
-      expect((await send).error).toContain('Nothing was sent. Your text was saved.')
-      const disk = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
-      expect(disk.threadDrafts).toContainEqual(expect.objectContaining({ threadId, requestId: null, text: 'Latest packet', attachments: [] }))
+      expect((await send).error).toBe('This draft or question changed before Send arrived. Nothing was sent. Your draft is kept. Review it and send again.')
+      await expect.poll(async () => {
+        const disk = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
+        return disk.threadDrafts.find((draft: { threadId: string }) => draft.threadId === threadId)
+      }).toMatchObject({ threadId, requestId: null, text: 'Latest packet', attachments: [] })
+      expect(nativeWrites.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])
       expect(host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId, requestId: null, text: 'Latest packet', attachments: [] }))
       expect(admitted.filter(input => input.type === 'compose')).toHaveLength(2)
       expect(nativeWrites.mock.calls.filter(([input]) => input.type === 'send' || input.type === 'answer')).toEqual([])

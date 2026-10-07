@@ -428,6 +428,7 @@ export class SocketHostService implements HostService {
     if (barrierOwner) this.delivering.set(barrierOwner, (this.delivering.get(barrierOwner) ?? 0) + 1)
     try {
       const result = await this.commandNow(admitted, _client, commandId)
+      if (admitted.type === 'preview-reclaim-thread-worktree') return result
       if (result.error === null && edit && (admitted.type === 'send' || admitted.type === 'cancel-draft')) {
         const latest = this.retainedDrafts.get(this.retainedHostId(), edit.draft.threadId)
         this.retainedDrafts.remove(this.retainedHostId(), edit.draft.threadId, edit.draft.draftId)
