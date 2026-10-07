@@ -123,8 +123,8 @@ interface Connection {
   /** The Devin mode confirmed on this process. Any other mode it announces after that is its own change. */
   mode: string | undefined
   intentionalClose: boolean
-  /** When the profile and native integrations were last confirmed for this process, so one send checks them once. */
-  checkedAt: number
+  /** The number of the last profile and integrations check this process passed (see `checksStarted`). */
+  passedCheck: number
 }
 interface ActiveTurn {
   origin: Origin
@@ -197,6 +197,12 @@ export class DevinAcpHost implements AgentHost {
   private shutdown = Promise.resolve()
   private polling: Promise<void> | undefined
   private pollTimer: ReturnType<typeof setInterval> | undefined
+  /**
+   * Counts profile and integration checks as they start. A send compares the number it was asked at with the last
+   * check its connection passed, so a check counts for it only if it began after the send was asked; a count cannot
+   * step back the way a wall clock can.
+   */
+  private checksStarted = 0
   constructor(private readonly userDataDirectory: string, private readonly options: DevinAcpOptions = {}) {
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'devin-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'devin-projects.json'), z.array(agentProjectSchema).parse, () => [])
@@ -251,14 +257,14 @@ export class DevinAcpHost implements AgentHost {
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
-    const checking = Date.now()
+    const check = ++this.checksStarted
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
     // Before the process exists: an integration it would load is refused before it can start.
     await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const connection: Connection = {
       rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
-      transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, intentionalClose: false, checkedAt: 0,
+      transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, intentionalClose: false, passedCheck: 0,
     }
     const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile.path, 'acp'], cwd,
       devinEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
@@ -287,7 +293,7 @@ export class DevinAcpHost implements AgentHost {
       })
       await rpc.request('_cognition.ai/config/read', {}, value => verifyDevinPolicy(value, profile))
       if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-      connection.checkedAt = checking
+      connection.passedCheck = check
       return connection
     } catch (error) { connection.intentionalClose = true; rpc.close(); await rpc.closed; throw error }
   }
@@ -297,7 +303,7 @@ export class DevinAcpHost implements AgentHost {
     }
     try {
       current()
-      const checking = Date.now()
+      const check = ++this.checksStarted
       const profile = await prepareDevinPolicy(this.userDataDirectory, connection.profile.allows, cwd, this.options.nativeConfigDirectory)
       // The process is already running, so the integration lists and its own reading of the profile are
       // independent and run side by side. Both must pass; the lists are judged first so a refusal reads the same.
@@ -308,7 +314,7 @@ export class DevinAcpHost implements AgentHost {
       if (integrations.status === 'rejected') throw integrations.reason
       if (config.status === 'rejected') throw config.reason
       current()
-      connection.checkedAt = checking
+      connection.passedCheck = check
     } catch (error) {
       connection.rpc.close(); await connection.rpc.closed
       throw error
@@ -728,7 +734,7 @@ export class DevinAcpHost implements AgentHost {
     try { return await this.executeNative(command) } finally { this.dispatching.delete(command.threadId) }
   }
   private async executeNative(command: AgentHostCommand): Promise<AgentHostResult> {
-    const generation = this.generation; const began = Date.now()
+    const generation = this.generation; const checksBefore = this.checksStarted
     if (!this.state.connected) throw new Error('Connect Devin before managing threads.')
     let creation: Connection | undefined
     try {
@@ -818,7 +824,7 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
         this.reaper.touch(id)
         if (!alias.settingsConfirmed) throw new Error('Devin has not confirmed this thread’s settings. Reconnect before sending.')
-        if (command.type === 'send') return await this.send(command, connection, began)
+        if (command.type === 'send') return await this.send(command, connection, checksBefore)
         if (command.type === 'answer') {
           const saved = this.pending.get(command.requestId)
           if (!saved || saved.decision.threadId !== id || saved.connection !== connection) throw new Error('That Devin request is no longer pending.')
@@ -858,8 +864,8 @@ export class DevinAcpHost implements AgentHost {
       throw error
     }
   }
-  /** `began` is when this send was asked for: checks this connection passed since then are not run again. */
-  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection, began: number): Promise<AgentHostResult> {
+  /** `checksBefore` is how many checks had started when this send was asked for: one this connection passed since is not run again. */
+  private async send(command: Extract<AgentHostCommand, { type: 'send' }>, connection: Connection, checksBefore: number): Promise<AgentHostResult> {
     const generation = this.generation
     const id = command.threadId; const alias = this.aliases[id]!
     const checkConnection = (): void => {
@@ -882,7 +888,7 @@ export class DevinAcpHost implements AgentHost {
     // opening the session for this same send has just done it. Nothing else is read first. This connection holds the
     // session, Devin refuses it to every other client while it does, and the replay it loaded and its stream since
     // are the whole history, so the stale-input check below needs nothing more.
-    if (connection.checkedAt < began) await this.revalidate(connection, alias.cwd, generation)
+    if (connection.passedCheck <= checksBefore) await this.revalidate(connection, alias.cwd, generation)
     checkConnection()
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The Devin thread changed before this follow-up. Review the newest input first.')
     if (this.active.has(id) || this.thread(id).requests.length) throw new Error('Devin is still working. Queue this follow-up.')
