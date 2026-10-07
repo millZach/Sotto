@@ -356,7 +356,8 @@ export function WidgetApp({
   // half second was aimed at esc, so it does not discard what was just kept.
   const errorKey = snapshot.status === 'error' ? `${snapshot.sessionId ?? ''}:${snapshot.code}:${String(snapshot.retried)}` : ''
   const errorShownAt = useRef(0)
-  useEffect(() => { if (errorKey !== '') errorShownAt.current = Date.now() }, [errorKey])
+  // A layout effect runs before the browser can deliver a click on the new ×.
+  useLayoutEffect(() => { if (errorKey !== '') errorShownAt.current = Date.now() }, [errorKey])
   const orientation = useWidgetOrientation()
   // The coordinator is hidden for the beta, and with it every control on the
   // widget that speaks, listens or hands a thread to Sotto. Dictation is what
