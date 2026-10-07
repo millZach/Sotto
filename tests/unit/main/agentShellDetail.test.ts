@@ -622,6 +622,17 @@ describe('an opening at the IPC boundary', () => {
     clock.tick()
     expect(sent).toEqual(['detail:1', 'shell', 'detail:3'])
   })
+  it('delivers the held shell ahead of an opening that starts a quiet lane too', () => {
+    const sent: string[] = []
+    const clock = new TestClock()
+    const publisher = coalesceAgentThreadDetailPublishes(item => sent.push(`detail:${item.revision}`),
+      { schedule: clock.schedule, beforeOpening: () => sent.push('shell') })
+    publisher.publish(base)
+    clock.tick(); clock.tick()
+    // The lane went quiet and was dropped; the reply's first words start a fresh one.
+    publisher.publish(added(1, 'reply', 'Hi'))
+    expect(sent).toEqual(['detail:1', 'shell', 'detail:2'])
+  })
   it('sends an opening published while the lane is sending in that same flush, after the update being sent', () => {
     const sent: string[] = []
     const clock = new TestClock()

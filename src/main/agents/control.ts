@@ -898,16 +898,17 @@ export class AgentControl {
     // The first publish of a burst is never held back; anything during the window rides the trailing run.
     // So is a thread a window is looking at starting a message or an activity record: the first words of a
     // reply must not wait behind the echo of the prompt that asked for it.
-    if (this.broadcastOpen && !this.detailOpened()) { this.broadcastPending = true; return }
+    if (this.broadcastOpen && !this.watchedThreadOpened()) { this.broadcastPending = true; return }
     if (this.broadcastOpen) { this.broadcastCancel?.(); this.broadcastCancel = null; this.broadcastOpen = false }
     this.broadcast()
   }
   /**
-   * Whether a thread whose detail a window holds has a newer message or activity record at its end than the
-   * one the window was sent. Only the ends are compared, so a chunk added to a message already sent is not
-   * an opening, and the check costs nothing like the diff the broadcast makes.
+   * Whether a thread whose detail a window holds has had an opening change: a newer message or activity
+   * record at its end than the one the window was sent. Only the ends are compared, so a chunk added to a
+   * message already sent is not one, and the check costs nothing like the diff the broadcast makes. The
+   * workspace ahead of this sends at most two publishes a window, so this cuts a window short no more often.
    */
-  private detailOpened(): boolean {
+  private watchedThreadOpened(): boolean {
     if (!this.detailListeners.size) return false
     for (const [threadId, held] of this.detailSnapshots) {
       const thread = this.state.host.threads.find(item => item.id === threadId)
@@ -3423,8 +3424,9 @@ export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
 /**
  * A provider frame publishes the whole agent state, and Claude emits dozens of frames a
  * second, so the renderer and the widget each revalidate every thread's history that often.
- * 50ms caps that at 20 sends a second: still faster than the ~100ms a person reads as
- * instant, and the first state of a burst is never held back at all.
+ * 50ms caps that at 20 sends a second, plus one just ahead of each detail that brings a message's first
+ * words (`beforeOpening` on the detail coalescer): still faster than the ~100ms a person reads as instant, and
+ * the first state of a burst is never held back at all.
  */
 export const AGENT_STATE_PUBLISH_INTERVAL_MS = 50
 /** Schedules a deferred run and returns its cancel; injectable so tests own the clock. */
@@ -3484,10 +3486,12 @@ export interface CoalescedThreadDetailPublisher {
  * one) and keeps them in order where it cannot. Whole details still supersede everything before them.
  * A lane that goes quiet is dropped; the next update opens a fresh one.
  *
- * A delta that brings a message or an activity record the lane has not sent yet is not held either: it
- * goes at once, with whatever was waiting ahead of it, and opens a fresh window. The echo of a prompt opens
- * a window just before the reply's first words, and those words are what the person is waiting to see.
- * Later chunks of a message already sent coalesce as before, so the window still updates at a bounded rate.
+ * An opening change, an update that brings a message or an activity record the lane has not sent yet, is not
+ * held either: it goes at once, with whatever was waiting ahead of it, and starts a fresh window. The echo of a
+ * prompt often starts a window just before the reply's first words, and those words are what the person is
+ * waiting to see. Later chunks of a message already sent coalesce as before. A lane lets every opening change
+ * through rather than one per window: the workspace and the adapters ahead of it already send at most two
+ * a window, so a lane sees no more than they do.
  * `beforeOpening` runs just before such a send: the desktop delivers the shell held in its own window there,
  * so the window receives the two together and paints them in one commit rather than two.
  */
@@ -3497,23 +3501,23 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
   const schedule = options.schedule ?? realPublishScheduler
   // `sending` holds back an update published while the lane is sending, such as the change a whole read
   // made inside `send` flushes first: sent at once it would reach later listeners ahead of the one being sent.
-  // `sent` is every message and activity record this lane has sent, which is what makes a later one new.
   type Lane = { cancel: (() => void) | null; pending: AgentThreadDetailUpdate[]; sending?: boolean; opening?: boolean; sent: SentDetail }
+  const freshLane = (): Lane => ({ cancel: null, pending: [], sent: new SentDetail() })
   const lanes = new Map<string, Lane>()
   let disposed = false
   const flushLane = (threadId: string): void => {
-    const lane = lanes.get(threadId) ?? { cancel: null, pending: [], sent: { messages: new Set<string>(), records: new Set<string>() } }
+    const lane = lanes.get(threadId) ?? freshLane()
     lanes.set(threadId, lane)
     lane.cancel?.()
     lane.sending = true
     try {
-      // An opening that arrives while this lane is sending goes out in the same flush, after what was ahead of it.
+      // An opening change that arrives while this lane is sending goes out in the same flush, after what was ahead of it.
       do {
         if (lane.opening) options.beforeOpening?.()
         lane.opening = false
         const queued = lane.pending
         lane.pending = []
-        for (const update of queued) { remember(lane, update); send(update) }
+        for (const update of queued) { lane.sent.note(update); send(update) }
       } while (lane.opening && !disposed)
     } finally { lane.sending = false }
     if (disposed) return
@@ -3528,35 +3532,42 @@ export function coalesceAgentThreadDetailPublishes(send: (update: AgentThreadDet
         const merged = held === undefined ? null : mergeAgentThreadDetailUpdates(held, update)
         if (merged === null) lane.pending.push(update)
         else lane.pending[lane.pending.length - 1] = merged
-        if (opens(lane, update)) {
+        if (lane.sent.opens(update)) {
           lane.opening = true
           if (!lane.sending) flushLane(update.threadId)
         }
         return
       }
-      const open = lane ?? { cancel: null, pending: [], sent: { messages: new Set<string>(), records: new Set<string>() } }
+      const open = lane ?? freshLane()
       lanes.set(update.threadId, open)
       open.pending.push(update)
+      open.opening = open.sent.opens(update)
       flushLane(update.threadId)
     },
     dispose: () => { disposed = true; for (const lane of lanes.values()) lane.cancel?.(); lanes.clear() },
   }
 }
-/** The messages and activity records one detail lane has sent, by ID. */
-interface SentDetail { readonly messages: Set<string>; readonly records: Set<string> }
-/** Whether a delta brings a message or an activity record this lane has not sent. A whole detail never opens. */
-function opens(lane: { sent: SentDetail }, update: AgentThreadDetailUpdate): boolean {
-  if (!isAgentThreadDetailDelta(update)) return false
-  return update.messageDeltas.some(item => 'message' in item && !lane.sent.messages.has(item.message.id))
-    || update.activityDeltas.some(item => 'record' in item && !lane.sent.records.has(item.record.id))
-}
-function remember(lane: { sent: SentDetail }, update: AgentThreadDetailUpdate): void {
-  const { messages, records } = lane.sent
-  if (isAgentThreadDetailDelta(update)) {
-    for (const item of update.messageDeltas) messages.add('message' in item ? item.message.id : item.id)
-    for (const item of update.activityDeltas) records.add('record' in item ? item.record.id : item.id)
-    return
+/** The messages and activity records one detail lane has sent, by ID, which is what makes a later one new. */
+class SentDetail {
+  private readonly messages = new Set<string>()
+  private readonly records = new Set<string>()
+  /**
+   * Whether an update is an opening change for this lane: a delta with a message or record the lane has not sent.
+   * A whole detail never is. It supersedes what waits ahead of it and rides the window like any other, which
+   * leaves the first record of a thread whose detail had no activity yet to wait for the window's end.
+   */
+  opens(update: AgentThreadDetailUpdate): boolean {
+    if (!isAgentThreadDetailDelta(update)) return false
+    return update.messageDeltas.some(item => 'message' in item && !this.messages.has(item.message.id))
+      || update.activityDeltas.some(item => 'record' in item && !this.records.has(item.record.id))
   }
-  for (const message of update.messages) messages.add(message.id)
-  for (const record of update.activities ?? []) records.add(record.id)
+  note(update: AgentThreadDetailUpdate): void {
+    if (isAgentThreadDetailDelta(update)) {
+      for (const item of update.messageDeltas) this.messages.add('message' in item ? item.message.id : item.id)
+      for (const item of update.activityDeltas) this.records.add('record' in item ? item.record.id : item.id)
+      return
+    }
+    for (const message of update.messages) this.messages.add(message.id)
+    for (const record of update.activities ?? []) this.records.add(record.id)
+  }
 }
