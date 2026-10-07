@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DIM_CLASS, LIT_CLASS, diagramStepCss, lightDiagramStep, stepTargets } from '../../../src/renderer/src/agents/diagrams/diagramSteps'
+import { DIM_CLASS, LIT_CLASS, diagramStepCss, lightDiagramStep } from '../../../src/renderer/src/agents/diagrams/diagramSteps'
+import { stepTargets } from '../../../src/renderer/src/agents/diagrams/diagramStepTargets'
 import { toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
 
 const fixture = (name: string): string => {

@@ -10,6 +10,8 @@ import { inspectDiagramSource, MAX_DIAGRAM_SOURCE_LENGTH } from './diagramSource
 export const VISUAL_TITLE_MAX = 120
 export const VISUAL_INTRO_MAX = 2_000
 export const VISUAL_STEPS_MAX = 12
+/** The most steps a kept visual is read with: the input's limit with room, as for every field a store holds. */
+export const VISUAL_KEPT_STEPS_MAX = VISUAL_STEPS_MAX * 2
 export const VISUAL_STEP_TEXT_MAX = 1_000
 export const VISUAL_HIGHLIGHTS_MAX = 12
 export const VISUAL_HIGHLIGHT_MAX = 120
@@ -70,7 +72,7 @@ export const agentVisualSchema = z.object({
   kind: z.string().max(64),
   source: z.string().max(VISUAL_KEPT_SOURCE_MAX),
   intro: z.string().max(VISUAL_INTRO_MAX * 2).optional(),
-  steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_HIGHLIGHT_MAX * 2)).max(VISUAL_HIGHLIGHTS_MAX * 2).optional() })).max(VISUAL_STEPS_MAX * 2).optional(),
+  steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_HIGHLIGHT_MAX * 2)).max(VISUAL_HIGHLIGHTS_MAX * 2).optional() })).max(VISUAL_KEPT_STEPS_MAX).optional(),
 })
 export type AgentVisual = z.infer<typeof agentVisualSchema>
 
