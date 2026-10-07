@@ -114,6 +114,8 @@ A thread's messages and retained activity are Sotto's own record, kept in `threa
 
 Diagnostic turn records keep event names, IDs, outcomes, fixed failure codes and timings only. They never keep prompt, answer or error text. On upgrade, Sotto removes text from existing turn records before starting the coordinator. If that rewrite cannot finish, Sotto deletes the diagnostic file; if deletion also fails, it asks you to close apps using the file and restart.
 
+Hovering a message or a finished reply shows a copy control at its top corner. One press copies it as Markdown, so code blocks, lists and tables paste intact somewhere else. Right-click the control, or press Shift+F10 with it focused, to copy as plain text instead. A reply still being written has no copy control, and each code block keeps a copy button of its own.
+
 ### Visuals
 
 An agent in a project thread can draw a visual to show how something works: a flow, an architecture, a state machine, a sequence of calls. It does that on its own when a picture helps, and when you ask for one. The visual appears in the thread where the agent drew it, after what it wrote before and before what it writes next, as a card with its title and kind, the diagram, and its explanation: an intro and numbered steps. **Show source** swaps the diagram for its Mermaid source, **Copy source** copies the source, and **Expand** opens the diagram to zoom and pan; Escape closes it. A diagram that cannot be drawn shows its source and the reason, and the steps stay readable. Visuals stay out of a finished turn's **Worked for** line, so they are in view with the reply.
@@ -121,8 +123,6 @@ An agent in a project thread can draw a visual to show how something works: a fl
 Claude Code, Codex and Grok Build can draw visuals; Devin cannot, and neither can a personal chat or a thread on another host. A visual changes nothing outside its thread, so drawing one asks you nothing. To stop agents drawing them, turn off **Let agents draw visuals in threads** in Settings under Application. Agents then explain in text, and visuals already in threads stay.
 
 A visual is kept with its thread: it is back after a restart, goes when **Keep local history** is turned off or a checkpoint rewinds the turn it was drawn in, and stays when a later turn is rewound. A turn can draw up to 6 visuals and a thread can hold 100. The iPhone app and paired devices show a visual's explanation, with a line saying the visual is in Sotto on your computer. Visuals are drawn on this computer and contact no one. See [ADR-0055](adr/0055-an-agent-can-draw-a-visual-in-its-thread.md).
-
-Hovering a message or a finished reply shows a copy control at its top corner. One press copies it as Markdown, so code blocks, lists and tables paste intact somewhere else. Right-click the control, or press Shift+F10 with it focused, to copy as plain text instead. A reply still being written has no copy control, and each code block keeps a copy button of its own.
 
 ### Working indicators
 
