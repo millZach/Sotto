@@ -74,12 +74,15 @@ and steps; they still show, under Step through, when the finished turn draws the
 
 ## A real provider
 
-On October 7, `tests/e2e/visuals-live.spec.ts`, run against this branch with its prompt also asking for a highlight
-list on every step, had a real Claude Code thread draw "A request round trip" as a sequence diagram with three steps.
+On October 7, `tests/e2e/visuals-live.spec.ts`, run against this branch, had a real Claude Code thread draw "A request round trip" as a sequence diagram with three steps.
 Claude named participants and arrow numbers on its own, and each step lit what it named: step 2 the Server and the
 Database with the query and its answer ([live-claude-step-2-dark.png](../../artifacts/visual-walkthrough/live-claude-step-2-dark.png)),
 step 3 the Browser and the Server with the last answer, with **Start over** in place of Next
 ([live-claude-step-3-dark.png](../../artifacts/visual-walkthrough/live-claude-step-3-dark.png)).
+The run is repeatable from the committed spec: its prompt asks for a highlight list on every step, and its Claude run
+steps to step 2, checks that something is lit and keeps `artifacts/visuals-live/claude/walkthrough-step-2.png`. The two
+captures cited here were taken by hand from the run above, before the spec stepped through on its own; the spec has
+not been run live since.
 
 ## Not verified here
 
