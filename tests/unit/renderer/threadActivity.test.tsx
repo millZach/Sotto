@@ -181,6 +181,39 @@ describe('the running turn', () => {
   })
 })
 
+describe('thinking as it streams', () => {
+  it('shows a running Thinking row on the reasoning row, named for what it is, with its words as they grow', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const { live, transcript } = mount(stateWith({ status: 'running', activities: [
+      lifecycle({ status: 'running', startedAt: iso(-3_000) }),
+      activity({ id: 'think', kind: 'reasoning', title: 'Thinking', status: 'running', startedAt: iso(-2_000), text: 'Reading the parser first' }),
+    ] }))
+    const row = within(transcript).getByRole('button', { name: 'Thinking, Reading the parser first, Running' })
+    expect(row.closest('.thread-activity__row')).toHaveAttribute('data-kind', 'reasoning')
+    expect(row).toHaveTextContent('Running 2s')
+    act(() => {
+      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD
+        ? { ...thread, activities: thread.activities!.map(item => item.id === 'think' ? { ...item, text: 'Reading the parser first\n\n**Then** the tests' } : item) } : thread) } })
+    })
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Thinking, Reading the parser first, Running' }))
+    expect(within(transcript).getByText('Then').tagName).toBe('STRONG')
+  })
+
+  it('shows thinking with no words as the row alone, and counts thoughts apart from reasoning summaries', async () => {
+    const user = userEvent.setup()
+    const { transcript } = mount(stateWith({ activities: [
+      lifecycle({ status: 'completed', durationMs: 4_000, timingSource: 'provider' }),
+      activity({ id: 'quiet', kind: 'reasoning', title: 'Thinking', durationMs: 1_200 }),
+      activity({ id: 'said', kind: 'reasoning', title: 'Thinking', text: 'Check the build' }),
+      activity({ id: 'why', kind: 'reasoning', title: 'Reasoning summary', text: 'Summary' }),
+    ] }))
+    await user.click(within(transcript).getByRole('button', { name: /^Worked/ }))
+    await user.click(within(transcript).getByRole('button', { name: '1 reasoning summary, thought 2 times' }))
+    const quiet = within(transcript).getByRole('group', { name: 'Thinking, completed in 1.2s' })
+    expect(quiet.closest('.thread-activity__row')).toHaveAttribute('data-kind', 'reasoning')
+  })
+})
+
 describe('honest detail', () => {
   it('shows subagent lifecycle without identities or controls, and only the provider’s reasoning summary', async () => {
     const user = userEvent.setup()

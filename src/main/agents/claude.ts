@@ -282,12 +282,24 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.runtimes.get(id) === runtime) {
       ended = thread?.backgroundWork?.length ? [...thread.backgroundWork] : [...thread?.monitoring ?? []]
       this.runtimes.delete(id); this.clearMonitoring(id)
+      if (this.thinkingEnded(id)) this.emit()
     }
     runtime.protocol.stop()
     const closed = runtime.protocol.closed
     this.closing.set(id, closed)
     try { await closed } finally { if (this.closing.get(id) === closed) this.closing.delete(id) }
     return ended
+  }
+  /**
+   * The thread's CLI is ending, by its own exit or by a stop Sotto made. A thinking block it was writing gets nothing
+   * more, so its row stops running with it. Says whether any row changed.
+   */
+  private thinkingEnded(id: string): boolean {
+    const thread = this.threads.get(id); const projector = this.activity.get(id)
+    if (!thread || !projector) return false
+    const activities = projector.runtimeEnded(thread.activities)
+    if (activities === thread.activities) return false
+    thread.activities = activities; return true
   }
   /** Write the cursors a pending cadence still owes, rather than losing them with the session. */
   private flushCursors(): void {
@@ -924,6 +936,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.reaper.dispose()
     this.flushCursors()
     for (const [id, runtime] of this.runtimes) {
+      this.thinkingEnded(id)
       const closure = this.denyPending(id, runtime).catch(() => undefined).then(() => { runtime.protocol.stop(); return runtime.protocol.closed })
       this.trackClosure(closure)
     }
@@ -978,6 +991,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // Work still going in the background is lost with the session too, so the thread asks for attention.
         const cut = running || !!thread.monitoring?.length || !!thread.backgroundWork?.length
         this.clearMonitoring(id)
+        this.thinkingEnded(id)
         this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }
@@ -1074,7 +1088,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
       if (localReply || resultFor) for (const origin of alias.origins) if (origin.uuid === resultFor || localReply && this.startedOrigins.has(origin.uuid)) this.recordUnechoed.get(origin.uuid)?.()
     }
-    this.projectActivity(id, frame, true)
+    // A result ends its turn, and the turn's own outcome is decided before its activity settles, so a block the turn
+    // left open settles the way the turn ended. A turn the user stopped is no failure of Claude Code's, nor finished.
+    const ending = frame.type === 'result' && !frame.parent_tool_use_id ? this.resultEnding(id, frame) : undefined
+    this.projectActivity(id, frame, true, ending?.status)
     if (frame.parent_tool_use_id) { this.emit(true); return }
     this.observeCompaction(id, frame, false)
     if (frame.type === 'user' && authoredClaudeUser(frame)) {
@@ -1126,16 +1143,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.usage.claudeResult(id, frame)
       thread.usage = this.usage.get(id)
       this.messageLog.dropEmpty(id); this.streaming.delete(id)
-      // Claude Code leaves its own prompt's identity off the result of a turn it gave itself and says where that prompt
-      // came from instead, so such a result never ends a prompt of Sotto's still waiting to go out.
-      const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : this.selfTurns.get(id) ?? (object(frame.origin) ? undefined : alias.origins.at(-1)?.uuid)
+      const { origin, stopped, status } = ending!
       this.selfTurns.delete(id); this.queries.delete(id)
-      // A turn the user stopped ends in an error result, which is no failure of Claude Code's.
-      const stopped = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
       if (origin) {
-        const status = stopped ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed'
         this.completedOrigins.add(origin)
         thread.lastTurn = { id: origin, status }
         this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined)
@@ -1305,12 +1317,22 @@ export class ClaudeStreamJsonHost implements AgentHost {
     thread.activities = markTurnActivity(thread.activities, { provider: 'claude', turnId: turn, status,
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
   }
-  private projectActivity(id: string, frame: ClaudeFrame, live = false): void {
+  /** The turn a `result` ends, and how it ended. */
+  private resultEnding(id: string, frame: ClaudeFrame): { origin: string | undefined; stopped: boolean; status: 'interrupted' | 'failed' | 'completed' } {
+    const alias = this.aliases[id]!; const thread = this.threads.get(id)!
+    // Claude Code leaves its own prompt's identity off the result of a turn it gave itself and says where that prompt
+    // came from instead, so such a result never ends a prompt of Sotto's still waiting to go out.
+    const origin = typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : this.selfTurns.get(id) ?? (object(frame.origin) ? undefined : alias.origins.at(-1)?.uuid)
+    // A turn the user stopped ends in an error result, which is no failure of Claude Code's.
+    const stopped = this.interrupting.has(id) || thread.lastTurn?.status === 'interrupted' && (!origin || thread.lastTurn.id === origin)
+    return { origin, stopped, status: stopped ? 'interrupted' : frame.is_error === true ? 'failed' : 'completed' }
+  }
+  private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
     const thread = this.threads.get(id)!
     let projector = this.activity.get(id)
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const turnId = this.messageLog.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.messageLog.lastTextMessageId(id), this.aliases[id]!.cwd, live)
+    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.messageLog.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
     if (rows.length) thread.activities = rows
   }
   /** The one place a Claude message reaches the record: the transcript tail, a streamed reply, or a
