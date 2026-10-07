@@ -7,6 +7,12 @@ import type { VisualPageStore } from './visualPageStore'
  * points at, and the `<webview>` guest that shows a page.
  */
 
+/**
+ * How the `sotto-visual:` scheme is registered: standard, so a page has an origin to seal, and nothing more. Not secure,
+ * no fetch, no CORS and no service workers.
+ */
+export const VISUAL_SCHEME_PRIVILEGES = Object.freeze({ scheme: VISUAL_SCHEME, privileges: Object.freeze({ standard: true }) })
+
 /** The parts of an Electron session the seal sets. */
 export interface VisualSessionLike {
   protocol: { handle(scheme: string, handler: (request: Request) => Response | Promise<Response>): void }
@@ -20,13 +26,20 @@ export interface VisualSessionLike {
 }
 
 /**
- * Seals the session every interactive visual runs in. It serves the page and nothing else: every request but a waiting
- * page address is cancelled, every permission is denied, downloads are blocked, and everything that would leave
- * goes to a proxy that answers nothing, loopback included, so even a connection that never passes through a request
- * filter (WebRTC, a preconnect) has nowhere to go.
+ * Sends everything the session would send to a proxy that answers nothing, loopback included, so even a connection
+ * that never passes through a request filter (WebRTC, a preconnect) has nowhere to go. Called again with a new port if
+ * the proxy is ever lost.
  */
-export async function sealVisualSession(session: VisualSessionLike, pages: Pick<VisualPageStore, 'isAwaitingLoad' | 'serve'>, deadProxyPort: number): Promise<void> {
+export async function pointVisualSessionAtProxy(session: VisualSessionLike, deadProxyPort: number): Promise<void> {
   await session.setProxy({ mode: 'fixed_servers', proxyRules: `socks5://127.0.0.1:${deadProxyPort}`, proxyBypassRules: '<-loopback>' })
+}
+
+/**
+ * Seals the session every interactive visual runs in, once. It serves the page and nothing else: every request but a
+ * waiting page address is cancelled, every permission is denied and downloads are blocked. Its proxy is set apart, by
+ * `pointVisualSessionAtProxy`, and a page is shown only once both are done.
+ */
+export function sealVisualSession(session: VisualSessionLike, pages: Pick<VisualPageStore, 'isAwaitingLoad' | 'serve'>): void {
   session.protocol.handle(VISUAL_SCHEME, request => pages.serve(request.url))
   session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !(details.resourceType === 'mainFrame' && pages.isAwaitingLoad(details.url)) }))
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
@@ -36,19 +49,34 @@ export async function sealVisualSession(session: VisualSessionLike, pages: Pick<
   session.on('will-download', event => event.preventDefault())
 }
 
+/** The parts of a `net.Server` the dead proxy uses. */
+export type DeadProxyServer = Pick<Server, 'listen' | 'address' | 'close' | 'unref' | 'on' | 'off'>
+export interface DeadProxy { readonly port: number; close(): void }
+
 /**
  * The proxy a sealed session points at: a loopback port Sotto holds, so no other program can take it, that closes
- * every connection without a byte.
+ * every connection without a byte. The server keeps an error handler for its whole life: an error before it listens
+ * fails the start, and one after closes it and calls `onLost`, so the session is pointed at a new one before another
+ * page is shown.
  */
-export function startDeadProxy(): Promise<{ readonly port: number; close(): void }> {
+export function startDeadProxy(onLost: () => void, create: (onSocket: (socket: { destroy(): void }) => void) => DeadProxyServer = createServer): Promise<DeadProxy> {
   return new Promise((resolve, reject) => {
-    const server: Server = createServer(socket => socket.destroy())
-    server.once('error', reject)
+    const server = create(socket => socket.destroy())
+    let listening = false
+    let lost = false
+    server.on('error', () => {
+      if (!listening) { reject(new Error('The dead proxy could not start.')); return }
+      if (lost) return
+      lost = true
+      server.close()
+      onLost()
+    })
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
       if (!address || typeof address === 'string') { server.close(); reject(new Error('The dead proxy has no port.')); return }
+      listening = true
       server.unref()
-      resolve({ port: address.port, close: () => server.close() })
+      resolve({ port: address.port, close: () => { lost = true; server.close() } })
     })
   })
 }
@@ -77,11 +105,15 @@ export function admitVisualGuest(input: { embedderTrusted: boolean; webPreferenc
   return true
 }
 
+/** Every way a page could start a navigation or a nested guest; a visual's guest refuses each one. */
+export const GUEST_NAVIGATION_EVENTS = ['will-navigate', 'will-frame-navigate', 'will-redirect', 'will-attach-webview'] as const
+export type GuestNavigationEvent = typeof GUEST_NAVIGATION_EVENTS[number]
+
 /** The parts of a guest's webContents the seal sets. */
 export interface VisualGuestLike {
   setWebRTCIPHandlingPolicy(policy: 'disable_non_proxied_udp'): void
   setWindowOpenHandler(handler: () => { action: 'deny' }): void
-  on(event: 'will-navigate' | 'will-frame-navigate' | 'will-redirect' | 'will-attach-webview', listener: (event: { preventDefault(): void }) => void): unknown
+  on(event: GuestNavigationEvent, listener: (event: { preventDefault(): void }) => void): unknown
 }
 
 /**
@@ -93,5 +125,5 @@ export function sealVisualGuest(guest: VisualGuestLike): void {
   guest.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
   guest.setWindowOpenHandler(() => ({ action: 'deny' }))
   const refuse = (event: { preventDefault(): void }): void => event.preventDefault()
-  for (const name of ['will-navigate', 'will-frame-navigate', 'will-redirect', 'will-attach-webview'] as const) guest.on(name, refuse)
+  for (const name of GUEST_NAVIGATION_EVENTS) guest.on(name, refuse)
 }

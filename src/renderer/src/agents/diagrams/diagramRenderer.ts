@@ -2,10 +2,9 @@
 // startup bundle. Renders run one at a time because Mermaid keeps global configuration.
 
 import mermaid, { type MermaidConfig } from 'mermaid'
-import figtreeLatin from '../../assets/fonts/figtree-latin.woff2?inline'
-import figtreeLatinExt from '../../assets/fonts/figtree-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
-import { FIGTREE_FONT_STACK, figtreeFontFaces } from '../../../../shared/figtreeFaces'
+import { FIGTREE_FONT_STACK } from '../../../../shared/figtreeFaces'
+import { FIGTREE_FONT_FACES } from '../../../../shared/figtreeFonts'
 import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
 import { keepRecent, readRecent } from '../../../../shared/recentMap'
 import { assertDiagramSafe } from './diagramSafety'
@@ -26,7 +25,7 @@ export type DiagramRenderResult =
 
 const FONT_FAMILY = FIGTREE_FONT_STACK
 // The image document cannot see the window's fonts, so the label face travels with every drawing.
-const LABEL_FONT_CSS = figtreeFontFaces(figtreeLatin, figtreeLatinExt)
+const LABEL_FONT_CSS = FIGTREE_FONT_FACES
 
 /**
  * Corrections to Mermaid's own theme CSS: solid label backings and no fixed light fills in a dark room. Then how a

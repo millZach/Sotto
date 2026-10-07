@@ -4,11 +4,13 @@
  * and the headers it serves it with, the session every page runs in, and the guest that shows one. The session and the
  * guest are recorded fakes here; the running app proves them in tests/e2e/visual-sandbox.spec.ts.
  */
+import { EventEmitter } from 'node:events'
 import { connect } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
 import { VISUAL_PAGE_CSP, VISUAL_PAGE_HEADERS, visualPageDocument } from '../../../src/main/agents/visualPagePolicy'
 import { localVisualThreadId, VISUAL_PAGE_TOKEN_TTL_MS, VISUAL_PAGE_TOKENS_MAX, VisualPageStore } from '../../../src/main/agents/visualPageStore'
-import { admitVisualGuest, sealVisualGuest, sealVisualSession, startDeadProxy, type VisualGuestLike, type VisualSessionLike } from '../../../src/main/agents/visualSeal'
+import { admitVisualGuest, pointVisualSessionAtProxy, sealVisualGuest, sealVisualSession, startDeadProxy, type DeadProxyServer, type VisualGuestLike, type VisualSessionLike } from '../../../src/main/agents/visualSeal'
+import { FIGTREE_FONT_FACES } from '../../../src/shared/figtreeFonts'
 import type { AgentVisual } from '../../../src/shared/visuals'
 import type { VisualTheme } from '../../../src/shared/visualGuest'
 
@@ -116,6 +118,15 @@ describe('the page Sotto serves', () => {
     expect(VISUAL_PAGE_HEADERS['Content-Security-Policy']).toBe(VISUAL_PAGE_CSP)
   })
 
+  it('carries Figtree itself, as data URLs, so the page shows Sotto\'s face without fetching it', async () => {
+    const { pages: target } = pages({ fontCss: FIGTREE_FONT_FACES })
+    const page = await target.serve(opened(target)).text()
+    const faces = page.match(/@font-face\{font-family:"Figtree"[^}]*\}/gu) ?? []
+    expect(faces).toHaveLength(2)
+    for (const face of faces) expect(face).toMatch(/src:url\(data:font\/woff2;base64,[A-Za-z0-9+/]{1000,}=*\) format\("woff2"\)/u)
+    expect(page).toContain('--sotto-font:"Figtree", ui-sans-serif')
+  })
+
   it('puts Sotto\'s charset, colour scheme, fonts and theme before the agent\'s page', () => {
     const document = visualPageDocument('<!doctype html><html><body>Mine</body></html>', { ...theme, mode: 'light' }, '@font-face{}')
     expect(document.startsWith('<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light">')).toBe(true)
@@ -158,15 +169,16 @@ describe('the sealed session', () => {
 
   it('sends everything to a proxy that answers nothing, with no bypass, loopback included', async () => {
     const fake = fakeSession()
-    await sealVisualSession(fake.session, pages().pages, 40_123)
+    await pointVisualSessionAtProxy(fake.session, 40_123)
     expect(fake.session.setProxy).toHaveBeenCalledWith({ mode: 'fixed_servers', proxyRules: 'socks5://127.0.0.1:40123', proxyBypassRules: '<-loopback>' })
+    sealVisualSession(fake.session, pages().pages)
     expect(fake.session.setSpellCheckerEnabled).toHaveBeenCalledWith(false)
   })
 
   it('cancels every request but a waiting page address loaded as the page itself', async () => {
     const fake = fakeSession()
     const { pages: target } = pages()
-    await sealVisualSession(fake.session, target, 40_123)
+    sealVisualSession(fake.session, target)
     const url = opened(target)
     expect(fake.cancelled(url, 'mainFrame')).toBe(false)
     for (const [other, type] of [[url, 'image'], [url, 'xhr'], [url, 'subFrame'], ['http://127.0.0.1:8080/', 'mainFrame'], ['http://127.0.0.1:8080/data.json', 'xhr'],
@@ -179,7 +191,7 @@ describe('the sealed session', () => {
 
   it('denies every permission, every check and every device, and blocks downloads', async () => {
     const fake = fakeSession()
-    await sealVisualSession(fake.session, pages().pages, 40_123)
+    sealVisualSession(fake.session, pages().pages)
     for (const name of ['media', 'geolocation', 'notifications', 'clipboard-read', 'fullscreen', 'pointerLock', 'hid', 'serial', 'usb']) {
       const callback = vi.fn()
       fake.permission()({}, name, callback)
@@ -193,7 +205,7 @@ describe('the sealed session', () => {
   })
 
   it('holds the dead proxy\'s port and closes every connection without a byte', async () => {
-    const proxy = await startDeadProxy()
+    const proxy = await startDeadProxy(() => undefined)
     try {
       const received = await new Promise<number>(done => {
         let bytes = 0
@@ -206,6 +218,29 @@ describe('the sealed session', () => {
       })
       expect(received).toBe(0)
     } finally { proxy.close() }
+  })
+
+  it('keeps handling the proxy server\'s errors for its life: a later one closes it and says the proxy was lost', async () => {
+    const server = Object.assign(new EventEmitter(), {
+      listen: vi.fn((_port: number, _host: string, ready: () => void) => { ready(); return server }),
+      address: () => ({ address: '127.0.0.1', family: 'IPv4', port: 40_555 }),
+      close: vi.fn(() => server), unref: vi.fn(() => server),
+    })
+    const lost = vi.fn()
+    const proxy = await startDeadProxy(lost, () => server as unknown as DeadProxyServer)
+    expect(proxy.port).toBe(40_555)
+    // An unhandled 'error' on an emitter throws; this one is handled, once, however many come.
+    expect(() => { server.emit('error', new Error('gone')); server.emit('error', new Error('gone again')) }).not.toThrow()
+    expect(lost).toHaveBeenCalledOnce()
+    expect(server.close).toHaveBeenCalledOnce()
+  })
+
+  it('fails to start when the server errors before it listens', async () => {
+    const server = Object.assign(new EventEmitter(), {
+      listen: vi.fn(() => { queueMicrotask(() => server.emit('error', new Error('in use'))); return server }),
+      address: () => null, close: vi.fn(() => server), unref: vi.fn(() => server),
+    })
+    await expect(startDeadProxy(() => undefined, () => server as unknown as DeadProxyServer)).rejects.toThrow('The dead proxy could not start.')
   })
 })
 

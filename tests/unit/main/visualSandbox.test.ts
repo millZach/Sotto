@@ -48,6 +48,7 @@ function contents(type: string, session: unknown) {
 function sandbox(overrides: { read?: (threadId: string, visualId: string) => AgentVisual | undefined; startProxy?: VisualSandboxAdapters['startProxy'] } = {}) {
   const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
   const created = new Set<(event: unknown, contents: VisualContentsLike) => void>()
+  const lostHandlers: (() => void)[] = []
   const visualSession = fakeSession()
   const proxy = { port: 41_234, close: vi.fn() }
   const main = renderer()
@@ -56,9 +57,9 @@ function sandbox(overrides: { read?: (threadId: string, visualId: string) => Age
   const read = vi.fn(overrides.read ?? ((threadId: string, visualId: string) => threadId === 'thread-1' && visualId === 'v1' ? page : undefined))
   const adapters: VisualSandboxAdapters = {
     ipc: { handle: (channel, listener) => { handlers.set(channel, listener) }, removeHandler: channel => { handlers.delete(channel) } },
-    contentsCreated: { on: listener => { created.add(listener) }, off: listener => { created.delete(listener) } },
+    contentsCreated: listener => { created.add(listener); return () => { created.delete(listener) } },
     session: vi.fn(() => visualSession),
-    startProxy: vi.fn(overrides.startProxy ?? (async () => proxy)),
+    startProxy: vi.fn(overrides.startProxy ?? (async (onLost: () => void) => { lostHandlers.push(onLost); return proxy })),
   }
   let mainContents: unknown = main
   const dispose = installVisualSandbox(adapters, { read, localHostId: () => HERE, mainWebContents: () => mainContents, senders: () => senders,
@@ -66,7 +67,7 @@ function sandbox(overrides: { read?: (threadId: string, visualId: string) => Age
   const ask = (from: ReturnType<typeof renderer>, threadId = 'thread-1'): Promise<VisualPageResult> =>
     Promise.resolve(handlers.get(VISUAL_PAGE_OPEN)!({ sender: from, senderFrame: from.mainFrame }, { threadId, visualId: 'v1', theme })) as Promise<VisualPageResult>
   const make = (type: string, session: unknown) => { const made = contents(type, session); for (const listener of created) listener({}, made.fake); return made }
-  return { adapters, dispose, ask, make, main, widget, visualSession, proxy, read, handlers, created, setMain: (value: unknown) => { mainContents = value } }
+  return { adapters, dispose, ask, make, main, widget, visualSession, proxy, read, handlers, created, lostHandlers, setMain: (value: unknown) => { mainContents = value } }
 }
 
 describe('the window\'s request for a page', () => {
@@ -143,6 +144,24 @@ describe('a guest', () => {
     expect(guest.fake.setWebRTCIPHandlingPolicy).toHaveBeenCalledWith('disable_non_proxied_udp')
     const window = box.make('window', {})
     expect(window.fake.close).not.toHaveBeenCalled()
+  })
+
+  it('shows nothing while a lost proxy is replaced, points the session at the new one, and seals the session only once', async () => {
+    const box = sandbox()
+    const mainWindow = box.make('window', {})
+    box.setMain(mainWindow.fake)
+    const before = await waitingAddress(box)
+    let release: (() => void) | undefined
+    vi.mocked(box.adapters.startProxy).mockImplementationOnce(async onLost => { box.lostHandlers.push(onLost); await new Promise<void>(done => { release = done }); return { port: 41_999, close: vi.fn() } })
+    box.lostHandlers[0]!()
+    // The old port is free for another program: no guest attaches, and no guest is sealed, until the new proxy holds.
+    expect(mainWindow.attach(before)).toBe(false)
+    expect(box.make('webview', box.visualSession).fake.close).toHaveBeenCalledOnce()
+    release!()
+    const after = await waitingAddress(box)
+    expect(box.visualSession.setProxy).toHaveBeenLastCalledWith({ mode: 'fixed_servers', proxyRules: 'socks5://127.0.0.1:41999', proxyBypassRules: '<-loopback>' })
+    expect(box.visualSession.protocol.handle).toHaveBeenCalledOnce()
+    expect(mainWindow.attach(after)).toBe(true)
   })
 
   it('stops answering, and closes the proxy, when disposed', async () => {

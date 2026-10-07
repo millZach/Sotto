@@ -1,7 +1,9 @@
+import { FIGTREE_FONT_STACK } from './figtreeFaces'
+
 /**
  * What passes between Sotto and the sealed page of an interactive visual (ADR-0060). Sotto's guest preload imports this
- * file and nothing else, so it has no imports of its own: a sandboxed preload is one file, and a module it shared with
- * the window's preload would be split into a chunk it cannot load.
+ * file, which imports only `figtreeFaces.ts`, which imports nothing: a sandboxed preload is one file, and a module it
+ * shared with the window's preload would be split into a chunk it cannot load. The window's preload imports neither.
  */
 
 /** Sotto's window to its guest preload, through the `<webview>` element. */
@@ -23,7 +25,7 @@ export const VISUAL_THEME_TOKENS = [
 export type VisualThemeToken = typeof VISUAL_THEME_TOKENS[number]
 /** The font a page is given, as a CSS variable. Figtree travels with the page, so nothing is fetched to show it. */
 export const VISUAL_FONT_TOKEN = '--sotto-font'
-export const VISUAL_FONT_STACK = '"Figtree", ui-sans-serif, system-ui, sans-serif'
+export const VISUAL_FONT_STACK = FIGTREE_FONT_STACK
 
 export interface VisualTheme {
   readonly tokens: Readonly<Record<VisualThemeToken, string>>

@@ -1,7 +1,6 @@
 /**
- * Figtree as `@font-face` rules for a document that cannot see the window's fonts: a drawn diagram's image and an
- * interactive visual's sealed page. Each caller inlines the two font files as data URLs its own way (Vite's `?inline`
- * in both builds) and hands them here, so the faces and their ranges are written once.
+ * Figtree's font stack and its `@font-face` rules, written once. This file imports nothing, so Sotto's guest preload
+ * can take the stack from it; `figtreeFonts.ts` builds the faces with the font files inlined.
  */
 
 export const FIGTREE_FONT_STACK = '"Figtree", ui-sans-serif, system-ui, sans-serif'
