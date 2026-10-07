@@ -1,4 +1,4 @@
-/* A visual an agent drew in its thread (ADR-0055): a card in the transcript with its own header, the drawing and the
+/* A visual an agent drew in its thread (ADR-0056): a card in the transcript with its own header, the drawing and the
    explanation under it. It borrows the code block's buttons and source view (.rich-code__copy, .rich-code__scroll),
    so it sets the --rich-* properties they read; every colour is a theme token. */
 
