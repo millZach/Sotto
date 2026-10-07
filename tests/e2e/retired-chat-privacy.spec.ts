@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
-const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Save Settings or restart Sotto to try again.'
+const notice = 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.'
 const answerNotice = 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.'
 const crashCopy = 'chats.json.tmp-123-12345678-1234-1234-1234-123456789abc'
 

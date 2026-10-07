@@ -349,7 +349,7 @@ describe('Sotto application onboarding integration', () => {
       listRecoveryNotices: vi.fn(async () => [{ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' as const }]),
     })
     renderApp(bridge)
-    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Save Settings or restart Sotto to try again.')).toBeVisible()
+    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.')).toBeVisible()
   })
 
   it('describes shared answer-storage failures without claiming the user has retired Chats', async () => {

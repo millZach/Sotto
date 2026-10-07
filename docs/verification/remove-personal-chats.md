@@ -143,7 +143,10 @@ cover 57 runtime cases and 63 notice/schema/renderer cases. All five privacy
 Electron journeys pass on the final build, including an unreadable answer store
 with no retired Chats file; only the answer notice appears. Typecheck, lint,
 notices and build pass again. Standards and Spec reviews find no remaining
-actionable issues, and the final three-line notice screenshot is inspected.
+actionable issues, and the notice screenshot is inspected. Both cleanup notices
+explicitly tell the user to repair local storage before retrying; chat cleanup
+can then retry through Settings or restart, while an unreadable answer store
+requires restart.
 
 The answer-store recovery journey also repairs a malformed file, confirms that
 a Settings save commits without reopening the read-only store, and restarts
