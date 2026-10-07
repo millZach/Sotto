@@ -343,6 +343,25 @@ describe('shared main-window frame', () => {
 })
 
 describe('Sotto application onboarding integration', () => {
+  it('explains that retired chat data remains when privacy cleanup fails', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.')).toBeVisible()
+  })
+
+  it('describes shared answer-storage failures without claiming the user has retired Chats', async () => {
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: vi.fn(async () => [{ code: 'ANSWER_HISTORY_NOT_CLEARED' as const }]),
+    })
+    renderApp(bridge)
+    expect(await screen.findByText('Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.')).toBeVisible()
+    expect(screen.queryByText(/Saved chat history could not be fully cleared/)).not.toBeInTheDocument()
+  })
+
   it('shows deduplicated non-blocking recovery notices without paths or transcript content', async () => {
     let recoveryListener: ((notice: { code: 'SETTINGS_RECOVERED' | 'HISTORY_RECOVERED' }) => void) | undefined
     const bridge = createBridge({
@@ -841,10 +860,11 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByRole('tab', { name: 'Threads' })).toBeVisible()
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     // The sidebar's foot carries the other pages as icon links; Threads is the switch's own tab.
-    for (const destination of ['Chats', 'History', 'Settings', 'Help']) {
+    for (const destination of ['History', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name: destination })).toBeVisible()
     }
-    await user.click(screen.getByRole('link', { name: 'Chats' }))
+    expect(screen.queryByRole('link', { name: 'Chats' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Threads' }))
     expect(screen.queryByRole('heading', { name: /check your microphone/i })).not.toBeInTheDocument()
   })
 
@@ -1099,6 +1119,24 @@ describe('transcription pipeline prewarm', () => {
     )
     return prewarm
   }
+
+  it('has each new controller announce it holds no session, so a reload clears the widget', async () => {
+    const announceIdle = vi.fn()
+    const factory: AppControllerFactory = () => ({
+      getState: () => ({ status: 'idle' }),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      toggle: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+      announceIdle,
+    })
+    const bridge = createBridge({
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+    })
+    render(<AppProvider bridge={bridge} createController={factory}><App /></AppProvider>)
+    await waitFor(() => expect(announceIdle).toHaveBeenCalledTimes(1))
+  })
 
   it('prewarms the pipeline once the controller becomes ready', async () => {
     const bridge = createBridge({

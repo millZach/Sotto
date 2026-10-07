@@ -189,7 +189,6 @@ renderer tests for memoization and identical final markup run in CI.
 | Budget | Test | What it measures |
 | --- | --- | --- |
 | 100 ms | `tests/unit/renderer/threadQueueSkills.test.tsx` — *queues with Enter while a turn runs…* | Enter to the queue row being on screen. |
-| 100 ms | `tests/integration/personalChats.test.ts` — *durably acknowledges send before native completion…* | `send()` returning while the provider is held for 350 ms. |
 | 100 ms | `tests/unit/main/threadDrafts.test.ts` — *publishes local queued feedback before provider latency…* | The first published `queued` delivery after a send. |
 | 250 ms | `tests/integration/codexStreamingResponsiveness.test.ts`, `tests/integration/nativeStreamingResponsiveness.test.ts` | The longest main-process heartbeat gap while three threads stream 600 output updates, tested for Codex, Claude and Grok. Snapshot coalescing and lossless output are checked regardless of the budget switch. |
 | Less than half of structuredClone | `tests/unit/main/cloneHostSnapshot.test.ts` | Median internal snapshot copy with 24 MiB of retained output; container isolation and the incremental-storage work bound are always checked. |
@@ -200,14 +199,14 @@ Run them by hand on an idle machine:
 
 ```powershell
 $env:SOTTO_PERF_ASSERT = '1'
-npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 $env:SOTTO_PERF_BENCH = '1'
 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
 
 ```sh
-SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/integration/personalChats.test.ts tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
+SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
@@ -381,7 +380,7 @@ This command complements the full suite. Its fake provider boundary proves Sotto
 
 ## Fake Claude event timestamps
 
-`tests/integration/claudeFixtureTimestamp.test.ts` runs the scripted Claude child and compares live messages with its saved transcript. Completion, persisted raw frames, bursts and user echoes must carry the same event timestamp on both paths; explicit timestamps remain unchanged. The regression fails deterministically on the earlier fixture because its live replies omit timestamps. `personalChatProviders.test.ts` retains full history equality across restart; the fixture supplies consistent events rather than relaxing that assertion.
+`tests/integration/claudeFixtureTimestamp.test.ts` runs the scripted Claude child and compares live messages with its saved transcript. Completion, persisted raw frames, bursts and user echoes must carry the same event timestamp on both paths; explicit timestamps remain unchanged. The regression fails deterministically on the earlier fixture because its live replies omit timestamps. The former `personalChatProviders.test.ts` also checked full history equality across restart; it was retired with standalone Chats. The fixture supplies consistent events rather than relaxing the timestamp assertion.
 ## Workflow assignment detail readiness
 
 The workflow journey in `tests/unit/renderer/subagents.test.tsx` holds the first assignment response until it has checked the pending view. The summary and fallback both show the workflow description during that interval; only the full task response removes the fallback. The test scopes pending assertions to each location, releases the response explicitly, and checks the loaded detail before requiring a unique description. It also retains the existing Escape and return-focus journey. Back-button focus is not proof that asynchronous assignment detail has loaded (#402).

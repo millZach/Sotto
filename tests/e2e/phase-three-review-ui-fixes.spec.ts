@@ -101,6 +101,8 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
     const placed = panes.locator('section.thread-pane[role="region"]:not([data-hidden])')
     await expect(placed).toHaveCount(4)
     await pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true }).fill('Footer draft through compact.')
+    // Verify the saved revision before changing arrangement, so a persistence failure is separate from layout.
+    await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, key('footer-links'))).toBe('Footer draft through compact.')
     await pane('visual-gate').click({ position: { x: 200, y: 200 } })
     const rows = page.getByRole('separator', { name: 'Resize rows 1 and 2' })
     await rows.focus()
@@ -203,7 +205,7 @@ async function expectSendReachable(page: Page, form: Locator): Promise<void> {
   })).toBe(true)
 }
 
-test('threaded and personal structured forms show the native explanation and tool context once, in light and dark at 820', async () => {
+test('threaded structured forms show the native explanation and tool context once, in light and dark at 820', async () => {
   test.setTimeout(180_000)
   await mkdir(SHOTS, { recursive: true })
   const threaded = await launchSotto()
@@ -238,32 +240,5 @@ test('threaded and personal structured forms show the native explanation and too
     await shoot(page, 'form-threaded-claude-820', () => questions.evaluate(element => element.scrollIntoView({ block: 'start' })))
   } finally { await closeSotto(threaded) }
 
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-review-ui-fixes-personal-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: true, appearance: 'dark' }))
-  const personal = await launchSotto('success', profile)
-  try {
-    const { page } = personal
-    const id = await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-      const bridge = window.sotto!.personalChats!
-      await bridge.connect()
-      const id = (await bridge.create()).selectedChatId!
-      await bridge.saveDraft({ chatId: id, revision: 1, text: 'Draft the v0.9 release notes', skills: [] })
-      await bridge.send({ chatId: id, revision: 1 })
-      return id
-    })
-    await expect.poll(() => page.evaluate(async id => (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)?.submissions[0]?.status, id)).toBe('accepted')
-    await page.getByRole('link', { name: 'Chats', exact: true }).click()
-    await page.evaluate(async ([id, request]) => window.sottoE2E!.agentEvent!({ scope: 'personal', type: 'question', threadId: id, text: '', request }), [id, codexForm(nativeMessage)] as const)
-    await size(personal, 820, 560)
-    const form = page.locator('.agent-request[data-kind="question"]')
-    await expectExplained(form)
-    await shoot(page, 'form-personal-codex-820', () => form.evaluate(element => element.scrollIntoView({ block: 'start' })))
-    await expectSendReachable(page, form)
-    await form.getByRole('button', { name: 'Send answers' }).click()
-    await expect(form).toHaveCount(0)
-    const chat = await page.evaluate(async id => (await window.sotto!.personalChats!.get()).chats.find(chat => chat.id === id)!, id)
-    expect(chat.decisions?.at(-1)?.status).toBe('accepted')
-    expect(chat.messages.filter(message => message.role === 'user')).toHaveLength(1)
-  } finally { await closeSotto(personal) }
+
 })

@@ -39,7 +39,9 @@ If Codex asks for an approval Sotto cannot show, Sotto refuses it and tells you.
 
 Thread drafts save automatically while you type, including while other threads are working.
 
-Claude Code keeps background work running when remembered preferences change. Messages continue with the chat's previous context while that work runs. The first send after it ends refreshes the context. Deleting a memory the client is using forces a restart on the next send and stops that background work. After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work.
+Standalone Chats, including Talk and Generate prompt, has been removed. With **Keep local history** on, existing `personal-chat/` files and personal records in `request-drafts.json` are preserved without reopening conversations, reconnecting providers or showing old drafts. Turning history off clears Sotto's retained personal transcripts and submitted answers; startup applies the same cleanup when history is already off. Provider-owned history is untouched; nothing is migrated into Threads.
+
+After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work.
 
 If a Claude Code answer is unconfirmed, **Check again** checks the request without sending anything. A delayed write keeps your original choice; another answer is allowed only after the write fails outright or the client is gone.
 Pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as it is ready. No audio is kept or transcribed.
@@ -82,7 +84,7 @@ If a key saved by an older version of Sotto cannot be moved into the credential 
 
 Your data leaves your computer only when a feature you use needs it, and only to that feature's service:
 
-- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. OpenRouter charges about $0.10 per hour of audio.
+- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. When transcription fails, the recording stays in memory until you try again or discard it. OpenRouter charges about $0.10 per hour of audio.
 - **Optional AI cleanup** sends the finished text to OpenRouter too. It is off until you turn it on.
 - **Your threads** go to the agent's own provider, under that provider's account and data policy. A Sotto host on another machine starts every client signed in there when the host starts, and each talks to its own provider under the account signed in on that machine.
 - **Screenshots** you attach to a thread, or add from Sotto's browser as feedback, are scaled down, in the same format, to 2576 pixels on their longer side before they go anywhere, because that is the most any model Sotto sends them to reads: Claude 4.7 and later read up to 2576 and Codex up to 2048. The pixels past it would cost transfer and storage and change nothing the model reads. Smaller images, animated ones, GIFs, and any the smaller copy would not make smaller in bytes, go as you attached them; nothing is scaled up. **Photos** from the iPhone app are scaled to the same bound on the phone and drawn again without their location or camera details before they go, to the computer that runs the thread only.
