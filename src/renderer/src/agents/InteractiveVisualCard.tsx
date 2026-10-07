@@ -27,6 +27,14 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
   const card = useRef<HTMLElement>(null)
   const step = readAllStep(visual)
   const otherwise = pageOtherwise(visual)
+  // Escape from the page is a key, so focus lands on the card with its ring showing, until focus moves on.
+  const returnFocus = (): void => {
+    const element = card.current
+    if (!element) return
+    element.dataset.focusReturned = ''
+    element.addEventListener('blur', () => { delete element.dataset.focusReturned }, { once: true })
+    element.focus()
+  }
 
   return <section ref={card} className="visual-card" aria-label={`Visual: ${visual.title}`} data-state="drawn" data-kind="interactive" tabIndex={-1}>
     <header className="visual-card__bar">
@@ -45,7 +53,7 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
       </div>
       // The page stops while Expand shows it, so one visual never runs twice.
       : frame.expanded ? <div className="interactive-visual" data-state="expanded" aria-hidden="true" />
-        : <InteractiveVisualPage threadId={threadId} visualId={visual.id} title={visual.title} step={step} otherwise={otherwise} onEscape={() => card.current?.focus()} />}
+        : <InteractiveVisualPage threadId={threadId} visualId={visual.id} title={visual.title} step={step} otherwise={otherwise} onEscape={returnFocus} />}
     <VisualReadAll intro={visual.intro} steps={visual.steps} />
     {frame.expanded && <InteractiveVisualViewer visual={visual} threadId={threadId} step={step} otherwise={otherwise} frame={frame} />}
   </section>
