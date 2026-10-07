@@ -94,8 +94,16 @@ export interface GitStatusReaderOptions {
 
 /** What the workspace asks of a status source; the reader is the production one and tests hand in a stub. */
 export interface GitStatusSource {
-  read(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus>
-  /** A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches. */
+  /**
+   * The folder's status. Callers asking for the same folder at once share one read, unless `fresh` asks for a read
+   * of its own: a decision about to change the folder (an automatic pull, a Git action's next step) must see it as
+   * it is now, not as a read begun before a switch or a commit found it.
+   */
+  read(cwd: string, options: { readonly remote: boolean; readonly fresh?: boolean }): Promise<GitStatus>
+  /**
+   * A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches, and
+   * no read begun before now is shared with a caller after it.
+   */
   invalidate(): void
   /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
   listRefs?(cwd: string, request: Omit<GitRefsRequest, 'threadId'>): Promise<GitRefsPage>
@@ -246,9 +254,13 @@ export class GitStatusReader implements GitStatusSource {
     return { isRepository: true, files, truncated }
   }
 
-  /** One read per folder at a time: two threads sharing a checkout share the answer. */
-  read(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus> {
-    const key = `${cwd}\0${options.remote}`
+  /**
+   * One read per folder at a time: two threads sharing a checkout share the answer. A read begun before the last
+   * `invalidate` is not shared after it, and a fresh read is never shared.
+   */
+  read(cwd: string, options: { readonly remote: boolean; readonly fresh?: boolean }): Promise<GitStatus> {
+    if (options.fresh) return this.readNow(cwd, options)
+    const key = `${this.epoch}\0${cwd}\0${options.remote}`
     const pending = this.reads.get(key)
     if (pending) return pending
     const task = this.readNow(cwd, options).finally(() => { if (this.reads.get(key) === task) this.reads.delete(key) })

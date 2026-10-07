@@ -787,11 +787,12 @@ export class WorkspaceHost implements AgentHost {
       const release = await this.acquireCheckoutMutation(threadId, { kind: 'automatic-pull' })
       try {
         if (this.mutationGuard && !await this.mutationGuard(threadId)) return null
-        // Still the thread's folder before the read and once it is back, and still only behind.
-        if (!this.stillThreadFolder(threadId, folder) || !this.mayAutoPull(await this.gitStatus.read(folder, { remote: false })) || !this.stillThreadFolder(threadId, folder)) return null
+        // Still the thread's folder before the read and once it is back, and still only behind. The read is one of
+        // its own: a read another thread began before a switch or a commit would answer for the folder as it was.
+        if (!this.stillThreadFolder(threadId, folder) || !this.mayAutoPull(await this.gitStatus.read(folder, { remote: false, fresh: true })) || !this.stillThreadFolder(threadId, folder)) return null
         const result = await this.gitActions.pull(folder, { automatic: true })
         if (result.status !== 'pulled') return null
-        return await this.gitStatus.read(folder, { remote: false })
+        return await this.gitStatus.read(folder, { remote: false, fresh: true })
       } finally { release() }
     } catch { return null }
   }

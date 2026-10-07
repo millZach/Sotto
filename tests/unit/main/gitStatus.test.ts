@@ -145,6 +145,43 @@ describe('Git status the way T3 reads it', () => {
     const [a, b] = await Promise.all([f.reader.read(f.repo, { remote: false }), f.reader.read(f.repo, { remote: false })])
     expect(a).toBe(b)
   })
+  it('reads afresh for a caller that asks, and after a Git action, rather than sharing a read begun before the folder changed', async () => {
+    const f = await fixture({ remote: false })
+    // The next read is held once Git has told it the folder's state, as a slow read would be.
+    let hold: { reached: () => void; go: Promise<void> } | undefined
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const output = await runGitStatusCommand(cwd, command, args, options)
+      const held = hold
+      if (held && args[0] === 'status') { hold = undefined; held.reached(); await held.go }
+      return output
+    }
+    const reader = new GitStatusReader({ run, fetchIntervalMs: () => 0 })
+    const holdNext = () => {
+      let reached!: () => void, go!: () => void
+      const state = { reached: new Promise<void>(done => { reached = done }), go: new Promise<void>(done => { go = done }) }
+      hold = { reached, go: state.go }
+      return { reached: state.reached, go }
+    }
+    // A read begins on main, and the folder moves to a branch of its own before it answers.
+    let held = holdNext()
+    const before = reader.read(f.repo, { remote: false })
+    await held.reached
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    const fresh = reader.read(f.repo, { remote: false, fresh: true })
+    held.go()
+    expect(await fresh).toMatchObject({ branch: 'feature' })
+    expect(await before).toMatchObject({ branch: 'main' })
+    // After a Git action, a read begun before it is not shared either.
+    held = holdNext()
+    const older = reader.read(f.repo, { remote: false })
+    await held.reached
+    git(f.repo, 'switch', '-q', 'main')
+    reader.invalidate()
+    const after = reader.read(f.repo, { remote: false })
+    held.go()
+    expect(await after).toMatchObject({ branch: 'main' })
+    expect(await older).toMatchObject({ branch: 'feature' })
+  })
 })
 
 describe('branches the way T3 lists them', () => {

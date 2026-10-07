@@ -715,6 +715,56 @@ describe('durable project/thread organization', () => {
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('topic')
   })
 
+  it('decides an automatic pull from a read of its own, not one another thread began before a switch', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 600_000 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    let branch = 'main'
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
+    const status = (): GitStatus => ({ isRepository: true, branch, upstream: `origin/${branch}`, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 2, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
+    // Like the status reader, a caller asking for the folder while a read of it is under way shares that read, unless
+    // it asks for a fresh one. Each read answers for the folder as it was when it began.
+    const underWay = new Map<boolean, Promise<GitStatus>>()
+    const earlierRead = deferred(), joined = deferred()
+    let holdLocal = false
+    const read = vi.fn((_cwd: string, options: { remote: boolean; fresh?: boolean }): Promise<GitStatus> => {
+      const shared = options.fresh ? undefined : underWay.get(options.remote)
+      if (shared) { joined.release(); return shared }
+      const answer = status(), hold = holdLocal && !options.remote
+      if (hold) holdLocal = false
+      const task = (async () => { if (hold) await earlierRead.promise; return answer })()
+      if (!options.fresh) { underWay.set(options.remote, task); void task.finally(() => { if (underWay.get(options.remote) === task) underWay.delete(options.remote) }) }
+      return task
+    })
+    f.host.setGitStatus({ read, invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
+    const switching = deferred(), remoteRead = deferred()
+    const pull = vi.fn(async () => ({ status: 'pulled' as const, branch, upstream: `origin/${branch}` }))
+    f.host.setGitActions({ pull, switchBranch: vi.fn(async (_cwd: string, ref: string) => { await switching.promise; branch = ref; return { branch: ref } }) } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    // Another thread in the same folder began a local read while the folder was a clean main, and it is still running.
+    holdLocal = true
+    const earlier = read(project.path, { remote: false })
+    // The user switches to a branch of their own while a refresh's remote read finds main behind its upstream.
+    const switched = f.host.switchThreadBranch('local', 'topic', true)
+    read.mockImplementationOnce(async () => { const answer = status(); remoteRead.release(); return answer })
+    await f.host.updateThreadWorktree('local', false)
+    await remoteRead.promise
+    switching.release()
+    // The pull waits for the switch, then checks the folder again: on the old read it would still look like a clean main.
+    await Promise.race([joined.promise, switched])
+    earlierRead.release()
+    await Promise.all([switched, earlier])
+    expect(pull).not.toHaveBeenCalled()
+    expect(read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true })
+  })
+
   it('lets a branch switch made in Sotto move the sent branch even when a background status read lands during its inspection', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
