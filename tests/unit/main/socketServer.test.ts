@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash, randomUUID } from 'node:crypto'
 import { Duplex } from 'node:stream'
 import { request as httpRequest, type Server } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -232,4 +233,168 @@ it('opens nothing for a phone while phones are not admitted, closes one already 
   expect(pair.status).toBe(403)
   expect(await upgradeStatus(listener.descriptor.port, pairing.signSession(paired.clientId))).toBe(403)
   expect((await fetch(`${url}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${desktop.token}` } })).status).toBe(200)
+})
+
+it('pushes late exact acceptance once only to an authenticated client that watched and opted in', async () => {
+  const { pairing, paired } = await pairedClient('New desktop')
+  const another = await pairing.redeem(pairing.issuePairingCode().code, 'Other desktop')
+  const { service } = recordingService()
+  let publish: () => void = () => undefined
+  const completed: { requestId: string; questionsDigest: string; decisionId: string }[] = []
+  Object.assign(service, {
+    subscribe: (listener: (state: ReturnType<typeof service.shell>) => void) => { publish = () => listener(service.shell()); return () => undefined },
+    requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed }),
+  })
+  listener = await startSocketServer({ service, pairing })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const older = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const other = await connected(listener.descriptor.port, pairing.signSession(another.clientId))
+  await desktop.call('hello-new', { op: 'hello', accepts: ['answer-receipts'] })
+  await older.call('hello-old', { op: 'hello' })
+  await other.call('hello-other', { op: 'hello', accepts: ['answer-receipts'] })
+  const target = { threadId: 'thread', providerId: 'claude', requestId: 'question', questionsDigest: 'a'.repeat(64) }
+  for (const peer of [desktop, older, other]) expect(await peer.call('read-receipt', { op: 'receipt', commandId: 'decision', answer: target })).toMatchObject({ result: { status: 'unknown' } })
+  publish()
+  // Read a shell as a transport barrier; unrelated publications send no acceptance.
+  await desktop.call('barrier-before', { op: 'shell' })
+  expect(desktop.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
+  completed.push({ requestId: target.requestId, questionsDigest: target.questionsDigest,
+    decisionId: 'socket-answer:' + createHash('sha256').update(JSON.stringify([paired.clientId, 'decision'])).digest('hex') })
+  publish(); publish()
+  await desktop.call('barrier-after', { op: 'shell' })
+  expect(desktop.messages.filter(message => message.event === 'answer-receipt')).toEqual([{ v: 1, event: 'answer-receipt', acceptedAnswer: { ...target, decisionId: 'decision' } }])
+  expect(older.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
+  expect(other.messages.filter(message => message.event === 'answer-receipt')).toEqual([])
+})
+
+it('runs an explicit answer Check only with current authority and returns the freshly read shell', async () => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service } = recordingService()
+  let allowed = false
+  const check = vi.fn(async () => undefined)
+  Object.assign(service, { checkRequestAnswer: check })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => allowed })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect(hello).toMatchObject({ result: { features: expect.arrayContaining(['answer-check']) } })
+  const answer = { threadId: 'thread', providerId: 'grok', requestId: 'question', questionsDigest: 'a'.repeat(64) }
+  expect(await desktop.call('denied', { op: 'check-answer', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(check).not.toHaveBeenCalled()
+  allowed = true
+  expect(await desktop.call('checked', { op: 'check-answer', answer })).toMatchObject({ ok: true, result: { hostId: 'host' } })
+  expect(check).toHaveBeenCalledWith(answer, expect.objectContaining({ clientId: paired.clientId, transport: 'socket' }))
+  allowed = false
+  expect(await desktop.call('revoked', { op: 'check-answer', answer })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(check).toHaveBeenCalledTimes(1)
+})
+
+it.each([false, true])('offers atomic Send only when the service implements it and keeps legacy Send (supported: %s)', async supported => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  Object.assign(service, { supportsAtomicSend: supported, shell: () => ({ hostId: 'host', host: { threads: [
+    { id: 'thread', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false }) })
+  listener = await startSocketServer({ service, pairing })
+  expect(listener.descriptor.features.includes('atomic-send')).toBe(supported)
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect((hello.result as { features: string[] }).features.includes('atomic-send')).toBe(supported)
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const command = { type: 'send', draft: { threadId: 'thread', text: 'Prompt', attachments: [] } }
+  expect(await desktop.call('atomic', { op: 'command', command })).toMatchObject(supported ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  expect(commands.filter(item => item.command.type === 'send')).toEqual(supported ? [{ command, clientId: paired.clientId }] : [])
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'send' } })).toMatchObject({ ok: true })
+  const save = { type: 'compose', threadId: 'thread', text: 'A targeted edit', attachments: [] }
+  expect(await desktop.call('targeted-save', { op: 'command', command: save })).toMatchObject(supported ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  expect(commands.filter(item => item.command.type === 'compose')).toEqual(supported ? [{ command: save, clientId: paired.clientId }] : [])
+  expect(await desktop.call('legacy-save', { op: 'command', command: { type: 'compose', text: 'Legacy draft' } })).toMatchObject({ ok: true })
+})
+
+it.each([false, true])('offers stable draft revisions only when implemented and refuses their fields otherwise (%s)', async supported => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  Object.assign(service, { supportsAtomicSend: true, supportsDraftRevisions: supported,
+    shell: () => ({ hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
+      queue: [], draft: '', composing: false }) })
+  listener = await startSocketServer({ service, pairing })
+  expect(listener.descriptor.features.includes('draft-revisions')).toBe(supported)
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = await desktop.call('hello', { op: 'hello' })
+  expect((hello.result as { features: string[] }).features.includes('draft-revisions')).toBe(supported)
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const draftId = randomUUID()
+  for (const command of [{ type: 'compose', threadId: 'thread', draftId, text: 'Edit', attachments: [] },
+    { type: 'send', draft: { threadId: 'thread', draftId, text: 'Edit', attachments: [] } },
+    { type: 'save-thread-draft', threadId: 'thread', draftId, expectedDraftId: null, text: 'Edit', attachments: [], requestId: null }]) {
+    expect(await desktop.call(`revision-${command.type}`, { op: 'command', command })).toMatchObject(supported
+      ? { ok: true } : { ok: false, error: { code: 'invalid_request' } })
+  }
+  expect(commands).toHaveLength(supported ? 3 : 0)
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', threadId: 'thread', text: 'Legacy targeted edit' } })).toMatchObject({ ok: true })
+})
+
+it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compose'].map(type => ({ delivery, type }))))('keeps targeted $type selection exact during a native $delivery question and delegates Compose authority to execution', async ({ delivery, type }) => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  let allowed = false
+  Object.assign(service, { supportsAtomicSend: true, shell: () => ({ hostId: 'host', host: { threads: [
+    { id: 'thread', projectId: 'project', requests: [{ id: 'native-question', kind: 'question', text: 'Choose', options: [],
+      ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) }] },
+    { id: 'other', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false, threadDrafts: [] }) })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => allowed })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  const draft = { threadId: 'thread', text: 'Blue', attachments: [] }
+  const command = type === 'send' ? { type, draft } : { type, ...draft }
+  expect(await desktop.call('unselected', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  // This recorder is not a coordinator: real TCP tests prove its execution-time Compose policy.
+  expect(await desktop.call('denied', { op: 'command', command })).toMatchObject(type === 'compose' ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
+  expect(commands).toEqual(type === 'compose' ? [{ command, clientId: paired.clientId }] : [])
+  allowed = true
+  expect(await desktop.call('allowed', { op: 'command', command })).toMatchObject({ ok: true })
+  expect(commands).toHaveLength(type === 'compose' ? 2 : 1)
+  allowed = false
+  expect(await desktop.call('revoked', { op: 'command', command })).toMatchObject(type === 'compose' ? { ok: true } : { ok: false, error: { code: 'forbidden' } })
+  await desktop.call('switch', { op: 'command', command: { type: 'select-thread', threadId: 'other' } })
+  allowed = true
+  expect(await desktop.call('drifted', { op: 'command', command })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(commands).toHaveLength(type === 'compose' ? 3 : 1)
+})
+
+it('returns a targeted Compose refusal as its own outcome when the shared shell has another error', async () => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service } = recordingService()
+  const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
+    queue: [], draft: '', composing: false, error: 'A different command changed the shared error.' }
+  Object.assign(service, { supportsAtomicSend: true, shell: () => state,
+    command: async () => ({ ...state, error: 'The draft could not be saved. Your earlier draft is kept.' }) })
+  listener = await startSocketServer({ service, pairing })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  expect(await desktop.call('save', { op: 'command', command: { type: 'compose', threadId: 'thread', text: 'Edit' } }))
+    .toMatchObject({ ok: true, result: { error: 'The draft could not be saved. Your earlier draft is kept.' } })
+  expect(service.shell().error).toBe('A different command changed the shared error.')
+})
+
+it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as const)('delegates targeted Compose binding authority to its coordinator for a %s draft', async binding => {
+  const { pairing, paired } = await pairedClient('Desktop')
+  const { service, commands } = recordingService()
+  const saved = binding.startsWith('saved')
+  const plain = binding.endsWith('plain')
+  const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [
+    { id: 'native-question', kind: 'question', text: 'Question', options: [] }] }], models: [] }, queue: [], draft: 'Active draft',
+    composing: true, draftThreadId: 'thread', draftRequestId: saved ? plain ? 'native-question' : null : plain ? null : 'native-question',
+    threadDrafts: saved ? [{ threadId: 'thread', requestId: plain ? null : 'native-question', text: 'Retained draft', attachments: [] }] : [] }
+  Object.assign(service, { supportsAtomicSend: true, shell: () => state })
+  listener = await startSocketServer({ service, pairing, mayAnswer: () => false })
+  const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  await desktop.call('hello', { op: 'hello' })
+  await desktop.call('select', { op: 'command', command: { type: 'select-thread', threadId: 'thread' } })
+  const command = { type: 'compose', threadId: 'thread', text: 'A new edit' }
+  expect(await desktop.call('targeted', { op: 'command', command })).toMatchObject({ ok: true })
+  expect(commands).toEqual([{ command, clientId: paired.clientId }])
+  // The real coordinator checks targeted saves at execution; legacy Compose and Send keep their native-question gate.
+  expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', text: 'Legacy edit' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await desktop.call('send', { op: 'command', command: { type: 'send', draft: { threadId: 'thread', text: 'Prompt' } } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 })
