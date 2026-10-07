@@ -76,6 +76,13 @@ describe('a sequence step', () => {
     expect(lit('sequence-numbered', ['Sotto'])).toEqual(sorted(['activation0:', 'life-line:Sotto', 'participant:Sotto']))
   })
 
+  it('lights a participant by the name it is drawn with as well as the name it is declared with', () => {
+    // participant U as User, participant S as Sotto desktop app
+    expect(lit('sequence-aliased', ['User'])).toEqual(sorted(['life-line:U', 'participant:U']))
+    expect(lit('sequence-aliased', ['U'])).toEqual(sorted(['life-line:U', 'participant:U']))
+    expect(lit('sequence-aliased', [' Sotto  desktop app '])).toEqual(sorted(['life-line:S', 'participant:S']))
+  })
+
   it('dims the notes and control rows a step does not name', () => {
     const root = parse(fixture('sequence'))
     const { parts, lit: shown } = stepTargets(root, ['1'])

@@ -190,11 +190,24 @@ function sequenceTargets(root: Element, names: readonly string[]): StepTargets {
     if (owner) participants.get(owner.name)!.push(part)
   }
 
+  // A participant declared `participant U as User` is drawn as "User" and named U: a step may use either.
+  const shownAs = new Map<string, string>()
+  for (const part of parts) {
+    if (part.getAttribute('data-et') !== 'participant') continue
+    const id = part.getAttribute('data-id')
+    const text = part.querySelector('text')
+    const lines = text ? [...text.querySelectorAll('tspan')].map(line => line.textContent ?? '') : []
+    const shown = (lines.length ? lines.join(' ') : text?.textContent ?? '').replace(/\s+/gu, ' ').trim()
+    if (id && shown && !participants.has(shown) && !shownAs.has(shown)) shownAs.set(shown, id)
+  }
+
   const lit = new Set<Element>()
   const light = (name: string): void => { for (const element of participants.get(name) ?? []) lit.add(element) }
   for (const raw of names) {
     const name = raw.trim()
     if (participants.has(name)) { light(name); continue }
+    const declared = shownAs.get(name.replace(/\s+/gu, ' '))
+    if (declared) { light(declared); continue }
     if (!/^\d+$/u.test(name)) continue
     const arrow = arrows[Number(name) - 1]
     if (!arrow) continue

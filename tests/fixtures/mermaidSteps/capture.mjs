@@ -47,6 +47,23 @@ export const SOURCES = {
     '  You->>+Sotto: Send prompt',
     '  Sotto-->>-You: Shows it as sending',
   ].join('\n'),
+  'sequence-aliased': [
+    'sequenceDiagram',
+    '  participant U as User',
+    '  participant S as Sotto desktop app',
+    '  U->>S: Send prompt',
+  ].join('\n'),
+  'flowchart-nested': [
+    'flowchart LR',
+    '  subgraph Outer',
+    '    A[Draft] --> B[Check]',
+    '    subgraph Inner',
+    '      C[Send] --> D[Wait]',
+    '    end',
+    '  end',
+    '  B --> C',
+    '  D --> E[Reply]',
+  ].join('\n'),
   state: [
     'stateDiagram-v2',
     '  [*] --> Idle',
