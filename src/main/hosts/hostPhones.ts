@@ -52,11 +52,12 @@ export interface HostPhonesOptions {
   readonly log?: (event: 'host-phones-read-failed' | 'host-phones-command-failed') => void
 }
 
-const answerSchema = z.object({
+/** What the host's phone access routes answer: its state, and a page to open or a sentence when there is one. */
+export const hostPhonesAnswerSchema = z.object({
   v: z.literal(1), hostId: z.uuid(), state: phonesStateSchema,
   url: z.string().max(2100).optional(), error: z.string().max(1000).optional(),
 })
-type Answer = z.infer<typeof answerSchema>
+type Answer = z.infer<typeof hostPhonesAnswerSchema>
 
 /** A read can wait on nothing slow; a command can wait on Tailscale (HOST_ADMIN_COMMAND_TIMEOUT_MS). */
 const READ_TIMEOUT_MS = 10_000
@@ -181,7 +182,7 @@ export class HostPhones {
 
   /** One administrative request over a connection (see `hostAdminRequest`). */
   private post(connection: PressConnection, link: HostPhonesLink, route: 'phones' | 'phones-command', body: unknown, timeoutMs: number): Promise<Answer> {
-    return hostAdminRequest(connection, route, body, answerSchema, link.hostId, timeoutMs, this.options.fetch ?? fetch)
+    return hostAdminRequest(connection, route, body, hostPhonesAnswerSchema, link.hostId, timeoutMs, this.options.fetch ?? fetch)
   }
 
   private failure(name: string, error: unknown): string {
