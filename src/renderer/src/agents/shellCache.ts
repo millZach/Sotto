@@ -1,4 +1,4 @@
-import { agentShell, hostForThread, type AgentHostSnapshot, type AgentModel, type AgentState } from '../../../shared/agents'
+import { agentShell, hostForThread, NO_LIVE_THREAD_STATE, type AgentHostSnapshot, type AgentModel, type AgentState } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 
 /**
@@ -68,7 +68,7 @@ export function cacheableShell(state: AgentState): AgentState {
   const shell = agentShell(state)
   return {
     ...shell,
-    host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], monitoring: undefined, backgroundWork: undefined })) }),
+    host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], ...NO_LIVE_THREAD_STATE })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
     // Attention is live: what needed the user last time is not what needs them now, and a restored
@@ -89,7 +89,7 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
       // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
       ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, error: null, connection: 'disconnected',
       host: { ...state.host, connected: false,
-        threads: state.host.threads.map(thread => ({ ...thread, monitoring: undefined, backgroundWork: undefined })),
+        threads: state.host.threads.map(thread => ({ ...thread, ...NO_LIVE_THREAD_STATE })),
         providers: state.host.providers?.map(provider => ({ ...provider, connection: 'disconnected' as const })) },
     }
   } catch { return null }

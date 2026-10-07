@@ -44,11 +44,22 @@ it('refuses integrations activated by session load before sending on a resumed o
   expect(await prompts()).toHaveLength(1)
 })
 
-it('refuses integrations activated by the final observer replay before a follow-up', async () => {
+it('refuses integrations enabled while the owner sat idle before a follow-up', async () => {
   const id = await settledThread()
-  await f.script({ enableMcpAfterLoad: true })
+  // Nothing loads or reads the session before this send, so only the send's own fresh check can see the change.
+  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ enabledMcp: true }))
   await expect(send(id)).rejects.toThrow(/MCP servers/u)
   expect(await prompts()).toHaveLength(1)
+})
+
+it('refuses integrations activated by an observer replay before the next follow-up', async () => {
+  const id = await settledThread()
+  await f.script({ enableMcpAfterLoad: true })
+  // The replay read that would confirm this prompt is what turns the integration on, so the prompt stays uncertain.
+  expect(await send(id)).toEqual({ accepted: false, uncertain: true })
+  await f.script({})
+  await expect(send(id)).rejects.toThrow(/MCP servers/u)
+  expect(await prompts()).toHaveLength(2)
 })
 
 

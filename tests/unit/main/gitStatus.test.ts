@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 const roots: string[] = []
@@ -12,7 +12,7 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd,
 const commit = (cwd: string, message: string) => { execFileSync('git', ['add', '.'], { cwd, windowsHide: true }); git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', message) }
 
 /** A repository on `main`, pushed to an owned bare remote, with a second clone that can move the remote under it. */
-async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh?: (args: readonly string[]) => Promise<string> } = {}) {
+async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh?: (args: readonly string[]) => Promise<string>; before?: (command: 'git' | 'gh', args: readonly string[]) => Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-git-status-')); roots.push(root)
   const repo = join(root, 'repo'), remote = join(root, 'remote.git'), other = join(root, 'other')
   await mkdir(repo)
@@ -24,14 +24,17 @@ async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh
     git(root, 'clone', '-q', '-b', 'main', remote, other); git(other, 'config', 'user.name', 'Fixture'); git(other, 'config', 'user.email', 'fixture@example.invalid'); git(other, 'config', 'commit.gpgSign', 'false'); git(other, 'config', 'core.autocrlf', 'false')
   }
   const calls: string[][] = []
+  /** Where each command ran. */
+  const places: Array<{ cwd: string; call: string[] }> = []
   let now = 1_000_000
   const run: RunGitCommand = async (cwd, command, args, runOptions) => {
-    calls.push([command, ...args])
+    calls.push([command, ...args]); places.push({ cwd, call: [command, ...args] })
+    await options.before?.(command, args)
     if (command === 'gh') { if (!options.gh) throw new Error('gh: not signed in'); return options.gh(args) }
     return runGitStatusCommand(cwd, command, args, runOptions)
   }
   const reader = new GitStatusReader({ run, now: () => now, fetchIntervalMs: () => options.fetchIntervalMs ?? 30_000 })
-  return { root, repo, remote, other, reader, calls, advance: (ms: number) => { now += ms }, fetches: () => calls.filter(call => call[1] === 'fetch').length, ghCalls: () => calls.filter(call => call[0] === 'gh').length }
+  return { root, repo, remote, other, reader, calls, places, advance: (ms: number) => { now += ms }, fetches: () => calls.filter(call => call[1] === 'fetch').length, ghCalls: () => calls.filter(call => call[0] === 'gh').length }
 }
 
 describe('Git status the way T3 reads it', () => {
@@ -144,6 +147,158 @@ describe('Git status the way T3 reads it', () => {
     const f = await fixture({ remote: false })
     const [a, b] = await Promise.all([f.reader.read(f.repo, { remote: false }), f.reader.read(f.repo, { remote: false })])
     expect(a).toBe(b)
+  })
+  it('reads afresh for a caller that asks, and after a Git action, rather than sharing a read begun before the folder changed', async () => {
+    const f = await fixture({ remote: false })
+    // The next read is held once Git has told it the folder's state, as a slow read would be.
+    let hold: { reached: () => void; go: Promise<void> } | undefined
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const output = await runGitStatusCommand(cwd, command, args, options)
+      const held = hold
+      if (held && args[0] === 'status') { hold = undefined; held.reached(); await held.go }
+      return output
+    }
+    const reader = new GitStatusReader({ run, fetchIntervalMs: () => 0 })
+    const holdNext = () => {
+      let reached!: () => void, go!: () => void
+      const state = { reached: new Promise<void>(done => { reached = done }), go: new Promise<void>(done => { go = done }) }
+      hold = { reached, go: state.go }
+      return { reached: state.reached, go }
+    }
+    // A read begins on main, and the folder moves to a branch of its own before it answers.
+    let held = holdNext()
+    const before = reader.read(f.repo, { remote: false })
+    await held.reached
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    const fresh = reader.read(f.repo, { remote: false, fresh: true })
+    held.go()
+    expect(await fresh).toMatchObject({ branch: 'feature' })
+    expect(await before).toMatchObject({ branch: 'main' })
+    // After a Git action, a read begun before it is not shared either.
+    held = holdNext()
+    const older = reader.read(f.repo, { remote: false })
+    await held.reached
+    git(f.repo, 'switch', '-q', 'main')
+    reader.invalidate()
+    const after = reader.read(f.repo, { remote: false })
+    held.go()
+    expect(await after).toMatchObject({ branch: 'main' })
+    expect(await older).toMatchObject({ branch: 'feature' })
+  })
+})
+
+describe('the remote half of a read, on its own', () => {
+  const samePlace = (a: string, b: string) => { const key = (path: string) => resolve(path).toLowerCase(); return key(a) === key(b) }
+  it('fetches and asks GitHub in the folder that asked, writing no FETCH_HEAD, and only for a folder read since the last Git action', async () => {
+    const f = await fixture({ gh: async () => JSON.stringify([{ number: 5, title: 'Side work', url: 'https://github.com/o/r/pull/5', state: 'OPEN', isDraft: false, headRefName: 'side' }]) })
+    // A linked worktree on a branch of its own that tracks main, the way a thread's worktree is.
+    const side = join(f.root, 'side-worktree')
+    git(f.repo, 'worktree', 'add', '-q', '--track', '-b', 'side', side, 'origin/main')
+    const ownGitDirectory = git(side, 'rev-parse', '--path-format=absolute', '--git-dir')
+    // A folder not read yet: nothing is asked, and the caller reads it first.
+    expect(await f.reader.readRemote(side)).toBe(false)
+    expect(f.fetches()).toBe(0)
+    expect(await f.reader.read(side, { remote: false })).toMatchObject({ branch: 'side', upstream: 'origin/main', behind: 0, pullRequest: null })
+    // The remote moves on; the remote half brings it, and the next local read shows it.
+    await writeFile(join(f.other, 'other.txt'), 'remote\n'); commit(f.other, 'Remote commit'); git(f.other, 'push', '-q')
+    const before = f.places.length
+    expect(await f.reader.readRemote(side)).toBe(true)
+    expect(f.fetches()).toBe(1); expect(f.ghCalls()).toBe(1)
+    const remoteCalls = f.places.slice(before)
+    expect(remoteCalls.length).toBeGreaterThan(0)
+    // In the folder, as a terminal there would resolve its remote, and never writing the folder's FETCH_HEAD: a pull
+    // in the same checkout beside a fetch that wrote it could find two heads.
+    expect(remoteCalls.every(place => samePlace(place.cwd, side))).toBe(true)
+    expect(remoteCalls.find(place => place.call[1] === 'fetch')?.call).toContain('--no-write-fetch-head')
+    await expect(readFile(join(ownGitDirectory, 'FETCH_HEAD'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await f.reader.read(side, { remote: false })).toMatchObject({ behind: 1, pullRequest: { number: 5 } })
+    // A Git action since: the folder is read again before its remote half is asked.
+    f.reader.invalidate()
+    expect(await f.reader.readRemote(side)).toBe(false)
+  })
+  it('starts no remote half in a folder held for removal, and lets the removal wait for one already running', async () => {
+    let release!: () => void
+    let started!: () => void
+    const fetching = new Promise<void>(resolve => { started = resolve })
+    const f = await fixture({ before: async (command, args) => {
+      if (command === 'git' && args[0] === 'fetch') { started(); await new Promise<void>(go => { release = go }) }
+    } })
+    // The thread works in a folder inside the checkout, as one does whose project is a subfolder of its repository.
+    const inside = join(f.repo, 'app'); await mkdir(inside)
+    await f.reader.read(inside, { remote: false })
+    // A fetch is running in that folder when the checkout's removal begins.
+    const remote = f.reader.readRemote(inside)
+    await fetching
+    const unhold = f.reader.hold(f.repo)
+    let idle = false
+    const waited = f.reader.idle(f.repo).then(() => { idle = true })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(idle).toBe(false)
+    // While the checkout is held, no new remote half starts in it or in a folder inside it.
+    const before = f.calls.length
+    expect(await f.reader.readRemote(inside)).toBe(true)
+    expect(await f.reader.readRemote(f.repo)).toBe(true)
+    expect(f.calls.length).toBe(before)
+    release()
+    await remote; await waited
+    expect(idle).toBe(true)
+    unhold()
+  })
+  it('fetches without the FETCH_HEAD flag from then on when Git does not know it', async () => {
+    let refusals = 0
+    const f = await fixture({ before: async (command, args) => {
+      if (command === 'git' && args[0] === 'fetch' && args.includes('--no-write-fetch-head')) { refusals++; throw new Error("error: unknown option `no-write-fetch-head'") }
+    } })
+    await f.reader.read(f.repo, { remote: false })
+    expect(await f.reader.readRemote(f.repo)).toBe(true)
+    const fetches = () => f.calls.filter(call => call[1] === 'fetch')
+    expect(refusals).toBe(1)
+    expect(fetches().map(call => call.includes('--no-write-fetch-head'))).toEqual([true, false])
+    expect((await f.reader.read(f.repo, { remote: false })).fetchedAt).not.toBeNull()
+    f.advance(60_000)
+    await f.reader.readRemote(f.repo)
+    expect(fetches().map(call => call.includes('--no-write-fetch-head'))).toEqual([true, false, false])
+  })
+  it('lets no fetch or pull request answer begun before a Git action stand for one asked after it', async () => {
+    let held: { call: 'fetch' | 'gh'; started: () => void; go: Promise<void> } | undefined
+    const holdNext = (call: 'fetch' | 'gh') => {
+      let started!: () => void, go!: () => void
+      const state = { started: new Promise<void>(done => { started = done }), go: new Promise<void>(done => { go = done }) }
+      held = { call, started, go: state.go }
+      return { started: state.started, go }
+    }
+    const f = await fixture({
+      gh: async () => JSON.stringify([{ number: 4, title: 'Open', url: 'https://github.com/o/r/pull/4', state: 'OPEN', isDraft: false, headRefName: 'main' }]),
+      before: async (command, args) => {
+        const hold = held
+        if (hold && (command === 'gh' ? hold.call === 'gh' : args[0] === 'fetch' && hold.call === 'fetch')) { held = undefined; hold.started(); await hold.go }
+      },
+    })
+    await f.reader.read(f.repo, { remote: false })
+    // A fetch is under way when a Git action runs; the remote half asked for after the action does not share it,
+    // and the fetch that began before the action does not make the next one wait its fifteen seconds.
+    let hold = holdNext('fetch')
+    const first = f.reader.readRemote(f.repo)
+    await hold.started
+    f.reader.invalidate()
+    await f.reader.read(f.repo, { remote: false })
+    const second = f.reader.readRemote(f.repo)
+    hold.go()
+    await Promise.all([first, second])
+    expect(f.fetches()).toBe(2)
+    // A GitHub answer asked for before an action is asked for again after it.
+    const asked = f.ghCalls()
+    f.advance(60_001)
+    await f.reader.read(f.repo, { remote: false })
+    hold = holdNext('gh')
+    const lookup = f.reader.readRemote(f.repo)
+    await hold.started
+    f.reader.invalidate()
+    hold.go()
+    await lookup
+    await f.reader.read(f.repo, { remote: false })
+    await f.reader.readRemote(f.repo)
+    expect(f.ghCalls()).toBe(asked + 2)
   })
 })
 

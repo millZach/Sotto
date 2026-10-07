@@ -9,11 +9,7 @@ import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
 import { devinFixture } from '../fixtures/devinFixture'
 
-// devin.ts is #770's to change; it marks no send stage yet.
-describeAdapterContract('Devin ACP', async session => {
-  const f = await devinFixture(undefined, undefined, undefined, session)
-  return { ...f, skips: { sendStages: 'Devin does not yet mark the prompt written or acknowledged.' } }
-})
+describeAdapterContract('Devin ACP', session => devinFixture(undefined, undefined, undefined, session))
 
 describe('Devin dispatch and decision boundaries', () => {
   let f: Awaited<ReturnType<typeof devinFixture>>
