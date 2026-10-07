@@ -1,0 +1,108 @@
+/**
+ * An interactive visual in the transcript (ADR-0056): the card asks main for a one-time page address by thread and
+ * visual, never sends the page, runs at most three pages at once and only near the view, sizes the page to the height
+ * the guest measured, and gives focus back to the card on Escape. The guest itself is Electron's; here it is the bare
+ * `<webview>` element jsdom makes.
+ */
+import React from 'react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentVisual } from '../../../src/shared/visuals'
+import type { VisualPageRequest, VisualPageResult } from '../../../src/shared/visualPages'
+import { VisualCard } from '../../../src/renderer/src/agents/VisualCard'
+import { LIVE_PAGES_MAX, visualThemeFrom } from '../../../src/renderer/src/agents/InteractiveVisual'
+
+const page = (id: string, title = `Page ${id}`): AgentVisual => ({ id, title, kind: 'interactive', source: '<h1>Mine</h1><script>1</script>',
+  intro: 'It fills.', steps: [{ text: 'One.' }, { text: 'Two.' }] })
+
+// Every observed card is near the view unless a test moves it away.
+const observed = new Map<Element, (entries: { isIntersecting: boolean }[]) => void>()
+class FakeIntersectionObserver {
+  constructor(private readonly callback: (entries: { isIntersecting: boolean }[]) => void) {}
+  observe(element: Element): void { observed.set(element, this.callback); this.callback([{ isIntersecting: true }]) }
+  disconnect(): void { for (const [element, callback] of observed) if (callback === this.callback) observed.delete(element) }
+}
+const away = (element: Element): void => { act(() => observed.get(element)?.([{ isIntersecting: false }])) }
+
+let opens: VisualPageRequest[] = []
+let answer: (request: VisualPageRequest) => VisualPageResult = request => ({ ok: true, url: `sotto-visual://page/${request.visualId.padEnd(43, 'x')}` })
+beforeEach(() => {
+  opens = []
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+  Object.assign(window, { sotto: { visuals: { open: vi.fn(async (request: VisualPageRequest) => { opens.push(request); return answer(request) }) } } })
+})
+afterEach(() => {
+  cleanup(); vi.unstubAllGlobals(); observed.clear(); delete (window as { sotto?: unknown }).sotto
+  answer = request => ({ ok: true, url: `sotto-visual://page/${request.visualId.padEnd(43, 'x')}` })
+})
+
+describe('an interactive visual\'s card', () => {
+  it('has the diagram card\'s header and explanation, and asks main for the page by thread and visual', async () => {
+    render(<VisualCard visual={page('v1', 'A queue')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: A queue' })
+    expect(within(card).getByText('Interactive page')).toBeInTheDocument()
+    for (const name of ['Show source', 'Copy source', 'Expand A queue']) expect(within(card).getByRole('button', { name })).toBeInTheDocument()
+    expect(within(card).getAllByRole('listitem').map(item => item.textContent)).toEqual(['One.', 'Two.'])
+    const guest = await vi.waitFor(() => { const element = card.querySelector('webview'); if (!element) throw new Error('no guest'); return element })
+    expect(guest.getAttribute('src')).toBe(`sotto-visual://page/${'v1'.padEnd(43, 'x')}`)
+    expect(guest.getAttribute('partition')).toBe('sotto-visual')
+    expect(guest).toHaveAttribute('aria-label', 'A queue, interactive page')
+    expect(guest.hasAttribute('allowpopups')).toBe(false)
+    expect(guest.hasAttribute('nodeintegration')).toBe(false)
+    expect(opens).toHaveLength(1)
+    expect(Object.keys(opens[0]!).sort()).toEqual(['theme', 'threadId', 'visualId'])
+    expect(opens[0]).toMatchObject({ threadId: 'thread-1', visualId: 'v1' })
+    expect(JSON.stringify(opens[0])).not.toContain('Mine')
+  })
+
+  it('runs at most three pages at once, and starts the next when one moves away', async () => {
+    const { container } = render(<>{['a', 'b', 'c', 'd'].map(id => <VisualCard key={id} visual={page(id)} threadId="thread-1" />)}</>)
+    await vi.waitFor(() => expect(container.querySelectorAll('webview')).toHaveLength(LIVE_PAGES_MAX))
+    const fourth = screen.getByRole('region', { name: 'Visual: Page d' })
+    expect(within(fourth).getByText('The page starts when it is in view.')).toBeInTheDocument()
+    away(screen.getByRole('region', { name: 'Visual: Page a' }).querySelector('.interactive-visual')!)
+    await vi.waitFor(() => expect(fourth.querySelector('webview')).not.toBeNull())
+    expect(container.querySelectorAll('webview')).toHaveLength(LIVE_PAGES_MAX)
+  })
+
+  it('takes the height the guest measured, held between 160 and 640 pixels', async () => {
+    render(<VisualCard visual={page('v1')} threadId="thread-1" />)
+    const guest = await vi.waitFor(() => { const element = document.querySelector('webview'); if (!element) throw new Error('no guest'); return element })
+    const frame = guest.parentElement!
+    expect(frame.style.height).toBe('160px')
+    const measured = (height: unknown): void => { act(() => { guest.dispatchEvent(Object.assign(new Event('ipc-message'), { channel: 'sotto-visual:height', args: [height] })) }) }
+    measured(300); expect(frame.style.height).toBe('300px')
+    measured(5_000); expect(frame.style.height).toBe('640px')
+    measured(12); expect(frame.style.height).toBe('160px')
+    measured('tall'); expect(frame.style.height).toBe('160px')
+  })
+
+  it('sends the theme and the read-all step once the page is ready, and gives focus back to the card on Escape', async () => {
+    render(<VisualCard visual={page('v1', 'A queue')} threadId="thread-1" />)
+    const guest = await vi.waitFor(() => { const element = document.querySelector('webview'); if (!element) throw new Error('no guest'); return element }) as HTMLElement & { send: ReturnType<typeof vi.fn> }
+    guest.send = vi.fn(async () => undefined)
+    act(() => { guest.dispatchEvent(new Event('dom-ready')) })
+    await vi.waitFor(() => expect(guest.send).toHaveBeenCalledTimes(2))
+    expect(guest.send).toHaveBeenCalledWith('sotto-visual:theme', expect.objectContaining({ mode: expect.stringMatching(/^(light|dark)$/u), reducedMotion: expect.any(Boolean) }))
+    expect(guest.send).toHaveBeenCalledWith('sotto-visual:step', { type: 'sotto-visual-step', step: 0, total: 2, highlight: [] })
+    act(() => { guest.dispatchEvent(Object.assign(new Event('ipc-message'), { channel: 'sotto-visual:escape', args: [] })) })
+    expect(screen.getByRole('region', { name: 'Visual: A queue' })).toHaveFocus()
+  })
+
+  it('shows main\'s reason in place of the page when it cannot be shown, with the steps still there', async () => {
+    answer = () => ({ ok: false, reason: 'Sotto no longer has this visual. The visual is not shown. Its steps are below.' })
+    render(<VisualCard visual={page('v1', 'A queue')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: A queue' })
+    expect(await within(card).findByText('Sotto no longer has this visual. The visual is not shown. Its steps are below.')).toBeInTheDocument()
+    expect(card.querySelector('webview')).toBeNull()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(2)
+  })
+})
+
+describe('the theme a page is given', () => {
+  it('is the diagram palette under the names agents are told, every colour six-digit hex', () => {
+    const theme = visualThemeFrom({ dark: true, text: '#FFF', muted: '#a5aab3', line: '#a5aab3', node: '#333b45', nodeBorder: '#848e9b', group: '#324e66', note: '#2c3d4e', block: '#252e38', accent: '#70b9ee' }, true)
+    expect(theme).toEqual({ mode: 'dark', reducedMotion: true, tokens: { '--sotto-text': '#ffffff', '--sotto-muted': '#a5aab3', '--sotto-line': '#a5aab3', '--sotto-background': '#252e38',
+      '--sotto-surface': '#333b45', '--sotto-border': '#848e9b', '--sotto-group': '#324e66', '--sotto-note': '#2c3d4e', '--sotto-accent': '#70b9ee' } })
+  })
+})

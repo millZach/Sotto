@@ -3,6 +3,7 @@ import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
 import { useMermaidDrawing } from './diagrams/MermaidDiagram'
+import { InteractiveVisualCard } from './InteractiveVisualCard'
 import './visualCard.css'
 
 /**
@@ -30,7 +31,12 @@ export function VisualReadAll({ intro, steps }: Pick<AgentVisual, 'intro' | 'ste
  * Expand; the diagram, drawn by the same safe renderer and frame as a diagram in an answer; and its explanation. When
  * the diagram cannot be drawn, its source and the reason take its place and the explanation stays readable.
  */
-export const VisualCard = memo(function VisualCard({ visual }: { readonly visual: AgentVisual }): ReactNode {
+export const VisualCard = memo(function VisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId?: string | undefined }): ReactNode {
+  // An agent's own page runs sealed (ADR-0056), in a card with the same header and explanation.
+  return visual.kind === 'interactive' ? <InteractiveVisualCard visual={visual} threadId={threadId} /> : <DiagramVisualCard visual={visual} />
+})
+
+function DiagramVisualCard({ visual }: { readonly visual: AgentVisual }): ReactNode {
   const drawing = useMermaidDrawing(visual.source, true)
   const frame = useDiagramFrame(visual.source, drawing)
   // The label is "Diagram" when the checks cannot name the kind.
@@ -53,4 +59,4 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
     <VisualReadAll intro={visual.intro} steps={visual.steps} />
     <DiagramExpanded frame={frame} name={name} />
   </section>
-})
+}

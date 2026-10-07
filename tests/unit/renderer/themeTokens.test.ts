@@ -189,6 +189,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/visualCard.css',
+      'src/renderer/src/agents/interactiveVisual.css',
       'src/renderer/src/components/listeningBars.css',
       'src/renderer/src/features/history/history.css',
       'src/renderer/src/features/memory/memory.css',
