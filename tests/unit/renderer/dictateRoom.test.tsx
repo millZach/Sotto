@@ -245,6 +245,16 @@ describe('DictateRoom', () => {
     await settle()
     expect(onDismiss).not.toHaveBeenCalled()
 
+    // A non-modal panel, such as the theme editor, does not hold Escape while focus is elsewhere.
+    rerender(<>
+      <div role="dialog" aria-modal="false" aria-label="Theme editor" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).toHaveBeenCalledOnce()
+    onDismiss.mockClear()
+
     // A part of the window that claims Escape, as the client-update card does, keeps it.
     rerender(<>
       <button type="button" onKeyDown={(event) => { if (event.key === 'Escape') event.preventDefault() }}>Put away update</button>

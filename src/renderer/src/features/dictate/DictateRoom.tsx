@@ -204,9 +204,10 @@ export function DictateRoom({
       if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
       if (Date.now() - shownAt < ESCAPE_GRACE_MS) return
       const target = event.target instanceof Element ? event.target : null
-      // An open dialog, ARIA or native (the folder browser is a <dialog>), owns Escape.
+      // An open dialog, ARIA or native (the folder browser is a <dialog>), owns
+      // Escape; a non-modal panel such as the theme editor only does while it has focus.
       if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog')) return
-      if (document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]') !== null) return
+      if (document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], dialog[open]') !== null) return
       // Decide once every other handler has had the press: one that claimed it,
       // such as the client-update card closing, keeps it.
       setTimeout(() => {
