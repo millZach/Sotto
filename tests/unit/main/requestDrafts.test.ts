@@ -3,9 +3,8 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RequestDraftService, personalRequestDraftState, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
+import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
 import { requestDraftQuestions, requestDraftSchema, type RequestDraft, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
-import { personalChatStateSchema } from '../../../src/shared/personalChats'
 import type { AgentRequest } from '../../../src/shared/agents'
 
 const questions = [
@@ -38,18 +37,18 @@ it('retains the first queued edit when the provider closes the question before i
 })
 
 describe('request-owned atomic drafts', () => {
-  it('keeps threaded and personal answers, multiple requests and separate providers across restart, independently of composer/history', async () => {
+  it('keeps threaded answers, multiple requests and separate providers across restart, independently of composer/history', async () => {
     const state = { connected: true, ready: true, requests: [request, { ...request, id: 'second' }] }
     const service = new RequestDraftService(directory, () => state, async () => {})
     await service.start()
-    const targets: RequestDraftTarget[] = [target, { ...target, kind: 'personal' }, { ...target, providerId: 'claude' }, { ...target, requestId: 'second' }, { ...target, ownerId: 'other' }]
+    const targets: RequestDraftTarget[] = [target, { ...target, providerId: 'claude' }, { ...target, requestId: 'second' }, { ...target, ownerId: 'other' }]
     await writeFile(join(directory, 'composer.json'), 'a separate composer')
     for (const [index, target] of targets.entries()) await service.save(draft({ target, revision: index + 1 }))
     const restarted = new RequestDraftService(directory, () => ({ ...state, connected: false, requests: [] }), async () => {})
     await restarted.start(); await restarted.reconcile()
     for (const [index, target] of targets.entries()) expect(await restarted.get(target)).toEqual(draft({ target, revision: index + 1 }))
     expect(await readFile(join(directory, 'composer.json'), 'utf8')).toBe('a separate composer')
-    expect((await disk()).drafts).toHaveLength(5)
+    expect((await disk()).drafts).toHaveLength(4)
   })
 
   it('retains restored and in-flight drafts through empty disconnected/loading/reconnect snapshots; releases only after a fresh main read', async () => {
@@ -133,6 +132,7 @@ describe('request-owned atomic drafts', () => {
     await expect(service.list(owner)).rejects.toThrow('original request-drafts.json is unchanged')
     await expect(service.discard({ target, revision: 1 })).rejects.toThrow('original request-drafts.json is unchanged')
     await expect(service.save(draft())).rejects.toThrow('original request-drafts.json is unchanged')
+    await expect(service.privacyChanged(false)).rejects.toThrow('original request-drafts.json is unchanged')
     expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(contents)
     expect(await readdir(directory)).toEqual(['request-drafts.json'])
   })
@@ -201,10 +201,10 @@ it.each([undefined, requestQuestionsDigest(questions)])('never applies an old re
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request], completed: [oldReceipt] }
   const service = new RequestDraftService(directory, () => state, async () => {})
   await service.start()
-  const changed = { ...target, kind: 'personal' as const, questions: [{ ...questions[1]!, question: 'New private question' }] }
+  const changed = { ...target, questions: [{ ...questions[1]!, question: 'New private question' }] }
   state = { ...state, requests: [{ ...request, questions: changed.questions }] }
   await service.save(draft({ target: changed, held: true, selections: { notes: { optionIds: [], other: false, text: 'New private answer' } } }))
-  // The personal service publishes submitting before the new native write.
+  // The thread publishes submitting before the new native write.
   state = { ...state, uncertainRequestIds: [target.requestId] }
   await service.reconcile()
   expect((await disk()).drafts[0]?.selections.notes?.text).toBe('New private answer')
@@ -309,18 +309,83 @@ it('retains legacy choices across restart and checks definition and delivery ide
   expect(await restarted.get(legacyTarget)).toBeNull()
 })
 
-it.each([true, false])('uses the personal answer owner connection when it is %s', async connected => {
-  const personalTarget = { ...target, kind: 'personal' as const, providerId: 'claude' as const }
-  const state = personalChatStateSchema.parse({ selectedChatId: 'owner', connected: !connected, connecting: connected,
-    availability: { provider: 'codex', supported: true }, chats: [{ id: 'owner', kind: 'personal', providerId: 'claude', connected,
-      title: 'Personal chat', modelId: 'model', status: 'idle', messages: [], requests: [request],
-      createdAt: 'now', updatedAt: 'now', nativeState: 'ready', draft: { revision: 0, text: '', skills: [] }, submissions: [] }] })
-  const projection = personalRequestDraftState(state, personalTarget)
-  expect(projection?.connected).toBe(connected)
-  const service = new RequestDraftService(directory, owner => personalRequestDraftState(state, owner), async () => {})
+it('retains legacy personal drafts while thread answers recover and rejects personal commands', async () => {
+  const legacy = draft({ target: { ...target, kind: 'personal', ownerId: 'saved-chat' }, held: true, decisionId: 'old-personal-attempt' })
+  const original = JSON.stringify({ version: 1, drafts: [legacy, draft()] })
+  await writeFile(join(directory, 'request-drafts.json'), original)
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request],
+    completed: [{ requestId: legacy.target.requestId, questionsDigest: requestQuestionsDigest(legacy.target.questions), decisionId: 'old-personal-attempt' }],
+  }), async () => {})
+  await service.start(); await service.privacyChanged(true); await service.reconcile()
+  expect(await service.list(owner)).toEqual([draft()])
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(original)
+  expect(() => service.list({ kind: 'personal', ownerId: legacy.target.ownerId, providerId: legacy.target.providerId })).toThrow('Standalone chats')
+  expect(() => service.get(legacy.target)).toThrow('Standalone chats')
+  expect(() => service.save(legacy)).toThrow('Standalone chats')
+  expect(() => service.bindDecision(legacy.target, 'new-attempt', {})).toThrow('Standalone chats')
+  await expect(service.check(legacy.target)).rejects.toThrow('Standalone chats')
+  expect(() => service.discard({ target: legacy.target, revision: 1 })).toThrow('Standalone chats')
+  await service.save(draft({ revision: 2 }))
+  expect((await disk()).drafts).toContainEqual(legacy)
+  expect(await service.get(target)).toEqual(draft({ revision: 2 }))
+})
+
+it('removes retired submitted answer forms when history is off and keeps unsent forms and thread recovery', async () => {
+  const personal = (providerId: RequestDraftTarget['providerId'], requestId: string, patch: Partial<RequestDraft>) => draft({
+    ...patch, target: { ...target, kind: 'personal', providerId, ownerId: 'saved-chat', requestId },
+  })
+  const submitted = (['codex', 'claude', 'grok'] as const).flatMap(provider => [
+    personal(provider, 'submitting', { held: true }),
+    personal(provider, 'accepted', { held: true, decisionId: `${provider}-accepted` }),
+    personal(provider, 'uncertain', { held: true, decisionId: `${provider}-uncertain` }),
+    personal(provider, 'bound-without-held', { held: false, decisionId: `${provider}-bound` }),
+  ])
+  const unsent = personal('codex', 'unsent', { held: false })
+  const pendingThread = draft({ target: { ...target, requestId: 'pending-thread' }, held: true, decisionId: 'thread-attempt' })
+  const kept = [unsent, draft(), pendingThread]
+  await writeFile(join(directory, 'request-drafts.json'), JSON.stringify({ version: 1, drafts: [...submitted, ...kept] }))
+  const refresh = vi.fn()
+  const state = { connected: true, ready: true, requests: [request] }
+  const service = new RequestDraftService(directory, item => item.kind === 'thread' ? state : undefined, refresh)
+  await service.start(); await service.privacyChanged(false)
+  expect((await disk()).drafts).toEqual(kept)
+  expect(await service.list(owner)).toEqual([draft(), pendingThread])
+  expect(refresh).not.toHaveBeenCalled()
+  await service.save(draft({ revision: 2 }))
+  const restarted = new RequestDraftService(directory, () => state, refresh)
+  await restarted.start(); await restarted.privacyChanged(true); await restarted.reconcile()
+  expect((await disk()).drafts).toEqual([unsent, pendingThread, draft({ revision: 2 })])
+  expect(await restarted.get(target)).toEqual(draft({ revision: 2 }))
+})
+
+it('retains submitted copies on a failed privacy write and retries without losing newer thread edits', async () => {
+  const legacy = draft({ target: { ...target, kind: 'personal', ownerId: 'saved-chat' }, held: true, decisionId: 'personal-attempt' })
+  const original = JSON.stringify({ version: 1, drafts: [legacy, draft()] })
+  await writeFile(join(directory, 'request-drafts.json'), original)
+  const write = vi.fn().mockRejectedValueOnce(new Error('disk denied'))
+    .mockImplementation(async value => { await writeFile(join(directory, 'request-drafts.json'), JSON.stringify(value)) })
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), async () => {}, { write })
+  await service.start(); await service.privacyChanged(true)
+  expect(write).not.toHaveBeenCalled()
+  await expect(service.privacyChanged(false)).rejects.toThrow('retired submitted answers could not be removed')
+  expect(await readFile(join(directory, 'request-drafts.json'), 'utf8')).toBe(original)
+  await service.save(draft({ revision: 2 }))
+  expect((await disk()).drafts).toContainEqual(legacy)
+  await service.privacyChanged(false)
+  expect((await disk()).drafts).toEqual([draft({ revision: 2 })])
+  await service.privacyChanged(false)
+  expect(write).toHaveBeenCalledTimes(3)
+})
+
+it('serializes history-off cleanup with queued thread saves', async () => {
+  const legacy = draft({ target: { ...target, kind: 'personal', ownerId: 'saved-chat' }, held: true })
+  await writeFile(join(directory, 'request-drafts.json'), JSON.stringify({ version: 1, drafts: [legacy, draft()] }))
+  const service = new RequestDraftService(directory, () => ({ connected: true, ready: true, requests: [request] }), async () => {})
   await service.start()
-  await service.save(draft({ target: personalTarget }))
-  const save = service.save(draft({ target: personalTarget, revision: 2, held: true }))
-  if (connected) await expect(save).resolves.toBeDefined()
-  else await expect(save).rejects.toThrow('Reconnect and check')
+  const first = service.save(draft({ revision: 2 }))
+  const cleanup = service.privacyChanged(false)
+  const last = service.save(draft({ revision: 3 }))
+  await Promise.all([first, cleanup, last])
+  expect((await disk()).drafts).toEqual([draft({ revision: 3 })])
+  expect(await service.get(target)).toEqual(draft({ revision: 3 }))
 })

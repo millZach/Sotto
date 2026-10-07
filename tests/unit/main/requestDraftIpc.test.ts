@@ -17,7 +17,7 @@ it('authorizes main-frame draft access only, validates identity/selections, and 
     expect(() => handlers.get(channel)!(event)).toThrow()
     expect(() => handlers.get(channel)!(event, {}, {})).toThrow()
   }
-  const target: RequestDraftTarget = { kind: 'personal', ownerId: 'chat', providerId: 'codex', requestId: 'request', questions: [
+  const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'codex', requestId: 'request', questions: [
     { id: 'q', question: 'Notes', options: [], multiSelect: false, allowFreeText: true },
   ] }
   expect(() => handlers.get(REQUEST_DRAFT_GET)!(event, { ...target, cwd: 'C:/' })).toThrow()

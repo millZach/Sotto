@@ -1,5 +1,7 @@
 # One provider process per thread
 
+Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats and their always-watched processes describe historical behavior; Sotto no longer starts those processes. Project-bound threads keep the process and client-update behavior described here.
+
 ## Status
 
 Accepted September 28, 2026. Follows T3 Code (`pingdotgg/t3code`, `apps/server/src/provider/`). Amends ADR-0042, whose client update no longer disconnects the provider, and extends to Codex and Grok Build what Claude Code already did: a process per thread or chat.

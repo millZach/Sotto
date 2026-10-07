@@ -195,32 +195,6 @@ describe('Codex send checks the newest turn before reading the whole transcript'
     expect(await historyRequests(f, from)).toEqual(['turns', 'read', 'read'])
   })
 
-  it('checks the newest turn before a personal-chat send', async () => {
-    const f = await codexFixture(); fixtures.push(f)
-    await f.host.connect()
-    const id = randomUUID()
-    await f.adapter.createPersonalConversation({ commandId: randomUUID(), threadId: id, modelId: f.modelId, title: 'Personal', workingDirectory: f.root })
-    const personal = (messageId: string, expectedLastUserMessageId?: string) => f.adapter.sendPersonalConversation({ type: 'send', commandId: randomUUID(), threadId: id,
-      messageId, text: `Prompt ${messageId}`, ...(expectedLastUserMessageId ? { expectedLastUserMessageId } : {}) }, [])
-    const answered = async (messageId: string, expectedLastUserMessageId?: string) => {
-      await expect(personal(messageId, expectedLastUserMessageId)).resolves.toEqual({ accepted: true })
-      await f.driver.completeTurn(id, `Reply to ${messageId}`)
-      await expect.poll(() => f.adapter.personalSnapshot().find(thread => thread.id === id)?.status).toBe('idle')
-    }
-    await answered('own-1')
-    const from = (await f.driver.requests()).length
-    await answered('own-2', 'own-1')
-    // One check, before the chat's own instructions are resumed; it stands for the send's own, since nothing moved
-    // in between (#765), and it does not read whole.
-    expect(await historyRequests(f, from)).toEqual(['turns'])
-    await elsewhere(f, id, { type: 'native-turn', text: 'Typed in another Codex' })
-    const stale = (await f.driver.requests()).length
-    // The chat's own check reads the whole transcript, and the send refuses the stale reply on what that read found.
-    await expect(personal('stale', 'own-2')).rejects.toThrow('changed')
-    expect(await historyRequests(f, stale)).toEqual(['turns', 'read'])
-    expect((await f.driver.requests()).slice(stale).some(request => request.method === 'turn/start')).toBe(false)
-  })
-
   it('checks the newest turn once when the read before the send was made for it (#765)', async () => {
     const { f, id } = await answeredThread()
     const from = (await f.driver.requests()).length
