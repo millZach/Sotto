@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { claudeFixture } from '../fixtures/claudeFixture'
@@ -229,5 +229,79 @@ describe('Claude transcript catch-up', () => {
     expect(kinds).not.toContain('message-added')
     // And each replayed record keeps the turn and the anchor the first read gave it, not the newest stored message's.
     expect(placed((await f.host.snapshot()).threads.find(thread => thread.id === id)!)).toEqual(placed(before))
+
+    // A record read after the replay, before any new message says something, follows the message the replay ended on.
+    await appendFile(path, JSON.stringify({ type: 'assistant', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(),
+      message: { id: 'reply-tool-c', role: 'assistant', content: [{ type: 'tool_use', id: 'tool-c', name: 'Bash', input: { command: 'echo again' } }] } }) + '\n')
+    await f.adapter.pollSessionLogs()
+    const later = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.activities?.find(record => record.id === 'claude-tool-tool-c')
+    expect(later).toEqual(expect.objectContaining({ turnId: second, afterMessageId: before.messages.find(message => message.text === 'Done with tool-b')!.id }))
+  })
+
+  it('places replayed records by the read even when the transcript was missing at connect', async () => {
+    const session = await f.realId(id)
+    const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+    await mkdir(folder, { recursive: true })
+    const path = join(folder, `${session}.jsonl`)
+    const [first, second] = [randomUUID(), randomUUID()]
+    const turn = (user: string, prompt: string, tool: string) => [
+      { type: 'user', uuid: user, message: { role: 'user', content: prompt } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: `reply-${tool}`, role: 'assistant', content: [{ type: 'tool_use', id: tool, name: 'Bash', input: { command: 'echo ok' } }] } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: `answer-${tool}`, role: 'assistant', content: [{ type: 'text', text: `Done with ${tool}` }] } },
+    ]
+    const frames = [...turn(first, 'First prompt', 'tool-a'), ...turn(second, 'Second prompt', 'tool-b')]
+    await appendFile(path, frames.map(frame => JSON.stringify({ ...frame, sessionId: session, timestamp: new Date().toISOString() })).join('\n') + '\n')
+    await f.adapter.pollSessionLogs()
+    const before = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    const placed = (thread: typeof before) => Object.fromEntries((thread.activities ?? []).filter(record => record.id.startsWith('claude-tool-'))
+      .map(record => [record.id, { turnId: record.turnId, afterMessageId: record.afterMessageId }]))
+
+    // Restart with no cursor, and with the transcript out of reach while the connect reads.
+    f.adapter.disconnect(); await f.adapter.closed()
+    const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
+    delete aliases[id].transcriptCursor
+    await writeFile(join(f.root, 'claude-threads.json'), JSON.stringify(aliases))
+    await rename(path, `${path}.away`)
+    f = await claudeFixture(f.root)
+    f.adapter.useThreadHistory({ messageIdentities: () => before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })) })
+    const kinds: string[] = []
+    f.adapter.subscribeEvents(({ event }) => { kinds.push(event.kind) })
+    await f.host.connect()
+
+    // The read that finds it is still the replay the connect began.
+    await rename(`${path}.away`, path)
+    await f.adapter.pollSessionLogs()
+    expect(kinds).not.toContain('message-added')
+    expect(placed((await f.host.snapshot()).threads.find(thread => thread.id === id)!)).toEqual(placed(before))
+  })
+
+  it('does not shrink a reply written over several lines while a reconnect reads it again from the first byte', async () => {
+    const session = await f.realId(id)
+    const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+    await mkdir(folder, { recursive: true })
+    const path = join(folder, `${session}.jsonl`)
+    const frames = [
+      { type: 'user', uuid: randomUUID(), message: { role: 'user', content: 'Explain it' } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: 'answer', role: 'assistant', content: [{ type: 'text', text: 'First block' }] } },
+      { type: 'assistant', uuid: randomUUID(), message: { id: 'answer', role: 'assistant', content: [{ type: 'text', text: 'Second block' }] } },
+    ]
+    await appendFile(path, frames.map(frame => JSON.stringify({ ...frame, sessionId: session, timestamp: new Date().toISOString() })).join('\n') + '\n')
+    await f.adapter.pollSessionLogs()
+    const words = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.map(message => message.text)
+    expect(words.at(-1)).toBe('First block\nSecond block')
+
+    // Reconnect in the same process, which hands the log the messages it held, with the cursor gone.
+    f.adapter.disconnect(); await f.adapter.closed()
+    const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
+    delete aliases[id].transcriptCursor
+    await writeFile(join(f.root, 'claude-threads.json'), JSON.stringify(aliases))
+    const events: string[] = []
+    const unsubscribe = f.adapter.subscribeEvents(({ event }) => { events.push(event.kind) })
+    await f.host.connect()
+    unsubscribe()
+
+    // The first block alone is not a change to the reply the store holds whole, so nothing is said again.
+    expect(events).toEqual([])
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.map(message => message.text)).toEqual(words)
   })
 })
