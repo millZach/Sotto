@@ -1,7 +1,5 @@
-import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, CircleAlert, CodeXml, Copy, Maximize2 } from 'lucide-react'
-import { useTransientFlag, writeClipboard } from '../richActions'
-import { DiagramViewer } from './DiagramViewer'
+import React, { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './DiagramFrame'
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
 import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
@@ -89,49 +87,17 @@ export function useMermaidDrawing(source: string, complete: boolean): MermaidDra
 
 /** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
 export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
-  const { inspection, drawing, name, notice, failed } = useMermaidDrawing(source, complete)
-  const [showSource, setShowSource] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const [feedback, showFeedback] = useTransientFlag()
-  const expandButton = useRef<HTMLButtonElement>(null)
-  const noticeId = useId()
-  const descriptionId = useId()
+  const drawing = useMermaidDrawing(source, complete)
+  const frame = useDiagramFrame(source, drawing)
+  const { inspection, name } = drawing
 
-  useEffect(() => { if (!drawing) { setExpanded(false); setShowSource(false) } }, [drawing])
-
-  const copy = (): void => { void writeClipboard(source).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
-  const close = (): void => {
-    setExpanded(false)
-    requestAnimationFrame(() => expandButton.current?.focus())
-  }
-
-  const sourceView = <pre className="rich-code__scroll rich-diagram__source" tabIndex={0} aria-label={`${inspection.label} source`} aria-describedby={notice ? noticeId : undefined}><code>{source}</code></pre>
-
-  return <figure className="rich-diagram rich-code" data-state={drawing ? 'drawn' : failed ? 'failed' : 'source'} aria-label={name}>
+  return <figure className="rich-diagram rich-code" data-state={diagramFrameState(drawing)} aria-label={name}>
     <div className="rich-code__bar">
-      <span className="rich-code__language">{drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
-      <span className="rich-code__status" role="status" aria-live="polite">{feedback}</span>
-      {drawing && <button type="button" className="rich-code__copy tt-focusable" aria-pressed={showSource} aria-label="Show source" title={showSource ? 'Show diagram' : 'Show source'}
-        onClick={() => setShowSource(value => !value)}><CodeXml size={16} aria-hidden="true" /></button>}
-      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-label="Copy diagram source" title="Copy source" onClick={copy}>
-        {feedback === 'Copied' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
-      </button>
-      {drawing && <button ref={expandButton} type="button" className="rich-code__copy tt-focusable" aria-label="Expand diagram" title="Expand" aria-haspopup="dialog"
-        onClick={() => setExpanded(true)}><Maximize2 size={15} aria-hidden="true" /></button>}
+      <span className="rich-code__language">{drawing.drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
+      <DiagramCopyStatus frame={frame} />
+      <DiagramActions frame={frame} copyLabel="Copy diagram source" expandLabel="Expand diagram" />
     </div>
-    {drawing && !showSource
-      ? <div className="rich-diagram__canvas" onClick={() => setExpanded(true)}>
-        <img src={drawing.dataUrl} alt={name} width={drawing.width} height={drawing.height} draggable={false} decoding="async"
-          aria-describedby={drawing.description ? descriptionId : undefined} />
-        {drawing.description && <span id={descriptionId} className="tt-visually-hidden">{drawing.description}</span>}
-      </div>
-      : <>
-        {notice && <p id={noticeId} className="rich-diagram__notice" data-tone={failed ? 'problem' : 'waiting'}>
-          {failed && <CircleAlert size={15} aria-hidden="true" />}<span>{notice}</span>
-        </p>}
-        {sourceView}
-      </>}
-    {expanded && drawing && <DiagramViewer dataUrl={drawing.dataUrl} width={drawing.width} height={drawing.height} name={name}
-      description={drawing.description} copyFeedback={feedback} onCopy={copy} onClose={close} />}
+    <DiagramStage frame={frame} name={name} sourceLabel={`${inspection.label} source`} block="rich-diagram" />
+    <DiagramExpanded frame={frame} name={name} />
   </figure>
 })

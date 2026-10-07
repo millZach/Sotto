@@ -277,15 +277,15 @@ export async function startSocketServer(options: SocketServerOptions) {
    * Each whole detail as a socket client reads it: no client is sent a visual, only its words (ADR-0055), and a client
    * that accepts activity summaries is sent them (#701). Each is made once however many peers are sent it.
    */
-  const plain = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
     if (detail === null) return detail
-    let bare = plain.get(detail)
-    if (!bare) plain.set(detail, bare = detailWithoutVisuals(detail))
-    if (!peer.activitySummaries) return bare
+    let withoutVisuals = withoutVisualsOf.get(detail)
+    if (!withoutVisuals) withoutVisualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail))
+    if (!peer.activitySummaries) return withoutVisuals
     let summary = summarised.get(detail)
-    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(bare))
+    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return summary
   }
   const sendWhole = (peer: Peer, threadId: string, detail: AgentThreadDetail | null): void => {
@@ -341,7 +341,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const threadId = update.threadId
     waiting.delete(threadId)
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
-    let bare: AgentThreadDetailDelta | undefined
+    let deltaWithoutVisual: AgentThreadDetailDelta | undefined
     let summaries: AgentThreadDetailDelta | undefined
     for (const peer of peers) {
       if (!peer.observed.has(threadId)) continue
@@ -349,8 +349,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       const held = peer.held.get(threadId)
       if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
       if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
-      bare ??= deltaWithoutVisuals(update)
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(bare)) : bare }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+      deltaWithoutVisual ??= deltaWithoutVisuals(update)
+      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(deltaWithoutVisual)) : deltaWithoutVisual }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
       else peer.held.delete(threadId)
     }
   })

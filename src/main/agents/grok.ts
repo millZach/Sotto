@@ -24,7 +24,7 @@ import { verifyFileMentions } from './promptFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { grokActivities } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
-import { grokBrowserAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
+import { grokToolAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -177,10 +177,10 @@ export class GrokAcpHost implements AgentHost {
     if (!pending.permission || !this.httpToolServers || this.aliases[pending.threadId]?.kind === 'personal') return undefined
     // Each scoped server is answered the same way, by its own name: adding a host asks the user in the thread itself
     // (ADR-0035), and a visual changes nothing outside the thread (ADR-0055).
-    const browser = this.browserTools ? grokBrowserAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name)) : undefined
+    const browser = this.browserTools ? grokToolAdmission(pending, BROWSER_MCP_SERVER, this.browserTools.definitions.map(tool => tool.name)) : undefined
     if (browser !== undefined) return browser
     for (const entry of this.threadTools) {
-      const answer = grokBrowserAdmission(pending, entry.name, entry.definitions.map(tool => tool.name))
+      const answer = grokToolAdmission(pending, entry.name, entry.definitions.map(tool => tool.name))
       if (answer !== undefined) return answer
     }
     return undefined
