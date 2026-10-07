@@ -2,8 +2,10 @@
 /**
  * What a send to Devin costs before Devin hears the prompt, and how many observer processes a running turn starts
  * (#770). Against the fake ACP peer in `tests/fixtures/fakeDevinAgent.mjs` it sends five times to a warm thread the
- * way a send from the Threads page goes: the coordinator's read before the send (`beforeSend`), the checkpoint's
- * whole read of the thread, the send, and after acceptance the coordinator's reconciliation read. For each send it
+ * way a send from the Threads page went when it was measured: the coordinator's read before the send (`beforeSend`),
+ * the checkpoint's whole read of the thread, the send, and after acceptance the coordinator's reconciliation read.
+ * Since then #764 removed the checkpoint's read and #765 answers the read after acceptance from the echo the
+ * workspace holds; both are kept here so the figures compare with the "before" in the perf note. For each send it
  * reports the time from Send until the fake records `session/prompt`, the time until the send is accepted, the
  * processes started before the prompt and the observer reads (`session/load`) made through the reconciliation read. The fake starts streaming
  * the reply as soon as it has the prompt. It then leaves one streamed turn running for four seconds at the
@@ -62,7 +64,7 @@ describe.skipIf(!PERF_BENCH)('Devin send path (#770)', () => {
         const result = await f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: `Synthetic prompt ${index}` })
         const accepted = performance.now() - started
         await watch; watching = false
-        // The coordinator's reconciliation read after an accepted prompt, outside the times above.
+        // The coordinator's reconciliation read after an accepted prompt as it was when measured, outside the times above.
         await f.host.refreshThread(id)
         expect(result.accepted || result.uncertain).toBe(true)
         const records = (await f.driver.requests()).slice(mark)

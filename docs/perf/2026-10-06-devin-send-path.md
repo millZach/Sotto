@@ -44,7 +44,7 @@ prompt. Each figure is the median of the five sends in a run, and each range is 
 
 The two processes left are `plugins list` and `mcp list`, run together. The one observer read left is the
 coordinator's reconciliation read after acceptance, which confirms the dispatch against the replay; it comes after
-the prompt and the first words. `tests/integration/devinSendPath.test.ts` pins the count of 2 and shows reply text
+the prompt and the first words. In the app that read is now the adapter's own, once the turn ends (see below). `tests/integration/devinSendPath.test.ts` pins the count of 2 and shows reply text
 reaching the message log with no observer read at all.
 
 The running-turn row is counted from once the send was accepted, over three runs each, its "before" against
@@ -80,9 +80,11 @@ at the median), and 700 to 1,035 ms in the run before it.
 - No live "before" was taken. The 6.4 s is #762's measurement from delivery records, and the live "after" includes
   the model, so the two are not the same interval. Send to `session/prompt` against the real CLI was not measured
   directly.
-- The checkpoint's read before a send is #764's. It starts no observer now because the thread's session is held
-  and its dispatches confirmed, not because the checkpoint changed. The coordinator's reconciliation read after
-  acceptance is #765's and was left as it is.
+- The benchmark sends the way the Threads page did on October 6. Since then #764 removed the checkpoint's read
+  before a send, and #765 has the workspace answer the coordinator's read after an accepted send from the echo it
+  already holds, so that read no longer reaches the adapter. The one replay read a send makes in the app is now the
+  adapter's own, once the turn ends, which confirms a prompt taken on the stream. The benchmark keeps both of the
+  old reads so its figures compare with the "before"; the counts it reports are therefore an upper bound.
 - Opening a session is unchanged: it still checks before the process starts and again after the load, and replays
   the whole session. A first send to a thread nobody has open pays for that.
 - Taken on the Windows development machine with Node v24.14.1 while another builder's suite was running on it.

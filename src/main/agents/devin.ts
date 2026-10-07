@@ -569,9 +569,9 @@ export class DevinAcpHost implements AgentHost {
     await this.open(id)
     // While this thread's own connection holds its session, Devin refuses the session to every other client
     // (-32015), so the replay the owner loaded and its stream since are the whole history and nothing can have
-    // changed it unseen. A replay then adds only the confirmation of a dispatch not yet confirmed by one, which a
-    // reconciliation read still gets. The read before a send leaves that to the send, which makes it just before its
-    // prompt, so one send reads the replay at most once (ADR-0017).
+    // changed it unseen. A replay then adds only the confirmation of a dispatch not yet confirmed by one, which any
+    // other read still makes. The read before a send leaves that to the send, which makes it just before its prompt,
+    // so one send reads the replay at most once (ADR-0017).
     const unconfirmed = this.aliases[id]?.origins.some(origin => !origin.confirmed) === true
     if (!this.connections.has(id) || unconfirmed && !purpose?.beforeSend) await this.readHistory(id)
     return this.current(purpose?.historyFromEvents)

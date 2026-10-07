@@ -39,14 +39,14 @@ it('starts only the two integration lists between Send and session/prompt on a w
   const id = await opened(f)
   await f.script({ streamOnPrompt: 'Working on it' })
   expect(await send(f, id, 'First synthetic prompt')).toEqual({ accepted: true })
-  // The coordinator's reconciliation read after an accepted prompt.
+  // A read of the thread after the accepted prompt, which confirms its dispatch.
   await f.host.refreshThread(id)
   await f.driver.completeTurn(id, ' and done')
   await expect.poll(async () => (await f!.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
 
   const mark = (await f.driver.requests()).length
-  // As a send from the Threads page goes: the coordinator's read before the send, the checkpoint's read of the
-  // thread, then the send.
+  // The coordinator's read before the send, a whole read of the thread such as the checkpoint made before #764
+  // removed it, then the send.
   await f.host.refreshThread(id, { beforeSend: true })
   await f.host.refreshThread(id)
   expect(await send(f, id, 'Second synthetic prompt')).toEqual({ accepted: true })
@@ -113,7 +113,7 @@ it('reads the replay of a held session only to confirm a dispatch no replay has 
   await f.script({ streamOnPrompt: 'Working on it' })
   expect(await send(f, id)).toEqual({ accepted: true })
   const loaded = await loads(f)
-  // Accepted from the stream, so the reconciliation read after it reads the replay and confirms the dispatch.
+  // Accepted from the stream, so a whole read after it reads the replay and confirms the dispatch.
   await f.host.refreshThread(id)
   expect(await loads(f)).toBe(loaded + 1)
   expect(JSON.parse(await readFile(join(f.root, 'devin-threads.json'), 'utf8'))[id].origins[0].confirmed).toBe(true)
