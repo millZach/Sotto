@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
@@ -31,6 +32,8 @@ function deferred<T>() {
  * work — so several can be observed in flight at once. Each held action is labelled `what:threadId`.
  */
 class LaneHost extends E2EAgentHost {
+  /** Absent unless a test gives this host an early start (#769). */
+  startThreadSession?: (threadId: string) => Promise<void>
   readonly started: string[] = []
   readonly openedFolders: string[] = []
   private readonly held: (() => void)[] = []
@@ -85,6 +88,44 @@ const busyThreads = (state: AgentState): string[] => [...(state.busyThreadIds ??
 const settled = async (): Promise<void> => { await new Promise(done => { setImmediate(done) }) }
 
 describe('thread-scoped command lanes', () => {
+  it('takes an early start in the thread’s own lane, quietly, and a send typed meanwhile waits behind it', async () => {
+    const f = await fixture()
+    const starting = deferred<void>()
+    const starts: string[] = []
+    f.host.startThreadSession = async (threadId: string) => { starts.push(threadId); await starting.promise; throw new Error('The CLI did not start.') }
+    f.host.hold = true
+    const published = f.published.length
+    const start = f.control.command({ type: 'start-thread-session', threadId: 'docs' })
+    await vi.waitFor(() => expect(starts).toEqual(['docs']))
+    // The start marks nothing busy and publishes nothing.
+    await settled()
+    expect(f.published.length).toBe(published)
+    expect(busyThreads(f.control.get())).toEqual([])
+    const send = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Synthetic prompt', draftId: randomUUID() })
+    await settled()
+    // The send is admitted at once but dispatched only after the start has settled in the lane.
+    expect(f.host.started).toEqual([])
+    starting.resolve()
+    expect((await start).error).toBeNull()
+    await vi.waitFor(() => expect(f.host.started).toEqual(['send:docs']))
+    f.host.release()
+    expect((await send).error).toBeNull()
+    // A failed start says nothing; the send goes as it always did.
+    expect(f.control.get().error).toBeNull()
+  })
+
+  it('asks for no early start for a session main already sees open', async () => {
+    const f = await fixture()
+    const starts: string[] = []
+    f.host.startThreadSession = async (threadId: string) => { starts.push(threadId) }
+    const thread = (f.host as unknown as { state: AgentHostSnapshot }).state.threads.find(item => item.id === 'docs')!
+    thread.providerSessionOpen = true
+    await f.control.command({ type: 'refresh' })
+    await f.control.command({ type: 'start-thread-session', threadId: 'docs' })
+    await f.control.command({ type: 'start-thread-session', threadId: 'workshop' })
+    expect(starts).toEqual(['workshop'])
+  })
+
   it('runs thread-scoped commands on different threads at the same time and one thread’s in order', async () => {
     const f = await fixture()
     f.host.hold = true
@@ -235,6 +276,40 @@ describe('prompt admission beside a thread lane', () => {
     expect((await configure).error).toBeNull(); expect((await send).error).toBeNull()
     expect(f.host.started).toEqual(['configure-thread:docs', 'send:docs'])
     expect(f.control.get().host.threads.find(thread => thread.id === 'docs')?.runtimeMode).toBe('full-access')
+  })
+
+  it('saves a send that waits behind its thread’s other work as it is admitted, and refuses it when that save fails', async () => {
+    const f = await fixture()
+    f.host.hold = true
+    const folder = f.control.command({ type: 'open-thread-folder', threadId: 'docs' })
+    await vi.waitFor(() => expect(f.host.started).toEqual(['folder:docs']))
+    // A send that goes at once is first saved by its outbox write (#767); one held behind other work is saved now.
+    const waiting = randomUUID()
+    const send = f.control.command({ type: 'manual-send', threadId: 'docs', draftId: waiting, text: 'Waits for the folder' })
+    const onDisk = async (): Promise<string[]> => ((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { threadDrafts?: { draftId: string }[] }).threadDrafts ?? []).map(draft => draft.draftId)
+    await vi.waitFor(async () => expect(await onDisk()).toContain(waiting))
+    expect(f.host.started).toEqual(['folder:docs'])
+    f.host.hold = false; f.host.release()
+    expect((await folder).error).toBeNull(); expect((await send).error).toBeNull()
+
+    f.host.hold = true
+    // Another thread, as the first is still answering its prompt and would queue the next.
+    const again = f.control.command({ type: 'open-thread-folder', threadId: 'workshop' })
+    await vi.waitFor(() => expect(f.host.holding).toBe(1))
+    // The first write that holds the waiting prompt fails, which is its admission write.
+    const refusedId = randomUUID(); let failed = false
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown, compact?: string) {
+      if (!failed && (this as unknown as { filePath: string }).filePath.endsWith('agents.json') && JSON.stringify(value).includes(refusedId)) { failed = true; return Promise.reject(new Error('Synthetic disk failure')) }
+      return write.call(this, value, compact)
+    })
+    const refused = f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: refusedId, text: 'Not saved, not sent' })
+    await vi.waitFor(() => expect(failed).toBe(true))
+    f.host.hold = false; f.host.release()
+    expect((await again).error).toBeNull()
+    expect((await refused).error).toBe('Could not save this prompt, so it was not sent. Check access to local storage and send it again.')
+    expect((await refused).deliveries).toContainEqual(expect.objectContaining({ draftId: refusedId, status: 'failed' }))
+    expect(f.host.started.filter(label => label === 'send:workshop')).toEqual([])
   })
 
   it('dispatches a queued follow-up while other work on that thread is still in flight', async () => {

@@ -252,7 +252,11 @@ export class DevinAcpHost implements AgentHost {
    * subscriber that asks for it is (#368). */
   private current(historyFromEvents = false): AgentHostSnapshot {
     if (historyFromEvents) return cloneActivitySnapshot(this.activitySnapshot(true))
-    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) })
+    return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()].map(thread => this.withSession(this.log.publishedThread(thread))) })
+  }
+  /** A thread whose session is open on its own connection says so, so a window asks for no early start (#769). */
+  private withSession(thread: AgentThread): AgentThread {
+    return this.connections.has(thread.id) && !this.loading.has(thread.id) ? { ...thread, providerSessionOpen: true } : thread
   }
   /** What activity subscribers are handed. One that keeps history from this adapter's events gets each
    * thread's summary and no messages: those already left as events (#322). */
@@ -260,7 +264,7 @@ export class DevinAcpHost implements AgentHost {
     for (const thread of this.threads.values()) if (thread.activities && !isImmutableActivities(thread.activities)) {
       thread.activities = immutableActivities(thread.activities)
     }
-    return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
+    return { ...this.state, threads: [...this.threads.values()].map(thread => this.withSession(this.log.activityThread(thread, historyFromEvents))) }
   }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
@@ -449,6 +453,15 @@ export class DevinAcpHost implements AgentHost {
       connection.mode = mode.devinMode
     })
   }
+  /**
+   * Early start (#769): a thread Devin already has opens its session, as its next action would. A thread whose first
+   * send has not happened gets nothing: Devin's process opens on a session, and making one is the send's to do.
+   */
+  async startThreadSession(id: string): Promise<void> {
+    if (!this.state.connected || !this.aliases[id]?.devinSessionId) return
+    await this.open(id)
+    this.reaper.touch(id)
+  }
   private open(id: string): Promise<Connection> {
     const stopping = this.stopping.get(id)
     if (stopping) return stopping.then(() => this.open(id))
@@ -457,7 +470,8 @@ export class DevinAcpHost implements AgentHost {
     if (current) return current
     const existing = this.connections.get(id)
     if (existing) return Promise.resolve(existing)
-    const loading = this.load(id).finally(() => { if (this.loading.get(id) === loading) this.loading.delete(id) })
+    // The flag `withSession` publishes waits for the load to clear, so the open is published once it has (#769).
+    const loading = this.load(id).finally(() => { if (this.loading.get(id) === loading) { this.loading.delete(id); if (this.connections.has(id)) this.emit() } })
     this.loading.set(id, loading); return loading
   }
   private async load(id: string): Promise<Connection> {
@@ -1001,7 +1015,8 @@ export class DevinAcpHost implements AgentHost {
     const generation = this.generation
     const alias = this.aliases[id]
     const connection = this.connections.get(id); if (!connection) return
-    this.connections.delete(id); connection.intentionalClose = true; connection.rpc.close(); await connection.rpc.closed
+    // The session is no longer open, so the window is told and asks for an early start the next time the user types (#769).
+    this.connections.delete(id); this.emit(); connection.intentionalClose = true; connection.rpc.close(); await connection.rpc.closed
     if (generation !== this.generation || this.aliases[id] !== alias) return
     if (alias?.ephemeral && alias.origins.length === 0 && alias.settingsConfirmed) { alias.emptyReleased = true; await this.persist() }
     this.log.release(id); this.reaper.forget(id)

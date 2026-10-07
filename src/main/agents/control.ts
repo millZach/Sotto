@@ -120,6 +120,7 @@ type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promi
 class SupersededSupervision extends Error {}
 class RefusedInterrupt extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
+const PROMPT_NOT_SAVED = 'Could not save this prompt, so it was not sent. Check access to local storage and send it again.'
 /** The 30-second upkeep of previews and staged images failed: nothing anyone still needs was touched. */
 const ATTACHMENT_UPKEEP_ERROR = 'Could not remove screenshots Sotto no longer needs. Nothing was lost. Check access to local storage.'
 /**
@@ -383,7 +384,8 @@ export class AgentControl {
       credentials: { reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
     }
-    this.store = new AtomicJsonStore(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
+    // Compact: it is rewritten before every send.
+    this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false)
@@ -811,10 +813,18 @@ export class AgentControl {
     return () => this.listeners.delete(listener)
   }
   private saved(): Saved {
+    return structuredClone(this.savedOverLiveState())
+  }
+  /**
+   * What `agents.json` holds, built over the live state rather than copied from it. It shares the live state's
+   * objects, so it is good only until the next await: serialize it before then. `saved()` is the copy for a caller
+   * that keeps it.
+   */
+  private savedOverLiveState(): Saved {
     this.syncLegacyDraft()
     const { configuration, assignments, queue, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing, pendingRequest } = this.state
     const retainContext = this.dependencies.historyEnabled?.() !== false
-    return structuredClone({ configuration, providerUpgrade: this.state.providerUpgrade ?? null,
+    return { configuration, providerUpgrade: this.state.providerUpgrade ?? null,
       assignments: assignments.map(assignment => ({ ...assignment, instruction: retainContext ? assignment.instruction : '', paused: assignment.paused || (!retainContext && Boolean(assignment.instruction)) })),
       queue: queue.map(item => ({ ...item, text: retainContext ? item.text : 'Open the provider to review this pending item.' })),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, draftAttachments: this.state.draftAttachments ?? [], composing, pendingRequest: retainContext ? pendingRequest : '',
@@ -824,7 +834,7 @@ export class AgentControl {
       finishedUnread: this.finishedUnread.saved(),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
-      threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] })
+      threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] }
   }
   async privacyChanged(): Promise<void> {
     const revision = ++this.privacyRevision
@@ -855,18 +865,20 @@ export class AgentControl {
   /** `closing`: the last write before Sotto stops, which leaves no confirmed settings entry behind on disk. */
   private async persist(closing = false): Promise<void> {
     if (this.retirementFailure) throw new Error(this.retirementFailure)
-    const saved = this.saved()
+    // Most calls follow a provider snapshot that changed nothing saved, so the state is serialized to compare
+    // and never copied: the store serializes what it writes as it is handed it.
+    const saved = this.savedOverLiveState()
     const serialized = JSON.stringify(saved)
-    const outbox = [...saved.outbox]
     const queued = this.queuedWrite
-    if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, outbox, queued)))) {
+    if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
       // The newest queued write already carries this state, so it is durable when that write lands. A write
       // still in flight is waited for rather than repeated, and its failure is this call's failure.
       await queued.written
     } else {
+      const outbox = structuredClone(saved.outbox)
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      const written = this.store.write(saved)
+      const written = this.store.write(saved, serialized)
       const current: QueuedWrite = { serialized, outbox, written }
       this.queuedWrite = current
       try {
@@ -901,8 +913,21 @@ export class AgentControl {
     return JSON.stringify({ ...saved, outbox: queued.outbox }) === queued.serialized
   }
   private draftSignatures(drafts: readonly Saved['threadDrafts'][number][]): Map<string, string> {
-    return new Map(drafts.map(({ threadId, draftId, text, attachments, skills, files, requestId }) => [threadId,
-      createHash('sha256').update(JSON.stringify({ draftId, text, attachments, skills, files, requestId })).digest('hex')]))
+    return new Map(drafts.map(draft => [draft.threadId, this.draftSignature(draft)]))
+  }
+  /**
+   * A draft's signature, worked out once per draft object. A saved draft is never changed in place, only replaced
+   * (`putThreadDraft` keeps a copy), so the same object always has the same signature, and the check every persist
+   * makes for draft evidence hashes nothing that has not changed.
+   */
+  private readonly draftSignatureCache = new WeakMap<object, string>()
+  private draftSignature(draft: Saved['threadDrafts'][number]): string {
+    const cached = this.draftSignatureCache.get(draft)
+    if (cached !== undefined) return cached
+    const { draftId, text, attachments, skills, files, requestId } = draft
+    const signature = createHash('sha256').update(JSON.stringify({ draftId, text, attachments, skills, files, requestId })).digest('hex')
+    this.draftSignatureCache.set(draft, signature)
+    return signature
   }
   /**
    * Records this moment's feedback evidence, then asks for a broadcast. A provider emits dozens of
@@ -1244,6 +1269,22 @@ export class AgentControl {
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
       ...this.followupStore.peek().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
+  }
+  /**
+   * Early start (#769): the user began typing in this thread's composer, so its provider session starts now rather
+   * than inside the send. It takes its place in the thread's own lane, so a send typed meanwhile waits behind it and
+   * finds the session it started, but it marks nothing busy, publishes nothing, writes nothing and reports nothing: a
+   * start that fails leaves the send to start the session and say what went wrong, as it always has.
+   */
+  private startThreadSession(threadId: string): Promise<AgentState> {
+    const host = this.dependencies.host
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.shell())
+    const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
+      .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
+    this.threadActions.set(threadId, task)
+    void task.finally(() => { if (this.threadActions.get(threadId) === task) this.threadActions.delete(threadId) })
+    return task.then(() => this.shell())
   }
   private thread(id: string | null): AgentThread {
     const thread = this.state.host.threads.find(t => t.id === id)
@@ -1881,6 +1922,7 @@ export class AgentControl {
     // disconnect, never on the one global lane, which would lock every other surface while it ran.
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
+    if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
       if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })
@@ -1942,8 +1984,11 @@ export class AgentControl {
         }
         this.setDelivery(command.threadId, command.draftId!, 'queued')
         this.publish({ receivedAt, threadId: command.threadId, draftId: command.draftId! })
-        // Catch immediately even if the existing command lane is blocked for a long time.
-        admission = this.persist().then(() => undefined, () => new Error('Could not save this prompt. No new prompt was sent.'))
+        // A prompt that has to wait behind another action on its thread is saved now, however long that takes.
+        // One that goes at once is saved by the write that makes its outbox entry durable, just before the
+        // provider hears it: the same state and one write fewer. Until then it is held in memory, and a send
+        // that fails before that write keeps it with the save after the lane.
+        if (this.threadActions.has(threadId)) admission = this.persist().then(() => undefined, () => new Error(PROMPT_NOT_SAVED))
       }
     }
     const selectionRevision = this.selectionRevision
@@ -3049,7 +3094,8 @@ export class AgentControl {
       // Nothing crossed the adapter boundary. Do not leave phantom uncertain intent.
       this.outbox = this.outbox.filter(item => item.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) { this.setDelivery(threadId, draftId, 'failed'); this.publish() }
-      throw error
+      // This write is also the one that first saves a prompt sent at once, so its failure says what admission's did.
+      throw prompt ? new Error(PROMPT_NOT_SAVED) : error
     }
     let result
     if (prompt) addTurnContext(turn, prompt.text)
@@ -3226,7 +3272,8 @@ export class AgentControl {
       this.state.draftAttachments = attachments
       this.manualDraftId = draftId ?? null
       this.state.draft = text; this.state.draftThreadId = threadId; this.state.draftRequestId = null; this.state.composing = true
-      // Admission already persisted the complete per-thread draft before entering this lane.
+      // Admission put the complete per-thread draft in place before this lane, and saved it then if the lane was busy;
+      // otherwise the write that makes the outbox entry durable saves it.
     }
     this.canAct()
     this.observe(threadId)
@@ -3604,11 +3651,26 @@ export class AgentControl {
     this.pumpFollowups()
     this.generateTitles()
     if (!announcedManualControl) this.presentQueue(false)
-    void this.persist().catch(() => {
-      if (this.disposed) return
-      this.state.assignments.forEach(a => { a.paused = true }); this.state.error = 'Agent state could not be saved. Management paused.'; this.publish()
-    })
+    this.persistAfterSnapshots()
     this.publish()
+  }
+  private afterSnapshotsPersistQueued = false
+  /**
+   * Saves what a snapshot changed once the code that accepted it has run on, so the snapshots one run accepts
+   * share a single comparison. A send reads its thread, accepts that snapshot and goes straight on to the
+   * write that makes its outbox entry durable: that write then carries the snapshot's changes too, and this
+   * finds nothing left to write rather than putting another write in front of the provider.
+   */
+  private persistAfterSnapshots(): void {
+    if (this.afterSnapshotsPersistQueued) return
+    this.afterSnapshotsPersistQueued = true
+    queueMicrotask(() => {
+      this.afterSnapshotsPersistQueued = false
+      void this.persist().catch(() => {
+        if (this.disposed) return
+        this.state.assignments.forEach(a => { a.paused = true }); this.state.error = 'Agent state could not be saved. Management paused.'; this.publish()
+      })
+    })
   }
   private enqueue(thread: AgentThread, kind: AgentQueueItem['kind'], text: string, requestId?: string): void {
     const latest = this.state.host.threads.find(item => item.id === thread.id)

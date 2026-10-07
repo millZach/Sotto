@@ -68,9 +68,9 @@ describe('review comments on the composer', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     const text = 'Tighten this before we merge.\n\nComment on `src/main/voice.ts L12`:\n\nSay why.\n\n```diff\n-old\n+new\n```'
     expect(requests(live, 'manual-send')).toEqual([{ type: 'manual-send', threadId: THREAD, draftId: expect.any(String), text }])
-    // The revision saved before the send is the same text, so main can match the delivery to its draft.
+    // Main saves the sent revision from the send itself, so the window saves no copy of it first.
     const sent = requests(live, 'manual-send')[0]!
-    expect(requests(live, 'save-thread-draft').find(save => save.draftId === sent.draftId)?.text).toBe(text)
+    expect(requests(live, 'save-thread-draft').find(save => save.draftId === sent.draftId)).toBeUndefined()
     expect(reviewCommentStore.list(THREAD)).toEqual([])
     expect(chips()).toBeNull()
     expect(prompt()).toHaveValue('')

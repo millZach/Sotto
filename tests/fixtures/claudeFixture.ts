@@ -6,6 +6,8 @@ import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../sr
 import type { RecordedRpc } from './codexFixture'
 import type { AdapterFixture, AdapterSessionOptions } from '../integration/adapterContract'
 
+export { storedClaudeOrigins } from './claudeOrigins'
+
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
 async function oneShots(root: string): Promise<Record<string, unknown>[]> {
   return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)

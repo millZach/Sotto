@@ -1082,6 +1082,9 @@ it.each(['empty', 'different'] as const)('owns a queued socket Send by its selec
     let entered: () => void = () => undefined
     const started = new Promise<void>(resolve => { entered = resolve })
     const gate = new Promise<void>(resolve => { release = resolve })
+    // A snapshot's save runs once the code that accepted it has run on. Let it start, so the gate below holds the
+    // save this test is about.
+    await new Promise<void>(resolve => setImmediate(resolve))
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     predecessor = f.control.commandShell({ type: 'compose', text: 'Blue' }, client)
@@ -1289,6 +1292,9 @@ it.each(['before', 'during'] as const)('preserves a newer same-owner saved revis
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     let entered: () => void = () => undefined
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    // A snapshot's save runs once the code that accepted it has run on. Let it start, so the gate below holds the
+    // save this test is about.
+    await new Promise<void>(resolve => setImmediate(resolve))
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     if (timing === 'before') { predecessor = f.command({ type: 'compose', text: '' }); await started }

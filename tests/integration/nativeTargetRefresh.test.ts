@@ -76,11 +76,13 @@ it.each(['codex', 'claude', 'grok'] as const)('%s rechecks a permission arriving
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Selected', modelId: f.modelId })
-    const seam = f.adapter as unknown as { persist(): Promise<void> }
-    const persist = seam.persist.bind(seam)
+    // Claude makes an origin durable on its own, as a line of its origin journal (#767); the others write the thread store.
+    const seamName = provider === 'claude' ? 'recordOrigin' : 'persist'
+    const seam = f.adapter as unknown as Record<typeof seamName, (...args: unknown[]) => Promise<void>>
+    const persist = seam[seamName].bind(seam)
     let injected = false
-    vi.spyOn(seam, 'persist').mockImplementation(async () => {
-      await persist()
+    vi.spyOn(seam, seamName).mockImplementation(async (...args: unknown[]) => {
+      await persist(...args)
       if (provider === 'codex') {
         const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8')) as Record<string, { origins: Array<{ messageId: string }> }>
         // History identity writes also use this seam. Inject at the durable

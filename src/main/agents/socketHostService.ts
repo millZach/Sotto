@@ -737,6 +737,9 @@ export class SocketHostService implements HostService {
       catch { return { ...acknowledged, error: 'This computer could not save your draft. Keep your text and images and try saving again.' } }
       return { ...acknowledged, error: state.error }
     }
+    // An early start changes nothing in the thread, and a session it opens shows in the host's next push. Reading the
+    // thread here would cost a whole-thread read just before the send and could show an error the start never shows (#769).
+    if (command.type === 'start-thread-session') return acknowledged
     // Receipt evidence is optional after acknowledgement. A failed read preserves the command-local
     // outcome and leaves its saved answer held until an exact positive receipt is recovered later.
     if (answer) await this.refreshRequestAnswer(commandId, answer).catch(() => undefined)

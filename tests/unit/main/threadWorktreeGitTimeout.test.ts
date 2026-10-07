@@ -96,3 +96,12 @@ describe('worktree Git process deadlines', () => {
     await expect(runWorktreeGitProcess('.', [], { executable: 'sotto-no-such-git-executable' })).rejects.toMatchObject({ timedOut: false, message: expect.stringContaining('Git is unavailable') })
   })
 })
+
+describe('worktree Git process environment', () => {
+  // A status read can run beside an agent's own commit in the same folder (issue #766). Without optional locks it
+  // never takes the index lock to write back what it refreshed, so the commit never finds the lock taken.
+  it('runs every worktree Git command without optional locks', async () => {
+    const said = await runWorktreeGitProcess('.', ['status'], { executable: process.execPath, prefix: ['-e', 'process.stdout.write(process.env.GIT_OPTIONAL_LOCKS ?? "unset")', '--'] })
+    expect(said).toBe('0')
+  })
+})

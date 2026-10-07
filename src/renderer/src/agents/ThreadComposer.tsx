@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -19,6 +19,7 @@ import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions } from './ThreadOptions'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
+import { sessionSeenOpen, startOnTyping } from './earlyStart'
 import { toolbarApplies } from './branchToolbar.logic'
 import './composer.css'
 import './reviewComments.css'
@@ -58,7 +59,7 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  */
 export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string): Promise<void> {
   const threadId = row.thread.id
-  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode) : store.retry(threadId, retryDraftId, submittedAt)
+  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
   let attempted = false
   try {
@@ -180,6 +181,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const [menuOpen, setMenuOpen] = useState(false)
   const leavePickers = useRef<() => void>(() => undefined)
   const statusId = `${composerId}-status`
+  // Seen open, the session is asked for again the next time it is stopped and the user types (#769).
+  const sessionOpen = row.thread.providerSessionOpen === true
+  useEffect(() => { if (sessionOpen) sessionSeenOpen(store, threadId) }, [sessionOpen, store, threadId])
 
   const edit = (patch: Parameters<ThreadDraftStore['edit']>[1]): void => {
     store.edit(threadId, question ? { ...patch, requestId: question.requestId! } : patch)
@@ -192,7 +196,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (field !== null && document.activeElement !== field && field.form?.contains(document.activeElement)) field.focus()
     if (question?.requestId) {
       if (draft.requestId !== question.requestId) store.edit(threadId, { requestId: question.requestId })
-      const answer = store.submit(threadId, submittedAt)
+      // Main keeps no draft for an answer, so this window saves the revision it answers with.
+      const answer = store.submit(threadId, submittedAt, 'send', 'window')
       if (answer === null) return
       store.dismiss(threadId, answer.draftId)
       store.setAnswerState(threadId, { sending: true, error: null })
@@ -409,7 +414,12 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
         aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex)
           : files.open && files.activeIndex !== null ? fileOptionId(fileListId, files.activeIndex) : undefined}
         placeholder={placeholder}
-        onChange={event => { if (!editable) return; editText(event.target.value); picker.track(event.target); files.track(event.target) }}
+        onChange={event => {
+          if (!editable) return
+          editText(event.target.value); picker.track(event.target); files.track(event.target)
+          // The first keystroke starts the thread's provider session, so Send does not wait for it (#769).
+          startOnTyping(store, command, row.thread, row.connected)
+        }}
         onSelect={event => { picker.track(event.currentTarget); files.track(event.currentTarget) }}
         onKeyDown={event => {
           // Without the skills list, an open menu is still told by aria-expanded.

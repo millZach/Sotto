@@ -439,4 +439,90 @@ describe('AtomicJsonStore', () => {
     await store.write({ value: 'saved' })
     expect(await store.exists()).toBe(true)
   })
+
+  it('writes a value as it was when write was called, so a caller need not copy it', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    const value = { value: 'as called' }
+
+    const written = store.write(value)
+    value.value = 'changed afterwards'
+    await written
+
+    await expect(store.read()).resolves.toEqual({ value: 'as called' })
+  })
+
+  it('writes compact JSON when asked, which reads back the same', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = AtomicJsonStore.compact(filePath, (input) => exampleSchema.parse(input), () => ({ value: 'default' }))
+
+    await store.write({ value: 'compact' })
+
+    expect(await readFile(filePath, 'utf8')).toBe('{"value":"compact"}\n')
+    await expect(store.read()).resolves.toEqual({ value: 'compact' })
+  })
+
+  it('writes text already serialized as it is, in order with other writes', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+
+    const first = store.write({ value: 'first' })
+    const second = store.writeSerialized(JSON.stringify({ value: 'second' }))
+    await Promise.all([first, second])
+
+    expect(await readFile(filePath, 'utf8')).toBe('{"value":"second"}\n')
+  })
+
+  it('shares one queued latest write among calls made before it starts, reading the value as it starts', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    let current = 'one'
+    const reads: string[] = []
+    const latest = (): Example => { reads.push(current); return { value: current } }
+
+    // A write in flight holds the queue, so the next latest write waits behind it.
+    const running = store.write({ value: 'running' })
+    const first = store.writeLatest(latest)
+    current = 'two'
+    const second = store.writeLatest(latest)
+    current = 'three'
+    expect(second).toBe(first)
+    await Promise.all([running, first])
+
+    expect(reads).toEqual(['three'])
+    await expect(store.read()).resolves.toEqual({ value: 'three' })
+  })
+
+  it('queues one more latest write for a call made while one is running, so no call is left unsaved', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    let current = 'one'
+    const reads: string[] = []
+    const latest = (): Example => { reads.push(current); return { value: current } }
+    const first = store.writeLatest(latest)
+    // The first latest write has read its value and is writing it.
+    while (reads.length === 0) await new Promise(done => setImmediate(done))
+    current = 'two'
+    const second = store.writeLatest(latest)
+
+    expect(second).not.toBe(first)
+    await Promise.all([first, second])
+    expect(reads).toEqual(['one', 'two'])
+    await expect(store.read()).resolves.toEqual({ value: 'two' })
+  })
+
+  it('ends at a later latest call, not at a plain write made between two of them', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = createStore(filePath)
+    let current = 'one'
+    const latest = (): Example => ({ value: current })
+    const first = store.writeLatest(latest)
+    const plain = store.write({ value: 'plain' })
+    current = 'newest'
+    const last = store.writeLatest(latest)
+
+    expect(last).not.toBe(first)
+    await Promise.all([first, plain, last])
+    await expect(store.read()).resolves.toEqual({ value: 'newest' })
+  })
 })
