@@ -34,3 +34,6 @@
 
 /* Expand: the viewer's frame from diagrams.css, with the page filling the room under its bar. */
 .interactive-visual-viewer__body { display: flex; flex: 1; min-height: 0; }
+
+/* Escape inside the page gives focus back to the card: the ring shows where it went. */
+.visual-card[data-kind='interactive']:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }

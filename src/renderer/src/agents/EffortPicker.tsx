@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
+import { useReducedMotion } from '../state/reducedMotion'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
@@ -26,19 +27,6 @@ const ARRIVAL_MS = 1900
 /** A drag within this much of a stop is drawn toward it, so the thumb settles on levels rather than between them. */
 const MAGNET = 0.2
 
-function useStill(): boolean {
-  const read = (): boolean => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reducedMotion === 'on'
-  const [still, setStill] = useState(read)
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-    const update = (): void => setStill(read())
-    const observer = new MutationObserver(update)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
-    media?.addEventListener('change', update)
-    return () => { observer.disconnect(); media?.removeEventListener('change', update) }
-  }, [])
-  return still
-}
 
 /**
  * Eases the painted position toward the chosen one and writes it to the card as `--effort-x`, which the fill,
@@ -255,7 +243,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
   const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
-  const still = useStill()
+  const still = useReducedMotion()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {
     // Hide the native popover before restoring focus; a turn starting or the provider going away disables the chip.
