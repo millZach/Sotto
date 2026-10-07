@@ -1098,8 +1098,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
     let initialized: ClaudeFrame
     try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
-    catch (error) { void this.stopRuntime(id, runtime); throw error }
-    if (generation !== this.generation) { await this.stopRuntime(id, runtime); throw new Error('Claude connection was cancelled.') }
+    // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
+    catch (error) { void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw error }
+    if (generation !== this.generation) { await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw new Error('Claude connection was cancelled.') }
     return { runtime, initialized }
   }
   /**

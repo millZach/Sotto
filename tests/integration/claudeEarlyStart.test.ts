@@ -203,6 +203,25 @@ describe('Claude early start', () => {
     expect((await f.adapter.snapshot()).threads.find(thread => thread.id === threadId)?.providerSessionOpen).toBeUndefined()
   })
 
+  it('starts the thread’s own CLI without waiting for a spare whose initialize failed to exit', async () => {
+    const { f, registry, workspace, draft, send } = await stack()
+    const threadId = await draft()
+    const closing = (f.adapter as unknown as { closing: Map<string, Promise<void>> }).closing
+    const waitedFor = vi.spyOn(closing, 'set')
+    await writeFile(join(f.root, 'initialize-script.json'), JSON.stringify({ fail: true }))
+    await writeFile(join(f.root, 'exit-delay.json'), JSON.stringify({ ms: 300 }))
+    await workspace.startThreadSession(threadId)
+    const [spare] = await launches(f)
+    await rm(join(f.root, 'initialize-script.json'))
+    expect(await send(threadId)).toEqual({ accepted: true })
+    expect(await f.realId(registry.byThread(threadId)!.sessionId)).not.toBe(spare!.session)
+    await expect.poll(() => exited(f, spare!.session)).toBe(true)
+    // The failed spare ran a session of its own, so the thread's start did not wait for it to exit.
+    expect(waitedFor).not.toHaveBeenCalled()
+    await rm(join(f.root, 'exit-delay.json'))
+    expect(await violations(f)).toBe('')
+  })
+
   it('lets go of the session ID an early start held when the provider disconnects', async () => {
     const { f, registry, workspace, draft, send } = await stack()
     const threadId = await draft()
