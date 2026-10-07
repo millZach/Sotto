@@ -14,9 +14,9 @@ public enum HostFinder {
     /// Every name the system resolver gives for a machine name: its canonical name and the
     /// reverse-lookup name of each address. Injected so tests need no network.
     public typealias Lookup = @Sendable (String) async -> [String]
-    /// The ports to try for a name, in order: the desktop's Tailscale Serve port, then the usual HTTPS
-    /// port a host without a screen is served on.
-    public static let ports = [8443, 443]
+    /// The ports to try for a name, in order: the Tailscale Serve ports phone access uses (8443, or
+    /// 10000 when another app holds 8443), then the usual HTTPS port a host run by hand is served on.
+    public static let ports = [8443, 10000, 443]
 
     public static func read(_ typed: String) throws -> Input {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -47,7 +47,7 @@ public enum HostFinder {
         ports.compactMap { try? HostEndpoint("https://\(fullName):\($0)") }
     }
 
-    /// The addresses to check, in order: the one typed with its port, or 8443 then 443 on the
+    /// The addresses to check, in order: the one typed with its port, or 8443, 10000, then 443 on the
     /// computer's full name.
     public static func candidates(_ typed: String, lookup: Lookup = SystemLookup.names) async throws -> [HostEndpoint] {
         switch try read(typed) {
@@ -78,6 +78,31 @@ public enum HostFinder {
             }
         }
         throw missed ?? ClientError.invalidHost
+    }
+
+    /// The Tailscale Serve ports phone access uses. A computer can come back on the other one after a
+    /// restart, when another app took the port it was on.
+    public static let phoneAccessPorts = [8443, 10000]
+
+    /// Reaches a saved computer: at its saved address, then, when that address is on a phone access port
+    /// and no running Sotto answers there, at the other phone access port on the same full name. A 502 or 503
+    /// counts, since another app's Serve setting whose own server is stopped answers that way. `check` must
+    /// confirm the pairing's host ID, so another computer answering there is never used. When the other
+    /// port fails too, for any reason, the saved address's error is the one thrown.
+    public static func reconnect<Found>(_ saved: HostEndpoint, check: (HostEndpoint) async throws -> Found) async throws -> (endpoint: HostEndpoint, found: Found) {
+        do { return (saved, try await check(saved)) }
+        catch {
+            switch error as? ClientError {
+            case .hostUnreachable?, .notASottoHost?, .sottoNotRunning?: break
+            default: throw error
+            }
+            guard phoneAccessPorts.contains(saved.port) else { throw error }
+            for port in phoneAccessPorts where port != saved.port {
+                guard let other = try? HostEndpoint("https://\(saved.host):\(port)") else { continue }
+                if let found = try? await check(other) { return (other, found) }
+            }
+            throw error
+        }
     }
 
     static func isMachineName(_ text: String) -> Bool {
