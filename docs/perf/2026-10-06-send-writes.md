@@ -47,7 +47,7 @@ both runs.
 
 The three `agents.json` writes in the benchmark were the coordinator's admission write, a save of the thread
 snapshot it read just before the send, and the outbox entry. Each was about 4 KB here. The snapshot's save now rides
-on the outbox write, and admission writes only for a prompt that waits behind other work on its thread (ADR-0056).
+on the outbox write, and admission writes only for a prompt that waits behind other work on its thread (ADR-0058).
 
 Two more writes of `agents.json` were the window's, and the benchmark does not show them. The window saved the
 revision it was sending when Enter came within 250 ms of the last keystroke; the benchmark presses after the typed
