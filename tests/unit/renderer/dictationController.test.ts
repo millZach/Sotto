@@ -1289,8 +1289,9 @@ describe('kept recordings', () => {
 
     await harness.controller.cancel()
     expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true })
-    cleanup.resolve({ text: 'Cleaned words.', applied: true })
+    // The cancelled attempt stops waiting at once, though the cleanup call runs on.
     await retry
+    cleanup.resolve({ text: 'Cleaned words.', applied: true })
     expect(harness.deliverOutput).not.toHaveBeenCalled()
     expect(harness.addHistory).not.toHaveBeenCalled()
     expect(harness.controller.getState()).toMatchObject({ status: 'error', kept: true })
@@ -1301,6 +1302,36 @@ describe('kept recordings', () => {
     expect(call).toBe(2)
     expect(polishes).toBe(1)
     expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'Cleaned words.' }))
+  })
+
+  it('tries cleanup afresh when the one a cancelled Try again left running failed', async () => {
+    const cleanup = deferred<{ text: string; applied: boolean }>()
+    let polishes = 0
+    let call = 0
+    const harness = createHarness({
+      currentSettings: settings({ llmFormatting: true }),
+      transcribe: async () => {
+        call += 1
+        if (call === 1) throw new TranscriptionError('rate-limited')
+        return { text: 'kept words', language: 'en' }
+      },
+      polishTranscript: async () => {
+        polishes += 1
+        return polishes === 1 ? cleanup.promise : { text: 'Cleaned the second time.', applied: true }
+      },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    const retry = harness.controller.retry()
+    await vi.waitFor(() => expect(polishes).toBe(1))
+    await harness.controller.cancel()
+    await retry
+    cleanup.resolve({ text: 'kept words', applied: false })
+    await Promise.resolve()
+
+    await harness.controller.retry()
+    expect(polishes).toBe(2)
+    expect(harness.deliverOutput).toHaveBeenCalledWith(expect.objectContaining({ text: 'Cleaned the second time.' }))
   })
 
   it('keeps the parts a cancelled Try again had already got back', async () => {

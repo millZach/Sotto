@@ -119,6 +119,8 @@ interface ActiveSession {
   attempt: number
   /** The cleanup pass under way for this recording's text, kept for a Try again after a cancel. */
   cleanup?: { readonly text: string; readonly result: Promise<TranscriptPolishResult> }
+  /** Ends a wait on cleanup when its Try again is cancelled. */
+  abandonWait?: () => void
 }
 
 /**
@@ -455,6 +457,8 @@ export class DictationController {
     // Discard, a new dictation or closing Sotto lets a kept recording go.
     if (this.state.status === 'processing' && session.keptCode !== undefined && this.isCurrent(session)) {
       session.attempt += 1
+      session.abandonWait?.()
+      delete session.abandonWait
       try {
         this.dependencies.transcriber.cancel(session.id)
       } catch {
@@ -675,17 +679,29 @@ export class DictationController {
             ? Math.max(0, Math.round(session.durationMs))
             : 0,
         })
-        void pending.catch(() => undefined)
-        session.cleanup = { text: rawText, result: pending }
+        const entry = { text: rawText, result: pending }
+        session.cleanup = entry
+        // Only a cleanup still running, or one that worked, is worth reusing;
+        // one that failed is tried afresh next time.
+        void pending.then(
+          (polished) => { if (!polished.applied && session.cleanup === entry) delete session.cleanup },
+          () => { if (session.cleanup === entry) delete session.cleanup },
+        )
       }
+      const cleanup = session.cleanup!.result
+      // A cancelled Try again stops waiting at once, so Dictate's buttons come back.
+      const abandoned = new Promise<null>((resolve) => { session.abandonWait = () => resolve(null) })
       try {
-        const polished = await session.cleanup.result
+        const polished = await Promise.race([cleanup, abandoned])
+        if (polished === null) return
+        delete session.abandonWait
         if (polished.applied && polished.text.trim().length > 0) {
           rawText = polished.text
           normalized = formatTranscript(polished.text)
         }
       } catch {
         // The raw transcript is always deliverable without the cleanup pass.
+        delete session.abandonWait
       }
       // A Try again cancelled during cleanup has already returned to its kept recording.
       if (!this.isCurrent(session) || session.attempt !== attempt) return
