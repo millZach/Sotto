@@ -23,3 +23,7 @@ The complete cached provider view that send validation and confirmation refresh 
 ## Amendment, September 26, 2026: Codex's send-validation read is the newest-turn check (#324)
 
 The decision above has send validation refresh the target thread. For Codex that read is now the newest-turn check: it asks Codex for the thread's newest turn alone and reads the whole transcript only when that turn is not the finished one Sotto already holds, with the same messages. The dispatch-time takeover and stale-reply checks after it are unchanged. [ADR-0005](0005-codex-app-server-adapter.md)'s follow-up has the full list of what still reads whole, and the measurements are in [the send-read note](../perf/2026-09-26-codex-send-read.md).
+
+## Amendment, October 5, 2026: one read before a send (#765)
+
+Send validation and confirmation still refresh only the target thread, but neither always reaches the provider now. The coordinator's validation read names the send it is for, and it stands for the adapter's own read at the start of that send while the thread has not moved. The adapter's dispatch-time takeover and stale-reply checks after it are unchanged. The confirmation read after a send is accepted is answered first from what the workspace holds, where the echo usually waits, and reads the thread only when the echo is not there. So "Sends keep their confirmation read" above still holds, but that read is usually of what Sotto already has. [ADR-0005](0005-codex-app-server-adapter.md)'s amendment "one read before a send" has the rule and what it narrows.

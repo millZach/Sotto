@@ -33,7 +33,7 @@ User report: answers sent from the laptop reach agents on Forge, across multiple
 - [x] Protect Send before queued Compose creates its draft, refuse queued local thread changes without sending, and verify both failing and ordinary same-thread journeys with independent reviews.
 - [ ] Confirm all required gates and resolved review comments on the published revision, then merge PR #796.
 
-The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `3bc5efa1`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.
+The implementation is on `fix/forge-question-ack`, originally based on local `main` at `77d24f8d` and now integrated with `main` at `6607fec5`. The original `chore/launch-video` checkout and its unrelated untracked artifacts are unchanged. The user authorized opening a PR and merging after checks and comments are resolved. No install or live host restart is part of that delivery.
 
 The throwaway state demonstration is preserved on `prototype/forge-answer-receipt` at `4f81c4b4`, in `docs/prototypes/forge-answer-receipt-prototype.html`. It illustrates the existing question panel: only a receipt for the exact submission clears its saved answer. It makes no visual change to the shipped interface. The user clarified that the bug affects multiple providers; no new design choice was needed.
 
