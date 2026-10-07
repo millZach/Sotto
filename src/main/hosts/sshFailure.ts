@@ -96,6 +96,11 @@ export interface SshFix { readonly text: string; readonly command: string }
 export class SshFailure extends Error {
   /** Set where there is one exact command that fixes the failure. */
   fix?: SshFix
+  /**
+   * Set on `host-not-running` when Forget's admin connection found this installation's boot unit and could not take it
+   * away (ADR-0054), so the forgotten host still starts at boot.
+   */
+  bootLeft?: boolean
   constructor(readonly code: SshFailureCode, message: string = MESSAGES[code]) {
     super(message)
     this.name = 'SshFailure'

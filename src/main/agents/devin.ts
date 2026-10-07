@@ -17,7 +17,8 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
-import { devinActivities } from './devinActivity'
+import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
+import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
@@ -319,7 +320,10 @@ export class DevinAcpHost implements AgentHost {
     const thread = this.thread(id)
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.origin.messageId, status }
-    thread.activities = markTurnActivity(thread.activities?.map(activity => activity.status === 'running' && activity.kind !== 'turn'
+    // A thought the turn ended on was cut off, which is known; the work it left running has an outcome nobody saw.
+    const thoughts = settledThinking(DEVIN_THINKING_ID_PREFIX, thread.activities ?? [], thinkingSettledAs(status), true)
+    const settled = thoughts.length ? mergeAgentActivities(thread.activities, thoughts) : thread.activities
+    thread.activities = markTurnActivity(settled?.map(activity => activity.status === 'running' && activity.kind !== 'turn'
       ? { ...activity, status: status === 'failed' ? 'unknown' : 'interrupted' } : activity), { provider: 'devin', turnId: turn.origin.messageId, status })
   }
   private unsupported(rpc: DevinRpc, frame: DevinFrame): void {
@@ -898,7 +902,9 @@ export class DevinAcpHost implements AgentHost {
       const status = stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : 'failed'
       this.thread(id).status = status === 'failed' ? 'error' : 'idle'
       this.thread(id).lastTurn = { id: origin.messageId, status }
-      this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
+      // A thought the turn ended on gets no later update to settle it.
+      const thoughts = settledThinking(DEVIN_THINKING_ID_PREFIX, this.thread(id).activities ?? [], thinkingSettledAs(status), true)
+      this.thread(id).activities = markTurnActivity(thoughts.length ? mergeAgentActivities(this.thread(id).activities, thoughts) : this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status })
       this.reaper.touch(id); this.emit()
       // A turn taken on the stream's evidence alone has its replay read once it ends, unless a read has confirmed it
       // already, so a dispatch the replay contradicts still says so, and the next send's reads find nothing to confirm.

@@ -102,3 +102,26 @@ it('looks up only related active checkout candidates and caches shared folders f
     expect(lookup.mock.calls.map(call => call[0])).toEqual([project.path])
   } finally { vi.restoreAllMocks(); integration?.dispose(); await f.stop(); await f.remove() }
 })
+
+it('takes a send\'s checkpoint from the thread the coordinator just read, settling the last turn once', async () => {
+  const f = await workspaceFixture()
+  let integration: ReturnType<typeof connectCheckpoints> | undefined
+  try {
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'ready', threadId: 'ready', projectId: project.id, modelId: model.id, title: 'Ready' })
+    const files = new FilesService({ resolveBinding: id => resolveFilesBinding(f.host.workspaceSnapshot(), id), copyPath: vi.fn(), reveal: vi.fn() })
+    const hooks = vi.spyOn(f.host, 'setCheckpointHooks')
+    const pending = vi.fn(() => false)
+    integration = connectCheckpoints({ files, directory: f.root, host: f.host, registry: f.registry,
+      control: { subscribe: () => () => undefined, hasPendingThreadWork: pending } as unknown as AgentControl, report: vi.fn() })
+    const refresh = vi.spyOn(f.host, 'refreshThread')
+    const settle = vi.spyOn(integration.checkpoints, 'afterTurn')
+    await hooks.mock.calls[0]![0].beforeTurn('ready')
+    expect(refresh).not.toHaveBeenCalled()
+    expect(settle).toHaveBeenCalledOnce()
+    // Taking the checkpoint asks for the thread's history, not whether other work is pending.
+    expect(pending).not.toHaveBeenCalled()
+  } finally { vi.restoreAllMocks(); integration?.dispose(); await f.stop(); await f.remove() }
+})

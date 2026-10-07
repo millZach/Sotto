@@ -75,7 +75,12 @@ function replay(sessionId) {
    _meta: { ...(message.role === 'user' ? { 'cognition.ai/clientMessageId': message.id, 'cognition.ai/messageSubIndex': 0 } : {}), 'cognition.ai/timestamp': message.timestamp } })
  }
 }
-function complete(sessionId, text, stopReason = 'end_turn') {
+// With `thought`, the reply opens on ACP thought chunks, which Devin streams live and Sotto does not read back from replay.
+function complete(sessionId, text, stopReason = 'end_turn', thought) {
+ if (typeof thought === 'string') {
+  const middle = Math.ceil(thought.length / 2)
+  for (const part of thought ? [thought.slice(0, middle), thought.slice(middle)] : ['']) update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: part } })
+ }
  if (text) {
   const timestamp = new Date().toISOString()
   saveMessage(sessionId, { role: 'assistant', text, timestamp })
@@ -195,7 +200,8 @@ const control = setInterval(() => {
   if (!command || seen.has(command.id)) continue
   seen.add(command.id)
   if (command.type === 'malformed') process.stdout.write('{invalid json}\n')
-  if (command.type === 'complete') complete(sessionId, command.text, command.reason)
+  if (command.type === 'complete') complete(sessionId, command.text, command.reason, command.thought)
+  if (command.type === 'thought') update(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: command.text } })
   if (command.type === 'mode') update(sessionId, { sessionUpdate: 'current_mode_update', currentModeId: command.mode })
   if (command.type === 'changed-permission') {
    const prior = [...pending].find(([, value]) => value.kind === 'permission' && value.sessionId === sessionId)

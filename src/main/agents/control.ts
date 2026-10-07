@@ -23,6 +23,7 @@ import { desktopWindowClient, supervisionClient, type ClientIdentity } from './h
 import type { AgentHost, AgentHostCommand, PromptImage, ThreadReadPurpose } from './host'
 import type { AgentPreference, AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
+import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { attentionItemKey, isLiveAttention } from '../../shared/agentAttention'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
@@ -180,6 +181,11 @@ import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/g
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
+/**
+ * The read immediately before a send, naming the message it is for so the adapter's own first read can be skipped
+ * (#765). An answer to a request is not a send, so its read names none and stands for nothing.
+ */
+const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose => ({ beforeSend: true, ...(sendMessageId ? { sendMessageId } : {}) })
 
 export class AgentControl {
   private readonly followupStore: FollowupStore
@@ -273,6 +279,8 @@ export class AgentControl {
   private finishedUnread = new FinishedUnread()
   private readonly dispatchTurns = new Map<string, ActiveTurn>()
   private readonly feedbackReady = new Set<ActiveTurn>()
+  /** The sends whose reply's first output the coordinator is watching for, to time it. */
+  private readonly firstOutputs = new FirstOutputWatches()
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
@@ -329,11 +337,6 @@ export class AgentControl {
     clients?: ProviderClients
     /** Where a client is installed. Injected so a test never reads the machine's real PATH. */
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
-    /**
-     * Anything else in this process running a client, told once an install has put a new one on disk so it
-     * moves its processes to it as they go idle (ADR-0042). Personal chats hold their own copy of each client.
-     */
-    clientUpdated?: (provider: ProviderId) => Promise<void>
     /** The sentence a send is refused with when an image it names is no longer kept; a headless host names itself. */
     missingAttachment?: string
     /**
@@ -1158,7 +1161,7 @@ export class AgentControl {
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
       // has, and keeps its threads running; its sentence is the one the update reports.
-      const told = await Promise.allSettled([this.dependencies.host.clientUpdated?.(provider), this.dependencies.clientUpdated?.(provider)])
+      const told = await Promise.allSettled([this.dependencies.host.clientUpdated?.(provider)])
       const refused = told.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
       if (refused) this.dependencies.logFailure?.('client-update-handoff-failed', provider)
       const handoff = refused ? refused.reason instanceof Error && refused.reason.message ? refused.reason.message
@@ -1709,6 +1712,8 @@ export class AgentControl {
           text: command.type === 'utterance' ? command.text
             : (command.type === 'manual-send' || command.type === 'steer') ? command.text : command.type === 'send' ? this.state.draft : command.type === 'answer' ? command.answer : '',
         }) : undefined
+      // A send this command makes is timed from the moment it was received, before its admission write and its lane.
+      if (turn) turn.receivedAt = receivedAt
       let failure: string | undefined
       let unconfirmedAnswer: AnswerDeliveryUnconfirmed | undefined
       try {
@@ -1858,12 +1863,20 @@ export class AgentControl {
         if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
         let claimed = false
         const turn = this.beginTurn({ source: 'command', commandType: 'manual-send', text: first.text })
+        // A queued follow-up is timed from the moment the queue takes it, not from when it was queued.
+        if (turn) turn.receivedAt = performance.now()
         let failure: string | undefined
         try {
           this.canAct(threadId)
           await this.followupStore.claim(first.id); claimed = true
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
+          // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
+          // and naming the send lets the adapter take this read for its own.
+          const readStartedAt = performance.now()
+          const read = await this.readThread(threadId, undefined, readBeforeSend(item.messageId))
+          const readMs = performance.now() - readStartedAt
+          this.acceptSnapshot(read)
           const validate = (): void => {
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and explicitly resume queued follow-ups.')
             const latest = this.thread(threadId)
@@ -1874,6 +1887,7 @@ export class AgentControl {
             validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
           }
           validate()
+          this.sendStages(turn)?.addRead(readMs)
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)) }, turn, validate, item.draftId)
@@ -2004,6 +2018,14 @@ export class AgentControl {
     try {
       await this.dependencies.turns?.finish(turn, error !== undefined ? 'failed' : turn.clarified ? 'clarified' : 'completed')
     } catch { /* recording must never throw into the command path */ }
+  }
+  /**
+   * The stopwatch of the send this turn makes, started the first time a step of it is timed. Only a turn that
+   * sends a prompt has one, and its admission counts from when its command was received, where there was one.
+   */
+  private sendStages(turn: ActiveTurn | undefined): SendStageClock | undefined {
+    if (!turn) return undefined
+    return turn.stages ??= new SendStageClock(turn.receivedAt)
   }
   private async navigate(threadId: string): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: 'select-thread', text: '' })
@@ -2567,9 +2589,11 @@ export class AgentControl {
     for (const action of classifyRiskyAction(request)) this.dependencies.authority?.authorizes({ action, resource: '*', scope: thread.projectId, at })
   }
   /**
-   * Read a thread back from its host. `purpose` says what the read is for: the read immediately before a send
-   * passes `{ beforeSend: true }`, which an adapter may make lighter than a whole read when it can show nothing
-   * changed (Codex's newest-turn check, ADR-0005). What the send then checks is the same.
+   * Read a thread back from its host. `purpose` says what the read is for. The read immediately before a send passes
+   * `{ beforeSend: true }` and the message ID of the send: an adapter reads only what is new where it can (Codex's
+   * newest-turn check, ADR-0005), and the read stands for the adapter's own at the start of that send (#765). The
+   * read after a host accepted a send passes `{ afterSend: true }`, which the workspace answers from what it holds.
+   * What the send checks is the same either way.
    */
   private readThread(threadId?: string, provider?: ProviderId, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     const host = this.dependencies.host
@@ -2639,6 +2663,9 @@ export class AgentControl {
     let result
     if (prompt) addTurnContext(turn, prompt.text)
     else if (command.type === 'answer') addTurnContext(turn, command.answer)
+    // A prompt sent as a new turn is timed step by step down to its reply's first output; a steer joins a running turn.
+    const stages = prompt && command.type === 'send' ? this.sendStages(turn) : undefined
+    let endLoan: (() => void) | undefined
     let providerLatencyMs: number | undefined
     let previewAttachments: AgentAttachmentHandle[] = []
     try {
@@ -2661,12 +2688,22 @@ export class AgentControl {
         ? { ...prompt, attachments: prompt.attachments.map(image => this.promptImage(image)) } : command) as AgentHostCommand
       try {
         this.canAct(undefined, draftKept)
+        if (stages && prompt && !stages.has('dispatched')) {
+          stages.mark('dispatched')
+          this.firstOutputs.watch(prompt.threadId, stages, this.state.host.threads.find(item => item.id === prompt.threadId))
+          endLoan = lendSendStages(command.commandId, stages)
+        }
         result = await this.dependencies.host.execute(hostCommand).catch(error => {
           if (turn) turn.failureCode = 'provider-failed'
           throw error
         })
       }
-      finally { providerLatencyMs = Math.max(0, Date.now() - providerStartedAt) }
+      finally {
+        providerLatencyMs = Math.max(0, Date.now() - providerStartedAt)
+        endLoan?.()
+        // A prompt the provider did not take has no reply to watch for.
+        if (endLoan && !result?.accepted) stages?.close()
+      }
     } catch (error) {
       this.outbox = this.outbox.filter(o => o.id !== command.commandId)
       if (prompt && draftId) this.setDelivery(prompt.threadId, draftId, 'failed')
@@ -2715,8 +2752,16 @@ export class AgentControl {
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw uncertaintyError
     if ((command.type === 'configure-thread' || prompt) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
-      // reconciliation; the thread is read again only when the adapter has none to give.
-      try { this.acceptSnapshot(command.type === 'configure-thread' && result.snapshot ? result.snapshot : await this.readThread(threadId)) }
+      // reconciliation; the thread is read again only when the adapter has none to give. A send's echo has usually
+      // reached the host already and is waiting to be published, so the host is asked for what it holds first and
+      // the thread is read whole only when the echo is not there (#765).
+      try {
+        if (command.type === 'configure-thread' && result.snapshot) this.acceptSnapshot(result.snapshot)
+        else {
+          if (prompt) this.acceptSnapshot(await this.readThread(threadId, undefined, { afterSend: true }))
+          if (!prompt || this.outbox.some(item => item.id === command.commandId)) this.acceptSnapshot(await this.readThread(threadId))
+        }
+      }
       catch (error) {
         // The exact echo can arrive while this required reconciliation read is
         // in flight. Keep its receipt; an unconfirmed command still fails here.
@@ -2786,7 +2831,11 @@ export class AgentControl {
     }
     this.canAct()
     this.observe(threadId)
-    this.acceptSnapshot(await this.readThread(threadId, undefined, { beforeSend: true }))
+    const messageId = randomUUID()
+    const readStartedAt = performance.now()
+    const read = await this.readThread(threadId, undefined, readBeforeSend(messageId))
+    this.sendStages(turn)?.addRead(performance.now() - readStartedAt)
+    this.acceptSnapshot(read)
     const validate = (): void => {
       this.canAct()
       const latest = this.thread(threadId)
@@ -2801,7 +2850,6 @@ export class AgentControl {
     }
     validate()
     const thread = this.thread(threadId)
-    const messageId = randomUUID()
     const assignment = this.state.assignments.find(a => a.threadId === threadId)
     assignment?.ownMessageIds.push(messageId)
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId)
@@ -2832,7 +2880,12 @@ export class AgentControl {
     }
     this.canAct()
     this.observe()
-    this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined, undefined, { beforeSend: true }))
+    const messageId = randomUUID()
+    const readStartedAt = performance.now()
+    const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
+    // The read alone, as a typed send times it; taking in its snapshot is not part of it.
+    const readMs = performance.now() - readStartedAt
+    this.acceptSnapshot(read)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
@@ -2851,7 +2904,7 @@ export class AgentControl {
     }
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
-    const messageId = randomUUID()
+    this.sendStages(turn)?.addRead(readMs)
     assignment.ownMessageIds.push(messageId)
     assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
     assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
@@ -3013,6 +3066,7 @@ export class AgentControl {
 
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return
+    this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
     // Sotto's own requests join the provider's before anything below reads the threads, so the attention queue
     // takes and keeps them the same way (ADR-0035).
@@ -3219,7 +3273,11 @@ export class AgentControl {
       assignment.lastFailure = failureFingerprint; assignment.followups += 1
       await this.persist()
       // Refresh immediately before dispatch, so a direct host send revokes this queued reply.
-      this.acceptSnapshot(await this.readThread(thread.id, undefined, { beforeSend: true }))
+      const messageId = randomUUID()
+      const readStartedAt = performance.now()
+      const read = await this.readThread(thread.id, undefined, readBeforeSend(requestId ? undefined : messageId))
+      const readMs = performance.now() - readStartedAt
+      this.acceptSnapshot(read)
       const validate = (): void => {
         const current = this.state.assignments.find(item => item.threadId === thread.id)
         const live = this.state.host.threads.find(item => item.id === thread.id)
@@ -3242,7 +3300,8 @@ export class AgentControl {
           turn, validate, undefined, this.supervisionClient)
         assignment.handledRequestIds.push(requestId)
       } else {
-        const messageId = randomUUID(); assignment.ownMessageIds.push(messageId)
+        assignment.ownMessageIds.push(messageId)
+        this.sendStages(turn)?.addRead(readMs)
         await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text: decision.text, expectedLastUserMessageId: lastUserMessageIdOf(latest) }, turn, validate)
       }
     } catch (error) {
@@ -3321,9 +3380,14 @@ export class AgentControl {
   async closed(): Promise<void> {
     await Promise.allSettled([...this.activeCommands, this.serial, ...this.threadActions.values(), ...this.titleWrites])
     await this.persist(true)
+    // A send's record still waiting for its reply is written now, without a first output, rather than when the wait runs out.
+    this.firstOutputs.closeAll()
+    await this.dependencies.turns?.drain()
   }
   dispose(): void {
     this.disposed = true
+    // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
+    this.firstOutputs.closeAll()
     // A held broadcast dies with the control: its listeners are going away, and a run that
     // escapes the cancel still finds `disposed` and does nothing.
     this.broadcastCancel?.()

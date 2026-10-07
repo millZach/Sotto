@@ -3,6 +3,8 @@ import { MAX_ACTIVITY_TEXT, compactAgentIdentity, isTerminalActivity, mergeAgent
 import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
+import { ClaudeThinking, THINKING_BLOCKS, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
+import { thinkingSettledAs } from './thinkingActivity'
 import { CLAUDE_TRANSCRIPT_ID, type ClaudeModelTarget, type ClaudeSubagentTranscript } from './claudeSubagentModels'
 
 const text = (value: unknown): string | undefined => typeof value === 'string' ? value.slice(0, MAX_ACTIVITY_TEXT) : undefined
@@ -75,8 +77,18 @@ export class ClaudeActivity {
   private readonly workflowMembers = new Map<string, ObservedAgent>()
   /** How many of each workflow's agents are waiting for a place to start, by the workflow's observed id. */
   private readonly queuedAgents = new Map<string, number>()
+  private readonly thinking = new ClaudeThinking()
   constructor(private readonly readActivity?: (activityId: string) => AgentActivity | undefined) {}
-  apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false): AgentActivity[] {
+  /** The CLI ended. A thinking block it left open gets nothing more, so its row stops running now. */
+  runtimeEnded(previous: AgentActivity[] | undefined): AgentActivity[] | undefined {
+    const rows = this.thinking.ended(new Date().toISOString())
+    return rows.length ? mergeAgentActivities(previous ?? [], rows) : previous
+  }
+  /**
+   * One frame's activity. `turnEnd` is how the adapter decided a `result` ended its turn, which can differ from what the
+   * result says: a turn the user stopped is interrupted whatever its `is_error`. Without it the result's own word stands.
+   */
+  apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false, turnEnd?: AgentActivity['status']): AgentActivity[] {
     const rows: AgentActivity[] = []
     const observedAt = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp))
       ? new Date(frame.timestamp).toISOString() : live ? new Date().toISOString() : undefined
@@ -103,9 +115,12 @@ export class ClaudeActivity {
     // start there is; `observedAt` already prefers the provider's own time where a replayed frame has one.
     // Replay without a timestamp still records nothing, because a transcript must not be given a clock
     // it never had. Codex has timed its running rows this way since `codexActivity` was written.
-    const base = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}), cwd,
+    // `place` is where and when a row sits; `base` adds the folder its work ran in, which thinking has none of.
+    const place = { turnId, sequence: 0, ...(afterMessageId ? { afterMessageId } : {}),
       ...(observedAt ? { startedAt: observedAt, timingSource: typeof frame.timestamp === 'string' ? ('provider' as const) : ('observed' as const) } : {}),
       ...(typeof frame.parent_tool_use_id === 'string' ? { parentId: `claude-tool-${frame.parent_tool_use_id}` } : {}) }
+    const base = { ...place, cwd }
+    const replyId = typeof object(frame.message)?.id === 'string' ? object(frame.message)!.id as string : undefined
     const tool = (block: ClaudeFrame): void => {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return
       const input = object(block.input)
@@ -141,9 +156,23 @@ export class ClaudeActivity {
         ...(path ? { changes: [{ path, kind: name, ...(typeof input?.old_string === 'string' && typeof input?.new_string === 'string' ? { diff: text(`--- before\n${input.old_string}\n+++ after\n${input.new_string}`) } : {}) }] } : {}) })
     }
     const blocks = object(frame.message)?.content
-    if (Array.isArray(blocks)) for (const value of blocks) {
+    if (Array.isArray(blocks)) for (const [position, value] of blocks.entries()) {
       const block = object(value); if (!block) continue
       if (['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(block.type))) tool(block)
+      if (THINKING_BLOCKS.has(String(block.type)) && replyId) {
+        // A transcript line names the block's place in its reply (`apiBlockIndex`), the same index the stream
+        // started it under, so a replayed block lands on the row the live one made. A live frame carries no index,
+        // and a block the stream already showed needs nothing more from it.
+        const index = typeof frame.apiBlockIndex === 'number' && blocks.length === 1 ? frame.apiBlockIndex : position
+        if (!(live && typeof frame.apiBlockIndex !== 'number' && this.thinking.showed(replyId))) {
+          const words = typeof block.thinking === 'string' ? block.thinking : ''
+          const durationMs = typeof frame.thinkingDurationMs === 'number' && Number.isFinite(frame.thinkingDurationMs) && frame.thinkingDurationMs >= 0 ? frame.thinkingDurationMs : undefined
+          // The line is written when the block ends, so its own time is the end and the reported duration gives the start.
+          const timed = durationMs !== undefined && observedAt && typeof frame.timestamp === 'string'
+            ? { startedAt: new Date(Date.parse(observedAt) - durationMs).toISOString(), completedAt: observedAt, timingSource: 'provider' as const, durationMs } : {}
+          rows.push(claudeThinkingRow(place, claudeThinkingId(replyId, index), 'completed', words, timed))
+        }
+      }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         const old = previous.find(row => row.id === `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
         const result = object(frame.tool_use_result)
@@ -178,6 +207,10 @@ export class ClaudeActivity {
           // run, whose folder holds each of its agents' transcripts; those are watched per agent.
           if (typeof launch?.agentId === 'string') this.watchTranscript(child, { agentId: launch.agentId }, block.tool_use_id, task)
         }
+        // A result ends the subagent's stream, and with it any thinking it left open, unless the launch only
+        // acknowledged a subagent that runs on in the background.
+        if (launch?.isAsync === true) this.thinking.detached(block.tool_use_id)
+        else rows.push(...this.thinking.streamEnded(block.tool_use_id, block.is_error === true ? 'interrupted' : 'completed', observedAt))
         rows.push({ ...base, ...old, id: `claude-tool-${block.tool_use_id}`, kind: old?.kind ?? 'tool', title: old?.title ?? 'Tool result',
           ...(child ? { agents: [child] } : {}),
           status: block.is_error === true ? 'failed' : 'completed', startedAt: old?.startedAt, output: text(claudeText(block.content)) ?? '',
@@ -187,20 +220,39 @@ export class ClaudeActivity {
       }
     }
     if (frame.type === 'stream_event') {
-      const event = object(frame.event); const key = `${frame.parent_tool_use_id ?? 'main'}:${event?.index}`
+      const stream = parentTool ?? 'main'
+      const event = object(frame.event); const key = `${stream}:${event?.index}`
       const block = object(event?.content_block)
+      const reply = event?.type === 'message_start' ? object(event.message)?.id : undefined
+      if (typeof reply === 'string') rows.push(...this.thinking.replyStarted(stream, reply, observedAt))
       if (event?.type === 'content_block_start' && block && ['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(block.type))) {
         this.blocks.set(key, { block, input: '' }); tool(block)
+      }
+      // Thinking shows from its first byte: the row starts with the block and grows with each delta. A redacted
+      // block, or one the model sends no words for, still shows the row. Its signature is not reply content.
+      if (event?.type === 'content_block_start' && block && THINKING_BLOCKS.has(String(block.type)) && typeof event.index === 'number') {
+        rows.push(...this.thinking.started(stream, event.index, block.thinking, place))
       }
       const partial = this.blocks.get(key); const delta = object(event?.delta)
       if (partial && event?.type === 'content_block_delta' && delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
         partial.input = (partial.input + delta.partial_json).slice(0, MAX_ACTIVITY_TEXT)
         try { tool({ ...partial.block, input: JSON.parse(partial.input) }) } catch { /* Incomplete JSON is not tool input yet. */ }
       }
-      if (event?.type === 'content_block_stop') this.blocks.delete(key)
+      if (event?.type === 'content_block_delta' && delta?.type === 'thinking_delta' && typeof delta.thinking === 'string' && typeof event.index === 'number') {
+        rows.push(...this.thinking.grew(stream, event.index, delta.thinking))
+      }
+      if (event?.type === 'content_block_stop') {
+        this.blocks.delete(key)
+        if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt))
+      }
     }
+    // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
+    if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(turnEnd ?? (frame.is_error === true ? 'failed' : 'completed'), observedAt))
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
+      // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.
+      const ending = frame.subtype === 'task_notification' ? typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id) : undefined
+      if (ending) rows.push(...this.thinking.streamEnded(ending, thinkingSettledAs(status), observedAt))
       const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
       const old = previous.find(row => row.id === `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
       // A restored row is positive task evidence even when this projector resumed after its start.
