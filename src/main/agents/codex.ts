@@ -34,6 +34,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
+import { markSendStage } from './sendStages'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -1356,6 +1357,7 @@ export class CodexAppServerHost implements AgentHost {
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
           try {
+            markSendStage(command.commandId, 'written')
             await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
               input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
               approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
@@ -1364,7 +1366,9 @@ export class CodexAppServerHost implements AgentHost {
               origin.turnId = turn.id
               this.applyTurn(id, turn)
               if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id); this.emit()
+              this.unconfirmedDispatchSessionIds.delete(id)
+              markSendStage(command.commandId, 'acknowledged')
+              this.emit()
               return this.persist()
             }, () => {
               alias.origins = alias.origins.filter(o => o !== origin)

@@ -16,6 +16,14 @@ export function bootUnsupportedSentence(reason: BootUnsupportedReason | undefine
  * is shown for the owner to paste into a shell on the host, so nothing else a host might send is taken for it.
  */
 const LINGER_FIX = /^sudo loginctl enable-linger (?:[A-Za-z0-9._-]+|'[^'\p{Cc}]+')$/u
+const LINGER_COMMAND = 'sudo loginctl enable-linger '
+
+/** The account a linger command names, as the launch script wrote it: bare, or unquoted from its single quotes. */
+export function lingerAccount(fix: string | undefined): string | undefined {
+  if (!fix || !LINGER_FIX.test(fix)) return undefined
+  const name = fix.slice(LINGER_COMMAND.length)
+  return name.startsWith("'") ? name.slice(1, -1) : name
+}
 
 /**
  * Start at boot (ADR-0054): a host's systemd user unit, installed by Sotto, that starts the host when its machine starts.
@@ -42,3 +50,54 @@ export const bootStatusSchema = z.object({
   fix: z.string().max(300).regex(LINGER_FIX).optional().catch(undefined),
 })
 export type BootStatus = Readonly<z.infer<typeof bootStatusSchema>>
+
+/**
+ * Whether a start at boot change restarts the host, which is when it asks the busy-host question first (ADR-0054):
+ * installing hands a host Sotto started to the unit, unless the unit runs it already, and removing takes the host the
+ * unit runs off it. Main decides with it, and the consent's words say the same.
+ */
+export function bootChangeRestarts(change: 'install' | 'remove', host: { readonly owned: boolean; readonly bootStart?: Pick<BootStatus, 'active'> | undefined }): boolean {
+  const active = host.bootStart?.active === true
+  return change === 'install' ? host.owned && !active : active
+}
+
+/**
+ * The presses of a start at boot change in Settings > Hosts (ADR-0054): `install` is Start at boot, `remove` is Stop
+ * starting at boot, and the busy-host question's answers follow ADR-0040's: `when-idle` waits for the host's working
+ * threads, `stop-threads` stops them and goes on at once, `cancel` changes nothing. `dismiss` puts a result away.
+ */
+export const HOST_BOOT_ACTIONS = ['install', 'remove', 'when-idle', 'stop-threads', 'cancel', 'dismiss'] as const
+export type HostBootAction = typeof HOST_BOOT_ACTIONS[number]
+export const hostBootCommandSchema = z.object({ type: z.literal('host-boot'), id: z.uuid(), action: z.enum(HOST_BOOT_ACTIONS) }).strict()
+export type HostBootCommand = z.infer<typeof hostBootCommandSchema>
+/**
+ * `confirm` while the change would restart a host with working threads and the user has not said what to do with them;
+ * `waiting` until none of them is working; `changing` while the launch script runs it; then `done` or `failed`.
+ */
+export type HostBootPhase = 'confirm' | 'waiting' | 'changing' | 'done' | 'failed'
+/**
+ * Why a change did not happen: `linger` when the host would not turn linger on without an administrator, `unsupported`
+ * when the host cannot start at boot at all, and `failed` for anything else. Each says what happened, whether anything
+ * was lost and what to do next; `fix` is a command for the owner to run on the host, which Sotto never runs.
+ */
+export interface HostBootFailure {
+  readonly kind: 'linger' | 'unsupported' | 'failed'
+  readonly message: string
+  readonly fix?: { readonly text: string; readonly command: string } | undefined
+}
+/** One saved host's start at boot change, from the press until its result is put away. Kept in memory only. */
+export interface HostBootState {
+  /** The saved host's ID, which every press names. */
+  readonly id: string
+  readonly name: string
+  /** Start at boot (`install`) or Stop starting at boot (`remove`). */
+  readonly change: 'install' | 'remove'
+  readonly phase: HostBootPhase
+  /** How many of the host's threads are working now. */
+  readonly working: number
+  /** Whether the change restarts the host: one Sotto started, handed to the unit or taken off it. */
+  readonly restarts: boolean
+  /** Once done: whether the host restarted, under the unit or outside it. */
+  readonly restarted?: boolean | undefined
+  readonly failure?: HostBootFailure | undefined
+}

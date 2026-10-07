@@ -74,6 +74,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
 export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
+ * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
+ * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
+ */
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates']
+/**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
  * other field it does not know is optional and ignored.
@@ -220,8 +225,22 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
-/** `capabilities` is what this client may do on this host; `features` is what the host's protocol offers. */
-export interface HostHello extends HostEventPage { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[] }
+/**
+ * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
+ * Tailscale Serve carries its tailnet listener at, `https://<MagicDNS name>:<port>`, while Serve runs for it. `startedBy`
+ * is who started it, as its listener descriptor records: `launch-script` or `boot` (its start at boot unit), and absent
+ * for a host its owner started by hand. A value this build does not know reads as absent. Neither is evidence of identity: the host's ID, its certificate and the pairing are.
+ */
+export interface HostAbout { tailnetAddress?: string | undefined; startedBy?: string | undefined }
+/** A host's phone access in the words its row uses, as hello reports it to a desktop (ADR-0053): off, starting, on with how many phones are paired, or needs the owner. */
+export const HOST_PHONE_ACCESS_STATUSES = ['off', 'starting', 'on', 'needs-you'] as const
+export interface HostPhoneAccessSummary { status: typeof HOST_PHONE_ACCESS_STATUSES[number]; phones: number }
+/**
+ * `capabilities` is what this client may do on this host; `features` is what the host's protocol offers this client,
+ * which on a headless host's tailnet listener depends on whether it is a desktop (ADR-0053). `phoneAccess` goes only to
+ * a desktop, as it stood when the session's hello was answered.
+ */
+export interface HostHello extends HostEventPage, HostAbout { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[]; phoneAccess?: HostPhoneAccessSummary | undefined }
 export interface HostSession { v: 1; hostId: string; clientId: string; session: string; expiresAt: string }
 export interface HostPairing { v: 1; hostId: string; clientId: string; token: string }
 export interface HostReceipt {
@@ -230,7 +249,7 @@ export interface HostReceipt {
   answerDelivered?: boolean | undefined
 }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
-export interface HostDescriptor { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
+export interface HostDescriptor extends HostAbout { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
 export interface HostHealth extends HostDescriptor {
   status: 'ready'
   /** The computer's name as its owner set it for phones; only the desktop's phone access sends it (ADR-0033). */
@@ -244,15 +263,25 @@ const eventPageShape = { events: z.array(z.object({ seq: z.number().int().nonneg
 export const hostEventPageSchema = z.object(eventPageShape)
 export const hostPairingSchema = z.object({ v: z.literal(1), hostId: z.uuid(), clientId: id, token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
 export const hostSessionSchema = z.object({ v: z.literal(1), hostId: z.uuid(), clientId: id, session: z.string().min(1).max(2048), expiresAt: z.iso.datetime() })
-export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList })
-export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList })
 /**
- * The Sotto version and features a host's health advertises, or null when the host does not speak the
+ * Health's and hello's additions since v1 froze. Each is optional and read leniently: a value this build cannot read,
+ * such as a later host's new `startedBy` or phone access status, reads as absent rather than refusing the whole answer.
+ */
+const aboutShape = {
+  tailnetAddress: z.string().min(1).max(300).optional().catch(undefined),
+  startedBy: z.string().min(1).max(64).optional().catch(undefined),
+}
+export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
+export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
+  ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
+/**
+ * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the
  * frozen v1: another protocol version, or a host from before the freeze that advertises neither.
  */
-export function hostHealthFeatures(value: unknown): { sottoVersion: string; features: string[] } | null {
+export function hostHealthFeatures(value: unknown): { hostId: string; sottoVersion: string; features: string[] } | null {
   const health = hostHealthSchema.safeParse(value)
-  return health.success ? { sottoVersion: health.data.sottoVersion, features: health.data.features } : null
+  return health.success ? { hostId: health.data.hostId, sottoVersion: health.data.sottoVersion, features: health.data.features } : null
 }
 export const hostProtocolErrorSchema = z.object({ code: z.enum(['unauthenticated', 'invalid_request', 'stale_request', 'forbidden', 'unavailable', 'busy', 'too_large']), message: z.string().min(1).max(1000) })
 export const hostResponseSchema = z.discriminatedUnion('ok', [

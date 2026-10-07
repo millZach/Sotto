@@ -163,6 +163,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/phones.css',
       'src/renderer/src/features/settings/cloudIphone.css',
       'src/renderer/src/features/settings/hostSetup.css',
+      'src/renderer/src/features/settings/hostBoot.css',
       'src/renderer/src/features/settings/hostProviders.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/requests/requests.css',

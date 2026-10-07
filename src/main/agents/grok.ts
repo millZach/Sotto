@@ -31,6 +31,7 @@ import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActi
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { SessionReaper } from './sessionReaper'
+import { markSendStage } from './sendStages'
 
 // Only strip our suffix after durable origin/digest matching; foreign native
 // messages remain untouched and no extra plaintext prompt is stored in aliases.
@@ -930,6 +931,7 @@ export class GrokAcpHost implements AgentHost {
           let timer: ReturnType<typeof setTimeout> | undefined
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
+          markSendStage(command.commandId, 'written')
           void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
@@ -944,6 +946,7 @@ export class GrokAcpHost implements AgentHost {
             this.emit()
           }).catch(() => this.disconnect())
           try { await delivery } finally { clearTimeout(timer); this.deliveries.delete(command.messageId) }
+          markSendStage(command.commandId, 'acknowledged')
           await this.refreshThread(command.threadId)
         } else if (command.type === 'answer') {
           const pending = this.pending.get(command.requestId)
