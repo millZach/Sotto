@@ -35,7 +35,7 @@ describe('the stepper', () => {
     const stepper = screen.getByRole('group', { name: 'Walkthrough' })
     expect(stepper).toHaveTextContent('Step 1 of 3')
     const dots = within(within(stepper).getByRole('group', { name: 'Steps' })).getAllByRole('button')
-    expect(dots.map(dot => dot.getAttribute('aria-label'))).toEqual(['Step 1', 'Step 2', 'Step 3'])
+    expect(dots.map(dot => dot.getAttribute('aria-label'))).toEqual(['Go to step 1', 'Go to step 2', 'Go to step 3'])
     expect(dots[0]).toHaveAttribute('aria-current', 'step')
     expect(dots[1]).not.toHaveAttribute('aria-current')
     expect(screen.getByText('You write a draft.')).toHaveAttribute('aria-live', 'polite')
@@ -64,44 +64,63 @@ describe('the stepper', () => {
 
   it('goes to a step from its dot, marking the steps before it done', async () => {
     render(<Harness />)
-    await userEvent.click(screen.getByRole('button', { name: 'Step 3' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Go to step 3' }))
     expect(screen.getByText('Codex answers.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Step 3' })).toHaveAttribute('aria-current', 'step')
-    expect(screen.getByRole('button', { name: 'Step 1' })).toHaveAttribute('data-state', 'done')
+    expect(screen.getByRole('button', { name: 'Go to step 3' })).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('button', { name: 'Go to step 1' })).toHaveAttribute('data-state', 'done')
   })
 
-  it('steps with Left and Right anywhere inside it, stopping at the ends, and leaves other keys alone', async () => {
+  it('steps with Left and Right on the dots, the focus going with the step, stopping at the ends', async () => {
     const user = userEvent.setup()
     const onStep = vi.fn()
     render(<Harness onStep={onStep} />)
     screen.getByRole('button', { name: 'Before' }).focus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Go to step 1' })).toHaveFocus()
     await user.keyboard('{ArrowLeft}')
     expect(onStep).not.toHaveBeenCalled()
     await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
     expect(screen.getByText('Codex answers.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Go to step 3' })).toHaveFocus()
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}{Control>}{ArrowLeft}{/Control}')
     expect(screen.getByText('Codex answers.')).toBeInTheDocument()
     await user.keyboard('{ArrowLeft}')
     expect(screen.getByText('Sotto sends it.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Go to step 2' })).toHaveFocus()
     expect(onStep.mock.calls.map(([index]) => index)).toEqual([1, 2, 1])
   })
 
-  it('reaches Back, then Next, by Tab, leaving the dots to the pointer and the arrow keys', async () => {
+  it('steps with Left and Right from Back and Next too, leaving the focus where it is', async () => {
+    const user = userEvent.setup()
+    render(<Harness start={1} />)
+    const back = screen.getByRole('button', { name: 'Back' })
+    back.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByText('Codex answers.')).toBeInTheDocument()
+    expect(back).toHaveFocus()
+  })
+
+  it('presses a dot from the keyboard', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    screen.getByRole('button', { name: 'Go to step 1' }).focus()
+    await user.keyboard('{ArrowRight}{Enter}')
+    expect(screen.getByText('Sotto sends it.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Go to step 2' })).toHaveAttribute('aria-current', 'step')
+  })
+
+  it('makes the dots one Tab stop, the current step\'s, then Back, then Next', async () => {
     const user = userEvent.setup()
     render(<><Harness start={1} /><button type="button">After</button></>)
     screen.getByRole('button', { name: 'Before' }).focus()
     const order: string[] = []
-    for (let press = 0; press < 3; press += 1) {
+    for (let press = 0; press < 4; press += 1) {
       await user.tab()
-      order.push(document.activeElement!.textContent!)
+      order.push((document.activeElement as HTMLElement).getAttribute('aria-label') ?? document.activeElement!.textContent!)
     }
-    expect(order).toEqual(['Back', 'Next', 'After'])
-    // Still named for a reader, and a click still goes to the step.
-    for (const dot of within(screen.getByRole('group', { name: 'Steps' })).getAllByRole('button')) expect(dot).toHaveAttribute('tabindex', '-1')
-    await user.click(screen.getByRole('button', { name: 'Step 3' }))
-    expect(screen.getByText('Codex answers.')).toBeInTheDocument()
+    expect(order).toEqual(['Go to step 2', 'Back', 'Next', 'After'])
+    const dots = within(screen.getByRole('group', { name: 'Steps' })).getAllByRole('button')
+    expect(dots.map(dot => dot.getAttribute('tabindex'))).toEqual(['-1', '0', '-1'])
   })
 
   it('draws nothing for a visual without steps', () => {
@@ -227,7 +246,7 @@ describe('a walkthrough in the card', () => {
     const value = visual()
     const first = render(<VisualCard visual={value} />)
     await screen.findByRole('img')
-    await userEvent.click(screen.getByRole('button', { name: 'Step 3' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Go to step 3' }))
     first.unmount()
     render(<VisualCard visual={value} />)
     expect(screen.getByRole('group', { name: 'Walkthrough' })).toHaveTextContent('Step 3 of 3')

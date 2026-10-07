@@ -53,8 +53,9 @@ and a flowchart with a subgraph inside another, captured by `capture.mjs` in Chr
 ## What the spec asserts beyond the pictures
 
 - Each kind lights the parts listed above, and every step's picture has the drawing's size.
-- The keyboard path: Tab goes from Expand to Back, then Next, with a solid focus ring; the dots are out of the Tab
-  order, for the pointer, and keep their names. Left and Right step while the
+- The keyboard path: Tab goes from Expand to the current step's dot, the dots' one Tab stop, then Back and Next, with
+  a solid focus ring. On the dots, Right moves the step and the focus together; Enter on the third step's dot goes to
+  step 3. Each dot is named for what a press does ("Go to step 3"), and the current one carries `aria-current`. Left and Right step while the
   focus is in the walkthrough and stop at the ends. Next on the last step reads Start over and goes back to step 1.
   Back on the first step stays focusable and does nothing. Read all sits before Show source in the header; Space
   shows every step and the button, still focused, reads Step through, and Space again goes back. Expand opens the viewer and Escape closes it with the focus back on Expand.

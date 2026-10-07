@@ -1,4 +1,4 @@
-import React, { type KeyboardEvent, type ReactNode } from 'react'
+import React, { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import './visualStepper.css'
 
 export interface VisualStepperProps {
@@ -13,10 +13,12 @@ export interface VisualStepperProps {
 /**
  * A visual's walkthrough (ADR-0056, #793): "Step n of N", a dot for each step, Back and Next ("Start over" on the last
  * step), and the step's words in larger type, read out as they change. Left and Right step while focus is anywhere in
- * it. A visual with one step shows its words alone. It holds no state of its own, so whatever shows the visual (a
- * diagram's card, an interactive page's card) keeps the step and lights it.
+ * it. The dots are one Tab stop, the current step's, and the focus moves with the step while it is on them. A visual
+ * with one step shows its words alone. It holds no state of its own, so whatever shows the visual (a diagram's card, an
+ * interactive page's card) keeps the step and lights it.
  */
 export function VisualStepper({ steps, index, onStep }: VisualStepperProps): ReactNode {
+  const dots = useRef<(HTMLButtonElement | null)[]>([])
   const count = steps.length
   if (!count) return null
   const current = Math.min(Math.max(Math.trunc(index) || 0, 0), count - 1)
@@ -31,15 +33,18 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    go(current + (event.key === 'ArrowRight' ? 1 : -1))
+    const next = Math.min(Math.max(current + (event.key === 'ArrowRight' ? 1 : -1), 0), count - 1)
+    go(next)
+    // On the dots, the focus goes with the step, so the one Tab stop stays the current step's dot.
+    if (dots.current.includes(event.target as HTMLButtonElement)) dots.current[next]?.focus()
   }
 
   return <div className="visual-stepper" role="group" aria-label="Walkthrough" onKeyDown={onKeyDown}>
     <div className="visual-stepper__head">
       <span className="visual-stepper__count">Step {current + 1} of {count}</span>
       <div className="visual-stepper__dots" role="group" aria-label="Steps">
-        {/* Out of the Tab order: the arrow keys step from Back or Next, so the dots are for the pointer, named for a reader. */}
-        {steps.map((_, step) => <button key={step} type="button" tabIndex={-1} className="visual-stepper__dot tt-focusable" aria-label={`Step ${step + 1}`}
+        {steps.map((_, step) => <button key={step} ref={element => { dots.current[step] = element }} type="button"
+          tabIndex={step === current ? 0 : -1} className="visual-stepper__dot tt-focusable" aria-label={`Go to step ${step + 1}`}
           aria-current={step === current ? 'step' : undefined} data-state={step === current ? 'current' : step < current ? 'done' : undefined}
           onClick={() => go(step)} />)}
       </div>

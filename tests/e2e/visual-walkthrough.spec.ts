@@ -125,25 +125,30 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await quietShot(page, join(SHOTS, 'flowchart-step-1280x800-dark.png'))
     const base = await flow.evaluate(element => (element.querySelector('.visual-card__layers img') as HTMLImageElement).naturalWidth)
 
-    // The keyboard path: Tab goes from Expand past the dots, which are for the pointer, to Back; the arrow keys step
-    // while the focus is in the walkthrough.
+    // The keyboard path: Tab goes from Expand to the current step's dot, the dots' one Tab stop, then Back and Next.
+    // The arrow keys step while the focus is in the walkthrough, and on the dots the focus goes with the step.
     const expand = flow.getByRole('button', { name: `Expand ${FLOW.title}` })
     const back = flow.getByRole('button', { name: 'Back' })
+    const dot = (step: number): Locator => flow.getByRole('button', { name: `Go to step ${step}` })
     await expand.focus()
     await page.keyboard.press('Tab')
-    await expect(back).toBeFocused()
-    await expect(back).toHaveCSS('outline-style', 'solid')
+    await expect(dot(1)).toBeFocused()
+    await expect(dot(1)).toHaveCSS('outline-style', 'solid')
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
+    await expect(dot(2)).toBeFocused()
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_B_C_0', 'edgeLabel:L_B_C_0', 'flowchart-B-1', 'flowchart-C-3'])
     await quietShot(page, join(SHOTS, 'flowchart-edge-1280x800-dark.png'))
-    // The capture took the focus away; it goes back to Back.
-    await back.focus()
-    await page.keyboard.press('ArrowRight')
+    // The capture took the focus away. Pressing the third step's dot from the keyboard goes there.
+    await dot(3).focus()
+    await page.keyboard.press('Enter')
     await expect(stepper(FLOW.title)).toContainText('Step 3 of 4')
+    await expect(dot(3)).toHaveAttribute('aria-current', 'step')
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_C_D_0', 'L_D_E_0', 'Provider', 'edgeLabel:L_C_D_0', 'edgeLabel:L_D_E_0', 'flowchart-C-3', 'flowchart-D-7', 'flowchart-E-9'])
     // Every step's picture is the drawing's size.
     expect(await flow.evaluate(element => (element.querySelector('.visual-card__layers img:last-child') as HTMLImageElement).naturalWidth)).toBe(base)
+    await page.keyboard.press('Tab')
+    await expect(back).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(flow.getByRole('button', { name: 'Next' })).toBeFocused()
     await page.keyboard.press('Enter')
@@ -200,7 +205,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await sequence.getByRole('button', { name: 'Next' }).click()
     await expect.poll(() => lit(image(SEQUENCE.title))).toEqual(['life-line:Codex', 'life-line:Sotto', 'message:i3', 'messageText:turn/start', 'participant:Codex', 'participant:Sotto'])
     await quietShot(page, join(SHOTS, 'sequence-step-1280x800-dark.png'))
-    await sequence.getByRole('button', { name: 'Step 3' }).click()
+    await sequence.getByRole('button', { name: 'Go to step 3' }).click()
     await expect.poll(() => lit(image(SEQUENCE.title))).toEqual(['life-line:Codex', 'life-line:You', 'message:i6', 'messageText:Streams the answer', 'participant:Codex', 'participant:You'])
 
     // State, class and entity relationship diagrams.
@@ -224,7 +229,7 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await page.emulateMedia({ reducedMotion: null })
 
     // Light and dark at every size, nothing clipped, the walkthrough's words at 4.5:1 on the card.
-    await flow.getByRole('button', { name: 'Step 2' }).click()
+    await flow.getByRole('button', { name: 'Go to step 2' }).click()
     let appearance: 'dark' | 'light' = 'dark'
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
