@@ -167,6 +167,22 @@ it.each([
   } finally { await f.cleanup() }
 })
 
+// The fake CLI closes a stopped turn with a result that is no error, so only the stop itself says how the turn ended.
+it('Claude settles a thinking block as interrupted when the user stops the turn mid-thought', async () => {
+  const f = await claudeFixture(); const id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId: id, projectId: 'p', modelId: f.modelId, title: 'T' })
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'user', threadId: id, text: 'Think first' })
+    await f.action(id, { type: 'complete', text: 'Never sent.', thinking: 'Half of a thought.', holdInThinking: 'release-thought' })
+    await expect.poll(async () => (await thoughts(f.host)).map(row => row.status)).toEqual(['running'])
+    expect(await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId: id })).toEqual({ accepted: true })
+    await expect.poll(async () => (await thread(f.host))?.lastTurn?.status).toBe('interrupted')
+    expect((await thoughts(f.host)).map(row => [row.text, row.status])).toEqual([['Half of a', 'interrupted']])
+  } finally { await f.cleanup() }
+})
+
 it.each([
   ['Sotto’s prompt', true],
   ['a turn Sotto only watched', false],

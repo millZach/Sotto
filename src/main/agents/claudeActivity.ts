@@ -84,7 +84,11 @@ export class ClaudeActivity {
     const rows = this.thinking.ended(new Date().toISOString())
     return rows.length ? mergeAgentActivities(previous ?? [], rows) : previous
   }
-  apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false): AgentActivity[] {
+  /**
+   * One frame's activity. `turnEnd` is how the adapter decided a `result` ended its turn, which can differ from what the
+   * result says: a turn the user stopped is interrupted whatever its `is_error`. Without it the result's own word stands.
+   */
+  apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false, turnEnd?: AgentActivity['status']): AgentActivity[] {
     const rows: AgentActivity[] = []
     const observedAt = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp))
       ? new Date(frame.timestamp).toISOString() : live ? new Date().toISOString() : undefined
@@ -243,7 +247,7 @@ export class ClaudeActivity {
       }
     }
     // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
-    if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(frame.is_error === true ? 'failed' : 'completed', observedAt))
+    if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(turnEnd ?? (frame.is_error === true ? 'failed' : 'completed'), observedAt))
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
       const status = frame.subtype === 'task_notification' ? frame.status === 'completed' ? 'completed' : frame.status === 'failed' ? 'failed' : ['stopped', 'cancelled', 'canceled', 'killed', 'interrupted'].includes(String(frame.status)) ? 'interrupted' : 'unknown' : 'running'
       // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.
