@@ -112,7 +112,7 @@ describe('the stepper', () => {
 
 // A flowchart Mermaid 11.17.2 drew, as the renderer returns it after the sanitizer.
 const flow = toInertDiagramSvg(readFileSync(join(process.cwd(), 'tests/fixtures/mermaidSteps/flowchart.svg'), 'utf8'))!
-const DRAWING: DiagramRenderResult = { ok: true, svg: flow.svg, dataUrl: svgDataUrl(flow.svg), width: flow.width, height: flow.height, title: null, description: null }
+const DRAWING: DiagramRenderResult = { ok: true, dataUrl: svgDataUrl(flow.svg), width: flow.width, height: flow.height, title: null, description: null }
 let sources = 0
 const visual = (overrides: Partial<AgentVisual> = {}): AgentVisual => ({
   id: `walk-${sources + 1}`, title: 'How a draft is sent', kind: 'diagram', source: `flowchart LR\n  A${++sources}[Draft] --> B[Sent]`, intro: 'From draft to answer.',

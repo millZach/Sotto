@@ -5,7 +5,7 @@
 
 import type { DiagramPalette } from './diagramPalette'
 import { stepTargets } from './diagramStepTargets'
-import { svgDataUrl } from './diagramSvg'
+import { svgDataUrl, svgFromDataUrl } from './diagramSvg'
 import { keepRecent, readRecent } from '../../../../shared/recentMap'
 import { VISUAL_KEPT_STEPS_MAX } from '../../../../shared/visuals'
 
@@ -55,16 +55,18 @@ const stepImages = new WeakMap<object, Map<string, string>>()
 
 /**
  * The picture for one step of `drawn`, as a data URL for an `<img>`: its lit version, or the drawing as it is when the
- * step names nothing it can find. Made once per step and kept with the drawing, so moving back and forth through a
+ * step names nothing it can find. The SVG is read back from the drawing's own data URL, so only drawings that are
+ * stepped through pay for it. Made once per step and kept with the drawing, so moving back and forth through a
  * walkthrough does not edit the drawing again.
  */
-export function stepImage(drawn: { readonly svg: string; readonly dataUrl: string }, names: readonly string[] | undefined): string {
+export function stepImage(drawn: { readonly dataUrl: string }, names: readonly string[] | undefined): string {
   if (!names?.length) return drawn.dataUrl
   let images = stepImages.get(drawn)
   if (!images) stepImages.set(drawn, images = new Map())
   const key = JSON.stringify(names)
   const kept = readRecent(images, key)
   if (kept !== undefined) return kept
-  const svg = lightDiagramStep(drawn.svg, names)
+  const base = svgFromDataUrl(drawn.dataUrl)
+  const svg = base === null ? null : lightDiagramStep(base, names)
   return keepRecent(images, key, svg ? svgDataUrl(svg) : drawn.dataUrl, MAX_STEP_IMAGES)
 }

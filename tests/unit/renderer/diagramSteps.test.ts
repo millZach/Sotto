@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DIM_CLASS, LIT_CLASS, diagramStepCss, lightDiagramStep } from '../../../src/renderer/src/agents/diagrams/diagramSteps'
+import { DIM_CLASS, LIT_CLASS, diagramStepCss, lightDiagramStep, stepImage } from '../../../src/renderer/src/agents/diagrams/diagramSteps'
 import { stepTargets } from '../../../src/renderer/src/agents/diagrams/diagramStepTargets'
-import { toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
+import { svgDataUrl, svgFromDataUrl, toInertDiagramSvg } from '../../../src/renderer/src/agents/diagrams/diagramSvg'
 
 const fixture = (name: string): string => {
   const image = toInertDiagramSvg(readFileSync(join(process.cwd(), 'tests/fixtures/mermaidSteps', `${name}.svg`), 'utf8'))
@@ -124,6 +124,13 @@ describe('an entity relationship step', () => {
 })
 
 describe('a step picture', () => {
+  it('reads the drawing back from its data URL, labels in any script intact', () => {
+    const svg = fixture('flowchart').replace('Draft', 'Brouillon é 下書き')
+    expect(svgFromDataUrl(svgDataUrl(svg))).toBe(svg)
+    expect(svgFromDataUrl('data:image/png;base64,AAAA')).toBeNull()
+    expect(stepImage({ dataUrl: svgDataUrl(svg) }, ['A'])).not.toBe(svgDataUrl(svg))
+  })
+
   it('marks the named parts lit and every other part dimmed, without moving anything', () => {
     const base = fixture('flowchart')
     const stepped = lightDiagramStep(base, ['Provider'])!

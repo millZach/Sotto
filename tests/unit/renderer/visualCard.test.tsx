@@ -18,7 +18,7 @@ import type { DiagramRenderResult } from '../../../src/renderer/src/agents/diagr
 const renderer = vi.hoisted(() => ({ renderDiagram: vi.fn<(code: string) => Promise<DiagramRenderResult>>() }))
 vi.mock('../../../src/renderer/src/agents/diagrams/diagramRenderer', () => renderer)
 
-const DRAWING: DiagramRenderResult = { ok: true, dataUrl: 'data:image/svg+xml;base64,PHN2Zy8+', svg: '<svg/>', width: 400, height: 200, title: null, description: null }
+const DRAWING: DiagramRenderResult = { ok: true, dataUrl: 'data:image/svg+xml;base64,PHN2Zy8+', width: 400, height: 200, title: null, description: null }
 let sources = 0
 /** A source no earlier test drew, so the module's drawing cache never answers for it. */
 const freshSource = (): string => `flowchart LR\n  A${++sources}[Draft] --> B[Sent]`

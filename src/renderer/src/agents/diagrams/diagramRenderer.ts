@@ -14,9 +14,8 @@ import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
 export type DiagramRenderResult =
   | {
     readonly ok: true
+    /** The sanitized drawing, which a visual's walkthrough reads back to light one step at a time (diagramSteps.ts). */
     readonly dataUrl: string
-    /** The sanitized drawing as SVG text, which a visual's walkthrough lights one step at a time (diagramSteps.ts). */
-    readonly svg: string
     readonly width: number
     readonly height: number
     readonly title: string | null
@@ -215,7 +214,7 @@ async function renderNow(code: string, palette: DiagramPalette): Promise<Diagram
     const { svg } = await mermaid.render(`sotto-diagram-${sequence}`, code, stage)
     const image = toInertDiagramSvg(svg, { trustedCss: LABEL_FONT_CSS + finishingCss(palette), measure: measureOn(stage) })
     if (!image) return { ok: false, reason: 'Mermaid did not produce a drawing.' }
-    return { ok: true, dataUrl: svgDataUrl(image.svg), svg: image.svg, width: image.width, height: image.height, title: image.title, description: image.description }
+    return { ok: true, dataUrl: svgDataUrl(image.svg), width: image.width, height: image.height, title: image.title, description: image.description }
   } catch (error) {
     return { ok: false, reason: readableDiagramError(error) }
   } finally {
