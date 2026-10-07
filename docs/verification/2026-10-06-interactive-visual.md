@@ -21,9 +21,10 @@ run, at a display scale of 150 percent.
 - An Escape the page dispatched itself moved nothing. The user's Escape inside the page put focus back on the card, with its focus ring. Show source showed the HTML, and Expand opened the page over the
   window while the card's own page stopped. Escape closed it, back on Expand.
 - The fetch and the image were refused by the page's policy (`connect-src`, `img-src`). The links left the page where
-  it was and opened no window. A fetch made by the session itself failed with `ERR_BLOCKED_BY_CLIENT`, and the page's
-  address could not be loaded a second time.
+  it was and opened no window. A fetch made by the session itself failed with `ERR_BLOCKED_BY_CLIENT`. The guest loading its page's
+  address a second time was refused, and it still showed the first load's page.
 - The session's own fetch failed with `ERR_BLOCKED_BY_CLIENT`. The session resolved a loopback address to its SOCKS5 proxy, not DIRECT, and the guest's WebRTC IP policy was `disable_non_proxied_udp`.
+- With Let agents draw visuals in threads off, a new call was refused and drew nothing, and the page already in the thread opened again. The page showed in Figtree, loaded from the faces Sotto carried.
 - With Reduce motion on, the page was told and its style stopped movement. A page whose body fills the frame grew to its 300 pixels of content.
 - The listener saw no connection. No request completed but the pages, no frame committed a navigation but each
   guest's one load, and nothing downloaded.
