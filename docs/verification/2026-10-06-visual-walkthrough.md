@@ -13,15 +13,17 @@ lit parts out of the picture the renderer made: the SVG inside each `<img>` is d
 the ids Mermaid gave them. Every capture below is from that run, at a display scale of 150 percent.
 
 The lighting itself is unit tested on what Mermaid 11.17.2 really draws: `tests/fixtures/mermaidSteps/` holds one
-drawing of each kind, and a second sequence diagram with numbered arrows and an activation bar, captured by `capture.mjs` in Chromium with the app's settings, and
+drawing of each kind, a sequence diagram with numbered arrows and an activation bar, one with aliased participants
+and a flowchart with a subgraph inside another, captured by `capture.mjs` in Chromium with the app's settings, and
 `tests/unit/renderer/diagramSteps.test.ts` passes each through the app's sanitizer before lighting steps on it.
 
 ## What lights
 
-- **Flowchart.** A node by its id. A subgraph by its id, with the nodes inside it. An edge written `A->B` (or
+- **Flowchart.** A node by its id. A subgraph by its id, with the nodes and subgraphs inside it. An edge written `A->B` (or
   `A-->B`) with its label and its two ends. An edge between two nodes a step names lights too, but the ends of a named
   edge do not count, so naming `B->A` does not light `A->B`.
-- **Sequence diagram.** A participant by its name, with its lifeline and activation bars. An arrow by its number,
+- **Sequence diagram.** A participant by its name, or by the words it is drawn with (`participant U as User` lights
+  for U or User), with its lifeline and activation bars. An arrow by its number,
   counted from 1 down the drawing past loops, notes and alternatives (Mermaid's own ids count those rows too), with
   its words, its autonumber badge and its two participants. Notes and loop, alt and other boxes stay dimmed.
 - **State diagram.** A state by its id; a composite state with the states inside it. Transitions never light:
@@ -29,6 +31,7 @@ drawing of each kind, and a second sequence diagram with numbered arrows and an 
 - **Class and entity relationship diagrams.** A class or entity by its name, and the relation between two lit ones
   with its label. Multiplicity labels ("1", "many") stay dimmed.
 - A name the drawing does not have is ignored, and a step whose names match nothing leaves the whole drawing lit.
+- A visual with one step shows its words alone under the drawing, its part lit, with no count, dots, Back or Next.
 
 ## What the captures show
 
