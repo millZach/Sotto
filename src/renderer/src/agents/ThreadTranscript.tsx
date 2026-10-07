@@ -172,18 +172,27 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
   </React.Fragment>
   const everything = turn.user ? [turn.user, ...turn.replies] : [...turn.replies]
+  // A visual is Sotto's drawing, not a reply, so it is never the final reply and never folds: it stays in view where it
+  // was drawn, before or after the final reply (ADR-0055). One pass sorts the replies into the two.
+  const written: AgentMessage[] = []
+  const visuals: { readonly message: AgentMessage; readonly at: number }[] = []
+  for (const [at, message] of turn.replies.entries()) {
+    if (isVisualMessage(message)) visuals.push({ message, at })
+    else written.push(message)
+  }
   // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
-  // a finished turn folds under its last written reply. A visual is Sotto's drawing, not a reply, so it is never the
-  // final reply and never folds: it stays in view where it was drawn, before or after the final reply.
-  const final = !turn.user || running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && drawn(message) && !isVisualMessage(message))
+  // a finished turn folds under its last written reply.
+  const final = !turn.user || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
   const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
-  const work = final ? turn.replies.filter(message => message !== final && drawn(message) && !isVisualMessage(message)) : []
-  const finalAt = final ? turn.replies.indexOf(final) : -1
-  const visuals = turn.replies.filter(isVisualMessage)
+  const work = final ? written.filter(message => message !== final && drawn(message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}</>
+  const finalAt = turn.replies.indexOf(final)
+  const unfolded = new Set(visuals.map(visual => visual.message))
+  const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
+    .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   return <>
@@ -191,15 +200,15 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
-        {message === turn.user || isVisualMessage(message) ? null : article(message)}
+        {message === turn.user || unfolded.has(message) ? null : article(message)}
         <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
       </React.Fragment>)}
       <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
     </TurnWork>
-    {visuals.filter(message => turn.replies.indexOf(message) < finalAt).map(message => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)}
+    {shown(-1, finalAt)}
     <ActivityGroups groups={boundaries} context={context} />
     {article(final)}
-    {visuals.filter(message => turn.replies.indexOf(message) > finalAt).map(message => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)}
+    {shown(finalAt, Number.POSITIVE_INFINITY)}
   </>
 })
 
