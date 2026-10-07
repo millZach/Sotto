@@ -1,8 +1,26 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
-/** ACP activity updates are upserts. Partial updates retain the original action and transcript anchor. */
-export function devinActivities(update: Record<string, unknown>, context: { turnId: string; afterMessageId?: string; cwd: string }, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+type Context = { turnId: string; afterMessageId?: string; cwd: string }
+
+export const DEVIN_THINKING_ID_PREFIX = 'devin-thinking-'
+/** Updates that say the model has moved on from a thought: its reply, a new tool or a plan. The turn's end is `devin.ts`'s. */
+const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan'])
+const DEVIN_THINKING: AcpThinking = { idPrefix: DEVIN_THINKING_ID_PREFIX, settles: update => MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined }
+
+/**
+ * ACP activity updates are upserts. Partial updates retain the original action and transcript anchor. A thought
+ * (`agent_thought_chunk`) streams into a Thinking row that runs until the model moves on to something else.
+ */
+export function devinActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+  // ACP may name the message a chunk belongs to; without it, chunks that run on in order are one thought.
+  const key = typeof update.messageId === 'string' && update.messageId ? `${context.turnId}-${update.messageId.slice(0, 128)}` : undefined
+  return acpThinkingActivities(DEVIN_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
+    () => devinWork(update, context, previous, live))
+}
+
+function devinWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
   let truncated = false
   const bounded = (text: string): string => {
     if (text.length > MAX_ACTIVITY_TEXT) truncated = true

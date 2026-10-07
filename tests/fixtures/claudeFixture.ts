@@ -16,7 +16,7 @@ const flag = (args: unknown, name: string): string | undefined => { const list =
 
 // The acknowledgement deadline also covers the fake CLI's process start, which a loaded two-core runner
 // stretches past a second. Tests that need a lost acknowledgement script one instead of shortening this.
-export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions & Pick<ClaudeStreamJsonHostOptions, 'logEvent'> = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; liveSettings: NonNullable<AdapterFixture['liveSettings']>; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
+export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions & Pick<ClaudeStreamJsonHostOptions, 'logEvent' | 'pollIntervalMs'> = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; liveSettings: NonNullable<AdapterFixture['liveSettings']>; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-claude-'))
   const adapter = new ClaudeStreamJsonHost({ userDataPath: root, executable: process.execPath, args: [resolve('tests/fixtures/fakeClaudeThread.mjs'), root], claudeHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...(environment ? { environment } : {}), ...session })
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8'))[id].sessionId

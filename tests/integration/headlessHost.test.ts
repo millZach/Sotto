@@ -1,6 +1,8 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
@@ -57,3 +59,32 @@ const fixtures: { provider: ProviderId; create: (session?: AdapterSessionOptions
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session) },
 ]
 for (const fixture of fixtures) describeHostServiceContract('Headless ' + fixture.provider, async session => hostFixture(fixture.provider, await fixture.create(session)))
+
+describe('a Claude thread whose host stopped before any read reached its first send', () => {
+  it('holds its first message once after the restart (#765)', async () => {
+    // No poll of the transcript runs during the case, and the coordinator no longer reads the thread after Claude
+    // accepts a send when the echo is already held, so nothing has recorded how far the transcript was read.
+    let f = await hostFixture('claude', await claudeFixture(undefined, undefined, undefined, { pollIntervalMs: 600_000 }))
+    try {
+      const client = desktopWindowClient('restart-before-read')
+      const command = (value: Parameters<typeof f.service.command>[0]) => f.service.command(value, client)
+      expect((await command({ type: 'connect', provider: 'claude' })).error).toBeNull()
+      const created = await command({ type: 'create-project', provider: 'claude', title: 'Project', path: f.root, useExisting: true })
+      const projectId = created.host.projects.find(project => project.path === f.root)!.id
+      const threadId = randomUUID()
+      expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: f.modelId, workingCopy: 'shared', managed: false })).error).toBeNull()
+      await command({ type: 'observe-threads', threadIds: [threadId] })
+      const thread = () => f.service.state().host.threads.find(item => item.id === threadId)!
+      expect((await command({ type: 'manual-send', threadId, text: 'First prompt' })).error).toBeNull()
+      const before = thread().messages
+      expect(before.map(message => message.text)).toEqual(['First prompt'])
+      f = await f.driver.restart()
+      await command({ type: 'observe-threads', threadIds: [threadId] })
+      await command({ type: 'connect', provider: 'claude' })
+      // The restarted adapter reads the transcript from its first byte, and finds the prompt already held.
+      await expect.poll(() => thread()?.messages.length ?? 0).toBeGreaterThan(0)
+      expect(thread().messages).toEqual(before)
+      expect(f.service.events(0, threadId).filter(event => event.event.kind === 'message-added')).toHaveLength(1)
+    } finally { await f.cleanup() }
+  }, 60_000)
+})
