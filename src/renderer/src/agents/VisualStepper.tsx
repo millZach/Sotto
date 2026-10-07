@@ -38,7 +38,8 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
     <div className="visual-stepper__head">
       <span className="visual-stepper__count">Step {current + 1} of {count}</span>
       <div className="visual-stepper__dots" role="group" aria-label="Steps">
-        {steps.map((_, step) => <button key={step} type="button" className="visual-stepper__dot tt-focusable" aria-label={`Step ${step + 1}`}
+        {/* Out of the Tab order: the arrow keys step from Back or Next, so the dots are for the pointer, named for a reader. */}
+        {steps.map((_, step) => <button key={step} type="button" tabIndex={-1} className="visual-stepper__dot tt-focusable" aria-label={`Step ${step + 1}`}
           aria-current={step === current ? 'step' : undefined} data-state={step === current ? 'current' : step < current ? 'done' : undefined}
           onClick={() => go(step)} />)}
       </div>

@@ -76,7 +76,7 @@ describe('the stepper', () => {
     render(<Harness onStep={onStep} />)
     screen.getByRole('button', { name: 'Before' }).focus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Step 1' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Back' })).toHaveFocus()
     await user.keyboard('{ArrowLeft}')
     expect(onStep).not.toHaveBeenCalled()
     await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
@@ -88,16 +88,20 @@ describe('the stepper', () => {
     expect(onStep.mock.calls.map(([index]) => index)).toEqual([1, 2, 1])
   })
 
-  it('reaches the dots, then Back, then Next, in the order they are read', async () => {
+  it('reaches Back, then Next, by Tab, leaving the dots to the pointer and the arrow keys', async () => {
     const user = userEvent.setup()
-    render(<Harness start={1} />)
+    render(<><Harness start={1} /><button type="button">After</button></>)
     screen.getByRole('button', { name: 'Before' }).focus()
     const order: string[] = []
-    for (let press = 0; press < 5; press += 1) {
+    for (let press = 0; press < 3; press += 1) {
       await user.tab()
-      order.push((document.activeElement as HTMLElement).getAttribute('aria-label') ?? document.activeElement!.textContent!)
+      order.push(document.activeElement!.textContent!)
     }
-    expect(order).toEqual(['Step 1', 'Step 2', 'Step 3', 'Back', 'Next'])
+    expect(order).toEqual(['Back', 'Next', 'After'])
+    // Still named for a reader, and a click still goes to the step.
+    for (const dot of within(screen.getByRole('group', { name: 'Steps' })).getAllByRole('button')) expect(dot).toHaveAttribute('tabindex', '-1')
+    await user.click(screen.getByRole('button', { name: 'Step 3' }))
+    expect(screen.getByText('Codex answers.')).toBeInTheDocument()
   })
 
   it('draws nothing for a visual without steps', () => {

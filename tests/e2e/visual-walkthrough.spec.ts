@@ -164,26 +164,25 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await shot(page, 'flowchart-step-1280x800-dark.png')
     const base = await flow.evaluate(element => (element.querySelector('.visual-card__frames img') as HTMLImageElement).naturalWidth)
 
-    // The keyboard path: the first dot, then the arrow keys step while focus stays in the stepper.
-    const dot1 = flow.getByRole('button', { name: 'Step 1', exact: true })
-    await dot1.focus()
-    await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab')
-    await expect(dot1).toBeFocused()
-    await expect(dot1).toHaveCSS('outline-style', 'solid')
+    // The keyboard path: Tab goes from Expand past the dots, which are for the pointer, to Back; the arrow keys step
+    // while the focus is in the walkthrough.
+    const expand = flow.getByRole('button', { name: `Expand ${FLOW.title}` })
+    const back = flow.getByRole('button', { name: 'Back' })
+    await expand.focus()
+    await page.keyboard.press('Tab')
+    await expect(back).toBeFocused()
+    await expect(back).toHaveCSS('outline-style', 'solid')
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_B_C_0', 'edgeLabel:L_B_C_0', 'flowchart-B-1', 'flowchart-C-3'])
     await shot(page, 'flowchart-edge-1280x800-dark.png')
-    // The capture took the focus away; it goes back to the second dot.
-    await flow.getByRole('button', { name: 'Step 2' }).focus()
+    // The capture took the focus away; it goes back to Back.
+    await back.focus()
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 3 of 4')
     await expect.poll(() => lit(image(FLOW.title))).toEqual(['L_C_D_0', 'L_D_E_0', 'Provider', 'edgeLabel:L_C_D_0', 'edgeLabel:L_D_E_0', 'flowchart-C-3', 'flowchart-D-7', 'flowchart-E-9'])
     // Every step's picture is the drawing's size.
     expect(await flow.evaluate(element => (element.querySelector('.visual-card__frames img:last-child') as HTMLImageElement).naturalWidth)).toBe(base)
-    // Tab moves on from the dots to Back and Next, in the order they are read.
-    await page.keyboard.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab')
-    await expect(flow.getByRole('button', { name: 'Back' })).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(flow.getByRole('button', { name: 'Next' })).toBeFocused()
     await page.keyboard.press('Enter')
@@ -196,13 +195,12 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await page.keyboard.press('Enter')
     await expect(stepper(FLOW.title)).toContainText('Step 1 of 4')
     await page.keyboard.press('Shift+Tab')
-    await expect(flow.getByRole('button', { name: 'Back' })).toBeFocused()
-    await expect(flow.getByRole('button', { name: 'Back' })).toHaveAttribute('aria-disabled', 'true')
+    await expect(back).toBeFocused()
+    await expect(back).toHaveAttribute('aria-disabled', 'true')
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
 
     // Expand shows the step as it is lit; Escape closes it, back on Expand.
-    const expand = flow.getByRole('button', { name: `Expand ${FLOW.title}` })
     await expand.focus()
     await page.keyboard.press('Enter')
     const viewer = page.getByRole('dialog')
