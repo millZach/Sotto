@@ -1,61 +1,103 @@
-import { app, ipcMain, session, type WebContents } from 'electron'
 import { join } from 'node:path'
-import figtreeLatin from '../../renderer/src/assets/fonts/figtree-latin.woff2?inline'
-import figtreeLatinExt from '../../renderer/src/assets/fonts/figtree-latin-ext.woff2?inline'
-import { VISUAL_PAGE_OPEN, VISUAL_PARTITION, visualPageRequestSchema } from '../../shared/visualPages'
+import { VISUAL_PAGE_OPEN, visualPageRequestSchema, type VisualPageResult } from '../../shared/visualPages'
 import type { AgentVisual } from '../../shared/visuals'
-import { isAuthorizedIpcSender, type TrustedIpcSender } from '../ipc/registerIpc'
-import { admitVisualGuest, sealVisualGuest, sealVisualSession, startDeadProxy, VisualPages } from './visualPages'
+import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
+import { localVisualThreadId, VisualPageStore } from './visualPageStore'
+import { admitVisualGuest, sealVisualGuest, sealVisualSession, type VisualGuestLike, type VisualSessionLike } from './visualSeal'
 
-// Figtree travels with the page as data URLs, so showing it fetches nothing (ADR-0057).
-const FIGTREE_CSS = [
-  `@font-face{font-family:"Figtree";font-style:normal;font-weight:300 900;src:url(${figtreeLatin}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}`,
-  `@font-face{font-family:"Figtree";font-style:normal;font-weight:300 900;src:url(${figtreeLatinExt}) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}`,
-].join('')
+type PreventableEvent = { preventDefault(): void }
+type AttachListener = (event: PreventableEvent, webPreferences: Record<string, unknown>, params: Record<string, string>) => void
+
+/** The parts of a webContents the sandbox reads and seals: every one Electron makes, guests among them. */
+export interface VisualContentsLike extends VisualGuestLike {
+  getType(): string
+  readonly session: unknown
+  close(): void
+  on(event: 'will-navigate' | 'will-frame-navigate' | 'will-redirect' | 'will-attach-webview', listener: (event: PreventableEvent) => void): unknown
+  on(event: 'will-attach-webview', listener: AttachListener): unknown
+}
+type ContentsListener = (event: unknown, contents: VisualContentsLike) => void
+
+/** The Electron pieces the sandbox needs, injected so a test can stand in for each. */
+export interface VisualSandboxAdapters {
+  readonly ipc: IpcMainAdapter
+  /** `app`'s `web-contents-created`. */
+  readonly contentsCreated: { on(listener: ContentsListener): void; off(listener: ContentsListener): void }
+  /** The `sotto-visual` in-memory session, made the first time it is asked for. */
+  session(): VisualSessionLike
+  /** The proxy that answers nothing, started the first time a page is asked for. */
+  startProxy(): Promise<{ readonly port: number; close(): void }>
+}
 
 export interface VisualSandboxOptions {
+  /** The visual this computer's thread holds under this ID. */
   read(threadId: string, visualId: string): AgentVisual | undefined
+  /** This computer's host ID, which a window's host-qualified thread key names for a thread here. */
+  localHostId(): string | undefined
   /** Sotto's main window, the only renderer that may hold a visual's guest. */
   mainWebContents(): unknown
   senders(): readonly TrustedIpcSender[]
-  /** The guest preload, `out/preload/visual.js`. */
+  /** The guest preload's folder, holding `visual.js`. */
   readonly preloadDirectory: string
+  /** The Figtree faces, as `@font-face` rules with data URLs. */
+  readonly fontCss: string
 }
 
+interface Sealed { readonly session: VisualSessionLike; readonly proxy: { close(): void } }
+
+const NOT_SEALED = 'Sotto could not seal this page from the network, so it is not shown.'
+const ELSEWHERE = 'This page belongs to a thread on another computer, so it is not shown here.'
+
 /**
- * Seals the in-memory session interactive visuals run in, admits a `<webview>` guest only for a live page address in
- * the main window, seals every guest, and answers the window's request for a page (ADR-0057). If the dead proxy cannot
- * hold a port, the session is not sealed and no page is shown; the card shows the visual's steps instead.
+ * Answers the window's request for an interactive visual's page, admits a `<webview>` guest only for an address
+ * awaiting its load in the main window, and seals every guest (ADR-0057). The session is sealed, and its proxy started,
+ * the first time a page is asked for, so a launch that shows none sets up nothing. If the proxy cannot hold a port, no
+ * page is shown; the next request tries again.
  */
-export async function installVisualSandbox(options: VisualSandboxOptions): Promise<() => void> {
-  let proxy: Awaited<ReturnType<typeof startDeadProxy>> | undefined
-  let sealed = false
-  const pages = new VisualPages({ read: options.read, sealed: () => sealed, fontCss: FIGTREE_CSS })
-  const visualSession = session.fromPartition(VISUAL_PARTITION)
-  try {
-    proxy = await startDeadProxy()
-    await sealVisualSession(visualSession, pages, proxy.port)
-    sealed = true
-  } catch { sealed = false }
+export function installVisualSandbox(adapters: VisualSandboxAdapters, options: VisualSandboxOptions): () => void {
+  const store = new VisualPageStore({ read: options.read, fontCss: options.fontCss })
   const preload = join(options.preloadDirectory, 'visual.js')
-  const onContents = (_event: unknown, contents: WebContents): void => {
-    contents.on('will-attach-webview', (event, webPreferences, params) => {
-      const embedderTrusted = sealed && contents === options.mainWebContents()
-      if (!admitVisualGuest({ embedderTrusted, webPreferences: webPreferences as Record<string, unknown>, params, preload, live: url => pages.live(url) })) event.preventDefault()
-    })
+  let sealed: Sealed | undefined
+  let sealing: Promise<Sealed> | undefined
+  let disposed = false
+
+  const seal = (): Promise<Sealed> => sealing ??= (async () => {
+    const proxy = await adapters.startProxy()
+    try {
+      const session = adapters.session()
+      await sealVisualSession(session, store, proxy.port)
+      if (disposed) throw new Error('The sandbox was closed.')
+      sealed = { session, proxy }
+      return sealed
+    } catch (error) { proxy.close(); throw error }
+  })().catch((error: unknown) => { sealing = undefined; throw error })
+
+  const onContents: ContentsListener = (_event, contents) => {
+    contents.on('will-attach-webview', ((event, webPreferences, params) => {
+      const embedderTrusted = sealed !== undefined && contents === options.mainWebContents()
+      if (!admitVisualGuest({ embedderTrusted, webPreferences, params, preload, isAwaitingLoad: url => store.isAwaitingLoad(url) })) event.preventDefault()
+    }) as AttachListener)
     if (contents.getType() !== 'webview') return
-    // Every guest is a visual's: anything that attached on another session is closed before it loads.
-    if (contents.session !== visualSession) { contents.close(); return }
+    // Every guest is a visual's: one on any other session, or before the session is sealed, is closed before it loads.
+    if (!sealed || contents.session !== sealed.session) { contents.close(); return }
     sealVisualGuest(contents)
   }
-  app.on('web-contents-created', onContents)
-  ipcMain.handle(VISUAL_PAGE_OPEN, (event, payload: unknown) => {
+  adapters.contentsCreated.on(onContents)
+
+  adapters.ipc.handle(VISUAL_PAGE_OPEN, async (event, payload: unknown): Promise<VisualPageResult> => {
     if (!isAuthorizedIpcSender(event, options.senders(), ['main'])) throw new Error('VISUAL_MAIN_WINDOW_REQUIRED')
-    return pages.open(visualPageRequestSchema.parse(payload))
+    const request = visualPageRequestSchema.parse(payload)
+    // A key for another host names a paired host's thread: its visuals are there, never in this computer's store.
+    const threadId = localVisualThreadId(request.threadId, options.localHostId())
+    if (threadId === undefined) return { ok: false, reason: ELSEWHERE }
+    try { await seal() } catch { return { ok: false, reason: NOT_SEALED } }
+    return store.open({ ...request, threadId })
   })
+
   return () => {
-    app.removeListener('web-contents-created', onContents)
-    ipcMain.removeHandler(VISUAL_PAGE_OPEN)
-    proxy?.close()
+    disposed = true
+    adapters.contentsCreated.off(onContents)
+    adapters.ipc.removeHandler(VISUAL_PAGE_OPEN)
+    sealed?.proxy.close()
   }
 }

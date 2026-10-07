@@ -6,10 +6,9 @@
  */
 import { connect } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  admitVisualGuest, sealVisualGuest, sealVisualSession, startDeadProxy, VISUAL_PAGE_CSP, VISUAL_PAGE_HEADERS, VISUAL_PAGE_TOKEN_TTL_MS,
-  VISUAL_PAGE_TOKENS_MAX, visualPageDocument, VisualPages, type VisualGuestLike, type VisualSessionLike,
-} from '../../../src/main/agents/visualPages'
+import { VISUAL_PAGE_CSP, VISUAL_PAGE_HEADERS, visualPageDocument } from '../../../src/main/agents/visualPagePolicy'
+import { localVisualThreadId, VISUAL_PAGE_TOKEN_TTL_MS, VISUAL_PAGE_TOKENS_MAX, VisualPageStore } from '../../../src/main/agents/visualPageStore'
+import { admitVisualGuest, sealVisualGuest, sealVisualSession, startDeadProxy, type VisualGuestLike, type VisualSessionLike } from '../../../src/main/agents/visualSeal'
 import type { AgentVisual } from '../../../src/shared/visuals'
 import type { VisualTheme } from '../../../src/shared/visualGuest'
 
@@ -20,14 +19,14 @@ const theme: VisualTheme = { mode: 'dark', reducedMotion: false, tokens: {
 const page: AgentVisual = { id: 'page-1', title: 'A queue', kind: 'interactive', source: '<h1>Queue</h1><script>document.title = "drawn"</script>' }
 const diagram: AgentVisual = { id: 'diagram-1', title: 'A flow', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
 
-function pages(overrides: Partial<ConstructorParameters<typeof VisualPages>[0]> = {}) {
+function pages(overrides: Partial<ConstructorParameters<typeof VisualPageStore>[0]> = {}) {
   let now = 1_000
   const store: Record<string, AgentVisual[]> = { 'thread-1': [page, diagram] }
-  const created = new VisualPages({ read: (threadId, visualId) => store[threadId]?.find(item => item.id === visualId), sealed: () => true,
+  const created = new VisualPageStore({ read: (threadId, visualId) => store[threadId]?.find(item => item.id === visualId),
     fontCss: '@font-face{font-family:"Figtree"}', now: () => now, ...overrides })
   return { pages: created, store, advance: (ms: number) => { now += ms } }
 }
-const opened = (target: VisualPages, request: Partial<{ threadId: string; visualId: string }> = {}): string => {
+const opened = (target: VisualPageStore, request: Partial<{ threadId: string; visualId: string }> = {}): string => {
   const result = target.open({ threadId: 'thread-1', visualId: 'page-1', theme, ...request })
   if (!result.ok) throw new Error(result.reason)
   return result.url
@@ -38,11 +37,11 @@ describe('an interactive visual\'s page address', () => {
     const { pages: target } = pages()
     const url = opened(target)
     expect(url).toMatch(/^sotto-visual:\/\/page\/[A-Za-z0-9_-]{43}$/u)
-    expect(target.live(url)).toBe(true)
+    expect(target.isAwaitingLoad(url)).toBe(true)
     const first = target.serve(url)
     expect(first.status).toBe(200)
     expect(await first.text()).toContain('<h1>Queue</h1>')
-    expect(target.live(url)).toBe(false)
+    expect(target.isAwaitingLoad(url)).toBe(false)
     const second = target.serve(url)
     expect(second.status).toBe(404)
     expect(await second.text()).not.toContain('Queue')
@@ -58,19 +57,22 @@ describe('an interactive visual\'s page address', () => {
   it('is refused for another thread, an unknown visual or a diagram, in plain words', () => {
     const { pages: target } = pages()
     for (const request of [{ threadId: 'thread-2' }, { visualId: 'missing' }, { visualId: 'diagram-1' }])
-      expect(target.open({ threadId: 'thread-1', visualId: 'page-1', theme, ...request })).toEqual({ ok: false, reason: 'Sotto no longer has this visual. The visual is not shown. Its steps are below.' })
+      expect(target.open({ threadId: 'thread-1', visualId: 'page-1', theme, ...request })).toEqual({ ok: false, reason: 'Sotto no longer has this page, so it is not shown.' })
   })
 
-  it('is refused while the session is not sealed', () => {
-    expect(pages({ sealed: () => false }).pages.open({ threadId: 'thread-1', visualId: 'page-1', theme }))
-      .toEqual({ ok: false, reason: 'Sotto could not seal this page from the network. The visual is not shown. Its steps are below.' })
+  it("reads a thread on this computer only, never a paired host's", () => {
+    const here = '11111111-2222-4333-8444-555555555555', there = '99999999-2222-4333-8444-555555555555'
+    expect(localVisualThreadId('thread-1', here)).toBe('thread-1')
+    expect(localVisualThreadId(`host:${here}:thread-1`, here)).toBe('thread-1')
+    expect(localVisualThreadId(`host:${there}:thread-1`, here)).toBeUndefined()
+    expect(localVisualThreadId(`host:${there}:thread-1`, undefined)).toBeUndefined()
   })
 
   it('lapses unloaded after its time, and serves nothing once its visual is gone', () => {
     const lapsed = pages()
     const url = opened(lapsed.pages)
     lapsed.advance(VISUAL_PAGE_TOKEN_TTL_MS)
-    expect(lapsed.pages.live(url)).toBe(false)
+    expect(lapsed.pages.isAwaitingLoad(url)).toBe(false)
     expect(lapsed.pages.serve(url).status).toBe(404)
 
     const rewound = pages()
@@ -82,18 +84,18 @@ describe('an interactive visual\'s page address', () => {
   it('keeps at most a few addresses waiting, dropping the oldest', () => {
     const { pages: target } = pages()
     const urls = Array.from({ length: VISUAL_PAGE_TOKENS_MAX + 1 }, () => opened(target))
-    expect(target.live(urls[0]!)).toBe(false)
-    expect(urls.slice(1).every(url => target.live(url))).toBe(true)
+    expect(target.isAwaitingLoad(urls[0]!)).toBe(false)
+    expect(urls.slice(1).every(url => target.isAwaitingLoad(url))).toBe(true)
   })
 
   it('reads nothing that is not exactly a page address', () => {
     const { pages: target } = pages()
     const url = opened(target)
     for (const near of [`${url}/`, `${url}?x=1`, url.replace('page', 'other'), url.toUpperCase(), `https://example.invalid/${url}`]) {
-      expect(target.live(near)).toBe(false)
+      expect(target.isAwaitingLoad(near)).toBe(false)
       expect(target.serve(near).status).toBe(404)
     }
-    expect(target.live(url)).toBe(true)
+    expect(target.isAwaitingLoad(url)).toBe(true)
   })
 })
 
@@ -161,7 +163,7 @@ describe('the sealed session', () => {
     expect(fake.session.setSpellCheckerEnabled).toHaveBeenCalledWith(false)
   })
 
-  it('cancels every request but a live page address loaded as the page itself', async () => {
+  it('cancels every request but a waiting page address loaded as the page itself', async () => {
     const fake = fakeSession()
     const { pages: target } = pages()
     await sealVisualSession(fake.session, target, 40_123)
@@ -208,10 +210,10 @@ describe('the sealed session', () => {
 })
 
 describe('a visual\'s guest', () => {
-  it('attaches only in Sotto\'s main window and only for a live address', () => {
+  it('attaches only in Sotto\'s main window and only for an address awaiting its load', () => {
     const { pages: target } = pages()
     const url = opened(target)
-    const input = (embedderTrusted: boolean, src: string) => ({ embedderTrusted, webPreferences: {}, params: { src }, preload: '/out/preload/visual.js', live: (value: string) => target.live(value) })
+    const input = (embedderTrusted: boolean, src: string) => ({ embedderTrusted, webPreferences: {}, params: { src }, preload: '/out/preload/visual.js', isAwaitingLoad: (value: string) => target.isAwaitingLoad(value) })
     expect(admitVisualGuest(input(false, url))).toBe(false)
     expect(admitVisualGuest(input(true, 'https://example.com/'))).toBe(false)
     expect(admitVisualGuest(input(true, 'sotto-visual://page/unknown'))).toBe(false)
@@ -223,7 +225,7 @@ describe('a visual\'s guest', () => {
     const url = opened(target)
     const webPreferences: Record<string, unknown> = { nodeIntegration: true, contextIsolation: false, sandbox: false, webSecurity: false, preload: 'C:/elsewhere.js', partition: 'persist:other', disablePopups: false }
     const params: Record<string, string> = { src: url, allowpopups: 'true', partition: 'persist:other', preload: 'file:///C:/elsewhere.js', webpreferences: 'nodeIntegration=yes' }
-    expect(admitVisualGuest({ embedderTrusted: true, webPreferences, params, preload: '/out/preload/visual.js', live: value => target.live(value) })).toBe(true)
+    expect(admitVisualGuest({ embedderTrusted: true, webPreferences, params, preload: '/out/preload/visual.js', isAwaitingLoad: value => target.isAwaitingLoad(value) })).toBe(true)
     expect(webPreferences).toMatchObject({ nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false,
       disablePopups: true, disableDialogs: true, partition: 'sotto-visual', preload: '/out/preload/visual.js', nodeIntegrationInSubFrames: false })
     expect(params).toEqual({ src: url, partition: 'sotto-visual' })

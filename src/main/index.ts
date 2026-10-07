@@ -8,8 +8,10 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
-import { installVisualSandbox } from './agents/visualSandbox'
-import { VISUAL_SCHEME } from '../shared/visualPages'
+import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
+import { startDeadProxy } from './agents/visualSeal'
+import { VISUAL_PAGE_FONT_CSS } from './agents/visualFonts'
+import { VISUAL_PARTITION, VISUAL_SCHEME } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -59,6 +61,7 @@ import {
   Tray,
   type Event as ElectronEvent,
   type MenuItemConstructorOptions,
+  type WebContents,
   type WebContentsWillFrameNavigateEventParams,
   type WebContentsWillNavigateEventParams,
   type WebContentsWillRedirectEventParams,
@@ -759,10 +762,23 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
   agentHost.useThreadTools([hostSetupTools, visualTools])
-  // An interactive visual runs in a sealed page (ADR-0057): main serves it from this store, once per address.
-  const disposeVisualSandbox = await installVisualSandbox({ read: (threadId, visualId) => agentHost.visual(parseHostEntityKey(threadId)?.id ?? threadId, visualId),
+  // An interactive visual runs in a sealed page (ADR-0057): main serves it from this store, once per address. The session
+  // and its proxy are set up the first time a page is asked for.
+  const onVisualContents = new Map<(event: unknown, contents: VisualContentsLike) => void, (event: ElectronEvent, contents: WebContents) => void>()
+  const disposeVisualSandbox = installVisualSandbox({
+    ipc: ipcMain,
+    contentsCreated: {
+      on: listener => { const bound = (event: ElectronEvent, contents: WebContents): void => listener(event, contents as unknown as VisualContentsLike); onVisualContents.set(listener, bound); app.on('web-contents-created', bound) },
+      off: listener => { const bound = onVisualContents.get(listener); if (bound) app.removeListener('web-contents-created', bound); onVisualContents.delete(listener) },
+    },
+    session: () => session.fromPartition(VISUAL_PARTITION),
+    startProxy: startDeadProxy,
+  }, {
+    read: (threadId, visualId) => agentHost.visual(threadId, visualId),
+    localHostId: () => agentControl.get().hostId,
     mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
-    preloadDirectory: join(__dirname, '../preload') })
+    preloadDirectory: join(__dirname, '../preload'), fontCss: VISUAL_PAGE_FONT_CSS,
+  })
   app.on('will-quit', disposeVisualSandbox)
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
