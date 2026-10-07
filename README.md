@@ -27,6 +27,7 @@ When a failed creation keeps your prompt or screenshots, the error names the pro
 ## What it does
 
 - **One sidebar for every agent.** Each provider keeps its own sign-in and models. Sotto keeps the threads. Stop still reaches running work when its last prompt is unconfirmed.
+- **Visuals in the thread.** An agent in a project thread can draw a diagram where you read its replies, to show how something works, with its steps written beneath. Drawing one asks you nothing; turn it off in Settings.
 - **You answer every request.** Anything a thread's permissions don't already allow waits for you. A desktop set up over your SSH account can answer requests and change thread permissions as soon as setup finishes, and can do so over your tailnet as well once it connects that way. A phone or another device paired by code needs your separate permission to do those things.
 
 If Codex asks for an approval Sotto cannot show, Sotto refuses it and tells you. This includes an unknown child thread on a thread's own Codex process. Nothing is approved; answer in Codex meanwhile.
