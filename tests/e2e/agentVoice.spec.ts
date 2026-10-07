@@ -88,7 +88,8 @@ test('routes activated voice through the real controller, retains paused prompts
     await widget.getByTestId('widget-sliver').hover()
     await widget.getByRole('button', { name: 'Expand threads', exact: true }).click()
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Close Workshop', exact: true }).click()
+    // The thread can name itself from its first exchange before this closes.
+    await page.getByRole('dialog').getByRole('button', { name: /^Close / }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await page.getByRole('button', { name: 'Turn off agent control' }).click()
     await expect(widget.locator('.widget-shell')).toBeVisible()

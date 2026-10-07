@@ -11,7 +11,7 @@
  * both requests per send and weighs the replies the fake sent, and, for comparison, the newest turn and its user
  * message alone: the only part of the transcript the `expectedLastUserMessageId` check compares. It then sends the
  * way the Threads page does, through the coordinator over the wrapped adapter, and counts the whole reads each send
- * made before `turn/start` and after it. Counters, sizes and timers only; every seeded text is filler. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1`
+ * made before `turn/start` and after it, and the newest-turn checks before it (#765). Counters, sizes and timers only; every seeded text is filler. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1`
  * (`tests/fixtures/perfBench.ts`). Add `SOTTO_PERF_WITHOUT_TURNS_LIST=1` for the same run with the check switched
  * off, which is how a send read before #324:
  *
@@ -94,11 +94,11 @@ async function seeded(turns: number): Promise<{ f: Fixture; id: string; openMs: 
   return { f, id, openMs: await opened(f, id, startedAt) }
 }
 
-/** The whole reads a send made before its `turn/start` and after it. */
-async function wholeReads(f: Fixture, from: number): Promise<{ before: number; after: number }> {
+/** The whole reads a send made before its `turn/start` and after it, and the newest-turn checks before it (#765). */
+async function wholeReads(f: Fixture, from: number): Promise<{ before: number; after: number; checks: number }> {
   const { before, after } = aroundTurnStart((await f.driver.requests()).slice(from))
   const whole = (requests: typeof before) => historyReads(requests).filter(read => read === 'read').length
-  return { before: whole(before), after: whole(after) }
+  return { before: whole(before), after: whole(after), checks: historyReads(before).filter(read => read === 'turns').length }
 }
 
 const lastUser = (f: Fixture, id: string): string | null =>
@@ -156,7 +156,7 @@ describe.skipIf(!PERF_BENCH)('Codex send-time read on a long thread', () => {
         await control.command({ type: 'observe-threads', threadIds: [id] })
         const openMs = await opened(f, f.registry.byThread(id)!.sessionId, startedAt)
         const samples: Record<Stage | 'send', number[]> = { send: [], refreshThread: [], read: [], newestTurn: [], applyThread: [], persist: [] }
-        const reads: { before: number; after: number }[] = []
+        const reads: { before: number; after: number; checks: number }[] = []
         for (let index = 0; index < SENDS; index++) {
           const from = (await f.driver.requests()).length
           spent.clear()
@@ -173,7 +173,8 @@ describe.skipIf(!PERF_BENCH)('Codex send-time read on a long thread', () => {
         }
         console.info(`codex send read, Threads page: ${JSON.stringify({ turns, sends: SENDS, openMs: round(openMs), sendMedianMs: round(median(samples.send)),
           ...Object.fromEntries(STAGES.map(stage => [`${stage}MedianMs`, round(median(samples[stage]))])),
-          wholeReadsBeforeTurnStart: reads.map(read => read.before), wholeReadsAfterTurnStart: reads.map(read => read.after) })}`)
+          wholeReadsBeforeTurnStart: reads.map(read => read.before), wholeReadsAfterTurnStart: reads.map(read => read.after),
+          newestTurnChecksBeforeTurnStart: reads.map(read => read.checks) })}`)
       } finally { control.dispose(); await control.privacyChanged(); await f.cleanup() }
     }, 600_000)
   }

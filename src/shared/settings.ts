@@ -125,6 +125,8 @@ export interface AppSettings {
   showBrowserPreviews: boolean
   /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
   browserWithoutAsking: boolean
+  /** On by default (ADR-0056): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
+  visualsInThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -224,6 +226,12 @@ export interface AppSettings {
   /** This computer's name as phones show it. Empty uses the Tailscale machine name, or the computer's own. */
   phoneAccessName: string
   /**
+   * Host-local, read only by a headless host (ADR-0053): Tailscale Serve carries the host's tailnet listener for paired
+   * desktops' tailnet connections while this or `phoneAccess` is on. The host's administrative route sets it; nothing on
+   * a desktop does, so it is not on the settings allow-list.
+   */
+  tailnetConnections: boolean
+  /**
    * The voice coordinator (the wake phrase, the Agents room, spoken hints, the
    * widget's voice controls and assignment) is hidden for the beta. Off keeps
    * every one of those surfaces out of the window; dictation is unaffected.
@@ -270,6 +278,7 @@ const fieldSchemas = {
   responseStreaming: z.enum(['live', 'complete']),
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
+  visualsInThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -322,6 +331,7 @@ const fieldSchemas = {
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
+  tailnetConnections: z.boolean(),
   voiceCoordinatorEnabled: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
@@ -351,6 +361,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   responseStreaming: 'live',
   showBrowserPreviews: true,
   browserWithoutAsking: true,
+  visualsInThreads: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -415,6 +426,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Off by default: nothing listens beyond this computer until the owner turns it on (ADR-0033).
   phoneAccess: false,
   phoneAccessName: '',
+  // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
+  tailnetConnections: false,
   // Off for the beta: the voice coordinator is not ready to ship, so nothing
   // voice-shaped is shown until it is turned on here.
   voiceCoordinatorEnabled: false,
@@ -473,6 +486,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
+    visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
@@ -520,6 +534,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
+    tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
     voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),

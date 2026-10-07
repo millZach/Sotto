@@ -69,6 +69,8 @@ if (process.argv.includes('exec')) {
 let state = { threads: {} }
 let stamp
 const loadedThreads = new Set()
+const configStamp = () => { try { const file = statSync(join(process.env.CODEX_HOME, 'config.toml'), { bigint: true }); return `${file.ino}:${file.mtimeNs}:${file.size}` } catch { return 'missing' } }
+let mcpConfigStamp = configStamp()
 const pause = new Int32Array(new SharedArrayBuffer(4))
 const stateStamp = () => { try { const stats = statSync(file('state.json'), { bigint: true }); return `${stats.ino}:${stats.mtimeNs}:${stats.size}` } catch { return 'none' } }
 const load = () => {
@@ -121,17 +123,23 @@ const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 // Each process numbers its own requests, as Codex's do; starting from its own base keeps them apart in requests.jsonl.
-let requestId = process.pid * 1000
+let requestId = read('script.json', {}).requestIdBase ?? process.pid * 1000
 const pending = new Map()
 const heldReplies = new Map()
-function complete(thread, text, status = 'completed') {
+/** One agent message item in the newest turn, streamed and completed, as Codex writes before a tool call. */
+function say(thread, text) {
   const turn = thread.turns.at(-1)
-  if (!turn) return
+  if (!turn) return undefined
   const item = { type: 'agentMessage', id: randomUUID(), text }
   turn.items.push(item)
   notify('item/started', { threadId: thread.id, turnId: turn.id, item: { ...item, text: '' } })
   notify('item/agentMessage/delta', { threadId: thread.id, turnId: turn.id, itemId: item.id, delta: text })
   notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+  return turn
+}
+function complete(thread, text, status = 'completed') {
+  const turn = say(thread, text)
+  if (!turn) return
   turn.status = status
   thread.status = { type: status === 'failed' ? 'systemError' : 'idle' }
   save()
@@ -189,13 +197,20 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   }
   if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
   if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
-  if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (script.reject === method) {
+    delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script))
+    // A held rejection waits for `release-reply` the way a held answer does.
+    const rejection = { id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }
+    if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
+    return
+  }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
       : { config: { developer_instructions: script.developerInstructions ?? null }, origins: {}, layers: null })
     return
   }
+  if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }
   if (method === 'initialize') served(method)
@@ -284,6 +299,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.dropRollbackReply) return
     reply({ thread: script.omitRollbackTurns ? { ...thread, turns: undefined } : thread })
   } else if (method === 'turn/start') {
+    if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {
+      emit({ id, error: { code: -32000, message: 'Native computer-use pipe is missing from cached MCP configuration' } }); return
+    }
     const thread = state.threads[params.threadId]
     // Explicit opt-in fixture writes prove the adapter's actual execution cwd.
     if (script.writeCwd) writeFileSync(join(params.cwd ?? thread.cwd, 'native-cwd-proof.txt'), params.input.find(item => item.type === 'text')?.text ?? '')
@@ -306,6 +324,9 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.permission) raise(thread, 'permission', script.permission)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
   } else if (method === 'turn/steer') {
+    if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {
+      emit({ id, error: { code: -32000, message: 'Native computer-use pipe is missing from cached MCP configuration' } }); return
+    }
     const thread = state.threads[params.threadId]
     const turn = thread?.turns.at(-1)
     if (!turn || turn.status !== 'inProgress' || turn.id !== params.expectedTurnId) {
@@ -365,6 +386,7 @@ function control(action) {
   }
   if (!thread) return
   if (action.type === 'complete') complete(thread, action.text, action.status)
+  else if (action.type === 'say') { say(thread, action.text); save() }
   // Another Codex process on the same session: what it does reaches the shared history, never this connection's stream.
   // `count` adds that many turns at once, all completed except the last when `status` is `inProgress`, and `reply`
   // is what each completed one answered.

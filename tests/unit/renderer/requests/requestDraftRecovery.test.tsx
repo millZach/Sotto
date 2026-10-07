@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRequest } from '../../../../src/shared/agents'
-import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner } from '../../../../src/shared/requestDrafts'
+import { requestDraftQuestions, type RequestDraft, type RequestDraftBridge, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
 import { RequestDraftRecovery, savedAnswerClipboard, type RecoveryObservation } from '../../../../src/renderer/src/agents/requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 
@@ -26,8 +26,18 @@ const live = (patch: Partial<AgentRequest> = {}): AgentRequest => ({ id: 'durabl
 
 function fakeBridge(initial: RequestDraft[]) {
   let saved = structuredClone(initial)
+  const listeners = new Set<(owner: RequestDraftOwner) => void>()
   const bridge = {
     get: vi.fn(), save: vi.fn(), check: vi.fn(),
+    status: vi.fn(async (target: RequestDraftTarget): Promise<RequestDraftStatus> => {
+      const draft = await bridge.get(target)
+      return draft ? { status: 'draft', draft } : { status: 'missing' }
+    }),
+    onChanged: vi.fn((listener: (owner: RequestDraftOwner) => void) => {
+      listeners.add(listener)
+      return vi.fn(() => { listeners.delete(listener) })
+    }),
+    changed: (owner: RequestDraftOwner) => { for (const listener of listeners) listener(owner) },
     list: vi.fn(async (input: RequestDraftOwner) => structuredClone(saved.filter(item => item.target.ownerId === input.ownerId))),
     discard: vi.fn(async ({ target, revision }: { target: RequestDraft['target']; revision: number }) => {
       const found = saved.find(item => JSON.stringify(item.target) === JSON.stringify(target))
@@ -53,6 +63,31 @@ function view(bridge: ReturnType<typeof fakeBridge>, props: { live?: AgentReques
 const saved = () => screen.findByRole('region', { name: 'Saved answer' })
 
 describe('saved answers without a live request', () => {
+  it('reloads mounted recovery only for its own persisted owner change and unsubscribes on unmount', async () => {
+    const bridge = fakeBridge([draft({ held: true })])
+    const rendered = view(bridge, { observed: 'unchanged' })
+    await screen.findByRole('region', { name: 'Unconfirmed answer' })
+    expect(bridge.onChanged).toHaveBeenCalledTimes(1)
+    const reads = bridge.list.mock.calls.length
+    await act(async () => {
+      bridge.changed({ ...owner, ownerId: 'other-thread' })
+      bridge.changed({ ...owner, providerId: 'claude' })
+      bridge.changed({ ...owner, kind: 'personal' })
+    })
+    expect(bridge.list).toHaveBeenCalledTimes(reads)
+    bridge.replace([])
+    await act(async () => { bridge.changed(owner) })
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Unconfirmed answer' })).toBeNull())
+    expect(bridge.list).toHaveBeenCalledTimes(reads + 1)
+    expect(bridge.check).not.toHaveBeenCalled()
+    expect(bridge.discard).not.toHaveBeenCalled()
+    const off = bridge.onChanged.mock.results[0]!.value
+    rendered.unmount()
+    expect(off).toHaveBeenCalledTimes(1)
+    await act(async () => { bridge.changed(owner) })
+    expect(bridge.list).toHaveBeenCalledTimes(reads + 1)
+  })
+
   it('shows the original question labels, chosen option labels and text with no way to send', async () => {
     const bridge = fakeBridge([draft()])
     view(bridge)

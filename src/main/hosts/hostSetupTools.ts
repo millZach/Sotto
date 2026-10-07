@@ -62,6 +62,8 @@ export class HostSetupToolServer implements ScopedThreadTools {
   readonly name = HOST_SETUP_MCP_SERVER
   /** Every tool, so a client's own allow-list covers whichever job a thread runs; `tools/list` gives each thread its own. */
   readonly definitions = allDefinitions
+  /** A check or add can wait 5 minutes for a Tailscale approval. */
+  readonly timeoutMs = 600_000
   private readonly server: ThreadToolServer
   constructor(private readonly handlers: HostSetupToolHandlers) {
     this.server = new ThreadToolServer({ name: HOST_SETUP_MCP_SERVER, serverName: 'sotto-host-setup', instructions: INSTRUCTIONS,

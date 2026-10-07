@@ -24,7 +24,7 @@ describe('Files preload contract', () => {
     for (const [method, channel] of [['copyPath', FILES_COPY_PATH], ['reveal', FILES_REVEAL]] as const) {
       const reply = { ok: true, value: { workspace, path: 'file.md', absolutePath: 'C:/project/file.md' } }
       ipc.invoke.mockResolvedValueOnce(reply)
-      expect(await bridge[method](request)).toEqual(reply)
+      expect(await bridge[method]!(request)).toEqual(reply)
       expect(ipc.invoke).toHaveBeenLastCalledWith(channel, request)
     }
   })
@@ -34,8 +34,8 @@ describe('Files preload contract', () => {
     expect(() => bridge.list({ threadId: 'thread', path: '', root: 'C:/' } as FileListRequest)).toThrow()
     expect(() => bridge.list({ threadId: 'thread', path: 'subdir' })).toThrow()
     for (const method of ['preview', 'copyPath', 'reveal'] as const) {
-      expect(() => bridge[method]({ threadId: 'thread', path: 'file' } as FileRequest)).toThrow()
-      expect(() => bridge[method]({ ...request, path: '../secret' })).toThrow()
+      expect(() => bridge[method]!({ threadId: 'thread', path: 'file' } as FileRequest)).toThrow()
+      expect(() => bridge[method]!({ ...request, path: '../secret' })).toThrow()
     }
     expect(ipc.invoke).not.toHaveBeenCalled()
   })

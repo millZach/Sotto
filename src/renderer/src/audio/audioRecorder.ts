@@ -1,5 +1,6 @@
 import { MAX_TRANSCRIPTION_SAMPLES, TRANSCRIPTION_SAMPLE_RATE } from '../../../shared/audio'
 import { calculateRms, resampleMono } from './audioMath'
+import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
 import { microphoneConstraints, type MicrophoneConstraints } from './microphoneConstraints'
 export type { MicrophoneConstraints } from './microphoneConstraints'
 
@@ -72,6 +73,8 @@ export interface AudioContextAdapter {
   readonly sampleRate: number
   readonly destination: AudioNodeAdapter
   readonly audioWorklet: { addModule(url: string): Promise<void> }
+  readonly state?: 'suspended' | 'running' | 'closed'
+  resume?(): Promise<void>
   createMediaStreamSource(stream: MediaStreamAdapter): AudioNodeAdapter
   createGain(): GainNodeAdapter
   close(): Promise<void>
@@ -80,7 +83,9 @@ export interface AudioContextAdapter {
 export interface AudioRecorderDependencies {
   readonly audioWorkletModuleUrl: string
   mediaDevices: {
-    getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
+    getUserMedia(
+      constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
+    ): Promise<MediaStreamAdapter>
   }
   createAudioContext(): AudioContextAdapter
   createAudioWorkletNode(
@@ -110,6 +115,12 @@ export interface AudioRecorderOptions {
    * while durationMs still reports the full recording length.
    */
   onSegment?: (segment: AudioRecordingResult) => void
+  /**
+   * Reports levels and keeps no audio: chunks are dropped as they arrive, no
+   * segment is emitted and stop() resolves null. The microphone test uses it
+   * so a long test does not hold minutes of audio in memory.
+   */
+  levelsOnly?: boolean
 }
 
 interface RecordingSession {
@@ -141,7 +152,9 @@ function defaultDependencies(): AudioRecorderDependencies {
   const browser = globalThis as unknown as {
     navigator: {
       mediaDevices: {
-        getUserMedia(constraints: MicrophoneConstraints): Promise<MediaStreamAdapter>
+        getUserMedia(
+          constraints: MicrophoneConstraints | { audio: true } | { audio: { deviceId: { exact: string } } },
+        ): Promise<MediaStreamAdapter>
       }
     }
     document: { readonly baseURI: string }
@@ -156,7 +169,14 @@ function defaultDependencies(): AudioRecorderDependencies {
   return {
     audioWorkletModuleUrl: new URL('audio-capture-worklet.js', browser.document.baseURI).href,
     mediaDevices: {
-      getUserMedia: (constraints) => browser.navigator.mediaDevices.getUserMedia(constraints),
+      getUserMedia: async (constraints) => {
+        if (!await ensureMicrophoneAccess()) {
+          const error = new Error('Microphone access is blocked.')
+          error.name = 'NotAllowedError'
+          throw error
+        }
+        return await browser.navigator.mediaDevices.getUserMedia(constraints)
+      },
     },
     createAudioContext: () => new browser.AudioContext(),
     createAudioWorkletNode: (context, processorName) =>
@@ -213,6 +233,8 @@ export class AudioRecorder {
       // alone can cost seconds on a cold start, silently dropping the
       // speaker's first words). None of this setup needs the stream.
       session.context = this.dependencies.createAudioContext()
+      // A context opened before the permission dialog can be left suspended once that dialog closes.
+      if (session.context.state === 'suspended') await session.context.resume?.()
       await session.context.audioWorklet.addModule(this.dependencies.audioWorkletModuleUrl)
       this.assertSessionLive(session)
 
@@ -226,7 +248,17 @@ export class AudioRecorder {
       session.gain.connect(session.context.destination)
       session.worklet.port.onmessage = (event) => this.receiveChunk(session, event.data)
 
-      session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(this.options.selectedDeviceId))
+      const selected = this.options.selectedDeviceId
+      try {
+        session.stream = await this.dependencies.mediaDevices.getUserMedia(microphoneConstraints(selected))
+      } catch (error: unknown) {
+        if (!isConstraintError(error)) throw error
+        session.stream = await this.dependencies.mediaDevices.getUserMedia(
+          selected ? { audio: { deviceId: { exact: selected } } } : { audio: true },
+        )
+      }
+      this.assertSessionLive(session)
+      if (session.context.state === 'suspended') await session.context.resume?.()
       this.assertSessionLive(session)
       this.monitorTrackEnd(session)
 
@@ -293,11 +325,14 @@ export class AudioRecorder {
   private receiveChunk(session: RecordingSession, data: unknown): void {
     if (session.terminated || this.session !== session || !(data instanceof Float32Array)) return
 
-    const chunk = new Float32Array(data)
-    session.chunks.push(chunk)
-    session.sourceFrames += chunk.length
-    session.totalFrames += chunk.length
-    this.maybeEmitSegment(session, chunk)
+    const levelsOnly = this.options.levelsOnly === true
+    const chunk = levelsOnly ? data : new Float32Array(data)
+    if (!levelsOnly) {
+      session.chunks.push(chunk)
+      session.sourceFrames += chunk.length
+      session.totalFrames += chunk.length
+      this.maybeEmitSegment(session, chunk)
+    }
     const now = Date.now()
     if (now - session.lastLevelEmitAt < LEVEL_EMIT_INTERVAL_MS) return
     session.lastLevelEmitAt = now
@@ -414,7 +449,7 @@ export class AudioRecorder {
     session.finalization = (async () => {
       let result: AudioRecordingResult | null = null
       try {
-        if (includeAudio) {
+        if (includeAudio && this.options.levelsOnly !== true) {
           const sampleRate = session.context?.sampleRate ?? TRANSCRIPTION_SAMPLE_RATE
           const joined = new Float32Array(session.sourceFrames)
           let offset = 0
@@ -517,6 +552,11 @@ export class AudioRecorder {
       // Best-effort release continues for the remaining independently owned resources.
     }
   }
+}
+
+function isConstraintError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : ''
+  return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError'
 }
 
 function readStartFailureName(error: unknown): string | undefined {

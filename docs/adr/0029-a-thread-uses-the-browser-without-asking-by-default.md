@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted September 25, 2026 (Zach, step 3 of `docs/plans/2026-09-25-agent-tool-exposure.md`, issue #332). Supersedes, for Sotto's own browser, ADR-0020's rule that opening a page, navigating, clicking and typing each wait for the user's one-time answer, and its September 22 amendment's page-opening grant.
+Accepted September 25, 2026 (Zach, step 3 of `docs/plans/2026-09-25-agent-tool-exposure.md`, issue #332). Amended October 5, 2026: the grant shares every page in the thread (below). Supersedes, for Sotto's own browser, ADR-0020's rule that opening a page, navigating, clicking and typing each wait for the user's one-time answer, and its September 22 amendment's page-opening grant.
 
 ## Context
 
@@ -18,7 +18,7 @@ AGENTS.md says the user answers every permission, and ADR-0004 keeps authority i
 
 **The user can stop it for one thread.** **Stop** on the grant line in Tools > Browser ends that thread's grant, whichever its source. The thread then asks again until the user allows it again or Sotto restarts. Turning the setting off ends every settings grant at once; grants the user gave by answering stay until stopped.
 
-**What does not change.** A page the user opened stays private until the user shares it. A page the agent opens is shared the way Open and share shares it, with the same revocation when a navigation leaves its origin. The endpoint still binds one thread, and a grant reaches no other thread. Supervision, memory, repetition and a provider's own confirmation still never create one. A waiting action whose page has changed still does not run. Pausing a task still stops its later actions. Grants still end when Sotto closes, when the thread is gone, and when the browser shuts down with its window.
+**What does not change.** A page the user opened stays private until the user shares it. A page the agent opens is shared the way Open and share shares it, with the same revocation when a navigation leaves its origin. (The October 5 amendment below replaces these two sentences while a grant lives.) The endpoint still binds one thread, and a grant reaches no other thread. Supervision, memory, repetition and a provider's own confirmation still never create one. A waiting action whose page has changed still does not run. Pausing a task still stops its later actions. Grants still end when Sotto closes, when the thread is gone, and when the browser shuts down with its window.
 
 ## Consequences
 
@@ -26,3 +26,15 @@ AGENTS.md says the user answers every permission, and ADR-0004 keeps authority i
 - AGENTS.md names this exception beside "The user answers every permission". A second standing grant of this kind is a new ADR, not an extension of this one.
 - The user's controls are one setting for every thread and one Stop for each thread. A stopped thread asking again is visible in Tools > Browser, where its request waits.
 - The page-opening grant's names give way to the browser grant's in code and in `CONTEXT.md`, because the old names would say "opening pages" about clicks and typing.
+
+## October 5 amendment: the grant shares every page in the thread
+
+Zach reported still pressing a button before an agent could work in Sotto's browser, with the setting on. The button was **Share with agent**. The grant answered opens, navigations, clicks and typing, but two rules from "What does not change" still stopped the agent. A page the user opened stayed private until shared, and sharing covered only the site it was given for, so a page moving from youtube.com to studio.youtube.com, or through a Google sign-in, stopped being shared on the way. A server's redirect was worse: the page kept the address it started from, never finished loading, and pressing Share shared the old site rather than the one on screen, so nothing but a reload helped. Zach asked to turn the setting on and not think about it again, and on October 5, 2026 picked "every page in the thread" and then variant A of `docs/prototypes/remote-tools-and-browser-sharing-prototype.html` (branch `prototype/remote-tools-and-browser-sharing`): the Share button already in the tab line, pressed on every page.
+
+**While a thread has a browser grant, every page in that thread's browser is shared with it**: pages the agent opens, pages the user opens, and pages that were already open when the grant was given. A shared page stays shared as it moves to another site, a server's redirect included. **Stop sharing** on a page makes that one page private. It stays private as it moves and when a grant is given again, until the user presses Share with agent. Tools > Browser shows the button pressed on a shared page, and a private page says so on a line under the address with Share with agent beside it.
+
+When the grant ends, at Stop or when the setting is turned off, each page keeps the sharing it has at the site it is on. Leaving that site ends it, as it always has without a grant, and a page opened afterwards is private until shared. Ending the grant changes what the agent may do without asking. It does not take back what the user already saw shared, and the pressed buttons still show exactly what is shared.
+
+Separately from the grant, a server's redirect now moves the page to the address it reached, so the page finishes loading there and Share with agent shares the site on screen.
+
+This widens the exception this decision made. With the setting on, the agent in a thread can read every page in that thread's browser, including one the user opens on a site where Sotto's browser is signed in. The browser's pages and sign-ins are per working copy, so what a thread can see is still only what is open in that thread's browser. The grant still reaches no other thread, and nothing but the setting or the user's answer in Tools makes one.

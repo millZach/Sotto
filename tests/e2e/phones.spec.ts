@@ -9,7 +9,7 @@ import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 /**
  * Settings > Phones in the built app, through every state the prototype drew: off, Tailscale not
- * running, port 8443 taken, ready, a pairing code, and a paired phone. Tailscale is the end-to-end
+ * running, ports 8443 and 10000 taken, ready, a pairing code, and a paired phone. Tailscale is the end-to-end
  * stand-in in the profile (`e2e-tailscale.json`), never the machine's own; the phone is this test,
  * pairing over the listener's loopback port the way Tailscale Serve would carry it.
  */
@@ -63,10 +63,10 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
     await expect(step('Tailscale Serve on port 8443')).toContainText('Waits for Tailscale.')
     await capture('tailscale', step('Tailscale is running'))
 
-    // Another app on 8443: left alone, and said so.
-    await tailscale({ state: 'running', serve: 'taken' })
+    // Other apps on 8443 and 10000: left alone, and said so.
+    await tailscale({ state: 'running', serve: 'both-taken' })
     await step('Tailscale is running').getByRole('button', { name: 'Try again' }).click()
-    await expect(step('Tailscale Serve on port 8443')).toContainText('Another app already uses port 8443 in Tailscale Serve on this computer. Sotto left that setting alone')
+    await expect(step('Tailscale Serve on port 8443')).toContainText('Other apps already use ports 8443 and 10000 in Tailscale Serve on this computer. Sotto left those settings alone')
     await capture('port', step('Tailscale Serve on port 8443'))
 
     // Ready: every step done, the address to copy.

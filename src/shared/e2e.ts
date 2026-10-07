@@ -22,6 +22,9 @@ export const e2eBrowserAgentSchema = z.object({ threadId: z.string().min(1).max(
 /** Calls one of the running host setup's tools as its thread would (ADR-0035); main supplies the thread. */
 export const E2E_HOST_SETUP_TOOL_CHANNEL = 'sotto:e2e:host-setup-tool'
 export const e2eHostSetupToolSchema = z.object({ name: z.string().min(1).max(80) }).strict()
+/** Calls the visualize tool as a thread's agent would (ADR-0056); main checks and keeps it as it would for a provider. */
+export const E2E_VISUAL_TOOL_CHANNEL = 'sotto:e2e:visual-tool'
+export const e2eVisualToolSchema = z.object({ threadId: z.string().min(1).max(512), arguments: z.unknown() }).strict()
 export const e2eBrowserAgentResultSchema = z.object({ content: z.array(z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('image'), data: z.string(), mimeType: z.string() }),
@@ -37,6 +40,7 @@ export const e2eScenarioSchema = z.enum([
   'paste-failure',
   'clipboard-recovery',
   'transcription-failure',
+  'transcription-turned-away-twice',
   'design-permission',
   'design-processing',
   'design-threads',
@@ -58,7 +62,6 @@ export type E2EScenario = z.infer<typeof e2eScenarioSchema>
 export type E2ESnapshot = z.infer<typeof e2eSnapshotSchema>
 
 export const e2eAgentEventSchema = z.object({
-  scope: z.enum(['thread', 'personal']).optional(),
   type: z.enum(['ready', 'manual', 'question', 'permission', 'disconnect', 'failure', 'reasoner-release', 'uncertain', 'reject', 'connect-reject', 'history', 'stream', 'monitoring', 'background-work', 'settings', 'settings-unconfirmed']),
   threadId: z.string(), text: z.string(), requestId: z.string().optional(), status: z.enum(['idle', 'running', 'error']).optional(),
   request: agentRequestSchema.optional(), activities: z.array(agentActivitySchema).max(MAX_AGENT_ACTIVITIES).optional(),
@@ -71,6 +74,7 @@ export const e2eAgentEventSchema = z.object({
 export interface SottoE2EBridge {
   browserAgent?(request: z.infer<typeof e2eBrowserAgentSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   hostSetupTool?(request: z.infer<typeof e2eHostSetupToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
+  visualTool?(request: z.infer<typeof e2eVisualToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario
   snapshot(): Promise<E2ESnapshot>

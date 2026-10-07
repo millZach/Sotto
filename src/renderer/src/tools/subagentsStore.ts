@@ -14,6 +14,16 @@ export interface ThreadSubagents {
 const EMPTY: ThreadSubagents = { rows: [], resetVersion: 0, revision: -1, summary: EMPTY_SUBAGENT_SUMMARY, loading: false, error: null }
 
 /**
+ * What main said when a roster could not be read, when it said it in a sentence: a paired host from before Agents could
+ * be read there names its version, and a dropped host says so. Anything else gets the surface's own words.
+ */
+function plainRefusal(error: unknown): string | null {
+  const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() : ''
+  // A host's own name starts some of these sentences, and it may be lower case ("forge could not read…").
+  return /^\p{L}[^\n{}[\]]{0,600}\.$/u.test(message) ? message : null
+}
+
+/**
  * The newest rows up to the capacity, and where earlier ones begin. A parent older than the cut stays with the rows
  * under it, so a workflow keeps its one row in the roster however its agents fall across pages.
  */
@@ -87,8 +97,8 @@ export class SubagentsStore {
       const kept = newestRows(ordered, this.capacities.get(threadId) ?? SUBAGENT_PAGE_SIZE)
       this.publish(threadId, { rows: kept.rows, resetVersion: latest.resetVersion, revision: Math.max(page.revision, latest.revision),
         summary: latest.revision > page.revision ? latest.summary : page.summary, before: kept.before ?? page.before, loading: false, error: null })
-    } catch {
-      if (generation === this.generation) this.publish(threadId, { ...this.thread(threadId), loading: false, error: 'Could not load agents. Saved work is unchanged. Try again.' })
+    } catch (error) {
+      if (generation === this.generation) this.publish(threadId, { ...this.thread(threadId), loading: false, error: plainRefusal(error) ?? 'Could not load agents. Saved work is unchanged. Try again.' })
     }
   }
 

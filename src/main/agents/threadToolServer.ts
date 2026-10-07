@@ -9,9 +9,16 @@ export interface ThreadToolResult {
 }
 /** How a native client reaches one of Sotto's tool servers for one thread: loopback HTTP and a bearer token. */
 export interface ThreadMcpServer { name: string; type: 'http'; url: string; headers: { name: string; value: string }[] }
-/** What a server says about itself: its MCP name, the name in its handshake, and its instructions to the model. */
-export interface ThreadToolServerIdentity { readonly name: string; readonly serverName: string; readonly instructions: string; readonly unavailable: string; readonly failed: string }
-const MAX_REQUEST_BYTES = 128 * 1024
+/**
+ * What a server says about itself: its MCP name, the name in its handshake, and its instructions to the model. Also the
+ * largest request body it reads, when its tools take more than the default allows.
+ */
+export interface ThreadToolServerIdentity {
+  readonly name: string; readonly serverName: string; readonly instructions: string; readonly unavailable: string; readonly failed: string
+  readonly maxRequestBytes?: number
+}
+/** The largest request body a server reads unless it says otherwise: enough for every browser and host setup call. */
+export const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024
 const frameSchema = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string().max(256), z.number().int().safe()]).optional(), method: z.string().max(128), params: z.unknown().optional() })
 const toolCallSchema = z.object({ name: z.string().max(128), arguments: z.unknown().optional() })
 
@@ -84,7 +91,7 @@ export class ThreadToolServer {
       for await (const chunk of request) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)
         size += bytes.length
-        if (size > MAX_REQUEST_BYTES) { response.writeHead(413).end(); return }
+        if (size > (this.identity.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES)) { response.writeHead(413).end(); return }
         chunks.push(bytes)
       }
       let parsed: unknown
@@ -115,10 +122,23 @@ export class ThreadToolServer {
 
 /**
  * A tool server only some threads get: `mcpServer` answers undefined for every other thread, so an adapter asks for
- * it at each launch and offers nothing when there is nothing to offer. The host setup tools are one (ADR-0035).
+ * it at each launch and offers nothing when there is nothing to offer. The host setup tools are one (ADR-0035), and
+ * the visual tool another (ADR-0056). An adapter is handed every one of them as a list.
  */
 export interface ScopedThreadTools {
   readonly name: string
   readonly definitions: readonly ThreadToolDefinition[]
+  /** How long one call may take before the client gives up, when that is longer than the client's own default. */
+  readonly timeoutMs?: number
   mcpServer(threadId: string): Promise<ThreadMcpServer | undefined>
+}
+
+/** The servers of `tools` this thread is given, in list order, each beside the tools that serve it. */
+export async function scopedThreadServers(tools: readonly ScopedThreadTools[], threadId: string): Promise<{ server: ThreadMcpServer; tools: ScopedThreadTools }[]> {
+  const servers: { server: ThreadMcpServer; tools: ScopedThreadTools }[] = []
+  for (const entry of tools) {
+    const server = await entry.mcpServer(threadId)
+    if (server) servers.push({ server, tools: entry })
+  }
+  return servers
 }

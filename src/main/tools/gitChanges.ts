@@ -210,6 +210,9 @@ export class GitChangesService extends ToolOperations {
       for (const entry of nameStatus) {
         if (!fileRelativePathSchema.safeParse(entry.path).success || entry.originalPath !== undefined && !fileRelativePathSchema.safeParse(entry.originalPath).success) continue
         const counts = numstat.get(entry.path)
+        // Some Git versions (Apple's Git 2.50 among them) still name a whitespace-only change in --name-status under
+        // --ignore-all-space, while --numstat and the patch leave it out; a mode change or a rename keeps its numstat line.
+        if (request.ignoreWhitespace && !counts) continue
         const section = byPath.get(entry.path)
         let content: GitReviewFile['content']
         if (!section || section === incomplete) content = overflowed ? { kind: 'too-large', message: TOO_LARGE_REVIEW } : { kind: 'unavailable', message: 'Git gave no text diff for this file.' }

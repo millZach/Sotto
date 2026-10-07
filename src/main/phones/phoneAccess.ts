@@ -3,21 +3,23 @@ import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 
-import { startSocketServer } from '../../host/socketServer'
+import { startSocketServer, type SocketServerOptions, type TailnetAdmission } from '../../host/socketServer'
 import type { ClientIdentity, HostService } from '../agents/hostService'
 import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { PHONE_ACCESS_SERVE_PORT, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
+import { PHONE_ACCESS_SERVE_PORTS, type PhoneAccessServePort, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
 import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
 
 /**
  * Phone access (ADR-0033): while the `phoneAccess` setting is on and the local host runs, the desktop
  * opens the host protocol listener over its own host service, on loopback, and asks Tailscale Serve
- * to carry HTTPS port 8443 on the tailnet to it. Paired phones then see exactly this window's threads.
+ * to carry HTTPS port 8443 on the tailnet to it, or 10000 when another app already holds 8443. Paired
+ * phones then see exactly this window's threads.
  *
- * Only this computer's own Serve setting is ever changed: one Sotto put on 8443 itself, proxying to a
- * loopback port Sotto remembers. Anything else on 8443 is left alone and the Phones page says so. The
- * setting is removed when phone access turns off and when Sotto quits, and put back at the next start.
+ * Only this computer's own Serve setting is ever changed: one Sotto put on 8443 or 10000 itself, proxying
+ * to a loopback port Sotto remembers. Anything else on those ports is left alone; when other apps hold both,
+ * the Phones page says so. The setting is removed when phone access turns off and when Sotto quits, and put
+ * back at the next start on the Serve port it was last on while that port is free, since phones keep its address.
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
@@ -26,6 +28,10 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  * A headless host runs the same phone access over its own host service (ADR-0050). It shares the host's pairing
  * store, so a phone and a desktop pair with one set of clients, and the desktop it is connected to administers it
  * through the host's own administrative routes rather than a Phones page.
+ *
+ * On a headless host the listener is the host's tailnet listener, and carries desktops too (ADR-0053): it runs, and Serve
+ * carries it, while phone access or the host's `tailnetConnections` setting is on. With phone access off and the listener
+ * up for desktops, it takes no pairing, opens nothing for a client that is not a desktop, and shows no code.
  */
 
 /** What phone access logs: stable event names only, never a name, a code or an address. */
@@ -56,7 +62,11 @@ export interface PhoneAccessOptions {
   /** The local host's service, or nothing when the local host is off. */
   readonly service: HostService | undefined
   readonly tailscale: PhoneAccessTailscale
-  readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string }
+  /**
+   * `tailnetConnections` is a headless host's own (ADR-0053), and is honoured only with `listener.desktops`, which only
+   * the headless host gives: a desktop's settings file naming it never raises the desktop's own phone listener.
+   */
+  readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string; readonly tailnetConnections?: boolean | undefined }
   readonly policy?: PhoneAccessPolicy | undefined
   readonly openExternal: (url: string) => Promise<void>
   readonly hostname?: () => string
@@ -70,17 +80,42 @@ export interface PhoneAccessOptions {
   readonly pairing?: PairedClients
   /** How long to wait before looking for Tailscale again after it was not running. */
   readonly retryMs?: number
+  /**
+   * For this long after start, a Tailscale that is missing and a Serve setting that failed are looked at again too, on
+   * the same `retryMs`. A host started at boot can come up before tailscaled, which a user unit cannot wait for (ADR-0054).
+   */
+  readonly startRetryWindowMs?: number
   /** The longest quitting waits for the Serve setting to be removed. */
   readonly quitTimeoutMs?: number
+  /**
+   * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
+   * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
+   */
+  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked'>
+    & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
+
+/** What health and hello read of phone access: whether it is on, the phase and address `get()` reports, and how many phones are paired. */
+export type PhoneAccessBrief = Pick<PhonesState, 'enabled' | 'phase' | 'address'> & { readonly phones: number }
 
 const recordSchema = z.object({
   /** The loopback port last listened on, tried first next time so the Serve setting stays recognisably Sotto's. */
   port: z.number().int().min(1).max(65535).nullable(),
   /** Set before Sotto asks for the Serve setting and cleared once it is gone, so a crash is cleaned up at the next start. */
   mapped: z.boolean(),
+  /**
+   * The Serve port the setting is on, or was last on, which the next start tries first so paired phones keep their
+   * address. Absent means 8443, as in every record from before the fallback.
+   */
+  servePort: z.literal(10000).optional(),
 }).strict()
 type PhoneAccessRecord = z.infer<typeof recordSchema>
+
+/** The Serve port a record's setting is on, or was last on. */
+const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.servePort ?? 8443
+/** A record naming a Serve port, written the way records from before the fallback read: 8443 is left implicit. */
+const onPort = (record: Omit<PhoneAccessRecord, 'servePort'>, servePort: PhoneAccessServePort): PhoneAccessRecord =>
+  servePort === 8443 ? record : { ...record, servePort }
 
 const ANSWERS_NOTE = 'The user turned on Can answer for this paired phone on the Phones page.'
 const WAITING = { status: 'waiting' } as const
@@ -98,6 +133,7 @@ export class PhoneAccess {
   private tailscaleCheck: TailscaleCheck = WAITING
   private serveCheck: ServeCheck = WAITING
   private address: string | null = null
+  private servePort: PhoneAccessServePort | null = null
   private enableUrl: string | undefined
   private readonly formerPorts = new Set<number>()
   private code: { code: string; expiresAt: string } | null = null
@@ -105,7 +141,9 @@ export class PhoneAccess {
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private queue: Promise<void> = Promise.resolve()
   private closed = false
+  private startedAt = 0
   private readonly listeners = new Set<(state: PhonesState) => void>()
+  private readonly watchers = new Set<(brief: PhoneAccessBrief) => void>()
   /**
    * With a shared pairing store, the clients that paired through phone access, which are the phones: the desktops that
    * pair with the same host are not phones, and the Phones dialog must never offer to remove one. Kept in
@@ -123,6 +161,7 @@ export class PhoneAccess {
 
   /** Reads the saved pairings and record, then brings phone access in line with the setting. */
   async start(): Promise<void> {
+    this.startedAt = Date.now()
     // Keep an invalid primary until an atomic replacement preserves pending cleanup.
     try { if (await this.store.exists()) this.record = await this.store.peek() } catch { this.recordUncertain = true }
     if (this.record.mapped && this.record.port === null) this.recordUncertain = true
@@ -155,8 +194,12 @@ export class PhoneAccess {
 
   /** Called when any setting changed: turns phone access on or off to match, and republishes the name. */
   settingsChanged(): void {
-    if (!this.wanted()) {
+    if (!this.phonesWanted()) {
       this.cancelCode()
+      // The listener stays up for desktops; the phones on it go now.
+      this.listener?.dropRevoked()
+    }
+    if (!this.listenerWanted()) {
       if (this.listener) { this.listener.stopServing(); this.listenerStopped = true }
     }
     this.enqueue(() => this.reconcile())
@@ -168,18 +211,27 @@ export class PhoneAccess {
     return () => { this.listeners.delete(listener) }
   }
 
+  /**
+   * Told the brief state (see `brief()`) on every change `subscribe` is told of. A socket opening or closing is one, so
+   * a watcher that needs only the phase and address costs no per-phone policy lookups.
+   */
+  watch(watcher: (brief: PhoneAccessBrief) => void): () => void {
+    this.watchers.add(watcher)
+    return () => { this.watchers.delete(watcher) }
+  }
+
   get(): PhonesState {
     const settings = this.options.settings()
     const defaultName = this.defaultName()
-    const connected = new Set(!this.listenerStopped && this.wanted() ? this.listener?.connectedClients() ?? [] : [])
+    const connected = new Set(!this.listenerStopped && this.listenerWanted() ? this.listener?.connectedClients() ?? [] : [])
     const phones = this.pairingReady ? this.paired().map(client => ({
       clientId: client.clientId, name: client.name, pairedAt: client.pairedAt, connected: connected.has(client.clientId),
       canAnswer: this.options.policy?.mayGrant({ clientId: client.clientId, user: '', transport: 'socket' }).allowed ?? false,
     })) : []
     return {
       enabled: settings.phoneAccess, localHostRunning: this.options.service !== undefined,
-      phase: this.listenerStopped && this.phase === 'on' && this.wanted() ? 'starting' : this.phase,
-      tailscale: this.tailscaleCheck, serve: this.serveCheck, address: this.listenerStopped ? null : this.address,
+      phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
+      tailscale: this.tailscaleCheck, serve: this.serveCheck, servePort: this.servePort, address: this.listenerStopped ? null : this.address,
       computerName: this.computerName(), defaultName,
       code: this.code, phones, answersAvailable: this.options.policy !== undefined,
     }
@@ -188,11 +240,11 @@ export class PhoneAccess {
   async command(command: PhonesCommand): Promise<PhonesState> {
     switch (command.type) {
       case 'retry':
-        this.enqueue(async () => { if (this.phase === 'cleanup-failed') await this.reconcile(); else if (this.wanted()) await this.turnOn() })
+        this.enqueue(async () => { if (this.phase === 'cleanup-failed') await this.reconcile(); else if (this.listenerWanted()) await this.turnOn() })
         await this.queue
         break
       case 'show-code': {
-        if (this.phase !== 'on' || !this.wanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
+        if (this.phase !== 'on' || !this.phonesWanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
         this.cancelCode()
         const code = this.pairing.issuePairingCode()
         this.code = code
@@ -271,23 +323,53 @@ export class PhoneAccess {
     return this.pairingReady
   }
 
-  private wanted(): boolean {
+  /**
+   * Whether the listener and the Serve setting are wanted: for phones, or on a headless host, the only phone access told
+   * which clients are desktops, for desktops too.
+   */
+  private listenerWanted(): boolean {
+    const settings = this.options.settings()
+    const desktops = this.options.listener?.desktops !== undefined && settings.tailnetConnections === true
+    return !this.closed && (settings.phoneAccess || desktops) && this.options.service !== undefined
+  }
+
+  /** Whether phones may pair and connect: phone access itself is on. */
+  private phonesWanted(): boolean {
     return !this.closed && this.options.settings().phoneAccess && this.options.service !== undefined
   }
+
+  /** Waits for the changes in progress, so an answer can say how Serve came out. */
+  settled(): Promise<void> { return this.queue }
+
+  /**
+   * The parts of `get()` health and hello read, without the per-phone policy lookups: whether phone access is on, the
+   * phase and address as `get()` reports them, and how many phones are paired.
+   */
+  brief(): PhoneAccessBrief {
+    return {
+      enabled: this.options.settings().phoneAccess,
+      phase: this.listenerStopped && this.phase === 'on' && this.listenerWanted() ? 'starting' : this.phase,
+      address: this.listenerStopped ? null : this.address,
+      phones: this.pairingReady ? this.paired().length : 0,
+    }
+  }
+
+  /** How many paired clients hold an open socket on the listener now, phones and desktops alike. */
+  peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
 
   private async reconcile(): Promise<void> {
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {
       await this.turnOff()
       if (this.phase === 'cleanup-failed') return
     }
-    if (this.wanted()) { if (this.phase === 'off') await this.turnOn() }
+    if (this.listenerWanted()) { if (this.phase === 'off') await this.turnOn() }
     else if (this.phase !== 'off' || this.listener || this.record.mapped) await this.turnOff()
   }
 
   private async turnOn(): Promise<void> {
-    if (this.listenerStopped || !this.wanted()) {
+    if (this.listenerStopped || !this.listenerWanted()) {
       await this.turnOff()
-      if (this.phase === 'cleanup-failed' || !this.wanted()) return
+      if (this.phase === 'cleanup-failed' || !this.listenerWanted()) return
     }
     this.clearRetry()
     this.reset('starting')
@@ -298,40 +380,49 @@ export class PhoneAccess {
       this.tailscaleCheck = { status: 'failed', reason: status.state }
       await this.fail()
       // Tailscale often starts after Sotto at sign-in, so look again in a while rather than wait for Try again.
-      if (status.state === 'not-running') this.scheduleRetry()
+      if (status.state === 'not-running' || this.starting()) this.scheduleRetry()
       return
     }
     this.tailscaleCheck = { status: 'ok', hostName: status.hostName, dnsName: status.dnsName }
     this.publish()
-    let owner: ReturnType<typeof servePortOwner>
-    try { owner = servePortOwner(await this.options.tailscale.serveStatus(), PHONE_ACCESS_SERVE_PORT, this.ourPorts()) }
-    catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
-    if (owner === 'ours') this.record.mapped = true
-    if (owner === 'taken') { await this.failServe('port-taken'); return }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    let owners: { port: PhoneAccessServePort; owner: ReturnType<typeof servePortOwner> }[]
+    try {
+      const config = await this.options.tailscale.serveStatus()
+      // The port phones last used comes first: they keep its address, so a restart must not move them while it is free.
+      const last = servePortOf(this.record)
+      const ports = [last, ...PHONE_ACCESS_SERVE_PORTS.filter(port => port !== last)]
+      owners = ports.map(port => ({ port, owner: servePortOwner(config, port, this.ourPorts()) }))
+    } catch (error) { this.options.log?.('phone-access-serve-status-failed'); await this.failServe(error instanceof TailscaleAccessDenied ? 'denied' : 'failed'); return }
+    // A setting that is already Sotto's wins; else the first free port, the one phones last used if it is free.
+    const chosen = owners.find(entry => entry.owner === 'ours') ?? owners.find(entry => entry.owner === 'free')
+    if (!chosen) { await this.failServe('port-taken'); return }
+    const owner = chosen.owner, servePort = chosen.port
+    this.servePort = servePort
+    if (owner === 'ours') this.record = onPort({ ...this.record, mapped: true }, servePort)
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     if (!this.listener) {
       // Paired phones that cannot be read are never replaced: the listener stays shut until they can be.
       if (!await this.loadPairing()) { await this.failServe('listener'); return }
       try { this.listener = await this.listen() }
       catch { this.options.log?.('phone-access-listener-failed'); await this.failServe('listener'); return }
     }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     const port = this.listener.descriptor.port
-    if (!await this.save({ port, mapped: true })) { await this.failServe('record'); return }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (!await this.save(onPort({ port, mapped: true }, servePort))) { await this.failServe('record'); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     let result: ServeResult
-    try { result = await this.options.tailscale.serve(PHONE_ACCESS_SERVE_PORT, port) } catch { result = { ok: false, reason: 'failed' } }
+    try { result = await this.options.tailscale.serve(servePort, port) } catch { result = { ok: false, reason: 'failed' } }
     if (!result.ok) {
       this.options.log?.(result.reason === 'not-enabled' ? 'phone-access-serve-not-enabled' : result.reason === 'denied' ? 'phone-access-serve-denied' : 'phone-access-serve-failed')
       this.enableUrl = result.reason === 'not-enabled' ? result.enableUrl : undefined
       // A consent request or a refusal made no new setting. Other failures keep cleanup pending until Serve is checked.
-      if (result.reason !== 'failed') await this.save({ port, mapped: owner === 'ours' })
+      if (result.reason !== 'failed') await this.save(onPort({ port, mapped: owner === 'ours' }, servePort))
       await this.failServe(result.reason)
       return
     }
-    if (this.listenerStopped || !this.wanted()) { await this.turnOff(); return }
+    if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
     this.serveCheck = { status: 'ok' }
-    this.address = `https://${status.dnsName}:${PHONE_ACCESS_SERVE_PORT}`
+    this.address = `https://${status.dnsName}:${servePort}`
     this.phase = 'on'
     this.options.log?.('phone-access-on')
     this.publish()
@@ -339,12 +430,19 @@ export class PhoneAccess {
 
   private reset(phase: PhonesState['phase']): void {
     if (phase === 'off') this.listenerStopped = false
-    this.phase = phase; this.tailscaleCheck = WAITING; this.serveCheck = WAITING; this.address = null; this.enableUrl = undefined
+    this.phase = phase; this.tailscaleCheck = WAITING; this.serveCheck = WAITING; this.address = null; this.servePort = null; this.enableUrl = undefined
   }
 
   private async failServe(reason: 'port-taken' | 'not-enabled' | 'denied' | 'listener' | 'failed' | 'record'): Promise<void> {
     this.serveCheck = { status: 'failed', reason, ...(this.enableUrl ? { canOpenSetup: true } : {}) }
     await this.fail()
+    // Serve fails while tailscaled is still coming up, so a start's first minutes look again rather than wait for Try again.
+    if (reason === 'failed' && this.phase === 'failed' && this.starting()) this.scheduleRetry()
+  }
+
+  /** Whether phone access started a moment ago, within the window in which every failure of Tailscale's is looked at again. */
+  private starting(): boolean {
+    return this.options.startRetryWindowMs !== undefined && Date.now() - this.startedAt < this.options.startRetryWindowMs
   }
 
   /**
@@ -371,7 +469,10 @@ export class PhoneAccess {
     this.publish()
   }
 
-  /** Removes Sotto's own Serve setting when the record says one may be there. Anyone else's on 8443 is never touched. */
+  /**
+   * Removes Sotto's own Serve setting when the record says one may be there. Anyone else's is never touched.
+   * Without a readable record Sotto cannot say which port it used, so it checks both.
+   */
   private async removeMapping(): Promise<boolean> {
     if (!this.record.mapped) return true
     try {
@@ -384,10 +485,16 @@ export class PhoneAccess {
         } catch { /* Still check Serve, even when the saved record remains unreadable. */ }
         if (this.recordUncertain && readable) await this.save(this.record)
       }
-      const owner = servePortOwner(await this.options.tailscale.serveStatus(), PHONE_ACCESS_SERVE_PORT, this.ourPorts())
-      if (owner === 'ours' && !await this.options.tailscale.unserve(PHONE_ACCESS_SERVE_PORT)) { this.options.log?.('phone-access-serve-remove-failed'); return false }
+      const config = await this.options.tailscale.serveStatus()
+      const ports: readonly PhoneAccessServePort[] = this.recordUncertain ? PHONE_ACCESS_SERVE_PORTS : [servePortOf(this.record)]
+      let unattributed = false
+      for (const port of ports) {
+        const owner = servePortOwner(config, port, this.ourPorts())
+        if (owner === 'ours' && !await this.options.tailscale.unserve(port)) { this.options.log?.('phone-access-serve-remove-failed'); return false }
+        if (owner === 'taken') unattributed = true
+      }
       // Without a readable record, an occupied mapping cannot be attributed to Sotto.
-      if (this.recordUncertain && owner !== 'free') return false
+      if (this.recordUncertain && unattributed) return false
       if (!await this.save({ ...this.record, mapped: false })) return false
       this.recordUncertain = false
       return true
@@ -430,8 +537,13 @@ export class PhoneAccess {
 
   private async listen(): Promise<Listener> {
     const start = this.options.startServer ?? startSocketServer
+    const { desktops, ...listener } = this.options.listener ?? {}
     const base = {
+      ...listener,
+      ...(desktops ? { tailnet: { desktops, phonesAdmitted: () => this.phonesWanted() } } : {}),
       service: this.options.service!, pairing: this.pairing, admin: false,
+      // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.
+      observationKey: 'tailnet-observations',
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onPaired: (clientId: string) => {
@@ -478,7 +590,10 @@ export class PhoneAccess {
     this.clearRetry()
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined
-      this.enqueue(async () => { if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile(); else if (this.wanted() && this.phase === 'failed' && this.tailscaleCheck.status === 'failed') await this.turnOn() })
+      this.enqueue(async () => {
+        if (!this.closed && this.phase === 'cleanup-failed') await this.reconcile()
+        else if (this.listenerWanted() && this.phase === 'failed' && (this.tailscaleCheck.status === 'failed' || (this.serveCheck.status === 'failed' && this.serveCheck.reason === 'failed'))) await this.turnOn()
+      })
     }, this.options.retryMs ?? 30_000)
     this.retryTimer.unref?.()
   }
@@ -493,6 +608,10 @@ export class PhoneAccess {
   }
 
   private publish(): void {
+    if (this.watchers.size > 0) {
+      const brief = this.brief()
+      for (const watcher of this.watchers) watcher(brief)
+    }
     if (this.listeners.size === 0) return
     const state = this.get()
     for (const listener of this.listeners) listener(state)

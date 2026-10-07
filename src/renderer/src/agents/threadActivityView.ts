@@ -1,5 +1,5 @@
-import type { AgentActivity } from '../../../shared/agentActivity'
-import type { AgentMessage, AgentThread } from '../../../shared/agents'
+import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 
 /**
@@ -74,6 +74,27 @@ export function placeActivities(
     const anchor = anchors.get(record)
     if (anchor) nextByTurn.set(record.turnId, anchor)
     else anchors.set(record, nextByTurn.get(record.turnId) ?? (known.has(record.turnId) ? record.turnId : null))
+  }
+  // A visual an agent drew sits right after the message it was drawn under, which is also the message the work after
+  // it names (ADR-0056). Work that started once the visual was drawn follows the visual rather than sitting above it.
+  const visualsAfter = new Map<string, AgentMessage[]>()
+  for (const [index, message] of messages.entries()) {
+    if (!isVisualMessage(message)) continue
+    let under = index - 1
+    while (under >= 0 && isVisualMessage(messages[under]!)) under--
+    if (under < 0) continue
+    const id = messages[under]!.id
+    visualsAfter.set(id, [...visualsAfter.get(id) ?? [], message])
+  }
+  if (visualsAfter.size) {
+    for (const record of sorted) {
+      const anchor = anchors.get(record)
+      const chain = anchor ? visualsAfter.get(anchor) : undefined
+      const started = record.startedAt ? Date.parse(record.startedAt) : Number.NaN
+      if (!chain || !Number.isFinite(started)) continue
+      const after = chain.findLast(visual => Date.parse(visual.createdAt) <= started)
+      if (after) anchors.set(record, after.id)
+    }
   }
 
   // When each turn began, and the earliest beginning among the turns the messages give a place. With no
@@ -441,13 +462,17 @@ export const agentStatusLabel = (status: string): string => AGENT_STATUS[status]
 export function groupSummary(records: readonly AgentActivity[]): string {
   const count = (kind: AgentActivity['kind']): AgentActivity[] => records.filter(record => record.kind === kind)
   const files = new Set(count('file-change').flatMap(record => record.changes?.length ? record.changes.map(change => change.path) : [record.id]))
+  // Thinking a provider streamed and Codex's reasoning summaries share a row, but not a name.
+  const thoughts = count('reasoning').filter(record => record.title === THINKING_TITLE).length
+  const summaries = count('reasoning').length - thoughts
   const parts = [
     count('command').length ? `ran ${plural(count('command').length, 'command', 'commands')}` : '',
     files.size ? `changed ${plural(files.size, 'file', 'files')}` : '',
     count('tool').length ? `used ${plural(count('tool').length, 'tool', 'tools')}` : '',
     count('subagent').length ? plural(count('subagent').length, 'agent action', 'agent actions') : '',
     count('plan').length ? 'updated the plan' : '',
-    count('reasoning').length ? plural(count('reasoning').length, 'reasoning summary', 'reasoning summaries') : '',
+    summaries ? plural(summaries, 'reasoning summary', 'reasoning summaries') : '',
+    thoughts ? thoughts === 1 ? 'thought once' : `thought ${thoughts} times` : '',
     count('status').length ? plural(count('status').length, 'notice', 'notices') : '',
     count('compaction').length ? 'compacted the context' : '',
   ].filter(Boolean)

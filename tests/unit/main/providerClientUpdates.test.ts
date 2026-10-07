@@ -348,9 +348,7 @@ describe('updating a client from the app', () => {
 
   it('says what failed, leaves the installed version alone and tells no host anything', async () => {
     const host = new VersionedHost()
-    const personal: string[] = []
-    const { control } = await coordinator(host, async () => ({ ok: false, detail: 'npm ERR! code EACCES' }), '1.0.40',
-      { clientUpdated: async provider => { personal.push(provider) } })
+    const { control } = await coordinator(host, async () => ({ ok: false, detail: 'npm ERR! code EACCES' }))
     try {
       await control.command({ type: 'connect' })
       await control.command({ type: 'check-client-updates' })
@@ -358,7 +356,6 @@ describe('updating a client from the app', () => {
       const result = await control.command({ type: 'update-client', provider: 'grok' })
       expect(result.error).toMatch(/did not update.*EACCES.*unchanged, and your threads kept working/u)
       expect(host.log, 'a failed install changes nothing, so nothing is put back').toEqual([])
-      expect(personal).toEqual([])
       expect(control.get().clientUpdates).toEqual([expect.objectContaining({ installed: '1.0.5', state: 'failed', error: 'npm ERR! code EACCES' })])
     } finally { control.dispose() }
   })
@@ -432,46 +429,19 @@ describe('updating a client from the app', () => {
     } finally { control.dispose() }
   })
 
-  it('tells personal chats after the install, and only after', async () => {
-    const host = new VersionedHost()
-    const order: string[] = []
-    const { control } = await coordinator(host, async () => { order.push('install'); host.onDisk = '1.0.40'; return { ok: true } },
-      '1.0.40', { clientUpdated: async provider => { order.push(`personal ${provider}`) } })
-    try {
-      await control.command({ type: 'connect' })
-      await control.command({ type: 'check-client-updates' })
-      const result = await control.command({ type: 'update-client', provider: 'grok' })
-      expect(result.error).toBeNull()
-      expect(order).toEqual(['install', 'personal grok'])
-    } finally { control.dispose() }
-  })
-
-  it('reports the install when a host cannot take the news, and logs it by name alone', async () => {
-    const host = new VersionedHost()
-    const failures: string[] = []
-    const { control } = await coordinator(host, async () => { host.onDisk = '1.0.40'; return { ok: true } }, '1.0.40',
-      { clientUpdated: async () => { throw new Error('personal chats are stuck') }, logFailure: (code, detail) => { failures.push(`${code} ${detail}`) } })
-    try {
-      await control.command({ type: 'connect' })
-      await control.command({ type: 'check-client-updates' })
-      const result = await control.command({ type: 'update-client', provider: 'grok' })
-      // The host's own sentence is what the update reports; the log carries only the event and the provider.
-      expect(result.error).toBe('personal chats are stuck')
-      expect(failures).toEqual(['client-update-handoff-failed grok'])
-      expect(control.get().clientUpdates).toEqual([expect.objectContaining({ installed: '1.0.40', state: 'updated', error: 'personal chats are stuck' })])
-    } finally { control.dispose() }
-  })
-
   it('says why when the host will not move to the new client, rather than blaming the installer', async () => {
     const host = new VersionedHost()
     const refusal = 'Grok Build was updated, but Sotto cannot run the new version. Threads that are working carry on and nothing was lost.'
     host.clientUpdated = async () => { throw new Error(refusal) }
-    const { control } = await coordinator(host, async () => { host.onDisk = '1.0.40'; return { ok: true } })
+    const failures: string[] = []
+    const { control } = await coordinator(host, async () => { host.onDisk = '1.0.40'; return { ok: true } }, '1.0.40',
+      { logFailure: (code, detail) => { failures.push(`${code} ${detail}`) } })
     try {
       await control.command({ type: 'connect' })
       await control.command({ type: 'check-client-updates' })
       const result = await control.command({ type: 'update-client', provider: 'grok' })
       expect(result.error).toBe(refusal)
+      expect(failures).toEqual(['client-update-handoff-failed grok'])
       expect(result.error).not.toMatch(/in a terminal/u)
       expect(host.log).not.toContain('disconnect')
       expect(control.get().clientUpdates).toEqual([expect.objectContaining({ installed: '1.0.5', state: 'unchanged', error: refusal })])

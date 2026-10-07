@@ -125,3 +125,72 @@ describe('the append path a provider rail is handed to', () => {
     expect(log.messages('t').map(item => item.text)).toEqual(['Ask', 'Partial reply'])
   })
 })
+
+describe('the mark of a reply that is still growing', () => {
+  it('is kept as the chunks arrive, so a re-read of the same words is recognised and a different one is not', () => {
+    const log = new ThreadMessageLog()
+    log.observe([])
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('t', message('prompt', 'user', 'Ask'))
+    log.add('t', message('reply', 'assistant', 'Ind'))
+    // Both append paths: a suffix the stream names, and a whole message that grew.
+    log.appendText('t', 'reply', 'igo')
+    log.add('t', message('reply', 'assistant', 'Indigo it'))
+    for (const chunk of [' is', ', with', ' white', ' text.']) log.appendText('t', 'reply', chunk)
+    // A later message moves the newest one on, so a re-read of the reply is compared by its mark alone.
+    log.add('t', message('next', 'user', 'Thanks'))
+    events.length = 0
+    log.add('t', message('reply', 'assistant', 'Indigo it is, with white text.'))
+    expect(events).toEqual([])
+    log.add('t', message('reply', 'assistant', 'Indigo it is, with black text.'))
+    expect(events.map(item => item.event.kind)).toEqual(['message-replaced'])
+  })
+  it('starts again from the words after a reply was replaced', () => {
+    const log = new ThreadMessageLog()
+    log.observe([])
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('t', message('reply', 'assistant', 'First'))
+    log.appendText('t', 'reply', ' draft')
+    log.add('t', { ...message('reply', 'assistant', 'Second'), createdAt: '2026-09-19T10:00:01.000Z' })
+    log.appendText('t', 'reply', ' take')
+    log.add('t', message('next', 'user', 'Thanks'))
+    events.length = 0
+    log.add('t', { ...message('reply', 'assistant', 'Second take'), createdAt: '2026-09-19T10:00:01.000Z' })
+    expect(events).toEqual([])
+  })
+})
+
+describe('the count a publisher reads to tell a message’s first words from a chunk', () => {
+  it('moves when a message says something for the first time, and not when it grows', () => {
+    const log = new ThreadMessageLog()
+    expect(log.recorded()).toBe(0)
+    log.add('a', message('prompt', 'user', 'Ask'))
+    log.add('a', message('reply', 'assistant', ''))
+    expect(log.recorded()).toBe(1)
+    log.appendText('a', 'reply', 'First words')
+    expect(log.recorded()).toBe(2)
+    log.appendText('a', 'reply', ' and more')
+    log.add('b', message('other', 'user', 'Elsewhere'))
+    expect(log.recorded()).toBe(3)
+  })
+})
+
+describe('a reply that has said nothing but whitespace', () => {
+  it('is held like an empty one, and its first words open it with the blank text kept in front', () => {
+    const log = new ThreadMessageLog()
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('a', message('reply', 'assistant', ''))
+    log.appendText('a', 'reply', '\n\n')
+    log.add('a', message('streamed', 'assistant', ' '))
+    expect(events).toEqual([])
+    expect(log.recorded()).toBe(0)
+    log.appendText('a', 'reply', 'Indigo')
+    expect(events.map(item => item.event)).toEqual([expect.objectContaining({ kind: 'message-added', message: expect.objectContaining({ id: 'reply', text: '\n\nIndigo' }) })])
+    log.add('a', message('streamed', 'assistant', ' Done'))
+    expect(events.at(-1)?.event).toEqual(expect.objectContaining({ kind: 'message-added', message: expect.objectContaining({ id: 'streamed', text: ' Done' }) }))
+    expect(log.recorded()).toBe(2)
+  })
+})

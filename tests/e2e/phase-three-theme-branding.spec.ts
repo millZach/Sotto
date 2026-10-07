@@ -259,8 +259,17 @@ test.describe('theme branding evidence', () => {
         expect(await widget.evaluate(() => document.documentElement.style.getPropertyValue('--theme-error-foreground'))).toBe(roles.errorForeground)
         await settle(widget)
         await widget.screenshot({ path: resolve(evidenceRoot, `error-${scheme === 'light' ? 'tropic-light' : 'citrine-dark'}-widget.png`), animations: 'disabled' })
-        const dismiss = widget.getByRole('button', { name: /dismiss|close/i })
-        if (await dismiss.isVisible().catch(() => false)) await dismiss.click()
+        // A failed transcription keeps its recording, so the pill offers Try again
+        // and the error waits for the user to discard it.
+        await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
+        // A click in the first half second after the error appears is ignored,
+        // so the press is repeated until one counts.
+        const discard = widget.getByRole('button', { name: 'Discard recording' })
+        await expect(async () => {
+          // Once a click has counted the × is gone, so only click while it is there.
+          if (await discard.isVisible()) await discard.click({ timeout: 1_000 })
+          await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 1_000 })
+        }).toPass({ timeout: 10_000 })
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 20_000 })
       }
     } finally {

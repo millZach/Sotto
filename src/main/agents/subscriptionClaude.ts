@@ -54,7 +54,7 @@ class ClaudeExitError extends Error {
 // Keep native OS identity and networking, not provider keys, alternate account
 // directories, Node injection flags, or cloud-provider routing overrides.
 const ENVIRONMENT_KEYS = new Set([
-  'path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'userprofile', 'homedrive', 'homepath', 'home',
+  'path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'home',
   'appdata', 'localappdata', 'programdata', 'allusersprofile', 'xdg_config_home', 'xdg_cache_home', 'xdg_data_home',
   'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy',
   'ssl_cert_file', 'ssl_cert_dir', 'node_extra_ca_certs',

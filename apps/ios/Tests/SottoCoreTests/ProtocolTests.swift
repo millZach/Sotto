@@ -13,7 +13,7 @@ final class ProtocolTests: XCTestCase {
             XCTAssertThrowsError(try HostEndpoint(address), address)
         }
     }
-    func testOnlyPorts443And8443AreAccepted() throws {
+    func testOnlyPorts443And8443And10000AreAccepted() throws {
         let desktop = try HostEndpoint("https://forge.example.ts.net:8443")
         XCTAssertEqual(desktop.port, 8443)
         XCTAssertEqual(desktop.address, "forge.example.ts.net:8443")
@@ -24,7 +24,11 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(headless.port, 443)
         XCTAssertEqual(headless.address, "forge.example.ts.net")
         XCTAssertEqual(headless.machine, "forge")
-        for port in [80, 444, 8080, 8444, 3000, 4319] {
+        let fallback = try HostEndpoint("https://forge.example.ts.net:10000")
+        XCTAssertEqual(fallback.port, 10000)
+        XCTAssertEqual(fallback.address, "forge.example.ts.net:10000")
+        XCTAssertEqual(fallback.route("/v1/socket", socket: true).absoluteString, "wss://forge.example.ts.net:10000/v1/socket")
+        for port in [80, 444, 8080, 8444, 3000, 4319, 9999, 10001] {
             XCTAssertThrowsError(try HostEndpoint("https://forge.example.ts.net:\(port)"), "port \(port)")
         }
     }

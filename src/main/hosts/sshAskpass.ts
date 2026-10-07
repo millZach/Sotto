@@ -121,8 +121,10 @@ export class AskpassBroker {
         program = join(directory, 'askpass.exe')
         await writeFile(source, WINDOWS_HELPER_SOURCE, 'utf8')
         const compiler = join(process.env.SystemRoot ?? 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+        // A budget only a hung compiler reaches: csc usually takes a second or two, but a loaded machine (or a virus
+        // scan of the new executable) has held it past 15 seconds, which failed a connect that would have worked.
         try {
-          await compile(compiler, ['/nologo', '/target:exe', '/reference:System.Web.Extensions.dll', `/out:${program}`, source], { windowsHide: true, timeout: 15_000 })
+          await compile(compiler, ['/nologo', '/target:exe', '/reference:System.Web.Extensions.dll', `/out:${program}`, source], { windowsHide: true, timeout: 60_000 })
         } catch {
           throw new Error('Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect.')
         }

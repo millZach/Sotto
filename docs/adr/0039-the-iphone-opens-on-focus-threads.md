@@ -1,5 +1,7 @@
 # The iPhone opens on Focus Threads
 
+Amended October 4, 2026 by [ADR-0051](0051-the-iphone-takes-the-glow-look.md): the look is Glow, the thread page places the agent's steps between messages instead of on an Activity tab, Settings holds the theme, text size, density, local alerts and new-thread defaults, and a question with one-tap choices or a permission can be answered on its Threads card again. What follows about navigation and Settled still holds.
+
 Accepted September 29, 2026. Zach chose variant A, **Focus**, from the thread redesign study, then asked for a permanent search pill and for Settings to replace Needs you. He approved the revised prototype at `0d3e5835` on `prototype/ios-threads-redesign` with “Looks good” and subsequently requested native implementation; the design approval is recorded at `54607463` on that branch.
 
 The iPhone opens on Threads. Questions and permissions come first, working threads have room to show their activity, and recent threads use quieter rows. Search remains visible beneath the heading and computer selector. The three tabs are Threads, Computers and Settings; Threads carries the waiting-request badge, which since ADR-0046 also counts recent threads that finished unread. Requests are opened and answered in their thread, so removing the separate Needs you page removes no permission or question capability. This chooses one place to read and act on threads over a separate request inbox, project-first folders or a chronological preview list.

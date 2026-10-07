@@ -78,9 +78,11 @@ export class BrowserStore {
     for (const threadId of threadIds) {
       if (this.taskThreads.has(threadId)) continue
       this.taskThreads.add(threadId)
-      // A bridge that refuses a thread outright rather than answering, as the preload does for another host's thread,
-      // leaves that thread without tasks here; it must not throw out of the effect and unmount the page.
-      void settle(Promise.resolve().then(() => tasks({ threadId }))).then(result => {
+      // A bridge that refuses another host's thread throws before the promise exists. That must not
+      // skip the rest of the list or unmount the page, and the thread must not stay marked watched.
+      let listed: Promise<ToolsResult<readonly BrowserTask[]>>
+      try { listed = settle(Promise.resolve(tasks({ threadId }))) } catch { this.taskThreads.delete(threadId); continue }
+      void listed.then(result => {
         if (!result.ok) { this.taskThreads.delete(threadId); return }
         for (const task of result.value) this.receiveTask(task)
       })

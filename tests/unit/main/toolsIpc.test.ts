@@ -89,4 +89,32 @@ describe('tools IPC and preload boundary', () => {
     expect(safeBrowserUrl('https://EXAMPLE.com')).toBe('https://example.com/')
     expect(safeBrowserUrl('http://127.0.0.1:5000')).toBe('http://127.0.0.1:5000/')
   })
+  it('sends a paired host\'s thread to that host for the change list, comparisons and Copy path, and refuses the rest in words (ADR-0025, October 5 amendment)', async () => {
+    const local = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, local]), ['dispose', vi.fn()]])
+    const answer = { ok: true as const, value: { from: 'host' } }
+    const hostedGitChanges = { list: vi.fn().mockResolvedValue(answer), review: vi.fn().mockResolvedValue(answer), copyPath: vi.fn().mockResolvedValue(answer) }
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']),
+      gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']), hostedGitChanges } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
+    const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
+    const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
+    const call = (method: string, payload: unknown) => handlers.get(`sotto:git-changes:${method}`)!({ sender, senderFrame: mainFrame }, payload)
+    const target = { threadId: 'host:22222222-2222-4222-8222-222222222222:thread', workspaceId: 'a'.repeat(64) }
+    await expect(call('list', target)).resolves.toBe(answer)
+    await expect(call('review', { ...target, scope: { kind: 'branch', base: null } })).resolves.toBe(answer)
+    await expect(call('copyPath', { ...target, path: 'src/a.ts' })).resolves.toBe(answer)
+    expect(hostedGitChanges.review).toHaveBeenCalledWith({ ...target, scope: { kind: 'branch', base: null } })
+    // Checked as this computer's thread would be, before anything reaches the host.
+    await expect(call('review', { ...target, scope: { kind: 'branch', base: '--output=/tmp/x' } })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    await expect(call('reveal', { ...target, path: 'src/a.ts' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('on the host machine') } })
+    await expect(call('watch', { ...target, enabled: true })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    for (const method of ['checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) await expect(call(method, target)).resolves.toMatchObject({ ok: false, error: { code: 'unavailable', message: 'Turn checkpoints are kept only for threads on this computer. Nothing was changed.' } })
+    expect(hostedGitChanges.review).toHaveBeenCalledOnce()
+    expect(local).not.toHaveBeenCalled()
+    // This computer's own thread is read here, as before.
+    await call('list', { threadId: 'thread' })
+    expect(local).toHaveBeenCalledWith({ threadId: 'thread' })
+    cleanup()
+  })
 })

@@ -52,6 +52,7 @@ function windowsProfile() {
       ])
       return { APPDATA: appData, LOCALAPPDATA: localAppData }
     },
+    smokeArgs: [],
     openDistributable: async (distributablePath, open) => {
       const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-installer-asar-'))
       try {
@@ -89,6 +90,8 @@ function macProfile(arch) {
       ])
       return { HOME: home }
     },
+    // The smoke HOME has no login keychain, so a real Keychain write would stop on a native dialog.
+    smokeArgs: ['--use-mock-keychain'],
     openDistributable: async (distributablePath, open) => {
       const mountPoint = await mkdtemp(join(tmpdir(), 'sotto-disk-image-'))
       try {

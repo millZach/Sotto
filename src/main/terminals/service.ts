@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, writeFile } from 'node:fs/promises'
-import { basename, delimiter, join } from 'node:path'
+import { basename, join, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentProject, AgentWorktree } from '../../shared/agents'
 import { TERMINAL_MAX_OUTPUT } from '../../shared/terminal'
@@ -47,7 +47,8 @@ interface ResolvedShell { readonly path: string; readonly discovered: boolean }
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
-const shellName = (path: string): string => basename(path).replace(/\.exe$/iu, '')
+const shellName = (path: string, platform: NodeJS.Platform): string =>
+  (platform === 'win32' ? win32Path.basename(path) : basename(path)).replace(/\.exe$/iu, '')
 const posixQuote = (token: string): string => `'${token.replace(/'/gu, `'\\''`)}'`
 const powerShellQuote = (token: string): string => `'${token.replace(/['\u2018-\u201b]/gu, quote => quote + quote)}'`
 
@@ -86,7 +87,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   list() { return this.run(async () => {
-    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shellFor()) }
+    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shellFor(), this.dependencies.platform ?? process.platform) }
   }) }
 
   open(payload: unknown) { return this.run(async () => {
@@ -190,11 +191,11 @@ export class TerminalWorkspaceService extends ToolOperations {
     const platform = this.dependencies.platform ?? process.platform
     const env = this.environment(platform)
     if (platform !== 'win32') return { path: env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh'), discovered: false }
-    for (const entry of (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean)) {
-      const candidate = join(entry, 'pwsh.exe')
+    for (const entry of (env.PATH ?? env.Path ?? '').split(win32Path.delimiter).filter(Boolean)) {
+      const candidate = win32Path.join(entry, 'pwsh.exe')
       if (await this.exists(candidate)) return { path: candidate, discovered: true }
     }
-    return { path: join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), discovered: false }
+    return { path: win32Path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), discovered: false }
   }
 
   /** node-pty, imported once for the session; the injected spawn stands in for it under test. */
@@ -225,7 +226,7 @@ export class TerminalWorkspaceService extends ToolOperations {
     const platform = this.dependencies.platform ?? process.platform
     const shell = await this.shellFor()
     const argv = providerCommand({ provider: launch.provider, model: launch.modelId === null ? null : nativeModelName(launch.modelId), reasoning: launch.reasoning, permission: launch.permission })
-    if (argv.length === 0) return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], command: shellName(shell) }
+    if (argv.length === 0) return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], command: shellName(shell, platform) }
     const command = commandLine(argv)
     if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-Command', `& ${argv.map(powerShellQuote).join(' ')}`], command }
     return { file: shell, args: ['-l', '-i', '-c', `exec ${argv.map(posixQuote).join(' ')}`], command }
