@@ -280,7 +280,8 @@ export class GrokAcpHost implements AgentHost {
         this.confirmLoad(id, alias, value); await this.persist()
       })
       if (this.processes.get(id) !== entry) return
-      this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
+      // Published, so the window sees the session open and asks for an early start again once it stops (#769).
+      this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.emit()
     }).finally(() => { if (this.loading.get(id) === work) this.loading.delete(id); this.stopOutdated() })
     this.loading.set(id, work)
     return work

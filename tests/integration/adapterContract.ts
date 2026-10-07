@@ -345,6 +345,15 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     }
     /** A fresh run over the same saved threads, watching none of them. */
     const reconnect = async (): Promise<void> => { f = await f.driver.restart(); await f.host.connect() }
+    /**
+     * Whether a thread's session is open as the host last published it. A window sees only what is published, and a
+     * snapshot read works the flag out afresh, so a host that never publishes the change passes a read and not this.
+     */
+    const published = (id: string): { open(): boolean | undefined; wasOpen(): boolean; stop(): void } => {
+      const seen: (boolean | undefined)[] = []
+      const stop = f.host.subscribe(snapshot => { seen.push(snapshot.threads.find(item => item.id === id)?.providerSessionOpen) })
+      return { open: () => seen.at(-1), wasOpen: () => seen.includes(true), stop }
+    }
     afterEach(async () => { await f?.cleanup() })
 
     it('connects without starting a session, and starts one when the thread enters the watched set', async context => {
@@ -371,19 +380,26 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await reconnect()
       const before = await starts(sessionId)
       expect((await thread(sessionId)).providerSessionOpen).toBeUndefined()
+      const shown = published(sessionId)
       await f.host.startThreadSession!(sessionId)
       expect(await starts(sessionId)).toBe(before + 1)
       await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBe(true)
+      await expect.poll(() => shown.open()).toBe(true)
+      shown.stop()
       expect(await send(sessionId, 'after-early-start', 'Synthetic prompt')).toEqual({ accepted: true })
       expect(await starts(sessionId)).toBe(before + 1)
     })
 
     it('says a session the reaper stopped after an early start is no longer open', async context => {
       if (!await open(impatient)) { context.skip(); return }
+      await reconnect()
+      const shown = published(sessionId)
       await f.host.startThreadSession!(sessionId)
-      await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBe(true)
+      await expect.poll(() => shown.wasOpen()).toBe(true)
       await untilStopped(sessionId).toBe(true)
       await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBeUndefined()
+      await expect.poll(() => shown.open()).toBeUndefined()
+      shown.stop()
     })
 
     // A draft whose worktree its first send makes names no folder yet (`ThreadSessionDraft`).

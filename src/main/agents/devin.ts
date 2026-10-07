@@ -419,7 +419,8 @@ export class DevinAcpHost implements AgentHost {
     if (current) return current
     const existing = this.connections.get(id)
     if (existing) return Promise.resolve(existing)
-    const loading = this.load(id).finally(() => { if (this.loading.get(id) === loading) this.loading.delete(id) })
+    // The flag `withSession` publishes waits for the load to clear, so the open is published once it has (#769).
+    const loading = this.load(id).finally(() => { if (this.loading.get(id) === loading) { this.loading.delete(id); if (this.connections.has(id)) this.emit() } })
     this.loading.set(id, loading); return loading
   }
   private async load(id: string): Promise<Connection> {
@@ -900,7 +901,8 @@ export class DevinAcpHost implements AgentHost {
     const generation = this.generation
     const alias = this.aliases[id]
     const connection = this.connections.get(id); if (!connection) return
-    this.connections.delete(id); connection.intentionalClose = true; connection.rpc.close(); await connection.rpc.closed
+    // The session is no longer open, so the window is told and asks for an early start the next time the user types (#769).
+    this.connections.delete(id); this.emit(); connection.intentionalClose = true; connection.rpc.close(); await connection.rpc.closed
     if (generation !== this.generation || this.aliases[id] !== alias) return
     if (alias?.ephemeral && alias.origins.length === 0 && alias.settingsConfirmed) { alias.emptyReleased = true; await this.persist() }
     this.log.release(id); this.reaper.forget(id)
