@@ -17,6 +17,13 @@ const DESCRIPTION = [
   `A turn can draw up to ${VISUALS_PER_TURN_MAX} visuals and a thread up to ${VISUALS_PER_THREAD_MAX}.`,
   'The visual appears under your last message, so carry on from it in your reply rather than repeating its steps.',
 ].join(' ')
+/**
+ * The largest request the visual server reads. A whole call at today's limits, every character three bytes in UTF-8,
+ * is within a few bytes of the 128 KiB default: a 12,000-character source, 12 steps of 1,000 characters, 12 highlights
+ * of 12 names of 120 characters each, an intro and a title. Characters JSON escapes take more. This leaves room for
+ * an interactive page's 60,000-character source (#794), about 270 KiB as a whole call.
+ */
+export const VISUAL_REQUEST_MAX_BYTES = 512 * 1024
 const INSTRUCTIONS = 'visualize draws a diagram in this thread, under your last message. It changes nothing outside the thread and asks the user nothing. Use it to show how something works, or when the user asks for a visual. If a call is refused, nothing was drawn: explain in text instead.'
 export const visualizeDefinition: ThreadToolDefinition = { name: VISUALIZE_TOOL, description: DESCRIPTION, inputSchema: z.toJSONSchema(visualInputSchema, { io: 'input' }) as Record<string, unknown> }
 
@@ -64,7 +71,7 @@ export class VisualToolServer implements ScopedThreadTools {
   readonly definitions: readonly ThreadToolDefinition[] = [visualizeDefinition]
   private readonly server: ThreadToolServer
   constructor(private readonly handlers: VisualToolHandlers) {
-    this.server = new ThreadToolServer({ name: VISUAL_MCP_SERVER, serverName: 'sotto-visual', instructions: INSTRUCTIONS,
+    this.server = new ThreadToolServer({ name: VISUAL_MCP_SERVER, serverName: 'sotto-visual', instructions: INSTRUCTIONS, maxRequestBytes: VISUAL_REQUEST_MAX_BYTES,
       unavailable: `The visual tool is unavailable. ${NOTHING} ${INSTEAD}`, failed: `The visual could not be drawn. ${NOTHING} ${INSTEAD}` },
     this.definitions, (threadId, name, args) => this.invoke(threadId, name, args))
   }

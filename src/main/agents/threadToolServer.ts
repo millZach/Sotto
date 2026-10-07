@@ -9,9 +9,16 @@ export interface ThreadToolResult {
 }
 /** How a native client reaches one of Sotto's tool servers for one thread: loopback HTTP and a bearer token. */
 export interface ThreadMcpServer { name: string; type: 'http'; url: string; headers: { name: string; value: string }[] }
-/** What a server says about itself: its MCP name, the name in its handshake, and its instructions to the model. */
-export interface ThreadToolServerIdentity { readonly name: string; readonly serverName: string; readonly instructions: string; readonly unavailable: string; readonly failed: string }
-const MAX_REQUEST_BYTES = 128 * 1024
+/**
+ * What a server says about itself: its MCP name, the name in its handshake, and its instructions to the model. Also the
+ * largest request body it reads, when its tools take more than the default allows.
+ */
+export interface ThreadToolServerIdentity {
+  readonly name: string; readonly serverName: string; readonly instructions: string; readonly unavailable: string; readonly failed: string
+  readonly maxRequestBytes?: number
+}
+/** The largest request body a server reads unless it says otherwise: enough for every browser and host setup call. */
+export const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024
 const frameSchema = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string().max(256), z.number().int().safe()]).optional(), method: z.string().max(128), params: z.unknown().optional() })
 const toolCallSchema = z.object({ name: z.string().max(128), arguments: z.unknown().optional() })
 
@@ -84,7 +91,7 @@ export class ThreadToolServer {
       for await (const chunk of request) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)
         size += bytes.length
-        if (size > MAX_REQUEST_BYTES) { response.writeHead(413).end(); return }
+        if (size > (this.identity.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES)) { response.writeHead(413).end(); return }
         chunks.push(bytes)
       }
       let parsed: unknown

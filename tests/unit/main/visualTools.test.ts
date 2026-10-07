@@ -4,7 +4,10 @@
  * says nothing was drawn. Calls go through the server's own dispatch, as a provider's would.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { VISUAL_MCP_SERVER, VisualToolServer, visualizeDefinition, visualShownText, type VisualToolHandlers } from '../../../src/main/agents/visualTools'
+import { VISUAL_MCP_SERVER, VISUAL_REQUEST_MAX_BYTES, VisualToolServer, visualizeDefinition, visualShownText, type VisualToolHandlers } from '../../../src/main/agents/visualTools'
+import { DEFAULT_MAX_REQUEST_BYTES } from '../../../src/main/agents/threadToolServer'
+import { MAX_DIAGRAM_SOURCE_LENGTH } from '../../../src/shared/diagramSource'
+import { VISUAL_HIGHLIGHT_MAX, VISUAL_HIGHLIGHTS_MAX, VISUAL_INTRO_MAX, VISUAL_STEP_TEXT_MAX, VISUAL_STEPS_MAX, VISUAL_TITLE_MAX } from '../../../src/shared/visuals'
 
 const servers: VisualToolServer[] = []
 afterEach(async () => { for (const server of servers.splice(0)) await server.close() })
@@ -74,6 +77,40 @@ describe('the visualize tool', () => {
   ] as const)('says nothing was drawn when the thread refuses it: %s', async (reason, text) => {
     const { tools } = server({ add: async () => ({ added: false, reason }) })
     expect(await said(tools, FLOW)).toEqual({ isError: true, text })
+  })
+
+  describe('the size of a call', () => {
+    /** Characters that take three bytes each in UTF-8, as most CJK text does. */
+    const wide = (length: number): string => 'あ'.repeat(length)
+    const head = 'flowchart LR\n  A['
+    const worst = (sourceLength: number) => ({ title: wide(VISUAL_TITLE_MAX), kind: 'diagram', source: `${head}${wide(sourceLength - head.length - 1)}]`, intro: wide(VISUAL_INTRO_MAX),
+      steps: Array.from({ length: VISUAL_STEPS_MAX }, () => ({ text: wide(VISUAL_STEP_TEXT_MAX), highlight: Array.from({ length: VISUAL_HIGHLIGHTS_MAX }, () => wide(VISUAL_HIGHLIGHT_MAX)) })) })
+    const frame = (args: unknown): string => JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'visualize', arguments: args } })
+    const post = async (tools: VisualToolServer, body: string): Promise<Response> => {
+      const endpoint = await tools.mcpServer('thread')
+      if (!endpoint) throw new Error('No server.')
+      return fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...Object.fromEntries(endpoint.headers.map(header => [header.name, header.value])) }, body })
+    }
+
+    it('reads the largest call it takes, every character three bytes, which leaves the default no room', async () => {
+      const { tools, add } = server()
+      const body = frame(worst(MAX_DIAGRAM_SOURCE_LENGTH))
+      expect(Buffer.byteLength(body)).toBeGreaterThan(DEFAULT_MAX_REQUEST_BYTES - 1_024)
+      const response = await post(tools, body)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ result: { content: [{ text: expect.stringContaining('Shown in the thread') }] } })
+      expect(add).toHaveBeenCalledOnce()
+    })
+
+    it('has room for a 60,000-character interactive source, and refuses a byte past its limit', async () => {
+      const { tools } = server()
+      expect(Buffer.byteLength(frame(worst(60_000)))).toBeLessThan(VISUAL_REQUEST_MAX_BYTES * 0.6)
+      const base = frame({ padding: '' })
+      const sized = (bytes: number): string => frame({ padding: 'x'.repeat(bytes - Buffer.byteLength(base)) })
+      expect(Buffer.byteLength(sized(VISUAL_REQUEST_MAX_BYTES))).toBe(VISUAL_REQUEST_MAX_BYTES)
+      expect((await post(tools, sized(VISUAL_REQUEST_MAX_BYTES))).status).toBe(200)
+      expect((await post(tools, sized(VISUAL_REQUEST_MAX_BYTES + 1))).status).toBe(413)
+    })
   })
 
   it('answers a failure it did not expect without its details', async () => {
