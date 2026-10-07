@@ -39,9 +39,10 @@ interface Track {
   lastUser: AgentMessage | undefined
   lastAssistant: AgentMessage | undefined
   lastMessageAt: string | undefined
-  /** Messages opened with no text yet: a stream that has announced a reply but not said anything. An
-   * empty message is never recorded, so nothing has to be taken back when the turn drops it. */
-  readonly empty: Set<string>
+  /** Messages opened with no words yet, with the blank text they hold so far: a stream that has announced a
+   * reply but said nothing but whitespace. Such a message is never recorded, so nothing has to be taken back
+   * when the turn drops it, and its first words are what opens it. */
+  readonly empty: Map<string, string>
   /** The hash behind the mark of the reply growing now, so the next chunk extends it rather than hashing
    * the whole reply again. Only good for the message and the length it names. */
   growing: { id: string; length: number; hash: number } | undefined
@@ -49,7 +50,7 @@ interface Track {
 
 function freshTrack(): Track {
   return { messages: [], ids: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
-    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Set(), growing: undefined }
+    lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Map(), growing: undefined }
 }
 
 /** The mark of a message the store holds whose words the log never saw. The first report of it matches. */
@@ -73,6 +74,9 @@ function heldMessage(track: Track, messageId: string): AgentMessage | undefined 
   const last = track.messages?.at(-1)
   return last?.id === messageId ? last : track.messages?.find(value => value.id === messageId)
 }
+
+/** Whether a message has said anything yet. A reply that has sent only line breaks or spaces has not. */
+function said(text: string): boolean { return text.trim().length > 0 }
 
 /** True when the two messages differ in anything but their text. */
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
@@ -252,12 +256,13 @@ export class ThreadMessageLog {
     const existing = held ? held.get(message.id) : heldMessage(track, message.id)
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
-        if (!message.text.length) { if (existing) Object.assign(existing, message); return }
+        if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
         track.empty.delete(message.id)
-      } else if (!message.text.length && message.role === 'assistant') {
+      } else if (!said(message.text) && message.role === 'assistant') {
         // Nothing was said yet. Keep the place in the window and wait for the first words.
-        track.empty.add(message.id)
-        if (!existing) this.hold(track, message, held)
+        track.empty.set(message.id, message.text)
+        if (existing) Object.assign(existing, message)
+        else this.hold(track, message, held)
         return
       }
       if (existing) Object.assign(existing, message)
@@ -296,7 +301,7 @@ export class ThreadMessageLog {
     const existing = heldMessage(track, messageId)
     if (track.empty.has(messageId) && !track.ids.has(messageId)) {
       const opened = existing ?? { id: messageId, role: 'assistant' as const, text: '', createdAt: new Date().toISOString() }
-      this.add(threadId, { ...opened, text: appendText })
+      this.add(threadId, { ...opened, text: track.empty.get(messageId)! + appendText })
       return
     }
     if (!track.ids.has(messageId)) return

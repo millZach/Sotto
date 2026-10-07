@@ -176,3 +176,21 @@ describe('the count a publisher reads to tell a message’s first words from a c
     expect(log.recorded()).toBe(3)
   })
 })
+
+describe('a reply that has said nothing but whitespace', () => {
+  it('is held like an empty one, and its first words open it with the blank text kept in front', () => {
+    const log = new ThreadMessageLog()
+    const events: ThreadHostEvent[] = []
+    log.subscribeEvents(event => events.push(event))
+    log.add('a', message('reply', 'assistant', ''))
+    log.appendText('a', 'reply', '\n\n')
+    log.add('a', message('streamed', 'assistant', ' '))
+    expect(events).toEqual([])
+    expect(log.recorded()).toBe(0)
+    log.appendText('a', 'reply', 'Indigo')
+    expect(events.map(item => item.event)).toEqual([expect.objectContaining({ kind: 'message-added', message: expect.objectContaining({ id: 'reply', text: '\n\nIndigo' }) })])
+    log.add('a', message('streamed', 'assistant', ' Done'))
+    expect(events.at(-1)?.event).toEqual(expect.objectContaining({ kind: 'message-added', message: expect.objectContaining({ id: 'streamed', text: ' Done' }) }))
+    expect(log.recorded()).toBe(2)
+  })
+})
