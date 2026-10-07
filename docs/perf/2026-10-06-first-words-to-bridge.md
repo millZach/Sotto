@@ -1,22 +1,32 @@
 # A reply's first words to the window - October 6, 2026
 
 Issue #771, part of #762. Once a provider streamed its first words, main held them behind timers before the window
-could paint them. Every layer between an adapter and the window coalesces a streaming burst, and the echo of the
-prompt opens each layer's window just before the reply starts, so the first words usually waited for the window's
-trailing edge:
+could paint them. Every layer between an adapter and the window gathers a streaming burst in a publish window
+(`CONTEXT.md`), and the echo of the prompt starts each layer's publish window just before the reply starts, so the
+first words usually waited for its end:
 
 - the adapter's snapshot publisher was trailing-only: even the first streamed frame waited 16 ms;
 - the workspace host's publish and the coordinator's broadcast send the first change of a burst at once, then hold a
-  16 ms window;
-- the IPC boundary's per-thread detail coalescer does the same with a 50 ms window, and that is the one the first
-  words waited for.
+  16 ms publish window;
+- the IPC boundary's per-thread detail coalescer does the same with a 50 ms publish window, and that is the one the
+  first words waited for.
 
-Now each of those layers sends a change at once, inside an open window, when it brings a message's first words or a
-new activity record: the publisher when the count of recorded messages and activity records has moved since its
-last publish, the workspace when an event adds a message or a provider snapshot adds a record, the coordinator when a
-thread a window is looking at ends in a message or record that window was not sent, and the IPC lane when a delta
-carries a message or record it has not sent. The adapter's publisher also sends the first frame of a burst at once
-now, as the others already did. Later chunks of the same message ride the windows as before.
+Now each of those layers sends an opening change (`CONTEXT.md`: a message's first words or a new activity record) at
+once, inside an open publish window, and starts a fresh one: the publisher when the count of recorded messages and
+activity records has moved since its last publish, the workspace when an event adds a message or a provider snapshot
+adds a record, the coordinator when a thread a window is looking at ends in a message or record that window was not
+sent, and the detail coalescer when an update carries a message or record it has not sent. The adapter's publisher
+also sends the first frame of a burst at once now, as the others already did. Later chunks of the same message ride
+the publish windows as before.
+
+The adapters' publishers and the workspace let only one opening change cut a given publish window short; the next
+waits for that fresh window's end. A read that records many messages in one go (a Claude transcript catch-up, a Grok
+or Codex history read that finds messages written outside Sotto) would otherwise copy the whole workspace once per
+message: a review measured 300 messages in one task as 300 publishes in 1.2 s. It is now two publishes and a trailing
+one (`tests/unit/main/workspacePublishCoalescing.test.ts`, `tests/unit/main/providerSnapshotPublisher.test.ts`), so
+those two layers publish at most twice per window. The coordinator and the detail coalescer after them let every
+opening change through: they see no more than the workspace sends them. The cost of the rule is that a second opening
+change within 16 ms of one that cut a window, say a tool record just after the reply's first words, waits up to 16 ms.
 
 In the window, a detail commits with the shell it holds as soon as it arrives, as a transition, which is unchanged.
 The shell waiting in its own window now goes just ahead of a detail that opens a message, so the two are painted in
@@ -26,11 +36,16 @@ one commit. "The window's commit" below has both, and why an urgent commit was t
 
 `tests/perf/firstWordsBridge.perf.test.ts` runs main's own chain with real timers: a provider that records through
 the adapters' `ThreadMessageLog` and publishes through their `ProviderSnapshotPublisher`, the `WorkspaceHost`, the
-`AgentControl` coordinator with the thread observed, and `coalesceAgentThreadDetailPublishes`, whose send stands for
-the window's bridge. Each trial lets every window close, publishes a prompt's echo the way an adapter does, waits a
+`AgentControl` coordinator with the thread observed, and the desktop's shell publisher and
+`coalesceAgentThreadDetailPublishes` wired as `src/main/index.ts` wires them, whose sends stand for the window's
+bridge. The workspace is the fixture provider's two short threads, so the work each layer does on the chunk's own task
+is near nothing here; on a large workspace, where one copy is 4.5 ms (`state-pipeline.md`) and a shell 12-15 ms, that
+same-task work is the floor. Each trial lets every window close, publishes a prompt's echo the way an adapter does, waits a
 gap, then publishes the reply's first chunk and times it to the first send that carries the reply. Fifteen trials
 per gap, two runs of each version alternating, Windows 11, the development machine with another build running.
-"Before" is `origin/main` at `be3e7946`, run by putting its sources back under the same benchmark.
+"Before" is `origin/main` at `be3e7946`, run by putting its sources back under the same benchmark. These first
+runs had the detail coalescer alone at the end of the chain, with no shell publisher; the runs after review below
+have both.
 
 | Gap after the echo | Before, median | After, median |
 | ---: | ---: | ---: |
@@ -39,7 +54,7 @@ per gap, two runs of each version alternating, Windows 11, the development machi
 | 10 ms | 39.2-40.3 ms | 1.6-2.1 ms |
 | 30 ms | 20.1-21.6 ms | 2.0 ms |
 
-Before, the wait was the IPC lane's 50 ms window, opened by the echo, less the gap. After, no trial waited on a
+Before, the wait was the detail coalescer's 50 ms publish window, started by the echo, less the gap. After, no trial waited on a
 timer: the benchmark also times how much of each trial came after the chunk's own task had returned, and that was
 0 ms in every one of the 120 trials. What the 2 ms is, and the occasional slow trial (68 ms and 116 ms at most across
 both runs), is work done inside the chunk's task, almost all of it the workspace writing the chunk's event to
@@ -48,6 +63,20 @@ the writes between provider events.
 
 Forty more chunks, 2 ms apart, became a median of 3 sends to the bridge in both versions (at most 4): later chunks
 still coalesce.
+
+After review, with the one-cut rule above and the benchmark wired with the shell publisher and its flush ahead of an
+opening detail, two more runs, same machine, another build running:
+
+| Gap after the echo | Median | Most |
+| ---: | ---: | ---: |
+| 0 ms | 2.2-2.6 ms | 3.7-173 ms |
+| 5 ms | 2.4-2.5 ms | 26-39 ms |
+| 10 ms | 2.2-2.4 ms | 6.1-236 ms |
+| 30 ms | 2.3-3.7 ms | 31-166 ms |
+
+Again no trial waited on a timer (0 ms after the chunk's own task in all 120), and forty chunks still became a median
+of 3 sends (at most 6). The slow trials are work inside the chunk's task, as above. The first runs recorded only the
+"after" maxima; the "before" waits were bounded by the 50 ms publish window plus the same task's work.
 
 ## The render and state pipeline benchmarks
 
@@ -64,10 +93,13 @@ thread holding 347), `SOTTO_PERF_BENCH=1` with `SOTTO_PERF_DATA`. Two runs of ea
 | `statePipeline` | streaming delta, ms per flush | 0.07, 0.08 | 0.08, 0.09 |
 | `shellDetailCommits` | commits per chunk, shell first | 1 | 1 |
 
-No regression. The spread between runs of one version is wider than any gap between versions: the machine was
-running another build throughout. The render benchmarks mount the Threads page with a mocked connection, so they
-measure what a commit costs, which this change leaves alone. `shellDetailCommits`, which drives the real
-connection hook, still makes one commit per streamed chunk.
+No regression that these can see, which is less than it sounds. The spread between runs of one version is wider
+than any gap between versions: the machine was running another build throughout. The render benchmarks mount the
+Threads page with a mocked connection, so they measure what a commit costs, which this change leaves alone.
+`shellDetailCommits`, which drives the real connection hook, still makes one commit per streamed chunk. The one row
+on the changed path, `statePipeline`'s streaming delta, moved within its noise. What this change adds in main is a
+publish per opening change, and the one-cut rule above bounds that at two per publish window; none of these
+benchmarks times it.
 
 ## The window's commit
 
@@ -85,7 +117,8 @@ history while sending, typing and switching panes, and holds frame and staleness
 - **The shell now goes just ahead of an opening detail.** A detail that opens a message left the IPC boundary at
   once while the shell from the same broadcast could still be waiting in its own 50 ms window, so the window
   painted twice, once for each. The desktop now delivers its held shell just before such a detail
-  (`beforeOpening` on the detail lane), and the window paints them in one commit, as it does every other chunk.
+  (`beforeOpening` on the detail coalescer), and the window paints them in one commit, as it does every other chunk.
+  The phone's socket keeps its own shell and detail pushes apart, as before; a phone draws them separately anyway.
 
 Runs of this spec on one machine shared with another build vary more than any change here moves them, so the
 final comparison interleaved the two builds, rebuilding between each run: four of `origin/main` (which moved
@@ -116,8 +149,12 @@ budget more often than serial runs of `origin/main` done at other times; interle
   | 500 | 0.44-0.86 ms | 0.012 ms | 123-180 ms | 2.8-3.3 ms |
   | 2,000 | 5.8-7.0 ms | 0.020-0.025 ms | 1,233-1,583 ms | 4.9-7.6 ms |
 
+  After review the message log also looks at the newest held message first when it appends, rather than searching
+  the held window from the front, which the 2,000-message row still showed as about 5 ns a message. Two runs after
+  that put every row at a median of 0.007-0.008 ms a chunk and 1.9-2.3 ms for 200 chunks, at 10, 500 and 2,000 held.
+
   `tests/unit/main/grokLiveAppend.test.ts` holds the shape: the four chunks after the first make no `set` or `add`
-  call and four appends, at 10 and at 2,000 held messages alike. Anything else, a chunk on a reply the durable
+  call and four appends, and search no list as long as the thread, at 10 and at 2,000 held messages alike. Anything else, a chunk on a reply the durable
   history says more about for instance, still goes through `record()`, whose `set` now indexes the held window once
   rather than searching it per message.
 - **Claude** ran the activity merge on every frame and swapped in a new array even when nothing changed. A frame
@@ -134,8 +171,9 @@ budget more often than serial runs of `origin/main` done at other times; interle
   React commit) comes after it, and so does Electron's IPC.
 - The provider in the benchmark is a fake that publishes through the real log and publisher; no provider CLI ran, and
   nothing was sent to a model. The time a provider takes to send its first words is not in it.
-- The provider switch and the desktop host router sit between the workspace and the coordinator in the app. Neither
-  holds a timer on this path.
+- The provider switch sits between the workspace and the coordinator in the app, and the desktop host router after
+  the coordinator, rebuilding the shell before the detail goes out. Neither holds a timer on this path, and neither
+  is in the benchmark.
 - The socket server for remote clients uses the same detail coalescer, so a phone gets the same change; it was not
   measured separately.
 
