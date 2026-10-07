@@ -1352,11 +1352,14 @@ export class AgentControl {
    */
   private async refreshThreadWorktree(threadId: string): Promise<AgentState> {
     const host = this.dependencies.host
+    // Another command can finish while the refresh reads, and an error it sets is newer than the refresh: only the
+    // error that was showing when the refresh began is the refresh's to clear.
+    const before = { message: this.state.error, cause: this.visibleCommandError }
     try {
       this.thread(threadId)
       if (!host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
       this.acceptSnapshot(await host.updateThreadWorktree(threadId, false))
-      this.state.error = null
+      if (this.state.error === before.message && this.visibleCommandError === before.cause) this.state.error = null
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The working copy could not be read.') }
     this.publish()
     return this.shell()

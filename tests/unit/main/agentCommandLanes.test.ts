@@ -36,6 +36,8 @@ class LaneHost extends E2EAgentHost {
   private readonly held: (() => void)[] = []
   private readonly settledThreads = new Map<string, string | null>()
   hold = false
+  /** What the next thread settings change is refused with, when set. */
+  refuseSettings: string | null = null
   private async pause(label: string): Promise<void> {
     this.started.push(label)
     if (this.hold) await new Promise<void>(done => this.held.push(done))
@@ -47,6 +49,7 @@ class LaneHost extends E2EAgentHost {
   override async snapshot(): Promise<AgentHostSnapshot> { return this.organized(await super.snapshot()) }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
     if (command.type === 'configure-thread' || command.type === 'send') await this.pause(`${command.type}:${command.threadId}`)
+    if (command.type === 'configure-thread' && this.refuseSettings) throw new Error(this.refuseSettings)
     return super.execute(command)
   }
   async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean): Promise<AgentHostSnapshot> {
@@ -233,6 +236,20 @@ describe('prompt admission beside a thread lane', () => {
     expect(f.control.get().followups ?? []).toEqual([])
     f.host.hold = false; f.host.release()
     expect((await refresh).error).toBeNull(); expect((await send).error).toBeNull()
+  })
+
+  it('keeps the error a command on the same thread set while a refresh of its working copy was still reading it', async () => {
+    const f = await fixture()
+    f.host.hold = true
+    const refresh = f.control.command({ type: 'refresh-thread-worktree', threadId: 'docs' })
+    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs']))
+    // A settings change goes ahead of the refresh and fails.
+    f.host.hold = false; f.host.refuseSettings = 'The provider refused these settings.'
+    expect((await f.control.command(options('docs', 'auto'))).error).toBe('The provider refused these settings.')
+    // The refresh finishes after it, and the banner still says what failed.
+    f.host.release()
+    expect((await refresh).error).toBe('The provider refused these settings.')
+    expect(f.control.get().error).toBe('The provider refused these settings.')
   })
 
   it('runs a send made straight after a thread’s settings behind them, in the order they arrived', async () => {
