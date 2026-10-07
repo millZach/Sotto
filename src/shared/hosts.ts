@@ -35,6 +35,23 @@ export type RemoteHost = z.infer<typeof remoteHostSchema>
  */
 export const HOST_SETUP_STEPS = ['reach', 'tailscale', 'sign-in', 'install', 'start', 'pair'] as const
 export type HostSetupStep = typeof HOST_SETUP_STEPS[number]
+/**
+ * Why a host whose owner prefers the tailnet is on its SSH connection: the tailnet did not answer, the host has not reported
+ * a tailnet address, Tailscale is not running on the host, or its Tailscale Serve needs the SSH account to be Tailscale's
+ * operator first.
+ */
+export type HostTailnetNote = 'unreachable' | 'no-address' | 'no-tailscale' | 'operator'
+/**
+ * Where Add host's tailnet step stands. `ssh` says why the host stayed on its SSH connection: one of the row's notes, a host
+ * too old for tailnet connections (`old-host`), a host Sotto could not reach for the setting, or lost while the step ran
+ * (`not-reached`), or a host that refused the setting, with the host's own sentence (`error`) when it answered that it
+ * could not save it.
+ */
+export type HostAddTailnet =
+  | { readonly state: 'active' }
+  | { readonly state: 'done' }
+  | { readonly state: 'ssh'; readonly why: HostTailnetNote | 'old-host' | 'not-reached' }
+  | { readonly state: 'ssh'; readonly why: 'refused'; readonly error?: string | undefined }
 /** How long Sotto waits for the user to approve a connection Tailscale SSH holds in its `check` mode. */
 export const TAILSCALE_APPROVAL_MS = 5 * 60_000
 export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
@@ -85,7 +102,18 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
    * reported a tailnet address, Tailscale is not running on the host, or its Tailscale Serve needs the SSH account to be
    * Tailscale's operator first. Sotto tries the tailnet again every 5 minutes.
    */
-  tailnetNote?: 'unreachable' | 'no-address' | 'no-tailscale' | 'operator' | undefined
+  tailnetNote?: HostTailnetNote | undefined
+  /**
+   * The host's tailnet address as this computer last learned it, and when this computer last reached the host there, in
+   * milliseconds since the epoch. Edit connection shows them; nobody types the address.
+   */
+  tailnetAddress?: string | undefined
+  tailnetSeen?: number | undefined
+  /**
+   * Add host's tailnet step (ADR-0053), after Paired, on Add host's own add only: under way, done once the socket is on the
+   * tailnet connection, or `ssh` when the host stays on its SSH connection, with why.
+   */
+  addTailnet?: HostAddTailnet | undefined
   /** The host's phone access as its hello reported it on a tailnet connection, where nothing reads it over SSH. */
   phoneAccess?: HostPhoneAccessSummary | undefined
   /** Start at boot on the host, as this connection last found it (ADR-0054). */
@@ -191,7 +219,11 @@ export interface HostPhonesView {
 export const hostsCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('add'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
   z.object({ type: z.literal('cancel-add'), id: z.uuid() }).strict(),
-  z.object({ type: z.literal('save'), host: remoteHostSchema.omit({ enabled: true }) }).strict(),
+  /**
+   * Edit connection's Save: the SSH settings, and how Sotto connects when the dialog offers the choice (ADR-0053). Both are
+   * checked before either is written.
+   */
+  z.object({ type: z.literal('save'), host: remoteHostSchema.omit({ enabled: true }), prefer: z.enum(HOST_CONNECTIONS).optional() }).strict(),
   z.object({ type: z.literal('rename'), id: z.uuid(), name: z.string().trim().min(1).max(80) }).strict(),
   z.object({ type: z.literal('set-enabled'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ type: z.literal('connect'), id: z.uuid() }).strict(),
