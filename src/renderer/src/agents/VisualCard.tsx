@@ -1,8 +1,10 @@
-import React, { memo, type ReactNode } from 'react'
+import React, { memo, useMemo, useState, type ReactNode } from 'react'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
-import { useMermaidDrawing } from './diagrams/MermaidDiagram'
+import { useMermaidRendering } from './diagrams/MermaidDiagram'
+import { stepImage } from './diagrams/diagramSteps'
+import { VisualStepper } from './VisualStepper'
 import './visualCard.css'
 
 /**
@@ -14,8 +16,8 @@ export function isDrawableVisual(message: AgentMessage): message is AgentMessage
 }
 
 /**
- * A visual's explanation laid out to read all at once: the intro, then the numbered steps. This is the one place the
- * steps are drawn, so a walkthrough that shows them one at a time can take its place (#793).
+ * A visual's explanation laid out to read all at once: the intro, then the numbered steps. A visual without steps shows
+ * it always; one with steps shows it under Read all, in place of the walkthrough.
  */
 export function VisualReadAll({ intro, steps }: Pick<AgentVisual, 'intro' | 'steps'>): ReactNode {
   if (!intro && !steps?.length) return null
@@ -26,18 +28,47 @@ export function VisualReadAll({ intro, steps }: Pick<AgentVisual, 'intro' | 'ste
 }
 
 /**
- * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Show source, Copy source and
- * Expand; the diagram, drawn by the same safe renderer and frame as a diagram in an answer; and its explanation. When
- * the diagram cannot be drawn, its source and the reason take its place and the explanation stays readable.
+ * Where each visual's walkthrough is, by the visual's id. A card is drawn again when its turn finishes and folds, or the
+ * thread is opened again, and the reader stays on the step they were reading. Kept for this window's life only.
+ */
+const walkthroughs = new Map<string, { readonly step: number; readonly readAll: boolean }>()
+const MAX_WALKTHROUGHS = 200
+
+function useWalkthrough(id: string): [{ readonly step: number; readonly readAll: boolean }, (change: Partial<{ step: number; readAll: boolean }>) => void] {
+  const [state, setState] = useState(() => walkthroughs.get(id) ?? { step: 0, readAll: false })
+  const update = (change: Partial<{ step: number; readAll: boolean }>): void => setState(current => {
+    const next = { ...current, ...change }
+    walkthroughs.delete(id)
+    walkthroughs.set(id, next)
+    if (walkthroughs.size > MAX_WALKTHROUGHS) walkthroughs.delete(walkthroughs.keys().next().value!)
+    return next
+  })
+  return [state, update]
+}
+
+/**
+ * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Read all when it has steps, Show
+ * source, Copy source and Expand; the diagram, drawn by the same safe renderer and frame as a diagram in an answer;
+ * and its explanation. A visual with steps is a walkthrough (#793): one step at a time, its part of the diagram lit and
+ * the rest dimmed, in the card and in Expand. Read all swaps the walkthrough for the intro and the numbered steps, with
+ * the whole diagram lit. When the diagram cannot be drawn, its source and the reason take its place and the steps stay
+ * readable.
  */
 export const VisualCard = memo(function VisualCard({ visual }: { readonly visual: AgentVisual }): ReactNode {
-  const drawing = useMermaidDrawing(visual.source, true)
-  const frame = useDiagramFrame(visual.source, drawing)
+  const rendering = useMermaidRendering(visual.source, true)
+  const frame = useDiagramFrame(visual.source, rendering)
+  const [{ step, readAll }, walk] = useWalkthrough(visual.id)
   // The label is "Diagram" when the checks cannot name the kind.
-  const kind = drawing.inspection.label
+  const kind = rendering.inspection.label
   const name = `${kind}: ${visual.title}`
+  const steps = visual.steps ?? []
+  const walking = steps.length > 0 && !readAll
+  const current = Math.min(step, Math.max(steps.length - 1, 0))
+  const drawn = rendering.drawing
+  const highlight = walking ? steps[current]?.highlight : undefined
+  const picture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
 
-  return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(drawing)}>
+  return <section className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={diagramFrameState(rendering)}>
     <header className="visual-card__bar">
       <div className="visual-card__heading">
         <h3 className="visual-card__title" title={visual.title}>{visual.title}</h3>
@@ -45,12 +76,16 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
       </div>
       <DiagramCopyStatus frame={frame} />
       <div className="visual-card__actions">
+        {steps.length > 0 && <button type="button" className="tt-button visual-card__read-all tt-focusable" aria-pressed={readAll}
+          onClick={() => walk({ readAll: !readAll })}>Read all</button>}
         <DiagramActions frame={frame} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} />
       </div>
     </header>
-    <DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage" />
-    {/* The explanation. #793's step-by-step walkthrough takes this one component's place. */}
-    <VisualReadAll intro={visual.intro} steps={visual.steps} />
-    <DiagramExpanded frame={frame} name={name} />
+    <DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage"
+      dataUrl={picture} crossFade />
+    {walking
+      ? <VisualStepper steps={steps} index={current} onStep={index => walk({ step: index })} />
+      : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
+    <DiagramExpanded frame={frame} name={name} dataUrl={picture} />
   </section>
 })

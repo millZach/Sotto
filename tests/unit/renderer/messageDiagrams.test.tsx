@@ -8,7 +8,7 @@ import type { DiagramRenderResult } from '../../../src/renderer/src/agents/diagr
 const renderer = vi.hoisted(() => ({ renderDiagram: vi.fn<(code: string) => Promise<DiagramRenderResult>>() }))
 vi.mock('../../../src/renderer/src/agents/diagrams/diagramRenderer', () => renderer)
 
-const DRAWING: DiagramRenderResult = { ok: true, dataUrl: 'data:image/svg+xml;base64,PHN2Zy8+', width: 400, height: 200, title: 'Login', description: 'You sign in and get a token.' }
+const DRAWING: DiagramRenderResult = { ok: true, dataUrl: 'data:image/svg+xml;base64,PHN2Zy8+', svg: '<svg/>', width: 400, height: 200, title: 'Login', description: 'You sign in and get a token.' }
 const SEQUENCE = 'sequenceDiagram\n  accTitle: Login\n  You->>Sotto: Sign in'
 const fence = (source: string, closed = true): string => ['Before', '', '```mermaid', source, ...(closed ? ['```'] : [])].join('\n')
 

@@ -114,6 +114,9 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       const image = card.getByRole('img', { name: 'Sequence diagram: How a send moves through Sotto' })
       await expect(image).toBeVisible({ timeout: 15_000 })
       await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      // The card opens as a walkthrough (#793, tests/e2e/visual-walkthrough.spec.ts); Read all shows the intro and every step.
+      await expect(card.getByRole('group', { name: 'Walkthrough' })).toContainText('Step 1 of 4')
+      await card.getByRole('button', { name: 'Read all' }).click()
       await expect(card.getByRole('listitem')).toHaveCount(4)
       await expect(card).toContainText(SEND.intro)
 
@@ -188,7 +191,10 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       await expect(expand).toBeFocused()
       await page.emulateMedia({ reducedMotion: null })
 
-      // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card.
+      // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card, under Read all.
+      // Finishing the turn drew the card again in its place by the fold, and Read all stayed pressed.
+      await expect(card.getByRole('button', { name: 'Read all' })).toHaveAttribute('aria-pressed', 'true')
+      await expect(card.getByRole('listitem')).toHaveCount(4)
       let appearance: 'dark' | 'light' = 'dark'
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
@@ -222,7 +228,7 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       const broken = log.getByRole('region', { name: 'Visual: A flow that will not draw' })
       await expect(broken.getByText(/^Couldn't draw this diagram\./u)).toBeVisible({ timeout: 15_000 })
       await expect(broken.getByLabel('A flow that will not draw source')).toContainText('A[Start --> B')
-      await expect(broken.getByRole('listitem')).toHaveText(['This step stays readable.'])
+      await expect(broken.getByRole('group', { name: 'Walkthrough' })).toContainText('This step stays readable.')
       await scrollTo(broken)
       await shot(page, 'error-1280x800-dark.png')
 
