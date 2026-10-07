@@ -225,7 +225,7 @@ describe('SettingsView', () => {
     // The column continues into the sidebar foot (the room switch, then the page links) before the room itself.
     await user.tab()
     expect(screen.getByRole('tablist', { name: 'Page' })).toContainElement(document.activeElement as HTMLElement)
-    for (const name of ['Chats', 'History', 'Settings', 'Help']) {
+    for (const name of ['History', 'Settings', 'Help']) {
       await user.tab()
       expect(screen.getByRole('link', { name })).toHaveFocus()
     }

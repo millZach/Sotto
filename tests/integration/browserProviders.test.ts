@@ -14,7 +14,6 @@ import type { AdapterFixture } from './adapterContract'
 import type { ProviderId } from '../../src/shared/agents'
 import { VISUAL_MCP_SERVER, VisualToolServer, type VisualToolHandlers } from '../../src/main/agents/visualTools'
 import type { ThreadMcpServer } from '../../src/main/agents/threadToolServer'
-import type { PersonalCreateCommand } from '../../src/main/agents/personalConversation'
 import { callVisualize } from '../fixtures/visualToolCall'
 
 const cleanup: (() => Promise<void>)[] = []
@@ -125,7 +124,7 @@ describe('grok browser admission', () => {
 
 // The visual tool (ADR-0055) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
 // `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin's client
-// ignores supplied servers and a personal chat is given none, and a switch turned off gives new launches nothing.
+// ignores supplied servers, and a switch turned off gives new launches nothing.
 const DIAGRAM = { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.', highlight: ['A->B'] }] }
 
 describe.each(factories)('%s visual tool', (provider, factory) => {
@@ -190,20 +189,6 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
     await create('Visuals off')
     expect(JSON.stringify((await fixture.driver.requests()).slice(before))).not.toContain(VISUAL_MCP_SERVER)
     await registry.flush()
-  })
-})
-
-// Devin keeps no personal chats on its client, so only the three providers that take Sotto's tools are asked.
-describe.each(factories.filter(([provider]) => provider !== 'devin'))('%s personal chat', (_provider, factory) => {
-  it('gives a personal chat no visual tool', async () => {
-    const fixture = await factory(); cleanup.push(fixture.cleanup)
-    const mcpServer = vi.fn(async () => ({ name: VISUAL_MCP_SERVER, type: 'http' as const, url: 'http://127.0.0.1:1/mcp', headers: [] }))
-    fixture.host.useThreadTools!([{ name: VISUAL_MCP_SERVER, definitions: [{ name: 'visualize', description: '', inputSchema: {} }], mcpServer }])
-    await fixture.host.connect()
-    const personal = fixture.host as unknown as { createPersonalConversation(command: PersonalCreateCommand): Promise<{ accepted: boolean }> }
-    expect(await personal.createPersonalConversation({ commandId: randomUUID(), threadId: randomUUID(), title: 'Personal', modelId: fixture.modelId, workingDirectory: fixture.root })).toMatchObject({ accepted: true })
-    expect(mcpServer).not.toHaveBeenCalled()
-    expect(JSON.stringify(await fixture.driver.requests())).not.toContain(VISUAL_MCP_SERVER)
   })
 })
 

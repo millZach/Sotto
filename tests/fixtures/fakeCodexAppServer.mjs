@@ -197,7 +197,13 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   }
   if (script.skillsChanged && method === 'skills/list') notify('skills/changed', {})
   if (method === 'skills/list' && script.skillsMalformed) { reply({ data: null }); return }
-  if (script.reject === method) { delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script)); setTimeout(() => emit({ id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }), delay); return }
+  if (script.reject === method) {
+    delete script.reject; writeFileSync(file('script.json'), JSON.stringify(script))
+    // A held rejection waits for `release-reply` the way a held answer does.
+    const rejection = { id, error: script.rejection ?? { code: -32000, message: 'Synthetic rejection' } }
+    if (holdReply) heldReplies.set(method, rejection); else setTimeout(() => emit(rejection), delay)
+    return
+  }
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }

@@ -1,5 +1,7 @@
 # Sotto's own history, on an event store the host owns and a client reads
 
+Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal-chat readers describe historical behavior; Sotto no longer opens or connects those conversations. Their retained Sotto copies still follow Keep local history: retirement preserves them while it is on, and local cleanup removes transcripts and submitted answers while it is off. The thread history, before-send checks, event-store decisions and beta gates remain in force.
+
 Accepted September 19, 2026, so that a thread's history stops being something a provider is asked to rebuild, and so the same split serves a machine the user is not sitting at. Transport beyond loopback — which remote path ships first, and what the pairing flow looks like to the user — is left open for the owner to decide and is marked as open below.
 
 Amended September 22, 2026 by ADR-0025: the owner decided both. SSH ships first, with the desktop pairing itself over the SSH session and a phone entering a code read on the host; the host listens on its own loopback address, reached through the SSH forward or Tailscale Serve, and the README's "Privacy and cost" section names that path. Everything else here stands.

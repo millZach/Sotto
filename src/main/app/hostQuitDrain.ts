@@ -5,7 +5,6 @@ interface AsyncClose { close(): Promise<void> }
 export interface HostQuitHandles {
   localRuntime?: AsyncClose
   desktopHosts?: AsyncClose
-  personalChats?: AsyncClose
   phoneAccess?: AsyncClose
   hostSetup?: AsyncClose
   hostSetupTools?: AsyncClose
@@ -34,7 +33,7 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     handles.hostPhones?.close()
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), handles.localRuntime?.close(),
-      handles.personalChats?.close(), handles.hostSetupTools?.close(), handles.visualTools?.close(),
+      handles.hostSetupTools?.close(), handles.visualTools?.close(),
       handles.cloudIphone?.close(),
     ])
     handles.hostRouter?.dispose()

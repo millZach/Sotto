@@ -1,6 +1,6 @@
 # A visualize tool for threads
 
-An agent in a project thread calls `visualize` to show how something works. Sotto draws the visual in the thread itself, with steps that walk through it one part at a time. Claude Code, Codex and Grok Build get the tool; Devin does not (its client ignores supplied MCP servers, ADR-0020, ADR-0035), personal chats do not, and threads on a remote host do not (a host runs no Sotto tool servers).
+An agent in a project thread calls `visualize` to show how something works. Sotto draws the visual in the thread itself, with steps that walk through it one part at a time. Claude Code, Codex and Grok Build get the tool; Devin does not (its client ignores supplied MCP servers, ADR-0020, ADR-0035), and threads on a remote host do not (a host runs no Sotto tool servers).
 
 ## Decisions with Zach (2026-10-06)
 

@@ -1,4 +1,5 @@
 import { cleanSettingsHistory } from './settings/privacyCleanup'
+import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { parseHostEntityKey } from '../shared/clientIdentity'
@@ -29,16 +30,11 @@ import { PHONES_CHANGED } from '../shared/phones'
 import { discoverSshHosts } from './hosts/sshSuggestions'
 import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
-import { PersonalChatService } from './agents/personalChats'
-import { ChatPromptService } from './agents/chatPrompts'
-import { registerChatPromptIpc } from './agents/chatPromptIpc'
 import { connectCheckpoints } from './tools/checkpointIntegration'
-import { RequestDraftService, personalRequestDraftState } from './agents/requestDrafts'
+import { RequestDraftService } from './agents/requestDrafts'
 import { registerRequestDraftIpc } from './agents/requestDraftIpc'
-import { isThreadProviderConnected, type ProviderId } from '../shared/agents'
+import { isThreadProviderConnected } from '../shared/agents'
 import { requestDraftProvider } from '../shared/requestDrafts'
-import { registerPersonalChatIpc } from './agents/personalChatIpc'
-import { PERSONAL_CHAT_STATE } from '../shared/personalChats'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -172,10 +168,6 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
-import { ConfiguredAgentReasoner } from './agents/reasoning'
-import { ClaudeSubscriptionClient } from './agents/subscriptionClaude'
-import { GrokSubscriptionClient } from './agents/subscriptionGrok'
-import { CodexSubscriptionClient } from './agents/subscriptionCodex'
 import { registerAgentIpc } from './agents/ipc'
 import { desktopWindowClient } from './agents/hostService'
 import { createAgentRuntime } from './agents/runtime'
@@ -210,7 +202,6 @@ import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
-import { E2EPersonalChatHost } from './e2e/personalChatHost'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -576,6 +567,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
+  const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
   // Two beta gates the renderer hides surfaces behind; main keeps their promise. With the voice coordinator
   // off no thread stays managed across a start, and with memory off no turn retrieves preferences.
@@ -648,11 +640,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === APP_NAME && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
-  // Personal chats start after the runtime; until they do, a client update has nothing of theirs to tell.
-  const personalClients: { updated?: (provider: ProviderId) => Promise<void> } = {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials,
-    clientUpdated: async provider => { await personalClients.updated?.(provider) },
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
@@ -802,35 +791,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
-  const testPersonalChatHosts = e2eConfiguration ? {
-    codex: new E2EPersonalChatHost(userDataPath), claude: new E2EPersonalChatHost(userDataPath, 'claude'), grok: new E2EPersonalChatHost(userDataPath, 'grok'),
-  } : undefined
-  const personalChats = new PersonalChatService({ userDataPath,
-    ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}), bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers), configuration: () => agentControl.configuration(),
-    ...(memoryProfile && agentMemoryEnabled ? { preferences: memoryProfile } : {}), historyEnabled: () => agentHistoryEnabled,
-    ...(testPersonalChatHosts ? { hosts: testPersonalChatHosts } : {}) })
-  quitHandles.personalChats = personalChats
-  await personalChats.start()
-  personalClients.updated = provider => personalChats.clientUpdated(provider)
-  const promptSubscriptions = {
-    claude: new ClaudeSubscriptionClient(join(userDataPath, 'reasoning', 'claude-prompts')),
-    codex: new CodexSubscriptionClient(join(userDataPath, 'reasoning', 'codex-prompts')),
-    grok: new GrokSubscriptionClient(join(userDataPath, 'reasoning', 'grok-prompts')),
-  }
-  // Transform text through the chat's original provider. Defaults cannot move
-  // an existing discussion to another account, and this path has no host tools.
-  const chatPrompts = new ChatPromptService(personalChats, async (system, input, chat) => {
-    if (e2eConfiguration) {
-      const source = input.messages.filter(message => message.role === 'user').at(-1)!
-      return { objective: [{ text: source.text, evidence: [{ messageId: source.id, quote: source.text }] }],
-        context: [], decisions: [], constraints: [], deliverables: [], acceptanceChecks: [], unresolvedQuestions: [], suggestions: [] }
-    }
-    return new ConfiguredAgentReasoner(() => ({ ...agentControl.configuration(),
-      reasoning: chat.providerId, reasoningModel: chat.modelId.replace(/^(?:codex|claude|grok):/u, ''), reasoningEffort: chat.reasoningEffort ?? '',
-    }), credentials, promptSubscriptions).transformText(system, input)
-  })
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => {
-    if (owner.kind === 'personal') return personalRequestDraftState(personalChats.get(), owner)
+    if (owner.kind !== 'thread') return undefined
     const key = parseHostEntityKey(owner.ownerId)
     const remote = key !== null && key.hostId !== agentControl.get().hostId
     const state = remote ? hostRouter.shell() : agentControl.shell()
@@ -841,20 +803,33 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     return thread ? { connected: isThreadProviderConnected(state.host, thread), ready: thread.historyStatus !== 'loading' && thread.historyStatus !== 'error',
       requests: thread.requests, ...recovery } : recovery.completed.length ? { connected: false, ready: false, requests: [], ...recovery } : undefined
   }, async owner => {
-    if (owner.kind === 'personal') await personalChats.refresh(owner.ownerId)
-    else { const key = parseHostEntityKey(owner.ownerId); if (key && key.hostId !== agentControl.get().hostId) await hostRouter.threadDetail(owner.ownerId); else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId) }
+    if (owner.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    const key = parseHostEntityKey(owner.ownerId)
+    if (key && key.hostId !== agentControl.get().hostId) await hostRouter.threadDetail(owner.ownerId)
+    else await agentControl.refreshRequestDraft(key?.id ?? owner.ownerId)
   })
   await requestDrafts.start()
+  const cleanRetiredHistory = async (): Promise<void> => {
+    const [chats, answers] = await Promise.allSettled([
+      Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
+      Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
+    ])
+    if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
+    if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
+    if (chats.status === 'rejected') throw chats.reason
+    if (answers.status === 'rejected') throw answers.reason
+  }
+  // Retired records never start a provider. Apply the saved privacy preference once,
+  // and keep startup available when inaccessible storage needs a later Settings retry.
+  await cleanRetiredHistory().catch(() => undefined)
   await requestDrafts.reconcile().catch(() => undefined)
   const reconcileRequestDrafts = (): void => { void requestDrafts.reconcile().catch(() => undefined) }
-  const unsubscribePersonalChats = personalChats.subscribe(state => { reconcileRequestDrafts(); windows.sendToMain(PERSONAL_CHAT_STATE, state) })
 
   // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
   // nothing more. Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
-    personalChats.configurationChanged()
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
     agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
     agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
@@ -865,7 +840,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const unsubscribeAgentDetail = hostRouter.subscribeThreadDetail(detail => agentDetailPublisher.publish(detail))
   // Quitting drops the held state with its timer: the windows it would reach are going away.
   quitHandles.stopPublishing = () => {
-    unsubscribePersonalChats(); unsubscribeAgents(); unsubscribeAgentDetail()
+    unsubscribeAgents(); unsubscribeAgentDetail()
     agentStatePublisher.dispose(); agentDetailPublisher.dispose()
   }
   const showTurnRecords = (): void => {
@@ -1080,7 +1055,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (grantDefaultChanged) browserService?.settingChanged()
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
-      await cleanSettingsHistory(agentControl, personalChats, async () => {
+      await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
         if (!dictationLifecycle.isIdle()) {
@@ -1094,7 +1069,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         const delivered = await messageDelivery.sendToMain(SETTINGS_CHANGED, settings)
         if (!delivered) logOperational('native-main-send-failed')
-      })
+      }, [cleanRetiredHistory])
     },
   })
   const trayController = new TrayController(trayAdapter, {
@@ -1185,8 +1160,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           runtimeSource,
         }),
     registerIpc: () => {
-      const cleanupPersonalChats = registerPersonalChatIpc(ipcMain, personalChats, () => windows.getTrustedRenderers())
-      const cleanupChatPrompts = registerChatPromptIpc(ipcMain, chatPrompts, () => windows.getTrustedRenderers(), copyOutput)
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
       const files = new FilesService({
         resolveBinding: threadId => agentControl.filesBinding(threadId),
@@ -1347,8 +1320,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupAgents()
         cleanupHosts()
         cleanupPhones()
-        cleanupPersonalChats()
-        cleanupChatPrompts()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
@@ -1389,11 +1360,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
         const parsed = e2eAgentEventSchema.parse(payload)
-        if (parsed.scope === 'personal') {
-          const chat = personalChats.get().chats.find(chat => chat.id === parsed.threadId)
-          if (!chat || !testPersonalChatHosts) throw new Error('E2E_PERSONAL_CHAT_UNAVAILABLE')
-          return testPersonalChatHosts[chat.providerId].event(parsed)
-        }
         testAgentHost?.event(parsed)
       })
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
