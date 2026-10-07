@@ -71,11 +71,20 @@ and a flowchart with a subgraph inside another, captured by `capture.mjs` in Chr
 and steps; they still show, under Step through, when the finished turn draws the card again by its fold. Its captures in
 `artifacts/visual-in-thread/` were not taken again for this note.
 
+## A real provider
+
+On October 7, `tests/e2e/visuals-live.spec.ts`, run against this branch with its prompt also asking for a highlight
+list on every step, had a real Claude Code thread draw "A request round trip" as a sequence diagram with three steps.
+Claude named participants and arrow numbers on its own, and each step lit what it named: step 2 the Server and the
+Database with the query and its answer ([live-claude-step-2-dark.png](../../artifacts/visual-walkthrough/live-claude-step-2-dark.png)),
+step 3 the Browser and the Server with the last answer, with **Start over** in place of Next
+([live-claude-step-3-dark.png](../../artifacts/visual-walkthrough/live-claude-step-3-dark.png)).
+
 ## Not verified here
 
 - The dimmed parts are at 30 percent, a little stronger than the prototype's 22. Dimmed words in the drawing fall
   under 4.5:1 on purpose, the exception ADR-0056 records: the lit part, the step's words and the controls meet 4.5:1,
   the drawing's words are also in the step text and its accessible name, and Read all shows the drawing undimmed.
-- No real provider was asked to draw a walkthrough. The highlight names come from the fake tool call.
+- Codex and Grok Build were not asked to draw a walkthrough; both drew visuals with steps for #800.
 - Diagram kinds and shapes beyond the five fixtures (flowchart shapes other than boxes and diamonds, sequence boxes and
   notes over participants, class namespaces) were not captured; unknown parts stay dimmed and never break a step.
