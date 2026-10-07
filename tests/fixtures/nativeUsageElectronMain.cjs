@@ -34,10 +34,12 @@ app.setPath('userData', profile)
 // A missing fake must fail closed: this placeholder is never executed as a real native client.
 const spawn = childProcess.spawn
 childProcess.spawn = function (command, args, options) {
-  // Opening a project asks Git about its folder. The fixture's PATH holds only the placeholder, so a bare `git`
-  // finds nothing and fails the way a machine without Git does, which the project survives; no real Git runs.
-  if (command === 'git') { record('unscripted-git'); return spawn.call(this, command, args, { ...options, env: { ...options?.env, PATH: dirname(executable) }, windowsHide: true }) }
-  if (command !== executable) throw new Error(`Unexpected process launch in isolated usage fixture: ${basename(String(command))}`)
+  // Anything else (Git asked about a project's folder, the paste helper) fails the way a missing program does: no
+  // real process starts, and the app takes its own path for a program it cannot find.
+  if (command !== executable) {
+    record('unexpected-launch-refused')
+    return spawn.call(this, join(root, 'no-such-program'), [], { ...options, shell: false, windowsHide: true })
+  }
   record('scripted-claude-launch')
   const nativeArgs = args.includes('--version') ? ['-e', 'process.stdout.write("2.1.268 (scripted Claude)\\n")']
     : [resolve(__dirname, 'fakeClaudeThread.mjs'), client, ...args]

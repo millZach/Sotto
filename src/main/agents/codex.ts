@@ -223,7 +223,8 @@ export class CodexAppServerHost implements AgentHost {
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.usage = new NativeUsage(options.userDataPath, 'codex')
-    this.aliasStore = new AtomicJsonStore(join(options.userDataPath, 'codex-threads.json'), preserveLegacyAliases(aliasesSchema.parse), () => ({}))
+    // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
+    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), preserveLegacyAliases(aliasesSchema.parse), () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),
@@ -676,9 +677,28 @@ export class CodexAppServerHost implements AgentHost {
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
+  /**
+   * Writes every thread's record as it is when the write starts. Calls made before a queued write starts share it,
+   * so a stream of frames costs the write in flight and one more, and each call is durable when its promise is.
+   */
   private persist(): Promise<void> {
-    this.writing = this.aliasStore.write(structuredClone(this.aliases))
+    this.writing = this.aliasStore.writeLatest(() => this.aliases)
     return this.writing
+  }
+  /**
+   * A save a response to `turn/start` or `turn/steer` starts, which the sender waits for once the frame queue has
+   * moved on: frames behind the response are not held behind a rewrite of every thread's record. A failed save
+   * leaves the send uncertain, as a response that could not be applied does.
+   */
+  private saveBehindResponse(): { start(): void; settled(): Promise<void> } {
+    let saving: Promise<void> | undefined
+    return {
+      start: () => { saving = this.persist(); saving.catch(() => undefined) },
+      settled: async () => {
+        if (saving === undefined) return
+        try { await saving } catch { throw new Uncertain('Codex response could not be saved.') }
+      },
+    }
   }
   async pollSessionLogs(): Promise<void> { await this.watcher?.poll() }
   async snapshot(): Promise<AgentHostSnapshot> {
@@ -1303,15 +1323,18 @@ export class CodexAppServerHost implements AgentHost {
             try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
             catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
             this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
-            await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, async value => {
-              const response = z.object({ turnId: z.string() }).parse(value)
-              if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id); this.emit(); await this.persist()
-            }, async () => {
-              alias.origins = alias.origins.filter(o => o !== origin)
-              this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); await this.persist()
-            })
+            const save = this.saveBehindResponse()
+            try {
+              await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, value => {
+                const response = z.object({ turnId: z.string() }).parse(value)
+                if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
+                if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+                this.unconfirmedDispatchSessionIds.delete(id); this.emit(); save.start()
+              }, () => {
+                alias.origins = alias.origins.filter(o => o !== origin)
+                this.watcher?.forget(alias.codexThreadId, origin.messageId); this.unconfirmedDispatchSessionIds.delete(id); save.start()
+              })
+            } finally { await save.settled() }
           } catch (error) {
             if (error instanceof Uncertain) this.unconfirmedDispatchSessionIds.add(id)
             throw error
@@ -1370,26 +1393,29 @@ export class CodexAppServerHost implements AgentHost {
             await this.persist(); throw error
           }
           this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+          const save = this.saveBehindResponse()
           try {
             markSendStage(command.commandId, 'written')
-            await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-              input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
-              approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
-              ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
-              const { turn } = z.object({ turn: turnSchema }).parse(value)
-              origin.turnId = turn.id
-              this.applyTurn(id, turn)
-              if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
-              this.unconfirmedDispatchSessionIds.delete(id)
-              markSendStage(command.commandId, 'acknowledged')
-              this.emit()
-              return this.persist()
-            }, () => {
-              alias.origins = alias.origins.filter(o => o !== origin)
-              this.watcher?.forget(alias.codexThreadId, origin.messageId)
-              this.unconfirmedDispatchSessionIds.delete(id)
-              return this.persist()
-            })
+            try {
+              await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
+                input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+                approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
+                ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
+                const { turn } = z.object({ turn: turnSchema }).parse(value)
+                origin.turnId = turn.id
+                this.applyTurn(id, turn)
+                if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
+                this.unconfirmedDispatchSessionIds.delete(id)
+                markSendStage(command.commandId, 'acknowledged')
+                this.emit()
+                save.start()
+              }, () => {
+                alias.origins = alias.origins.filter(o => o !== origin)
+                this.watcher?.forget(alias.codexThreadId, origin.messageId)
+                this.unconfirmedDispatchSessionIds.delete(id)
+                save.start()
+              })
+            } finally { await save.settled() }
           } catch (error) {
             if (!(error instanceof Rejected)) this.unconfirmedDispatchSessionIds.add(id)
             throw error
@@ -1509,9 +1535,12 @@ export class CodexAppServerHost implements AgentHost {
       }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(heldKey(server, params.requestId))
-    if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') await this.persist()
     this.emit(frame.method !== 'turn/started' && frame.method !== 'turn/completed'
       && frame.method !== 'error' && frame.method !== 'serverRequest/resolved')
+    // Saved after the frame's effect is shown, and never waited for here: the next frame is not held behind a
+    // rewrite of every thread's record. The saves share one write while one is running. What makes a send safe
+    // was saved before `turn/start` (its origin); this keeps the identities and turn states that follow it.
+    if (params.turn || params.item?.type === 'userMessage' || params.item?.type === 'agentMessage') void this.persist().catch(() => undefined)
   }
   /**
    * Send a request to the app-server it belongs to: `target` when given, else the thread's own for a request
@@ -1574,5 +1603,6 @@ export class CodexAppServerHost implements AgentHost {
     if (publish) this.emit()
   }
   /** Shutdown barrier for callers removing user data or replacing a host. */
-  async closed(): Promise<void> { await this.stopping; await this.frames; await this.writing; await this.usage.flushed() }
+  /** Waits for the CLI, its frames and the newest store write, and drains the usage ledger even when that write failed. */
+  async closed(): Promise<void> { await this.stopping; await this.frames; try { await this.writing } finally { await this.usage.flushed() } }
 }

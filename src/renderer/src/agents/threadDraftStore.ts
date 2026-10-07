@@ -207,7 +207,8 @@ export function deliveryPending(status: SubmissionStatus): boolean {
  * Per-thread composer drafts between the renderer and the durable `threadDrafts` state.
  *
  * Every edit is a new revision with a fresh UUID. Saves are debounced, flushed on
- * navigation and before sending, and sent in order. A published state only replaces
+ * navigation and before an answer, and sent in order. A send, steer or queue carries its
+ * revision to main, which saves it, so the window saves nothing in front of one. A published state only replaces
  * local content once that state has shown the local revision (or the revision was
  * accepted), so an older state can never overwrite newer typing.
  */
@@ -463,8 +464,13 @@ export class ThreadDraftStore {
     // Refused is the one outcome that proves nothing was sent, so the prompt comes back to an empty
     // composer. It is offered back once; typing since the press is never replaced without being asked.
     const returned = pruned.map(item => submissionStatus(item, state).status === 'failed' ? this.returnPrompt(item, changed) : item)
+    const kept = new Set(pruned)
+    const retiredThreads = new Set(this.submissionList.filter(item => !kept.has(item)).map(item => item.threadId))
     const submissionsChanged = pruned.length !== this.submissionList.length || returned.some((item, index) => item !== pruned[index])
     if (submissionsChanged) this.submissionList = returned
+    // A submission retired here (the queue owning its revision) may never be resolved, so the emptied composer
+    // it was holding back is saved once nothing else on its thread is unresolved.
+    for (const threadId of retiredThreads) this.saveAfterSubmissions(threadId)
     if (changed.size || submissionsChanged) this.emit(changed)
   }
 
@@ -477,11 +483,12 @@ export class ThreadDraftStore {
   }
 
   /**
-   * Replace the thread's composer content with a new revision, saved after the debounce.
+   * Replace the thread's composer content with a new revision. `debounce` saves it after the debounce;
+   * `after-submissions` leaves it for `saveAfterSubmissions`, once nothing the thread submitted is unresolved.
    * Sending uses it too: the composer starts a fresh empty revision on the press, so an older
    * published state can never put the sent text back (the new revision has not been observed).
    */
-  private revise(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachmentHandle[]; readonly skills?: readonly AgentSkillReference[]; readonly files?: readonly AgentFileReference[]; readonly requestId?: string | null }): string {
+  private revise(threadId: string, patch: { readonly text?: string; readonly attachments?: readonly AgentAttachmentHandle[]; readonly skills?: readonly AgentSkillReference[]; readonly files?: readonly AgentFileReference[]; readonly requestId?: string | null }, save: 'debounce' | 'after-submissions' = 'debounce'): string {
     const entry = this.entries.get(threadId) ?? { draft: EMPTY, observed: true, saved: true, saving: null, error: null, superseded: [] }
     this.entries.set(threadId, entry)
     if (entry.draft.draftId) entry.superseded = [...entry.superseded.slice(-15), entry.draft.draftId]
@@ -498,7 +505,8 @@ export class ThreadDraftStore {
     entry.error = null
     const pending = this.timers.get(threadId)
     if (pending !== undefined) clearTimeout(pending)
-    this.timers.set(threadId, setTimeout(() => this.flush(threadId), this.debounceMs))
+    if (save === 'debounce') this.timers.set(threadId, setTimeout(() => this.flush(threadId), this.debounceMs))
+    else this.timers.delete(threadId)
     return entry.draft.draftId
   }
 
@@ -589,14 +597,21 @@ export class ThreadDraftStore {
 
 
   /**
-   * Take the current revision out of the composer for sending. The pending debounce is replaced by an
-   * immediate save of this same revision, so nothing older can be saved after it, and the composer
-   * starts a fresh empty revision at once: the press empties it, not the provider's acknowledgement.
+   * Take the current revision out of the composer for sending, and start a fresh empty revision at once: the
+   * press empties the composer, not the provider's acknowledgement.
+   *
+   * `savedBy` says who makes the submitted revision durable. `window`, the default, saves it now, as an edit is,
+   * and saves the empty revision after the debounce; an answer uses it, because main keeps no draft for one.
+   * `main` is a send, steer or queue: its command carries the revision and main saves it as it admits it, so the
+   * window saves nothing in front of it. The pending debounce is dropped, so nothing older is saved after it, and
+   * the empty revision is saved once the thread has no submission left unresolved (`saveAfterSubmissions`), so
+   * the window's own draft saves stay out of the send. A save main or the window makes for another reason, such as
+   * focus moving to another thread, still goes when it is asked for.
    */
-  submit(threadId: string, submittedAt: number, mode: SubmissionMode = 'send'): ComposerDraft | null {
+  submit(threadId: string, submittedAt: number, mode: SubmissionMode = 'send', savedBy: 'main' | 'window' = 'window'): ComposerDraft | null {
     const entry = this.entries.get(threadId)
     if (entry === undefined || !hasDraftContent(entry.draft)) return null
-    this.flush(threadId)
+    if (savedBy === 'window') this.flush(threadId)
     const draft = entry.draft
     // Once its restored revision is sent, that exact submission owns the recovery copy too.
     // Keep one retry ID while unresolved, then let delivery or queue ownership retire it.
@@ -611,7 +626,7 @@ export class ThreadDraftStore {
     if (!recovered) submissions.push(submission)
     const recent = new Set(submissions.filter(item => !item.recovered).slice(-MAX_DELIVERED_DRAFTS))
     this.submissionList = submissions.filter(item => item.recovered || recent.has(item))
-    this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })
+    this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null }, savedBy === 'window' ? 'debounce' : 'after-submissions')
     this.clearScreenshotProblem(threadId)
     this.emit(new Set([threadId]))
     return draft
@@ -625,7 +640,8 @@ export class ThreadDraftStore {
     const submission = this.submissionList.find(item => item.threadId === threadId && item.draftId === draftId)
     if (submission === undefined) return null
     if (submission.restoredAs !== undefined && this.draft(threadId).draftId === submission.restoredAs) {
-      this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })
+      // Like a press, the retried send carries its revision to main: the emptied composer waits for it to resolve.
+      this.revise(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null }, 'after-submissions')
     }
     // Sending it again is a fresh outcome: a second refusal may offer it back again.
     this.returnedPrompts.delete(key(threadId, draftId))
@@ -701,7 +717,23 @@ export class ThreadDraftStore {
       const refused = notSent || item.mode === 'queue' && error !== null && error !== UNCONFIRMED_SUBMISSION.queue
       return refused ? this.returnPrompt(settled, changed) : settled
     })
+    // Called whether or not it was found: a published state may have retired the submission first (the queue
+    // owning its revision), and the emptied composer is still owed its save.
+    this.saveAfterSubmissions(threadId)
     if (found) this.emit(changed)
+  }
+
+  /**
+   * The empty revision a send left in the composer, saved once nothing the thread submitted is unresolved. Main
+   * saved the sent revision itself; this only records that the composer was emptied, and after a delivered send
+   * main already holds no draft for the thread, so the save usually writes nothing.
+   */
+  private saveAfterSubmissions(threadId: string): void {
+    const entry = this.entries.get(threadId)
+    // A save still running for the sent revision does not count: only one of this revision does.
+    if (entry === undefined || entry.saved || entry.saving === entry.draft.draftId || !entry.draft.draftId || !isEmpty(entry.draft) || this.timers.has(threadId)) return
+    if (this.submissionList.some(item => item.threadId === threadId && !item.resolved)) return
+    this.timers.set(threadId, setTimeout(() => this.flush(threadId), this.debounceMs))
   }
 
   /** Offer a refused prompt back to its composer, once, and only while nothing newer is written there. */

@@ -27,7 +27,8 @@ disk. Equal bytes cost no write only when no writes are pending; a failed write 
 alone so the next attempt writes. While a write is pending, every persist stays on the existing queue
 and waits for its own save. Otherwise, an older queued state could overwrite a newer state that
 happens to match the last completed save.
-Everything else about the path is unchanged: `saved()` still runs (it also upgrades the legacy draft),
+Everything else about the path is unchanged: the saved state is still built on every call (it also upgrades the
+legacy draft; since #767 it is built over the live state and serialized once rather than copied first),
 a changed fact still writes exactly once, and the draft-persistence publish that follows a write still
 follows a skipped one.
 

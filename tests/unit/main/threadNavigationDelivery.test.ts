@@ -405,7 +405,8 @@ describe('manual delivery receipts', () => {
     })
     const draftId = randomUUID()
     const result = await f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Never sent', draftId })
-    expect(result.error).toContain('Disk unavailable')
+    // This write is the one that first saves a prompt sent at once, so it fails the way admission's does.
+    expect(result.error).toBe('Could not save this prompt, so it was not sent. Check access to local storage and send it again.')
     expect(result.deliveries).toContainEqual(expect.objectContaining({ threadId: 'docs', draftId, status: 'failed' }))
     expect(f.host.attempts).toEqual([])
     expect(result.threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'docs', draftId, text: 'Never sent' }))

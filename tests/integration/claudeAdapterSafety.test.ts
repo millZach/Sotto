@@ -8,8 +8,9 @@ import { claudeAnswer, claudePending } from '../../src/main/agents/claudeRequest
 import { authoredClaudeUser } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
 import { ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
-import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import { ClaudeOriginJournal } from '../../src/main/agents/claudeOriginJournal'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
+import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
@@ -95,11 +96,11 @@ describe('Claude recovery and safety', () => {
     let release!: () => void; let entered!: () => void
     const blocked = new Promise<void>(resolve => { release = resolve })
     const reached = new Promise<void>(resolve => { entered = resolve })
-    const write = AtomicJsonStore.prototype.write
-    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
-      await write.call(this, value)
-      const aliases = value as Record<string, { origins?: { messageId: string }[] }>
-      if (aliases[id]?.origins?.some(origin => origin.messageId === 'stale-persist')) { entered(); await blocked }
+    // The origin is made durable as one synced line of the origin journal (#767).
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementation(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      if ((entry.origin as { messageId: string }).messageId === 'stale-persist') { entered(); await blocked }
     })
     const command = { type: 'send' as const, commandId: 'stale-persist', messageId: 'stale-persist', threadId: id, text: 'Must not send', expectedLastUserMessageId: null }
     const sending = f.host.execute(command).then(result => ({ result }), error => ({ error: error as Error }))
@@ -109,10 +110,129 @@ describe('Claude recovery and safety', () => {
     expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
     const aliases = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8'))
     expect(aliases[id].origins).toEqual([])
+    // Writing the store whole cleared the journal, so the removed origin cannot come back on the next connect.
+    expect(await readFile(join(f.root, 'claude-origins.jsonl'), 'utf8').catch(() => '')).not.toContain('stale-persist')
     vi.restoreAllMocks()
     const latest = (await thread()).messages.filter(message => message.role === 'user').at(-1)!.id
     expect(await f.host.execute({ ...command, expectedLastUserMessageId: latest })).toEqual({ accepted: true })
     expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
+  it('folds an origin only the journal holds back into the thread store on connect, past a line a crash cut short', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    // Nothing wrote the store whole since the send, so the origin is in the journal alone, as a crash would leave
+    // it. A second append that a crash cut short follows it.
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[] }>
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins).toEqual([])
+    const lines = (await readFile(journalPath, 'utf8')).split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as { threadId: string; origin: { messageId: string } })
+    const origin = lines.find(line => line.threadId === id && line.origin.messageId === 'journaled')!.origin
+    await writeFile(journalPath, `${await readFile(journalPath, 'utf8')}\n{"threadId":"${id}","origin":{"messageId":"cut-sh`)
+    f = await claudeFixture(f.root); await f.host.connect()
+    const stored = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    expect(stored[id]!.origins).toContainEqual(origin)
+    expect(stored[id]!.origins.filter(candidate => candidate.messageId === 'journaled')).toHaveLength(1)
+    // Folded in and cleared, so this connection's lines never follow the one cut short.
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    f.host.disconnect(); await f.adapter.closed()
+    // A journal holding nothing the store lacks is cleared too, a cut-short line and all.
+    await writeFile(journalPath, `\n${JSON.stringify({ threadId: id, origin })}\n\n{"threadId":"${id}","orig`)
+    f = await claudeFixture(f.root); await f.host.connect()
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins.filter(candidate => candidate.messageId === 'journaled')).toHaveLength(1)
+  })
+  it('still connects when a leftover journal holding nothing new cannot be cleared', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'kept', messageId: 'kept', threadId: id, text: 'Synthetic kept prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    f.host.disconnect(); await f.adapter.closed()
+    // The store holds the origin now; a journal left behind repeats it, and the file cannot be removed.
+    const journalPath = join(f.root, 'claude-origins.jsonl')
+    const stored = JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, { origins: { messageId: string }[] }>
+    const origin = stored[id]!.origins.find(candidate => candidate.messageId === 'kept')!
+    await writeFile(journalPath, `\n${JSON.stringify({ threadId: id, origin })}\n`)
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    f = await claudeFixture(f.root)
+    await f.host.connect()
+    expect((await f.host.snapshot()).connected).toBe(true)
+  })
+  it('counts a whole write of the thread store as saved when the journal behind it cannot be cleared', async () => {
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    const other = randomUUID()
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: other, projectId: f.projectId, title: 'Other', modelId: f.modelId })).resolves.toEqual({ accepted: true })
+    expect(Object.keys(JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, unknown>)).toContain(other)
+  })
+  it('starts a thread whose first send was refused at the dispatch check, when the journal behind its rollback could not be cleared', async () => {
+    // Claude Code stops after the origin is journaled and before the prompt is written: nothing is sent. The
+    // rollback writes the store whole without the origin, and the journal line it leaves cannot be removed.
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementation(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      if ((entry.origin as { messageId: string }).messageId === 'refused') await (f.adapter as unknown as { stopSession(id: string): Promise<void> }).stopSession(id)
+    })
+    vi.spyOn(ClaudeOriginJournal.prototype, 'clear').mockRejectedValue(Object.assign(new Error('Synthetic lock'), { code: 'EBUSY' }))
+    await expect(f.host.execute({ type: 'send', commandId: 'refused', messageId: 'refused', threadId: id, text: 'Must not send' })).rejects.toThrow('Nothing was sent')
+    expect(await readFile(join(f.root, 'claude-origins.jsonl'), 'utf8')).toContain('refused')
+    vi.restoreAllMocks()
+    // Sotto stops before another whole write. The leftover line is from before the rollback, so it stays out.
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Synthetic prompt after the refusal' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+  })
+  it('folds every line of a journal into a store written before there were journal generations, then stamps the store', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'unstamped', messageId: 'unstamped', threadId: id, text: 'Synthetic unstamped prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[]; journalGeneration?: number }>
+    const store = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    for (const alias of Object.values(store)) delete alias.journalGeneration
+    await writeFile(storePath, JSON.stringify(store))
+    const lines = (await readFile(journalPath, 'utf8')).split('\n').filter(line => line.trim()).map(line => JSON.parse(line) as { generation?: number })
+    for (const line of lines) delete line.generation
+    await writeFile(journalPath, lines.map(line => `\n${JSON.stringify(line)}\n`).join(''))
+    f = await claudeFixture(f.root); await f.host.connect()
+    const folded = JSON.parse(await readFile(storePath, 'utf8')) as Stored
+    expect(folded[id]!.origins.map(origin => origin.messageId)).toContain('unstamped')
+    expect(folded[id]!.journalGeneration).toBeGreaterThan(0)
+  })
+  it('starts a thread whose first origin line was written before its append failed', async () => {
+    const append = ClaudeOriginJournal.prototype.append
+    vi.spyOn(ClaudeOriginJournal.prototype, 'append').mockImplementationOnce(async function (this: ClaudeOriginJournal<unknown>, entry) {
+      await append.call(this, entry)
+      throw Object.assign(new Error('Synthetic sync failure'), { code: 'EIO' })
+    })
+    await expect(f.host.execute({ type: 'send', commandId: 'unsynced', messageId: 'unsynced', threadId: id, text: 'Must not send' })).rejects.toThrow('Synthetic sync failure')
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(0)
+    f.host.disconnect(); await f.adapter.closed()
+    f = await claudeFixture(f.root); await f.host.connect()
+    expect(await f.host.execute({ type: 'send', commandId: 'after', messageId: 'after', threadId: id, text: 'Synthetic prompt after the failure' })).toEqual({ accepted: true })
+  })
+  it('connects with the journal’s origins when folding them into the thread store fails, and keeps the journal', async () => {
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    f.host.disconnect(); await f.adapter.closed()
+    const storePath = join(f.root, 'claude-threads.json'); const journalPath = join(f.root, 'claude-origins.jsonl')
+    type Stored = Record<string, { origins: { messageId: string }[] }>
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins).toEqual([])
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value, compact) {
+      if ((this as unknown as { filePath: string }).filePath === storePath) return Promise.reject(Object.assign(new Error('Synthetic full disk'), { code: 'ENOSPC' }))
+      return write.call(this, value, compact)
+    })
+    const events: string[] = []
+    f = await claudeFixture(f.root, undefined, undefined, { logEvent: event => events.push(event) })
+    await f.host.connect()
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect(events).toContain('claude-origin-journal-fold-failed')
+    expect(await readFile(journalPath, 'utf8')).toContain('journaled')
+    // The thread still knows it sent that prompt, so asking again does not send it twice.
+    expect(await f.host.execute({ type: 'send', commandId: 'journaled', messageId: 'journaled', threadId: id, text: 'Synthetic journaled prompt' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).filter(record => record.method === 'user')).toHaveLength(1)
+    vi.restoreAllMocks()
+    // The next whole write folds them in for good and clears the journal.
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, title: 'Other', modelId: f.modelId })
+    expect((JSON.parse(await readFile(storePath, 'utf8')) as Stored)[id]!.origins.map(origin => origin.messageId)).toContain('journaled')
+    await expect(readFile(journalPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('reconciles image-only native frames over 1 MiB and restores references without persisting image bytes', async () => {
     const image = Buffer.alloc(1024 * 1024); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(image)

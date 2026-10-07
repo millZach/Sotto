@@ -313,11 +313,13 @@ describe('truthful durable draft delivery', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
 
-  it.each(['admission', 'outbox'] as const)('does not dispatch or leave phantom uncertain intent when %s persistence fails', async stage => {
+  // A send that goes at once is first saved by its outbox write (#767), so both fail there; the admission write of a
+  // send held behind other work is covered in agentCommandLanes.test.ts.
+  it.each(['every', 'the outbox'] as const)('does not dispatch or leave phantom uncertain intent when %s write fails', async stage => {
     const f = await fixture(); const original = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function(this: AtomicJsonStore<unknown>, value) {
       const state = value as { outbox?: unknown[] }
-      if (stage === 'admission' || state.outbox?.length) return Promise.reject(new Error('Synthetic disk failure'))
+      if (stage === 'every' || state.outbox?.length) return Promise.reject(new Error('Synthetic disk failure'))
       return original.call(this, value)
     })
     const draft = save('workshop', 'Recover locally', [image]); const result = await f.control.command(send(draft))

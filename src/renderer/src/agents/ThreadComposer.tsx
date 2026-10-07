@@ -59,7 +59,7 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  */
 export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string): Promise<void> {
   const threadId = row.thread.id
-  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode) : store.retry(threadId, retryDraftId, submittedAt)
+  const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
   let attempted = false
   try {
@@ -196,7 +196,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (field !== null && document.activeElement !== field && field.form?.contains(document.activeElement)) field.focus()
     if (question?.requestId) {
       if (draft.requestId !== question.requestId) store.edit(threadId, { requestId: question.requestId })
-      const answer = store.submit(threadId, submittedAt)
+      // Main keeps no draft for an answer, so this window saves the revision it answers with.
+      const answer = store.submit(threadId, submittedAt, 'send', 'window')
       if (answer === null) return
       store.dismiss(threadId, answer.draftId)
       store.setAnswerState(threadId, { sending: true, error: null })
