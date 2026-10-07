@@ -16,7 +16,7 @@ run, at a display scale of 150 percent.
 ## What it showed
 
 - The page drew and ran its script. `window.sotto`, `require` and `process` were undefined in it.
-- It received the read-all step (step 0 of 2) and the theme, and its style and colour scheme followed light and dark.
+- It received step 1 of 2 with that step's name (`bars`) and the theme. Next in the card's walkthrough showed step 2 on the page, Read all showed every step, Step through went back to step 2 and Start over to step 1. Its style and colour scheme followed light and dark.
 - The frame took the page's own 260 pixels; a 2,000-pixel page was held to 640.
 - An Escape the page dispatched itself moved nothing. The user's Escape inside the page put focus back on the card, with its focus ring. Show source showed the HTML, and Expand opened the page over the
   window while the card's own page stopped. Escape closed it, back on Expand.
@@ -37,4 +37,5 @@ run, at a display scale of 150 percent.
 - `page-1280x800-dark-reduced-motion.png`: the card with Reduce motion on.
 - `page-820x560-dark.png` and `page-820x560-light.png`: the minimum window. The card fits, and the page is clipped
   by the transcript above the composer like the rest of the thread.
+- `page-step-2-1280x800-dark.png`: the walkthrough on step 2, and the page showing the step it was sent.
 - `expanded-1280x800-dark.png`: Expand, with focus on Close.
