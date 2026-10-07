@@ -33,7 +33,7 @@ A spare runs in the thread's folder, so Claude Code starts one only when that fo
 
 **Connect starts the watched set's CLIs four at a time.** Each Claude Code CLI is a process of its own that takes about a second to answer `initialize`. Four at a time keeps a send to the last of them from waiting on all the others, without a burst of processes on a machine with many panes open.
 
-**Remote hosts and the iPhone.** A paired host takes `start-thread-session` like any other thread command (`src/host/remoteCommands.ts`), so a remote host's threads get the same early start once that host is updated. The desktop router sends it to the thread's own host and swallows a refusal, so a host that predates it, is away or refuses it changes nothing and says nothing. Host protocol version 1 is unchanged: the command is optional, the thread flag is optional, and the iPhone client neither sends one nor reads the other.
+**Remote hosts and the iPhone.** A paired host takes `start-thread-session` like any other thread command (`src/host/remoteCommands.ts`), so a remote host's threads get the same early start once that host is updated. The desktop router sends it to the thread's own host and swallows a refusal, so a host that predates it, is away or refuses it changes nothing and says nothing. Unlike other thread commands, the desktop reads nothing back after the host answers: a session the start opened shows in the host's next push, and a read there would cost a whole-thread read just before the send and could show an error. Host protocol version 1 is unchanged: the command is optional, the thread flag is optional, and the iPhone client neither sends one nor reads the other.
 
 ## Consequences
 
