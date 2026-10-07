@@ -16,6 +16,11 @@ export const VISUAL_HIGHLIGHT_MAX = 120
 /** How many visuals one turn may draw, and one thread may hold. */
 export const VISUALS_PER_TURN_MAX = 6
 export const VISUALS_PER_THREAD_MAX = 100
+/**
+ * The longest source a kept visual is read with, well past any kind's input limit (a diagram's 12,000 characters, an
+ * interactive page's 60,000 in #794), so a visual a newer version kept is not refused on the way to a window.
+ */
+export const VISUAL_KEPT_SOURCE_MAX = 200_000
 /** The kinds an agent may send. Interactive pages are a later kind (#794). */
 export const VISUAL_KINDS = ['diagram'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
@@ -57,7 +62,7 @@ export const agentVisualSchema = z.object({
   id: z.string().min(1).max(256),
   title: z.string().max(VISUAL_TITLE_MAX * 2),
   kind: z.string().max(64),
-  source: z.string().max(200_000),
+  source: z.string().max(VISUAL_KEPT_SOURCE_MAX),
   intro: z.string().max(VISUAL_INTRO_MAX * 2).optional(),
   steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_HIGHLIGHT_MAX * 2)).max(VISUAL_HIGHLIGHTS_MAX * 2).optional() })).max(VISUAL_STEPS_MAX * 2).optional(),
 })

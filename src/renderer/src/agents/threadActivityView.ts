@@ -80,10 +80,10 @@ export function placeActivities(
   const visualsAfter = new Map<string, AgentMessage[]>()
   for (const [index, message] of messages.entries()) {
     if (!isVisualMessage(message)) continue
-    let host = index - 1
-    while (host >= 0 && isVisualMessage(messages[host]!)) host--
-    if (host < 0) continue
-    const id = messages[host]!.id
+    let under = index - 1
+    while (under >= 0 && isVisualMessage(messages[under]!)) under--
+    if (under < 0) continue
+    const id = messages[under]!.id
     visualsAfter.set(id, [...visualsAfter.get(id) ?? [], message])
   }
   if (visualsAfter.size) {
