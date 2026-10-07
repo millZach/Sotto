@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, expect, it } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { CodexProcess, type RpcFrame } from '../../src/main/agents/codexProcess'
+import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
 import { codexFixture } from '../fixtures/codexFixture'
 import { recordDurableWrites, type DurableWriteRecorder } from '../fixtures/durableWrites'
@@ -85,4 +86,23 @@ it('applies the frames behind a turn/start response while that response’s save
     release?.()
     expect(await sending).toMatchObject({ accepted: true })
   } finally { prototype.frame = frame; CodexProcess.prototype.write = write; release?.(); await f.cleanup() }
+})
+
+it('drains the Codex usage ledger on close when the last save of the thread store failed', async () => {
+  const f = await codexFixture()
+  const flushed = vi.spyOn(NativeUsage.prototype, 'flushed')
+  try {
+    await f.host.connect()
+    // Usage is written at most once a second while a reply streams, so what is paced waits for this drain.
+    const failed = Promise.reject(Object.assign(new Error('Synthetic full disk'), { code: 'ENOSPC' }))
+    failed.catch(() => undefined)
+    ;(f.adapter as unknown as { writing: Promise<void> }).writing = failed
+    flushed.mockClear()
+    await expect(f.adapter.closed()).rejects.toThrow('Synthetic full disk')
+    expect(flushed).toHaveBeenCalled()
+  } finally {
+    flushed.mockRestore()
+    ;(f.adapter as unknown as { writing: Promise<void> }).writing = Promise.resolve()
+    await f.cleanup()
+  }
 })

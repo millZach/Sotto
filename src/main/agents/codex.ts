@@ -1614,5 +1614,6 @@ export class CodexAppServerHost implements AgentHost {
     if (publish) this.emit()
   }
   /** Shutdown barrier for callers removing user data or replacing a host. */
-  async closed(): Promise<void> { await this.stopping; await this.frames; await this.writing; await this.usage.flushed() }
+  /** Waits for the CLI, its frames and the newest store write, and drains the usage ledger even when that write failed. */
+  async closed(): Promise<void> { await this.stopping; await this.frames; try { await this.writing } finally { await this.usage.flushed() } }
 }
