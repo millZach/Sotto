@@ -318,6 +318,7 @@ describe('WindowManager construction', () => {
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
+          webviewTag: true,
         },
       },
     ])
@@ -516,6 +517,7 @@ describe('WindowManager construction', () => {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        webviewTag: true,
       },
     })
     expect(options[0]).not.toHaveProperty('frame')

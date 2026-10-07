@@ -7,6 +7,8 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VisualToolServer } from './agents/visualTools'
+import { installVisualSandbox } from './agents/visualSandbox'
+import { VISUAL_SCHEME } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -759,6 +761,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
   agentHost.useThreadTools([hostSetupTools, visualTools])
+  // An interactive visual runs in a sealed page (ADR-0056): main serves it from this store, once per address.
+  const disposeVisualSandbox = await installVisualSandbox({ read: (threadId, visualId) => agentHost.visual(parseHostEntityKey(threadId)?.id ?? threadId, visualId),
+    enabled: () => workingCopySettings.visualsInThreads, mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
+    preloadDirectory: join(__dirname, '../preload') })
+  app.on('will-quit', disposeVisualSandbox)
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
@@ -1435,7 +1442,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 }
 
-registerModelSchemesAsPrivileged(protocol)
+// Electron takes one list of privileged schemes. An interactive visual's page is standard, so it has an origin to
+// seal, and nothing more: not secure, no fetch, no CORS, no service workers (ADR-0056).
+registerModelSchemesAsPrivileged({ registerSchemesAsPrivileged: schemes => protocol.registerSchemesAsPrivileged([
+  ...schemes as Parameters<typeof protocol.registerSchemesAsPrivileged>[0], { scheme: VISUAL_SCHEME, privileges: { standard: true } }]) })
 enableWasmThreadSupport(app.commandLine)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.

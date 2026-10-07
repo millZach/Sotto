@@ -455,6 +455,7 @@ describe('typed preload bridge', () => {
         'themes',
         'transcribe',
         'updateSettings',
+        'visuals',
         'canFrostWindow',
       ].sort(),
     )

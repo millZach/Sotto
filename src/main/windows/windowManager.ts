@@ -55,6 +55,8 @@ export interface WindowWebPreferences {
   readonly nodeIntegration: false
   readonly sandbox: true
   readonly backgroundThrottling?: false
+  /** The main window alone: an interactive visual's sealed page is a `<webview>` guest, admitted only by main (ADR-0056). */
+  readonly webviewTag?: true
 }
 
 export interface WindowConstructorOptions {
@@ -340,6 +342,7 @@ function securePreferences(
     contextIsolation: true,
     nodeIntegration: false,
     sandbox: true,
+    ...(role === 'main' ? { webviewTag: true } as const : {}),
   }
 }
 

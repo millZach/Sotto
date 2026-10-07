@@ -25,7 +25,7 @@ export function hostClientBridge<T extends object>(bridge: T): T {
   }
   // A remote host's thread has no cloud iPhone here (ADR-0047): wrapped like `browser`, so a host-scoped
   // thread ID reaching this local bridge is refused the same way.
-  const domains = new Set(['agents', 'terminal', 'terminals', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory'])
+  const domains = new Set(['agents', 'terminal', 'terminals', 'browser', 'cloudIphone', 'gitChanges', 'files', 'subagents', 'requestDrafts', 'memory', 'visuals'])
   // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
   // October 5 amendment): these calls keep another host's key. Every other call naming another host is refused here.
   const hostReads: Readonly<Record<string, ReadonlySet<string>>> = {

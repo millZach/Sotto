@@ -10,6 +10,7 @@ import { REQUEST_DRAFT_GET, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRA
 import { agentSkillCatalogSchema } from '../shared/agentSkills'
 import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatPromptCopySchema, chatPromptResultSchema, type ChatPromptBridge } from '../shared/chatPrompts'
 import { contextBridge, ipcRenderer } from 'electron'
+import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -350,6 +351,10 @@ export function createSottoBridge(
       page: request => invokeParsed(renderer, SUBAGENTS_PAGE, subagentPageSchema, subagentPageRequestSchema.parse(request)),
       assignments: request => invokeParsed(renderer, SUBAGENTS_ASSIGNMENTS, subagentAssignmentsPageSchema, subagentAssignmentsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, SUBAGENTS_CHANGED, subagentChangeSchema, listener),
+    }),
+    // An interactive visual's sealed page (ADR-0056): the window names the visual, main reads the page from its store.
+    visuals: Object.freeze<VisualPagesBridge>({
+      open: request => invokeParsed(renderer, VISUAL_PAGE_OPEN, visualPageResultSchema, visualPageRequestSchema.parse(request)),
     }),
     files: Object.freeze<FilesBridge>({
       list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),
