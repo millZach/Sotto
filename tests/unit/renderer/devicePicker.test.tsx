@@ -19,6 +19,8 @@ it('gives the reason a device cannot be used, a saved host first', () => {
   expect(unavailableReason(omarchy, [], NOW)).toBe('Offline, last seen 8 days ago')
   expect(unavailableReason({ ...omarchy, tailscale: { online: false, ssh: true } }, [], NOW)).toBe('Offline')
   expect(unavailableReason({ ...omarchy, unavailable: 'phone' }, [], NOW)).toBe('A phone cannot run the host')
+  expect(unavailableReason({ ...omarchy, unavailable: 'this-computer' }, [], NOW)).toBe('This computer runs its own local host')
+  expect(unavailableReason({ ...omarchy, unavailable: 'git-service' }, [], NOW)).toBe('A Git service, not a computer')
   expect(unavailableReason(omarchy, [{ name: 'Laptop box', host: 'Omarchy' }], NOW)).toBe('Already added as Laptop box')
   expect(unavailableReason({ target: 'forge', name: 'forge', sshConfiguration: true, names: ['forge'] }, [{ name: 'Other', host: 'spark' }], NOW)).toBeUndefined()
 })
