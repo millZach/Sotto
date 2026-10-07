@@ -204,8 +204,9 @@ export function DictateRoom({
       if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
       if (Date.now() - shownAt < ESCAPE_GRACE_MS) return
       const target = event.target instanceof Element ? event.target : null
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return
+      // An open dialog, ARIA or native (the folder browser is a <dialog>), owns Escape.
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog')) return
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]') !== null) return
       // Decide once every other handler has had the press: one that claimed it,
       // such as the client-update card closing, keeps it.
       setTimeout(() => {

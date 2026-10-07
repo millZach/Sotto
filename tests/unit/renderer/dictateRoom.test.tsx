@@ -235,8 +235,17 @@ describe('DictateRoom', () => {
     await user.keyboard('{Escape}')
     expect(onDismiss).not.toHaveBeenCalled()
 
-    // A part of the window that claims Escape, as the client-update card does, keeps it.
     const settle = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    // A native <dialog>, such as the Add project folder browser, owns Escape too.
+    rerender(<>
+      <dialog open aria-label="Choose a folder" />
+      <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
+    </>)
+    await user.keyboard('{Escape}')
+    await settle()
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // A part of the window that claims Escape, as the client-update card does, keeps it.
     rerender(<>
       <button type="button" onKeyDown={(event) => { if (event.key === 'Escape') event.preventDefault() }}>Put away update</button>
       <DictateRoom {...baseProps} onRetry={vi.fn(async () => undefined)} onDismiss={onDismiss} dictation={error} />
