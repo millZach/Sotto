@@ -32,6 +32,7 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
+import { ReadsBeforeSend } from './readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
 import { markSendStage } from './sendStages'
@@ -166,6 +167,8 @@ export class CodexAppServerHost implements AgentHost {
   /** Whether this connection's Codex answers `thread/turns/list` as Sotto asks for it; one that cannot says so once. */
   private turnsListSupported = true
   private readonly revisions = new Map<string, number>()
+  /** Threads the coordinator just read for a send (#765): that read's newest-turn check stands for the send's own. */
+  private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly dispatching = new Set<string>()
   private readonly runningTurns = new Map<string, string>()
   private readonly terminalTurns = new Set<string>()
@@ -512,7 +515,7 @@ export class CodexAppServerHost implements AgentHost {
     for (const alias of Object.values(this.aliases)) if (alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) this.providerSessionIds.set(alias.codexThreadId, id)
-    this.threads.clear(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.turnsListSupported = true
+    this.threads.clear(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.readsBeforeSend.clear(); this.turnsListSupported = true
     this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
@@ -660,7 +663,8 @@ export class CodexAppServerHost implements AgentHost {
   async sendPersonalConversation(command: Extract<AgentHostCommand, { type: 'send' }>, memories: readonly { id: string; content: string }[]): Promise<AgentHostResult> {
     const alias = this.aliases[command.threadId]
     if (alias?.kind !== 'personal') throw new Error('This is not an owned personal conversation.')
-    await this.refreshThread(command.threadId, { beforeSend: true })
+    // This read stands for the send's own, below, while nothing moves in between (#765).
+    await this.sync(command.threadId, { beforeSend: true, sendMessageId: command.messageId })
     const thread = this.ensureThread(command.threadId)
     if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for the current turn and answer its requests first.')
     // ThreadResumeParams.developerInstructions is verified against installed 0.154.
@@ -704,7 +708,7 @@ export class CodexAppServerHost implements AgentHost {
   async snapshot(): Promise<AgentHostSnapshot> {
     await this.pollSessionLogs()
     const pending = new Set([...Object.keys(this.aliases).filter(id => this.aliases[id]!.pendingSettings), ...this.unconfirmedDispatchSessionIds])
-    if (this.state.connected) await Promise.all([...pending].map(id => this.refreshThread(id).catch(() => undefined)))
+    if (this.state.connected) await Promise.all([...pending].map(id => this.sync(id).catch(() => undefined)))
     return this.current()
   }
   /**
@@ -724,9 +728,20 @@ export class CodexAppServerHost implements AgentHost {
   }
   /**
    * Read the thread back from Codex. The read before a send first asks only for the newest turn
-   * (`confirmNewestTurn`) and reads the whole transcript when that cannot show nothing changed.
+   * (`confirmNewestTurn`) and reads the whole transcript when that cannot show nothing changed. A read for a named
+   * send stands for that send's own read while the thread has not moved since (#765).
    */
   async refreshThread(id: string, purpose: ThreadReadPurpose = {}): Promise<AgentHostSnapshot> {
+    await this.sync(id, purpose)
+    return this.current(purpose.historyFromEvents)
+  }
+  /** How far this thread has moved, as a send compares it with the read the coordinator made for it. */
+  private readState(id: string): string { return `${this.generation}:${this.revisions.get(id) ?? 0}` }
+  /**
+   * Bring a thread up to date from Codex, as Claude's and Grok's `sync` do: `refreshThread`'s read, without the
+   * snapshot nobody inside this adapter reads.
+   */
+  private async sync(id: string, purpose: ThreadReadPurpose = {}): Promise<void> {
     if (!this.aliases[id]) throw new Error('That Codex thread is unavailable.')
     const generation = this.generation
     const work = (this.threadReads.get(id) ?? Promise.resolve()).catch(() => undefined).then(async () => {
@@ -762,7 +777,10 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation || !this.state.connected) throw new Error('Codex connection changed while reading the thread.')
     })
     this.threadReads.set(id, work)
-    try { await work; return this.current(purpose.historyFromEvents) }
+    try {
+      await work
+      this.readsBeforeSend.mark(id, purpose)
+    }
     catch (error) {
       // A failed read cannot hide native-authored input. Without corroboration,
       // buffered rows remain external and management must stop for review.
@@ -851,7 +869,7 @@ export class CodexAppServerHost implements AgentHost {
     if (!this.aliases[id]) return
     await this.resume(id)
     if (this.histories.has(id) || !this.state.connected) return
-    try { await this.refreshThread(id) }
+    try { await this.sync(id) }
     catch (error) {
       const thread = this.ensureThread(id)
       thread.historyStatus = 'error'; thread.historyError = 'Codex history could not be read. Refresh this thread before replying.'
@@ -1113,7 +1131,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   async rollbackThread(id: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     if (!Number.isInteger(removedUserMessages) || removedUserMessages < 1 || removedUserMessages > expectedUserMessageIds.length) throw new Error('Choose a complete native turn to rewind.')
-    await this.refreshThread(id)
+    await this.sync(id)
     const alias = this.aliases[id]!, thread = this.ensureThread(id)
     if (!this.rollbackCapability(id).supported || alias.pendingRollback || alias.pendingSettings || this.unconfirmedDispatchSessionIds.has(id)
       || this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Resolve pending Codex work before reverting.')
@@ -1196,6 +1214,8 @@ export class CodexAppServerHost implements AgentHost {
       } else {
         const id = command.threadId; const alias = this.aliases[id]
         if (!alias) throw new Error('This Codex provider session is unknown.')
+        // The coordinator's read before this send stands for the send's own (#765).
+        const readForSend = this.readsBeforeSend.take(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
@@ -1322,7 +1342,12 @@ export class CodexAppServerHost implements AgentHost {
           })
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
-          try { await this.refreshThread(id, { beforeSend: true }) }
+          // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
+          // would have queued behind, so no read applies the thread across turn/start. It reads after all when the
+          // thread moved since that read, by a read in flight or the resume above, or when the read in flight
+          // failed, so a thread Codex cannot read is refused as it was before #765.
+          const covered = readForSend() && await (this.threadReads.get(id)?.then(() => true, () => false) ?? true) && readForSend()
+          try { if (!covered) await this.sync(id, { beforeSend: true }) }
           catch (error) { throw error instanceof Uncertain ? new Error('Codex history could not be verified before sending the prompt.', { cause: error }) : error }
           if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) {
             throw new Error('The thread changed in Codex before Sotto could reply. Review its manual control state.')
