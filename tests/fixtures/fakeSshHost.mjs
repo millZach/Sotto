@@ -17,7 +17,12 @@ async function lock() {
   for (let attempt = 0; attempt < 2; attempt++) {
     try { const handle = await fs.open(lockPath, 'wx'); if (process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS) await delay(Number(process.env.FAKE_HOST_LOCK_WRITE_DELAY_MS)); await handle.writeFile(JSON.stringify({ pid: process.pid, nonce: String(Math.random()) })); await handle.close(); return true }
     catch (error) { if (error.code !== 'EEXIST') throw error }
-    try { const lease = JSON.parse(await fs.readFile(lockPath, 'utf8')); if (!(lease.boot && process.env.FAKE_HOST_BOOT && lease.boot !== process.env.FAKE_HOST_BOOT) && alive(lease.pid)) return false } catch { return false }
+    try {
+      const lease = JSON.parse(await fs.readFile(lockPath, 'utf8'))
+      // This process calls lock only once. Its own PID in an existing file belongs to an earlier instance whose PID
+      // was reused, as Windows can do immediately after SIGTERM terminates it without running its cleanup handler.
+      if (lease.pid !== process.pid && !(lease.boot && process.env.FAKE_HOST_BOOT && lease.boot !== process.env.FAKE_HOST_BOOT) && alive(lease.pid)) return false
+    } catch { return false }
     await fs.rm(lockPath, { force: true })
   }
   return false

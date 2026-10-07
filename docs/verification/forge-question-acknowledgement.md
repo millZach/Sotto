@@ -177,6 +177,12 @@ Evidence: [typed answer with keyboard focus on Send](../../artifacts/forge-quest
 
 These are real desktop and host/socket flows with scripted provider results. They do not establish live Forge or native provider compatibility. The installed laptop app and active Forge host were not changed.
 
+## Final Windows fixture diagnosis
+
+The complete two-worker run on `f2bf9134` finished with 8,338 passed, two failed and 167 skipped across 610 files in 1223.86 seconds. It is not a green gate. The owned-worktree case reported `error launching git: Access is denied.` Both exact variants and the entire 28-case file subsequently passed unchanged. The error phrase is present in Git for Windows' launcher; the exact denied operation was not reproduced, and no matching security-block event was found. No retry, timeout or product workaround was added.
+
+The other failure occurred during boot fixture setup, before the restart-refusal assertion: the new unit host timed out and the prior host was restored. A deterministic regression reproduces that exact outcome by placing a stale lease with the new fixture process's own PID before its first lock attempt. Windows forced termination can leave a lease behind, and a new process can reuse its PID. The fixture now reclaims that earlier instance's lease while refusing another live holder. The regression failed with the same timeout before the correction, then passed alongside an actual second-process collision and the original restart-refusal case. The full boot file passed 35 cases with one skipped, and three neighboring launch-lease cases passed. Typecheck, full lint, notices and independent specification and standards reviews passed. Production code and deadlines are unchanged. Final complete local and CI results are recorded on PR #796 before merge.
+
 ## Limits and delivery
 
 Both desktop and host need the optional `answer-receipts` capability. Older hosts still accept authorized answers but cannot supply this evidence. Previously saved drafts without a submission identity, and receipts evicted from the host's bounded history of 128 accepted answers, remain recoverable instead of being guessed delivered.
