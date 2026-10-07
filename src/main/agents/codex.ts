@@ -1,7 +1,7 @@
 import { preserveLegacyAliases } from './legacyAliases'
 import { sameMessageContent } from '../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
-import type { ScopedThreadTools } from './threadToolServer'
+import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
@@ -54,14 +54,17 @@ const configArguments = Object.entries({ model_provider: 'openai', approval_poli
   approvals_reviewer: threadPolicy.approvalsReviewer, sandbox_mode: threadPolicy.sandbox }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`])
 // Codex 0.156.1 keeps request_user_input in Default mode behind this feature.
 // Set it on creation and resume, without changing the user's global Codex config.
-async function threadConfig(tools: BrowserAgentTools | undefined, threadId: string, reasoningEffort?: string, setupTools?: ScopedThreadTools): Promise<{ config: Record<string, unknown> }> {
+async function threadConfig(tools: BrowserAgentTools | undefined, threadId: string, reasoningEffort?: string, threadTools: readonly ScopedThreadTools[] = []): Promise<{ config: Record<string, unknown> }> {
   const browser = await browserCodexConfig(tools, threadId, reasoningEffort)
   const config: Record<string, unknown> = { ...(browser.config as Record<string, unknown> | undefined), 'features.default_mode_request_user_input': true }
-  // A host setup thread also gets the host setup tools while its setup runs (ADR-0035). Like the browser's, they carry
-  // no native prompt: adding asks the user in the thread itself. A check or add can wait 5 minutes for Tailscale.
-  const setup = await setupTools?.mcpServer(threadId)
-  if (setup) config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), [setup.name]: { url: setup.url, tool_timeout_sec: 600, default_tools_approval_mode: 'approve',
-    http_headers: Object.fromEntries(setup.headers.map(header => [header.name, header.value])) } }
+  // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs (ADR-0035)
+  // and the visual tool while visuals are on (ADR-0056). Like the browser's, they carry no native prompt: adding a host
+  // asks the user in the thread itself, and a visual changes nothing outside it. A host check can wait 5 minutes.
+  for (const { server, tools: entry } of await scopedThreadServers(threadTools, threadId)) {
+    config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), [server.name]: { url: server.url,
+      ...(entry.timeoutMs === undefined ? {} : { tool_timeout_sec: Math.ceil(entry.timeoutMs / 1000) }), default_tools_approval_mode: 'approve',
+      http_headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])) } }
+  }
   return { config }
 }
 const questionInstructions = 'Ask actionable clarification questions through request_user_input so Sotto can show its question panel. Use it for questions with choices and free-text questions, including while continuing independent work. Do not leave questions that need a user answer only in commentary or a final message. A suggested choice is not an answer. If an answer is required before an action, wait for the user before that action. Permission requests still use the native approval flow.'
@@ -144,8 +147,8 @@ export interface CodexAppServerHostOptions {
 export class CodexAppServerHost implements AgentHost {
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
-  private hostSetupTools: ScopedThreadTools | undefined
-  useHostSetupTools(tools: ScopedThreadTools): void { this.hostSetupTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -876,7 +879,7 @@ export class CodexAppServerHost implements AgentHost {
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
         ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
-        ...await threadConfig(this.browserTools, id, alias.pendingSettings ? undefined : alias.reasoningEffort, this.hostSetupTools),
+        ...await threadConfig(this.browserTools, id, alias.pendingSettings ? undefined : alias.reasoningEffort, this.threadTools),
         developerInstructions: await this.projectInstructions(alias.cwd) }, async value => {
       if (alias.pendingSettings) return this.applySettings(id, value)
       this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
@@ -1182,7 +1185,7 @@ export class CodexAppServerHost implements AgentHost {
         this.reaper.touch(command.threadId)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions,
-          ...runtimePolicy(command.runtimeMode), ...await threadConfig(this.browserTools, command.threadId, command.reasoningEffort, this.hostSetupTools), ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...runtimePolicy(command.runtimeMode), ...await threadConfig(this.browserTools, command.threadId, command.reasoningEffort, this.threadTools), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'

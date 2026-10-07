@@ -35,6 +35,36 @@ describe('parseSshConfig', () => {
   it('expands %h in a HostName to the alias', () => {
     expect(parseSshConfig('Host lab\n  HostName %h.example.net\n').hosts).toEqual([{ alias: 'lab', hostname: 'lab.example.net' }])
   })
+  it('keeps a jump, counts any ProxyCommand but none as one, and lets the first one win', () => {
+    const parsed = parseSshConfig([
+      'Host lan',
+      '  HostName 192.168.1.10',
+      '  ProxyJump bastion',
+      'Host forwarded',
+      '  ProxyCommand ssh -q -W %h:%p bastion',
+      'Host quoted',
+      '  ProxyCommand "ssh -J bastion %h"',
+      'Host path',
+      '  ProxyCommand /usr/bin/ssh -W %h:%p user@bastion',
+      'Host proxied',
+      '  ProxyCommand nc -X connect %h %p',
+      'Host direct',
+      '  ProxyCommand none',
+      '  ProxyJump bastion',
+      'Host off',
+      '  ProxyJump none',
+      '  ProxyJump bastion',
+    ].join('\n'))
+    expect(parsed.hosts).toEqual([
+      { alias: 'lan', hostname: '192.168.1.10', jump: true },
+      { alias: 'forwarded', jump: true },
+      { alias: 'quoted', jump: true },
+      { alias: 'path', jump: true },
+      { alias: 'proxied', jump: true },
+      { alias: 'direct' },
+      { alias: 'off' },
+    ])
+  })
 })
 
 describe('parseKnownHosts', () => {
@@ -99,5 +129,14 @@ describe('discoverSshHosts', () => {
     await write('.colima/work/ssh_config', 'Host colima-work\n')
     await write('.colima/_lima/ssh_config.bak', 'Host not-included\n')
     expect((await discoverSshHosts({ home })).map(item => item.alias)).toEqual(['colima', 'colima-work', 'forge'])
+  })
+
+  it('remembers a jump on the alias, and not a direct connection to the same address', async () => {
+    home = await mkdtemp(join(tmpdir(), 'sotto-ssh-suggestions-'))
+    await write('.ssh/config', 'Host lan\n  HostName 192.168.1.10\n  User zach\n  ProxyJump bastion\nHost desk\n  HostName 192.168.1.10\n')
+    expect(await discoverSshHosts({ home })).toEqual([
+      { alias: 'lan', source: 'config', detail: 'zach@192.168.1.10', hostname: '192.168.1.10', jump: true },
+      { alias: 'desk', source: 'config', detail: '192.168.1.10', hostname: '192.168.1.10' },
+    ])
   })
 })

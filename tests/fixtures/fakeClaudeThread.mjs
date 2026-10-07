@@ -160,6 +160,13 @@ const act = () => {
     const request = { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: action.payload }
     pending.set(action.requestId, request); output({ type: 'control_request', request_id: action.requestId, request }); return
   }
+  // One API message of a turn that goes on, as Claude writes before a tool call: the next message has its own ID.
+  if (action.type === 'say') {
+    const id = randomUUID()
+    output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
+    output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
+    output(persist({ type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } })); return
+  }
   if (action.type === 'complete') { void complete(action); return }
   if (action.type === 'permission' || action.type === 'question') {
     const request = { subtype: 'can_use_tool', tool_name: action.type === 'question' ? 'AskUserQuestion' : 'Bash', tool_use_id: randomUUID(), input: action.type === 'question' ? { questions: [{ question: action.text, header: 'Choice', options: [{ label: 'Blue', description: 'Blue color' }], multiSelect: false }] } : { command: 'npm run build', description: action.text } }

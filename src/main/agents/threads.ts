@@ -135,14 +135,18 @@ export class SottoThreadHost implements AgentHost {
       mcpServer: id => tools.mcpServer(thread(id)),
     })
   }
-  /** A native session asks for the host setup tools by its own ID; only its Sotto thread's setup can be given them. */
-  useHostSetupTools(tools: ScopedThreadTools): void {
-    this.inner.useHostSetupTools?.({ name: tools.name, definitions: tools.definitions,
-      mcpServer: async id => {
+  /**
+   * A native session asks for Sotto's scoped tools by its own ID; each server answers for its Sotto thread alone,
+   * bound or held by an early start until its first send.
+   */
+  useThreadTools(tools: readonly ScopedThreadTools[]): void {
+    this.inner.useThreadTools?.(tools.map(entry => ({ name: entry.name, definitions: entry.definitions,
+      ...(entry.timeoutMs === undefined ? {} : { timeoutMs: entry.timeoutMs }),
+      mcpServer: async (id: string) => {
         const threadId = this.threadFor(id)
-        return threadId ? tools.mcpServer(threadId) : undefined
+        return threadId ? entry.mcpServer(threadId) : undefined
       },
-    })
+    })))
   }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()

@@ -1,6 +1,6 @@
 import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
-import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
+import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { isDeepStrictEqual } from 'node:util'
@@ -171,8 +171,10 @@ const SPARE_FRAMES = 64
  * keyed by the session ID that send will create the thread under, holds the Claude session ID and the settings it was
  * started with, and is the thread's only once that send adopts it.
  */
-type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames: ClaudeFrame[]; setupTools: boolean; exited: boolean
+type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames: ClaudeFrame[]; scopedTools: string; exited: boolean
   runtime?: Runtime; ready?: Promise<{ runtime: Runtime; initialized: ClaudeFrame }> }
+/** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
+const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number }
 
@@ -193,8 +195,8 @@ interface Replay {
 export class ClaudeStreamJsonHost implements AgentHost {
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
-  private hostSetupTools: ScopedThreadTools | undefined
-  useHostSetupTools(tools: ScopedThreadTools): void { this.hostSetupTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -1044,12 +1046,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     const browser = await this.browserTools?.mcpServer(id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    // A host setup thread also gets the host setup tools, while its setup runs; every other thread gets none.
-    const setup = await this.hostSetupTools?.mcpServer(id)
+    // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs, and the
+    // visual tool while visuals are on.
+    const scoped = await scopedThreadServers(this.threadTools, id)
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    if (spare) spare.setupTools = !!setup
+    if (spare) spare.scopedTools = scopedNames(scoped)
     const servers = [...(browser ? [{ server: browser, definitions: this.browserTools?.definitions ?? [] }] : []),
-      ...(setup ? [{ server: setup, definitions: this.hostSetupTools?.definitions ?? [] }] : [])]
+      ...scoped.map(({ server, tools }) => ({ server, definitions: tools.definitions }))]
+    // The longest wait any offered server needs: a host setup check can wait 5 minutes, a browser action 6.
+    const toolTimeoutMs = Math.max(0, ...(browser ? [360_000] : []), ...scoped.map(({ tools }) => tools.timeoutMs ?? 0))
     const mcpConfig = servers.length ? join(this.options.userDataPath, `claude-mcp-${randomUUID()}.json`) : undefined
     if (mcpConfig) {
       try {
@@ -1064,7 +1069,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(setup ? { MCP_TOOL_TIMEOUT: '600000' } : browser ? { MCP_TOOL_TIMEOUT: '360000' } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -1133,7 +1138,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const cwd = await existingWorkingDirectory(draft.workingDirectory)
     if (generation !== this.generation || this.aliases[id] || this.spares.has(id)) return
     const settings = settingsOf(draft)
-    const spare: Spare = { sessionId: randomUUID(), cwd, settings, frames: [], setupTools: false, exited: false }
+    const spare: Spare = { sessionId: randomUUID(), cwd, settings, frames: [], scopedTools: '', exited: false }
     this.spares.set(id, spare)
     this.reaper.touch(id)
     spare.ready = this.spawn(id, { sessionId: spare.sessionId, cwd, ...settings }, false, spare)
@@ -1159,11 +1164,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.spares.get(id) !== spare) return undefined
     this.spares.delete(id)
     if (!started) return undefined
-    const setup = !!await this.hostSetupTools?.mcpServer(id)
+    const scoped = scopedNames(await scopedThreadServers(this.threadTools, id))
     // It is in neither map now, so a disconnect meanwhile did not stop it; this does, and the start then reports the cancel.
     if (generation !== this.generation) { await this.stopSpare(id, spare, started.runtime); return undefined }
-    // Checked again: a client update, or the host setup tools coming or going, can make a spare unfit after creation chose it.
-    if (spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || setup !== spare.setupTools
+    // Checked again: a client update, or one of Sotto's scoped servers coming or going for the thread, can make a spare unfit after creation chose it.
+    if (spare.sessionId !== alias.sessionId || !spareFits(spare, alias.cwd, settingsOf(alias)) || scoped !== spare.scopedTools
       || started.runtime.clientRevision !== this.clientRevision || this.runtimes.has(id)) {
       await this.stopSpare(id, spare, started.runtime)
       return undefined

@@ -45,7 +45,7 @@ describe.each(factories)('%s host setup tools', (provider, factory) => {
     const server = new HostSetupToolServer({ admits: threadId => threadId === setupThread, run }); cleanup.push(() => server.close())
     const registry = new ThreadRegistry(fixture.root)
     const host = new SottoThreadHost(provider, fixture.host, registry)
-    host.useHostSetupTools(server)
+    host.useThreadTools([server])
     await host.connect()
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Host setup', path: fixture.root })
     const create = async (threadId: string): Promise<void> => {
@@ -99,7 +99,7 @@ describe('grok host setup admission', () => {
     const fixture = await grokFixture(); cleanup.push(fixture.cleanup)
     const threadId = randomUUID()
     const server = new HostSetupToolServer({ admits: id => id === threadId, run: async () => ({ result: {} }) }); cleanup.push(() => server.close())
-    fixture.host.useHostSetupTools!(server)
+    fixture.host.useThreadTools!([server])
     await fixture.host.connect()
     await fixture.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Host setup', path: fixture.root })
     await fixture.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: fixture.projectId, title: 'Set up forge', modelId: fixture.modelId })

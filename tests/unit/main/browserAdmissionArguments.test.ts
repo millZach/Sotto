@@ -10,7 +10,7 @@ import { browserToolDefinitions } from '../../../src/main/tools/browserAgentTool
  */
 describe('browser admission carries no native prompt', () => {
   it('gives Grok no allow rule, which it would not apply to use_tool', () => {
-    // The adapter answers Grok's prompt for this thread's own browser tools instead (grokBrowserAdmission).
+    // The adapter answers Grok's prompt for this thread's own browser tools instead (grokToolAdmission).
     const args = grokArguments()
     expect(args).not.toContain('--allow')
     expect(args.join(' ')).not.toContain('MCPTool(')

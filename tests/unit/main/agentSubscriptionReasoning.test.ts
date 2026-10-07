@@ -62,6 +62,20 @@ describe('Sotto subscription reasoning integration', () => {
     expect(f.credentials.has('reasoning')).toBe(false)
   })
 
+  it('supervises from the agent\'s own words, leaving a visual out', async () => {
+    const f = await fixture()
+    f.configuration.reasoning = 'claude'
+    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { claude: f.client })
+    const visual = { id: 'v1', title: 'Flow', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
+    await reasoner.decide('Finish the assigned change.', { id: 'thread', title: 'Feature', projectId: 'project', modelId: 'coding-model', status: 'idle', requests: [], messages: [
+      { id: 'u1', role: 'user', text: 'Explain the flow.', createdAt: '2026-10-06T00:00:00.000Z' },
+      { id: 'a1', role: 'assistant', text: 'Here is the flow.', createdAt: '2026-10-06T00:00:01.000Z' },
+      { id: 'visual:v1', role: 'assistant', text: '**Flow**\n\nThe visual is in Sotto on your computer.', createdAt: '2026-10-06T00:00:02.000Z', visual },
+    ] })
+    const sent = f.client.complete.mock.calls[0]![1] as { messages: { id: string }[] }
+    expect(sent.messages.map(message => message.id)).toEqual(['u1', 'a1'])
+  })
+
   it('does not use a saved API key or another client after a subscription error', async () => {
     const f = await fixture()
     await f.credentials.set('reasoning', 'fixture-api-key')

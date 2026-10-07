@@ -7,6 +7,7 @@ import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
+import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -159,7 +160,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -751,7 +752,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.hostSetupTools = hostSetupTools
   hostSetup.useTools(threadId => hostSetupTools.revoke(threadId))
   providerJobs.useTools(threadId => hostSetupTools.revoke(threadId))
-  agentHost.useHostSetupTools(hostSetupTools)
+  // Let an agent draw a visual in its thread (ADR-0056): every admitted launch gets the tool while the switch is on, read live.
+  const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
+    admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
+  quitHandles.visualTools = visualTools
+  agentHost.useThreadTools([hostSetupTools, visualTools])
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
@@ -1377,6 +1382,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
         const request = e2eHostSetupToolSchema.parse(payload)
         return hostSetupTools.call(hostSetup.threadId() ?? providerJobs.threadId() ?? '', request.name, {})
+      })
+      ipcMain.handle(E2E_VISUAL_TOOL_CHANNEL, (event, payload: unknown) => {
+        if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+        const request = e2eVisualToolSchema.parse(payload)
+        // The window names a thread by its host-qualified ID; the tool hears the Sotto thread, as a provider's call does.
+        return visualTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, VISUALIZE_TOOL, request.arguments)
       })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
