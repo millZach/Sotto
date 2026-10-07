@@ -65,9 +65,11 @@ describe('OpenRouterTranscriber', () => {
   it('bounds stalled IPC and requests cancellation', async () => {
     vi.useFakeTimers()
     const { client, bridge } = harness({ transcribe: vi.fn(() => new Promise<never>(() => undefined)) })
-    const pending = client.transcribe(options())
+    const request = options()
+    const pending = client.transcribe(request)
     const rejection = expect(pending).rejects.toMatchObject({ reason: 'timeout' })
-    await vi.advanceTimersByTimeAsync(9_600)
+    // The watchdog fires one second after the request's own deadline.
+    await vi.advanceTimersByTimeAsync(Math.ceil(transcriptionTimeoutMs(request.audio.length / TRANSCRIPTION_SAMPLE_RATE)) + 1_000)
     await rejection
     expect(bridge.cancelTranscription).toHaveBeenCalledWith('request')
     client.dispose()

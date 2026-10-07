@@ -84,7 +84,7 @@ If a key saved by an older version of Sotto cannot be moved into the credential 
 
 Your data leaves your computer only when a feature you use needs it, and only to that feature's service:
 
-- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. OpenRouter charges about $0.10 per hour of audio.
+- **Dictation** goes to OpenRouter (`openrouter.ai`) on your key, where Microsoft MAI-Transcribe-2 transcribes it. Audio is never saved to disk. When transcription fails, the recording stays in memory until you try again or discard it. OpenRouter charges about $0.10 per hour of audio.
 - **Optional AI cleanup** sends the finished text to OpenRouter too. It is off until you turn it on.
 - **Your threads** go to the agent's own provider, under that provider's account and data policy. A Sotto host on another machine starts every client signed in there when the host starts, and each talks to its own provider under the account signed in on that machine.
 - **Screenshots** you attach to a thread, or add from Sotto's browser as feedback, are scaled down, in the same format, to 2576 pixels on their longer side before they go anywhere, because that is the most any model Sotto sends them to reads: Claude 4.7 and later read up to 2576 and Codex up to 2048. The pixels past it would cost transfer and storage and change nothing the model reads. Smaller images, animated ones, GIFs, and any the smaller copy would not make smaller in bytes, go as you attached them; nothing is scaled up. **Photos** from the iPhone app are scaled to the same bound on the phone and drawn again without their location or camera details before they go, to the computer that runs the thread only.

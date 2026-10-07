@@ -444,6 +444,10 @@ export function createSottoWidgetBridge(
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'stop' }),
     requestCancel: () =>
       invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'cancel' }),
+    requestRetry: () =>
+      invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'retry' }),
+    requestDismiss: () =>
+      invokeParsed(renderer, DICTATION_REQUEST, commandResultSchema, { type: 'dismiss' }),
     setPresentation: async (payload: WidgetPresentationPayload) =>
       invokeParsed(
         renderer,

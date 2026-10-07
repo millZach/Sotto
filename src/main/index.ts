@@ -958,10 +958,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 
   // Hosted transcription stays offline in E2E runs; the renderer uses its fake transcriber.
   // Each failed request records its reason and HTTP status, so a lost dictation can be
-  // told apart afterwards: out of credit, rate limited, or a service error.
+  // told apart afterwards: out of credit, rate limited, or a service error. A rate limit
+  // also records whether the provider or OpenRouter set it, and a request that was rate
+  // limited and then went through is recorded too, so the retries can be seen working.
+  const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
   const transcription = new OpenRouterTranscriptionService({
     getSettings: () => settings.forFormatting(),
-    onFailure: diagnosticsAppender('transcription-diagnostics.jsonl'),
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
     ...(e2eConfiguration === null
       ? {}
       : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
@@ -1262,7 +1266,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           show: () => windows.showMain(),
           hide: () => windows.hideMain(),
           minimize: () => windows.minimizeMain(),
-          reload: () => windows.reloadMain(),
+          // A reload ends the main renderer's dictation session as a crash does,
+          // so the widget returns to idle instead of offering an error, or a
+          // kept recording, that no controller holds any more.
+          reload: () => {
+            dictationLifecycle.rendererProcessGone('main')
+            return windows.reloadMain()
+          },
           toggleMaximize: () => windows.toggleMaximizeMain(),
           isMaximized: () => windows.isMainMaximized(),
           quit: () => app.quit(),

@@ -193,6 +193,22 @@ describe('dictation reducer', () => {
     }
   })
 
+  it('keeps a failed recording and returns only that kept session to processing on Try again', () => {
+    const processing = reduceDictation(startListening(), { type: 'STOPPED', sessionId: 'current' })
+    const kept = reduceDictation(processing, {
+      type: 'FAILED', sessionId: 'current', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'Kept.', kept: true,
+    })
+    expect(kept).toEqual({ status: 'error', sessionId: 'current', code: 'TRANSCRIPTION_RATE_LIMITED', message: 'Kept.', kept: true })
+
+    expect(reduceDictation(kept, { type: 'RETRIED', sessionId: 'current', startedAt: 1_000 }))
+      .toEqual({ status: 'processing', sessionId: 'current', startedAt: 1_000 })
+    expect(reduceDictation(kept, { type: 'RETRIED', sessionId: 'stale', startedAt: 1_000 })).toBe(kept)
+
+    const plain = reduceDictation(processing, { type: 'FAILED', sessionId: 'current', code: 'NO_SPEECH', message: 'None.' })
+    expect(plain).not.toHaveProperty('kept')
+    expect(reduceDictation(plain, { type: 'RETRIED', sessionId: 'current', startedAt: 1_000 })).toBe(plain)
+  })
+
   it('ignores mismatched session events with the exact state reference', () => {
     const listening = startListening()
     const processing = reduceDictation(listening, { type: 'STOPPED', sessionId: 'current' })
