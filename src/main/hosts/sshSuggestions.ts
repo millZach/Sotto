@@ -19,7 +19,8 @@ const SUGGESTION_LIMIT = 200
 /** One Include pattern expands to at most this many files, however many folders its wildcards match. */
 const EXPANSION_LIMIT = 256
 
-export interface SshConfigHost { readonly alias: string; readonly hostname?: string; readonly user?: string }
+/** An alias from one configuration file. `jump` means SSH reaches its `HostName` through a jump host. */
+export interface SshConfigHost { readonly alias: string; readonly hostname?: string; readonly user?: string; readonly jump?: boolean }
 /** `includes` are the `Include` patterns in order; `includeAt` says how many of `hosts` were written before each. */
 export interface ParsedSshConfig { readonly hosts: readonly SshConfigHost[]; readonly includes: readonly string[]; readonly includeAt: readonly number[] }
 
@@ -36,13 +37,18 @@ function directive(line: string): { key: string; args: string[] } | null {
   return { key: match[1]!.toLowerCase(), args }
 }
 
+/** `none` turns a jump off, as OpenSSH does for both `ProxyJump` and `ProxyCommand`. */
+const jumpOff = (value: string): boolean => value.toLowerCase() === 'none'
+
 /**
  * One configuration file's aliases and the `Include` patterns it names, in order. A `Host` line's
- * `HostName` and `User` are kept for the aliases it names, the first value winning as it does in
- * OpenSSH; a `Match` block names no alias, so the lines under it are not attributed to the one before.
+ * `HostName`, `User` and jump are kept for the aliases it names, the first value winning as it does in
+ * OpenSSH. A jump is `ProxyJump` to a host or any `ProxyCommand`, since the command decides where the
+ * connection goes; whichever of the two is written first wins, and `none` is not a jump. A `Match` block names no alias,
+ * so the lines under it are not attributed to the one before.
  */
 export function parseSshConfig(text: string): ParsedSshConfig {
-  const hosts = new Map<string, { alias: string; hostname?: string; user?: string }>()
+  const hosts = new Map<string, { alias: string; hostname?: string; user?: string; jump?: boolean; jumpSeen?: boolean }>()
   const includes: string[] = []
   const includeAt: number[] = []
   let current: string[] = []
@@ -57,14 +63,32 @@ export function parseSshConfig(text: string): ParsedSshConfig {
       continue
     }
     const value = entry.args[0]
-    if (!value || (entry.key !== 'hostname' && entry.key !== 'user')) continue
+    if (!value) continue
+    if (entry.key === 'proxyjump' || entry.key === 'proxycommand') {
+      // The destination of a jump is reached from wherever the jump goes, so an address there is not one on this computer.
+      const jump = !jumpOff(value)
+      for (const alias of current) {
+        const host = hosts.get(alias)!
+        if (host.jumpSeen) continue
+        host.jumpSeen = true
+        if (jump) host.jump = true
+      }
+      continue
+    }
+    if (entry.key !== 'hostname' && entry.key !== 'user') continue
     for (const alias of current) {
       const host = hosts.get(alias)!
       if (entry.key === 'hostname' && host.hostname === undefined) host.hostname = value.replace(/%h/gu, alias)
       if (entry.key === 'user' && host.user === undefined) host.user = value
     }
   }
-  return { hosts: [...hosts.values()], includes, includeAt }
+  return {
+    hosts: [...hosts.values()].map(host => ({
+      alias: host.alias, ...(host.hostname !== undefined ? { hostname: host.hostname } : {}),
+      ...(host.user !== undefined ? { user: host.user } : {}), ...(host.jump ? { jump: true } : {}),
+    })),
+    includes, includeAt,
+  }
 }
 
 /** The host names in a known_hosts file, with the port when it is not 22. Hashed and revoked lines are skipped. */
@@ -161,7 +185,7 @@ export async function discoverSshHosts(options: { readonly home?: string; readon
     const hostname = host.hostname && !host.hostname.includes('%') ? host.hostname : undefined
     if (hostname) destinations.add(hostname)
     const detail = host.user ? `${host.user}@${hostname ?? host.alias}` : hostname !== undefined && hostname !== host.alias ? hostname : undefined
-    suggestions.set(host.alias, { alias: host.alias, source: 'config', ...(detail ? { detail } : {}), ...(hostname ? { hostname } : {}) })
+    suggestions.set(host.alias, { alias: host.alias, source: 'config', ...(detail ? { detail } : {}), ...(hostname ? { hostname } : {}), ...(host.jump ? { jump: true } : {}) })
   }
   const known = await files.read(join(home, '.ssh', 'known_hosts'))
   for (const entry of parseKnownHosts(known ?? '').sort((left, right) => left.host.localeCompare(right.host))) {

@@ -27,7 +27,6 @@ const ARRIVAL_MS = 1900
 /** A drag within this much of a stop is drawn toward it, so the thumb settles on levels rather than between them. */
 const MAGNET = 0.2
 
-
 /**
  * Eases the painted position toward the chosen one and writes it to the card as `--effort-x`, which the fill,
  * thumb and dots read. The first write lands before the card's first paint, so it opens at the saved level

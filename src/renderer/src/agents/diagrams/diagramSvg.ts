@@ -149,6 +149,17 @@ export function toInertDiagramSvg(markup: string, options: InertDiagramOptions =
   return { svg: new XMLSerializer().serializeToString(root), width, height, title, description }
 }
 
+/** The SVG text inside a data URL made by svgDataUrl, or null when it is not one. */
+export function svgFromDataUrl(dataUrl: string): string | null {
+  const prefix = 'data:image/svg+xml;base64,'
+  if (!dataUrl.startsWith(prefix)) return null
+  try {
+    return new TextDecoder().decode(Uint8Array.from(atob(dataUrl.slice(prefix.length)), char => char.charCodeAt(0)))
+  } catch {
+    return null
+  }
+}
+
 /** A base64 data URL for an <img>; UTF-8 labels survive intact. */
 export function svgDataUrl(svg: string): string {
   const bytes = new TextEncoder().encode(svg)

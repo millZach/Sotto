@@ -80,3 +80,18 @@
 .visual-card__intro + .visual-card__steps { margin-top: 6px; }
 .visual-card__steps li { margin: 4px 0; padding-left: 2px; white-space: pre-wrap; }
 .visual-card__steps li::marker { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+
+/* Read all swaps the walkthrough for the intro and the numbered steps, and reads Step through while they show. */
+.visual-card__read-all { min-height: 30px; margin-right: 4px; padding: 0 12px; font-size: 13px; }
+.visual-card__read-all[data-reading-all] { border-color: transparent; background: var(--tt-hover-strong); color: var(--tt-text); }
+
+/* A walkthrough's step pictures are layered in one place; each has the drawing's size. The fade's length,
+   --diagram-fade, is set on the layers from DiagramImage.tsx's CROSS_FADE_MS. */
+.visual-card__layers { display: grid; min-width: 0; max-width: 100%; }
+.visual-card__layers > img { grid-area: 1 / 1; }
+@keyframes visual-card-fade-in { from { opacity: 0; } }
+@keyframes visual-card-fade-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .visual-card__layers > img[data-layer='arriving'] { animation: visual-card-fade-in var(--diagram-fade) ease both; }
+  :root:not([data-reduced-motion='on']) .visual-card__layers > img[data-layer='leaving'] { animation: visual-card-fade-out var(--diagram-fade) ease both; }
+}

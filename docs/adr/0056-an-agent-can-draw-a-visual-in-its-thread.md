@@ -24,9 +24,11 @@ An agent explaining how something works writes a wall of words, or a Mermaid fen
 
 **Private.** A visual is made on this computer from what the agent sent and contacts no host: the card draws Mermaid through the same sandboxed renderer as an answer's diagram, as an `<img>`. Nothing about a visual is logged. Every socket client is sent visual messages without the `visual` field, so the iPhone, an older desktop and anything reading a host's threads get the words and the line saying the drawing is on the computer.
 
+**A walkthrough dims the rest of the drawing, on purpose.** A visual with steps shows one step at a time, with the parts of the drawing the step names lit and the rest at 30 percent opacity (#793, the walkthrough Zach picked). That is a deliberate exception to "text meets 4.5:1": the dimmed words are de-emphasis inside a drawing, not text to be read in that state. The lit parts, the step's words and every control around them meet 4.5:1; the words in the drawing are also in the step text and the image's accessible name; and **Read all** shows the whole drawing undimmed. A step whose names match nothing dims nothing.
+
 ## Consequences
 
-- The card (`VisualCard`) draws the steps in one component, `VisualReadAll`, so #793's walkthrough replaces it without touching the card, and the steps' highlight names are already kept.
+- The card (`VisualCard`) draws the explanation as a walkthrough (`VisualStepper`, #793) or under Read all as one list (`VisualReadAll`). The walkthrough keeps no step of its own, so #794's interactive card can drive its page's steps with it. Each step's lighting is made from the drawing already sanitized, by adding classes the drawing's own Sotto stylesheet dims and lights (`diagramSteps.ts`), and is still shown as an `<img>`.
 - #794 adds the `interactive` kind to the input and to the card; a desktop on this version shows such a visual as its text.
 - A new scoped server is one more list entry: it implements `ScopedThreadTools` and is passed to `useThreadTools`.
 - Sotto has no thread deletion today. `ThreadStore.forget`, which a deletion would call, deletes a thread's visuals with its words.

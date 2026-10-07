@@ -22,7 +22,7 @@ const DRAWING: DiagramRenderResult = { ok: true, dataUrl: 'data:image/svg+xml;ba
 let sources = 0
 /** A source no earlier test drew, so the module's drawing cache never answers for it. */
 const freshSource = (): string => `flowchart LR\n  A${++sources}[Draft] --> B[Sent]`
-const visual = (overrides: Partial<AgentVisual> = {}): AgentVisual => ({ id: 'v1', title: 'How a send moves', kind: 'diagram', source: freshSource(),
+const visual = (overrides: Partial<AgentVisual> = {}): AgentVisual => ({ id: `v${sources + 1}`, title: 'How a send moves', kind: 'diagram', source: freshSource(),
   intro: 'Sotto shows your message first.', steps: [{ text: 'You send.', highlight: ['A1'] }, { text: 'Codex runs it.' }], ...overrides })
 const visualMessage = (value: AgentVisual, createdAt = '2026-10-06T10:00:30.000Z'): AgentMessage =>
   ({ id: `visual:${value.id}`, role: 'assistant', text: visualFallbackText(value), createdAt, visual: value })
@@ -31,7 +31,7 @@ beforeEach(() => { renderer.renderDiagram.mockReset(); renderer.renderDiagram.mo
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as { sotto?: unknown }).sotto })
 
 describe('the visual card', () => {
-  it('draws the header, the diagram and the intro with numbered steps', async () => {
+  it('draws the header, the diagram and the walkthrough, and the intro with numbered steps under Read all', async () => {
     render(<VisualCard visual={visual()} />)
     const card = screen.getByRole('region', { name: 'Visual: How a send moves' })
     expect(within(card).getByRole('heading', { name: 'How a send moves' })).toBeInTheDocument()
@@ -40,6 +40,10 @@ describe('the visual card', () => {
     expect(within(card).getByRole('button', { name: 'Show source' })).toHaveAttribute('aria-pressed', 'false')
     expect(within(card).getByRole('button', { name: 'Copy source' })).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Expand How a send moves' })).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(within(card).getByRole('group', { name: 'Walkthrough' })).toHaveTextContent('Step 1 of 2')
+    expect(within(card).getByText('You send.')).toBeInTheDocument()
+    expect(within(card).queryByRole('listitem')).toBeNull()
+    await userEvent.click(within(card).getByRole('button', { name: 'Read all' }))
     expect(within(card).getByText('Sotto shows your message first.')).toBeInTheDocument()
     expect(within(card).getAllByRole('listitem').map(item => item.textContent)).toEqual(['You send.', 'Codex runs it.'])
     expect(card).toHaveAttribute('data-state', 'drawn')
@@ -53,6 +57,10 @@ describe('the visual card', () => {
     expect(screen.getByLabelText('How a send moves source')).toHaveTextContent(`A${sources}[Draft] --> B[Sent]`)
     expect(screen.queryByRole('button', { name: 'Show source' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Expand/u })).toBeNull()
+    expect(screen.getByText('You send.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByText('Codex runs it.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Read all' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByRole('region', { name: 'Visual: How a send moves' })).toHaveAttribute('data-state', 'failed')
   })
@@ -78,6 +86,8 @@ describe('the visual card', () => {
     render(<><button type="button">Before</button><VisualCard visual={value} /></>)
     await screen.findByRole('img')
     screen.getByRole('button', { name: 'Before' }).focus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Read all' })).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'Show source' })).toHaveFocus()
     await user.keyboard('{Enter}')

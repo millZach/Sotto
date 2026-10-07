@@ -1,0 +1,75 @@
+/* A visual's walkthrough (ADR-0056, #793): the line under the drawing with the count, a dot per step and Back and Next,
+   then the step's words. Every colour is a theme token. */
+
+.visual-stepper {
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--tt-hairline);
+}
+
+.visual-stepper__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.visual-stepper__count {
+  flex: none;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Each dot is a 20 by 24 target, 24 apart, though it draws as a small dot (the current step's as a short bar). */
+.visual-stepper__dots {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  min-width: 0;
+}
+.visual-stepper__dot {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-pill);
+  background: transparent;
+  cursor: pointer;
+}
+.visual-stepper__dot::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: var(--tt-radius-pill);
+  background: var(--tt-text-faint);
+}
+.visual-stepper__dot[data-state='done']::before { background: var(--tt-text-muted); }
+.visual-stepper__dot[data-state='current'] { width: 30px; }
+.visual-stepper__dot[data-state='current']::before { width: 22px; background: var(--tt-accent); }
+.visual-stepper__dot:hover:not([data-state='current'])::before { background: var(--tt-text-2); }
+
+.visual-stepper__nav {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  margin-left: auto;
+}
+.visual-stepper__button { min-width: 70px; min-height: 30px; padding: 0 12px; font-size: 13px; }
+.visual-stepper__button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }
+.visual-stepper__button[aria-disabled='true']:hover { border-color: var(--tt-hairline); color: var(--tt-text-2); }
+
+.visual-stepper__text {
+  min-height: 50px;
+  margin: 10px 0 0;
+  color: var(--tt-text);
+  font-size: 16px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.visual-stepper__text--only { min-height: 0; margin-top: 0; }

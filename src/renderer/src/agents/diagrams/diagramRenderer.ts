@@ -7,22 +7,36 @@ import figtreeLatinExt from '../../assets/fonts/figtree-latin-ext.woff2?inline'
 import type { DiagramPalette } from './diagramPalette'
 import { FIGTREE_FONT_STACK, figtreeFontFaces } from '../../../../shared/figtreeFaces'
 import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
+import { keepRecent, readRecent } from '../../../../shared/recentMap'
 import { assertDiagramSafe } from './diagramSafety'
+import { diagramStepCss } from './diagramSteps'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
 
 export type DiagramRenderResult =
-  | { readonly ok: true; readonly dataUrl: string; readonly width: number; readonly height: number; readonly title: string | null; readonly description: string | null }
+  | {
+    readonly ok: true
+    /** The sanitized drawing, which a visual's walkthrough reads back to light one step at a time (diagramSteps.ts). */
+    readonly dataUrl: string
+    readonly width: number
+    readonly height: number
+    readonly title: string | null
+    readonly description: string | null
+  }
   | { readonly ok: false; readonly reason: string }
 
 const FONT_FAMILY = FIGTREE_FONT_STACK
 // The image document cannot see the window's fonts, so the label face travels with every drawing.
 const LABEL_FONT_CSS = figtreeFontFaces(figtreeLatin, figtreeLatinExt)
 
-/** Corrections to Mermaid's own theme CSS: solid label backings and no fixed light fills in a dark room. */
+/**
+ * Corrections to Mermaid's own theme CSS: solid label backings and no fixed light fills in a dark room. Then how a
+ * visual's step lights its parts, which does nothing until a step marks them.
+ */
 function finishingCss(palette: DiagramPalette): string {
   return [
     `.edgeLabel rect,.edgeLabel .label rect,.labelBkg{opacity:1!important;fill:${palette.block}!important}`,
     `.stateGroup .alt-composit{fill:${palette.group}!important}`,
+    diagramStepCss(palette),
   ].join('')
 }
 
@@ -220,12 +234,8 @@ const MAX_CACHED_RESULTS = 24
  */
 export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs = DIAGRAM_RENDER_TIMEOUT_MS): Promise<DiagramRenderResult> {
   const cacheKey = `${paletteKey(palette)}\n${code}`
-  const cached = results.get(cacheKey)
-  if (cached) {
-    results.delete(cacheKey)
-    results.set(cacheKey, cached)
-    return cached
-  }
+  const cached = readRecent(results, cacheKey)
+  if (cached) return cached
   const previous = queue
   const run = previous.then(async () => {
     const started = performance.now()
@@ -241,7 +251,5 @@ export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs =
   ])).finally(() => clearTimeout(timer))
   // A slow render is not cached, so a later view can try again once Mermaid is free.
   void settled.then(result => { if (!result.ok && result.reason === TOO_SLOW) results.delete(cacheKey) })
-  results.set(cacheKey, settled)
-  if (results.size > MAX_CACHED_RESULTS) results.delete(results.keys().next().value!)
-  return settled
+  return keepRecent(results, cacheKey, settled, MAX_CACHED_RESULTS)
 }

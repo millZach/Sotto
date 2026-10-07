@@ -1,22 +1,20 @@
 import { useEffect, useState } from 'react'
 
-const QUERY = '(prefers-reduced-motion: reduce)'
-
-/** Whether motion is reduced: by the system's setting, or by Sotto's own Reduce motion setting on the root. */
-export function readReducedMotion(): boolean {
-  return document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.(QUERY).matches ?? false)
+/** Whether motion is reduced right now: by the system, or by Sotto's own Reduce motion setting. */
+export function prefersReducedMotion(): boolean {
+  return (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) || document.documentElement.dataset.reducedMotion === 'on'
 }
 
-/** `readReducedMotion`, kept current as either setting changes. */
+/** Whether motion is reduced, following the system preference and Sotto's own setting as either changes. */
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(readReducedMotion)
+  const [reduced, setReduced] = useState(prefersReducedMotion)
   useEffect(() => {
-    const update = (): void => setReduced(readReducedMotion())
-    const media = window.matchMedia?.(QUERY)
-    media?.addEventListener('change', update)
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    const update = (): void => setReduced(prefersReducedMotion())
     const observer = new MutationObserver(update)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
-    return () => { media?.removeEventListener('change', update); observer.disconnect() }
+    media?.addEventListener?.('change', update)
+    return () => { observer.disconnect(); media?.removeEventListener?.('change', update) }
   }, [])
   return reduced
 }

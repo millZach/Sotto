@@ -3,6 +3,7 @@ import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagr
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
 import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
+import { keepRecent } from '../../../../shared/recentMap'
 import './diagrams.css'
 
 export interface MermaidDiagramProps {
@@ -28,14 +29,11 @@ const drawn = new Map<string, MermaidDrawn>()
 const MAX_DRAWN = 24
 const drawnKey = (palette: DiagramPalette, code: string): string => `${JSON.stringify(palette)}\n${code}`
 function rememberDrawing(key: string, result: DiagramRenderResult): void {
-  if (!result.ok) return
-  drawn.delete(key)
-  drawn.set(key, result)
-  if (drawn.size > MAX_DRAWN) drawn.delete(drawn.keys().next().value!)
+  if (result.ok) keepRecent(drawn, key, result, MAX_DRAWN)
 }
 
 /** One Mermaid source as a reader sees it: what it is, its drawing once made, and what to say while there is none. */
-export interface MermaidDrawing {
+export interface MermaidRendering {
   readonly inspection: DiagramSourceInspection
   /** The drawing for the current appearance, or null while it is drawing, cannot be drawn or failed. */
   readonly drawing: MermaidDrawn | null
@@ -52,7 +50,7 @@ export interface MermaidDrawing {
  * drawn: checked first, drawn once per source and palette, and redrawn without dropping the old drawing when the
  * appearance changes. The visual card (ADR-0056) draws with this too.
  */
-export function useMermaidDrawing(source: string, complete: boolean): MermaidDrawing {
+export function useMermaidRendering(source: string, complete: boolean): MermaidRendering {
   const inspection = useMemo(() => inspectDiagramSource(source), [source])
   const palette = useDiagramPalette()
   const drawable = complete && !inspection.problem
@@ -87,13 +85,13 @@ export function useMermaidDrawing(source: string, complete: boolean): MermaidDra
 
 /** A Mermaid block in an answer: the drawing when it can be drawn, otherwise its readable source and why. */
 export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }: MermaidDiagramProps): ReactNode {
-  const drawing = useMermaidDrawing(source, complete)
-  const frame = useDiagramFrame(source, drawing)
-  const { inspection, name } = drawing
+  const rendering = useMermaidRendering(source, complete)
+  const frame = useDiagramFrame(source, rendering)
+  const { inspection, name } = rendering
 
-  return <figure className="rich-diagram rich-code" data-state={diagramFrameState(drawing)} aria-label={name}>
+  return <figure className="rich-diagram rich-code" data-state={diagramFrameState(rendering)} aria-label={name}>
     <div className="rich-code__bar">
-      <span className="rich-code__language">{drawing.drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
+      <span className="rich-code__language">{rendering.drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
       <DiagramCopyStatus frame={frame} />
       <DiagramActions frame={frame} copyLabel="Copy diagram source" expandLabel="Expand diagram" />
     </div>
