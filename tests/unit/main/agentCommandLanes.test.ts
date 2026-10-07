@@ -113,14 +113,14 @@ describe('thread-scoped command lanes', () => {
   it('gives workspace organization and working-copy actions the same thread lanes', async () => {
     const f = await fixture()
     f.host.hold = true
-    // Settling one thread, reading another's working copy and opening a third's folder: three lanes, no waiting.
+    // Settling one thread, retrying another's working copy and opening its folder: two lanes, no waiting between them.
     const settle = f.control.command({ type: 'settle-thread', threadId: 'docs' })
-    const worktree = f.control.command({ type: 'refresh-thread-worktree', threadId: 'workshop' })
+    const worktree = f.control.command({ type: 'retry-thread-worktree', threadId: 'workshop' })
     const folder = f.control.command({ type: 'open-thread-folder', threadId: 'workshop' })
     await vi.waitFor(() => expect(f.host.holding).toBe(2))
     expect([...f.host.started].sort()).toEqual(['settle:docs', 'worktree:workshop'])
     expect(busyThreads(f.control.get())).toEqual(['docs', 'workshop'])
-    // The folder request is behind its own thread's working-copy refresh, not behind the settle.
+    // The folder request is behind its own thread's working-copy retry, not behind the settle.
     await settled()
     expect(f.host.started).not.toContain('folder:workshop')
     f.host.release()
@@ -219,6 +219,20 @@ describe('prompt admission beside a thread lane', () => {
     expect(f.host.started).toEqual(['send:docs'])
     f.host.hold = false; f.host.release()
     expect((await first).error).toBeNull()
+  })
+
+  it('sends a prompt while a refresh of the same thread’s working copy is still reading it (#766)', async () => {
+    const f = await fixture()
+    f.host.hold = true
+    // The refresh a draft starts: the host orders it against a send itself, so it holds no lane in the coordinator.
+    const refresh = f.control.command({ type: 'refresh-thread-worktree', threadId: 'docs' })
+    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs']))
+    expect(busyThreads(f.control.get())).toEqual([])
+    const send = f.control.command({ type: 'manual-send', threadId: 'docs', text: 'Past the refresh' })
+    await vi.waitFor(() => expect(f.host.started).toEqual(['worktree:docs', 'send:docs']))
+    expect(f.control.get().followups ?? []).toEqual([])
+    f.host.hold = false; f.host.release()
+    expect((await refresh).error).toBeNull(); expect((await send).error).toBeNull()
   })
 
   it('runs a send made straight after a thread’s settings behind them, in the order they arrived', async () => {

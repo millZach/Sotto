@@ -14,6 +14,8 @@ import type { AgentCommand } from './agents'
  * - `create-thread` has no existing thread to key a lane on, and it also takes the selection.
  * - `settle-project` and `restore-project` move every thread of a project at once.
  * The thread-scoped commands that never enter a lane at all are `LANELESS_THREAD_COMMAND_TYPES`, below.
+ * Two here are answered before main's lane as well, because the host orders them against a send itself:
+ * `preview-reclaim-thread-worktree`, and `refresh-thread-worktree`, so a send never waits for a refresh's Git (#766).
  */
 export const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set<AgentCommand['type']>([
   'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
