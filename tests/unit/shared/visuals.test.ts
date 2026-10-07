@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { agentMessageSchema, summarizeThread, type AgentMessage } from '../../../src/shared/agents'
-import { agentVisualSchema, checkVisualInput, isVisualMessageId, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualMessageId } from '../../../src/shared/visuals'
+import { agentVisualSchema, checkVisualInput, isVisualMessageId, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
 
 const FLOW = 'flowchart LR\n  A[Draft] --> B{Send}\n  B --> C[Running]'
 const valid = { title: 'How a send moves', kind: 'diagram', source: FLOW, intro: 'Sotto shows the message first.', steps: [{ text: 'You send.', highlight: ['A'] }, { text: 'Codex runs it.', highlight: ['B->C'] }] }
@@ -36,14 +36,29 @@ describe('checking a visualize call', () => {
     [{ ...valid, colour: 'red' }, 'The visual has fields it does not take: colour.'],
     [{ ...valid, steps: [{ text: 'ok', extra: true }] }, 'The visual has fields it does not take: extra.'],
   ])('refuses %j in plain words', (args, reason) => {
-    expect(checkVisualInput(args)).toEqual({ ok: false, reason })
+    const check = checkVisualInput(args)
+    expect(check).toEqual({ ok: false, reason, next: 'Fix it and call visualize again, or explain in text.' })
+    expect(visualRefusalText(check as VisualRefusal)).toBe(`${reason} Nothing was drawn. Fix it and call visualize again, or explain in text.`)
   })
 
-  it('refuses source the diagram checks would not draw, with their reason', () => {
-    const pie = checkVisualInput({ ...valid, source: 'pie title Pets\n  "Dogs" : 386' })
-    expect(pie).toEqual({ ok: false, reason: 'The diagram cannot be drawn. Sotto doesn\'t draw “pie” diagrams. Sequence, flow, state, class and entity diagrams are drawn.' })
-    const complex = checkVisualInput({ ...valid, source: `flowchart LR\n${Array.from({ length: 400 }, (_, index) => `  N${index} --> M${index}`).join('\n')}` })
-    expect(complex.ok).toBe(false)
+  const refusal = (source: string): string => {
+    const check = checkVisualInput({ ...valid, source })
+    if (check.ok) throw new Error('The call was taken.')
+    return visualRefusalText(check)
+  }
+
+  it('refuses a diagram kind Sotto does not draw, with the diagram checks\' reason', () => {
+    expect(refusal('pie title Pets\n  "Dogs" : 386')).toBe('The diagram cannot be drawn. Sotto doesn\'t draw “pie” diagrams. Sequence, flow, state, class and entity diagrams are drawn. Nothing was drawn. Fix it and call visualize again, or explain in text.')
+  })
+
+  it('refuses an empty diagram', () => {
+    expect(refusal('  \n%%{init: {}}%%\n')).toBe('The diagram cannot be drawn. This diagram is empty. Nothing was drawn. Fix it and call visualize again, or explain in text.')
+  })
+
+  it('refuses a diagram too large to draw without saying its source is shown', () => {
+    const text = refusal(`flowchart LR\n${Array.from({ length: 400 }, (_, index) => `  N${index} --> M${index}`).join('\n')}`)
+    expect(text).toBe('This diagram is too large for Sotto to draw: it has more parts than Sotto draws safely. Nothing was drawn. Split it into smaller diagrams, or explain in text.')
+    expect(text).not.toContain('shown as source')
   })
 
   it('describes its input as a strict JSON schema the clients can read', () => {

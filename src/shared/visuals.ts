@@ -61,10 +61,16 @@ export const agentVisualSchema = z.object({
 })
 export type AgentVisual = z.infer<typeof agentVisualSchema>
 
-/** A checked call: the visual to keep, and the diagram's kind in words for the reply. Or why nothing was drawn. */
+/** A checked call: the visual to keep, and the diagram's kind in words for the reply. Or what was wrong and what to do. */
 export type VisualCheck =
   | { readonly ok: true; readonly input: VisualInput; readonly label: string }
-  | { readonly ok: false; readonly reason: string }
+  | { readonly ok: false; readonly reason: string; readonly next: string }
+export type VisualRefusal = Extract<VisualCheck, { ok: false }>
+
+/** The sentence every refused visualize call carries. */
+export const VISUAL_NOTHING_DRAWN = 'Nothing was drawn.'
+const FIX_IT = 'Fix it and call visualize again, or explain in text.'
+const SPLIT_IT = 'Split it into smaller diagrams, or explain in text.'
 
 const FIELD_NAMES: Record<string, string> = { title: 'The title', kind: 'The kind', source: 'The source', intro: 'The intro', steps: 'The steps' }
 
@@ -89,10 +95,21 @@ function inputProblem(error: z.ZodError): string {
 /** The schema and the diagram source checks, in that order: the same checks the card makes before drawing. */
 export function checkVisualInput(args: unknown): VisualCheck {
   const parsed = visualInputSchema.safeParse(args)
-  if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error) }
+  if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
   const inspection = inspectDiagramSource(parsed.data.source)
-  if (inspection.problem) return { ok: false, reason: `The diagram cannot be drawn. ${inspection.problem}` }
+  // The card's words for an oversized diagram say its source is shown instead; a refused call shows nothing, so it
+  // says what is too big in its own words.
+  if (inspection.exceeds === 'length') return { ok: false, next: SPLIT_IT,
+    reason: `This diagram is too long for Sotto to draw: it takes up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters.` }
+  if (inspection.exceeds === 'work') return { ok: false, next: SPLIT_IT,
+    reason: 'This diagram is too large for Sotto to draw: it has more parts than Sotto draws safely.' }
+  if (inspection.problem) return { ok: false, reason: `The diagram cannot be drawn. ${inspection.problem}`, next: FIX_IT }
   return { ok: true, input: parsed.data, label: inspection.label }
+}
+
+/** What a refused call answers: what was wrong, that nothing was drawn, and what to do next. */
+export function visualRefusalText(refusal: VisualRefusal): string {
+  return `${refusal.reason} ${VISUAL_NOTHING_DRAWN} ${refusal.next}`
 }
 
 /** A message's ID for a visual, and the reverse. */

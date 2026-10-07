@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { checkVisualInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, visualInputSchema, type VisualInput } from '../../shared/visuals'
+import { checkVisualInput, VISUAL_NOTHING_DRAWN, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, visualInputSchema, visualRefusalText, type VisualInput } from '../../shared/visuals'
 import { MAX_DIAGRAM_SOURCE_LENGTH } from '../../shared/diagramSource'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 import type { VisualAddition } from './workspace'
@@ -29,7 +29,7 @@ export interface VisualToolHandlers {
   add(threadId: string, input: VisualInput): Promise<VisualAddition>
 }
 
-const NOTHING = 'Nothing was drawn.'
+const NOTHING = VISUAL_NOTHING_DRAWN
 const INSTEAD = 'Explain in text instead.'
 const REFUSALS: Record<Extract<VisualAddition, { added: false }>['reason'], string> = {
   'unknown-thread': `This thread cannot show visuals. ${NOTHING} ${INSTEAD}`,
@@ -83,7 +83,7 @@ export class VisualToolServer implements ScopedThreadTools {
     if (!this.handlers.enabled()) return text(`Visuals are turned off in Sotto's settings. ${NOTHING} ${INSTEAD}`, true)
     if (!this.admits(threadId)) return text(REFUSALS['unknown-thread'], true)
     const check = checkVisualInput(args)
-    if (!check.ok) return text(`${check.reason} ${NOTHING} Fix it and call visualize again, or explain in text.`, true)
+    if (!check.ok) return text(visualRefusalText(check), true)
     const result = await this.handlers.add(threadId, check.input)
     if (!result.added) return text(REFUSALS[result.reason], true)
     return text(visualShownText(result.visual.title, check.label, result.visual.steps?.length ?? 0, result.anchor))

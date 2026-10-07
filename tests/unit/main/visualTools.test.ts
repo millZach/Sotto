@@ -61,6 +61,8 @@ describe('the visualize tool', () => {
     const { tools, add } = server()
     expect(await said(tools, { ...FLOW, title: '' })).toEqual({ isError: true, text: 'The title is empty. Nothing was drawn. Fix it and call visualize again, or explain in text.' })
     expect((await said(tools, { ...FLOW, source: 'pie title Pets' })).text).toBe('The diagram cannot be drawn. Sotto doesn\'t draw “pie” diagrams. Sequence, flow, state, class and entity diagrams are drawn. Nothing was drawn. Fix it and call visualize again, or explain in text.')
+    const large = `flowchart LR\n${Array.from({ length: 400 }, (_, index) => `  N${index} --> M${index}`).join('\n')}`
+    expect(await said(tools, { ...FLOW, source: large })).toEqual({ isError: true, text: 'This diagram is too large for Sotto to draw: it has more parts than Sotto draws safely. Nothing was drawn. Split it into smaller diagrams, or explain in text.' })
     expect(add).not.toHaveBeenCalled()
   })
 
