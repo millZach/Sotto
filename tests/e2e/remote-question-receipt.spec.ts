@@ -340,9 +340,37 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
   const completion = new Promise<boolean>(resolve => { finishNative = resolve })
   const f = await fixture('claude', true, completion, true)
   const originalRecovery = f.host.service.requestAnswerRecovery.bind(f.host.service)
+  const originalCheck = f.host.service.checkRequestAnswer.bind(f.host.service)
+  const originalRead = f.native.refreshThread.bind(f.native)
+  const checks: Parameters<typeof originalCheck>[0][] = []
+  let proofReleases = 0, completedChecks = 0, allowProof = false
+  let activeCheck: Parameters<typeof originalCheck>[0] | undefined
   try {
     const { page } = f.launched
     f.host.service.requestAnswerRecovery = (...args) => ({ ...originalRecovery(...args), completed: [] })
+    f.host.service.checkRequestAnswer = async (...args) => {
+      checks.push(structuredClone(args[0]))
+      const explicit = allowProof
+      if (explicit) activeCheck = args[0]
+      try {
+        await originalCheck(...args)
+        completedChecks++
+      } finally { if (explicit) activeCheck = undefined }
+    }
+    f.native.refreshThread = async (threadId, purpose) => {
+      if (purpose?.retryUncertainAnswers && activeCheck) {
+        expect(checks).toHaveLength(2)
+        expect(completedChecks).toBe(1)
+        expect(activeCheck.providerId).toBe('claude')
+        expect(activeCheck.requestId).toBe(structured.id)
+        expect(threadId).toBe('workshop')
+        expect(purpose.retryUncertainAnswerId).toBe(activeCheck.requestId)
+        proofReleases++
+        // Keep background receipts masked until the user's exact Check reaches its native read.
+        f.host.service.requestAnswerRecovery = originalRecovery
+      }
+      return originalRead(threadId, purpose)
+    }
     f.native.event({ type: 'question', threadId: 'workshop', text: structured.text, request: structured })
     const card = page.locator('.thread-questions .agent-request').filter({ hasText: structured.questions![0]!.question })
     await card.getByRole('radio', { name: 'Coast', exact: true }).click()
@@ -350,6 +378,9 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
     await card.getByRole('button', { name: 'Send answer', exact: true }).click()
     await expect(card).toHaveAttribute('data-phase', 'unconfirmed')
     await expect.poll(() => f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.completedReceiptReads(id), f.connection.hostId)).toBeGreaterThan(0)
+    // The uncertain Send performs its automatic Check first; it must not disclose the later proof.
+    await expect.poll(() => completedChecks).toBe(1)
+    expect(f.native.checkReads).toBe(1)
     const remoteThread = f.host.service.shell().host.threads.find(thread => thread.title === 'Forge question fixture')!
     let acceptancePublished = false
     const stop = f.host.service.subscribe(() => { acceptancePublished ||= originalRecovery(remoteThread.id, 'claude').completed.length === 1 })
@@ -357,11 +388,18 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
       finishNative(true)
       await expect.poll(() => acceptancePublished).toBe(true)
     } finally { stop() }
-    // Its original question remains in the stale snapshot until a later native update.
+    // A queued ordinary publication must not learn the masked proof before the explicit Check.
+    ;(f.native as unknown as { emit(): void }).emit()
     await expect.poll(async () => (await drafts(f.profile)).map(draft => draft.held)).toEqual([true])
-    f.host.service.requestAnswerRecovery = originalRecovery
+    await expect(card).toHaveAttribute('data-phase', 'unconfirmed')
+    await expect(card.getByRole('button', { name: 'Check again', exact: true })).toBeVisible()
+    expect(checks).toHaveLength(1)
+    expect(proofReleases).toBe(0)
+    expect(f.native.checkReads).toBe(1)
+    const proof = originalRecovery(remoteThread.id, 'claude').completed[0]!
+    allowProof = true
     await card.getByRole('button', { name: 'Check again', exact: true }).click()
-    // Only the user's Check learns the proof. Observe the UI and disk, never agents.get().
+    // Only the user's exact native Check releases proof. Observe UI and disk, never agents.get().
     await expect(card).toHaveAttribute('data-phase', 'sent').catch(async error => {
       await test.info().attach('check-diagnostics', { body: JSON.stringify({
         drafts: (await drafts(f.profile)).map(draft => ({ revision: draft.revision, held: draft.held, decisionId: draft.decisionId })),
@@ -371,6 +409,10 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
       throw error
     })
     await expect(card.getByText('Answer sent.', { exact: true })).toBeVisible()
+    expect(checks).toEqual(Array(2).fill({ threadId: remoteThread.id, providerId: 'claude', requestId: structured.id, questionsDigest: proof.questionsDigest }))
+    expect(completedChecks).toBe(2)
+    expect(proofReleases).toBe(1)
+    expect(f.native.checkReads).toBe(2)
     await expect(card.getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
     await expect(card.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
     await expect(page.getByRole('alert')).toHaveCount(0)
@@ -382,7 +424,12 @@ test('Check confirming an accepted answer keeps its visible card sent and never 
     expect(await drafts(f.profile)).toEqual([])
     expect(f.native.answers).toHaveLength(1)
     expect(f.errors).toEqual([])
-  } finally { f.host.service.requestAnswerRecovery = originalRecovery; finishNative(false); await f.close() }
+  } finally {
+    f.host.service.requestAnswerRecovery = originalRecovery
+    f.host.service.checkRequestAnswer = originalCheck
+    f.native.refreshThread = originalRead
+    finishNative(false); await f.close()
+  }
 })
 
 test('Check again refreshes the exact saved remote answer through desktop wiring and unlocks an unsent hold without submitting it', async () => {
