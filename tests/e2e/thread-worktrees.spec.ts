@@ -611,6 +611,9 @@ test('clean submodule branch and tag history is listed and requires the tick in 
   const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-submodule-history-')), repo = join(root, 'repo-app'), origin = join(root, 'module-origin'), childOrigin = join(root, 'child-origin')
   await mkdir(repo); await mkdir(origin); await mkdir(childOrigin)
   git(repo, 'init', '-q'); git(origin, 'init', '-q'); git(childOrigin, 'init', '-q')
+  // The app's own Git reads the repository's config, so its worktree checks files out the way this test's Git does
+  // rather than by the machine's global line-ending setting; the status checks below compare the two.
+  git(repo, 'config', 'core.autocrlf', 'false')
   await commitFile(repo, 'README.md', 'Parent checkout\n')
   await commitFile(origin, 'module.txt', 'Published module\n')
   await commitFile(childOrigin, 'child.txt', 'Published child\n')

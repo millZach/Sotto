@@ -285,6 +285,39 @@ describe('the stacked Git action, the way T3 runs it', () => {
     expect(result.toast).toEqual({ title: `Pushed ${result.commit.sha!.slice(0, 7)} to origin/main`, description: 'Second', cta: { kind: 'none' } })
     expect(f.events.find(event => event.kind === 'action_started')).toMatchObject({ stages: ['Committing...', 'Pushing to origin...'] })
   }, 40000)
+  it('pushes the commit it just made while a status read begun before the commit is still under way', async () => {
+    const f = await fixture()
+    // One Git runner for the reader and the action, so a read another thread on the folder began is one the action
+    // could share. That read is held once Git has told it the folder's state, and let go when the action asks for
+    // the folder's state after its commit.
+    let hold: { reached: () => void; go: Promise<void> } | undefined
+    let committed = false
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const output = await runGitStatusCommand(cwd, command, args, options)
+      if (args[0] === 'commit') committed = true
+      const held = hold
+      if (held && args[0] === 'status') { hold = undefined; held.reached(); await held.go }
+      return output
+    }
+    const reader = new GitStatusReader({ run, fetchIntervalMs: () => 0 })
+    let go!: () => void, reached!: () => void
+    const reachedRead = new Promise<void>(done => { reached = done })
+    hold = { reached, go: new Promise<void>(done => { go = done }) }
+    const status = { read: (cwd: string, options: { remote: boolean; fresh?: boolean }) => {
+      if (committed && !options.remote) go()
+      return reader.read(cwd, options)
+    }, invalidate: () => reader.invalidate() }
+    const actions = new GitActions({ run, status, writeCommitMessage: async () => null, writePullRequestText: async () => null })
+    // The read begins on a clean main level with origin.
+    const earlier = reader.read(f.repo, { remote: false })
+    await reachedRead
+    await writeFile(join(f.repo, 'work.txt'), 'second\n')
+    const result = await actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'commit_push', commitMessage: 'Second', allowDefaultBranch: true })
+    // The push read the folder after the commit for itself, so it found the commit to push.
+    expect(result.push).toEqual({ status: 'pushed', branch: 'main', upstream: 'origin/main' })
+    expect(git(f.remote, 'log', '-1', '--pretty=%s', 'main')).toBe('Second')
+    expect(await earlier).toMatchObject({ dirty: false, ahead: 0 })
+  }, 40000)
   it('refuses a pull request from a dirty tree or a detached HEAD, and opens the existing one instead of a second', async () => {
     const f = await fixture({ gh: async args => args[0] === 'pr' && args[1] === 'list' ? JSON.stringify([{ number: 12, title: 'Already open', url: 'https://github.com/o/r/pull/12', baseRefName: 'main', headRefName: 'feature', state: 'OPEN' }]) : '' })
     git(f.repo, 'switch', '-q', '-c', 'feature')

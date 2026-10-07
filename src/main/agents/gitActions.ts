@@ -84,7 +84,12 @@ export class GitActions {
   }
   private git(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'git', args, options) }
   private gh(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'gh', args, options) }
-  private status(cwd: string): Promise<GitStatus> { return this.dependencies.status.read(cwd, { remote: true }) }
+  /**
+   * The folder's status for a decision this action is about to act on. Each is a read of its own, never one already
+   * under way for someone else: that read may have begun before this action's own commit or push, and would answer
+   * for the folder as it was then (a push skipped as up to date, a pull request refused as unpushed).
+   */
+  private status(cwd: string, remote = true): Promise<GitStatus> { return this.dependencies.status.read(cwd, { remote, fresh: true }) }
 
   private async exclusive<T>(cwd: string, work: () => Promise<T>, holder: 'action' | 'automatic-pull' = 'action'): Promise<T> {
     const held = this.busy.get(cwd)
@@ -264,7 +269,7 @@ export class GitActions {
 
   private async push(cwd: string, branch: string | null): Promise<GitActionResult['push']> {
     if (!branch) throw new GitActionRefusal('Cannot push from detached HEAD.')
-    const status = await this.dependencies.status.read(cwd, { remote: false })
+    const status = await this.status(cwd, false)
     const remote = await this.pushRemote(cwd, branch)
     const publish = branch.replace(/^[^/]+\//u, match => (remote && match === `${remote}/` ? '' : match))
     if (!remote) throw new GitActionRefusal('Cannot push because no git remote is configured for this repository.')
@@ -312,7 +317,7 @@ export class GitActions {
   private async baseBranch(cwd: string, branch: string): Promise<string> {
     const recorded = (await this.git(cwd, ['config', '--get', `branch.${branch}.gh-merge-base`]).catch(() => '')).trim()
     if (recorded) return recorded
-    const status = await this.dependencies.status.read(cwd, { remote: false })
+    const status = await this.status(cwd, false)
     const upstream = status.upstream ? parseUpstream(status.upstream) : null
     if (upstream && upstream.branch !== branch) return upstream.branch
     const viewed = await this.gh(cwd, ['repo', 'view', '--json', 'defaultBranchRef']).then(raw => repositorySchema.parse(JSON.parse(raw)).defaultBranchRef?.name ?? '', () => '')
@@ -321,7 +326,7 @@ export class GitActions {
   }
 
   private async pullRequest(threadId: string, cwd: string, branch: string, progress: (event: GitActionEvent) => void): Promise<GitActionResult['pr']> {
-    const status = await this.dependencies.status.read(cwd, { remote: false })
+    const status = await this.status(cwd, false)
     if (!status.upstream) throw new GitActionRefusal('Current branch has not been pushed. Push before creating a PR.')
     let existing: Awaited<ReturnType<GitActions['openPullRequest']>>
     try { existing = await this.openPullRequest(cwd, branch) }
@@ -445,7 +450,7 @@ export class GitActions {
   /** `git init` for a folder that is not a repository yet. */
   init(cwd: string): Promise<void> {
     return this.exclusive(cwd, async () => {
-      const status = await this.dependencies.status.read(cwd, { remote: false })
+      const status = await this.status(cwd, false)
       if (status.isRepository) throw new GitActionRefusal('This folder is already a Git repository.')
       await this.git(cwd, ['init', '-q'], { timeoutMs: 10_000 }).catch(error => { throw new GitActionRefusal(`Git initialization failed. ${(error instanceof Error ? error.message : '').slice(0, 400)}`.trim()) })
     })
@@ -455,7 +460,7 @@ export class GitActions {
   publish(cwd: string, options: { readonly repository: string; readonly visibility: 'private' | 'public' }): Promise<{ url: string }> {
     return this.exclusive(cwd, async () => {
       if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_.-]+$/u.test(options.repository)) throw new GitActionRefusal('Name the repository as owner/name.')
-      const status = await this.dependencies.status.read(cwd, { remote: false })
+      const status = await this.status(cwd, false)
       if (!status.isRepository) throw new GitActionRefusal('Initialize Git before publishing.')
       if (status.hasRemote) throw new GitActionRefusal('This repository already has an origin remote.')
       const hasCommit = await this.git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false)
