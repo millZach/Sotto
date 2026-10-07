@@ -2,8 +2,8 @@
 /**
  * Early start (#769): how long a new Claude thread's first send takes through the workspace, the Sotto thread host and
  * the adapter, over the fake CLI, when nothing started its CLI first, when typing started it and it finished starting
- * before Send, and when Send came 150 ms after the first key. The fake starts in a fraction of the real client's time,
- * so the gap here is the fake's start; `tests/integration/claudeEarlyStartLive.test.ts` measures the real one. Timers
+ * before Send, and when Send came `SEND_AFTER_MS` after the first key, while the start was still under way. The fake
+ * starts in a fraction of the real client's time, so the gap here is the fake's start; `tests/integration/claudeEarlyStartLive.test.ts` measures the real one. Timers
  * only. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1` (`tests/fixtures/perfBench.ts`):
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/earlyStart.perf.test.ts --maxWorkers=1 --disable-console-intercept
@@ -18,6 +18,8 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 
 const SENDS = 9
+/** Shorter than the fake's start of about 80 ms, so the send overlaps a start in progress and waits for its rest. */
+const SEND_AFTER_MS = 20
 
 describe.skipIf(!PERF_BENCH)('a new Claude thread’s first send', () => {
   it('reports the send with and without an early start', async () => {
@@ -47,12 +49,12 @@ describe.skipIf(!PERF_BENCH)('a new Claude thread’s first send', () => {
         samples.started.push(await send(started))
         const brief = await draft()
         void workspace.startThreadSession(brief)
-        await delay(150)
+        await delay(SEND_AFTER_MS)
         samples.typedBriefly.push(await send(brief))
       }
       const summary = (values: number[]) => ({ median: round(median(values)), min: round(Math.min(...values)), max: round(Math.max(...values)) })
       console.log(JSON.stringify({ sends: SENDS, earlyStartMs: summary(starts), firstSendColdMs: summary(samples.cold),
-        firstSendAfterEarlyStartMs: summary(samples.started), firstSend150MsAfterFirstKeyMs: summary(samples.typedBriefly) }))
+        firstSendAfterEarlyStartMs: summary(samples.started), firstSendSoonAfterFirstKeyMs: summary(samples.typedBriefly), sendAfterMs: SEND_AFTER_MS }))
     } finally { workspace.dispose(); await f.cleanup() }
   }, 240_000)
 })
