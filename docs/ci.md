@@ -145,7 +145,7 @@ SOTTO_CLAUDE_LIVE=1 npx vitest run tests/integration/claudeSettingsLive.test.ts 
 
 ## Claude early start live check
 
-`tests/integration/claudeEarlyStartLive.test.ts` is gated by `SOTTO_CLAUDE_LIVE=1`. With the installed, signed-in Claude Code and a temporary synthetic project, it starts spares for new threads (ADR-0055), creates threads with and without one, and starts four watched threads' CLIs at connect one after another and four at a time. It sends no prompt and runs no model turn, and fails if Claude Code wrote a session file for any of them. It prints the CLI version and timings, never a prompt, a reply or a path. It was last run on Claude Code 2.1.289 (`docs/perf/2026-10-06-early-start.md`):
+`tests/integration/claudeEarlyStartLive.test.ts` is gated by `SOTTO_CLAUDE_LIVE=1`. With the installed, signed-in Claude Code and a temporary synthetic project, it starts spares for new threads (ADR-0057), creates threads with and without one, and starts four watched threads' CLIs at connect one after another and four at a time. It sends no prompt and runs no model turn, and fails if Claude Code wrote a session file for any of them. It prints the CLI version and timings, never a prompt, a reply or a path. It was last run on Claude Code 2.1.289 (`docs/perf/2026-10-06-early-start.md`):
 
 ```powershell
 $env:SOTTO_CLAUDE_LIVE = '1'

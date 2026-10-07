@@ -2,7 +2,7 @@
 
 Issue #769, part of #762. A new thread's first send created the thread with its provider and started the thread's
 client inside the send, and for Claude Code that is a CLI that spawns and answers `initialize` before the prompt can
-be written to it. An early start (ADR-0055) does that when the user starts typing, so the send finds the client
+be written to it. An early start (ADR-0057) does that when the user starts typing, so the send finds the client
 running. At connect, Claude Code's adapter also started the watched threads' CLIs one after another, so a send to the
 last of them waited for the others; it now starts them four at a time. This note measures both, against the installed
 Claude Code and against the fake CLI.

@@ -1,5 +1,5 @@
 /**
- * Early start (#769, ADR-0055) in the built app. The real Claude adapter runs over the fake CLI in `tests/fixtures/`
+ * Early start (#769, ADR-0057) in the built app. The real Claude adapter runs over the fake CLI in `tests/fixtures/`
  * (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). Typing in a new thread's composer starts the CLI its first
  * send will use, before Send and without a session file; Send then runs on that CLI and starts no other.
  *
