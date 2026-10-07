@@ -20,6 +20,7 @@ import { markTurnActivity } from './turnActivity'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
+import { markSendStage } from './sendStages'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
@@ -891,6 +892,7 @@ export class DevinAcpHost implements AgentHost {
     this.thread(id).lastTurn = { id: origin.messageId, status: 'running' }
     this.thread(id).activities = markTurnActivity(this.thread(id).activities, { provider: 'devin', turnId: origin.messageId, status: 'running' })
     this.emit()
+    markSendStage(command.commandId, 'written')
     void connection.rpc.request('session/prompt', {
       sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: command.text }],
       _meta: { 'cognition.ai/clientMessageId': origin.nativeMessageId },
@@ -916,7 +918,7 @@ export class DevinAcpHost implements AgentHost {
       if (generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin) { settle(turn); return }
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id); this.thread(id).status = 'error'; this.emit()
     })
-    return this.acceptance(id, turn, generation)
+    return this.acceptance(id, command.commandId, turn, generation)
   }
   /**
    * Whether Devin took a prompt. Native ACP sends no acknowledgement and no echo of it, so there are two kinds of
@@ -926,13 +928,13 @@ export class DevinAcpHost implements AgentHost {
    * reads only once the stream has shown nothing for the grace period, or the turn ended without showing any work.
    * Neither ever sends the prompt again; a prompt with no evidence by the request deadline stays uncertain.
    */
-  private async acceptance(id: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
+  private async acceptance(id: string, commandId: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
     const deadline = Date.now() + (this.options.requestTimeoutMs ?? 15_000)
     const cadence = this.options.pollIntervalMs ?? 1_500
     let nextRead = Date.now() + (this.options.acceptanceGraceMs ?? ACCEPTANCE_GRACE_MS)
     let readAfterEnd = false
     while (true) {
-      if (turn.streamed || turn.origin.confirmed) return { accepted: true }
+      if (turn.streamed || turn.origin.confirmed) { markSendStage(commandId, 'acknowledged'); return { accepted: true } }
       if (generation !== this.generation) return { accepted: false, uncertain: true }
       if (turn.ended && !readAfterEnd) { readAfterEnd = true; nextRead = Date.now() }
       const now = Date.now()
