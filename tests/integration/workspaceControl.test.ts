@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -19,7 +19,7 @@ async function fixture(root?: string) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const opened: string[] = []
-  const recorder = new TurnRecorder({ directory: f.root, historyEnabled: () => true, resolveSession: id => f.registry.byThread(id) })
+  const recorder = new TurnRecorder({ directory: f.root, resolveSession: id => f.registry.byThread(id) })
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, turns: recorder,
     openThreadFolder: async path => { opened.push(path) },
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
@@ -33,6 +33,21 @@ async function fixture(root?: string) {
 function thread(state: AgentState) { return state.host.threads.find(thread => thread.id === state.activeThreadId)! }
 
 describe('workspace controller integration', () => {
+  it('returns a worktree preview without saving or broadcasting it', async () => {
+    const f = await fixture()
+    const preview = { path: '/synthetic/worktree', branch: 'sotto/test', dirty: false, ignored: ['.env'], items: [{ path: '.env', bytes: 10, fileCount: 1 }], repositories: [], untracked: [] }
+    const previewHost = vi.spyOn(f.host, 'previewThreadWorktreeReclaim').mockResolvedValue(preview)
+    const publish = vi.fn(); const unsubscribe = f.control.subscribe(publish); publish.mockClear()
+    try {
+      const result = await f.control.command({ type: 'preview-reclaim-thread-worktree', threadId: f.control.get().host.threads[0]!.id })
+      expect(result.worktreeReclaimPreview).toEqual(preview)
+      expect(f.control.get().worktreeReclaimPreview).toBeUndefined()
+      expect(f.control.shell().worktreeReclaimPreview).toBeUndefined()
+      expect(publish).not.toHaveBeenCalled()
+      expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('synthetic/worktree')
+    } finally { previewHost.mockRestore(); unsubscribe() }
+  })
+
   it('stops native work even when the follow-up pause cannot be saved', async () => {
     const f = await fixture()
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
@@ -42,7 +57,7 @@ describe('workspace controller integration', () => {
       const result = await f.control.command({ type: 'interrupt', threadId })
       expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toHaveLength(1)
       expect(result.assignments.find(item => item.threadId === threadId)?.paused).toBe(true)
-      expect((await f.recorder.recent(20)).find(turn => turn.commandType === 'interrupt')).toMatchObject({ outcome: 'completed', error: '' })
+      expect((await f.recorder.recent(20)).find(turn => turn.commandType === 'interrupt')).toMatchObject({ outcome: 'completed' })
       expect(result.error).toBe('Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.')
     } finally { pause.mockRestore() }
   })
@@ -264,6 +279,30 @@ describe('workspace controller integration', () => {
     expect(result.host.projects).toEqual(before)
     await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(f.adapters.codex.commands).toHaveLength(0)
+  })
+  it('makes a new folder, opens it when it is sent again as existing, and refuses a folder or file already there', async () => {
+    const f = await fixture()
+    const path = join(f.root, 'voice-lab')
+    const made = await f.control.command({ type: 'create-project', provider: 'codex', title: 'voice-lab', path })
+    expect(made.error).toBeNull()
+    expect((await stat(path)).isDirectory()).toBe(true)
+    const project = made.host.projects.find(item => item.path === path)!
+    // Add project's retry after an unanswered first try sends the folder as existing, and finds the project it made.
+    const retried = await f.control.command({ type: 'create-project', provider: 'codex', title: 'voice-lab', path, useExisting: true })
+    expect(retried.error).toBeNull()
+    expect(retried.activeProjectId).toBe(project.id)
+    expect(retried.host.projects.filter(item => item.path === path)).toHaveLength(1)
+    const before = retried.host.projects
+    const other = join(f.root, 'not-a-project')
+    await mkdir(other)
+    const refused = await f.control.command({ type: 'create-project', provider: 'codex', title: 'not-a-project', path: other })
+    expect(refused.error).toBe('That folder already exists. Nothing was added. Choose another folder, or add this one with Add project to use it as it is.')
+    expect(refused.host.projects).toEqual(before)
+    const file = join(f.root, 'notes')
+    await writeFile(file, '')
+    const onFile = await f.control.command({ type: 'create-project', provider: 'codex', title: 'notes', path: file, useExisting: true })
+    expect(onFile.error).toBe('A file with that name is already there. Nothing was added. Choose another name.')
+    expect(onFile.host.projects).toEqual(before)
   })
   it('opens existing projects without changing scope, creates multiple manual threads, and keeps coordinator settings independent', async () => {
     const f = await fixture()

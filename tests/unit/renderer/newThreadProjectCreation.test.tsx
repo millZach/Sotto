@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NewThreadDialog, type ThreadCreationStart } from '../../../src/renderer/src/agents/NewThreadDialog'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
@@ -34,6 +34,34 @@ async function browse() {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('native folder project resolution', () => {
+  it('ignores repeated project choices while creation is waiting', async () => {
+    let release!: (state: AgentState) => void
+    const state = fixture([actual, unrelated])
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(() => new Promise(resolve => { release = resolve }))
+    const view = setup(command, state)
+    const choice = screen.getByRole('button', { name: /^CodexC:/ })
+    const other = screen.getByRole('button', { name: /^OtherC:/ })
+    act(() => { fireEvent.click(choice); fireEvent.click(choice); fireEvent.click(other) })
+    const search = screen.getByRole('searchbox', { name: 'Search projects' })
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    fireEvent.keyDown(search, { key: 'Enter' })
+    await waitFor(() => expect(command).toHaveBeenCalled())
+    expect(command.mock.calls.filter(([request]) => request.type === 'create-thread')).toHaveLength(1)
+    release(state)
+    await waitFor(() => expect(view.onCreated).toHaveBeenCalledOnce())
+  })
+
+  it('allows another choice after a refused creation', async () => {
+    const state = fixture([actual])
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ ...state, error: 'Creation refused.' }))
+    const view = setup(command, state)
+    fireEvent.click(screen.getByRole('button', { name: /^CodexC:/ }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: /^CodexC:/ }))
+    await waitFor(() => expect(command.mock.calls.filter(([request]) => request.type === 'create-thread')).toHaveLength(2))
+    expect(view.onCreated).not.toHaveBeenCalled()
+  })
+
   it.each(['requested-id', unrelated.id])('uses the returned folder project when activeProjectId is %s', async activeId => {
     const acknowledged = fixture([unrelated, actual], activeId)
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => acknowledged)

@@ -98,6 +98,192 @@ describe('bounded WebSocket framing', () => {
     expect(client.messages).toEqual(['{"ok":true}'])
     client.frames.close(); server.frames.close()
   })
+  it('closes a silent listener peer that accepts client liveness', () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.frames.setClientLiveness(true)
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(50_000)
+      expect(h.writes).toEqual([])
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(true)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it('keeps an idle older client connected beyond 75 seconds when it answers host pings', () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.frames.startHeartbeat()
+      for (let round = 0; round < 5; round++) {
+        vi.advanceTimersByTime(25_000)
+        const ping = h.writes.at(-1)!
+        expect(ping[0]).toBe(137)
+        h.frames.feed(masked(ping.subarray(2), 10))
+      }
+      expect(h.stream.destroyed).toBe(false)
+      expect(h.messages).toEqual([])
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it('closes an older peer only after two missed rounds without other traffic', () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(25_000)
+      h.frames.feed(masked(Buffer.from('still here')))
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(true)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it('counts partial message bytes and incoming pings as listener liveness', () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.frames.setClientLiveness(true)
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(50_000)
+      const large = masked(Buffer.alloc(4 * 1024 * 1024, 97))
+      h.frames.feed(large.subarray(0, 1000))
+      vi.advanceTimersByTime(50_000)
+      expect(h.stream.destroyed).toBe(false)
+      h.frames.feed(large.subarray(1000))
+      h.frames.feed(masked(Buffer.from('ping'), 9))
+      expect(h.writes.at(-1)![0]).toBe(138)
+      vi.advanceTimersByTime(50_000)
+      expect(h.stream.destroyed).toBe(false)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it('keeps a large outgoing frame alive past the deadline until output drains', () => {
+    vi.useFakeTimers()
+    const stream = new Duplex({ read() {}, write() {} })
+    const frames = new SocketFrames(stream, false, () => {})
+    try {
+      frames.startHeartbeat()
+      frames.sendText('a'.repeat(4 * 1024 * 1024))
+      vi.advanceTimersByTime(100_000)
+      expect(stream.writableLength).toBeGreaterThan(0)
+      expect(stream.destroyed).toBe(false)
+    } finally { frames.close(); vi.useRealTimers() }
+  })
+  it.each([false, true])('survives a late pong after tunnel output has drained (desktop upload: %s)', client => {
+    vi.useFakeTimers()
+    const h = harness(client), peer = harness(!client)
+    try {
+      h.frames.startHeartbeat()
+      h.frames.send(client ? { op: 'stage-attachment', image: { data: 'a'.repeat(4 * 1024 * 1024) } } : { event: 'detail', detail: 'a'.repeat(4 * 1024 * 1024) })
+      expect(h.stream.writableLength).toBe(0)
+      vi.advanceTimersByTime(25_000)
+      const ping = h.writes.at(-1)!
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(10_000)
+      peer.frames.feed(ping)
+      h.frames.feed(peer.writes.at(-1)!)
+      vi.advanceTimersByTime(15_000)
+      expect(h.stream.destroyed).toBe(false)
+    } finally { h.frames.close(); peer.frames.close(); vi.useRealTimers() }
+  })
+  it.each([false, true])('does not count drained application writes since the ping as silence (client: %s)', client => {
+    vi.useFakeTimers()
+    const h = harness(client)
+    try {
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(25_000)
+      h.frames.sendText('a'.repeat(4 * 1024 * 1024))
+      expect(h.stream.writableLength).toBe(0)
+      vi.advanceTimersByTime(50_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(true)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it.each([false, true])('closes a truly silent peer after two rounds at 75 seconds (client: %s)', client => {
+    vi.useFakeTimers()
+    const h = harness(client)
+    try {
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(74_999)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(h.stream.destroyed).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it.each([false, true])('counts partial frames across multiple ping rounds (client: %s)', client => {
+    vi.useFakeTimers()
+    const h = harness(client), peer = harness(!client)
+    try {
+      h.frames.startHeartbeat()
+      peer.frames.sendText('a'.repeat(4 * 1024 * 1024))
+      const frame = peer.writes[0]!
+      for (let offset = 0; offset < 4000; offset += 1000) {
+        vi.advanceTimersByTime(30_000)
+        h.frames.feed(frame.subarray(offset, offset + 1000))
+        expect(h.messages).toEqual([])
+        expect(h.stream.destroyed).toBe(false)
+      }
+      vi.advanceTimersByTime(50_000)
+      expect(h.stream.destroyed).toBe(false)
+      h.frames.feed(frame.subarray(4000))
+      expect(h.messages).toEqual(['a'.repeat(4 * 1024 * 1024)])
+    } finally { h.frames.close(); peer.frames.close(); vi.useRealTimers() }
+  })
+  it('clears a client pending pong on any received bytes but closes a silent client peer', () => {
+    vi.useFakeTimers()
+    const h = harness(true)
+    try {
+      h.frames.startHeartbeat()
+      vi.advanceTimersByTime(25_000)
+      expect(h.writes[0]![0]).toBe(137)
+      h.frames.feed(Buffer.from([129]))
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(false)
+      vi.advanceTimersByTime(25_000)
+      expect(h.stream.destroyed).toBe(true)
+    } finally { h.frames.close(); vi.useRealTimers() }
+  })
+  it('waits for drain before continuing a detail batch and releases a wait on close', async () => {
+    const h = harness()
+    Object.defineProperty(h.stream, 'writableNeedDrain', { value: true, configurable: true })
+    const drained = vi.fn()
+    const waiting = h.frames.drained().then(drained)
+    await Promise.resolve()
+    expect(drained).not.toHaveBeenCalled()
+    h.stream.emit('drain')
+    await waiting
+    expect(drained).toHaveBeenCalledOnce()
+    const closing = h.frames.drained()
+    h.frames.close()
+    await closing
+    expect(h.stream.listenerCount('drain')).toBe(0)
+  })
+  it('reports a backlog while a write past the high-water mark is unread, and none once it drains or closes', async () => {
+    let finish: (() => void) | undefined
+    const stream = new Duplex({ read() {}, write(_chunk, _encoding, callback) { finish = callback } })
+    const frames = new SocketFrames(stream, false, () => {})
+    expect(frames.backlogged).toBe(false)
+    frames.sendText('small')
+    expect(frames.backlogged).toBe(false)
+    finish!()
+    frames.sendText('a'.repeat(stream.writableHighWaterMark))
+    expect(frames.backlogged).toBe(true)
+    const drained = frames.drained()
+    finish!()
+    await drained
+    expect(frames.backlogged).toBe(false)
+    frames.sendText('a'.repeat(stream.writableHighWaterMark))
+    expect(frames.backlogged).toBe(true)
+    frames.close()
+    expect(frames.backlogged).toBe(false)
+  })
   it('closes a slow consumer before accumulating unbounded writes', () => {
     const h = harness()
     Object.defineProperty(h.stream, 'writableLength', { value: HOST_MAX_FRAME_BYTES * 2 })

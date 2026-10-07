@@ -5,6 +5,7 @@ import {
   AppearancePreview,
   THEME_PREVIEW_ID,
   applyAppearance,
+  frostAvailable,
   readCachedAppearance,
   resolveAppearance,
   systemPrefersDark,
@@ -26,6 +27,8 @@ const base: AppearanceChoice = {
   darkTheme: 'nocturne',
   appearanceContrast: 100,
   glassOpacity: 80,
+  frostedWindow: false,
+  frostSeeThrough: 40,
   effortColor: 'ember',
   customThemes: [],
 }
@@ -85,6 +88,28 @@ describe('main-window appearance', () => {
     expect(root.style.getPropertyValue('--theme-contrast-base')).toBe('50%')
     expect(root.style.getPropertyValue('--theme-contrast-boost')).toBe('0%')
     expect(root.style.getPropertyValue('--theme-glass-opacity')).toBe('40%')
+  })
+
+  it('frosts the room only where main says the window can, and never against reduced transparency', () => {
+    const root = document.createElement('html')
+    const reduced = (matches: boolean) => (query: string) => ({ matches: matches && query.includes('reduced-transparency') }) as MediaQueryList
+    vi.stubGlobal('sotto', { canFrostWindow: true })
+    applyAppearance({ ...base, frostedWindow: true, frostSeeThrough: 55 }, root, true)
+    expect(root.dataset.frost).toBe('')
+    expect(root.style.getPropertyValue('--theme-frost-solid')).toBe('45%')
+
+    applyAppearance({ ...base, frostedWindow: false, frostSeeThrough: 99 }, root, true)
+    expect(root.dataset.frost).toBeUndefined()
+    expect(root.style.getPropertyValue('--theme-frost-solid')).toBe('20%')
+
+    expect(frostAvailable({ sotto: { canFrostWindow: true }, matchMedia: reduced(true) })).toBe(false)
+    expect(frostAvailable({ sotto: { canFrostWindow: true }, matchMedia: reduced(false) })).toBe(true)
+    expect(frostAvailable({ sotto: { canFrostWindow: false }, matchMedia: reduced(false) })).toBe(false)
+    expect(frostAvailable({ matchMedia: reduced(false) })).toBe(false)
+
+    vi.stubGlobal('sotto', undefined)
+    applyAppearance({ ...base, frostedWindow: true }, root, true)
+    expect(root.dataset.frost).toBeUndefined()
   })
 
   it('puts the effort colourway on the root as an attribute, and an unknown one falls back to Ember', () => {
@@ -147,9 +172,9 @@ describe('main-window appearance', () => {
     const root = document.createElement('html')
     const custom = aurora()
     const unused = parseThemeFile({ version: 1, name: 'Unused', appearance: 'light', colors: { canvas: '#ffffff' } })
-    applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, glassOpacity: 60, customThemes: [custom, unused] }, root, true)
+    applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 25, customThemes: [custom, unused] }, root, true)
     const cached = readCachedAppearance()
-    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, glassOpacity: 60 })
+    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 25 })
     expect(cached.customThemes.map(theme => theme.id)).toEqual([custom.id])
 
     // A cache that cannot be trusted comes back as the shipped defaults, not as the chosen halves.

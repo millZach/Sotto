@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { unusedNewThread } from '../../../src/renderer/src/agents/newThread'
+import { beginNewThread, unusedNewThread } from '../../../src/renderer/src/agents/newThread'
+import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { defaultAgentConfiguration, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import { pendingSettingsStore, settingValues } from '../../../src/renderer/src/agents/pendingSettings'
 
@@ -86,5 +87,25 @@ describe('an unused new thread', () => {
       thread({ projectId: 'elsewhere' }),
     ]
     for (const candidate of used) expect(unusedNewThread(state([candidate]), project)).toBeUndefined()
+  })
+})
+
+describe('a new thread shown before main confirms it', () => {
+  const LOCAL = '11111111-1111-4111-8111-111111111111', REMOTE = '22222222-2222-4222-8222-222222222222'
+  const twoHosts = (): AgentState => ({ ...state([]), hostId: LOCAL, connections: [
+    { hostId: LOCAL, kind: 'local', name: 'This computer', connected: true }, { hostId: REMOTE, kind: 'remote', name: 'forge', connected: true }] })
+  const draftFor = async (current: AgentState, hostId: string) => {
+    const start = await beginNewThread(current, async () => current, { ...project, id: hostEntityKey(hostId, 'project'), hostId })
+    if ('error' in start) throw new Error(start.error)
+    return start.thread
+  }
+  // A thread on forge is remote from its first frame, so this computer's cloud iPhone, browser and terminal leave it alone.
+  it('is marked with its remote host as main will publish it', async () => {
+    expect(await draftFor(twoHosts(), REMOTE)).toMatchObject({ hostId: REMOTE, hostLabel: 'forge', remoteHost: true })
+  })
+  it('is not marked remote on this computer', async () => {
+    const draft = await draftFor(twoHosts(), LOCAL)
+    expect(draft).toMatchObject({ hostId: LOCAL, hostLabel: 'This computer' })
+    expect(draft.remoteHost).toBeUndefined()
   })
 })

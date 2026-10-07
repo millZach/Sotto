@@ -5,11 +5,12 @@ import type { AgentConnection } from './AgentContext'
 import { hostIdOf, listedHostName } from './HostBadge'
 import { FolderBrowserDialog } from './FolderBrowserDialog'
 import { folderKey, folderName, projectAtFolder, projectOnHost } from './projectFolders'
+import { isCompositionKey } from './composerKeys'
 
 export { folderKey, folderName } from './projectFolders'
 
-/** A known project, or a folder from disk that is not a project yet. */
-export type ProjectChoice = { readonly project: AgentProject; readonly folder?: undefined } | { readonly project?: undefined; readonly folder: string }
+/** A known project, or a folder from disk that is not a project yet; `isNew` when it was named with New folder and is not made yet. */
+export type ProjectChoice = { readonly project: AgentProject; readonly folder?: undefined } | { readonly project?: undefined; readonly folder: string; readonly isNew?: true }
 
 /**
  * The first step of New thread and New terminal: a folder from disk or one of the projects, searched and chosen by
@@ -18,6 +19,7 @@ export type ProjectChoice = { readonly project: AgentProject; readonly folder?: 
 export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectChoice) => void, options: {
   /** Lists only this host's projects, as New thread does once a host is chosen, and browses this host's folders. */
   readonly hostId?: string | undefined
+  readonly disabled?: boolean | undefined
 } = {}): {
   readonly search: ReactNode; readonly choices: ReactNode; readonly focusSearch: () => void
 } {
@@ -39,13 +41,15 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
   const remote = browseHost?.kind === 'remote'
   const [browsing, setBrowsing] = useState(false)
   useEffect(() => { setHighlight(0); setError(null) }, [hostId])
-  const browse = (): void => { setError(null); setBrowsing(true) }
-  const chooseFolder = (path: string): void => {
+  const browse = (): void => { if (options.disabled) return; setError(null); setBrowsing(true) }
+  const chooseFolder = (path: string, isNew: boolean): void => {
+    if (options.disabled) return
     setBrowsing(false)
     const existing = projectAtFolder(latestState.current.host.projects, browseHostId, path)
-    onChoose(existing ? { project: existing } : { folder: path })
+    onChoose(existing ? { project: existing } : { folder: path, ...(isNew ? { isNew: true as const } : {}) })
   }
   const choose = (index: number): void => {
+    if (options.disabled) return
     if (index === 0) { browse(); return }
     const choice = projects[index - 1]
     if (choice) { setError(null); onChoose({ project: choice }) }
@@ -55,6 +59,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
     search: <><Search size={16} aria-hidden="true" /><input ref={search} type="search" aria-label="Search projects" placeholder="Search projects..." value={query}
       onChange={event => { setQuery(event.target.value); setHighlight(0) }}
       onKeyDown={event => {
+        if (isCompositionKey(event.nativeEvent)) return
         const count = projects.length + 1
         if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) { event.preventDefault(); setHighlight(current => (current + (event.key === 'ArrowDown' ? 1 : count - 1)) % count) }
         if (event.key === 'Enter') { event.preventDefault(); choose(highlight) }
@@ -67,7 +72,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
       {!projects.length && <p className="new-thread-dialog__empty">{query ? 'No matching projects.' : remote ? 'No projects on this host yet.' : 'Choose a folder to start your first project.'}</p>}
       {error && <p className="agent-error" role="alert">{error}</p>}
       {browsing ? <FolderBrowserDialog state={state} hostId={browseHostId} heading="Choose a folder for the new thread"
-        onUse={choice => chooseFolder(choice.path)} onClose={() => setBrowsing(false)} /> : null}
+        onUse={choice => chooseFolder(choice.path, choice.isNew === true)} onClose={() => setBrowsing(false)} /> : null}
     </div>,
   }
 }
@@ -75,9 +80,11 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
 /**
  * The project for a folder chosen in a New dialog, created when it does not exist yet. A missing acknowledgement is
  * not permission to add the folder again: `attempted` keeps the folders already sent, and a second try only checks.
+ * A folder named with New folder is sent to be made; any other is sent as existing, so one that has gone is refused.
  */
-export async function projectForFolder({ folder, command, latest, attempted, providerId, hostId }: {
+export async function projectForFolder({ folder, isNew = false, command, latest, attempted, providerId, hostId }: {
   readonly folder: string
+  readonly isNew?: boolean
   readonly command: AgentConnection['command']
   readonly latest: () => AgentState | null
   readonly attempted: Set<string>
@@ -92,7 +99,7 @@ export async function projectForFolder({ folder, command, latest, attempted, pro
   let acknowledgement: AgentState | null = null
   if (!project && !attempted.has(attemptKey)) {
     attempted.add(attemptKey)
-    acknowledgement = await command({ type: 'create-project', title: folderName(folder), path: folder, useExisting: true, ...(providerId ? { provider: providerId } : {}) })
+    acknowledgement = await command({ type: 'create-project', title: folderName(folder), path: folder, ...(isNew ? {} : { useExisting: true }), ...(providerId ? { provider: providerId } : {}) })
     project = findProject(acknowledgement) ?? findProject(latest())
   }
   if (!project) {

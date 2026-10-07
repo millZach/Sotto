@@ -3,10 +3,11 @@ import { RotateCcw } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { APPEARANCE_CONTRAST, GLASS_OPACITY, type ThemeDefinition } from '../../../../shared/themes/library'
+import { APPEARANCE_CONTRAST, FROST_SEE_THROUGH, GLASS_OPACITY, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
-import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { Toggle } from '../../components/Toggle'
+import { appearancePreview, frostAvailable, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
@@ -36,6 +37,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
   const system = platform === 'darwin' ? 'macOS' : 'Windows'
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark)
+  const canFrost = window.sotto?.canFrostWindow === true
   const [importing, setImporting] = useState(false)
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
   const getSettingsRef = useRef(getSettings)
@@ -114,6 +116,23 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
               onPreview={value => appearancePreview.choose({ glassOpacity: value })}
               onCommit={(value, sequence) => void onSave({ glassOpacity: value }, 'Glass opacity saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
             />
+            <Toggle
+              label="Frosted window"
+              checked={shown.frostedWindow}
+              disabled={!canFrost}
+              description={frostDescription(platform, canFrost, shown.frostedWindow)}
+              onCheckedChange={frostedWindow => void choose({ frostedWindow }, frostedWindow ? 'Frosted window on.' : 'Frosted window off.')}
+            />
+            {shown.frostedWindow && canFrost
+              ? <AppearanceSlider
+                  label="See-through"
+                  description="How much of the desktop shows through the room. The sidebar and a pane's terminal drawer stay a little more solid, and messages, the composer and menus keep their own colour."
+                  bounds={FROST_SEE_THROUGH}
+                  value={shown.frostSeeThrough}
+                  onPreview={value => appearancePreview.choose({ frostSeeThrough: value })}
+                  onCommit={(value, sequence) => void onSave({ frostSeeThrough: value }, 'See-through saved.').catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+                />
+              : null}
           </div>
         </div>
         <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />
@@ -127,6 +146,14 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings }: 
 }
 
 interface SliderBounds { readonly min: number; readonly max: number; readonly step: number; readonly default: number }
+
+/** What the Frosted window switch does here, and why it does nothing when the system cannot or will not draw it. */
+function frostDescription(platform: SottoPlatform, canFrost: boolean, on: boolean): string {
+  if (!canFrost) return 'Needs Windows 11 version 22H2 or later.'
+  const what = 'Let the desktop show through the window, blurred and tinted by your theme.'
+  if (on && !frostAvailable()) return `${what} Your system is set to reduce transparency, so the window stays solid.`
+  return platform === 'win32' ? `${what} Windows draws it solid while another window is in front.` : what
+}
 
 /**
  * A range that paints on every step and saves once the hand settles: the save

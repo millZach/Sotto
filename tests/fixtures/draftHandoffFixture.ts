@@ -8,12 +8,13 @@ import { AgentControl } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../src/main/agents/host'
+import type { Authority } from '../../src/main/agents/authority'
 import { agentCommandSchema, type AgentCommand, type AgentState } from '../../src/shared/agents'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 import { immediatePublishScheduler } from './publishScheduler'
 import { PIXEL_PNG, stageInto } from './stagedImages'
 
-export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequestDraftDecision) {
+export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequestDraftDecision, authority?: Authority) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-draft-handoff-'))
   const host = new E2EAgentHost()
   const attempts: AgentHostCommand[] = []
@@ -22,7 +23,7 @@ export async function draftHandoffFixture(bindRequestDraftDecision?: BindRequest
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
   await credentials.load()
   let history = true
-  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), historyEnabled: () => history,
+  const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, ...(bindRequestDraftDecision ? { bindRequestDraftDecision } : {}), ...(authority ? { authority } : {}), historyEnabled: () => history,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
   })
   let control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })

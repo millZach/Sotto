@@ -3,7 +3,7 @@ import { constants, type BigIntStats } from 'node:fs'
 import { open, opendir, realpath, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
-import { FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema,
+import { FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENTRIES, FILES_MAX_IMAGE_BYTES, FILES_MAX_TEXT_BYTES, fileListRequestSchema, fileRelativePathSchema, fileRequestSchema,
   type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesError, type FilesResult } from '../../shared/files'
 import { rasterImage } from './imagePreview'
 
@@ -37,7 +37,7 @@ export class FilesService {
   }
 
   private async run<T>(operation: () => Promise<T>): Promise<FilesResult<T>> {
-    if (this.active >= 4) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
+    if (this.active >= FILES_MAX_CONCURRENT_REQUESTS) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
     this.active++
     try { return { ok: true, value: await operation() } }
     catch (error) {
@@ -103,7 +103,11 @@ export class FilesService {
         for await (const entry of directory) {
           if (scanned++ === FILES_MAX_ENTRIES) { truncated = true; break }
           const path = request.path ? `${request.path}/${entry.name}` : entry.name
-          if (!fileRelativePathSchema.safeParse(path).success) continue
+          if (!fileRelativePathSchema.safeParse(path).success) {
+            if (path.length <= 4096) entries.push({ name: entry.name, path, kind: 'unavailable' })
+            else truncated = true
+            continue
+          }
           let kind: FileListing['entries'][number]['kind'] = 'unavailable'
           try {
             const child = await this.target(workspace, path)

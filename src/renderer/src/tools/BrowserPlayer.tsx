@@ -32,7 +32,7 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(boundary, host)
-  const show = page !== undefined && page.status !== 'unavailable' && !covered
+  const show = page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
     {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note">This page could not load.</p>
@@ -65,7 +65,8 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const ids = state.host.threads.filter(thread => !thread.remoteHost).map(thread => thread.id).join('\n')
   useEffect(() => { store.browser.watchTasks(bridge, ids.split('\n').filter(Boolean)) }, [bridge, store, ids])
 
-  const task = focusedThreadId === null ? undefined : tasks.find(item => item.threadId === focusedThreadId && state.host.threads.some(thread => thread.id === item.threadId))
+  // The test iPhone's tasks float in the phone player instead (ADR-0045).
+  const task = focusedThreadId === null ? undefined : tasks.find(item => item.threadId === focusedThreadId && !item.device && state.host.threads.some(thread => thread.id === item.threadId))
   const threadId = task?.threadId ?? null
   const taskId = task?.id
   useEffect(() => { if (threadId && taskId) playerStore.taskSeen(threadId, taskId, autoShow) }, [threadId, taskId, autoShow, playerStore])
@@ -80,23 +81,22 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [playerStore])
-  // `rectFor` is the one default (pane-anchored, `browserPlayerStore.ts`), so a first drag or resize starts from
-  // exactly the rectangle just drawn rather than a second, disagreeing default kept here.
-  const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
-
   const [problem, setProblem] = useState<string | null>(null)
   const [stoppingGrant, setStoppingGrant] = useState(false)
   const [answering, setAnswering] = useState(false)
   useEffect(() => { setProblem(null) }, [taskId])
   const playerRoot = useRef<HTMLElement>(null)
 
-  const mount = useCallback((bounds: BrowserBounds | null) => { if (threadId && task) store.browser.mount(bridge, threadId, task.pageId, bounds) }, [store, bridge, threadId, task])
+  const pageId = task?.pageId
+  const mount = useCallback((bounds: BrowserBounds | null) => { if (threadId && pageId) store.browser.mount(bridge, threadId, pageId, bounds) }, [store, bridge, threadId, pageId])
 
   if (!task || !threadId) return null
   const thread = state.host.threads.find(item => item.id === threadId)
   if (!thread) return null
   const dockedSame = chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === threadId && threadBrowser?.activePageId === task.pageId
   if (visibility === 'hidden' || dockedSame) return null
+  // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
+  const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
 
   const page = threadBrowser?.pages.find(item => item.id === task.pageId)
   const titleText = page ? pageLabel(page) : task.description

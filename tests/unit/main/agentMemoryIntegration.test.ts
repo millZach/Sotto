@@ -35,7 +35,7 @@ async function fixture() {
   let store: MemoryStore
   let profile: MemoryProfile
   let control: AgentControl
-  const turns = new TurnRecorder({ directory: root, historyEnabled: () => true, resolveSession: () => undefined })
+  const turns = new TurnRecorder({ directory: root, resolveSession: () => undefined })
   const complete = vi.fn<SubscriptionClient['complete']>(async (_system, input) => {
     const request = input as { utterance?: string; preferences?: { content: string; topic?: string }[] }
     const communication = request.preferences?.find(memory => memory.topic === 'communication')?.content

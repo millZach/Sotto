@@ -1,10 +1,12 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, LoaderCircle } from 'lucide-react'
+import { writeClipboard } from '../../agents/richActions'
+import { isCompositionKey } from '../../agents/composerKeys'
 import { PROVIDER_LABELS, type ProviderId } from '../../../../shared/agents'
 import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { PASTED_CODE_MAX, type ProviderSignInView } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
-import { HostsModal } from './HostDialog'
+import { HostsModal } from './HostsModal'
 
 /** How often the dialog asks the host where a sign-in stands while it waits for the user or the client. */
 const READ_EVERY_MS = 1500
@@ -97,7 +99,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     catch (failure) { setCodeError(clean(failure, 'The code could not be sent. Nothing was changed. Try again.')) }
     finally { setBusy(false) }
   }
-  const copy = async (value: string): Promise<void> => { try { await navigator.clipboard.writeText(value); setCopied('copied') } catch { setCopied('failed') } }
+  const copy = async (value: string): Promise<void> => { try { await writeClipboard(value); setCopied('copied') } catch { setCopied('failed') } }
   const tryAgain = (): void => setAttempt(value => value + 1)
   const close = (): void => { onClose() }
 
@@ -138,7 +140,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
           <input ref={field} id={fieldId} className="tt-input tt-focusable" value={code} maxLength={PASTED_CODE_MAX} autoComplete="off" spellCheck={false}
             aria-describedby={hintId} aria-invalid={codeError ? true : undefined} placeholder="Paste the code"
             onChange={event => { setCode(event.target.value); setCodeError(null) }}
-            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void finish() } }} />
+            onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); void finish() } }} />
           <Button variant="primary" disabled={!code.trim() || busy} onClick={() => void finish()}>Finish sign-in</Button>
         </div>
         <p className="tt-field__description" id={hintId}>Sotto hands the code to {name} on {host.name} and keeps nothing.</p>

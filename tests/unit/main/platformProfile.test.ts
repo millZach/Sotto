@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
-import { platformProfile } from '../../../src/main/platformProfile'
+import { platformProfile, windowFrostFor } from '../../../src/main/platformProfile'
 import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
@@ -13,7 +13,6 @@ describe('platformProfile', () => {
     expect(profile.mainWindowChrome).toBe('frameless')
     expect(profile.trafficLightPosition).toBeNull()
     expect(profile.applicationMenu).toBe('none')
-    expect(profile.dockPresence).toBe('regular')
     expect(profile.widgetAlwaysOnTopLevel).toBe('normal')
     expect(profile.widgetFocusable).toBe(false)
     expect(profile.widgetVisibleOnAllWorkspaces).toBe(false)
@@ -30,10 +29,10 @@ describe('platformProfile', () => {
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
       applicationMenu: 'none',
-      dockPresence: 'regular',
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
+      widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
@@ -48,10 +47,10 @@ describe('platformProfile', () => {
       mainWindowChrome: 'hidden-inset',
       trafficLightPosition: { x: 16, y: 16 },
       applicationMenu: 'macos',
-      dockPresence: 'dynamic',
       widgetAlwaysOnTopLevel: 'floating',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: true,
+      widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
@@ -91,4 +90,18 @@ describe('platformProfile', () => {
       expect(platformProfile(platform)).toBe(profile)
     },
   )
+})
+
+describe('windowFrostFor', () => {
+  it('offers acrylic from Windows 11 22H2 and nothing before it', () => {
+    expect(windowFrostFor('win32', '10.0.26200')).toBe('acrylic')
+    expect(windowFrostFor('win32', '10.0.22621')).toBe('acrylic')
+    expect(windowFrostFor('win32', '10.0.22000')).toBeNull()
+    expect(windowFrostFor('win32', '10.0.19045')).toBeNull()
+    expect(windowFrostFor('win32', 'unknown')).toBeNull()
+  })
+
+  it('offers vibrancy on every macOS', () => {
+    expect(windowFrostFor('darwin', '24.1.0')).toBe('vibrancy')
+  })
 })

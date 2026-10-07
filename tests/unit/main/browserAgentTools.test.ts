@@ -23,7 +23,7 @@ function setup(shared = false) {
 describe('thread browser tool dispatcher', () => {
   it('exposes neither authority overrides nor arbitrary debugger commands', async () => {
     const { server, service } = setup(true)
-    expect(browserToolDefinitions.map(tool => tool.name)).toEqual(['browser_pages', 'browser_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish'])
+    expect(browserToolDefinitions.map(tool => tool.name)).toEqual(['browser_pages', 'browser_open', 'iphone_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish', 'iphone_cloud_open', 'iphone_cloud_action', 'iphone_cloud_status', 'iphone_cloud_finish'])
     for (const extra of [{ threadId: 'victim' }, { workspaceId: 'b'.repeat(64) }, { approved: true }, { command: 'Runtime.evaluate' }]) {
       expect((await server.call('owner', 'browser_action', { pageId, taskId, action: { type: 'inspect' }, ...extra })).isError).toBe(true)
     }

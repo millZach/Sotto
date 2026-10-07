@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
+  TRANSCRIPTION_KEPT_DETAIL,
   isTranscriptionErrorCode,
   type DictationState,
 } from '../../../../shared/dictation'
@@ -25,12 +26,17 @@ export interface DictateRoomProps {
   readonly historyStatus: HistoryStatus
   readonly onStart: () => Promise<void>
   readonly onStop: () => Promise<void>
+  /** Sends a kept recording again. */
+  readonly onRetry?: () => Promise<void>
+  /** Clears an error, letting go of a kept recording. */
+  readonly onDismiss?: () => Promise<void>
   readonly onOpenSettings: () => void
   readonly onCopy: (text: string) => Promise<boolean>
 }
 
-const DAY_MS = 86_400_000
 const TIMER_TICK_MS = 250
+/** How long after an error appears an Escape is still taken as meant for the work before it. */
+const ESCAPE_GRACE_MS = 500
 
 export function formatElapsed(milliseconds: number): string {
   const totalSeconds = Number.isFinite(milliseconds) ? Math.max(0, Math.floor(milliseconds / 1_000)) : 0
@@ -54,11 +60,16 @@ export function transcriptStamp(createdAt: number, now: number): { dateTime?: st
   if (createdAt >= startOfToday.valueOf()) {
     return { dateTime, label: date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) }
   }
-  if (createdAt >= startOfToday.valueOf() - DAY_MS) return { dateTime, label: 'Yesterday' }
+  const startOfYesterday = new Date(startOfToday)
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+  if (createdAt >= startOfYesterday.valueOf()) return { dateTime, label: 'Yesterday' }
   return { dateTime, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 }
 
-function errorDetail(code: string, copy: PlatformCopy): string {
+function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = false): string {
+  if (kept && isTranscriptionErrorCode(code)) {
+    return retried ? `Try again did not get through. ${TRANSCRIPTION_KEPT_DETAIL[code]}` : TRANSCRIPTION_KEPT_DETAIL[code]
+  }
   switch (code) {
     case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
     case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
@@ -89,7 +100,7 @@ export function dictateSentence(
     case 'processing': return { sentence: 'Turning speech into text.', tone: 'normal' }
     case 'success': return { sentence: state.output === 'pasted' ? 'Pasted.' : 'Copied.', tone: 'normal' }
     case 'cancelled': return { sentence: 'Cancelled.', tone: 'normal' }
-    case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy), tone: 'error' }
+    case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy, state.kept === true, state.retried === true), tone: 'error' }
     default: return { sentence: 'Ready when you are.', tone: 'normal' }
   }
 }
@@ -115,6 +126,8 @@ export function DictateRoom({
   historyStatus,
   onStart,
   onStop,
+  onRetry,
+  onDismiss,
   onOpenSettings,
   onCopy,
 }: DictateRoomProps): ReactNode {
@@ -168,6 +181,44 @@ export function DictateRoom({
     actionLabel = 'Transcribing...'
     actionDisabled = true
   }
+  // A kept recording is sent again from here as well as from the widget.
+  const kept = dictation.status === 'error' && dictation.kept === true && onRetry !== undefined
+  if (kept) {
+    actionLabel = 'Try again'
+    actionDisabled = submitting
+    action = onRetry
+  }
+  const dismiss = dictation.status === 'error' && onDismiss !== undefined ? onDismiss : undefined
+  // Escape dismisses an error, and lets go of a kept recording, inside this
+  // window. Sotto does not claim the key system-wide for it, so other apps keep
+  // their Escape while an error waits. An Escape in the first half second is
+  // taken as one meant for the work the error replaced, which Sotto held the
+  // key for, so it cannot discard a recording that was just kept.
+  const errorKey = dictation.status === 'error'
+    ? `${dictation.sessionId ?? ''}:${dictation.code}:${String(dictation.kept)}:${String(dictation.retried)}`
+    : ''
+  useEffect(() => {
+    if (dismiss === undefined) return undefined
+    const shownAt = Date.now()
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
+      if (Date.now() - shownAt < ESCAPE_GRACE_MS) return
+      const target = event.target instanceof Element ? event.target : null
+      // An open dialog, ARIA or native (the folder browser is a <dialog>), owns
+      // Escape; a non-modal panel such as the theme editor only does while it has focus.
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog')) return
+      if (document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], dialog[open]') !== null) return
+      // Decide once every other handler has had the press: one that claimed it,
+      // such as the client-update card closing, keeps it.
+      setTimeout(() => {
+        if (!event.defaultPrevented) void dismiss()
+      }, 0)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [dismiss, errorKey])
+  const keyProblem = !configured || (dictation.status === 'error'
+    && (dictation.code === 'TRANSCRIPTION_UNCONFIGURED' || dictation.code === 'TRANSCRIPTION_UNAUTHORIZED'))
 
   const liveProps = said.tone === 'error'
     ? { role: 'alert' as const, 'aria-live': 'assertive' as const }
@@ -199,7 +250,15 @@ export function DictateRoom({
         </div>
         <div className="dictate__actions">
           <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
-          {configured && !microphoneSkipped ? (
+          {dismiss === undefined ? null : (
+            <Button variant="secondary" disabled={submitting} onClick={() => void invoke(dismiss)}>
+              {kept ? 'Discard recording' : 'Dismiss'}
+            </Button>
+          )}
+          {/* The shortcut starts a new dictation, which lets a kept recording go,
+              so it is not offered as another way to press Try again. A kept
+              recording that failed on the key still points at Settings. */}
+          {kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}
             </span>

@@ -2,6 +2,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { agentAttachmentPreviewDataSchema } from '../../../src/shared/agents'
 import {
   AttachmentPreviews, MAX_HIGHLIGHTED_CODE_LENGTH, MessageContent, attachmentTypeLabel, formatAttachmentSize, safeLinkUrl,
 } from '../../../src/renderer/src/agents/MessageContent'
@@ -272,6 +273,67 @@ describe('streaming', () => {
 })
 
 describe('attachment previews', () => {
+  const largePreview = (index: number, characters = 2 * 1024 * 1024): string =>
+    `data:image/png;base64,${PNG.split(',')[1]!.slice(0, 32)}${'A'.repeat(characters)}${btoa(String.fromCharCode(index, 0, 0))}`
+
+  it('evicts validated data URLs by retained bytes before reaching the entry limit', () => {
+    const validate = vi.spyOn(agentAttachmentPreviewDataSchema, 'safeParse')
+    const sources = [1, 2, 3].map(index => largePreview(index, 3 * 1024 * 1024))
+    const show = (dataUrl: string) => render(<AttachmentPreviews attachments={[{ id: 'large-inline', name: 'large.png', preview: { dataUrl } }]} />)
+    for (const source of sources) { show(source); expect(screen.getByRole('img')).toHaveAttribute('src', source); cleanup() }
+    show(sources[0]!)
+    expect(validate.mock.calls.filter(([value]) => (value as { dataUrl: string }).dataUrl === sources[0])).toHaveLength(2)
+  })
+
+  it('evicts fetched preview bytes when requests resolve and refetches an evicted image', async () => {
+    const attachmentPreview = vi.fn(async ({ attachmentId }: { attachmentId: string }) => ({ dataUrl: largePreview(Number(attachmentId), 3 * 1024 * 1024) }))
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const origin = { threadId: 'byte-bound', messageId: 'message' }
+    const show = (id: string) => render(<AttachmentPreviews origin={origin} attachments={[{ id, name: 'large.png', preview: { available: true } }]} />)
+    for (const id of ['1', '2', '3']) { show(id); await screen.findByRole('img'); cleanup() }
+    show('1')
+    await screen.findByRole('img')
+    expect(attachmentPreview).toHaveBeenCalledTimes(4)
+  })
+
+  it('draws an individually oversized preview without retaining it in either cache', async () => {
+    const dataUrl = largePreview(4, 9 * 1024 * 1024)
+    const validate = vi.spyOn(agentAttachmentPreviewDataSchema, 'safeParse')
+    const attachmentPreview = vi.fn(async () => ({ dataUrl }))
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const show = () => render(<AttachmentPreviews origin={{ threadId: 'oversized', messageId: 'message' }} attachments={[{ id: '4', name: 'large.png', preview: { available: true } }]} />)
+    show(); await screen.findByRole('img'); cleanup()
+    show(); await screen.findByRole('img')
+    expect(attachmentPreview).toHaveBeenCalledTimes(2)
+    expect(validate.mock.calls.filter(([value]) => (value as { dataUrl: string }).dataUrl === dataUrl).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('retains an ordinary large ASCII preview across an oversized request', async () => {
+    const normal = largePreview(5, 5 * 1024 * 1024)
+    const oversized = largePreview(6, 9 * 1024 * 1024)
+    const validate = vi.spyOn(agentAttachmentPreviewDataSchema, 'safeParse')
+    const attachmentPreview = vi.fn(async ({ attachmentId }: { attachmentId: string }) => ({ dataUrl: attachmentId === 'normal' ? normal : oversized }))
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const show = (id: string) => render(<AttachmentPreviews origin={{ threadId: 'oversized-admission', messageId: 'message' }} attachments={[{ id, name: `${id}.png`, preview: { available: true } }]} />)
+    for (const id of ['normal', 'oversized', 'normal']) { show(id); await screen.findByRole('img'); cleanup() }
+    expect(attachmentPreview.mock.calls.filter(([request]) => request.attachmentId === 'normal')).toHaveLength(1)
+    // Inline reuse reaches validation even when the fetch cache supplied the previous render.
+    render(<AttachmentPreviews attachments={[{ id: 'inline-normal', name: 'normal.png', preview: { dataUrl: normal } }]} />)
+    expect(screen.getByRole('img')).toHaveAttribute('src', normal)
+    expect(validate.mock.calls.filter(([value]) => (value as { dataUrl: string }).dataUrl === normal)).toHaveLength(1)
+  })
+
+  it('keeps all 64 fetched previews when an oversized request completes', async () => {
+    const attachmentPreview = vi.fn(async ({ attachmentId }: { attachmentId: string }) => ({
+      dataUrl: largePreview(Number(attachmentId), attachmentId === '65' ? 9 * 1024 * 1024 : 1024),
+    }))
+    ;(window as { sotto?: unknown }).sotto = { agents: { attachmentPreview } }
+    const show = (id: string) => render(<AttachmentPreviews origin={{ threadId: 'full-cache-oversized', messageId: 'message' }} attachments={[{ id, name: `${id}.png`, preview: { available: true } }]} />)
+    for (let id = 1; id <= 65; id++) { show(String(id)); await screen.findByRole('img'); cleanup() }
+    for (let id = 1; id <= 64; id++) { show(String(id)); await screen.findByRole('img'); cleanup() }
+    expect(attachmentPreview).toHaveBeenCalledTimes(65)
+  })
+
   it('shows a validated submitted image with readable name, type and size', () => {
     render(<AttachmentPreviews attachments={[{ id: 'a', name: 'footer.png', mimeType: 'image/png', sizeBytes: 1_468_006, preview: { dataUrl: PNG } }]} />)
     const image = screen.getByRole('img', { name: 'footer.png' })

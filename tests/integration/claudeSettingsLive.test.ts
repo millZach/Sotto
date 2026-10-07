@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ClaudeStreamJsonHost, type ClaudeSettingsEvent } from '../../src/main/agents/claude'
+import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from '../../src/main/agents/claude'
 import { object, type ClaudeFrame, type ClaudeProtocol } from '../../src/main/agents/claudeProtocol'
 import type { AgentHostResult } from '../../src/main/agents/host'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
@@ -26,8 +26,8 @@ type Runtimes = { runtimes: Map<string, { protocol: ClaudeProtocol }>; stopSessi
 describe.skipIf(!LIVE)('Claude settings on a running session (live)', () => {
   it('applies a model, an effort level and a permission mode to the running CLI without starting another', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-claude-settings-live-')); const cwd = join(root, 'project'); await mkdir(cwd)
-    const events: ClaudeSettingsEvent[] = []
-    const options = { userDataPath: root, requestTimeoutMs: 20_000, pollIntervalMs: 250, logEvent: (event: ClaudeSettingsEvent) => { events.push(event) } }
+    const events: ClaudeAdapterEvent[] = []
+    const options = { userDataPath: root, requestTimeoutMs: 20_000, pollIntervalMs: 250, logEvent: (event: ClaudeAdapterEvent) => { events.push(event) } }
     const host = new ClaudeStreamJsonHost(options)
     const id = randomUUID()
     const internals = () => host as unknown as Runtimes

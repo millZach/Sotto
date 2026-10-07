@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -16,17 +16,22 @@ import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
 import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
 import { BrowserSurface } from './BrowserSurface'
+import { IPhoneSurface } from './IPhoneSurface'
+import { PhonePlayer } from './PhonePlayer'
+import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
 import { useBrowserTasks } from './browserStore'
+import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
 import { PullRequestSurface } from './PullRequestSurface'
 import { useThreadChanges } from './changesStore'
 import { revealLabel } from './FilePreview'
 import { FilesSurface, useThreadFiles } from './FilesSurface'
+import { hostThreadChanges, hostThreadFiles } from './hostThreadTools'
 import { useProactiveChanges } from './proactivePanels'
 import type { PathAction } from './filesBrowser'
 import { TerminalSurface } from './TerminalSurface'
 import { ToolsChrome } from './ToolsChrome'
-import type { TerminalViewFactory } from './terminalStore'
+import { windowTerminalBridge, type TerminalViewFactory } from './terminalStore'
 import { useTerminalViewFactory } from './terminalViewLoader'
 import {
   TOOL_SURFACES, TOOLS_PANEL_MAX_WIDTH, TOOLS_PANEL_MIN_PANE_WIDTH, TOOLS_PANEL_MIN_WIDTH, toolsPanelStore, toolsTarget,
@@ -54,6 +59,9 @@ export interface ToolsPanelProps {
   readonly terminalView?: TerminalViewFactory
   readonly store?: ToolsPanelStore
   readonly playerStore?: BrowserPlayerStore
+  readonly phoneStore?: PhonePlayerStore
+  readonly cloudStore?: CloudIphoneStore
+  readonly cloudBridge?: CloudIphoneBridgeLike
 }
 
 function bridgeFiles(): FilesBridge | undefined {
@@ -68,10 +76,6 @@ function bridgeBrowser(): BrowserBridge | undefined {
   return (window.sotto as { browser?: BrowserBridge } | undefined)?.browser
 }
 
-function bridgeTerminal(): TerminalBridge | undefined {
-  return (window.sotto as { terminal?: TerminalBridge } | undefined)?.terminal
-}
-
 function bridgePlatform(): string | undefined {
   return (window.sotto as { platform?: string } | undefined)?.platform
 }
@@ -79,7 +83,8 @@ function bridgePlatform(): string | undefined {
 /** The area the panel shares with the panes: its parent, or the parent of a wrapper that holds only the panel. */
 function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   const parent = panel?.parentElement ?? null
-  return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
+  // The floating players render beside the panel in its column but take no room in it.
+  return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill') && !child.classList.contains('phone-player')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
 function focusToggle(): void {
@@ -130,25 +135,28 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
 
 /**
  * Which working copy the panel reads: the project, then the branch in mono when it is known, then the kind of
- * folder in the pane chip's words. The thread's recorded branch comes first; a project folder with no record
- * takes the branch Changes last read. The branch gives way before the project and the folder's kind.
+ * folder in the pane chip's words, and for a thread on a paired host, the host it is on. The thread's recorded
+ * branch comes first; a project folder with no record takes the branch Changes last read. The branch gives way
+ * before the project, the folder's kind and the host.
  */
-function WorkingCopyLine({ thread, project, knownBranch }: { readonly thread: AgentThread; readonly project: AgentProject | undefined; readonly knownBranch: string | undefined }): ReactNode {
+function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thread: AgentThread; readonly project: AgentProject | undefined; readonly knownBranch: string | undefined; readonly host: string | undefined }): ReactNode {
   const facts = describeWorkingCopy(thread, project)
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
   const branch = facts.branch ?? knownBranch
   // A ready record's label is its branch, which now has its own place; the folder's kind stands in for it.
   const place = facts.status === 'ready' && facts.mode === 'independent' ? 'Worktree' : facts.status === 'ready' && facts.mode === 'shared' && facts.label === facts.branch ? 'Project folder' : facts.label
-  const words = [project?.title, branch === undefined ? undefined : `Branch ${branch}`, place].filter(Boolean).join(' · ')
+  const words = [project?.title, branch === undefined ? undefined : `Branch ${branch}`, place, host === undefined ? undefined : `on ${host}`].filter(Boolean).join(' · ')
   return <div className="tools-panel__copy" title={words}>
     <Icon size={14} aria-hidden="true" />
     {project ? <><span className="tools-panel__project">{project.title}</span><span className="tools-panel__sep" aria-hidden="true">·</span></> : null}
     {branch !== undefined ? <><bdi className="tools-panel__branch">{branch}</bdi><span className="tools-panel__sep" aria-hidden="true">·</span></> : null}
     <span className="tools-panel__label">{place}</span>
+    {host !== undefined ? <><span className="tools-panel__sep" aria-hidden="true">·</span>
+      <span className="tools-panel__host"><Server size={12} aria-hidden="true" /><span className="tools-panel__host-name">on {host}</span></span></> : null}
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, agents: Users }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: GitCompare, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
 /** A surface's name where its rail word is shortened. */
 const SURFACE_NAMES: Partial<Record<ToolSurfaceId, string>> = { 'pull-request': 'Pull request' }
 
@@ -156,6 +164,7 @@ const SURFACE_NAMES: Partial<Record<ToolSurfaceId, string>> = { 'pull-request': 
 const NO_THREAD: Record<ToolSurfaceId, string> = {
   files: 'Open a thread to browse its files.', changes: 'Open a thread to review its changes.', 'pull-request': 'Open a thread to see its pull request.', terminal: 'Open a thread to use its terminal.',
   browser: 'Open a thread to browse its pages.',
+  iphone: 'Open a thread to use its test iPhone.',
   agents: 'Open a thread to see its agents.',
 }
 
@@ -191,13 +200,19 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
 }
 
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
-function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean): Partial<Record<ToolSurfaceId, string>> {
+function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean, cloudStore: CloudIphoneStore): Partial<Record<ToolSurfaceId, string>> {
   const tasks = useBrowserTasks(store.browser)
+  const cloudSession = useCloudSession(thread?.id ?? null, cloudStore)
   const live: Partial<Record<ToolSurfaceId, string>> = {}
   if (thread) {
-    const threadTasks = tasks.filter(task => task.threadId === thread.id)
+    const threadTasks = tasks.filter(task => task.threadId === thread.id && !task.device)
     if (threadTasks.some(task => task.pendingAction !== null)) live.browser = 'A browser request is waiting for your answer'
     else if (threadTasks.some(task => task.status === 'working')) live.browser = 'A browser task is working'
+    const phoneTasks = tasks.filter(task => task.threadId === thread.id && task.device === 'iphone')
+    if (phoneTasks.some(task => task.pendingAction !== null)) live.iphone = 'A test iPhone request is waiting for your answer'
+    else if (phoneTasks.some(task => task.status === 'working')) live.iphone = 'An agent is working on the test iPhone'
+    else if (cloudSession?.status === 'asking') live.iphone = 'A cloud iPhone request is waiting for your answer'
+    else if (cloudSession?.status === 'active' || cloudSession?.status === 'starting') live.iphone = 'A cloud iPhone session is running'
     // Changes reads Git only while it is open. Elsewhere the working copy's own dirty mark is fresher.
     const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
     if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = 'Has uncommitted changes' }
@@ -223,18 +238,24 @@ function useTransientStatus(): [string, (message: string) => void] {
  * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
  * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: ToolsPanelProps): ReactNode {
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
   const bridge = filesBridge ?? bridgeFiles()
   const changesBridge = gitChanges ?? bridgeChanges()
-  const terminalBridge = terminal ?? bridgeTerminal()
+  const terminalBridge = terminal ?? windowTerminalBridge()
   const browserBridge = browser ?? bridgeBrowser()
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   // showBrowserPreviews keeps its settings key (ADR-0020); in the player it decides whether a new page opens the player on its own.
   const autoShowBrowser = useOptionalAgents()?.showBrowserPreviews !== false
   const target = toolsTarget(chrome, focusedThreadId)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
+  // A thread on a paired host reads its Files and Changes on that host (ADR-0025, October 5 amendment), through bridges
+  // that leave out what needs the thread on this computer: reveal, the turn checkpoints and the watch.
+  const hostFiles = useMemo(() => bridge && hostThreadFiles(bridge), [bridge])
+  const hostChanges = useMemo(() => changesBridge && hostThreadChanges(changesBridge), [changesBridge])
+  const filesFor = thread?.remoteHost ? hostFiles : bridge
+  const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
   const workingCopyThread = state.host.threads.find(item => item.id === workingCopyTarget)
   const selectedThread = state.host.threads.find(item => item.id === focusedThreadId)
@@ -294,30 +315,32 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     return () => { covered.current.forEach((element, index) => { element.inert = previous[index] ?? false }); covered.current = [] }
   }, [open, chrome.expanded])
 
-  // A thread on a paired host keeps its tools on that machine; nothing here reads its folder.
-  const threadId = thread?.remoteHost ? undefined : thread?.id
+  // Files, Changes and Agents read a paired host's thread on that host. Its terminal, browser and test iPhone stay on
+  // that machine, so nothing here starts them for it.
+  const threadId = thread?.id
+  const localThreadId = thread?.remoteHost ? undefined : thread?.id
   // Files lists the working folder on every surface, since the footer's path and its actions read it,
   // and refreshes when its own surface comes back.
   const onFiles = chrome.surface === 'files'
   useEffect(() => {
-    if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(bridge, threadId)
-  }, [open, threadId, onFiles, bridge, store])
+    if (open && threadId !== undefined && (onFiles || !store.files.thread(threadId))) store.files.activate(filesFor, threadId)
+  }, [open, threadId, onFiles, filesFor, store])
   // Changes watches the working copy only while it is the visible surface. In the app it waits for settings, so its
   // first read already follows Hide whitespace changes rather than reading once each way on a cold start. Outside
   // the app (a panel rendered on its own) there are no settings to wait for.
   const diffSettingsKnown = app === null || app.settings !== null
   useEffect(() => {
     if (!open || threadId === undefined || chrome.surface !== 'changes' || !diffSettingsKnown) return
-    store.changes.activate(changesBridge, threadId)
-    return () => store.changes.deactivate(changesBridge)
-  }, [open, threadId, chrome.surface, changesBridge, store, diffSettingsKnown])
+    store.changes.activate(changesFor, threadId)
+    return () => store.changes.deactivate(changesFor)
+  }, [open, threadId, chrome.surface, changesFor, store, diffSettingsKnown])
   // Terminal sessions live in main; showing the surface only lists them again.
   useEffect(() => {
-    if (open && threadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, threadId)
-  }, [open, threadId, chrome.surface, terminalBridge, store])
+    if (open && localThreadId !== undefined && chrome.surface === 'terminal') void store.terminals.activate(terminalBridge, localThreadId)
+  }, [open, localThreadId, chrome.surface, terminalBridge, store])
   useEffect(() => {
-    if (open && threadId !== undefined && chrome.surface === 'browser') void store.browser.activate(browserBridge, threadId)
-  }, [open, threadId, chrome.surface, browserBridge, store])
+    if (open && localThreadId !== undefined && (chrome.surface === 'browser' || chrome.surface === 'iphone')) void store.browser.activate(browserBridge, localThreadId)
+  }, [open, localThreadId, chrome.surface, browserBridge, store])
 
   // Opening moves keyboard focus to the rail's open surface, so keyboard users land where the toggle pointed.
   // An open nobody pressed for (Proactive panels) leaves focus where the user is typing.
@@ -329,12 +352,15 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   useProactiveChanges(state, focusedThreadId, store)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
-  const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes')
+  const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes', cloudStore)
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
   // the "Float the browser over the thread" control's own condition, computed once for the surface below.
   const browserTasks = useBrowserTasks(store.browser)
 
-  const player = <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
+  const player = <>
+    <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
+    <PhonePlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
+  </>
   if (!open) return player
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
@@ -343,6 +369,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const pinned = chrome.surface !== 'agents' && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
   const surfaceLabel = SURFACE_NAMES[chrome.surface] ?? TOOL_SURFACES.find(surface => surface.id === chrome.surface)!.label
+  // The name this computer saved a paired host under, for the footer's "on forge".
+  const hostName = thread?.remoteHost ? state.connections?.find(item => item.hostId === thread.hostId)?.name ?? thread.hostLabel : undefined
 
   // Focus moves before the panel unmounts, so closing never leaves keyboard focus on the page.
   const close = (): void => {
@@ -353,7 +381,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }
   // Never offered while Tools is pinned elsewhere: that thread has no player here to float back to (the pin,
   // not this thread, owns what Browser shows), and the control never pins on its own way back either.
-  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && browserTasks.some(item => item.threadId === thread.id)
+  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && browserTasks.some(item => item.threadId === thread.id && !item.device)
   const floatBrowser = (): void => {
     if (!thread) return
     close()
@@ -361,7 +389,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }
   const pathAction = (action: PathAction, path: string): void => {
     if (!thread) return
-    void store.files.pathAction(bridge, thread.id, action, path).then(result => {
+    void store.files.pathAction(filesFor, thread.id, action, path).then(result => {
       if (action === 'copyPath') showStatus(result.ok ? 'Path copied' : 'Could not copy the path')
       else if (!result.ok) showStatus('Could not open the folder')
     })
@@ -396,13 +424,18 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     {chrome.surface !== 'agents' ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus} />
-  else if (thread.remoteHost) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
-  else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge} />
+  // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
+  else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
+  // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
+  else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
+    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} />
+  else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
-  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesBridge} platform={platform} onStatus={showStatus}
-    onOpenFile={path => { store.files.showFile(bridge, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
-  else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={bridge} platform={platform} onPathAction={pathAction} />
+  // A paired host pushes no change events: the Changes bridge for its thread asks it on a timer while Changes shows it.
+  else if (chrome.surface === 'changes') body = <ChangesSurface key={thread.id} threadId={thread.id} store={store.changes} bridge={changesFor} platform={platform} onStatus={showStatus}
+    onOpenFile={path => { store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
+  else body = <FilesSurface key={thread.id} threadId={thread.id} store={store.files} bridge={filesFor} platform={platform} onPathAction={pathAction} />
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.
@@ -423,12 +456,13 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
       <div className="tools-panel__main">
         <div className="tools-panel__body" id={`tools-surface-${chrome.surface}`} role="tabpanel" aria-labelledby={`tools-tab-${chrome.surface}`}>{body}</div>
         {thread ? <footer className="tools-panel__foot" title={`${thread.title}${workspace ? ` · ${workspace.workingDirectory}` : ''}`}>
-          <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} knownBranch={threadChanges?.list.status === 'ready' ? threadChanges.list.branch ?? undefined : undefined} />
+          <WorkingCopyLine thread={thread} project={state.host.projects.find(item => item.id === thread.projectId)} knownBranch={threadChanges?.list.status === 'ready' ? threadChanges.list.branch ?? undefined : undefined} host={hostName} />
           <span className={pinned ? 'tools-panel__pinned-owner' : 'tools-panel__accessible'}>{pinned ? <Pin size={12} aria-hidden="true" /> : null}<span className="tools-panel__thread-title">{thread.title}</span>{pinned ? <span className="tools-panel__tag">Pinned</span> : null}</span>
           {workspace ? <span className="tools-panel__foot-actions">
             <span className="tools-panel__path-text tools-panel__accessible" title={workspace.workingDirectory}>{workspace.workingDirectory}</span>
             <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Copy working folder path" title={`Copy path: ${workspace.workingDirectory}`} onClick={() => pathAction('copyPath', '')}><Copy size={14} aria-hidden="true" /></button>
-            <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={`${revealLabel(platform)}: working folder`} title={`${revealLabel(platform)}: ${workspace.workingDirectory}`} onClick={() => pathAction('reveal', '')}><FolderOutput size={14} aria-hidden="true" /></button>
+            {/* A paired host's folder is on that machine, so there is nothing to show here. */}
+            {filesFor?.reveal ? <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={`${revealLabel(platform)}: working folder`} title={`${revealLabel(platform)}: ${workspace.workingDirectory}`} onClick={() => pathAction('reveal', '')}><FolderOutput size={14} aria-hidden="true" /></button> : null}
           </span> : null}
         </footer> : null}
         <p className="tools-panel__status" role="status" aria-live="polite">{status}</p>

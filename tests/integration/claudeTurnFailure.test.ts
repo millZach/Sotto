@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLAUDE_TURN_FAILED, claudeTurnFailure } from '../../src/main/agents/claudeTurnFailure'
 import { claudeFixture } from '../fixtures/claudeFixture'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
 
 const fixtures: Awaited<ReturnType<typeof claudeFixture>>[] = []
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
@@ -26,6 +27,22 @@ const SIGN_IN = 'Claude Code is not signed in, or its sign-in has expired, so th
 const MODEL = 'Claude Code could not use this thread’s model, so this turn stopped. Nothing in the thread was lost. Choose another model from the model chip, then send again.'
 
 describe('the error a failed Claude turn leaves', () => {
+  it.each([401, 429])('uses the friendly failure in turn activity and history publications for status %s', async status => {
+    const f = await fixture()
+    const snapshots: AgentHostSnapshot[] = []
+    const unsubscribe = f.adapter.subscribeActivitySnapshots(snapshot => snapshots.push(snapshot), { historyFromEvents: true })
+    try {
+      await f.host.execute({ type: 'send', commandId: 'send', messageId: 'prompt', threadId: 'thread', text: 'Continue' })
+      const raw = `API Error: ${status} {"request_id":"synthetic-request-id","message":"synthetic protocol body"}`
+      const frame = failed({ result: raw, api_error_status: status })
+      const expected = claudeTurnFailure(frame)
+      await f.action('thread', { type: 'raw', frame })
+      await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === 'thread')?.activities?.find(activity => activity.kind === 'turn' && activity.status === 'failed')?.error).toBe(expected)
+      expect(JSON.stringify(snapshots)).toContain(expected)
+      expect(JSON.stringify(snapshots)).not.toContain(raw)
+      expect(JSON.stringify(await f.host.snapshot())).not.toContain('synthetic-request-id')
+    } finally { unsubscribe() }
+  })
   it.each([
     ['a usage limit with its reset time', failed({ result: 'You’ve hit your limit · resets 3pm (America/Chicago)' }), undefined, `${USAGE} Send again after it resets at 3pm (America/Chicago).`],
     ['a usage limit with no reset time', failed({ result: 'API Error: 429 {"type":"rate_limit_error"}' }), 'rate_limit', `${USAGE} Send again once it resets; Claude Code shows when.`],

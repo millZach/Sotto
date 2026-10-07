@@ -1,6 +1,6 @@
 {
   "name": "sotto",
-  "version": "0.1.27",
+  "version": "0.1.32",
   "description": "Hosted dictation through OpenRouter",
   "author": "Sotto",
   "private": true,
@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "postinstall": "node scripts/node-pty-spawn-helper.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json",
     "lint": "eslint .",
     "test": "vitest run",
@@ -25,15 +26,15 @@
     "runtime:verify": "node scripts/verify-runtime.mjs",
     "notices:verify": "node scripts/verify-notices.mjs",
     "package:dir": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --win --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked",
-    "package:win": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 0.1.27.exe\"",
+    "package:win": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --win nsis --x64 --publish never && node scripts/verify-packaged-resources.mjs release/win-unpacked --installer \"release/Sotto Setup 0.1.32.exe\"",
     "package:dir:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --dir --mac --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64",
-    "package:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-0.1.27-arm64.dmg\"",
+    "package:mac": "npm run runtime:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --mac dmg --arm64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/mac-arm64 --installer \"release/Sotto-0.1.32-arm64.dmg\"",
     "perf:voice": "node scripts/voice-perf/run.mjs",
     "test:voice-perf": "node --test scripts/voice-perf/*.test.mjs",
     "build:host": "node scripts/build-host.mjs",
     "package:host": "node scripts/package-host.mjs",
     "host:verify": "node scripts/verify-host-archive.mjs",
-    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/integration/remoteThreadPermissions.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/socketHostService.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts tests/unit/main/cliLookup.test.ts tests/integration/hostProviderLookup.test.ts --maxWorkers=2"
+    "test:socket": "vitest run tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/integration/remoteThreadPermissions.test.ts tests/unit/main/pairing.test.ts tests/unit/main/socketFrames.test.ts tests/unit/main/socketHostService.test.ts tests/unit/main/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/launchScriptBoot.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts tests/unit/main/cliLookup.test.ts tests/integration/hostProviderLookup.test.ts --maxWorkers=2"
   },
   "license": "MIT",
   "type": "commonjs",

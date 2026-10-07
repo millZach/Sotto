@@ -1,11 +1,11 @@
 import React from 'react'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PhonesSettings } from '../../../src/renderer/src/features/settings/PhonesSettings'
 import type { PairedPhone, PhonesBridge, PhonesCommand, PhonesState } from '../../../src/shared/phones'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const DNS = 'laptop-russh2j5.tail5728ca.ts.net'
 const OFF: PhonesState = {
   enabled: false, localHostRunning: true, phase: 'off', tailscale: { status: 'waiting' }, serve: { status: 'waiting' }, address: null,
@@ -29,6 +29,40 @@ function show(state: PhonesState, options: { answer?: (command: PhonesCommand, s
   return { command, push, update, openHosts }
 }
 const step = (name: string) => screen.getByText(name, { selector: 'b' }).closest('li')!
+
+it('shows failed setting saves beside each control and clears them after a successful retry', async () => {
+  const { bridge } = fixture(OFF)
+  const update = vi.fn(async () => false)
+  const user = userEvent.setup()
+  const { container } = render(<PhonesSettings phoneAccess={false} phoneAccessName="" onUpdateSettings={update} onOpenHosts={vi.fn()} bridge={bridge} />)
+  const toggle = screen.getByRole('switch', { name: 'Let phones connect' })
+  await user.click(toggle)
+  expect(await within(container.querySelector('.phones-switch')!).findByRole('alert')).toHaveTextContent('Phone access could not be saved. Nothing was changed. Try again.')
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  const input = await screen.findByRole('textbox', { name: 'Name on phones' })
+  await user.type(input, 'My computer{Enter}')
+  expect(await within(container.querySelector('.phones-name')!).findByText('The name could not be saved. Phones still use the previous name. Try again.')).toBeInTheDocument()
+  expect(input).toHaveAccessibleDescription(/The name could not be saved\. Phones still use the previous name\. Try again\./)
+  expect(within(container.querySelector('.phones-name')!).queryByRole('alert')).toBeNull()
+  expect(input).toHaveValue('My computer')
+  update.mockResolvedValue(true)
+  await user.keyboard('{Enter}')
+  await waitFor(() => expect(within(container.querySelector('.phones-name')!).queryByText('The name could not be saved. Phones still use the previous name. Try again.')).toBeNull())
+  await user.click(toggle)
+  await waitFor(() => expect(within(container.querySelector('.phones-switch')!).queryByRole('alert')).toBeNull())
+})
+
+it('copies the phone address through main when browser clipboard access is denied', async () => {
+  const user = userEvent.setup()
+  const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('Permission denied'))
+  const deliverOutput = vi.fn(async () => 'copied')
+  vi.stubGlobal('sotto', { deliverOutput })
+  show(READY)
+  await user.click(await screen.findByRole('button', { name: 'Copy address' }))
+  expect(deliverOutput).toHaveBeenCalledWith({ text: READY.address, autoPaste: false, pasteDelayMs: 50 })
+  expect(writeText).not.toHaveBeenCalled()
+  expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy()
+})
 
 it('off: every step waits, and no code can be shown yet', async () => {
   const { update } = show(OFF)
@@ -68,7 +102,10 @@ it('code: shows eight characters with a countdown, spelled out for a screen read
   await user.click(screen.getByRole('button', { name: 'Show a pairing code' }))
   const box = await screen.findByRole('group', { name: 'Pairing code' })
   expect(box).toBe(document.activeElement)
-  expect(within(box).getByLabelText('Pairing code K 7 M X 3 Q P D').textContent).toBe('K7MX3QPD')
+  expect(within(box).getByText('Pairing code K 7 M X 3 Q P D')).toHaveClass('tt-visually-hidden')
+  expect(within(box).getByText('K7MX3QPD')).toHaveAttribute('aria-hidden', 'true')
+  expect(within(box).queryByRole('img')).not.toBeInTheDocument()
+  expect(within(box).queryByRole('status')).not.toBeInTheDocument()
   expect(box.textContent).toMatch(/Works once\. Expires in 4:5\d/u)
   expect(within(box).getByRole('button', { name: 'Make a new code' })).toBeTruthy()
   await user.keyboard('{Escape}')
@@ -152,4 +189,42 @@ it('saves the name phones show on Enter, and Escape puts the saved one back', as
   await user.clear(field)
   await user.type(field, 'Den{Enter}')
   expect(update).toHaveBeenCalledWith({ phoneAccessName: 'Den' })
+})
+
+it.each([{ isComposing: true }, { keyCode: 229 }])('keeps the computer name while composing Enter (%j)', async composition => {
+  const { update } = show(READY)
+  const field = await screen.findByRole('textbox', { name: 'Name on phones' })
+  const user = userEvent.setup()
+  await user.type(field, 'Forge')
+  expect(field).toHaveValue('Forge')
+  fireEvent.keyDown(field, { key: 'Enter', ...composition })
+  expect(update).not.toHaveBeenCalled()
+  await user.keyboard('{Enter}')
+  expect(update).toHaveBeenCalledWith({ phoneAccessName: 'Forge' })
+})
+
+it('shows unfinished cleanup and offers a retry while the setting is off', async () => {
+  const { command } = show({ ...OFF, phase: 'cleanup-failed', serve: { status: 'failed', reason: 'cleanup' } })
+  expect(await screen.findByText(/Phones can’t connect/)).toBeTruthy()
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
+  expect(command).toHaveBeenCalledWith({ type: 'retry' })
+})
+
+
+it('explains when phone access settings could not be saved', async () => {
+  show({ ...OFF, enabled: true, phase: 'failed', serve: { status: 'failed', reason: 'record' } })
+  expect(await screen.findByText(/Phone access wasn’t started/)).toBeTruthy()
+})
+
+
+it('explains cleanup when the saved record could not be read', async () => {
+  show({ ...OFF, phase: 'cleanup-failed', serve: { status: 'failed', reason: 'cleanup-record' } })
+  expect(await screen.findByText(/couldn’t read its saved cleanup record/)).toBeVisible()
+  expect(screen.getByText(/Remove the setting on port 8443 in Tailscale, then press Try again/)).toBeVisible()
+})
+
+
+it('keeps pairing unavailable as soon as the setting turns off', async () => {
+  show({ ...READY, enabled: false })
+  expect(await screen.findByRole('button', { name: 'Show a pairing code' })).toBeDisabled()
 })

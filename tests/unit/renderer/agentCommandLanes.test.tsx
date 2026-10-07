@@ -51,6 +51,31 @@ async function laneFixture(holdReply: (request: AgentCommand) => boolean = () =>
 }
 
 describe('thread commands in the window', () => {
+  it('admits autosaves and atomic Send in invocation order while an older compose reply is held', async () => {
+    const f = await laneFixture(request => request.type === 'compose' && request.text === 'First edit')
+    let held: Promise<AgentState | null> | undefined, autosave: Promise<AgentState | null> | undefined, sending: Promise<AgentState | null> | undefined
+    try {
+      await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Work' })
+      const { result } = renderHook(() => useAgentConnection(f.bridge))
+      await waitFor(() => expect(result.current.state).not.toBeNull())
+      act(() => { held = result.current.command({ type: 'compose', text: 'First edit' }) })
+      await waitFor(() => expect(f.answered).toEqual(['compose:']))
+      let settled = false
+      void held!.then(() => { settled = true })
+      act(() => {
+        autosave = result.current.command({ type: 'compose', text: 'Older autosave' })
+        sending = result.current.command({ type: 'send', draft: { threadId: 'workshop', text: 'Text at Send', attachments: [] } })
+      })
+      expect([...f.arrived]).toEqual(['compose:', 'compose:', 'send:'])
+      await act(async () => { await autosave; expect((await sending)?.error).toBeNull() })
+      expect(settled).toBe(false)
+      expect(f.control.threadDetail('workshop')?.messages).toContainEqual(expect.objectContaining({ role: 'user', text: 'Text at Send' }))
+      expect(f.control.get().threadDrafts).not.toContainEqual(expect.objectContaining({ threadId: 'workshop' }))
+      await act(async () => { f.release(); await held })
+      expect(result.current.state?.draft).toBe('')
+    } finally { await act(async () => { f.release(); await Promise.allSettled([held, autosave, sending]) }); await f.close() }
+  })
+
   it('sends another thread’s settings, answer and Stop while one thread’s settings reply is still held', async () => {
     const f = await laneFixture(request => request.type === 'configure-thread' && request.threadId === 'docs')
     let held: Promise<AgentState | null> | undefined

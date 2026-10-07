@@ -1,9 +1,12 @@
 import type { AppSettings } from '../../shared/settings'
 import type { ShortTextPrompt } from '../agents/host'
 
+export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text'
+export type ShortTextFailureReason = 'unavailable' | 'failed' | 'empty'
+
 export interface ShortTextRequest {
   /** What this text is for, for the failure log only; never sent to the model. */
-  readonly purpose: string
+  readonly purpose: ShortTextPurpose
   /** The whole instruction the model follows. */
   readonly instruction: string
   /** The only material sent with the instruction. Callers choose what belongs here. */
@@ -20,9 +23,9 @@ export interface ShortTextRequest {
 
 export interface ShortTextFailure {
   readonly at: number
-  readonly purpose: string
+  readonly purpose: ShortTextPurpose
   /** 'unavailable' (the thread's provider writes nothing), 'failed' or 'empty'. */
-  readonly reason: string
+  readonly reason: ShortTextFailureReason
 }
 
 /**
@@ -83,7 +86,7 @@ export class ShortTextWriter {
     return text ?? this.fail(request.purpose, 'empty')
   }
 
-  private fail(purpose: string, reason: string): null {
+  private fail(purpose: ShortTextPurpose, reason: ShortTextFailureReason): null {
     try { this.dependencies.onFailure?.({ at: this.now(), purpose, reason }) }
     catch { /* Observability must never affect the caller. */ }
     return null

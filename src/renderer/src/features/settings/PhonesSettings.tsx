@@ -1,18 +1,22 @@
+import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, Circle, CircleCheck, CircleX, Copy, Info, Smartphone } from 'lucide-react'
-import { PHONE_ACCESS_SERVE_PORT, type PairedPhone, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
+import { AlertTriangle, Check, Copy, Info } from 'lucide-react'
+import { PHONE_ACCESS_SERVE_PORT, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
 import { Toggle } from '../../components/Toggle'
+import { writeClipboard } from '../../agents/richActions'
+import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
 import './hosts.css'
 import './phones.css'
 
-type Step = 'ok' | 'failed' | 'waiting'
-
 /** What a failed step says: what happened, that nothing was changed, and what to do. */
 export function phonesFailure(state: PhonesState): string | null {
+  if (state.phase === 'cleanup-failed') return state.serve.status === 'failed' && state.serve.reason === 'cleanup-record'
+    ? 'Phones can’t connect. Sotto couldn’t read its saved cleanup record, so it can’t identify the Tailscale Serve setting. Remove the setting on port 8443 in Tailscale, then press Try again. Sotto is still finishing cleanup.'
+    : 'Phones can’t connect. Sotto is still finishing cleanup of its Tailscale Serve setting and will try again while it is open. Check Tailscale, then press Try again.'
   if (state.tailscale.status === 'failed') {
     return state.tailscale.reason === 'missing'
       ? 'Tailscale isn’t installed on this computer. Phones can’t reach it yet, and nothing was changed. Install Tailscale and sign in, then press Try again.'
@@ -22,63 +26,29 @@ export function phonesFailure(state: PhonesState): string | null {
   switch (state.serve.reason) {
     case 'port-taken': return `Another app already uses port ${PHONE_ACCESS_SERVE_PORT} in Tailscale Serve on this computer. Sotto left that setting alone, and nothing was changed. Stop the other app using port ${PHONE_ACCESS_SERVE_PORT}, then press Try again.`
     case 'not-enabled': return 'Tailscale Serve isn’t turned on for your tailnet. Nothing was changed. Turn it on in Tailscale, then press Try again.'
+    case 'denied': return 'Tailscale on this computer won’t let your account change Tailscale Serve. Nothing was changed. Let your account manage Tailscale, then press Try again.'
     case 'listener': return 'Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto.'
+    case 'record': return 'Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again.'
+    case 'cleanup-record':
+    case 'cleanup': return null
     case 'failed': return `Tailscale Serve couldn’t be set up on port ${PHONE_ACCESS_SERVE_PORT}. Nothing was changed. Check Tailscale on this computer, then press Try again.`
   }
-}
-
-/** "Sep 26", with the year when it is not this one. */
-function pairedOn(iso: string, now = new Date()): string {
-  const date = new Date(iso)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })
-}
-
-function countdown(expiresAt: string, now: number): { text: string; fraction: number } {
-  const left = Math.max(0, Date.parse(expiresAt) - now)
-  const seconds = Math.ceil(left / 1000)
-  return { text: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, fraction: Math.min(1, left / 300_000) }
-}
-
-function StepMark({ step }: { readonly step: Step }): ReactNode {
-  const label = step === 'ok' ? 'Done' : step === 'failed' ? 'Failed' : 'Not yet'
-  return <span className="phones-step__mark" role="img" aria-label={label}>
-    {step === 'ok' ? <CircleCheck size={22} strokeWidth={1.7} aria-hidden="true" /> : step === 'failed' ? <CircleX size={22} strokeWidth={1.7} aria-hidden="true" /> : <Circle size={22} strokeWidth={1.7} aria-hidden="true" />}
-  </span>
-}
-
-function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove }: {
-  readonly phone: PairedPhone; readonly answersAvailable: boolean
-  readonly onCanAnswer: (allowed: boolean) => void; readonly onRemove: () => void
-}): ReactNode {
-  return <section className="hosts-row" aria-label={phone.name}>
-    <span className="hosts-row__icon" aria-hidden="true"><Smartphone size={18} /></span>
-    <div className="hosts-row__info">
-      <h4>{phone.name}</h4>
-      <p className="hosts-row__meta">Paired {pairedOn(phone.pairedAt)} · <span data-phase={phone.connected ? 'connected' : 'disconnected'}>{phone.connected ? 'Connected' : 'Not connected'}</span></p>
-      <p className="phones-grant">{phone.canAnswer ? 'Reads and replies. Can answer questions and permissions.' : 'Reads and replies. Can’t answer questions or permissions.'}</p>
-    </div>
-    <div className="hosts-row__actions">
-      <span className="phones-answer">
-        <span aria-hidden="true">Can answer</span>
-        <button type="button" role="switch" aria-checked={phone.canAnswer} aria-label={`Can answer: let ${phone.name} answer questions and permissions`} disabled={!answersAvailable}
-          className="tt-toggle tt-focusable hosts-switch__control" onClick={() => onCanAnswer(!phone.canAnswer)}>
-          <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
-        </button>
-      </span>
-      <Button variant="danger" aria-label={`Remove ${phone.name}`} onClick={onRemove}>Remove</Button>
-    </div>
-  </section>
 }
 
 /** The name phones show for this computer, saved when the field loses focus or on Enter. */
 function NameField({ name, defaultName, onSave }: { readonly name: string; readonly defaultName: string; readonly onSave: (name: string) => Promise<boolean> }): ReactNode {
   const [draft, setDraft] = useState(name)
+  const [failed, setFailed] = useState(false)
   useEffect(() => { setDraft(name) }, [name])
-  const save = (): void => { const next = draft.trim(); if (next !== name) void onSave(next); else setDraft(name) }
-  return <Field label="Name on phones" description={`Phones list this computer’s threads under this name. Leave it empty to use ${defaultName}.`}>
+  const save = (): void => {
+    const next = draft.trim()
+    if (next !== name) void onSave(next).then(saved => setFailed(!saved))
+    else { setDraft(name); setFailed(false) }
+  }
+  return <Field label="Name on phones" {...(failed ? { error: 'The name could not be saved. Phones still use the previous name. Try again.' } : {})} description={`Phones list this computer’s threads under this name. Leave it empty to use ${defaultName}.`}>
     <input className="tt-input" value={draft} placeholder={defaultName} maxLength={63} spellCheck={false}
       onChange={event => setDraft(event.target.value)} onBlur={save}
-      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save() } else if (event.key === 'Escape' && draft !== name) { event.preventDefault(); event.stopPropagation(); setDraft(name) } }} />
+      onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } if (event.key === 'Enter') { event.preventDefault(); save() } else if (event.key === 'Escape' && draft !== name) { event.preventDefault(); event.stopPropagation(); setDraft(name) } }} />
   </Field>
 }
 
@@ -91,6 +61,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
 }): ReactNode {
   const [state, setState] = useState<PhonesState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [accessSaveFailed, setAccessSaveFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -133,12 +104,12 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : 'Phone access could not be changed. Nothing was changed. Try again.'); return false }
   }
   const copyAddress = async (address: string): Promise<void> => {
-    try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    try { await writeClipboard(address); setCopied(true); setTimeout(() => setCopied(false), 1500) }
     catch { setError('The address could not be copied. Select it and copy it instead.') }
   }
 
   const localHostRunning = state?.localHostRunning ?? true
-  const on = state?.phase === 'on'
+  const on = state?.phase === 'on' && state.enabled
   const starting = state?.phase === 'starting'
   const failure = state ? phonesFailure(state) : null
   const tailscaleStep: Step = state?.tailscale.status === 'ok' ? 'ok' : state?.tailscale.status === 'failed' ? 'failed' : 'waiting'
@@ -160,7 +131,8 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
         return <div key="code" ref={codeBox} className="phones-code" role="group" aria-label="Pairing code" tabIndex={-1}
           onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void run({ type: 'cancel-code' }) } }}>
           <p>Pairing code</p>
-          <span className="phones-code__value" aria-label={`Pairing code ${[...code.code].join(' ')}`}>{code.code.slice(0, 4)}<i aria-hidden="true" />{code.code.slice(4)}</span>
+          <span className="phones-code__value" aria-hidden="true">{code.code.slice(0, 4)}<i />{code.code.slice(4)}</span>
+          <span className="tt-visually-hidden">Pairing code {[...code.code].join(' ')}</span>
           <span className="phones-count">
             <span className="phones-count__bar" aria-hidden="true"><i style={{ width: `${left.fraction * 100}%` }} /></span>
             <span>Works once. Expires in <b>{left.text}</b></span>
@@ -184,8 +156,9 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     </div> : null}
     <div className="phones-switch">
       <Toggle label="Let phones connect" checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
-        onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }) }}
+        onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
         description={`Sotto adds this computer to Tailscale Serve on port ${PHONE_ACCESS_SERVE_PORT}, so phones on your tailnet can find it. Only phones you pair can connect. Turning this off removes the setting.`} />
+      {accessSaveFailed ? <p className="tt-field__error" role="alert">Phone access could not be saved. Nothing was changed. Try again.</p> : null}
     </div>
     <ol className="phones-steps" aria-label="Setup" aria-busy={starting || undefined}>
       <li data-step={tailscaleStep}>

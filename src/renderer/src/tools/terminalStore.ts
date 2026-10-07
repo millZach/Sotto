@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { FileWorkspace } from '../../../shared/files'
-import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
+import type { TerminalBridge, TerminalEvent, TerminalPlace, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 
 /** What the store needs from a rendered terminal. The xterm implementation lives in terminalView.ts. */
@@ -21,8 +21,14 @@ export interface TerminalViewLike {
 export interface TerminalViewHandlers {
   readonly onInput: (data: string) => void
   readonly onInterrupt: () => void
+  /** Copy feedback, shown by the surface that owns this terminal. */
+  readonly onNotice?: ((message: string | null) => void) | undefined
   /** An image was pasted: its PNG as a data URL. Left out where images have nowhere to go. */
   readonly onPasteImage?: ((dataUrl: string) => void) | undefined
+  /** A key the page acts on: the terminal leaves it to the page instead of sending it to the shell. */
+  readonly isPageShortcut?: ((event: KeyboardEvent) => boolean) | undefined
+  /** Whether the terminal turns see-through while the room is frosted (ADR-0048), as a pane's drawer does. */
+  readonly followsFrost?: boolean | undefined
 }
 
 export type TerminalViewFactory = (handlers: TerminalViewHandlers) => TerminalViewLike
@@ -77,6 +83,8 @@ export class TerminalStore {
   private subscribed: TerminalBridge | null = null
   private unsubscribe: (() => void) | null = null
   private listTokens = new Map<string, number>()
+  /** Which place this store shows: the shared Tools surface, or a pane's own drawer. The two never show each other's shells. */
+  constructor(private readonly place: TerminalPlace = 'tools') {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -95,7 +103,7 @@ export class TerminalStore {
     this.listen(bridge)
     const token = (this.listTokens.get(threadId) ?? 0) + 1
     this.listTokens.set(threadId, token)
-    const result = await settle(bridge.list({ threadId }))
+    const result = await settle(bridge.list({ threadId, place: this.place }))
     if (this.listTokens.get(threadId) !== token) return
     const latest = this.threads.get(threadId)!
     if (!result.ok) { this.patch(threadId, { status: 'error', error: result.error }); return }
@@ -119,7 +127,7 @@ export class TerminalStore {
     if (!bridge || !target) return
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, ...(size ?? {}) }))
+    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}) }))
     if (!result.ok) { this.fail(bridge, threadId, result.error, 'Could not start a terminal.'); return }
     this.adopt(threadId, result.value)
     this.patch(threadId, { busy: false, activeSessionId: result.value.session.id })
@@ -205,9 +213,14 @@ export class TerminalStore {
   attach(bridge: TerminalBridge | undefined, threadId: string, sessionId: string, container: HTMLElement, factory: TerminalViewFactory): TerminalViewLike | null {
     const record = this.ensureRecord(threadId, sessionId)
     if (!record.view) {
+      let copyNotice: string | null = null
       record.view = factory({
         onInput: data => this.write(bridge, threadId, sessionId, data),
         onInterrupt: () => this.interrupt(bridge, threadId, sessionId),
+        onNotice: notice => {
+          if (notice !== null || this.thread(threadId)?.notice === copyNotice) this.patch(threadId, { notice })
+          copyNotice = notice
+        },
       })
     }
     record.view.mount(container)
@@ -302,6 +315,8 @@ export class TerminalStore {
 
   private receive(bridge: TerminalBridge, event: TerminalEvent): void {
     if (event.type === 'output') {
+      // Each store follows only its own place, so another place's output never queues up here.
+      if (event.place !== this.place) return
       const record = this.records.get(event.sessionId)
       if (!record) {
         const queue = this.orphans.get(event.sessionId) ?? []
@@ -316,6 +331,7 @@ export class TerminalStore {
       return
     }
     if (event.type === 'session') {
+      if (event.session.place !== this.place) return
       const threadId = event.session.workspace.threadId
       const thread = this.threads.get(threadId)
       if (!thread || thread.workspace?.workspaceId !== event.session.workspace.workspaceId) return
@@ -409,4 +425,9 @@ export function sessionStatusText(session: TerminalSession): string {
     case 'interrupted': return 'Ended when Sotto closed'
     default: return 'Could not start'
   }
+}
+
+/** The main window's terminal bridge, absent in a window that has none. */
+export function windowTerminalBridge(): TerminalBridge | undefined {
+  return (window.sotto as { terminal?: TerminalBridge } | undefined)?.terminal
 }

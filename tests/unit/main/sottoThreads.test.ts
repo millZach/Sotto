@@ -56,6 +56,19 @@ afterEach(async () => {
 })
 
 describe('Sotto thread interface', () => {
+  it('keeps an accepted send successful when the registry flush after dispatch fails', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const flush = vi.spyOn(f.registry, 'flush').mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('EPERM'))
+    const result = await f.host.execute({ type: 'send', commandId: 'send-once', threadId: snapshot.threads[0]!.id,
+      messageId: 'message-once', text: 'Continue' })
+    expect(result.accepted).toBe(true)
+    expect(f.inner.commands.filter(command => command.type === 'send')).toHaveLength(1)
+    expect(flush).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledExactlyOnceWith('registry-flush-deferred')
+  })
+
   it('translates indexed task classification lookups to Sotto thread IDs and preserves the history epoch', async () => {
     let received: ThreadHistorySource | undefined
     const inner = Object.assign(new FakeProviderHost(), { useThreadHistory: (source: ThreadHistorySource) => { received = source } })

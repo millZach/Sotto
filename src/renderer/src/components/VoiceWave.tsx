@@ -18,6 +18,8 @@ export interface VoiceWaveProps {
    * inside the Dictate tab.
    */
   readonly size?: VoiceWaveSize
+  /** Keep the listening wave moving for the whole open stream (microphone test). */
+  readonly holdSpeaking?: boolean
 }
 
 const BAR_COUNT = 7
@@ -44,7 +46,7 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
 /** Listening delegates to the same component and CSS as the floating widget.
  * Idle and processing retain the room's resting silhouette.
  */
-export function VoiceWave({ stage, value, label, size = 'widget' }: VoiceWaveProps): ReactNode {
+export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking = false }: VoiceWaveProps): ReactNode {
   const geometry = GEOMETRY[size]
   const safeValue = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
   const listening = stage === 'listening'
@@ -68,7 +70,7 @@ export function VoiceWave({ stage, value, label, size = 'widget' }: VoiceWavePro
     '--wave-peak': `${geometry.peak}px`,
   } as CSSProperties
 
-  if (listening) return <div className="voice-wave voice-wave--listening" data-stage={stage} data-size={size} style={style} {...liveProps}><ListeningBars level={safeValue} /></div>
+  if (listening) return <div className="voice-wave voice-wave--listening" data-stage={stage} data-size={size} style={style} {...liveProps}><ListeningBars level={safeValue} holdSpeaking={holdSpeaking} /></div>
 
   return (
     <div className="voice-wave" data-stage={stage} style={style} {...liveProps}>

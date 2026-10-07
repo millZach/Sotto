@@ -1,11 +1,21 @@
 import { nativeImage, type NativeImage, type WebContents } from 'electron'
 import type { BrowserAction, BrowserBounds, BrowserCapture } from '../../shared/browser'
 
+type Input = Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' | 'tap' | 'swipe' | 'key' }>
+/** What a `key` action sends: the key's code, and the character a press types for the keys that type one. */
+const KEYS: Record<Extract<BrowserAction, { type: 'key' }>['key'], { code: number; text?: string }> = {
+  Enter: { code: 13, text: '\r' }, Backspace: { code: 8 }, Tab: { code: 9 }, Escape: { code: 27 },
+  ArrowUp: { code: 38 }, ArrowDown: { code: 40 }, ArrowLeft: { code: 37 }, ArrowRight: { code: 39 },
+}
+/** A swipe is this many touch moves between its two points: enough for a list to read it as a fling. */
+const SWIPE_STEPS = 10
+
 /** Fixed operations only: callers cannot evaluate script or read cookies. */
 export class BrowserAutomation {
   private enabled: Promise<void> | null = null
   private readonly errors: { kind: string; message: string }[] = []
-  constructor(private readonly contents: WebContents, private readonly prepareCapture: () => () => void = () => () => undefined) {}
+  /** `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it. */
+  constructor(private readonly contents: WebContents, private readonly prepareCapture: () => () => void = () => () => undefined, private readonly touch = false) {}
   private async ready(): Promise<void> {
     if (!this.contents.debugger.isAttached()) {
       this.contents.debugger.attach('1.3')
@@ -14,7 +24,12 @@ export class BrowserAutomation {
     if (!this.enabled) {
       this.contents.debugger.removeListener('message', this.onMessage)
       this.contents.debugger.on('message', this.onMessage)
-      this.enabled = Promise.all([this.contents.debugger.sendCommand('Network.enable'), this.contents.debugger.sendCommand('Runtime.enable')]).then(() => undefined)
+      const commands = [this.contents.debugger.sendCommand('Network.enable'), this.contents.debugger.sendCommand('Runtime.enable')]
+      if (this.touch) commands.push(
+        this.contents.debugger.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }),
+        this.contents.debugger.sendCommand('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }),
+      )
+      this.enabled = Promise.all(commands).then(() => undefined)
     }
     await this.enabled
   }
@@ -105,10 +120,11 @@ export class BrowserAutomation {
     }
     return image.length <= 2_000_000 ? { image, width: size.width, height: size.height } : null
   }
-  async target(action: Extract<BrowserAction, { type: 'click' | 'type' }>): Promise<string> {
+  /** What a click, tap, typed entry or key press would reach: the node at its point, or the focused node. */
+  async target(action: Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>): Promise<string> {
     await this.ready()
     let backendNodeId: number | undefined
-    if (action.type === 'click') {
+    if (action.type === 'click' || action.type === 'tap') {
       const located = await this.contents.debugger.sendCommand('DOM.getNodeForLocation', { x: Math.round(action.x), y: Math.round(action.y), includeUserAgentShadowDOM: true }) as { backendNodeId?: number }
       backendNodeId = located.backendNodeId
     } else {
@@ -138,10 +154,28 @@ export class BrowserAutomation {
     if (snapshot.isEmpty()) return null
     return `data:image/jpeg;base64,${snapshot.resize({ width: 320 }).toJPEG(65).toString('base64')}`
   }
-  async input(action: Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' }>, guard: () => void): Promise<void> {
+  async input(action: Input, guard: () => void): Promise<void> {
     await this.ready()
     guard()
-    if (action.type === 'click') {
+    const send = (method: string, params: Record<string, unknown>): Promise<unknown> => this.contents.debugger.sendCommand(method, params)
+    if (action.type === 'tap') {
+      // Start and end are one operation, as a click's press and release are.
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    } else if (action.type === 'swipe') {
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
+      try {
+        for (let step = 1; step <= SWIPE_STEPS; step++) {
+          const x = action.x + (action.toX - action.x) * step / SWIPE_STEPS, y = action.y + (action.toY - action.y) * step / SWIPE_STEPS
+          await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x), y: Math.round(y) }] })
+        }
+      } finally { await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }) }
+    } else if (action.type === 'key') {
+      const key = KEYS[action.key]
+      const event = { key: action.key, code: action.key, windowsVirtualKeyCode: key.code, nativeVirtualKeyCode: key.code }
+      await send('Input.dispatchKeyEvent', { type: key.text ? 'keyDown' : 'rawKeyDown', ...event, ...(key.text ? { text: key.text, unmodifiedText: key.text } : {}) })
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...event })
+    } else if (action.type === 'click') {
       await this.contents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
       // Press/release is one operation. Always release when Pause arrives mid-click.
       await this.contents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })

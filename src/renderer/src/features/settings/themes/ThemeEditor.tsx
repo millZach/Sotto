@@ -1,3 +1,4 @@
+import { isCompositionKey } from '../../../agents/composerKeys'
 /*
  * The theme editor: a floating panel that paints its draft on the live window.
  *
@@ -710,6 +711,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                       setError(null)
                     }}
                     onKeyDown={event => {
+                      if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return }
                       if (event.key === 'Enter') void submit()
                     }}
                   />

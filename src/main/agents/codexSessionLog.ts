@@ -14,7 +14,9 @@ const textContent = z.array(z.object({ type: z.string(), text: z.string().option
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
   client_id: z.string().nullish(), images: z.array(z.string()).optional(), local_images: z.array(z.string()).optional(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), client_id: z.string().nullish(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
+type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
+const INITIAL_LOCATE_BACKOFF_MS = 2000
+const MAX_LOCATE_BACKOFF_MS = 60_000
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
@@ -25,11 +27,17 @@ export class CodexSessionLogWatcher {
   private stopped = false
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
   observe(threadId: string): void {
-    if (!this.tails.has(threadId)) this.tails.set(threadId, { offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
+    if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   sent(threadId: string, messageId: string, text: string): void { this.sentDigest(threadId, messageId, promptDigest(text)) }
-  sentDigest(threadId: string, messageId: string, digest: string): void { this.observe(threadId); this.tails.get(threadId)!.own.set(messageId, digest) }
+  sentDigest(threadId: string, messageId: string, digest: string): void {
+    this.observe(threadId)
+    const tail = this.tails.get(threadId)!
+    tail.own.set(messageId, digest)
+    tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
+    tail.locateGeneration++
+  }
   forget(threadId: string, messageId: string): void { this.tails.get(threadId)?.own.delete(messageId) }
   start(): void {
     if (this.timer || this.stopped) return
@@ -64,8 +72,22 @@ export class CodexSessionLogWatcher {
     const tail = this.tails.get(threadId)!
     if (this.stopped) return
     try {
-      tail.path ??= await this.locate(join(this.options.codexHome, 'sessions'), threadId)
-      if (!tail.path) return
+      if (!tail.path) {
+        // Complete reads protect a dispatch and must search for new evidence now.
+        if (!complete && Date.now() < tail.locateAfter) return
+        const generation = tail.locateGeneration
+        tail.path = await this.locate(join(this.options.codexHome, 'sessions'), threadId)
+        if (!tail.path) {
+          // A send during this search keeps its immediate retry, even if this
+          // older lookup missed the file before Codex created it.
+          if (!complete && generation === tail.locateGeneration) {
+            tail.locateAfter = Date.now() + tail.locateBackoffMs
+            tail.locateBackoffMs = Math.min(tail.locateBackoffMs * 2, MAX_LOCATE_BACKOFF_MS)
+          }
+          return
+        }
+        tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
+      }
       const file = await open(tail.path, 'r')
       try {
         const size = (await file.stat()).size

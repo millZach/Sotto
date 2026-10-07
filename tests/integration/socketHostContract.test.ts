@@ -14,14 +14,21 @@ import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
 import { describeHostServiceContract, type AdapterFixture, type AdapterSessionOptions, type HostServiceFixture } from './adapterContract'
 import type { HostDescriptor } from '../../src/shared/hostProtocol'
+import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
+import { serveStandIn } from '../fixtures/serveStandIn'
 let buildRoot: string
 beforeAll(async () => {
   buildRoot = await mkdtemp(join(tmpdir(), 'sotto-socket-build-'))
   await build({ configFile: false, logLevel: 'silent', ssr: { noExternal: ['zod'] }, build: { ssr: resolve('tests/fixtures/socketHostChild.ts'), target: 'node24', outDir: buildRoot, emptyOutDir: false, rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'host.cjs' } } } })
 })
 afterAll(async () => { if (buildRoot && dirname(buildRoot) === tmpdir() && buildRoot.includes('sotto-socket-build-')) await rm(buildRoot, { recursive: true, force: true }) })
-async function fixture(provider: ProviderId, native: AdapterFixture, session: AdapterSessionOptions = {}): Promise<HostServiceFixture> {
-  const child = spawn(process.execPath, [join(buildRoot, 'host.cjs'), provider, native.root, JSON.stringify(session)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+/**
+ * A host in a child process, and a desktop's client of it. `tailnet` puts the client on the host's tailnet connection
+ * (ADR-0053): the host's tailnet connections on, the client recorded as a desktop the way the launch script records it, and
+ * the socket through a stand-in for Tailscale Serve in front of the host's tailnet listener.
+ */
+async function fixture(provider: ProviderId, native: AdapterFixture, session: AdapterSessionOptions = {}, tailnet = false): Promise<HostServiceFixture> {
+  const child = spawn(process.execPath, [join(buildRoot, 'host.cjs'), provider, native.root, JSON.stringify(session), ...(tailnet ? ['tailnet'] : [])], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
   const exited = new Promise<void>(resolveExit => child.once('exit', () => resolveExit()))
   const callbacks = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
   let nextId = 0
@@ -40,9 +47,18 @@ async function fixture(provider: ProviderId, native: AdapterFixture, session: Ad
   const local = JSON.parse(await readFile(join(native.root, 'host-listener.json'), 'utf8')) as { adminToken: string }
   const permission = await fetch(url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + local.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: paired.clientId }) })
   if (!permission.ok) throw new Error('Test could not explicitly grant remote answer policy.')
-  const client = new SocketHostService({ url, token: paired.token, expectedHostId: descriptor.hostId })
+  let stand: Awaited<ReturnType<typeof serveStandIn>> | undefined
+  if (tailnet) {
+    const on = await fetch(url + '/v1/admin/tailnet', { method: 'POST', headers: { Authorization: 'Bearer ' + local.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) })
+    if (!on.ok) throw new Error('Test could not turn on the host’s tailnet connections.')
+    await ensureFixtureDesktopAnswers(native.root, descriptor.hostId, paired.clientId)
+    const port = await call<number | null>('tailnetPort')
+    if (!port) throw new Error('The host’s tailnet listener is not served.')
+    stand = await serveStandIn(() => port)
+  }
+  const client = new SocketHostService({ url: stand?.url ?? url, token: paired.token, expectedHostId: descriptor.hostId })
   await client.connect()
-  const stop = async (): Promise<void> => { await client.close(); await call('stop'); await exited }
+  const stop = async (): Promise<void> => { await client.close(); await stand?.close(); await call('stop'); await exited }
   return {
     service: client, client: { clientId: paired.clientId, user: 'host-contract', transport: 'socket' },
     provider, root: native.root, modelId: publicProviderEntityId(provider, 'model', native.modelId),
@@ -53,7 +69,7 @@ async function fixture(provider: ProviderId, native: AdapterFixture, session: Ad
       typeInProvider: (id, text) => call('typeInProvider', id, text), completeTurn: (id, text) => call('completeTurn', id, text),
       raiseQuestion: (id, text) => call('raiseQuestion', id, text), raisePermission: (id, text) => call('raisePermission', id, text),
       delayNextAck: method => call('delayNextAck', method), requests: () => call('requests'),
-      restart: async () => { await stop(); return fixture(provider, native, session) },
+      restart: async () => { await stop(); return fixture(provider, native, session, tailnet) },
     },
     cleanup: async () => { await stop(); await native.cleanup() },
   }
@@ -65,3 +81,5 @@ const providers: { provider: ProviderId; create: (session?: AdapterSessionOption
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session) },
 ]
 for (const provider of providers) describeHostServiceContract('Socket child ' + provider.provider, async session => fixture(provider.provider, await provider.create(session), session))
+// The same contract over a desktop's tailnet connection. The transport is what changes, so one provider carries it.
+describeHostServiceContract('Socket child codex over the tailnet', async session => fixture('codex', await providers[0]!.create(session), session, true))

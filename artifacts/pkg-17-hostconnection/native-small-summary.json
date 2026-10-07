@@ -1,0 +1,42 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "CB201E39-0AB7-4EDD-B7AE-AB5C08AB65D9",
+        "deviceName" : "Sotto Focus small",
+        "modelName" : "iPhone SE (3rd generation)",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 7,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "Sotto · Built with macOS 26.6.2",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1790942157.059,
+  "passedTests" : 7,
+  "result" : "Passed",
+  "skippedTests" : 0,
+  "startTime" : 1790941588.04,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - Sotto",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 7
+}

@@ -19,6 +19,8 @@ export const threadEventAttributionSchema = z.object({
 }).strict()
 export type ThreadEventAttribution = z.infer<typeof threadEventAttributionSchema>
 
+// Stored events are bounded; full projected messages may contain many text append events.
+const eventMessage = agentMessageSchema.extend({ text: z.string().max(100_000) })
 const at = z.string().min(1).max(64)
 /** Set when Keep local history off took the words out of this event; a rebuilt projection leaves it out. */
 const redacted = z.literal(true).optional()
@@ -28,9 +30,9 @@ const redacted = z.literal(true).optional()
  * kind added here is a kind the projection must know how to apply.
  */
 export const threadEventSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('message-added'), at, message: agentMessageSchema, redacted }).strict(),
+  z.object({ kind: z.literal('message-added'), at, message: eventMessage, redacted }).strict(),
   z.object({ kind: z.literal('message-text-appended'), at, messageId: z.string().min(1).max(512), appendText: z.string().max(100_000), redacted }).strict(),
-  z.object({ kind: z.literal('message-replaced'), at, message: agentMessageSchema, redacted }).strict(),
+  z.object({ kind: z.literal('message-replaced'), at, message: eventMessage, redacted }).strict(),
   /** Native identity proves two receipts describe one message; retain the canonical receipt. */
   z.object({ kind: z.literal('message-aliased'), at, messageId: z.string().min(1).max(512), canonicalId: z.string().min(1).max(512) }).strict(),
   /** A confirmed rewind: everything projected for this thread is dropped and the new epoch recorded. */

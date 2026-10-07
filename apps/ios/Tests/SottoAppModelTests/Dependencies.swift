@@ -6,12 +6,13 @@ import SottoCore
     static var items: [String: Data] = [:]
     static var locked = false
     static var unreadableAccount: String?
+    static var unwritableAccount: String?
     static var store: KeychainStore {
         KeychainStore(readData: { account in
             if locked || account == unreadableAccount { throw KeychainStore.failure }
             return items[account]
         }, writeData: { data, account in
-            if locked { throw KeychainStore.failure }
+            if locked || account == unwritableAccount { throw KeychainStore.failure }
             items[account] = data
         }, removeItem: { account in
             if locked { throw KeychainStore.failure }
@@ -31,6 +32,13 @@ struct HostRefusal: Error, LocalizedError {
 @MainActor final class HostConnection {
     static var instances: [HostConnection] = []
     static var failDetail = false
+    static var failConnect = false
+    static var revokeFailure: ClientError?
+    static var revokeHandler: ((Pairing) async throws -> Void)?
+    static var foundHealth: Health?
+    static var freshPairing: Pairing?
+    static var pairCalls = 0
+    static var revoked: [String] = []
     static var holdDetail = false
     static var shell: JSONValue = .null
     static var detail: JSONValue = .null
@@ -42,8 +50,14 @@ struct HostRefusal: Error, LocalizedError {
     static var features = ["host-folders"]
     static var commandHandler: ((String, JSONValue, String) async throws -> JSONValue)?
     static var folderHandler: ((String, JSONValue) async throws -> JSONValue)?
+    /// The computer's answer to `stage-attachment` and `preview`, given the request's image or preview fields.
+    static var stageHandler: ((JSONValue) async throws -> JSONValue)?
+    static var previewHandler: ((JSONValue) async throws -> JSONValue)?
+    /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
+    static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
     var onPush: ((IncomingFrame, Int) -> Void)?
+    var onLiveness: (() -> Void)?
     var onDisconnect: (() -> Void)?
     var operations: [String] = []
     var commands: [JSONValue] = []
@@ -55,6 +69,7 @@ struct HostRefusal: Error, LocalizedError {
     var received = 0
     init() { Self.instances.append(self) }
     func connect(endpoint: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
+        if Self.failConnect { throw URLError(.networkConnectionLost) }
         hostID = pairing.hostId
         let hello = try JSONValue.object(["hostId": .string(pairing.hostId), "clientId": .string(pairing.clientId),
             "shell": Self.shells[hostID] ?? Self.shell, "features": .array(Self.features.map(JSONValue.string)),
@@ -64,11 +79,14 @@ struct HostRefusal: Error, LocalizedError {
         return Received(hello, sequence: sequence)
     }
     func push(_ frame: IncomingFrame) { received += 1; onPush?(frame, received) }
-    func callReceived(_ operation: [String: JSONValue], id: String = UUID().uuidString) async throws -> Received<JSONValue> {
+    func callReceived<T: Decodable & Sendable>(_ operation: [String: JSONValue], as type: T.Type, id: String = UUID().uuidString) async throws -> Received<T> {
         let value = try await call(operation, id: id)
         received += 1; let sequence = received
         afterReply?(operation["op"]?.string ?? "")
-        return Received(value, sequence: sequence)
+        return Received(try value.decode(type), sequence: sequence)
+    }
+    func call<T: Decodable & Sendable>(_ operation: [String: JSONValue], as type: T.Type, id: String = UUID().uuidString) async throws -> T {
+        try await call(operation, id: id).decode(type)
     }
     func call(_ operation: [String: JSONValue], id: String = UUID().uuidString) async throws -> JSONValue {
         let op = operation["op"]?.string ?? ""
@@ -95,11 +113,17 @@ struct HostRefusal: Error, LocalizedError {
         if op == "shell" { return Self.shells[hostID] ?? Self.shell }
         if op == "receipt" { return Self.receipts[operation["commandId"]?.string ?? ""] ?? Self.receipt }
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
+        if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }
+        if op == "preview", let handler = Self.previewHandler { return try await handler(operation["request"] ?? .null) }
         return .null
     }
     func disconnect() { disconnects += 1 }
     func close() { disconnect() }
-    func health(endpoint: HostEndpoint) async throws -> Health { throw ClientError.disconnected }
-    func pair(endpoint: HostEndpoint, expectedHostID: String, code: String) async throws -> Pairing { throw ClientError.disconnected }
-    func revoke(endpoint: HostEndpoint, token: String) async throws {}
+    func health(endpoint: HostEndpoint) async throws -> Health { guard let health = Self.foundHealth else { throw ClientError.disconnected }; return health }
+    func pair(endpoint: HostEndpoint, expectedHostID: String, code: String) async throws -> Pairing { Self.pairCalls += 1; guard let pairing = Self.freshPairing else { throw ClientError.disconnected }; return pairing }
+    func revoke(endpoint: HostEndpoint, pairing: Pairing) async throws {
+        Self.revoked.append(pairing.clientId)
+        if let failure = Self.revokeFailure { throw failure }
+        try await Self.revokeHandler?(pairing)
+    }
 }

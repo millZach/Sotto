@@ -1,7 +1,8 @@
+import { stderrRateExceeded } from './stderrRate'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
-const MAX_OUTPUT_BYTES = 1024 * 1024
 const OUTPUT_DRAIN_GRACE_MS = 300
 // Legacy history and completed turns can echo multiple screenshot batches. Keep a
 // separate history budget rather than limiting a frame to one submitted prompt.
@@ -46,8 +47,10 @@ let serials = 0
  * reads) in another, so one ending is only that thread's failure. What a frame means stays with the adapter.
  */
 export class CodexProcess {
-  /** Unique among this run's processes; a request Codex makes is named by it, since each process numbers its own. */
+  /** Unique among this run's processes. */
   readonly serial = ++serials
+  /** Native request counters restart; saved answer identities must also distinguish desktop restarts. */
+  readonly nonce = randomUUID()
   readonly closed: Promise<void>
   private readonly child: ChildProcessWithoutNullStreams
   /** What Sotto asked and is owed an answer to. A waiter outlives its deadline, so a late reply can still be applied. */
@@ -60,7 +63,7 @@ export class CodexProcess {
   constructor(private readonly options: CodexProcessOptions) {
     const child = spawn(options.executable, [...options.args], { cwd: options.cwd, env: options.env, windowsHide: true, shell: false, stdio: 'pipe' })
     this.child = child
-    let buffer: string[] = []; let bufferedBytes = 0; let stderrBytes = 0; let queuedBytes = 0
+    let buffer: string[] = []; let bufferedBytes = 0; let queuedBytes = 0
     this.closed = new Promise<void>(resolve => child.once('close', () => { this.fail(); resolve() }))
     // Let final output drain, then release handles a descendant may still hold.
     child.once('exit', () => {
@@ -91,7 +94,8 @@ export class CodexProcess {
         }).catch(() => this.abort())
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => { stderrBytes += chunk.length; if (stderrBytes > MAX_OUTPUT_BYTES) this.abort() })
+    const stderrExceeded = stderrRateExceeded()
+    child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.abort() })
   }
 
   /** Whether an answer to something Sotto asked is still owed, a late one included: a late answer is still applied. */

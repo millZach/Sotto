@@ -27,6 +27,12 @@ struct KeychainStore {
     }
     func remove(account: String) throws { try removeItem(account) }
     func accounts() throws -> [String] { try listAccounts() }
+    /// Verify writes before spending a one-use pairing code.
+    func checkWritable() throws {
+        let account = "pairing-storage-check"
+        try write(true, account: account)
+        try remove(account: account)
+    }
     private static func readData(_ account: String) throws -> Data? {
         var query = base(account); query[kSecReturnData as String] = true; query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?; let status = SecItemCopyMatching(query as CFDictionary, &result)

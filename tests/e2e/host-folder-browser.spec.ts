@@ -70,7 +70,7 @@ test('adds a project from this computer\'s folders, by mouse and by keyboard', a
     await expect(dialog.getByText(/This folder is new/)).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: `${SHOTS}/new-folder-1280x800-dark.png` })
     await dialog.getByRole('button', { name: 'Use this folder' }).click()
-    await expect(dialog.getByRole('alert')).toHaveCount(0)
+    await expect.poll(() => dialog.getByRole('alert').allTextContents()).toEqual([])
     await expect(dialog).toHaveCount(0)
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).host.projects.map(project => project.title))).toContain('voice-lab')
     await expect.poll(async () => page.evaluate(async path => { try { return (await window.sotto!.agents!.hostFolders!({ hostId: (await window.sotto!.agents!.get()).hostId!, path })).status } catch { return 'error' } }, join(home, 'code', 'voice-lab'))).toBe('listed')

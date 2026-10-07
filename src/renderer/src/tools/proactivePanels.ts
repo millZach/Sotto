@@ -29,7 +29,8 @@ export class ProactiveChangesWatch {
     const present = new Set<string>()
     for (const thread of threads) {
       present.add(thread.id)
-      // A paired host's folder is on that machine; Changes does not read it, so nothing opens for it.
+      // A paired host's thread is not watched for this yet: its Changes reads that host only while it is open (ADR-0025,
+      // October 5 amendment), so a large turn there opens nothing on its own.
       if (thread.remoteHost) continue
       const turn = this.turns.get(thread.id)
       if (thread.status === 'running') {

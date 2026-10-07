@@ -3,6 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
@@ -135,11 +136,35 @@ it('restarts from one installed version to the next and keeps only the running o
     expect(last(await run(configuration, { op: 'update-fetch', version, releasesUrl: page.url }))).toMatchObject({ type: 'update-fetched' })
     expect(last(await run(configuration, { op: 'update-install', version, file, sha256: sha256(archive) }))).toMatchObject({ type: 'update-installed' })
     const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version }))
-    expect(ready).toMatchObject({ type: 'ready', owned: true })
+    expect(ready, `Restart ${version}: ${JSON.stringify(ready)}`).toMatchObject({ type: 'ready', owned: true })
     hosts.push(ready.pid as number)
   }
   expect((await readdir(join(configuration.installPath, 'versions'))).filter(name => /^\d/u.test(name)).sort()).toEqual(['9.9.8', NEW])
   expect(await pointer(configuration)).toBe(`${NEW}\n`)
+})
+
+it.skipIf(process.platform !== 'win32').each(['EPERM', 'EBUSY'])('the fake host publishes its descriptor after temporary %s rename failures', async code => {
+  const configuration = await fixture()
+  const preload = join(configuration.directory, 'descriptor-rename.mjs')
+  const descriptorPath = join(configuration.dataDirectory, 'host-listener.json')
+  const proof = join(configuration.directory, 'rename-attempts.json')
+  // Inject the reader's temporary Windows lock into the real copied fixture's fs boundary.
+  await writeFile(preload, `import fs from 'node:fs/promises'
+const rename = fs.rename.bind(fs)
+let attempts = 0
+fs.rename = async (from, to) => {
+  if (to === ${JSON.stringify(descriptorPath)}) {
+    await fs.writeFile(${JSON.stringify(proof)}, JSON.stringify(++attempts))
+    if (attempts <= 2) throw Object.assign(new Error('Synthetic reader holds the descriptor'), { code: ${JSON.stringify(code)} })
+  }
+  return rename(from, to)
+}
+`)
+  const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, join(configuration.installPath, 'host/index.js'), '--data', configuration.dataDirectory, '--port', '0'], { shell: false, windowsHide: true })
+  children.push(child)
+  await expect.poll(() => descriptor(configuration).catch(() => null)).toMatchObject({ pid: child.pid })
+  expect(JSON.parse(await readFile(proof, 'utf8'))).toBeGreaterThanOrEqual(3)
+  await expect(readFile(`${descriptorPath}.tmp`, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('deletes a download whose checksum does not match the release, and installs nothing', async () => {

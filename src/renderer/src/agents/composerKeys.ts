@@ -3,6 +3,11 @@ import type { KeyboardEvent } from 'react'
 /** What an Enter keydown in a thread composer means. */
 export type ComposerEnterIntent = 'send' | 'newline' | 'none'
 
+/** Composition owns its confirming key, including Chromium's legacy keyCode 229. */
+export function isCompositionKey(event: { readonly isComposing: boolean; readonly keyCode: number }): boolean {
+  return event.isComposing || event.keyCode === 229
+}
+
 export interface ComposerKeyEvent {
   readonly key: string
   readonly shiftKey: boolean
@@ -21,7 +26,7 @@ export interface ComposerKeyEvent {
  */
 export function composerEnterIntent(event: ComposerKeyEvent): ComposerEnterIntent {
   if (event.key !== 'Enter') return 'none'
-  if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || event.menuOpen) return 'none'
+  if (isCompositionKey(event) || event.defaultPrevented || event.menuOpen) return 'none'
   if (event.shiftKey || event.altKey) return 'newline'
   return 'send'
 }
@@ -46,7 +51,7 @@ export type ComposerMenuKeyAction = 'next' | 'previous' | 'select' | 'close' | '
  * only a highlighted choice, Escape closes. Composition owns every key.
  */
 export function composerMenuKeyAction(event: Pick<ComposerKeyEvent, 'key' | 'shiftKey' | 'altKey' | 'isComposing' | 'keyCode' | 'defaultPrevented'> & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }, options: { readonly optionCount: number; readonly highlighted: boolean }): ComposerMenuKeyAction {
-  if (event.isComposing || event.keyCode === 229 || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return 'none'
+  if (isCompositionKey(event) || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return 'none'
   if (event.key === 'Escape') return 'close'
   if (options.optionCount === 0) return 'none'
   if (event.key === 'ArrowDown') return 'next'

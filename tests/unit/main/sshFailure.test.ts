@@ -113,6 +113,11 @@ describe('failureFix', () => {
       command: 'mkdir -p "$HOME/.local/share/sotto-host" && tar -xzf Sotto-host-0.1.21-linux-x64.tar.gz -C "$HOME/.local/share/sotto-host"',
     })
   })
+  it('reads the journal of the boot unit on the host when the unit would not start the host or keep it running', () => {
+    for (const code of ['boot-start-refused', 'boot-unit-failed'] as const) {
+      expect(failureFix(code, context)).toEqual({ text: 'To see why, run this on the SSH host:', command: 'journalctl --user -u sotto-host -n 50 --no-pager' })
+    }
+  })
   it('offers no command it cannot write safely, and none for a failure without one exact fix', () => {
     expect(failureFix('archive-missing', { ...context, installPath: '/opt/sotto $(host)' })).toBeUndefined()
     expect(failureFix('host-key-changed', { ...context, hostname: 'forge;rm -rf ~' })).toBeUndefined()

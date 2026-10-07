@@ -8,14 +8,18 @@ import { Button } from '../components/Button'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { listedHostName } from './HostBadge'
 import { projectAtFolder } from './projectFolders'
+import { isCompositionKey } from './composerKeys'
 import './newThread.css'
 import './folderBrowser.css'
 
 /** A computer a project can live on: this one, or a paired host. A host that is not connected is listed but cannot be browsed. */
 export interface BrowsableHost { readonly hostId: string; readonly name: string; readonly kind: 'local' | 'remote'; readonly connected: boolean; readonly off?: boolean }
 
-/** A folder chosen in the browser: its path as the host that will run the project spells it, and its name there. */
-export interface FolderChoice { readonly hostId: string; readonly path: string; readonly name: string }
+/**
+ * A folder chosen in the browser: its path as the host that will run the project spells it, and its name there. `isNew`
+ * marks one named with New folder, which does not exist until adding the project makes it.
+ */
+export interface FolderChoice { readonly hostId: string; readonly path: string; readonly name: string; readonly isNew?: true }
 
 /**
  * Every paired computer, this one first. Unlike the Threads page's host badges, this counts this computer alone as one
@@ -192,7 +196,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   }
   const use = (): void => {
     if (!host || busy || loading || chosenPath === null || !current) return
-    onUse({ hostId: host.hostId, path: chosenPath, name: current.name })
+    onUse({ hostId: host.hostId, path: chosenPath, name: current.name, ...(namedFolder ? { isNew: true as const } : {}) })
   }
   const nameFolder = (): void => {
     if (!listing || listing.path === null || draftName === null) return
@@ -214,6 +218,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   const explorerLabel = mac ? 'Browse with Finder' : 'Browse with File Explorer'
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    if (isCompositionKey(event.nativeEvent)) return
     if (event.target === nameInput.current) return
     const rows = host ? shown.length : hosts.length
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && rows) {
@@ -287,6 +292,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
             <input ref={nameInput} aria-label="New folder name" placeholder="Folder name" value={draftName}
               onChange={event => { setDraftName(event.target.value); setDraftNameError(null) }}
               onKeyDown={event => {
+                if (isCompositionKey(event.nativeEvent)) return
                 if (event.key === 'Enter') { event.preventDefault(); nameFolder() }
                 if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setDraftName(null); setDraftNameError(null) }
               }} />

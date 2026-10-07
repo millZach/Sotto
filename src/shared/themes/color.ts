@@ -103,13 +103,14 @@ function formatNumber(value: number, precision: number): string {
 
 export function formatOklch(color: ThemeOklch, alpha = 1): string {
   const L = clamp(color.L, 0, 1)
-  const C = Math.max(0, color.C)
+  const C = clamp(color.C, 0, 1)
   const hue = C < 0.0000005 ? 0 : ((color.h % 360) + 360) % 360
   let hueText = formatNumber(hue, 3)
   // 359.9996 rounds to "360"; the canonical form keeps hue below a full turn.
   if (hueText === '360') hueText = '0'
   const body = `${formatNumber(L, 6)} ${formatNumber(C, 6)} ${hueText}`
-  return alpha < 1 ? `oklch(${body} / ${formatNumber(clamp(alpha, 0, 1), 4)})` : `oklch(${body})`
+  const alphaText = formatNumber(clamp(alpha, 0, 1), 4)
+  return alphaText !== '1' ? `oklch(${body} / ${alphaText})` : `oklch(${body})`
 }
 
 // ---------------------------------------------------------------------------

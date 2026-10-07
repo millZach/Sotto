@@ -42,6 +42,37 @@ async function typeAHost(user: ReturnType<typeof userEvent.setup>, value: string
 }
 const settings = (bridge: HostsBridge) => render(<HostsSettings localHostEnabled onLocalHostChange={async () => true} bridge={bridge} />)
 
+it('requires deliberate keyboard navigation before trusting a setup host key', async () => {
+  const { bridge, command, push } = fixture(), user = userEvent.setup()
+  const checking = attempt({ prompt: { id: 'trust-prompt', kind: 'host-key', text: 'Synthetic host key' } })
+  push({ setup: setupState({ attempt: checking }) })
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog')
+  expect(document.activeElement).toBe(within(dialog).getByRole('region', { name: 'SSH host key' }))
+  await user.keyboard('{Enter}')
+  expect(command).not.toHaveBeenCalled()
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Trust host' }))
+  await user.keyboard('{Enter}')
+  expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: checking.id, promptId: 'trust-prompt', answer: 'yes' })
+})
+
+it.each(['passphrase', 'password'] as const)('submits a setup %s on Enter and reaches Continue before Not now', async kind => {
+  const { bridge, command, push } = fixture(), user = userEvent.setup()
+  const checking = attempt({ prompt: { id: 'enter-prompt', kind, text: 'Synthetic question' } })
+  push({ setup: setupState({ attempt: checking }) })
+  render(<HostQuestionDialog bridge={bridge} />)
+  const dialog = await screen.findByRole('dialog')
+  const field = within(dialog).getByLabelText(kind === 'password' ? 'SSH password' : 'Key passphrase')
+  expect(document.activeElement).toBe(field)
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Continue' }))
+  await user.tab()
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Not now' }))
+  await user.type(field, 'synthetic{Enter}')
+  await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'ssh-answer', id: checking.id, promptId: 'enter-prompt', answer: 'synthetic' }))
+})
+
 it('offers both ways to add, chooses the agent first on the model used most, and starts a setup for the typed device', async () => {
   const { bridge, command } = fixture(), user = userEvent.setup()
   settings(bridge)

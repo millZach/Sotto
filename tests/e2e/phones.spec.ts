@@ -45,7 +45,7 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
   try {
     await openPage(page, 'Settings')
     const tabs = page.getByRole('tablist', { name: 'Settings sections' })
-    await expect(tabs.getByRole('tab')).toHaveText(['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Phones', 'Agents', 'Output', 'Appearance', 'Application', 'Git'])
+    await expect(tabs.getByRole('tab')).toHaveText(['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Phones', 'Cloud iPhone', 'Agents', 'Output', 'Appearance', 'Application', 'Git'])
     // The keyboard reaches Phones from Hosts with one arrow.
     await tabs.getByRole('tab', { name: 'Hosts', exact: true }).click()
     await page.keyboard.press('ArrowDown')
@@ -95,10 +95,14 @@ test('Phones: sets up through the checklist, pairs a phone with a code, and clos
     // The phone redeems it: the code closes and the phone is listed, connected once it opens a socket.
     const code = (await codeBox.locator('.phones-code__value').textContent())!
     expect(code).toMatch(/^[2-9A-Z]{8}$/u)
+    expect(await codeBox.ariaSnapshot()).toContain(`Pairing code ${[...code].join(' ')}`)
+    await expect(codeBox.locator('.phones-code__value')).toHaveAttribute('aria-hidden', 'true')
+    await expect(codeBox.locator('[role="img"], [role="status"], [aria-live]')).toHaveCount(0)
     const paired = await SocketHostService.pair(base, code, 'Zach’s iPhone')
     await expect(codeBox).toHaveCount(0)
     const row = page.getByRole('region', { name: 'Zach’s iPhone' })
-    await expect(row).toContainText('Paired Sep')
+    const pairedAt = await page.evaluate(async () => (await window.sotto!.phones!.get()).phones.find(phone => phone.name === 'Zach’s iPhone')!.pairedAt)
+    await expect(row).toContainText(`Paired ${new Date(pairedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`)
     await expect(row).toContainText('Not connected')
     await expect(row.getByRole('switch', { name: 'Can answer: let Zach’s iPhone answer questions and permissions' })).toHaveAttribute('aria-checked', 'false')
     const phone = new SocketHostService({ url: base, token: paired.token, expectedHostId: paired.hostId })

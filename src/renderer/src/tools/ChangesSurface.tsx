@@ -51,7 +51,8 @@ export interface ChangesSurfaceProps {
 /**
  * Changes as T3's diff panel: a scope (Working tree, Branch changes against a base, Latest turn or Turn N), the
  * files of that comparison as collapsible blocks with their counts, and a file tree beside them. Review only:
- * committing is the Git action's, and there is no staging, discarding or reverting here (ADR-0027).
+ * committing is the Git action's, and there is no staging, discarding or reverting here (ADR-0027). A bridge without
+ * checkpoints (a thread on a paired host) offers no turns and no Checkpoints, and one without reveal no Show in folder.
  */
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus, onOpenFile, refs, comments = reviewCommentStore }: ChangesSurfaceProps): ReactNode {
   const changes = useThreadChanges(store, threadId)
@@ -82,7 +83,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   const totals = files.reduce((sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }), { additions: 0, deletions: 0 })
   const tree = view.fileTree && files.length > 0
   const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? 'Path copied' : 'Could not copy the path')) }
-  const reveal = (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) }
+  const reveal = bridge?.reveal ? (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) } : undefined
   const setScope = (scope: ChangesScope): void => store.setScope(bridge, threadId, scope)
   const toggle = (key: keyof Pick<ChangesView, 'wrap' | 'ignoreWhitespace' | 'fileTree'>): void => store.setView({ [key]: !view[key] })
 
@@ -90,7 +91,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
     <div className="changes-summary tools-chrome">
       {/* The scope keeps its words; the counts beside it show whole or drop to a line the lead never shows. */}
       <span className="changes-lead">
-        <ScopePicker changes={changes} onChange={setScope} />
+        <ScopePicker changes={changes} turns={bridge?.checkpoints !== undefined} onChange={setScope} />
         {files.length > 0 ? <Totals {...totals} place="chrome" /> : null}
       </span>
       <div className="tools-chrome__actions">
@@ -178,8 +179,11 @@ function showFile(changes: ThreadChanges, store: ChangesStore, path: string): vo
   })
 }
 
-/** T3's scope menu, as the platform's own select: Working tree, Branch changes, Latest turn, then each turn. */
-function ScopePicker({ changes, onChange }: { readonly changes: ThreadChanges; readonly onChange: (scope: ChangesScope) => void }): ReactNode {
+/**
+ * T3's scope menu, as the platform's own select: Working tree, Branch changes, Latest turn, then each turn. Without
+ * `turns` (a thread on a paired host, whose turn checkpoints are not kept here) it offers the first two alone.
+ */
+function ScopePicker({ changes, turns: offersTurns, onChange }: { readonly changes: ThreadChanges; readonly turns: boolean; readonly onChange: (scope: ChangesScope) => void }): ReactNode {
   const { scope, turns } = changes
   const value = scope.kind === 'turn' ? scope.checkpointId === null ? 'latest' : `turn:${scope.checkpointId}` : scope.kind
   return <label className="changes-scope">
@@ -190,8 +194,8 @@ function ScopePicker({ changes, onChange }: { readonly changes: ThreadChanges; r
     }}>
       <option value="working">Working tree</option>
       <option value="branch">Branch changes</option>
-      <option value="latest">Latest turn</option>
-      {turns.length > 0 ? <optgroup label="Turn">
+      {offersTurns ? <option value="latest">Latest turn</option> : null}
+      {offersTurns && turns.length > 0 ? <optgroup label="Turn">
         {turns.map(turn => <option key={turn.id} value={`turn:${turn.id}`}>Turn {turnNumber(turns, turn.id)}{turn.status === 'unavailable' ? ' (unavailable)' : ''}</option>)}
       </optgroup> : null}
     </select>
@@ -233,7 +237,7 @@ const NO_COMMENTS: readonly ReviewComment[] = []
 
 function ChangesFiles({ changes, review, view, store, comments: commentStore, onCopy, onReveal, onOpenFile, platform }: {
   readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore; readonly comments: ReviewCommentStore
-  readonly onCopy: (path: string) => void; readonly onReveal: (path: string) => void; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
+  readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
 }): ReactNode {
   const body = useRef<HTMLDivElement>(null)
   const { threadId } = changes
@@ -362,7 +366,7 @@ interface FileReview {
 
 const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onToggle, onCopy, onReveal, onOpen, platform, review }: {
   readonly file: GitReviewFile; readonly collapsed: boolean; readonly split: boolean; readonly labels: readonly string[]
-  readonly onToggle: () => void; readonly onCopy: (path: string) => void; readonly onReveal: (path: string) => void
+  readonly onToggle: () => void; readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined
   readonly onOpen?: ((path: string) => void) | undefined; readonly platform?: string | undefined; readonly review: FileReview
 }): ReactNode {
   const { folder, name } = splitPath(file.path)
@@ -385,7 +389,7 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
     </div>
     {!collapsed ? <>
       {file.originalPath ? <p className="changes-note">Renamed from <code>{file.originalPath}</code></p> : null}
-      <FileBody file={file} split={split} labels={labels} onReveal={() => onReveal(file.path)} platform={platform} review={review} />
+      <FileBody file={file} split={split} labels={labels} onReveal={onReveal ? () => onReveal(file.path) : undefined} platform={platform} review={review} />
     </> : null}
   </section>
 })
@@ -404,7 +408,7 @@ const NO_KEYS: ReadonlySet<string> = new Set()
  * extends with Shift and comments straight from a line number. Comments sit under their last line.
  */
 function FileBody({ file, split, labels, onReveal, platform, review }: {
-  readonly file: GitReviewFile; readonly split: boolean; readonly labels: readonly string[]; readonly onReveal: () => void; readonly platform?: string | undefined
+  readonly file: GitReviewFile; readonly split: boolean; readonly labels: readonly string[]; readonly onReveal?: (() => void) | undefined; readonly platform?: string | undefined
   readonly review: FileReview
 }): ReactNode {
   const [all, setAll] = useState(false)
@@ -440,7 +444,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   if (file.content.kind !== 'text') {
     const title = file.content.kind === 'binary' ? 'Binary file: no text diff.' : file.content.kind === 'too-large' ? 'Too large to show as a diff.' : 'No diff is available for this file.'
     return <div className="changes-file__problem" role="note"><strong>{title}</strong>{file.content.message && file.content.message !== title ? <p>{file.content.message}</p> : null}
-      {file.status !== 'deleted' ? <button type="button" className="files-link tt-focusable" onClick={onReveal}>{revealLabel(platform)}</button> : null}</div>
+      {file.status !== 'deleted' && onReveal ? <button type="button" className="files-link tt-focusable" onClick={onReveal}>{revealLabel(platform)}</button> : null}</div>
   }
   if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>No line changes.</strong><p>Only the file’s mode or name changed.</p></div>
 

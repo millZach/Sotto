@@ -61,7 +61,8 @@ export class ClaudeSessionLog {
   }
   private async resolve(): Promise<string | undefined> {
     if (this.path) return this.path
-    const projects = join(this.home, 'projects'); const folder = this.cwd.normalize('NFC').replace(/[^a-zA-Z0-9]/gu, '-')
+    // Claude Code replaces each UTF-16 code unit, including both halves of an astral character.
+    const projects = join(this.home, 'projects'); const folder = this.cwd.normalize('NFC').replace(/[^a-zA-Z0-9]/g, '-')
     const folders = folder.length <= 200 ? [folder] : (await readdir(projects).catch(() => [])).filter(name => name.startsWith(`${folder.slice(0, 200)}-`))
     for (const name of folders) {
       const candidate = join(projects, name, `${this.sessionId}.jsonl`)

@@ -3,19 +3,19 @@ import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, ClaudeWritePending, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
 
 type FakeChild = EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; kill: ReturnType<typeof vi.fn> }
 
 /** A child whose stdout is a real stream, so `setEncoding('utf8')` decodes the bytes the test writes. */
-function start(timeout = 5000) {
+function start(timeout = 5000, receive?: (frame: ClaudeFrame) => void) {
   const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), kill: vi.fn(() => true) }) as FakeChild
   vi.mocked(spawn).mockReturnValueOnce(child as never)
   const frames: ClaudeFrame[] = []
   const onExit = vi.fn()
-  const protocol = new ClaudeProtocol('claude', [], '.', {}, timeout, frame => { frames.push(frame) }, onExit)
+  const protocol = new ClaudeProtocol('claude', [], '.', {}, timeout, frame => { frames.push(frame); receive?.(frame) }, onExit)
   const written: ClaudeFrame[] = []
   let pending = ''
   child.stdin.on('data', (chunk: Buffer) => {
@@ -36,9 +36,24 @@ function split(bytes: Buffer, size: number): Buffer[] {
   return chunks
 }
 
-afterEach(() => { vi.mocked(spawn).mockReset() })
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); vi.mocked(spawn).mockReset() })
 
 describe('ClaudeProtocol framing', () => {
+  it('drops the connection when a frame handler throws and ignores later frames', async () => {
+    const receive = vi.fn(() => { throw new Error('private handler detail') })
+    const { protocol, child, onExit } = start(5000, receive)
+    const pending = protocol.control({ subtype: 'initialize' }).catch((error: Error) => error.message)
+    expect(() => child.stdout.write('{"type":"a"}\n{"type":"b"}\n')).not.toThrow()
+    expect(child.kill).toHaveBeenCalledTimes(1)
+    expect(await pending).toBe('Claude disconnected before acknowledging the request.')
+    child.stdout.write('{"type":"c"}\n')
+    expect(receive).toHaveBeenCalledTimes(1)
+    await expect(protocol.write({ type: 'user' })).rejects.toThrow('Claude is disconnected.')
+    child.emit('close')
+    await protocol.closed
+    expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
   it('joins one frame split across many chunks, including inside a multi-byte character', async () => {
     const { frames, child, send } = start()
     const text = `${'é'.repeat(3000)} 画像 🎨 ${'x'.repeat(5000)}`
@@ -174,5 +189,26 @@ describe('ClaudeProtocol control requests', () => {
     child.emit('close', 0)
     await protocol.closed
     expect(onExit).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('ClaudeProtocol delayed writes', () => {
+  it.each(['success', 'error', 'destroyed'] as const)('keeps the original callback after a deadline until %s', async outcome => {
+    vi.useFakeTimers()
+    const { child, protocol } = start(15_000)
+    let callback!: (error?: Error | null) => void
+    const write = vi.spyOn(child.stdin, 'write').mockImplementation(((_chunk: string, done: typeof callback) => {
+      callback = done; return false
+    }) as typeof child.stdin.write)
+    const pending = protocol.write({ type: 'control_response' }).catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(15_000)
+    const error = await pending as ClaudeWritePending
+    expect(error).toBeInstanceOf(ClaudeWritePending)
+    const completion = error.completion.then(() => 'delivered', () => 'failed')
+    if (outcome === 'destroyed') { child.stdin.destroy(); await vi.runAllTimersAsync() }
+    else callback(outcome === 'error' ? new Error('Pipe failed') : undefined)
+    expect(await completion).toBe(outcome === 'success' ? 'delivered' : 'failed')
+    expect(write).toHaveBeenCalledTimes(1)
   })
 })

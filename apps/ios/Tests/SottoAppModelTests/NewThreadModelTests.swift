@@ -12,6 +12,7 @@ final class NewThreadModelTests: XCTestCase {
         HostConnection.receipt = .object(["status": .string("unknown")]); HostConnection.loseAcknowledgement = false
         HostConnection.features = ["host-folders"]; HostConnection.receipts = [:]
         HostConnection.shells = [:]; HostConnection.commandHandler = nil; HostConnection.folderHandler = nil
+        HostConnection.stageHandler = nil; HostConnection.previewHandler = nil
         let store = TestKeychain.store, hosts = twoComputers ? [laptop, forge] : [laptop]
         try store.write(hosts, account: ComputerStore.indexAccount)
         for host in hosts {
@@ -42,7 +43,7 @@ final class NewThreadModelTests: XCTestCase {
             HostConnection.receipts[id] = .object(["status": .string("completed")])
             return result
         }
-        let model = AppModel(keychain: TestKeychain.store); model.phase(.active); await model.reconnectAll()
+        let model = AppModel(keychain: TestKeychain.store, receiptSleep: { _ in }); model.phase(.active); await model.reconnectAll()
         return model
     }
     @MainActor private func create(_ model: AppModel, host: String? = nil, folder: FolderListing? = nil, permission: String = "approval-required") async -> ThreadRef? {
@@ -52,6 +53,17 @@ final class NewThreadModelTests: XCTestCase {
     @MainActor private func folder(_ model: AppModel) async throws -> FolderListing {
         guard case .listed(let result) = try await model.folders(laptop) else { throw ClientError.invalidProtocol }
         return result
+    }
+    @MainActor func testAnUnconfirmedCreationIsNotFollowedLikeASend() async throws {
+        let model = try await fixture()
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        HostConnection.loseAcknowledgement = true
+        HostConnection.receipt = .object(["status": .string("pending")])
+        let created = await create(model)
+        XCTAssertNil(created, "Its sheet says the creation is unconfirmed rather than waiting on the receipt")
+        XCTAssertEqual(connection.operations.filter { $0 == "receipt" }.count, 0)
+        let marker = try XCTUnwrap(model.pendingCreations.first)
+        XCTAssertFalse(model.isSending(marker))
     }
     @MainActor func testCreationGoesOnlyToTheChosenComputerWithSharedOpaqueIDs() async throws {
         let model = try await fixture(twoComputers: true)

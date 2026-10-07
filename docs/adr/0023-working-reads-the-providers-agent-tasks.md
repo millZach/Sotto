@@ -114,6 +114,10 @@ meanwhile. Every stop the adapter makes is recorded until the process has exited
 waits for it, so one session never has two CLIs, whether the stop came from a settings change, a rewind, a
 changed personal context or the session reaper.
 
+A changed personal context waits for background work to finish before it restarts the client. Messages continue on the existing client with its previous context while the work runs, including a message asking Claude to stop that work. The changed context stays pending, and the first send after the work ends restarts the client with the latest context. A context change never refuses a send for this reason.
+
+Clarified September 30, 2026 after review: that wait applies only to changed retrieved preferences. Authored turns typed in a separate Claude CLI require Sotto's next send to restart its client and resume the updated native history, including in project threads and while background work runs. Otherwise the displayed history and the model's loaded context disagree. A committed deletion of a memory supplied to the running client also forces the next send to restart (ADR-0010). Either restart names the work it stopped through the existing stopped-work notice. Native takeover and changed retrieved preferences are tracked separately.
+
 The adapter logs which path each change took, as event names and nothing else: `claude-settings-applied-live`,
 `claude-settings-applied-restart`, `claude-settings-live-rejected` and `claude-settings-unconfirmed`.
 

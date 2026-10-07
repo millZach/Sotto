@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { cleanSettingsHistory } from '../../../src/main/settings/privacyCleanup'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -326,4 +327,34 @@ describe('NativeSettingsCoordinator', () => {
     await expect(coordinator.resetSettings()).resolves.toEqual(defaults)
     expect(activeHotkey).toBe('Control+Shift+Space')
   })
+})
+
+it('retries failed thread privacy cleanup on the next unrelated Settings save', async () => {
+  const harness = createHarness()
+  const agentControl = { privacyChanged: vi.fn(async () => undefined).mockRejectedValueOnce(new Error('storage unavailable')) }
+  harness.settingsChanged.mockImplementation(() => cleanSettingsHistory(agentControl))
+  await harness.coordinator.updateSettings({ historyEnabled: false })
+  expect(agentControl.privacyChanged).toHaveBeenCalledTimes(1)
+  await harness.coordinator.updateSettings({ autoPaste: false })
+  expect(harness.persisted.historyEnabled).toBe(false)
+  expect(agentControl.privacyChanged).toHaveBeenCalledTimes(2)
+})
+
+it('keeps history off after retired-chat cleanup fails and retries both retired stores on the next Settings save', async () => {
+  const harness = createHarness()
+  const agentControl = { privacyChanged: vi.fn(async () => undefined) }
+  const retiredChats = vi.fn(async () => undefined).mockRejectedValueOnce(new Error('chat storage unavailable'))
+  const retiredAnswers = vi.fn(async () => undefined)
+  const notify = vi.fn(async () => undefined)
+  harness.settingsChanged.mockImplementation(() => cleanSettingsHistory(agentControl, notify, [retiredChats, retiredAnswers]))
+  await harness.coordinator.updateSettings({ historyEnabled: false })
+  expect(harness.persisted.historyEnabled).toBe(false)
+  expect(retiredChats).toHaveBeenCalledOnce()
+  expect(retiredAnswers).toHaveBeenCalledOnce()
+  expect(notify).toHaveBeenCalledOnce()
+  await harness.coordinator.updateSettings({ autoPaste: false })
+  expect(harness.persisted.historyEnabled).toBe(false)
+  expect(retiredChats).toHaveBeenCalledTimes(2)
+  expect(retiredAnswers).toHaveBeenCalledTimes(2)
+  expect(notify).toHaveBeenCalledTimes(2)
 })

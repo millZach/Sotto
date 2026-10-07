@@ -7,6 +7,7 @@ export const FILES_REVEAL = 'sotto:files:reveal'
 export const FILES_MAX_ENTRIES = 1_000
 export const FILES_MAX_TEXT_BYTES = 512 * 1024
 export const FILES_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+export const FILES_MAX_CONCURRENT_REQUESTS = 4
 
 // Canonical slash-separated relative paths only. Reject Windows device names,
 // alternate streams, drive-relative paths and normalization aliases on every OS.
@@ -28,7 +29,12 @@ export const fileWorkspaceSchema = z.object({
   threadId: z.string(), projectId: z.string(), workingDirectory: z.string(), workspaceId: workspaceIdSchema,
 }).strict()
 export type FileWorkspace = z.infer<typeof fileWorkspaceSchema>
-const fileEntrySchema = z.object({ name: z.string(), path: fileRelativePathSchema, kind: z.enum(['directory', 'file', 'unavailable']) }).strict()
+// Unavailable entries retain their observed name/path for display only. Requests
+// still require a canonical path before any filesystem operation.
+const fileEntrySchema = z.discriminatedUnion('kind', [
+  z.object({ name: z.string(), path: fileRelativePathSchema, kind: z.enum(['directory', 'file']) }).strict(),
+  z.object({ name: z.string(), path: z.string().max(4096), kind: z.literal('unavailable') }).strict(),
+])
 export const fileListingSchema = z.object({ workspace: fileWorkspaceSchema, path: fileRelativePathSchema,
   entries: z.array(fileEntrySchema).max(FILES_MAX_ENTRIES), truncated: z.boolean() }).strict()
 export type FileListing = z.infer<typeof fileListingSchema>
@@ -54,9 +60,10 @@ export function filesResultSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), value }).strict(),
     z.object({ ok: z.literal(false), error: filesErrorSchema }).strict()])
 }
+/** Files' reads and path actions. A thread on a paired host gets one without `reveal`: its folder is on that host. */
 export interface FilesBridge {
   list(request: FileListRequest): Promise<FilesResult<FileListing>>
   preview(request: FileRequest): Promise<FilesResult<FilePreview>>
   copyPath(request: FileRequest): Promise<FilesResult<FilePath>>
-  reveal(request: FileRequest): Promise<FilesResult<FilePath>>
+  reveal?(request: FileRequest): Promise<FilesResult<FilePath>>
 }

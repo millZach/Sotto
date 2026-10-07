@@ -379,3 +379,94 @@ test('a thread uses the browser without asking by default, the user can stop or 
     throw error
   } finally { await closeSotto(launched); await new Promise<void>(done => server.close(() => done())) }
 })
+
+test('under the default grant every page in the thread is shared: one the user opens, across a redirect to another site, until made private', async () => {
+  test.setTimeout(240_000)
+  await mkdir(GRANT_SHOTS, { recursive: true })
+  // One server, two origins: 127.0.0.1 serves the page and redirects /sign-in to localhost, as a site sends you to its sign-in.
+  const server = createServer((request, response) => {
+    const port = (server.address() as { port: number }).port
+    if (request.url === '/sign-in') { response.writeHead(302, { location: `http://localhost:${port}/signed-in` }); response.end(); return }
+    response.writeHead(200, { 'content-type': 'text/html' }); response.end(GRANT_CONTENT)
+  })
+  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Preview server unavailable')
+  const url = `http://127.0.0.1:${address.port}/`
+  const reached = `http://localhost:${address.port}/signed-in`
+  const launched = await launchSotto().catch(error => { server.close(); throw error })
+  const { page } = launched
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  const shot = (name: string) => page.screenshot({ path: join(GRANT_SHOTS, `${name}.png`), animations: 'disabled' })
+  try {
+    await page.evaluate(async () => {
+      // ADR-0029: this profile keeps the default, Let agents use the browser without asking, on.
+      await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    await page.reload(); await resize(launched, 1280, 800); await openThreads(page)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+    const agent = (name: string, args: unknown) => page.evaluate(async request => window.sottoE2E!.browserAgent!(request), { threadId: 'workshop', name, arguments: args })
+    const result = (called: { content: { type: string }[]; isError?: boolean | undefined }) => JSON.parse((called.content[0] as unknown as { text: string }).text) as Record<string, unknown>
+    const shown = () => page.evaluate(async () => {
+      const listed = await window.sotto!.browser!.list({ threadId: 'workshop' })
+      const item = listed.ok ? listed.value.pages[0] : undefined
+      return item ? `${item.status} ${item.url} ${item.sharedOrigin ?? 'private'}` : 'missing'
+    })
+    const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
+    const privateLine = panel.getByText('This page is private. The agent cannot see it', { exact: true })
+
+    // The user opens a page; the agent can read it at once, with nothing pressed.
+    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await panel.getByRole('tab', { name: 'Browser' }).click()
+    await panel.getByRole('textbox', { name: 'Address for a new page' }).fill(url)
+    await page.keyboard.press('Enter')
+    await expect.poll(shown).toBe(`ready ${url} ${url.slice(0, -1)}`)
+    await expect(panel.getByRole('button', { name: 'Stop sharing' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(privateLine).toBeHidden()
+    const listed = result(await agent('browser_pages', {})) as { pages: { pageId: string; shared: boolean }[] }
+    expect(listed.pages).toEqual([expect.objectContaining({ shared: true })])
+    const started = await agent('browser_start', { pageId: listed.pages[0]!.pageId, description: 'Signing in for the upload' })
+    expect(started.isError).not.toBe(true)
+    const task = (result(started) as { task: { id: string; pageId: string } }).task
+    expect((await agent('browser_action', { pageId: task.pageId, taskId: task.id, action: { type: 'inspect' } })).isError).not.toBe(true)
+
+    // The page goes to its sign-in on another site by a server redirect: it reaches that address and stays shared.
+    const addressBar = panel.getByRole('textbox', { name: 'Address' })
+    await addressBar.fill(`${url}sign-in`)
+    await page.keyboard.press('Enter')
+    await expect.poll(shown).toBe(`ready ${reached} http://localhost:${address.port}`)
+    await expect(addressBar).toHaveValue(reached)
+    const inspected = await agent('browser_action', { pageId: task.pageId, taskId: task.id, action: { type: 'inspect' } })
+    expect(inspected.isError).not.toBe(true)
+    expect(JSON.stringify(result(inspected))).toContain('/signed-in')
+    await shot('shared-across-sites')
+
+    // Stop sharing makes this one page private, and a line under its address says so until Share with agent.
+    await panel.getByRole('button', { name: 'Stop sharing' }).click()
+    await expect(privateLine).toBeVisible()
+    await expect.poll(shown).toBe(`ready ${reached} private`)
+    expect((await agent('browser_action', { pageId: task.pageId, taskId: task.id, action: { type: 'inspect' } })).isError).toBe(true)
+    await shot('private-line')
+    await resize(launched, 820, 560)
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'light' }))
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    const panelBox = (await panel.boundingBox())!
+    const lineBox = (await privateLine.boundingBox())!
+    expect(lineBox.x + lineBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await shot('private-line-820x560-light')
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await resize(launched, 1280, 800)
+    await panel.locator('.browser-grant').getByRole('button', { name: 'Share with agent' }).click()
+    await expect(privateLine).toBeHidden()
+    await expect(panel.getByRole('button', { name: 'Stop sharing' })).toBeFocused()
+    await expect.poll(shown).toBe(`ready ${reached} http://localhost:${address.port}`)
+    expect(errors).toEqual([])
+    await writeFile(join(GRANT_SHOTS, 'sharing-verification.json'), JSON.stringify({ userPageSharedAtOnce: true, sharedAcrossRedirect: true, addressFollowsRedirect: true, stopSharingMakesPrivate: true, shareRestores: true, errors }, null, 2))
+  } catch (error) {
+    await page.screenshot({ path: join(GRANT_SHOTS, 'sharing-failure.png') }).catch(() => undefined)
+    console.error(await page.locator('body').innerText().catch(() => 'No renderer'))
+    throw error
+  } finally { await closeSotto(launched); await new Promise<void>(done => server.close(() => done())) }
+})

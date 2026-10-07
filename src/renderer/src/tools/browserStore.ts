@@ -39,6 +39,18 @@ export function normalizeAddress(input: string): { readonly url: string } | { re
   return { url }
 }
 
+/** The thread's test iPhone (ADR-0045): a page in its browser drawn as a phone, never one of Tools > Browser's tabs. */
+export function phonePage(browser: ThreadBrowser | undefined): BrowserPage | undefined {
+  return browser?.pages.find(page => page.device === 'iphone')
+}
+/** The pages Tools > Browser lists: everything but the test iPhone, which has its own surface. */
+export function browserPages(pages: readonly BrowserPage[]): readonly BrowserPage[] {
+  return pages.filter(page => !page.device)
+}
+/** Where main draws a page: Tools > Browser and the Browser player share the pane's slot; the test iPhone has its own. */
+type MountSlot = 'pane' | 'phone'
+interface Placement { bridge: BrowserBridge; threadId: string; workspaceId: string; pageId: string; bounds: BrowserBounds; request: number }
+
 /** How a page reads in its tab: its title, else its host. */
 export function pageLabel(page: BrowserPage): string {
   if (page.title.trim()) return page.title.trim()
@@ -66,9 +78,11 @@ export class BrowserStore {
     for (const threadId of threadIds) {
       if (this.taskThreads.has(threadId)) continue
       this.taskThreads.add(threadId)
-      // A bridge that refuses a thread outright rather than answering, as the preload does for another host's thread,
-      // leaves that thread without tasks here; it must not throw out of the effect and unmount the page.
-      void settle(Promise.resolve().then(() => tasks({ threadId }))).then(result => {
+      // A bridge that refuses another host's thread throws before the promise exists. That must not
+      // skip the rest of the list or unmount the page, and the thread must not stay marked watched.
+      let listed: Promise<ToolsResult<readonly BrowserTask[]>>
+      try { listed = settle(Promise.resolve(tasks({ threadId }))) } catch { this.taskThreads.delete(threadId); continue }
+      void listed.then(result => {
         if (!result.ok) { this.taskThreads.delete(threadId); return }
         for (const task of result.value) this.receiveTask(task)
       })
@@ -108,11 +122,11 @@ export class BrowserStore {
   private readonly listTokens = new Map<string, number>()
   private subscribed: BrowserBridge | null = null
   private unsubscribe: (() => void) | null = null
-  /** The latest desired page and rectangle, including a placement waiting for main. */
-  private mounted: { bridge: BrowserBridge; threadId: string; workspaceId: string; pageId: string; bounds: BrowserBounds; request: number } | null = null
+  /** The latest desired page and rectangle in each slot, including a placement waiting for main. */
+  private readonly mounted = new Map<MountSlot, Placement>()
   private placements = 0
-  private placementPending = false
-  private queuedPlacement: (() => void) | null = null
+  private readonly placementPending = new Set<MountSlot>()
+  private readonly queuedPlacement = new Map<MountSlot, () => void>()
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -132,7 +146,8 @@ export class BrowserStore {
     const latest = this.threads.get(threadId)!
     if (!result.ok) { this.patch(threadId, { status: 'error', error: result.error }); return }
     const { workspace, pages } = result.value
-    const active = pages.some(page => page.id === latest.activePageId) ? latest.activePageId : pages.at(-1)?.id ?? null
+    const listed = browserPages(pages)
+    const active = listed.some(page => page.id === latest.activePageId) ? latest.activePageId : listed.at(-1)?.id ?? null
     this.setThread({ ...latest, workspace, status: 'ready', error: null, pages, activePageId: active, grant: result.value.grant ?? null })
   }
 
@@ -144,29 +159,34 @@ export class BrowserStore {
   }
 
   select(threadId: string, pageId: string): void {
-    if (this.threads.get(threadId)?.pages.some(page => page.id === pageId)) this.patch(threadId, { activePageId: pageId, notice: null })
+    if (this.threads.get(threadId)?.pages.some(page => page.id === pageId && !page.device)) this.patch(threadId, { activePageId: pageId, notice: null })
   }
 
-  /** A page main opened for this thread elsewhere (a link in its transcript) becomes the active page. */
+  /**
+   * A page main opened for this thread elsewhere (a link in its transcript) becomes the active page. The test
+   * iPhone is taken in but never becomes Tools > Browser's active page, which it is not one of.
+   */
   adopt(page: BrowserPage): void {
     const threadId = page.workspace.threadId
     const thread = this.threads.get(threadId)
+    const active = page.device ? undefined : page.id
     if (!thread) {
-      this.setThread({ threadId, workspace: page.workspace, status: 'ready', error: null, pages: [page], activePageId: page.id, busy: false, notice: null, placementProblem: null, grant: null })
+      this.setThread({ threadId, workspace: page.workspace, status: 'ready', error: null, pages: [page], activePageId: active ?? null, busy: false, notice: null, placementProblem: null, grant: null })
       return
     }
     this.upsert(page)
-    this.patch(threadId, { activePageId: page.id, workspace: thread.workspace ?? page.workspace })
+    this.patch(threadId, { ...(active ? { activePageId: active } : {}), workspace: thread.workspace ?? page.workspace })
   }
 
-  async create(bridge: BrowserBridge | undefined, threadId: string, url: string): Promise<boolean> {
+  /** Opens a page, or with `device` the thread's test iPhone, which never becomes Tools > Browser's active page. */
+  async create(bridge: BrowserBridge | undefined, threadId: string, url: string, device?: 'iphone'): Promise<boolean> {
     const target = await this.target(bridge, threadId)
     if (!bridge || !target) return false
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, url }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, 'Could not open the page.'); return false }
+    const result = await settle(bridge.create({ ...target, url, ...(device ? { device } : {}) }))
+    if (!result.ok) { this.fail(bridge, threadId, result.error, device ? 'Could not open the test iPhone.' : 'Could not open the page.'); return false }
     this.upsert(result.value)
-    this.patch(threadId, { busy: false, activePageId: result.value.id })
+    this.patch(threadId, device ? { busy: false } : { busy: false, activePageId: result.value.id })
     return true
   }
 
@@ -181,7 +201,7 @@ export class BrowserStore {
   async close(bridge: BrowserBridge | undefined, threadId: string, pageId: string): Promise<void> {
     const workspace = this.threads.get(threadId)?.workspace
     if (!bridge || !workspace) return
-    if (this.mounted?.pageId === pageId) this.mounted = null
+    this.forgetPlacement(pageId)
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.close({ threadId, workspaceId: workspace.workspaceId, pageId }))
     if (!result.ok && result.error.code !== 'page-unavailable') { this.fail(bridge, threadId, result.error, 'Could not close the page.'); return }
@@ -198,43 +218,49 @@ export class BrowserStore {
     const thread = this.threads.get(threadId)
     const workspace = thread?.workspace
     if (!bridge || !workspace) return
+    // Main keeps one page in each slot, so a phone and a page in Tools show at once and never replace each other.
+    const slot: MountSlot = thread.pages.find(page => page.id === pageId)?.device ? 'phone' : 'pane'
     const target = { threadId, workspaceId: workspace.workspaceId, pageId }
+    const current = this.mounted.get(slot)
     if (bounds === null) {
-      if (this.mounted?.pageId !== pageId) return
-      this.mounted = null
+      if (current?.pageId !== pageId) return
+      this.mounted.delete(slot)
       void settle(bridge.mount({ ...target, bounds }))
       return
     }
-    if (this.mounted?.pageId === pageId && sameBounds(this.mounted.bounds, bounds)) return
+    if (current?.pageId === pageId && sameBounds(current.bounds, bounds)) return
     if (thread.placementProblem?.pageId === pageId) return
-    const previous = this.mounted
     // Invalidate a pending mount of the previous page before a queued page becomes the desired one.
-    if (previous !== null && previous.pageId !== pageId) {
-      void settle(previous.bridge.mount({ threadId: previous.threadId, workspaceId: previous.workspaceId, pageId: previous.pageId, bounds: null }))
+    if (current !== undefined && current.pageId !== pageId) {
+      void settle(current.bridge.mount({ threadId: current.threadId, workspaceId: current.workspaceId, pageId: current.pageId, bounds: null }))
     }
     const request = ++this.placements
-    this.mounted = { bridge, ...target, bounds, request }
+    this.mounted.set(slot, { bridge, ...target, bounds, request })
     // A moving panel can report a new rectangle every frame, faster than main validates its folder.
     // Keep only the newest rectangle while that validation is pending; hides still go through immediately.
     const place = (): void => {
-      if (this.mounted?.request !== request) return
-      this.placementPending = true
+      if (this.mounted.get(slot)?.request !== request) return
+      this.placementPending.add(slot)
       void settle(bridge.mount({ ...target, bounds })).then(result => {
-        if (result.ok || this.mounted?.request !== request) return
+        if (result.ok || this.mounted.get(slot)?.request !== request) return
         // Main may still draw the page where an earlier request put it, over the explanation.
-        this.mounted = null
+        this.mounted.delete(slot)
         void settle(bridge.mount({ ...target, bounds: null }))
         this.patch(threadId, { placementProblem: { pageId, message: placementReason(result.error) } })
         if (result.error.code === 'workspace-changed' || result.error.code === 'page-unavailable') void this.activate(bridge, threadId)
       }).finally(() => {
-        this.placementPending = false
-        const queued = this.queuedPlacement
-        this.queuedPlacement = null
+        this.placementPending.delete(slot)
+        const queued = this.queuedPlacement.get(slot)
+        this.queuedPlacement.delete(slot)
         queued?.()
       })
     }
-    if (this.placementPending) this.queuedPlacement = place
+    if (this.placementPending.has(slot)) this.queuedPlacement.set(slot, place)
     else place()
+  }
+  /** A closed page holds no slot. */
+  private forgetPlacement(pageId: string): void {
+    for (const [slot, placement] of this.mounted) if (placement.pageId === pageId) this.mounted.delete(slot)
   }
 
   /** Lets a refused page ask main again; the surface sends its rectangle on the next frame. */
@@ -273,7 +299,7 @@ export class BrowserStore {
     }
     const thread = this.threads.get(event.threadId)
     if (thread?.pages.some(page => page.id === event.pageId)) {
-      if (this.mounted?.pageId === event.pageId) this.mounted = null
+      this.forgetPlacement(event.pageId)
       this.remove(event.threadId, event.pageId)
     }
   }
@@ -289,9 +315,11 @@ export class BrowserStore {
   private remove(threadId: string, pageId: string): void {
     const thread = this.threads.get(threadId)
     if (!thread) return
-    const index = thread.pages.findIndex(page => page.id === pageId)
+    const listed = browserPages(thread.pages)
+    const index = listed.findIndex(page => page.id === pageId)
     const pages = thread.pages.filter(page => page.id !== pageId)
-    const active = thread.activePageId === pageId ? pages[Math.min(Math.max(index, 0), pages.length - 1)]?.id ?? null : thread.activePageId
+    const remaining = browserPages(pages)
+    const active = thread.activePageId === pageId ? remaining[Math.min(Math.max(index, 0), remaining.length - 1)]?.id ?? null : thread.activePageId
     const placementProblem = thread.placementProblem?.pageId === pageId ? null : thread.placementProblem
     this.setThread({ ...thread, pages, activePageId: active, placementProblem })
   }

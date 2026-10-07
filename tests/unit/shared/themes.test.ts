@@ -35,6 +35,14 @@ describe('theme colours', () => {
     expect(toCanonicalThemeColor('#33669980')).toMatch(/ \/ 0\.50\d*\)$/u)
   })
 
+  it.each(['oklch(0.5 0.2 250 / 0.99999)', 'oklch(0.5 2 250)'])('keeps imported colour %s valid for saving', input => {
+    const canonical = toCanonicalThemeColor(input)
+    expect(isCanonicalThemeColor(canonical)).toBe(true)
+    expect(toCanonicalThemeColor(canonical)).toBe(canonical)
+    const theme = parseThemeFile({ version: 1, name: 'Boundary', appearance: 'dark', colors: { canvas: input } })
+    expect(customThemeSchema.safeParse(theme).success).toBe(true)
+  })
+
   it('refuses anything that is not a literal colour, so nothing else can reach a style', () => {
     for (const value of [
       'red; background: url(https://evil.example)',

@@ -28,6 +28,8 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   glassOpacity: 60,
+  frostedWindow: true,
+  frostSeeThrough: 55,
   effortColor: 'aurora',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
@@ -81,8 +83,11 @@ const customSettings = {
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
+  tailnetConnections: true,
   voiceCoordinatorEnabled: true,
   memoryEnabled: true,
+  cloudIphoneMonthlyMinutes: 1_000,
+  cloudIphoneIdleMinutes: 10,
 } satisfies AppSettings
 
 describe('settings', () => {
@@ -169,6 +174,15 @@ describe('settings', () => {
     expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
   })
 
+  it('opens a settings file written before the frosted window existed solid, and refuses a see-through it cannot draw', () => {
+    const legacy = { ...customSettings } as Record<string, unknown>
+    delete legacy.frostedWindow
+    delete legacy.frostSeeThrough
+    expect(parseSettings(legacy)).toMatchObject({ frostedWindow: false, frostSeeThrough: 40 })
+    expect(parseSettings({ ...customSettings, frostSeeThrough: 95 })).toMatchObject({ frostedWindow: true, frostSeeThrough: 40 })
+    expect(parseSettings({ ...customSettings, frostSeeThrough: 42 })).toMatchObject({ frostSeeThrough: 40 })
+  })
+
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
@@ -253,6 +267,8 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       glassOpacity: 80,
+      frostedWindow: false,
+      frostSeeThrough: 40,
       effortColor: 'ember',
       customThemes: [],
       reducedMotion: 'system',
@@ -302,6 +318,9 @@ describe('settings', () => {
       localHostEnabled: true,
       phoneAccess: false,
       phoneAccessName: '',
+      tailnetConnections: false,
+      cloudIphoneMonthlyMinutes: 750,
+      cloudIphoneIdleMinutes: 5,
     })
   })
 
@@ -312,6 +331,14 @@ describe('settings', () => {
     expect(parseSettings(legacy)).toMatchObject({ phoneAccess: false, phoneAccessName: '' })
     expect(parseSettings({ ...customSettings, phoneAccessName: 'x'.repeat(64) }).phoneAccessName).toBe('')
     expect(parseSettings({ ...customSettings, phoneAccessName: '  Studio Mac  ' }).phoneAccessName).toBe('Studio Mac')
+  })
+
+  it('keeps a host saved before tailnet connections existed off them until a desktop turns them on (ADR-0053)', () => {
+    const legacy = { ...customSettings } as Record<string, unknown>
+    delete legacy.tailnetConnections
+    expect(parseSettings(legacy).tailnetConnections).toBe(false)
+    expect(parseSettings(customSettings).tailnetConnections).toBe(true)
+    expect(parseSettings({ ...customSettings, tailnetConnections: 'yes' }).tailnetConnections).toBe(false)
   })
 
 

@@ -27,10 +27,15 @@ public enum RemoteCommands {
     }
 }
 public enum Commands {
-    public static func prompt(threadID: String, text: String, draftID: String) throws -> JSONValue {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf16.count <= 100_000,
-              UUID(uuidString: draftID) != nil else { throw ClientError.invalidRequest }
-        return try RemoteCommands.checked(.object(["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]))
+    /// A reply: its words, its staged photos, or both. Photos go by handle, within the host's limits.
+    public static func prompt(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty, text.utf16.count <= 100_000,
+              UUID(uuidString: draftID) != nil, images.count <= PhotoLimits.count, images.allSatisfy(\.valid),
+              Set(images.map(\.id)).count == images.count,
+              images.reduce(0, { $0 + $1.sizeBytes }) <= PhotoLimits.bytesTogether else { throw ClientError.invalidRequest }
+        var fields: [String: JSONValue] = ["type": .string("manual-send"), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
+        if !images.isEmpty { fields["attachments"] = .array(images.map(\.wire)) }
+        return try RemoteCommands.checked(.object(fields))
     }
     public static func interrupt(threadID: String) throws -> JSONValue {
         try RemoteCommands.checked(.object(["type": .string("interrupt"), "threadId": .string(threadID)]))

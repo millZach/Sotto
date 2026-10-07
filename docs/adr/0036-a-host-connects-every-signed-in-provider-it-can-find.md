@@ -4,6 +4,8 @@
 
 Accepted September 28, 2026, for issue #459, part of map #134. Found on forge the same day, with Sotto 0.1.22. Amends ADR-0025, which left a host's providers to the saved coordinator settings it shares with the desktop, and changes where every adapter looks for its client, on the desktop as well as on a host.
 
+October 5, 2026 amendment (#479, #169): a desktop on macOS or Linux whose inherited PATH looks like a Dock or Finder launch's (none of `~/.local/bin`, `/usr/local/bin` or, on macOS, `/opt/homebrew/bin`) now reads the login shell's PATH once at startup, before anything else runs (`src/main/app/guiPath.ts`), and puts its folders, nvm's default Node, Homebrew and `~/.local/bin` on PATH for the whole process. Git, the terminal and every client then see what Terminal would. The shell is started interactive (`-ilc`), with a minimal environment, four seconds and nothing on stdin. A shell that stalls, or one whose background job holds its output, costs those four seconds once and leaves PATH as it was plus the fixed folders. A launch whose PATH is already full keeps its order and only gains missing folders at the end. Windows is unchanged. The per-client lookup below stays, and its login-shell step now usually finds nothing PATH has not already found. On the desktop, pressing **Connect providers** when the saved provider's client is missing switches to an installed one, never one the user turned off. The connect Sotto starts on its own at launch still changes nothing the user chose.
+
 ## Context
 
 Opening a project or a thread on forge failed with "Reconnect the provider before sending. Your draft is saved." The host was up and paired, and no provider was connected on it. Two faults combined.

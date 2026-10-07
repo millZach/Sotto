@@ -1,0 +1,45 @@
+/* The phone player: the focused thread's test iPhone, floating like Virtual iPhone's widget (ADR-0045). */
+.phone-player { position: fixed; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; animation: phone-player-arrive 160ms ease-out; }
+.phone-player > * { pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .phone-player { animation: none; } }
+:root[data-reduced-motion='on'] .phone-player { animation: none; }
+@keyframes phone-player-arrive { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+
+.phone-player__label { display: flex; align-items: center; gap: 4px; height: 34px; max-width: 100%; padding: 0 3px 0 8px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); cursor: grab; user-select: none; }
+.phone-player__label:active { cursor: grabbing; }
+.phone-player__label:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.phone-player__label > svg { flex: none; color: var(--tt-text-muted); }
+.phone-player__grip { flex: none; width: 6px; height: 14px; margin-right: 2px; background-image: radial-gradient(circle, var(--tt-text-faint) 1.2px, transparent 1.4px); background-size: 3px 4.6px; }
+.phone-player__name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phone-player__size { flex: none; height: 26px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.phone-player__size:hover { background: var(--tt-hover); color: var(--tt-text); }
+/* The player sits outside the Tools panel, so its icon buttons carry the panel's own reset (tools.css). */
+.phone-player__label .files-icon { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.phone-player__label .files-icon:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* The phone: a bezel in the theme's code surface, so it reads as hardware in light and dark alike. */
+.phone-player__phone { flex: none; background: var(--tt-code-bg); box-shadow: inset 0 0 0 1.5px var(--tt-border), 0 22px 48px -20px color-mix(in srgb, var(--tt-shadow-color) 70%, transparent); }
+.phone-player__screen { position: relative; overflow: hidden; background: var(--tt-surface-sunken); }
+.phone-player__screen[data-covered] { display: grid; place-items: center; }
+.phone-player__note { margin: auto; padding: 12px; display: grid; justify-items: center; gap: 6px; text-align: center; font-size: 12px; color: var(--tt-text-muted); }
+.phone-player__note p { margin: 0; }
+.phone-player__screen > .phone-player__note { position: absolute; inset: 0; align-content: center; }
+
+.phone-player__status { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 6px 6px 6px 12px; border: 1px solid var(--tt-border); border-radius: 17px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); }
+.phone-player__line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 22px; }
+.phone-player__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); animation: phone-player-pulse 1.6s ease-in-out infinite; }
+.phone-player__dot[data-state='waiting'] { background: var(--tt-attention); animation: none; }
+.phone-player__dot[data-state='idle'] { background: var(--tt-text-muted); animation: none; }
+@keyframes phone-player-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .phone-player__dot { animation: none; } }
+:root[data-reduced-motion='on'] .phone-player__dot { animation: none; }
+.phone-player__action { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+.phone-player__line .browser-review-link { flex: none; font-size: 12px; min-height: 24px; padding: 2px 6px; }
+
+.phone-player__request { padding: 8px; border: 1px solid var(--tt-attention); border-radius: 12px; background: var(--tt-surface); }
+.phone-player__request p { margin: 0 0 6px; font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.phone-player__request-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.phone-player__request-row .tt-button { height: 26px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
+
+.phone-player__grant { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12px; color: var(--tt-text-muted); }
+.phone-player__grant .browser-review-link { font-size: 12px; min-height: 22px; padding: 2px 6px; }

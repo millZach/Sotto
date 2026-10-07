@@ -7,7 +7,7 @@ import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agen
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
-import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, type AgentConfiguration, } from '../../../src/shared/agents'
+import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ProviderId, } from '../../../src/shared/agents'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { MemoryProfile } from '../../../src/main/memory/profile'
 import { PolicyStore } from '../../../src/main/memory/policies'
@@ -17,6 +17,7 @@ import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { ThreadHostEvent } from '../../../src/main/agents/host'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { ProviderUnavailable } from '../../../src/main/agents/providerProblem'
 
 class RetainedCallbacksProvider extends FakeProviderHost {
@@ -48,11 +49,12 @@ async function fixture() {
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
   return { root, registry, adapters, host, configuration: (value: AgentConfiguration) => { configuration = value } }
 }
-async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' })) {
+async function coordinator(f: Awaited<ReturnType<typeof fixture>>, decide: AgentReasoner['decide'] = async () => ({ decision: 'human', text: 'Review' }), installed?: () => Promise<readonly ProviderId[]>) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide },
+    ...(installed ? { installedProviders: installed } : {}),
   })
   control.subscribe(state => f.configuration(state.configuration))
   await control.start(); f.configuration(control.get().configuration)
@@ -91,6 +93,40 @@ describe('independent thread providers', () => {
     expect((await host.snapshot('claude')).threads.find(thread => thread.id === 'session-workshop')?.title).toBe('Current callback')
     expect(events).toHaveLength(1)
     off?.(); host.disconnect()
+  })
+  it('keeps Codex when it is installed and switches to Claude Code when it is not', () => {
+    const codex = { ...defaultAgentConfiguration(), enabledProviders: ['codex' as const] }
+    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders(codex, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
+    expect(selectInstalledProviders(codex, [])).toBeNull()
+    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'devin'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['grok'])).toBeNull()
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'], disconnectedProviders: ['devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+  })
+  it('connects Claude Code when the saved provider is Codex and Codex is not installed', async () => {
+    const f = await fixture()
+    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), async () => ['claude', 'grok'])
+    const state = await control.command({ type: 'connect' })
+    expect(state.configuration.provider).toBe('claude')
+    expect(state.configuration.enabledProviders).toEqual(['claude', 'grok'])
+    expect(state.connection).toBe('connected')
+    expect(state.error).toBeNull()
+    expect(f.adapters.codex.connectCalls).toBe(0)
+    expect(f.adapters.claude.connectCalls).toBe(1)
+    expect(f.adapters.grok.connectCalls).toBe(1)
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration).toMatchObject({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
+  })
+  it('leaves the saved providers alone when Sotto connects on its own at startup', async () => {
+    const f = await fixture()
+    const detect = vi.fn(async () => ['claude', 'grok'] as const)
+    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    await control.command({ type: 'configure', patch: { enabled: true } })
+    control.dispose()
+    const restarted = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), detect)
+    expect(restarted.get().configuration.provider).toBe('codex')
+    expect(detect).not.toHaveBeenCalled()
   })
   it('keeps legacy selection and strictly parses scoped commands without injecting configuration defaults', () => {
     const legacy = { ...defaultAgentConfiguration(), provider: 'claude' as const }
@@ -216,6 +252,20 @@ describe('independent thread providers', () => {
       expect(f.adapters.codex.commands.at(-1)).toMatchObject({ type: 'send', text: 'Healthy provider work' })
     } finally { release(); await pending }
   })
+  it('retries a new folder after its registration intent could not be saved', async () => {
+    const f = await fixture(); f.adapters.claude.state.projects[0]!.path = join(f.root, 'other')
+    const initial = await f.host.connect()
+    const project = initial.projects.find(project => project.providerId === 'codex')!
+    const model = initial.models.find(model => model.providerId === 'claude')!
+    const create = { type: 'create-thread' as const, commandId: 'first', threadId: 'new-thread', title: 'New task', projectId: project.id, modelId: model.id }
+    const write = vi.spyOn((f.host as unknown as { registrationStore: AtomicJsonStore<string[]> }).registrationStore, 'write').mockRejectedValueOnce(new Error('EPERM'))
+    await expect(f.host.execute(create)).rejects.toThrow('EPERM')
+    expect(f.adapters.claude.commands).toEqual([])
+    write.mockRestore()
+    expect((await f.host.execute({ ...create, commandId: 'retry' })).accepted).toBe(true)
+    expect(f.adapters.claude.commands.map(command => command.type)).toEqual(['create-project', 'create-thread'])
+  })
+
   it('recovers an uncertain folder registration across restart without replaying it or submitting a thread early', async () => {
     const f = await fixture(); f.adapters.claude.state.projects[0]!.path = join(f.root, 'other')
     const initial = await f.host.connect()
@@ -436,5 +486,21 @@ describe('independent thread providers', () => {
     const unnamed = (await f.host.snapshot('codex')).providers?.find(provider => provider.id === 'claude')
     expect(unnamed).toMatchObject({ connection: 'error', error: 'Claude Code did not answer.' })
     expect(unnamed?.problem).toBeUndefined()
+  })
+
+  it('releases Connecting when every requested native provider fails, then connects on a later try', async () => {
+    const f = await fixture(); const control = await coordinator(f)
+    await control.command({ type: 'configure', patch: { enabledProviders: ['codex', 'claude', 'grok'] } })
+    const message = 'Install Codex and sign in before connecting this provider.'
+    const spies = Object.values(f.adapters).map(adapter => vi.spyOn(adapter, 'connect').mockRejectedValue(new Error(message)))
+    const failed = await control.command({ type: 'connect' })
+    expect(failed.connection).toBe('disconnected')
+    expect(failed.error).toBe(message)
+    expect(failed.host.providers?.filter(provider => provider.id !== 'devin').map(provider => provider.connection)).toEqual(['error', 'error', 'error'])
+    for (const spy of spies) spy.mockRestore()
+    const restored = await control.command({ type: 'connect' })
+    expect(restored.connection).toBe('connected')
+    expect(restored.error).toBeNull()
+    expect(restored.host.providers?.filter(provider => provider.id !== 'devin').every(provider => provider.connection === 'connected')).toBe(true)
   })
 })

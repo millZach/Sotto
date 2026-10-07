@@ -27,12 +27,35 @@ describe('Codex Computer Use calls', () => {
     expect(project(item).title).toBe('node_repl / js')
   })
 
-  it('say what to do when the sandbox or a closed Codex app stopped them', () => {
+  it('say what to do when the sandbox or an unavailable connection stopped them', () => {
     const failed = (text: string) => project(call('node_repl', 'await sky.list_apps()', { status: 'failed', result: { content: [{ type: 'text', text }] } }))
     expect(failed('node_repl kernel exited unexpectedly: windows sandbox failed: helper_unknown_error: apply deny-read ACLs').error).toMatch(/sandbox.*Full access/su)
     expect(failed('trusted Node process exited unexpectedly; kernel reset, rerun your request').error).toMatch(/Full access/u)
-    expect(failed('Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)').error).toMatch(/Codex app open/u)
+    expect(failed('Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)').error).toMatch(/connection is unavailable/u)
     expect(project(call('node_repl', 'await sky.click()', { status: 'failed', error: { message: 'Window not found' } })).error).toBe('Window not found')
+  })
+
+  it('gives the same recovery for a closed app and a stale connection in Full access', () => {
+    const guidance = 'Computer Use connection is unavailable. Open Codex if it is closed. Keep it open and try again. If this continues, restart Sotto when your other threads are idle.'
+    for (const text of [
+      'Computer Use native pipe is unavailable: failed to connect native pipe: The system cannot find the file specified. (os error 2)',
+      'failed to connect native pipe: The pipe has been ended. (os error 109)',
+      'native pipe connection lost after typing input',
+    ]) {
+      const failed = call('cua_repl', 'await sky.type_text(); await sky.list_apps()', { status: 'failed', error: { message: text } })
+      expect(project(failed, 'full-access').error).toBe(`${guidance}\n${text}`)
+      expect(project(failed, 'approval-required').error).toBe(`${guidance}\n${text}`)
+      expect(computerUseNeeds(text, false)).toBe(guidance)
+    }
+  })
+
+  it('does not interpret authorization and unrelated failures as a connection or sandbox problem', () => {
+    for (const text of ['Computer Use permission denied', 'Authorization required', 'Window not found', 'trusted Node process exited unexpectedly']) {
+      expect(computerUseNeeds(text, false)).toBeUndefined()
+      expect(project(call('cua_repl', 'anything', { status: 'failed', error: { message: text } }), 'full-access').error).toBe(text)
+    }
+    const unrelated = call('node_repl', 'console.log(1)', { status: 'failed', error: { message: 'native pipe unavailable' } })
+    expect(project(unrelated, 'full-access').error).toBe('native pipe unavailable')
   })
 
   it('keep Codex\'s own words under Sotto\'s, and do not blame the sandbox in Full access', () => {

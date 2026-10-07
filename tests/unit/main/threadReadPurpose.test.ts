@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,8 +21,14 @@ import { manualSendCoordinator } from '../../fixtures/manualSendCoordinator'
  */
 class ReadRecordingHost extends E2EAgentHost {
   readonly reads: { threadId: string; purpose: ThreadReadPurpose | undefined }[] = []
+  /** The message ID of each send dispatched to this host. */
+  readonly sent: string[] = []
   async refreshThread(threadId: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     this.reads.push({ threadId, purpose: purpose && structuredClone(purpose) }); return this.snapshot()
+  }
+  override async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    if (command.type === 'send') this.sent.push(command.messageId)
+    return super.execute(command)
   }
 }
 /** The same, publishing thread events so a workspace above it keeps history from them, and recording settings changes (#368). */
@@ -62,8 +69,9 @@ describe('the hosts between the coordinator and the adapter hand on what a read 
   it('reaches the adapter with the read before a send, under the adapter\'s own session ID', async () => {
     const { host, adapter, id } = await composed()
     adapter.reads.length = 0
-    await host.refreshThread(id, { beforeSend: true })
-    expect(adapter.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true } }])
+    await host.refreshThread(id, { beforeSend: true, sendMessageId: 'own-2' })
+    // The message ID of the send it is for comes with it, which is what lets it stand for the adapter's own read (#765).
+    expect(adapter.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: 'own-2' } }])
   })
 
   it('reaches the adapter without a purpose for any other read', async () => {
@@ -74,22 +82,26 @@ describe('the hosts between the coordinator and the adapter hand on what a read 
   })
 
   it.each([
-    ['WorkspaceHost', (inner: AgentHost, root: string) => new WorkspaceHost(inner, root)],
+    // The workspace answers the read after a send from what it holds, so that read goes no further (#765).
+    ['WorkspaceHost', (inner: AgentHost, root: string) => new WorkspaceHost(inner, root), []],
     ['ConfiguredProviderHost', (inner: AgentHost, root: string) => {
       const hosts = {} as Record<ProviderId, AgentHost>
       for (const provider of providerIdSchema.options) hosts[provider] = provider === 'codex' ? inner : new ReadRecordingHost()
       return new ConfiguredProviderHost({ directory: root, hosts, provider: () => 'codex', threadProvider: () => 'codex' })
-    }],
-  ] as const)('%s hands the read before a send to the host it wraps', async (_name, wrap) => {
+    }, [{ threadId: 'workshop', purpose: { afterSend: true } }]],
+  ] as const)('%s hands the read before a send to the host it wraps', async (_name, wrap, afterSend) => {
     const root = await directory()
     const inner = new ReadRecordingHost()
     const host = wrap(inner, root)
     cleanup.push(async () => { host.disconnect(); if (host instanceof WorkspaceHost) await host.close() })
     await host.connect()
     inner.reads.length = 0
-    await host.refreshThread!('workshop', { beforeSend: true })
+    await host.refreshThread!('workshop', { beforeSend: true, sendMessageId: 'own-2' })
     await host.refreshThread!('workshop')
-    expect(inner.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true } }, { threadId: 'workshop', purpose: undefined }])
+    expect(inner.reads).toEqual([{ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: 'own-2' } }, { threadId: 'workshop', purpose: undefined }])
+    inner.reads.length = 0
+    await host.refreshThread!('workshop', { afterSend: true })
+    expect(inner.reads).toEqual(afterSend)
   })
 })
 
@@ -151,13 +163,14 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     host.reads.length = 0
     return { host, control }
   }
-  const beforeSend = { threadId: 'workshop', purpose: { beforeSend: true } }
+  /** The read before a send, naming the message of the send that followed it (#765). */
+  const beforeSend = (host: ReadRecordingHost) => ({ threadId: 'workshop', purpose: { beforeSend: true, sendMessageId: host.sent.at(-1) ?? 'no send was dispatched' } })
   const plain = { threadId: 'workshop', purpose: undefined }
 
   it('a manual send', async () => {
     const { host, control } = await coordinator()
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Manual prompt' })).error).toBeNull()
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('a coordinator draft send, and not the assign read before it', async () => {
@@ -167,7 +180,7 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     await control.command({ type: 'compose', text: 'Drafted prompt' })
     host.reads.length = 0
     expect((await control.command({ type: 'send' })).error).toBeNull()
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('a supervision follow-up', async () => {
@@ -178,7 +191,14 @@ describe('the coordinator marks only its reads immediately before a send', () =>
     host.event({ type: 'ready', threadId: 'workshop', text: 'First test failed.', status: 'idle' })
     await expect.poll(() => control.get().assignments[0]?.followups).toBe(1)
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.status).toBe('running')
-    expect(host.reads[0]).toEqual(beforeSend)
+    expect(host.reads[0]).toEqual(beforeSend(host))
+  })
+
+  it('a queued follow-up, which its checkpoint is taken from', async () => {
+    const { host, control } = await coordinator()
+    expect((await control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Queued prompt' })).error).toBeNull()
+    await expect.poll(() => control.get().host.threads.find(thread => thread.id === 'workshop')?.messages.some(message => message.role === 'user' && message.text === 'Queued prompt')).toBe(true)
+    expect(host.reads[0]).toEqual(beforeSend(host))
   })
 
   it('not the read that reconciles a send whose delivery is uncertain', async () => {

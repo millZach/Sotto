@@ -53,7 +53,8 @@ export function Questionnaire({ draft, onChange, onSave, onLater, busy, error }:
       {review ? <Button disabled={busy} onClick={() => void onSave({ type: 'complete-questionnaire', answers: questions.map(item => ({ topic: item.topic, content: draft.answers[item.topic] ?? '' })), boundaries: draft.boundaries })}>{busy ? 'Saving…' : 'Save preferences'}</Button>
         : <Button disabled={busy || (question !== undefined && !answer.trim())} onClick={() => onChange({ ...draft, step: draft.step + 1 })}>Continue</Button>}
       <Button variant="ghost" disabled={busy} onClick={onLater}>Not now</Button>
-      <span className="memory-progress" aria-label={`Step ${draft.step + 1} of 9`}>{draft.step + 1} / 9</span>
+      <span className="memory-progress" aria-hidden="true">{draft.step + 1} / 9</span>
+      <span className="tt-visually-hidden">Question {draft.step + 1} of 9</span>
     </div>
   </section>
 }

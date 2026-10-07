@@ -1,11 +1,16 @@
 import { z } from 'zod'
-import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentCommandSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
 import { gitPullRequestRequestSchema } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
+import { fileListRequestSchema, fileRequestSchema } from './files'
+import { gitReviewRequestSchema } from './gitChanges'
+import { toolListRequestSchema } from './tools'
+import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { PASTED_CODE_MAX } from './hostProviders'
+import type { AgentActivity } from './agentActivity'
 import { providerIdSchema, type ProviderClientUpdate } from './agents'
 
 /**
@@ -19,7 +24,13 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
   return { ...state, membership: { status: 'beta' as const, label: '', expiresAt: null },
     configuration: { ...state.configuration, membershipEndpoint: '' } }
 }
-const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional() })
+/**
+ * A shell as a client reads it. `host.modelsRevision` is sent only to a client that accepts
+ * `model-catalog-revision`, which the desktop's own client does not; it reads it as optional and ignores it,
+ * and `host.models` stays required, as v1 has it.
+ */
+const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
+  host: agentHostSnapshotSchema.extend({ modelsRevision: z.number().int().positive().optional() }) })
 /** Older hosts carry retired fields; strip them before the strict domain schemas read them. */
 export const protocolAgentStateSchema = z.preprocess(value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
@@ -48,10 +59,32 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * message-aliased only after the client explicitly accepts it; other clients read the repaired detail.
  * `client-updates`: the host's shell carries its client updates for the client to show, and the host takes the
  * `queue-client-updates` command, which updates its clients one at a time (ADR-0042, #480). Only a headless host offers
- * it, and a client shows a host's client updates only when the host lists it.
+ * it, and a client shows a host's client updates only when the host lists it. `activity-summaries`: a client that
+ * accepts it is sent every activity record in a detail, a detail delta and a `detail` answer as its activity summary
+ * (`activitySummary`), without the output, text and diffs it would not show (#701).
+ * `model-catalog-revision`: to a client that accepts it, every shell's `host` names its model catalog's revision
+ * (`modelsRevision`) and carries `models` only when this connection has not yet been sent that revision whole
+ * (ADR-0028, October 3 amendment). Every other client is sent the whole catalog in every shell.
+ * `thread-files`: the host answers `thread-files` with a folder's entries in a thread's working copy and
+ * `thread-file-preview` with one file's preview, for Files. `thread-changes`: the host answers `thread-changes` with a thread's
+ * changed files as Git's status lists them and `thread-changes-review` with its Working tree or Branch changes comparison, for
+ * Changes. `subagents`: the host answers `subagent-page` and `subagent-assignments` with a thread's agents, for Agents.
+ * All six are reads, bounded as the desktop's own are (ADR-0025, October 5 amendment).
+ * `answer-check`: an authorized client's `check-answer` freshly reads an exact native question and may
+ * release its restart re-offer for a new user choice. Receipt reads and background publications never do this.
+ * `atomic-send`: `send` may carry its selected thread's text and staged attachment handles in `draft`.
+ * The host admits and sends that draft together, without a separate Compose request. A Compose save may also
+ * carry `threadId` to retain its exact selected owner after Send. Neither field grants authority.
+ * `draft-revisions`: targeted Compose and atomic Send accept stable draft IDs; recovery saves can
+ * require an exact previous host revision. Socket save outcomes remain private to their caller.
  */
-export const HOST_FEATURES = ['message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
+/**
+ * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
+ * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
+ */
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates']
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -59,6 +92,31 @@ export type HostFeature = typeof HOST_FEATURES[number]
  */
 export function clientUpdateForOlderClient(update: ProviderClientUpdate): ProviderClientUpdate {
   return { ...update, ...(update.channel === 'mise' ? { channel: 'unknown' as const } : {}), ...(update.state === 'queued' ? { state: 'idle' as const } : {}) }
+}
+/**
+ * An activity record as a summary row reads it, for a client that accepts `activity-summaries` (#701): what it is, how
+ * it went, how long it took, the command it ran and the files it changed. Its output, text, error, folder, diffs, plan,
+ * agents and context stay on the host. It is still an activity record under the same schema, with the same ID and
+ * sequence, so a delta of summaries applies to a detail of summaries exactly as a delta of whole records does.
+ */
+export function activitySummary(record: AgentActivity): AgentActivity {
+  return {
+    id: record.id, turnId: record.turnId, sequence: record.sequence, kind: record.kind, status: record.status, title: record.title,
+    ...(record.command !== undefined ? { command: record.command } : {}),
+    ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
+    ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
+    ...(record.startedAt !== undefined ? { startedAt: record.startedAt } : {}),
+    ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
+  }
+}
+/** A thread's detail with each activity record as its summary. Messages, revision and the rest are the detail's own. */
+export function detailWithActivitySummaries(detail: AgentThreadDetail): AgentThreadDetail {
+  return detail.activities === undefined ? detail : { ...detail, activities: detail.activities.map(activitySummary) }
+}
+/** A detail delta with each record it carries as its summary. Removals and the revisions are unchanged, so it still applies. */
+export function deltaWithActivitySummaries(delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
+  return delta.activityDeltas.length === 0 ? delta
+    : { ...delta, activityDeltas: delta.activityDeltas.map(item => 'record' in item ? { record: activitySummary(item.record) } : item) }
 }
 /**
  * Whether a host's Sotto version is later than this client's, by release number. A version that cannot
@@ -103,6 +161,10 @@ export function hostVersionMismatch(clientVersion: string, hostVersion: string |
 export const HOST_MAX_FRAME_BYTES = 16 * 1024 * 1024
 export const HOST_EVENT_PAGE_SIZE = 256
 const id = z.string().min(1).max(512)
+/** Evidence of acceptance of one exact answer attempt; never the question or answer text. */
+export const hostAnswerTargetSchema = z.object({ threadId: id, providerId: providerIdSchema, requestId: id,
+  questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
+export type HostAnswerTarget = z.infer<typeof hostAnswerTargetSchema>
 /** Feature names are read leniently, so a name this build does not know is ignored rather than refused. */
 const featureList = z.array(z.string().min(1).max(64)).max(64)
 const sottoVersion = z.string().min(1).max(64)
@@ -122,7 +184,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
   z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
-  z.object({ ...base, op: z.literal('receipt'), commandId: id }).strict(),
+  z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
+  z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
   z.object({ ...base, op: z.literal('git-refs'), request: gitRefsRequestSchema }).strict(),
   /** The changed files of a thread's folder with their line counts, for the commit dialog; read on request (ADR-0027). */
@@ -135,6 +198,17 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('attachment-content'), digest: attachmentDigestSchema }).strict(),
   /** One folder's subfolders on the host, for the Add project dialog's folder browser; read on request. */
   z.object({ ...base, op: z.literal('host-folders'), request: hostFoldersRequestSchema }).strict(),
+  /** One folder's entries in a thread's working copy, for Files; read on request (ADR-0025, October 5 amendment). */
+  z.object({ ...base, op: z.literal('thread-files'), request: fileListRequestSchema }).strict(),
+  /** One file's preview from a thread's working copy, for Files; one at a time per client, on the preview guard. */
+  z.object({ ...base, op: z.literal('thread-file-preview'), request: fileRequestSchema }).strict(),
+  /** A thread's changed files as Git's status lists them, for Changes; read on request. */
+  z.object({ ...base, op: z.literal('thread-changes'), request: toolListRequestSchema }).strict(),
+  /** A thread's Working tree or Branch changes comparison, for Changes; one at a time per client, on the preview guard. */
+  z.object({ ...base, op: z.literal('thread-changes-review'), request: gitReviewRequestSchema }).strict(),
+  /** A page of a thread's agents, and one agent's assignments, for Agents; read on request. */
+  z.object({ ...base, op: z.literal('subagent-page'), request: subagentPageRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it
    * stands, hand its client a code pasted from the sign-in page, or cancel it. Each answers with the sign-in, or null.
@@ -151,21 +225,46 @@ export interface HostProtocolError { code: HostErrorCode; message: string }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
 export type HostClientShell = AgentState & { clientCapabilities?: { mayAnswer: boolean } | undefined }
-export type HostPush = { v: 1; event: 'shell'; state: HostClientShell; eventPage?: HostEventPage | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
+/**
+ * A shell as it crosses the socket. To a client that accepts `model-catalog-revision` its `host` names the
+ * catalog's revision and leaves `models` out when this connection was already sent that revision; to every
+ * other client it is a `HostClientShell` as v1 has it.
+ */
+export type HostWireShell = Omit<HostClientShell, 'host'> & {
+  host: Omit<AgentState['host'], 'models'> & { models?: AgentModel[] | undefined; modelsRevision?: number | undefined }
+}
+export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?: HostEventPage | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
+  | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
-/** `capabilities` is what this client may do on this host; `features` is what the host's protocol offers. */
-export interface HostHello extends HostEventPage { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[] }
+/**
+ * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
+ * Tailscale Serve carries its tailnet listener at, `https://<MagicDNS name>:<port>`, while Serve runs for it. `startedBy`
+ * is who started it, as its listener descriptor records: `launch-script` or `boot` (its start at boot unit), and absent
+ * for a host its owner started by hand. A value this build does not know reads as absent. Neither is evidence of identity: the host's ID, its certificate and the pairing are.
+ */
+export interface HostAbout { tailnetAddress?: string | undefined; startedBy?: string | undefined }
+/** A host's phone access in the words its row uses, as hello reports it to a desktop (ADR-0053): off, starting, on with how many phones are paired, or needs the owner. */
+export const HOST_PHONE_ACCESS_STATUSES = ['off', 'starting', 'on', 'needs-you'] as const
+export interface HostPhoneAccessSummary { status: typeof HOST_PHONE_ACCESS_STATUSES[number]; phones: number }
+/**
+ * `capabilities` is what this client may do on this host; `features` is what the host's protocol offers this client,
+ * which on a headless host's tailnet listener depends on whether it is a desktop (ADR-0053). `phoneAccess` goes only to
+ * a desktop, as it stood when the session's hello was answered.
+ */
+export interface HostHello extends HostEventPage, HostAbout { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[]; phoneAccess?: HostPhoneAccessSummary | undefined }
 export interface HostSession { v: 1; hostId: string; clientId: string; session: string; expiresAt: string }
 export interface HostPairing { v: 1; hostId: string; clientId: string; token: string }
 export interface HostReceipt {
   status: 'pending' | 'completed' | 'unknown'; error?: HostProtocolError | undefined
   /** This answer command's own successful outcome. Older hosts omit it; completion alone proves none. */
   answerDelivered?: boolean | undefined
+  /** Acceptance of this authenticated client's exact answer attempt and original questions. */
+  acceptedAnswer?: (HostAnswerTarget & { decisionId: string }) | undefined
 }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
-export interface HostDescriptor { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
+export interface HostDescriptor extends HostAbout { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
 export interface HostHealth extends HostDescriptor {
   status: 'ready'
   /** The computer's name as its owner set it for phones; only the desktop's phone access sends it (ADR-0033). */
@@ -179,15 +278,25 @@ const eventPageShape = { events: z.array(z.object({ seq: z.number().int().nonneg
 export const hostEventPageSchema = z.object(eventPageShape)
 export const hostPairingSchema = z.object({ v: z.literal(1), hostId: z.uuid(), clientId: id, token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) })
 export const hostSessionSchema = z.object({ v: z.literal(1), hostId: z.uuid(), clientId: id, session: z.string().min(1).max(2048), expiresAt: z.iso.datetime() })
-export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList })
-export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList })
 /**
- * The Sotto version and features a host's health advertises, or null when the host does not speak the
+ * Health's and hello's additions since v1 froze. Each is optional and read leniently: a value this build cannot read,
+ * such as a later host's new `startedBy` or phone access status, reads as absent rather than refusing the whole answer.
+ */
+const aboutShape = {
+  tailnetAddress: z.string().min(1).max(300).optional().catch(undefined),
+  startedBy: z.string().min(1).max(64).optional().catch(undefined),
+}
+export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
+export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
+  ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
+/**
+ * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the
  * frozen v1: another protocol version, or a host from before the freeze that advertises neither.
  */
-export function hostHealthFeatures(value: unknown): { sottoVersion: string; features: string[] } | null {
+export function hostHealthFeatures(value: unknown): { hostId: string; sottoVersion: string; features: string[] } | null {
   const health = hostHealthSchema.safeParse(value)
-  return health.success ? { sottoVersion: health.data.sottoVersion, features: health.data.features } : null
+  return health.success ? { hostId: health.data.hostId, sottoVersion: health.data.sottoVersion, features: health.data.features } : null
 }
 export const hostProtocolErrorSchema = z.object({ code: z.enum(['unauthenticated', 'invalid_request', 'stale_request', 'forbidden', 'unavailable', 'busy', 'too_large']), message: z.string().min(1).max(1000) })
 export const hostResponseSchema = z.discriminatedUnion('ok', [
@@ -198,6 +307,8 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('shell'), state: protocolAgentStateSchema, eventPage: hostEventPageSchema.optional() }),
   z.object({ v: z.literal(1), event: z.literal('detail'), threadId: id, detail: agentThreadDetailResultSchema }),
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
+  z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
 ])
-export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(), answerDelivered: z.boolean().optional() })
+export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
+  answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional() })

@@ -5,8 +5,10 @@ import { catalogEntry } from '../../../shared/modelCatalog'
  * The last shell the window saw, kept so the Threads page paints its rows on the first frame after a
  * restart instead of waiting for main to connect its providers and answer.
  *
- * What is kept is what the sidebar draws and nothing else: no thread's messages, no attachment bytes,
- * no draft attachments. A restored shell is handed back marked `stale` and disconnected, so nothing on
+ * The cache keeps thread summaries, including `lastUser` and `lastAssistant` text (up to 2,000 characters
+ * each), and pending requests, including permission text and command details, in plaintext localStorage.
+ * Full message lists, attachment bytes and draft attachments are not kept. A restored shell is handed
+ * back marked `stale` and disconnected, so nothing on
  * the page offers an action that needs a live provider until the first real state lands.
  *
  * localStorage is already scoped to this install's renderer origin, so the cache never crosses windows
@@ -58,7 +60,7 @@ function trimCatalogsToReferencedModels(host: AgentHostSnapshot): AgentHostSnaps
 }
 
 /**
- * The shell as it is safe to keep: what a sidebar row draws, and nothing else. Drafts, follow-ups and
+ * The startup shell, including message excerpts and pending permission details. Drafts, follow-ups and
  * delivery evidence are deliberately dropped rather than trimmed — they are durable in main, and a copy
  * from the last run is not evidence of what is on disk now.
  */

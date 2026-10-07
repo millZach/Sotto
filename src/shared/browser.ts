@@ -1,30 +1,46 @@
 import { z } from 'zod'
+import { UNSAFE_URL_CHARACTERS } from './externalLinks'
 import { fileWorkspaceSchema } from './files'
 import { toolTargetSchema, type ToolsResult } from './tools'
 
 export const BROWSER_CHANNEL = 'sotto:browser:'
 export const BROWSER_EVENT = `${BROWSER_CHANNEL}event`
+/** What a page an agent asked to open says until it is opened: by the user's answer, the browser grant, or the user loading it. */
+export const BROWSER_WAITING_TO_OPEN = 'Waiting for you to open and share this page.'
+
 export function safeBrowserUrl(input: string): string | null {
-  // eslint-disable-next-line no-control-regex -- Reject display spoofing and URL parser control stripping.
-  if (/[\x00-\x20\x7f\u202a-\u202e\u2066-\u2069]/.test(input) || input.length > 8192) return null
+  if (UNSAFE_URL_CHARACTERS.test(input) || input.length > 8192) return null
   try {
     const url = new URL(input)
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null
   } catch { return null }
 }
+/**
+ * The test iPhone (ADR-0045): a page in Sotto's browser drawn at an iPhone 15 Pro's size, 393 by 852 CSS pixels,
+ * with iOS Safari's user agent and touch. It is not iOS, and nothing on it runs native code.
+ */
+export const TEST_IPHONE = {
+  name: 'iPhone 15 Pro', width: 393, height: 852,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+} as const
+/** Which kind of page: absent or null is an ordinary browser page; `iphone` is the thread's test iPhone. */
+export const browserDeviceSchema = z.literal('iphone')
+export type BrowserDevice = z.infer<typeof browserDeviceSchema>
 const browserUrlSchema = z.string().refine(value => safeBrowserUrl(value) !== null, 'Use a complete HTTP or HTTPS URL without credentials.').transform(value => safeBrowserUrl(value)!)
-export const browserCreateSchema = toolTargetSchema.extend({ url: browserUrlSchema })
+export const browserCreateSchema = toolTargetSchema.extend({ url: browserUrlSchema, device: browserDeviceSchema.optional() })
 export const browserRequestSchema = toolTargetSchema.extend({ pageId: z.string().uuid() })
 export const browserNavigateSchema = browserRequestSchema.extend({ url: browserUrlSchema })
 export const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(32768), y: z.number().finite().min(0).max(32768), width: z.number().finite().positive().max(32768), height: z.number().finite().positive().max(32768) }).strict()
 export const browserMountSchema = browserRequestSchema.extend({ bounds: browserBoundsSchema.nullable() })
 export const browserOpenLinkSchema = z.object({ url: browserUrlSchema, destination: z.enum(['external', 'embedded']).optional(), target: toolTargetSchema.optional() }).strict()
-export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional() }).strict()
+export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional(), device: browserDeviceSchema.nullable().optional() }).strict()
 /** What the renderer may know of a thread's browser grant (ADR-0029): that it is live, since when, and where it came from. */
 export const browserGrantSchema = z.object({ grantedAt: z.number(), source: z.enum(['settings', 'user']) }).strict()
 export const browserListingSchema = z.object({ workspace: fileWorkspaceSchema, pages: z.array(browserPageSchema).max(32), grant: browserGrantSchema.nullable().optional() }).strict()
 export const browserOpenResultSchema = z.object({ destination: z.enum(['external', 'embedded']), page: browserPageSchema.optional() }).strict()
 const coordinate = z.number().finite().min(0).max(8192)
+/** The keys a `key` action can press: the ones a form and a list need, never a shortcut chord. */
+export const BROWSER_KEYS = ['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const
 export const browserPointSchema = z.object({ x: coordinate, y: coordinate }).strict()
 const viewportShape = { width: z.number().int().min(240).max(2560), height: z.number().int().min(240).max(2560) }
 export const browserViewportSchema = browserRequestSchema.extend(viewportShape).or(browserRequestSchema.extend({ reset: z.literal(true) }))
@@ -38,10 +54,14 @@ export const browserActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('type'), text: z.string().max(4000) }).strict(),
   z.object({ type: z.literal('scroll'), x: coordinate, y: coordinate, deltaX: z.number().finite().min(-4096).max(4096), deltaY: z.number().finite().min(-4096).max(4096) }).strict(),
   z.object({ type: z.literal('viewport'), ...viewportShape }).strict(),
+  z.object({ type: z.literal('tap'), x: coordinate, y: coordinate }).strict(),
+  z.object({ type: z.literal('swipe'), x: coordinate, y: coordinate, toX: coordinate, toY: coordinate }).strict(),
+  z.object({ type: z.literal('key'), key: z.enum(BROWSER_KEYS) }).strict(),
 ])
 export const browserTaskRequestSchema = browserRequestSchema.extend({ taskId: z.string().uuid() })
 export const browserStartTaskSchema = browserRequestSchema.extend({ description: z.string().min(1).max(300) })
-export const browserAgentOpenSchema = browserCreateSchema.extend({ description: z.string().min(1).max(300) })
+/** `browser_open` and `iphone_open` take the same input; which tool was called decides the kind of page. */
+export const browserAgentOpenSchema = toolTargetSchema.extend({ url: browserUrlSchema, description: z.string().min(1).max(300) })
 export const browserAgentActionSchema = browserTaskRequestSchema.extend({ action: browserActionSchema })
 export const browserControlTaskSchema = browserTaskRequestSchema.extend({ control: z.enum(['pause', 'resume']) })
 /** `forThread` answers with a browser grant (ADR-0029) for the rest of the session, not just this once. */
@@ -54,6 +74,8 @@ export const browserTaskSchema = z.object({
   thumbnail: z.string().nullable(), summary: z.string().nullable(), unchecked: z.array(z.string()),
   pendingAction: z.object({ id: z.string().uuid(), action: browserActionSchema, description: z.string(), expiresAt: z.number() }).nullable(),
   output: z.string().max(200_000).nullable(),
+  /** The task's page kind, so a task on the test iPhone floats in the phone player before its page is listed. */
+  device: browserDeviceSchema.nullable().optional(),
   evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
 }).strict()
 export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()

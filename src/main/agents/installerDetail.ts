@@ -1,7 +1,52 @@
 import { homedir, userInfo } from 'node:os'
 
-/** A home folder in a line the installer printed: `C:\Users\<name>\…`, `/home/<name>/…`, `/Users/<name>/…`, `/root/…`. */
-const HOME_PATH = /[A-Za-z]:\\[^\s"']+|\/(?:home|Users|root)\/[^\s"']+/gu
+// Identify every absolute prefix before removing text. A quoted path cannot
+// consume another path's prefix and leave a private relative suffix behind.
+// URLs and package names such as aqua:openai/codex are not absolute paths.
+const ABSOLUTE_START = /(?<=file:\/\/)\/(?:[A-Za-z]:[\\/])?|(?<![\w/\\~])(?:[A-Za-z]:[\\/]|\\\\|\/(?=[^\s/]))|(?<![\w:/\\~])\/\//gu
+const NON_FILE_URL = /\b(?!file:)[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/giu
+function redactPaths(line: string): string {
+  const urls = Array.from(line.matchAll(NON_FILE_URL), match => ({ start: match.index, end: match.index + match[0].length }))
+  const paths = Array.from(line.matchAll(ABSOLUTE_START)).filter(match => !urls.some(url => match.index >= url.start && match.index < url.end)).map(match => {
+    const start = match.index
+    const prefixStart = line.slice(start - 7, start) === 'file://' ? start - 7 : start
+    const preceding = line[prefixStart - 1]
+    const quote = preceding === '"' || preceding === "'" ? preceding : undefined
+    const windows = /^(?:\/?[A-Za-z]:[\\/]|\\\\|\/\/)/u.test(match[0])
+    return { start: quote ? prefixStart - 1 : start, quote, windows, prefixLength: match[0].length }
+  })
+  let shown = '', cursor = 0
+  for (const [index, path] of paths.entries()) {
+    const next = paths[index + 1]
+    const end = next?.start ?? line.length
+    const span = line.slice(path.start, end)
+    let suffix = ''
+    if (path.quote) {
+      // Quotes and spaces can be part of an account folder. Prefer the last
+      // matching quote within this path's span, and keep only clear diagnostics.
+      const closing = span.lastIndexOf(path.quote)
+      const after = span.slice(closing + 1)
+      if (closing > 0 && (/^\s*$/u.test(after)
+        || next && /^\s*(?:->|to|,)\s*$/u.test(after)
+        || /^\s*[,;:)]/u.test(after) && !/[\\/]/u.test(after.replace(NON_FILE_URL, '')))) suffix = after
+    } else {
+      // Spaces belong to account folders too. Only clear diagnostic delimiters
+      // end an unquoted path; skip the drive colon when finding that boundary.
+      const boundary = path.windows ? /:(?=[ \d])|["<>|?*)]/gu : /: |\s*[()]|:\d+:\d+\b/gu
+      // Folder names may contain parentheses (and Unix names, colons). A suffix with
+      // more path segments is still private, even across an identified prefix.
+      const continues = next && line[next.start] === '/' && !/\s/u.test(line[next.start - 1]!)
+      const diagnostic = Array.from(span.slice(path.prefixLength).matchAll(boundary))
+        .find(match => path.windows && match[0] !== ')' || !continues && !/[\\/]/u.test(span.slice(path.prefixLength + match.index).replace(NON_FILE_URL, '')))
+      const separator = next ? /\s+(?:->|to)\s*$/u.exec(span) : null
+      const suffixStart = Math.min(diagnostic ? path.prefixLength + diagnostic.index : span.length, separator?.index ?? span.length)
+      suffix = span.slice(suffixStart)
+    }
+    shown += line.slice(cursor, path.start) + (path.quote ? `${path.quote}…${path.quote}` : '…') + suffix
+    cursor = end
+  }
+  return shown + line.slice(cursor)
+}
 
 /** The lines worth showing: not blank, and not npm's pointer to a log that sits in the home folder. */
 function shownLines(output: string): string[] {
@@ -21,7 +66,7 @@ function ownNames(): RegExp[] {
 }
 const escaped = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 const redact = (line: string): string => {
-  let shown = line.replace(HOME_PATH, '…')
+  let shown = redactPaths(line)
   for (const name of ownNames()) shown = shown.replace(name, '…')
   return shown.trim()
 }

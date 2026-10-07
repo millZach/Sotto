@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -507,6 +507,19 @@ describe('composition navigation and explicit spoken controls', () => {
     expect(next.activeThreadId).toBe('workshop')
   })
 
+  it.each(['con.txt', 'NUL.log', 'aux.archive.tar', 'COM1.txt', 'lpt9.log', 'LPT¹', 'com³.txt', 'nul .txt', 'CON  .log'])('refuses the Windows device folder name %s before creating it', async title => {
+    const f = await fixture()
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+    try {
+      const execute = vi.spyOn(f.host, 'execute')
+      const result = await f.control.command({ type: 'create-project', title, path: join(f.root, title) })
+      expect(result.error).toBe('Choose a project name that can be used as a folder name.')
+      expect(execute).not.toHaveBeenCalled()
+      expect(await readdir(f.root)).not.toContain(title)
+    } finally { Object.defineProperty(process, 'platform', platform) }
+  })
+
   it('keeps an explicitly created or selected project open while another project has a queued thread', async () => {
     const f = await fixture()
     await f.control.command({ type: 'assign', threadId: 'workshop' })
@@ -646,6 +659,23 @@ describe('supervision event ordering', () => {
     expect(f.control.get().assignments[0]).toMatchObject({ mode: 'managed', paused: false })
     expect(f.control.get().queue.some(item => item.text === failure.message)).toBe(false)
   })
+  it('detects a manual prompt after restarting before takeover was saved', async () => {
+    const f = await fixture()
+    await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
+    const file = join(f.root, 'agents.json')
+    const saved = await readFile(file, 'utf8')
+    f.host.event({ type: 'manual', threadId: 'workshop', text: 'I will handle this myself.' })
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+    await f.control.command({ type: 'refresh' })
+    f.control.dispose()
+    await writeFile(file, saved)
+    const startup = await f.host.snapshot()
+    Object.assign(f.host, { workspaceSnapshot: () => structuredClone(startup) })
+    await f.restart()
+    expect(f.control.get().assignments[0]?.mode).toBe('manual')
+    expect(f.decisions).toEqual([])
+  })
+
   it.each([1, 2001])('keeps management and context age when %s earlier messages are loaded', async count => {
     const f = await fixture()
     f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [

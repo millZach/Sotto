@@ -10,6 +10,10 @@ import { retrieveExplicitMemories, type RetrievalQuery, type RetrievedPreference
 /** Local profile mutations share one SQLite transaction, including policy and FTS writes. */
 export class MemoryProfile {
   private readonly policies: PolicyStore
+  private readonly deletionListeners = new Set<(ids: readonly string[]) => void>()
+  subscribeDeleted(listener: (ids: readonly string[]) => void): () => void {
+    this.deletionListeners.add(listener); return () => { this.deletionListeners.delete(listener) }
+  }
 
   constructor(private readonly store: MemoryStore) {
     this.policies = new PolicyStore(store)
@@ -27,20 +31,25 @@ export class MemoryProfile {
 
   command(input: unknown): MemorySnapshot {
     const command = memoryCommandSchema.parse(input)
+    const before = command.type === 'delete' ? this.store.list().map(memory => memory.id) : []
     const db = this.store.database()
     db.exec('BEGIN IMMEDIATE')
+    let snapshot: MemorySnapshot
     try {
       const at = new Date().toISOString()
       if (command.type === 'complete-questionnaire') this.completeQuestionnaire(command, at)
       else if (command.type === 'delete') this.deleteChain(command.id)
       else this.replace(command, at)
-      const snapshot = this.snapshot()
+      snapshot = this.snapshot()
       db.exec('COMMIT')
-      return snapshot
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
+    const remaining = new Set(snapshot.memories.map(memory => memory.id))
+    const deleted = before.filter(id => !remaining.has(id))
+    if (deleted.length) for (const listener of this.deletionListeners) listener(deleted)
+    return snapshot
   }
 
   retrieve(query: RetrievalQuery): RetrievedPreference[] {
