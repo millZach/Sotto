@@ -117,16 +117,29 @@ export function visualRefusalText(refusal: VisualRefusal): string {
 /** A message's ID for a visual. Whether a message is a visual is `isVisualMessage`'s to say, not the ID's alone. */
 export const visualMessageId = (visualId: string): string => `${VISUAL_MESSAGE_PREFIX}${visualId}`
 
+/**
+ * A checked call as the visual Sotto keeps, under `id`: the title, intro and step texts trimmed, an intro or a step's
+ * highlight left out when there is none, and the source exactly as sent. Everything that shows a visual, the card and
+ * its words alike, reads this.
+ */
+export function visualFromInput(id: string, input: VisualInput): AgentVisual {
+  const intro = input.intro?.trim()
+  return { id, title: input.title.trim(), kind: input.kind, source: input.source,
+    ...(intro ? { intro } : {}),
+    ...(input.steps?.length ? { steps: input.steps.map(step => ({ text: step.text.trim(), ...(step.highlight?.length ? { highlight: [...step.highlight] } : {}) })) } : {}) }
+}
+
 /** Indents every line after the first, so a step with line breaks stays one numbered item. */
-const listItem = (index: number, text: string): string => `${index + 1}. ${text.trim().split(/\r?\n/u).join('\n   ')}`
+const listItem = (index: number, text: string): string => `${index + 1}. ${text.split(/\r?\n/u).join('\n   ')}`
 
 /**
  * What a reader that cannot draw a visual is given: its title, intro and numbered steps, then where the drawing is. The
- * iPhone, an older desktop and anything reading a thread's words read this.
+ * iPhone, an older desktop and anything reading a thread's words read this. It takes the visual as `visualFromInput`
+ * keeps it, so it trims nothing itself.
  */
 export function visualFallbackText(visual: Pick<AgentVisual, 'title' | 'intro' | 'steps'>): string {
-  const parts = [`**${visual.title.trim()}**`]
-  if (visual.intro?.trim()) parts.push(visual.intro.trim())
+  const parts = [`**${visual.title}**`]
+  if (visual.intro) parts.push(visual.intro)
   if (visual.steps?.length) parts.push(visual.steps.map((step, index) => listItem(index, step.text)).join('\n'))
   parts.push(VISUAL_FALLBACK_NOTE)
   return parts.join('\n\n')

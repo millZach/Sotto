@@ -17,7 +17,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, ThreadStore, type StoredVisual } from './threadStore'
 import { placeVisuals } from './visualPlacement'
-import { VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
+import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
@@ -918,10 +918,7 @@ export class WorkspaceHost implements AgentHost {
       const visuals = this.threadStore.readVisuals(threadId)
       if (visuals.length >= VISUALS_PER_THREAD_MAX) return { added: false, reason: 'thread-limit' }
       if (visuals.filter(item => item.anchorUserMessageId === newest.userMessageId).length >= VISUALS_PER_TURN_MAX) return { added: false, reason: 'turn-limit' }
-      const visual: AgentVisual = { id: randomUUID(), title: input.title.trim(), kind: input.kind, source: input.source,
-        ...(input.intro?.trim() ? { intro: input.intro.trim() } : {}),
-        ...(input.steps?.length ? { steps: input.steps.map(step => ({ text: step.text.trim(), ...(step.highlight?.length ? { highlight: [...step.highlight] } : {}) })) } : {}) }
-      stored = { visual, createdAt: new Date().toISOString(), anchorMessageId: newest.messageId, anchorUserMessageId: newest.userMessageId }
+      stored = { visual: visualFromInput(randomUUID(), input), createdAt: new Date().toISOString(), anchorMessageId: newest.messageId, anchorUserMessageId: newest.userMessageId }
       this.threadStore.addVisual(threadId, stored)
     } catch { return { added: false, reason: 'history-unavailable' } }
     const anchor = stored.anchorMessageId === null ? 'none' : this.threadStore.message(threadId, stored.anchorMessageId)?.role ?? 'none'

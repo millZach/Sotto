@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { agentMessageSchema, isVisualMessage, lastWrittenMessage, summarizeThread, type AgentMessage } from '../../../src/shared/agents'
-import { agentVisualSchema, checkVisualInput, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
+import { agentVisualSchema, checkVisualInput, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualFromInput, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
 
 const FLOW = 'flowchart LR\n  A[Draft] --> B{Send}\n  B --> C[Running]'
 const valid = { title: 'How a send moves', kind: 'diagram', source: FLOW, intro: 'Sotto shows the message first.', steps: [{ text: 'You send.', highlight: ['A'] }, { text: 'Codex runs it.', highlight: ['B->C'] }] }
@@ -66,6 +66,15 @@ describe('checking a visualize call', () => {
     expect(schema.required).toEqual(['title', 'kind', 'source'])
     expect(schema.additionalProperties).toBe(false)
     expect(Object.keys(schema.properties)).toEqual(['title', 'kind', 'source', 'intro', 'steps'])
+  })
+})
+
+describe('a visual as Sotto keeps it', () => {
+  it('trims the words, leaves out what is empty and keeps the source as sent', () => {
+    const source = `  ${FLOW}  \n`
+    const kept = visualFromInput('v1', { title: '  Flow  ', kind: 'diagram', source, intro: '   ', steps: [{ text: ' One \n', highlight: [] }, { text: 'Two', highlight: ['A'] }] })
+    expect(kept).toEqual({ id: 'v1', title: 'Flow', kind: 'diagram', source, steps: [{ text: 'One' }, { text: 'Two', highlight: ['A'] }] })
+    expect(visualFallbackText(kept)).toBe(`**Flow**\n\n1. One\n2. Two\n\n${VISUAL_FALLBACK_NOTE}`)
   })
 })
 
