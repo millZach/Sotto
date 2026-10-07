@@ -62,6 +62,30 @@ afterEach(() => {
 })
 
 describe('WidgetApp', () => {
+  it('says dictated audio went to OpenRouter only once transcription is underway, on both platforms', () => {
+    // ADR-0006: the audio is uploaded to OpenRouter for transcription, and it is never written to disk. Before the
+    // upload, a stop that fails or finds no speech sends nothing, so those stages only say the audio is not kept.
+    const cases = [
+      ['preparing-audio', 'Preparing audio', 'Audio is never saved'],
+      ['loading-model', 'Preparing transcription', 'Audio is never saved'],
+      ['transcribing', 'Transcribing', 'Sent to OpenRouter, never saved'],
+      ['delivering-output', 'Delivering text', 'Sent to OpenRouter, never saved'],
+    ] as const
+    for (const platform of ['win32', 'darwin'] as const) {
+      for (const [stage, label, detail] of cases) {
+        render(
+          <WidgetApp
+            snapshot={snapshot({ status: 'processing', sessionId: `${platform}-${stage}`, startedAt: 0, stage, progress: 0.5, cancellable: true })}
+            platform={platform}
+            now={0}
+          />,
+        )
+        expect(screen.getByText(label)).toHaveAttribute('title', detail)
+        cleanup()
+      }
+    }
+  })
+
   it('renders the macOS copy row and glyph shortcut on darwin', () => {
     const macCopy = platformCopy('darwin')
     const { rerender } = render(
