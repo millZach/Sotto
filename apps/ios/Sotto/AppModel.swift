@@ -749,7 +749,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     /// The sheet closed. A code already spent still finishes pairing; anything else is dropped.
     func closeAdding() { adding = false; pairGeneration = UUID(); working = false; found = nil; pairFeedback = nil }
     /// Step 1: find the computer from its machine name (or full address) and confirm Sotto answers there:
-    /// on 8443, where the desktop serves it, then on 443.
+    /// on 8443, where phone access serves it, then on 10000, where it serves it when another app holds
+    /// 8443, then on 443.
     func find(_ typed: String) async {
         #if DEBUG && os(iOS)
         if isUIFixture { return }

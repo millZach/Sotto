@@ -156,6 +156,33 @@ it('bounds native integration checks and keeps subprocess output out of failures
 })
 
 
+it('runs both integration lists side by side and names the plugin refusal first however they finish', async () => {
+  const { root } = await setup()
+  const script = join(root, 'native-list.cjs')
+  const profile = join(root, 'profile.json')
+  const log = join(root, 'runs.log')
+  await writeFile(profile, '{}')
+  // Each run marks that it started, then answers only once the other has started too, so two lists run one after the
+  // other never meet: the first gives up waiting, well inside the lists' own deadline, and says it ran alone. Both
+  // refuse and the plugin list answers last, so the refusal named is the one judged first, not the one that finished first.
+  await writeFile(script, `const { appendFileSync, existsSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
+const kind = process.argv.includes('plugins') ? 'plugins' : 'mcp'
+const other = kind === 'plugins' ? 'mcp' : 'plugins'
+writeFileSync(join(${JSON.stringify(root)}, 'started-' + kind), '')
+const answer = () => console.log(kind === 'plugins' ? 'Installed plugins: one' : 'Configured MCP servers:\\n\\n  \\u2022 enabled\\n    Command: synthetic')
+const began = Date.now()
+const wait = setInterval(() => {
+  const met = existsSync(join(${JSON.stringify(root)}, 'started-' + other))
+  if (!met && Date.now() - began < 10000) return
+  clearInterval(wait)
+  appendFileSync(${JSON.stringify(log)}, (met ? 'met ' : 'alone ') + kind + '\\n')
+  setTimeout(answer, kind === 'plugins' ? 50 : 0)
+}, 5)`)
+  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow(/plugins/u)
+  expect((await readFile(log, 'utf8')).trim().split('\n').sort()).toEqual(['met mcp', 'met plugins'])
+})
+
 it('accepts native version-one normalization and formatting without accepting new policy fields', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
