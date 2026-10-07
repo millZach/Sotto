@@ -1118,9 +1118,12 @@ describe('durable project/thread organization', () => {
     expect(published.some(entry => entry.startsWith('running:Committing...'))).toBe(true)
     expect(published.some(entry => entry === 'running:Committing...:checking')).toBe(true)
     expect(source.invalidate).toHaveBeenCalled()
-    // The folder is read in the thread's lane once the action is done; its remote half runs outside the lane.
+    // The folder is read in the thread's lane once the action is done, so the remote half outside the lane asks about
+    // the branch it is on now; a read of its own after it takes what the remote half brought.
     expect(source.read).toHaveBeenCalledWith(project.path, { remote: false })
     expect(source.readRemote).toHaveBeenCalledWith(project.path)
+    expect(source.read.mock.invocationCallOrder[0]).toBeLessThan(source.readRemote.mock.invocationCallOrder[0]!)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
     // The record is Sotto's: a provider snapshot that follows keeps it.
     f.adapters.codex.emit()
     await vi.waitFor(() => expect(record_()?.gitAction).toMatchObject({ actionId: 'action-1', status: 'done' }))
@@ -1237,7 +1240,12 @@ describe('durable project/thread organization', () => {
     if (kind === 'reclaimed') expect(identity).not.toHaveBeenCalledWith(missing)
     if (blocked) await expect(f.host.reclaimThreadWorktree('local')).rejects.toThrow('Another thread works in this folder')
     else {
+      // The removal holds the folder off the remote half of status reads and waits for one already running in it.
+      const order: string[] = []
+      f.host.setGitStatus({ read: vi.fn(async () => { throw new Error('Not read here.') }), invalidate: vi.fn(),
+        hold: vi.fn(() => { order.push('hold'); return () => { order.push('released') } }), idle: vi.fn(async () => { order.push('idle') }) }, { pollIntervalMs: () => 0 })
       await f.host.reclaimThreadWorktree('local', { automatic: kind === 'reclaimed' })
+      expect(order).toEqual(['hold', 'idle', 'released'])
       expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.reclaimedAt).toBeDefined()
     }
   })

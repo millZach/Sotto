@@ -687,20 +687,19 @@ export class WorkspaceHost implements AgentHost {
   }
   /**
    * The folder's status with its remote half, for the timer, a refresh and after a Git action. The slow calls, a
-   * `git fetch` and the GitHub lookup (`GitStatusSource.readRemote`), run outside the thread's lane and outside its
-   * folder, so a send never waits for them and they never hold a worktree's folder open while it is removed (issue
-   * #766). A local read in the thread's lane then takes what they brought, and decides an automatic pull. A folder
-   * not read since the last Git action is read in the lane first, so the remote calls ask about the branch it is on
-   * now. Never rejects.
+   * `git fetch` and the GitHub lookup (`GitStatusSource.readRemote`), run outside the thread's lane, so a send never
+   * waits for them (issue #766); they run in the folder, and a folder being removed holds them off and waits for them
+   * (`reclaimThreadWorktree`). A local read in the lane comes first, so the remote calls ask about the branch the folder
+   * is on now, even after a switch made outside Sotto; a local read in the lane then takes what they brought, and
+   * decides an automatic pull. Never rejects.
    */
   private readRemoteStatus(threadId: string): Promise<void> {
     const read = (async () => {
       const source = this.gitStatus
-      let folder = this.statusFolder(threadId)
-      if (!source || folder === undefined || this.stopping) return
-      if (source.readRemote && !await source.readRemote(folder)) {
+      if (!source || this.statusFolder(threadId) === undefined || this.stopping) return
+      if (source.readRemote) {
         await this.onLane(threadId, () => this.readGitStatus(threadId, false))
-        folder = this.statusFolder(threadId)
+        const folder = this.statusFolder(threadId)
         if (folder === undefined || this.stopping) return
         await source.readRemote(folder)
       }
@@ -721,7 +720,8 @@ export class WorkspaceHost implements AgentHost {
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return
     let status: GitStatus
-    try { status = await this.gitStatus.read(folder, { remote: false }) } catch { return }
+    // The read after a fetch is its own, so it never joins a read of the same folder begun before the fetch landed.
+    try { status = await this.gitStatus.read(folder, { remote: false, ...afterRemote ? { fresh: true } : {} }) } catch { return }
     if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
@@ -799,7 +799,11 @@ export class WorkspaceHost implements AgentHost {
       if (!await this.ownsCheckoutAlone(threadId)) throw new Error('Another thread works in this folder too, so it stays.')
       if (this.worktreeInUse(threadId)) throw new Error('A terminal is open in this folder. Close it before removing the folder.')
       const release = await this.checkoutMutations.acquire(this.threadCheckoutFolder(threadId), 'mutation', { kind: 'remove-folder' })
+      // No remote status call starts in the folder from now, and one already running finishes before it is removed: on
+      // Windows a folder another process works in cannot be deleted whole.
+      const releaseStatus = this.gitStatus?.hold?.(worktree.path)
       try {
+        await this.gitStatus?.idle?.(worktree.path)
         if (options.expectedMergedTip && (await runWorktreeGit(worktree.path!, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its folder stays.')
         }
@@ -809,7 +813,7 @@ export class WorkspaceHost implements AgentHost {
         try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
         this.publish()
         return this.workspaceSnapshot()
-      } finally { release() }
+      } finally { releaseStatus?.(); release() }
     })
   }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {

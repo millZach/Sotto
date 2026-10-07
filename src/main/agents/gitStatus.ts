@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -102,13 +102,22 @@ export interface GitStatusSource {
   read(cwd: string, options: { readonly remote: boolean; readonly fresh?: boolean }): Promise<GitStatus>
   /**
    * The slow half of a remote read on its own: a `git fetch` of `origin` when the last one is stale, then GitHub's
-   * answer for the pull request of the branch the last read of `cwd` found, when the cached one is stale. Neither runs
-   * in `cwd`. Both run in the repository's common Git directory, where Git and gh find the same remotes, so a call
-   * that takes seconds never holds a worktree's folder open (issue #766). What they bring shows in the next `read`
-   * of the folder, remote or not. False, having asked nothing, when the folder has not been read since the last
-   * `invalidate`: the caller reads it and asks again. Absent on a source that has no remote half to give.
+   * answer for the pull request of the branch the last read of `cwd` found, when the cached one is stale. Both run in
+   * `cwd`, as a read does, so Git and gh resolve the folder's remotes, `safe.directory` and relative URLs the way a
+   * terminal there would; the fetch writes no `FETCH_HEAD`, which belongs to whoever fetched last and which Sotto
+   * never reads. What they bring shows in the next `read` of the folder, remote or not. False, having asked nothing,
+   * when the folder has not been read since the last `invalidate`: the caller reads it and asks again. A folder held
+   * for removal (`hold`) is not asked about. Absent on a source that has no remote half to give.
    */
   readRemote?(cwd: string): Promise<boolean>
+  /**
+   * Holds `cwd` while it is removed: no remote half starts in it until the returned function is called. With
+   * `idle`, a worktree is never removed while a Git or gh process this source started still runs in it, which on
+   * Windows could leave the folder part-deleted (issue #766).
+   */
+  hold?(cwd: string): () => void
+  /** Resolves once no Git or gh process this source started runs in `cwd`. */
+  idle?(cwd: string): Promise<void>
   /**
    * A Git action ran: the next remote read fetches again and asks GitHub again instead of trusting its caches, and
    * no read begun before now is shared with a caller after it.
@@ -152,7 +161,8 @@ const EMPTY: Omit<GitStatus, 'readAt'> = { isRepository: false, branch: null, up
  * asked: a `git fetch` of `origin` when the last one is older than the fetch interval allows, then the
  * branch's pull request through `gh`, each cached and backed off on failure so a remote that is down or
  * wants a sign-in costs one quiet attempt per window rather than one per read. The remote half runs in the
- * repository's common Git directory, never in the folder, and `readRemote` runs it on its own.
+ * folder, as a terminal there would, and `readRemote` runs it on its own; `hold` and `idle` keep it out of a folder
+ * being removed.
  */
 export class GitStatusReader implements GitStatusSource {
   private readonly run: RunGitCommand
@@ -163,13 +173,44 @@ export class GitStatusReader implements GitStatusSource {
   private readonly reads = new Map<string, Promise<GitStatus>>()
   private readonly remoteReads = new Map<string, Promise<boolean>>()
   private readonly known = new Map<string, KnownFolder>()
+  /** The processes and remote halves running in each folder, by `folderKey`, so a removal can wait for them. */
+  private readonly running = new Map<string, Set<Promise<unknown>>>()
+  private readonly held = new Map<string, number>()
+  /** Whether this Git takes `--no-write-fetch-head` (2.29 and later); learned from the first fetch that refuses it. */
+  private fetchHeadFlag = true
   private readonly refs = new Map<string, RefsSnapshot>()
   private epoch = 0
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
   }
-  private git(cwd: string, args: readonly string[], options?: GitCommandOptions): Promise<string> { return this.run(cwd, 'git', args, options) }
+  private git(cwd: string, args: readonly string[], options?: GitCommandOptions): Promise<string> { return this.tracked(cwd, this.run(cwd, 'git', args, options)) }
+  private folderKey(cwd: string): string { const path = resolve(cwd); return process.platform === 'win32' ? path.toLowerCase() : path }
+  private tracked<Result>(cwd: string, work: Promise<Result>): Promise<Result> {
+    const key = this.folderKey(cwd)
+    const running = this.running.get(key) ?? new Set<Promise<unknown>>()
+    this.running.set(key, running); running.add(work)
+    void work.then(() => undefined, () => undefined).then(() => {
+      running.delete(work)
+      if (!running.size && this.running.get(key) === running) this.running.delete(key)
+    })
+    return work
+  }
+  hold(cwd: string): () => void {
+    const key = this.folderKey(cwd)
+    this.held.set(key, (this.held.get(key) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const count = (this.held.get(key) ?? 1) - 1
+      if (count > 0) this.held.set(key, count); else this.held.delete(key)
+    }
+  }
+  async idle(cwd: string): Promise<void> {
+    const key = this.folderKey(cwd)
+    for (let running = this.running.get(key); running?.size; running = this.running.get(key)) await Promise.allSettled([...running])
+  }
 
   invalidate(): void {
     this.epoch++
@@ -287,6 +328,7 @@ export class GitStatusReader implements GitStatusSource {
    * folder as the last read found it; a read after it shows what it brought.
    */
   readRemote(cwd: string): Promise<boolean> {
+    if (this.held.has(this.folderKey(cwd))) return Promise.resolve(true)
     const known = this.known.get(cwd)
     if (!known || known.epoch !== this.epoch) return Promise.resolve(false)
     const key = `${known.epoch}\0${cwd}`
@@ -294,12 +336,12 @@ export class GitStatusReader implements GitStatusSource {
     if (pending) return pending
     const task = (async () => {
       if (!known.common || !known.hasRemote) return true
-      await this.fetchIfStale(known.common)
-      if (known.branch) await this.pullRequest(known.common, known.branch, known.upstream, known.isDefaultBranch, true)
+      await this.fetchIfStale(known.common, cwd)
+      if (known.branch) await this.pullRequest(known.common, cwd, known.branch, known.upstream, known.isDefaultBranch, true)
       return true
     })().finally(() => { if (this.remoteReads.get(key) === task) this.remoteReads.delete(key) })
     this.remoteReads.set(key, task)
-    return task
+    return this.tracked(cwd, task)
   }
 
   private async readNow(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus> {
@@ -316,7 +358,7 @@ export class GitStatusReader implements GitStatusSource {
     }
     const remotes = (await this.git(cwd, ['remote']).catch(() => '')).split('\n').map(line => line.trim()).filter(Boolean)
     const hasRemote = remotes.includes('origin')
-    if (options.remote && hasRemote) await this.fetchIfStale(common)
+    if (options.remote && hasRemote) await this.fetchIfStale(common, cwd)
     const fetchedAt = this.fetches.get(common)?.fetchedAt ?? null
     const porcelain = await this.git(cwd, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z'])
     const parsed = parsePorcelain(porcelain)
@@ -329,7 +371,7 @@ export class GitStatusReader implements GitStatusSource {
     // With no upstream there is nothing to be behind; the distance from the default branch stands in for ahead (T3's rule).
     const ahead = parsed.upstream ? parsed.ahead : aheadOfDefault ?? 0
     const behind = parsed.upstream ? parsed.behind : 0
-    const pullRequest = branch && hasRemote ? await this.pullRequest(common, branch, parsed.upstream, isDefaultBranch, options.remote) : null
+    const pullRequest = branch && hasRemote ? await this.pullRequest(common, cwd, branch, parsed.upstream, isDefaultBranch, options.remote) : null
     remember({ common, hasRemote, branch, upstream: parsed.upstream, isDefaultBranch })
     return {
       isRepository: true, branch, upstream: parsed.upstream, hasRemote, defaultBranch, isDefaultBranch,
@@ -377,19 +419,27 @@ export class GitStatusReader implements GitStatusSource {
   }
 
   /**
-   * A `git fetch` of `origin`, run in the common Git directory rather than in a folder checked out from it. A fetch
-   * begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
+   * A `git fetch` of `origin`, one per repository at a time, run in the folder that asked so Git resolves its remote
+   * as a terminal there would, and writing no `FETCH_HEAD`: run beside a pull in another checkout of the repository,
+   * a written one could leave that pull two heads to choose from. A fetch begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
    * when the next one is due, and a caller after the `invalidate` waits for it and fetches again rather than share it
    * or run beside it.
    */
-  private fetchIfStale(common: string): Promise<void> {
+  private fetchIfStale(common: string, cwd: string): Promise<void> {
     if (this.options.fetchIntervalMs() <= 0) return Promise.resolve()
     const record = this.fetches.get(common) ?? { failures: 0, nextAt: 0, fetchedAt: null }
     this.fetches.set(common, record)
-    if (record.inFlight) return record.inFlight.epoch === this.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common))
+    if (record.inFlight) return record.inFlight.epoch === this.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd))
     if (this.now() < record.nextAt) return Promise.resolve()
     const epoch = this.epoch
-    const done: Promise<void> = this.git(common, ['fetch', '--quiet', '--no-tags', 'origin'], { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_ENV })
+    const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
+      { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_ENV })
+    const done: Promise<void> = fetch().catch((error: unknown) => {
+      // A Git older than 2.29 does not know the flag; it fetches without it from then on.
+      if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
+      this.fetchHeadFlag = false
+      return fetch()
+    })
       .then(() => { record.failures = 0; record.fetchedAt = this.now(); if (epoch === this.epoch) record.nextAt = this.now() + FETCH_FRESH_MS },
         () => { record.failures++; if (epoch === this.epoch) record.nextAt = this.now() + backoff(FETCH_BACKOFF_MS, record.failures) })
       .finally(() => { if (record.inFlight?.done === done) delete record.inFlight })
@@ -399,11 +449,11 @@ export class GitStatusReader implements GitStatusSource {
 
   /**
    * The branch's pull request, from the cache or, when `refresh` allows and the cache is stale, from GitHub. `gh`
-   * runs in the common Git directory, which names the same remotes as every folder checked out from it. An answer
+   * runs in the folder that asked, which resolves the repository as a terminal there would. An answer
    * is stamped with the `invalidate` count its question was asked under, so one asked before a Git action is asked
    * again after it, and never lands over an answer asked after it.
    */
-  private async pullRequest(common: string, branch: string, upstream: string | null, isDefaultBranch: boolean, refresh: boolean): Promise<GitPullRequestSummary | null> {
+  private async pullRequest(common: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, refresh: boolean): Promise<GitPullRequestSummary | null> {
     const key = `${common}\0${branch}`
     const record = this.pullRequests.get(key)
     const epoch = this.epoch
@@ -412,7 +462,7 @@ export class GitStatusReader implements GitStatusSource {
     // A branch nobody has pushed has no pull request, and GitHub is not asked about it. That is checked on
     // every remote read, so a push made in a terminal is seen as soon as the fetch has brought its ref.
     if (!upstream) {
-      const published = (await this.git(common, ['for-each-ref', '--count=1', '--format=%(refname)', `refs/remotes/*/${branch}`]).catch(() => '')).trim()
+      const published = (await this.git(cwd, ['for-each-ref', '--count=1', '--format=%(refname)', `refs/remotes/*/${branch}`]).catch(() => '')).trim()
       if (!published) return null
     }
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
@@ -422,7 +472,7 @@ export class GitStatusReader implements GitStatusSource {
       return next.value
     }
     try {
-      const raw = await this.run(common, 'gh', ['pr', 'list', '--head', branch, '--state', 'all', '--limit', '20', '--json', 'number,title,url,state,isDraft,headRefName,updatedAt'], { env: QUIET_ENV })
+      const raw = await this.tracked(cwd, this.run(cwd, 'gh', ['pr', 'list', '--head', branch, '--state', 'all', '--limit', '20', '--json', 'number,title,url,state,isDraft,headRefName,updatedAt'], { env: QUIET_ENV }))
       const candidates = rawPullRequestSchema.parse(JSON.parse(raw)).filter(item => item.headRefName === branch)
         .map(item => ({ ...item, state: item.state.toLowerCase() })).filter((item): item is typeof item & { state: 'open' | 'closed' | 'merged' } => ['open', 'closed', 'merged'].includes(item.state))
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))

@@ -14,8 +14,8 @@ still fetches at `:331`. What they do was as the issue says, with one addition: 
 ## What changed
 
 - Only the slow half of a status read leaves the thread's order of work: the `git fetch` and the GitHub lookup. They
-  run outside it, in the repository's common Git directory rather than the thread's folder, and a local read in the
-  thread's order then takes what they brought and decides Automatically pull. Every local read, Git's inspection of
+  run outside it, in the thread's folder, write no `FETCH_HEAD`, and are held off a folder being removed; a local read
+  in the thread's order comes before them and another takes what they brought and decides Automatically pull. Every local read, Git's inspection of
   the folder after a send, a turn or a refresh, and every write to the worktree record stay in the thread's order with
   its sends, as before. A send never waits for a fetch or a GitHub lookup; it may wait for a local read or an
   inspection already under way.

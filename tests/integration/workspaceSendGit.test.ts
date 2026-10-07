@@ -65,7 +65,7 @@ describe('a send and Git', () => {
   it.each([
     { held: 'fetch', workingCopy: 'independent' },
     { held: 'GitHub lookup', workingCopy: 'shared' },
-  ] as const)('reaches the provider while the remote half a refresh started waits on a slow $held, which runs outside the thread\'s folder', async ({ held, workingCopy }) => {
+  ] as const)('reaches the provider while the remote half a refresh started waits on a slow $held, which runs outside the thread\'s lane', async ({ held, workingCopy }) => {
     const f = await repository()
     await startedThread(f, 'local', workingCopy)
     // The remote call the test holds, and the folder it was started in.
@@ -82,11 +82,9 @@ describe('a send and Git', () => {
     // The refresh a draft starts answers once the record is read, and leaves its remote half running.
     await f.host.updateThreadWorktree('local', false)
     await started.promise
-    // It runs in the repository's own Git directory: never in a folder a worktree removal could be holding up.
+    // It runs in the thread's folder, as a terminal there would, but not in the thread's lane.
     const folder = record(f).worktree!.path!
-    const common = (await git(folder, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()
-    expect(await pathKey(startedIn!)).toBe(await pathKey(common))
-    if (workingCopy === 'independent') expect((await pathKey(startedIn!)).startsWith(await pathKey(folder))).toBe(false)
+    expect(await pathKey(startedIn!)).toBe(await pathKey(folder))
     // Someone switched the folder's branch in a terminal meanwhile, so this send records a new branch.
     await git(folder, ['switch', '-c', 'feat/terminal'])
     const sent = await send(f, 1)
