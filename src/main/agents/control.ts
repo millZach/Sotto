@@ -11,7 +11,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage, lastWrittenMessage,
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -3154,7 +3154,8 @@ export class AgentControl {
         if (assignment.handledRequestIds.includes(request.id)) continue
         if (request.kind === 'permission' || assignment.mode === 'manual' || assignment.paused) this.enqueue(thread, request.kind, request.text, request.id)
       }
-      const last = thread.messages.at(-1)
+      // A visual is Sotto's drawing, not the agent's words, so what is ready, and what repeats, is the last written message.
+      const last = lastWrittenMessage(thread.messages)
       const question = thread.requests.find(r => r.kind === 'question' && !assignment.handledRequestIds.includes(r.id))
       const key = question?.id ?? (last?.role === 'assistant' ? last.id : null)
       const recovered = this.recoveredQueueIds.get(thread.id)
@@ -3187,7 +3188,7 @@ export class AgentControl {
   private enqueue(thread: AgentThread, kind: AgentQueueItem['kind'], text: string, requestId?: string): void {
     const latest = this.state.host.threads.find(item => item.id === thread.id)
     if (!latest || isThreadClosed(latest)) return
-    const id = `${thread.id}:${requestId ?? thread.messages.at(-1)?.id ?? 'idle'}:${kind}`
+    const id = `${thread.id}:${requestId ?? lastWrittenMessage(thread.messages)?.id ?? 'idle'}:${kind}`
     const existing = this.state.queue.find(q => q.id === id)
     if (existing) { existing.text = text.slice(0, 12000); return }
     if (!requestId) this.state.queue = this.state.queue.filter(q => q.threadId !== thread.id || q.requestId)
@@ -3240,12 +3241,12 @@ export class AgentControl {
       const current = this.state.assignments.find(a => a.threadId === thread.id)
       const latest = this.state.host.threads.find(t => t.id === thread.id)
       if (current !== assignment || current.mode !== 'managed' || current.paused || !latest || isThreadClosed(latest) || !isThreadProviderConnected(this.state.host, latest) || !this.state.configuration.enabled) return
-      const latestKey = latest.requests.find(r => r.kind === 'question' && !current.handledRequestIds.includes(r.id))?.id ?? latest.messages.at(-1)?.id
+      const latestKey = latest.requests.find(r => r.kind === 'question' && !current.handledRequestIds.includes(r.id))?.id ?? lastWrittenMessage(latest.messages)?.id
       if (latestKey !== key || (!requestId && latest.status === 'running')) return
       if (decision.decision !== 'followup') {
         this.enqueue(thread, decision.decision === 'human' ? (requestId ? 'question' : 'blocked') : 'ready', decision.text, requestId); return
       }
-      const failure = (thread.messages.at(-1)?.text ?? thread.requests.find(r => r.id === requestId)?.text ?? decision.text).toLocaleLowerCase().replace(/\s+/gu, ' ').trim()
+      const failure = (lastWrittenMessage(thread.messages)?.text ?? thread.requests.find(r => r.id === requestId)?.text ?? decision.text).toLocaleLowerCase().replace(/\s+/gu, ' ').trim()
       const failureFingerprint = createHash('sha256').update(failure).digest('hex')
       if (!failure || failureFingerprint === assignment.lastFailure) {
         assignment.stopReason = 'repeat'; assignment.stoppedAt = new Date().toISOString()
@@ -3271,7 +3272,7 @@ export class AgentControl {
         if (requestId && live.requests.some(request => request.id === requestId && request.kind === 'permission')) {
           throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
         }
-        const liveKey = live.requests.find(request => request.kind === 'question' && !current.handledRequestIds.includes(request.id))?.id ?? live.messages.at(-1)?.id
+        const liveKey = live.requests.find(request => request.kind === 'question' && !current.handledRequestIds.includes(request.id))?.id ?? lastWrittenMessage(live.messages)?.id
         if (liveKey !== key || live.requests.some(request => request.kind === 'permission')
           || (requestId ? !live.requests.some(request => request.id === requestId && request.kind === 'question') : live.requests.length > 0 || live.status === 'running')) {
           throw new SupersededSupervision('The thread changed before the automatic reply could be sent.')
