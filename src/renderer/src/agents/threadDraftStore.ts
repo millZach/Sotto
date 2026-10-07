@@ -464,8 +464,8 @@ export class ThreadDraftStore {
     // Refused is the one outcome that proves nothing was sent, so the prompt comes back to an empty
     // composer. It is offered back once; typing since the press is never replaced without being asked.
     const returned = pruned.map(item => submissionStatus(item, state).status === 'failed' ? this.returnPrompt(item, changed) : item)
-    const retired = new Set(pruned)
-    const retiredThreads = new Set(this.submissionList.filter(item => !retired.has(item)).map(item => item.threadId))
+    const kept = new Set(pruned)
+    const retiredThreads = new Set(this.submissionList.filter(item => !kept.has(item)).map(item => item.threadId))
     const submissionsChanged = pruned.length !== this.submissionList.length || returned.some((item, index) => item !== pruned[index])
     if (submissionsChanged) this.submissionList = returned
     // A submission retired here (the queue owning its revision) may never be resolved, so the emptied composer
