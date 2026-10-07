@@ -5,6 +5,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { quietShot, scrollToCard, slowMotion, textContrasts, visualize, type ToolReply } from './support/visualCards'
 
 // A visual an agent draws in its thread (ADR-0056, #792), in the running app: the visualize tool is called as the
 // thread's agent would call it, and the card lands in the open thread between the words before and after the call.
@@ -31,8 +32,6 @@ const SEND = {
 }
 const BROKEN = { title: 'A flow that will not draw', kind: 'diagram', source: 'flowchart TD\n  A[Start --> B\n  B -->> C((', steps: [{ text: 'This step stays readable.' }] }
 
-type ToolReply = { content: { type: string; text?: string }[]; isError?: boolean }
-const visualize = (page: Page, args: unknown): Promise<ToolReply> => page.evaluate(request => window.sottoE2E!.visualTool!(request), { threadId: 'workshop', arguments: args }) as Promise<ToolReply>
 const replyText = (reply: ToolReply): string => reply.content.map(item => item.text ?? '').join('')
 const history = (page: Page, messages: AgentMessage[]): Promise<void> => page.evaluate(value => window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'workshop', text: '', messages: value }), messages)
 
@@ -54,42 +53,6 @@ async function openWorkshop(launched: LaunchedSotto, first: boolean): Promise<Lo
   const log = page.getByRole('log', { name: 'Thread transcript' })
   await expect(log).toBeVisible()
   return log
-}
-
-/** Scrolls the transcript so the element sits a little below its top, with the words before it in view. */
-async function scrollTo(locator: Locator, offset = 80): Promise<void> {
-  await locator.evaluate((element, gap) => {
-    const transcript = element.closest('.thread-workspace__transcript')!
-    transcript.scrollTop += element.getBoundingClientRect().top - transcript.getBoundingClientRect().top - gap
-  }, offset)
-}
-/** A screenshot with nothing focused, so a focus ring left by the keyboard checks does not stand in the picture. */
-async function shot(page: Page, name: string): Promise<void> {
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-  await page.screenshot({ path: join(SHOTS, name), animations: 'disabled' })
-}
-
-/** The contrast of each element's text against the card it sits on, composited over the room. */
-async function contrasts(card: Locator, selectors: readonly string[]): Promise<number[]> {
-  return card.evaluate((element, list) => {
-    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const probe = document.createElement('div'); probe.style.backgroundColor = 'var(--tt-canvas)'; document.body.append(probe)
-    const room = getComputedStyle(probe).backgroundColor; probe.remove()
-    const luminance = (data: Uint8ClampedArray): number => [...data].slice(0, 3).map(value => value / 255)
-      .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    const paint = (...colours: string[]): number => {
-      for (const colour of colours) { context.fillStyle = colour; context.fillRect(0, 0, 1, 1) }
-      return luminance(context.getImageData(0, 0, 1, 1).data)
-    }
-    return list.map(selector => {
-      const target = element.querySelector(selector)!
-      const surface = target.closest('.visual-card__bar') ?? element
-      const background = paint(room, getComputedStyle(element).backgroundColor, getComputedStyle(surface).backgroundColor)
-      const foreground = paint(room, getComputedStyle(element).backgroundColor, getComputedStyle(surface).backgroundColor, getComputedStyle(target).color)
-      return (Math.max(background, foreground) + .05) / (Math.min(background, foreground) + .05)
-    })
-  }, selectors)
 }
 
 test('an agent draws a visual in its thread, live, and it stays with the thread', async () => {
@@ -114,6 +77,9 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       const image = card.getByRole('img', { name: 'Sequence diagram: How a send moves through Sotto' })
       await expect(image).toBeVisible({ timeout: 15_000 })
       await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      // The card opens as a walkthrough (#793, tests/e2e/visual-walkthrough.spec.ts); Read all shows the intro and every step.
+      await expect(card.getByRole('group', { name: 'Walkthrough' })).toContainText('Step 1 of 4')
+      await card.getByRole('button', { name: 'Read all' }).click()
       await expect(card.getByRole('listitem')).toHaveCount(4)
       await expect(card).toContainText(SEND.intro)
 
@@ -168,27 +134,21 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       // Reduced motion: the card draws the same and nothing in it, or in the viewer, takes longer than an instant to move.
       await page.emulateMedia({ reducedMotion: 'reduce' })
       expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
-      const moving = (locator: Locator): Promise<string[]> => locator.evaluate(element => {
-        const seconds = (value: string): number => Math.max(...value.split(',').map(part => part.trim().endsWith('ms') ? parseFloat(part) / 1000 : parseFloat(part)))
-        const slow: string[] = []
-        for (const node of [element, ...element.querySelectorAll('*')]) for (const pseudo of [null, '::before', '::after']) {
-          const style = getComputedStyle(node, pseudo)
-          if (seconds(style.transitionDuration) > 0.001 || seconds(style.animationDuration) > 0.001) slow.push(`${node.className}${pseudo ?? ''}`)
-        }
-        return slow
-      })
       await expect(image).toBeVisible()
-      expect(await moving(card)).toEqual([])
+      expect(await slowMotion(card)).toEqual([])
       await expand.press('Enter')
       await expect(viewer).toBeVisible()
-      expect(await moving(viewer)).toEqual([])
+      expect(await slowMotion(viewer)).toEqual([])
       expect(await viewer.evaluate(element => getComputedStyle(element, '::backdrop').transitionDuration)).toMatch(/^(?:0s|0\.001s|1ms)$/u)
       await page.keyboard.press('Escape')
       await expect(viewer).toBeHidden()
       await expect(expand).toBeFocused()
       await page.emulateMedia({ reducedMotion: null })
 
-      // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card.
+      // Light and dark at every size the window supports, nothing clipped, text at 4.5:1 on the card, under Read all.
+      // Finishing the turn drew the card again in its place by the fold, and it still shows every step.
+      await expect(card.getByRole('button', { name: 'Step through' })).toBeVisible()
+      await expect(card.getByRole('listitem')).toHaveCount(4)
       let appearance: 'dark' | 'light' = 'dark'
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
@@ -199,7 +159,7 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
           // The drawing is made again in the new appearance's colours; the old one stays until the new one is ready.
           if (mode !== appearance) await expect.poll(() => image.getAttribute('src'), { timeout: 15_000 }).not.toBe(drawing)
           appearance = mode
-          await scrollTo(card)
+          await scrollToCard(card)
           const fits = await card.evaluate(element => {
             const box = element.getBoundingClientRect()
             const title = element.querySelector('.visual-card__title')!
@@ -208,8 +168,8 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
               title: title.getBoundingClientRect().width > 40 }
           })
           expect(fits).toEqual({ right: true, overflow: true, page: true, controls: true, title: true })
-          for (const ratio of await contrasts(card, ['.visual-card__title', '.visual-card__kind', '.visual-card__intro', '.visual-card__steps li'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
-          await shot(page, `card-${width}x${height}-${mode}.png`)
+          for (const ratio of await textContrasts(card, ['.visual-card__title', '.visual-card__kind', '.visual-card__intro', '.visual-card__steps li'])) expect(ratio).toBeGreaterThanOrEqual(4.5)
+          await quietShot(page, join(SHOTS, `card-${width}x${height}-${mode}.png`))
         }
       }
       await resizeWindow(launched, 1280, 800)
@@ -222,9 +182,9 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       const broken = log.getByRole('region', { name: 'Visual: A flow that will not draw' })
       await expect(broken.getByText(/^Couldn't draw this diagram\./u)).toBeVisible({ timeout: 15_000 })
       await expect(broken.getByLabel('A flow that will not draw source')).toContainText('A[Start --> B')
-      await expect(broken.getByRole('listitem')).toHaveText(['This step stays readable.'])
-      await scrollTo(broken)
-      await shot(page, 'error-1280x800-dark.png')
+      await expect(broken.getByRole('group', { name: 'Walkthrough' })).toContainText('This step stays readable.')
+      await scrollToCard(broken)
+      await quietShot(page, join(SHOTS, 'error-1280x800-dark.png'))
 
       // With the switch off a call is refused, saying nothing was drawn, and the visuals already here stay.
       await page.evaluate(async () => window.sotto!.updateSettings({ visualsInThreads: false }))
@@ -251,8 +211,8 @@ test('an agent draws a visual in its thread, live, and it stays with the thread'
       const card = log.getByRole('region', { name: 'Visual: How a send moves through Sotto' })
       await expect(card).toBeVisible()
       await expect(card.getByRole('img')).toBeVisible({ timeout: 15_000 })
-      await scrollTo(card)
-      await shot(page, 'restarted-1280x800-dark.png')
+      await scrollToCard(card)
+      await quietShot(page, join(SHOTS, 'restarted-1280x800-dark.png'))
     } finally { await closeSotto(launched) }
   } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
 })
