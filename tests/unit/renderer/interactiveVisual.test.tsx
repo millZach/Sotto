@@ -44,8 +44,9 @@ describe('an interactive visual\'s card', () => {
     render(<VisualCard visual={page('v1', 'A queue')} threadId="thread-1" />)
     const card = screen.getByRole('region', { name: 'Visual: A queue' })
     expect(within(card).getByText('Interactive page')).toBeInTheDocument()
-    for (const name of ['Show source', 'Copy source', 'Expand A queue']) expect(within(card).getByRole('button', { name })).toBeInTheDocument()
-    expect(within(card).getAllByRole('listitem').map(item => item.textContent)).toEqual(['One.', 'Two.'])
+    for (const name of ['Read all', 'Show source', 'Copy source', 'Expand A queue']) expect(within(card).getByRole('button', { name })).toBeInTheDocument()
+    expect(within(card).getByText('Step 1 of 2')).toBeInTheDocument()
+    expect(within(card).getByText('One.')).toBeInTheDocument()
     const guest = await vi.waitFor(() => { const element = card.querySelector('webview'); if (!element) throw new Error('no guest'); return element })
     expect(guest.getAttribute('src')).toBe(`sotto-visual://page/${'v1'.padEnd(43, 'x')}`)
     expect(guest.getAttribute('partition')).toBe('sotto-visual')
@@ -87,7 +88,7 @@ describe('an interactive visual\'s card', () => {
     act(() => { guest.dispatchEvent(new Event('dom-ready')) })
     await vi.waitFor(() => expect(guest.send).toHaveBeenCalledTimes(2))
     expect(guest.send).toHaveBeenCalledWith('sotto-visual:theme', expect.objectContaining({ mode: expect.stringMatching(/^(light|dark)$/u), reducedMotion: expect.any(Boolean) }))
-    expect(guest.send).toHaveBeenCalledWith('sotto-visual:step', { type: 'sotto-visual-step', step: 0, total: 2, highlight: [] })
+    expect(guest.send).toHaveBeenCalledWith('sotto-visual:step', { type: 'sotto-visual-step', step: 1, total: 2, highlight: [] })
     act(() => { guest.dispatchEvent(Object.assign(new Event('ipc-message'), { channel: 'sotto-visual:escape', args: [] })) })
     expect(screen.getByRole('region', { name: 'Visual: A queue' })).toHaveFocus()
   })
@@ -98,7 +99,58 @@ describe('an interactive visual\'s card', () => {
     const card = screen.getByRole('region', { name: 'Visual: A queue' })
     expect(await within(card).findByText('Sotto no longer has this page, so it is not shown. Its steps are below.')).toBeInTheDocument()
     expect(card.querySelector('webview')).toBeNull()
-    expect(within(card).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(card).getByText('One.')).toBeInTheDocument()
+  })
+})
+
+describe('the walkthrough on an interactive page (#793)', () => {
+  const stepped = (id: string): AgentVisual => ({ id, title: `Walk ${id}`, kind: 'interactive', source: '<p>Mine</p>', intro: 'It fills.',
+    steps: [{ text: 'It grows.', highlight: ['queue', 'A->B'] }, { text: 'It drains.' }] })
+  const stepMessages = (send: ReturnType<typeof vi.fn>): unknown[] => send.mock.calls.filter(call => call[0] === 'sotto-visual:step').map(call => call[1])
+
+  it('shows the stepper and Read all, and sends each step with its names on Next, Back, Start over and Read all', async () => {
+    render(<VisualCard visual={stepped('w1')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: Walk w1' })
+    const guest = await vi.waitFor(() => { const element = card.querySelector('webview'); if (!element) throw new Error('no guest'); return element }) as HTMLElement & { send: ReturnType<typeof vi.fn> }
+    guest.send = vi.fn(async () => undefined)
+    act(() => { guest.dispatchEvent(new Event('dom-ready')) })
+    await vi.waitFor(() => expect(stepMessages(guest.send)).toEqual([{ type: 'sotto-visual-step', step: 1, total: 2, highlight: ['queue', 'A->B'] }]))
+    expect(within(card).getByText('Step 1 of 2')).toBeInTheDocument()
+    expect(within(card).getByText('It grows.')).toBeInTheDocument()
+
+    act(() => { within(card).getByRole('button', { name: 'Next' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ type: 'sotto-visual-step', step: 2, total: 2, highlight: [] }))
+    act(() => { within(card).getByRole('button', { name: 'Back' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ type: 'sotto-visual-step', step: 1, total: 2, highlight: ['queue', 'A->B'] }))
+    act(() => { within(card).getByRole('button', { name: 'Next' }).click() })
+    act(() => { within(card).getByRole('button', { name: 'Start over' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ type: 'sotto-visual-step', step: 1, total: 2, highlight: ['queue', 'A->B'] }))
+
+    act(() => { within(card).getByRole('button', { name: 'Read all' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ type: 'sotto-visual-step', step: 0, total: 2, highlight: [] }))
+    expect(within(card).getByRole('button', { name: 'Step through' })).toBeInTheDocument()
+    expect(within(card).getAllByRole('listitem').map(item => item.textContent)).toEqual(['It grows.', 'It drains.'])
+  })
+
+  it('sends the current step again once the page has finished loading', async () => {
+    render(<VisualCard visual={stepped('w2')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: Walk w2' })
+    const guest = await vi.waitFor(() => { const element = card.querySelector('webview'); if (!element) throw new Error('no guest'); return element }) as HTMLElement & { send: ReturnType<typeof vi.fn> }
+    guest.send = vi.fn(async () => undefined)
+    act(() => { guest.dispatchEvent(new Event('dom-ready')) })
+    act(() => { within(card).getByRole('button', { name: 'Next' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ type: 'sotto-visual-step', step: 2, total: 2, highlight: [] }))
+    guest.send.mockClear()
+    act(() => { guest.dispatchEvent(new Event('did-finish-load')) })
+    expect(stepMessages(guest.send)).toEqual([{ type: 'sotto-visual-step', step: 2, total: 2, highlight: [] }])
+  })
+
+  it('keeps the place per visual when the card is drawn again', async () => {
+    const first = render(<VisualCard visual={stepped('w3')} threadId="thread-1" />)
+    act(() => { within(screen.getByRole('region', { name: 'Visual: Walk w3' })).getByRole('button', { name: 'Next' }).click() })
+    first.unmount()
+    render(<VisualCard visual={stepped('w3')} threadId="thread-1" />)
+    expect(within(screen.getByRole('region', { name: 'Visual: Walk w3' })).getByText('Step 2 of 2')).toBeInTheDocument()
   })
 })
 

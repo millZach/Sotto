@@ -53,8 +53,9 @@ function page(port: number): string {
     addEventListener('message', event => {
       const message = event.data
       if (message && message.type === 'sotto-visual-step') {
-        record.steps = JSON.stringify([...JSON.parse(record.steps), { step: message.step, total: message.total }])
-        document.getElementById('state').textContent = 'Step ' + message.step + ' of ' + message.total
+        record.steps = JSON.stringify([...JSON.parse(record.steps), { step: message.step, total: message.total, highlight: message.highlight }])
+        document.getElementById('state').textContent = message.step === 0 ? 'Every step' : 'Step ' + message.step + ' of ' + message.total + (message.highlight.length ? ': ' + message.highlight.join(', ') : '')
+        record.shown = document.getElementById('state').textContent
       }
       if (message && message.type === 'sotto-visual-theme') { record.theme = message.mode + ' ' + message.tokens['--sotto-background']; record.reduced = String(message.reducedMotion) }
     })
@@ -165,10 +166,28 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
 
     // The page drew and ran its script, cannot see Sotto's bridge, and was given the read-all step and the theme.
     await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
-    // Sent once the page's script has run and again once its load finished: each time step 0 of 2, every step shown.
+    // The walkthrough opens on step 1, sent once the page's script has run and again once its load finished.
     await expect.poll(async () => (JSON.parse((await guestRecord(launched!)).steps ?? '[]') as unknown[]).length).toBeGreaterThan(0)
     const steps = JSON.parse((await guestRecord(launched)).steps!) as unknown[]
-    for (const step of steps) expect(step).toEqual({ step: 0, total: 2 })
+    for (const step of steps) expect(step).toEqual({ step: 1, total: 2, highlight: ['bars'] })
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 1 of 2: bars')
+
+    // Stepping through the card's walkthrough drives the page: Next shows step 2, Read all every step, Step through
+    // brings the walkthrough back where it was.
+    await expect(card.getByText('Step 1 of 2')).toBeVisible()
+    await card.getByRole('button', { name: 'Next' }).click()
+    await expect(card.getByText('Step 2 of 2')).toBeVisible()
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 2 of 2')
+    await scrollTo(card)
+    await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await view.screenshot({ path: join(SHOTS, 'page-step-2-1280x800-dark.png'), animations: 'disabled' })
+    await card.getByRole('button', { name: 'Read all' }).click()
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Every step')
+    await expect(card.getByRole('listitem')).toHaveCount(2)
+    await card.getByRole('button', { name: 'Step through' }).click()
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 2 of 2')
+    await card.getByRole('button', { name: 'Start over' }).click()
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 1 of 2: bars')
     await expect.poll(async () => (await guestRecord(launched!)).theme ?? '').toMatch(/^dark #[0-9a-f]{6}$/u)
     const first = await guestRecord(launched)
     expect(first.sotto).toBe('undefined')

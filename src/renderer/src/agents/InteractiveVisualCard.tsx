@@ -6,9 +6,18 @@ import { DiagramActions, DiagramCopyStatus, useFrameControls, type FrameControls
 import { ViewerDialog } from './diagrams/ViewerDialog'
 import { InteractiveVisualPage } from './InteractiveVisual'
 import { VisualReadAll } from './VisualReadAll'
+import { VisualStepper } from './VisualStepper'
+import { ReadAllToggle, useWalkthroughPlace, walkthroughView, type WalkthroughPlace } from './VisualWalkthrough'
 
-/** What the page is told while Read all shows every step at once: step 0 of the steps there are, nothing lit. */
-const readAllStep = (visual: AgentVisual): VisualStepPlace => ({ step: 0, total: visual.steps?.length ?? 0, highlight: [] })
+/**
+ * What the page is told of the walkthrough: the step shown, counted from 1, with the names that step is about; or, while
+ * Read all shows every step (and for a visual with none), step 0 with nothing named.
+ */
+export function pageStep(visual: Pick<AgentVisual, 'steps'>, place: WalkthroughPlace): VisualStepPlace {
+  const steps = visual.steps ?? []
+  const { walking, current, highlight } = walkthroughView(steps, place)
+  return walking ? { step: current + 1, total: steps.length, highlight: [...highlight ?? []] } : { step: 0, total: steps.length, highlight: [] }
+}
 
 /** What a reader can turn to when the page is not shown, by what the visual has besides it. */
 export function pageOtherwise(visual: Pick<AgentVisual, 'intro' | 'steps'>): string {
@@ -18,14 +27,19 @@ export function pageOtherwise(visual: Pick<AgentVisual, 'intro' | 'steps'>): str
 }
 
 /**
- * An interactive visual in its card (ADR-0057): the same header and controls as a diagram's (title, kind, Show source,
- * Copy source, Expand), the agent's page running sealed in the middle, and the intro and steps under it. Escape inside
- * the page gives focus back to the card.
+ * An interactive visual in its card (ADR-0057): the same header and controls as a diagram's (title, kind, Read all when
+ * it has steps, Show source, Copy source, Expand), the agent's page running sealed in the middle, and under it the same
+ * walkthrough as a diagram's (#793), or the intro and every step under Read all. Each step the reader moves to goes to
+ * the page as a step message with the names that step is about, so the page can show it. Escape inside the page gives
+ * focus back to the card.
  */
 export function InteractiveVisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId: string | undefined }): ReactNode {
   const frame = useFrameControls(visual.source)
   const card = useRef<HTMLElement>(null)
-  const step = readAllStep(visual)
+  const steps = visual.steps ?? []
+  const [place, movePlace] = useWalkthroughPlace(visual.id)
+  const { walking, current } = walkthroughView(steps, place)
+  const step = pageStep(visual, place)
   const otherwise = pageOtherwise(visual)
   // Escape from the page is a key, so focus lands on the card with its ring showing, until focus moves on.
   const returnFocus = (): void => {
@@ -44,6 +58,7 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
       </div>
       <DiagramCopyStatus frame={frame} />
       <div className="visual-card__actions">
+        {steps.length > 0 && <ReadAllToggle readAll={place.readAll} onToggle={() => movePlace({ readAll: !place.readAll })} />}
         <DiagramActions frame={frame} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} shownTitle="Show page" />
       </div>
     </header>
@@ -54,7 +69,9 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
       // The page stops while Expand shows it, so one visual never runs twice.
       : frame.expanded ? <div className="interactive-visual" data-state="expanded" aria-hidden="true" />
         : <InteractiveVisualPage threadId={threadId} visualId={visual.id} title={visual.title} step={step} otherwise={otherwise} onEscape={returnFocus} />}
-    <VisualReadAll intro={visual.intro} steps={visual.steps} />
+    {walking
+      ? <VisualStepper steps={steps} index={current} onStep={index => movePlace({ step: index })} />
+      : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
     {frame.expanded && <InteractiveVisualViewer visual={visual} threadId={threadId} step={step} otherwise={otherwise} frame={frame} />}
   </section>
 }
