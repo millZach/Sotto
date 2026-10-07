@@ -289,8 +289,6 @@ export class DesktopHostRouter {
   async command(input: unknown, client: ClientIdentity): Promise<AgentState> {
     if (input && typeof input === 'object' && 'type' in input && input.type === 'start-thread-session') return this.startThreadSession(input, client)
     this.notice = undefined
-    const references = new Set<string>()
-    mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     const type = input && typeof input === 'object' && 'type' in input ? input.type : undefined
     if (type === 'observe-threads') {
       const parsed = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
@@ -304,10 +302,7 @@ export class DesktopHostRouter {
       }))
       return this.shell()
     }
-    if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
-    const hostId = [...references][0] ?? this.selectedHostId
-    const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-    const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+    const { connection, command } = this.route(input)
     if (command.type === 'select-thread' || command.type === 'select-project') {
       this.selectedHostId = connection.hostId; this.selections++
       if (command.type === 'select-thread') {
@@ -359,17 +354,22 @@ export class DesktopHostRouter {
     this.emit()
     return agentShell(this.shell())
   }
+  /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
+  private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand } {
+    const references = new Set<string>()
+    mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
+    if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
+    const hostId = [...references][0] ?? this.selectedHostId
+    const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
+    return { connection, command: agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id)) }
+  }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know
    * about, so a host that is away, refuses it or predates it leaves no notice and no error: the send says what it finds.
    */
   private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
     try {
-      const references = new Set<string>()
-      mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
-      const hostId = [...references][0] ?? this.selectedHostId
-      const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
-      const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
+      const { connection, command } = this.route(input)
       if (connection.available?.() !== false) await connection.service.command(command, client)
     } catch { /* The send that follows starts the session itself and reports what it finds. */ }
     return agentShell(this.shell())
