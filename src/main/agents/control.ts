@@ -351,11 +351,6 @@ export class AgentControl {
     clients?: ProviderClients
     /** Where a client is installed. Injected so a test never reads the machine's real PATH. */
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
-    /**
-     * Anything else in this process running a client, told once an install has put a new one on disk so it
-     * moves its processes to it as they go idle (ADR-0042). Personal chats hold their own copy of each client.
-     */
-    clientUpdated?: (provider: ProviderId) => Promise<void>
     /** The sentence a send is refused with when an image it names is no longer kept; a headless host names itself. */
     missingAttachment?: string
     /**
@@ -1180,7 +1175,7 @@ export class AgentControl {
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
       // has, and keeps its threads running; its sentence is the one the update reports.
-      const told = await Promise.allSettled([this.dependencies.host.clientUpdated?.(provider), this.dependencies.clientUpdated?.(provider)])
+      const told = await Promise.allSettled([this.dependencies.host.clientUpdated?.(provider)])
       const refused = told.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
       if (refused) this.dependencies.logFailure?.('client-update-handoff-failed', provider)
       const handoff = refused ? refused.reason instanceof Error && refused.reason.message ? refused.reason.message

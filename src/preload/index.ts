@@ -5,10 +5,7 @@ import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type P
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { hostClientBridge } from './hostClientBridge'
-import { PERSONAL_CHAT_GET, PERSONAL_CHAT_COMMAND, PERSONAL_CHAT_SKILLS, PERSONAL_CHAT_STATE, personalChatStateSchema, personalChatCommandSchema, personalSkillsInputSchema, type PersonalChatBridge, type PersonalChatCommand } from '../shared/personalChats'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
-import { agentSkillCatalogSchema } from '../shared/agentSkills'
-import { CHAT_PROMPT_GENERATE, CHAT_PROMPT_COPY, chatPromptInputSchema, chatPromptCopySchema, chatPromptResultSchema, type ChatPromptBridge } from '../shared/chatPrompts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { createToolsBridges } from './tools'
@@ -238,24 +235,6 @@ function createBufferedSubscription<Output>(
   }
 }
 
-function createPersonalChatBridge(renderer: IpcRendererAdapter): PersonalChatBridge {
-  const command = (input: PersonalChatCommand) => invokeParsed(renderer, PERSONAL_CHAT_COMMAND, personalChatStateSchema, personalChatCommandSchema.parse(input))
-  return Object.freeze({
-    get: () => invokeParsed(renderer, PERSONAL_CHAT_GET, personalChatStateSchema),
-    create: () => command({ type: 'create' }),
-    select: (chatId: string | null) => command({ type: 'select', chatId }),
-    saveDraft: (input: Parameters<PersonalChatBridge['saveDraft']>[0]) => command({ ...input, type: 'draft' }),
-    send: (input: Parameters<PersonalChatBridge['send']>[0]) => command({ ...input, type: 'send' }),
-    skills: (chatId: string, forceReload?: boolean) => invokeParsed(renderer, PERSONAL_CHAT_SKILLS, agentSkillCatalogSchema, personalSkillsInputSchema.parse({ chatId, forceReload })),
-    refresh: (chatId: string) => command({ type: 'refresh', chatId }),
-    interrupt: (chatId: string) => command({ type: 'interrupt', chatId }),
-    answer: (input: Parameters<PersonalChatBridge['answer']>[0]) => command({ ...input, type: 'answer' }),
-    connect: () => command({ type: 'connect' }), disconnect: () => command({ type: 'disconnect' }),
-    onState: (listener: Parameters<PersonalChatBridge['onState']>[0]) => subscribe(renderer, PERSONAL_CHAT_STATE,
-      trustedState<import('../shared/personalChats').PersonalChatState>('chats'), listener),
-  })
-}
-
 function validatedRoutedCommand(command: import('../shared/agents').AgentCommand): import('../shared/agents').AgentCommand {
   agentCommandSchema.parse(mapHostReferences(command, id => parseHostEntityKey(id)?.id ?? id))
   return command
@@ -363,9 +342,6 @@ export function createSottoBridge(
       onChanged: listener => subscribe(renderer, MEMORY_CHANGED, memorySnapshotSchema, listener),
     }),
     agents: createAgentBridge(renderer, 'main'),
-    personalChats: createPersonalChatBridge(renderer),
-    chatPrompts: Object.freeze<ChatPromptBridge>({ generate: input => invokeParsed(renderer, CHAT_PROMPT_GENERATE, chatPromptResultSchema, chatPromptInputSchema.parse(input)),
-      copy: text => invokeParsed(renderer, CHAT_PROMPT_COPY, z.void(), chatPromptCopySchema.parse(text)) }),
     requestDrafts: Object.freeze<RequestDraftBridge>({
       onChanged: listener => subscribe(renderer, REQUEST_DRAFT_CHANGED, requestDraftOwnerSchema, listener),
       list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftSchema.array(), requestDraftOwnerSchema.parse(owner)),

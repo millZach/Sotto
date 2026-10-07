@@ -3,6 +3,8 @@ import { agentRequestSchema, providerIdSchema, type AgentHostSnapshot, type Agen
 import { resolveModel } from './modelCatalog'
 
 const id = z.string().min(1).max(256)
+// Personal owners are accepted only to preserve historical request-drafts.json records.
+// Live request operations reject them in main.
 export const requestDraftOwnerSchema = z.object({ kind: z.enum(['thread', 'personal']), ownerId: id, providerId: providerIdSchema }).strict()
 export type RequestDraftOwner = z.infer<typeof requestDraftOwnerSchema>
 export const requestDraftTargetSchema = requestDraftOwnerSchema.extend({ requestId: id, questions: agentRequestSchema.shape.questions.unwrap().min(1) }).strict()

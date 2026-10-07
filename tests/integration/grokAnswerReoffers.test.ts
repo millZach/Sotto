@@ -4,13 +4,10 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { expect, it, vi } from 'vitest'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { GrokRpc } from '../../src/main/agents/grokRpc'
-import { PersonalChatService } from '../../src/main/agents/personalChats'
-import { personalAnswerHeld } from '../../src/shared/personalChats'
 
 async function question(f: Awaited<ReturnType<typeof grokFixture>>, id: string) {
   await f.driver.raiseQuestion(id, 'Which color?')
-  const requests = async () => f.adapter.personalSnapshot().find(thread => thread.id === id)?.requests
-    ?? (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests
+  const requests = async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests
   await expect.poll(async () => (await requests())?.length).toBe(1)
   return (await requests())![0]!
 }
@@ -110,46 +107,4 @@ it('shows a same-ID Grok re-offer after its child restarts inside the connected 
     expect(checked.threads.find(thread => thread.id === id)!.requests[0]).toMatchObject({ id: original.id, answerRetryReady: true })
     expect((await f.driver.requests()).filter(record => record.result?.outcome)).toHaveLength(1)
   } finally { await f.cleanup() }
-})
-
-it('allows a new explicit Grok personal answer after checking its restart re-offer while retaining old uncertainty', async () => {
-  let f = await grokFixture()
-  const create = () => new PersonalChatService({ userDataPath: f.root, hosts: { grok: f.adapter },
-    configuration: () => ({ reasoning: 'grok', reasoningModel: f.modelId, reasoningEffort: '' }) })
-  let service = create()
-  let release: () => void = () => undefined
-  try {
-    await service.start(); await service.connect()
-    const chat = (await service.create()).chats[0]!
-    await service.saveDraft({ chatId: chat.id, revision: 1, text: 'Hello', skills: [] })
-    await service.send({ chatId: chat.id, revision: 1 }); await service.settled()
-    const pending = await question(f, chat.id)
-    const rpc = (f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }).processes.get(chat.id)!.rpc
-    const stdin = (rpc as unknown as { child: ChildProcessWithoutNullStreams }).child.stdin, write = stdin.write.bind(stdin)
-    const delayed = vi.spyOn(stdin, 'write').mockImplementation(((chunk: string, callback?: (error?: Error | null) => void) => {
-      if (!callback || !(JSON.parse(chunk) as { result?: unknown }).result) return write(chunk, callback)
-      return write(chunk, error => { release = () => callback(error) })
-    }) as typeof stdin.write)
-    await service.answer({ chatId: chat.id, requestId: pending.id, answer: '', questionAnswers: { '0': { optionIds: [], text: 'Blue' } } })
-    delayed.mockRestore()
-    expect(personalAnswerHeld(service.get().chats[0]!, pending.id)).toBe(true)
-    await service.refresh(chat.id, pending.id)
-    expect(personalAnswerHeld(service.get().chats[0]!, pending.id)).toBe(true)
-    expect(service.get().chats[0]!.requests[0]).not.toHaveProperty('answerRetryReady')
-    release(); release = () => undefined
-    await service.close(); f = await f.driver.restart(); service = create()
-    await service.start(); await service.connect(); await service.refresh(chat.id)
-    const reoffered = await question(f, chat.id)
-    expect(reoffered).toMatchObject({ id: pending.id, delivery: 'uncertain' })
-    await expect.poll(() => service.get().chats[0]!.requests[0]?.delivery).toBe('uncertain')
-    expect(personalAnswerHeld(service.get().chats[0]!, pending.id)).toBe(true)
-    await service.refresh(chat.id, pending.id)
-    expect(service.get().chats[0]!.requests[0]).toMatchObject({ id: pending.id, answerRetryReady: true })
-    expect(personalAnswerHeld(service.get().chats[0]!, pending.id)).toBe(false)
-    expect(service.get().chats[0]!.decisions).toMatchObject([{ status: 'uncertain' }])
-    expect((await f.driver.requests()).filter(record => record.result?.outcome)).toHaveLength(1)
-    await service.answer({ chatId: chat.id, requestId: pending.id, answer: '', questionAnswers: { '0': { optionIds: [], text: 'Green' } } })
-    expect(service.get().chats[0]!.decisions).toMatchObject([{ status: 'uncertain' }, { status: 'accepted' }])
-    expect((await f.driver.requests()).filter(record => record.result?.outcome)).toHaveLength(2)
-  } finally { release(); vi.restoreAllMocks(); await service.close(); await f.cleanup() }
 })

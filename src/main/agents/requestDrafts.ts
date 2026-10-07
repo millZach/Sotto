@@ -2,7 +2,6 @@ import { readFile, readdir, unlink } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { personalAnswerHeld, type PersonalChatState } from '../../shared/personalChats'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import {
   requestDraftQuestions, requestDraftKey, requestDraftSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftOwnerKey, requestDraftDiscardSchema, requestQuestionsSignature, sameRequestQuestions,
@@ -30,6 +29,7 @@ const parseSaved = (input: unknown): Saved => {
 }
 const unreadable = 'Answer draft storage could not be read. The original request-drafts.json is unchanged. Repair it and restart before saving answers.'
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
+const privacyFailed = 'Local history is off, but retired submitted answers could not be removed. Nothing was changed. Restore local storage access and save Settings again.'
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
 export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string, answers: AgentQuestionAnswers | undefined) => Promise<void>
@@ -40,16 +40,6 @@ export interface RequestDraftOwnerState {
   readonly requests: readonly AgentRequest[]
   readonly uncertainRequestIds?: readonly string[]
   readonly completed?: readonly { readonly requestId: string; readonly questionsDigest?: string; readonly decisionId?: string }[]
-}
-
-/** Shared production projection: legacy redacted decisions deliberately have no digest fallback. */
-export function personalRequestDraftState(state: PersonalChatState, owner: RequestDraftOwner): RequestDraftOwnerState | undefined {
-  const chat = state.chats.find(item => owner.kind === 'personal' && item.id === owner.ownerId && item.providerId === owner.providerId)
-  return chat ? { connected: chat.connected === true, ready: chat.historyStatus !== 'loading' && chat.historyStatus !== 'error',
-    requests: chat.requests,
-    uncertainRequestIds: [...new Set((chat.decisions ?? []).map(item => item.requestId))].filter(id => personalAnswerHeld(chat, id)),
-    completed: (chat.decisions ?? []).filter(item => item.status === 'accepted').map(item => ({ requestId: item.requestId,
-      decisionId: item.id, ...(item.questionsDigest ? { questionsDigest: item.questionsDigest } : {}) })) } : undefined
 }
 
 /** Unsent question answers have their own durable aggregate, independent of both composers and history.
@@ -174,7 +164,7 @@ export class RequestDraftService {
    * Disappearance, changed definitions and legacy receipts are recovery evidence, not acceptance. */
   reconcile(): Promise<void> {
     return this.serial(async () => {
-      const accepted = this.saved.drafts.filter(draft => draft.held && draft.decisionId && !this.reoffered(draft.target)
+      const accepted = this.saved.drafts.filter(draft => draft.target.kind === 'thread' && draft.held && draft.decisionId && !this.reoffered(draft.target)
         && this.lookup(draft.target)?.completed?.some(item => item.requestId === draft.target.requestId
           && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
       if (accepted.length) await this.retire(accepted)
@@ -187,14 +177,28 @@ export class RequestDraftService {
       && draft.held && draft.decisionId)))
   }
 
+  /** Retired submitted answers follow local history; unsent forms and thread recovery keep their own retention. */
+  privacyChanged(historyEnabled: boolean): Promise<void> {
+    if (historyEnabled) return Promise.resolve()
+    return this.serial(async () => {
+      // A held form is a submitted copy even before its native attempt is bound. An attempt identity is also
+      // submission evidence: retain no answer or question text just because a legacy form lost its held flag.
+      const drafts = this.saved.drafts.filter(draft => draft.target.kind !== 'personal' || !draft.held && !draft.decisionId)
+      if (drafts.length === this.saved.drafts.length) return
+      try { await this.commit(drafts) } catch { throw new Error(privacyFailed) }
+    })
+  }
+
   list(input: RequestDraftOwner): Promise<RequestDraft[]> {
     const owner = requestDraftOwnerSchema.parse(input)
+    if (owner.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => this.lookup(owner)
       ? structuredClone(this.saved.drafts.filter(draft => requestDraftOwnerKey(draft.target) === requestDraftOwnerKey(owner))) : [])
   }
 
   discard(input: RequestDraftDiscard): Promise<boolean> {
     const { target, revision } = requestDraftDiscardSchema.parse(input)
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       if (!this.lookup(target)) throw new Error('This answer owner is unavailable.')
       const previous = this.current(target)
@@ -207,6 +211,7 @@ export class RequestDraftService {
 
   /** Main only: bind the persisted held form before the native write. No answer content enters receipts. */
   bindDecision(target: RequestDraftTarget, decisionId: string, answers?: AgentQuestionAnswers): Promise<void> {
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       const previous = this.current(target)
       if (!previous?.held || !this.lookup(target) || !answers) return
@@ -229,6 +234,7 @@ export class RequestDraftService {
 
   get(input: RequestDraftTarget): Promise<RequestDraft | null> {
     const target = requestDraftTargetSchema.parse(input)
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       const draft = this.current(target)
       return this.lookup(target) && draft && sameRequestQuestions(draft.target.questions, target.questions) ? structuredClone(draft) : null
@@ -237,11 +243,13 @@ export class RequestDraftService {
 
   status(input: RequestDraftTarget): Promise<RequestDraftStatus> {
     const target = requestDraftTargetSchema.parse(input)
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => this.currentStatus(target))
   }
 
   save(input: RequestDraft): Promise<RequestDraft> {
     const draft = requestDraftSchema.parse(input)
+    if (draft.target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     return this.serial(async () => {
       const previous = this.current(draft.target), state = this.lookup(draft.target)
       const accepted = this.retirement(draft.target)
@@ -266,6 +274,7 @@ export class RequestDraftService {
 
   async check(input: RequestDraftTarget): Promise<RequestDraftCheckResult> {
     const target = requestDraftTargetSchema.parse(input)
+    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
     // Capture the attempt before refresh can publish acceptance and reconcile its saved hold.
     const initial = await this.serial(async () => ({ status: this.currentStatus(target),
       reoffered: this.reoffered(target), retirement: this.retirement(target),

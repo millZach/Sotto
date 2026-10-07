@@ -546,7 +546,7 @@ export const agentConfigurationSchema = z.object({
   reasoningEffort: z.string().max(64).default(''),
   checkClientUpdates: z.boolean().default(true),
   /**
-   * What a new thread in a project starts on, apart from personal chats' reasoning model and effort
+   * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
    * is empty the same way, meaning the chosen model's own default; `newThreadRuntimeMode` is absent the same
@@ -1045,7 +1045,7 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
 }
 /**
  * The model a new thread in a project starts on (issue #347): the model chosen in Settings → Agents' "New
- * threads start with" row, or, unset, the same reasoning-based default a personal chat starts on
+ * threads start with" row, or, unset, the coordinator's reasoning-based default
  * (`defaultThreadModelId`), which is today's behaviour for an install made before the setting existed.
  */
 export function defaultNewThreadModelId(configuration: AgentConfiguration, models: readonly AgentModel[], accounts: readonly SubscriptionAccount[] = []): string {

@@ -11,7 +11,7 @@ import {
 import './requests.css'
 
 export interface AgentRequestCardProps {
-  /** The thread or personal chat that owns the request; answers always carry this and `request.id`. */
+  /** The thread that owns the request; answers always carry this and `request.id`. */
   readonly ownerId: string
   readonly ownerTitle: string
   readonly draftOwner?: RequestDraftOwner

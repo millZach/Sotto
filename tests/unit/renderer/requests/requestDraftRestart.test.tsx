@@ -30,7 +30,7 @@ it('restores structured selections into a fresh renderer store without sending',
 })
 
 
-it.each(['thread', 'personal'] as const)('restores a legacy choice for a %s owner and sends only its original option ID', async kind => {
+it('restores a legacy choice for a thread and sends only its original option ID', async () => {
   const saved = new Map<string, RequestDraft>()
   const bridge: RequestDraftBridge = {
     list: vi.fn(async () => [...saved.values()]), discard: vi.fn(async () => false), check: vi.fn(async () => ({ status: 'editable' as const, draft: null })),
@@ -39,7 +39,7 @@ it.each(['thread', 'personal'] as const)('restores a legacy choice for a %s owne
     save: vi.fn(async draft => { saved.set(requestDraftKey(draft.target), structuredClone(draft)); return draft }),
   }
   const request = { id: 'legacy', kind: 'question' as const, text: 'Choose the route', options: [{ id: 'native-coast', label: 'Coast (Recommended)' }] }
-  const owner: RequestDraftOwner = { kind, providerId: 'codex', ownerId: 'owner' }
+  const owner: RequestDraftOwner = { kind: 'thread', providerId: 'codex', ownerId: 'owner' }
   const send = vi.fn(async () => ({ error: null }))
   const card = () => <AgentRequestCard ownerId="owner" ownerTitle="Owner" draftOwner={owner} request={request} blocked={null} onSubmit={send} store={new RequestAnswerStore(() => bridge)} />
   const first = render(card())

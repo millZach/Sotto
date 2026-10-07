@@ -1,7 +1,4 @@
-/* The Threads page sidebar: the 44px top row, search, project folders, adaptive thread rows and the Settled/Closed shelf.
-   Terminal mode reuses every class here (terminals/TerminalSidebar.tsx). The Chats page borrows the frame's
-   older shape (agents/personal/PersonalChatsView.tsx), so everything the redesign moved is scoped to the
-   [data-mode] the Threads and Terminal sidebars carry and Chats does not. */
+/* Sidebar styling is scoped to the thread navigation. */
 /* Sidebar */
 .thread-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 16px 10px 0; background: var(--threads-sidebar); }
 .thread-nav[data-mode] { padding: 0; }
@@ -128,7 +125,7 @@
 }
 @keyframes thread-ring { to { rotate: 360deg; } }
 
-/* Thread rows pair this status with a provider; Chats also uses the inline status dot. */
+/* Thread rows pair this status with a provider. */
 .thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }

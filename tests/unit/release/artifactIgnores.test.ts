@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process'
 import { ESLint } from 'eslint'
 import { expect, it } from 'vitest'
 
-it('keeps generated hand-test and iOS delivery bundles out of Git and lint', async () => {
+// The first ignore check loads the real TypeScript ESLint configuration. Like the Git child,
+// that setup can exceed the default deadline on a busy runner; elapsed time is not the assertion.
+it('keeps generated hand-test and iOS delivery bundles out of Git and lint', { timeout: 60_000 }, async () => {
   const paths = [
     'artifacts/forge-hand-test/capture.js',
     'artifacts/review-ios-focus-delivery/capture.js',
