@@ -126,7 +126,7 @@ export class SottoThreadHost implements AgentHost {
 
   useBrowserTools(tools: BrowserAgentTools): void {
     const thread = (sessionId: string): string => {
-      const threadId = this.registry.bySession(this.provider, sessionId)?.threadId ?? this.unboundThread(sessionId)
+      const threadId = this.threadFor(sessionId)
       if (!threadId) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
       return threadId
     }
@@ -139,7 +139,7 @@ export class SottoThreadHost implements AgentHost {
   useHostSetupTools(tools: ScopedThreadTools): void {
     this.inner.useHostSetupTools?.({ name: tools.name, definitions: tools.definitions,
       mcpServer: async id => {
-        const threadId = this.registry.bySession(this.provider, id)?.threadId ?? this.unboundThread(id)
+        const threadId = this.threadFor(id)
         return threadId ? tools.mcpServer(threadId) : undefined
       },
     })
@@ -279,7 +279,8 @@ export class SottoThreadHost implements AgentHost {
   /**
    * Early start (#769), under the provider's own session ID. A thread with no binding yet (its first send has not
    * created it) is given the session ID that send will reserve, held in memory only: nothing is bound or saved
-   * until the send, and a draft that is never sent leaves nothing behind.
+   * until the send, so a draft that is never sent leaves nothing on disk. The adapter lets every early start go at
+   * disconnect, and the IDs held for them go with it.
    */
   async startThreadSession(threadId: string, draft?: ThreadSessionDraft): Promise<void> {
     if (!this.inner.startThreadSession) return
@@ -291,8 +292,10 @@ export class SottoThreadHost implements AgentHost {
     if (!sessionId) { sessionId = randomUUID(); this.unbound.set(threadId, sessionId) }
     await this.inner.startThreadSession(sessionId, draft)
   }
-  /** The Sotto thread an unbound early-started session belongs to, until its first send binds it. */
-  private unboundThread(sessionId: string): string | undefined {
+  /** The Sotto thread a provider session belongs to: its binding, or the early start that holds it until its first send. */
+  private threadFor(sessionId: string): string | undefined {
+    const bound = this.registry.bySession(this.provider, sessionId)?.threadId
+    if (bound) return bound
     for (const [threadId, id] of this.unbound) if (id === sessionId) return threadId
     return undefined
   }
@@ -304,7 +307,7 @@ export class SottoThreadHost implements AgentHost {
     }))
   }
 
-  disconnect(): void { this.inner.disconnect() }
+  disconnect(): void { this.unbound.clear(); this.inner.disconnect() }
 
   async clientUpdated(): Promise<void> { await this.inner.clientUpdated?.(this.provider as ProviderId) }
 }

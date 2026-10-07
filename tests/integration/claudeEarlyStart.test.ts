@@ -151,11 +151,31 @@ describe('Claude early start', () => {
     expect(await violations(f)).toBe('')
   })
 
-  it('gives a thread whose worktree the first send makes no early start', async () => {
+  it('lets go of the session ID an early start held when the provider disconnects', async () => {
+    const { f, registry, workspace, draft, send } = await stack()
+    const threadId = await draft()
+    const asked = vi.spyOn(f.adapter, 'startThreadSession')
+    await workspace.startThreadSession(threadId)
+    const held = asked.mock.calls[0]![0]
+    const [spare] = await launches(f)
+    workspace.disconnect('claude'); await f.adapter.closed()
+    await expect.poll(() => exited(f, spare!.session)).toBe(true)
+    await workspace.connect()
+    expect(await send(threadId)).toEqual({ accepted: true })
+    // The spare went with the connection, and so did the ID the Sotto thread host held for it.
+    expect(registry.byThread(threadId)!.sessionId).not.toBe(held)
+    expect(await f.realId(registry.byThread(threadId)!.sessionId)).not.toBe(spare!.session)
+    expect(await violations(f)).toBe('')
+  })
+
+  it('names no folder for a thread whose worktree the first send makes, and Claude Code starts no spare for it', async () => {
     const { f, workspace } = await stack()
     const threadId = randomUUID()
     await workspace.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'New worktree', modelId: f.modelId, workingCopy: 'independent' })
+    const asked = vi.spyOn(f.adapter, 'startThreadSession')
     await workspace.startThreadSession(threadId)
+    // Codex and Grok start their client for this draft, since it runs outside the thread's folder; a spare runs in it.
+    expect(asked).toHaveBeenCalledWith(expect.any(String), { modelId: f.modelId })
     expect(await launches(f)).toEqual([])
   })
 

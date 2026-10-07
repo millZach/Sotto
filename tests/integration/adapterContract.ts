@@ -386,12 +386,13 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await thread(sessionId)).providerSessionOpen).toBeUndefined()
     })
 
-    it('creates no provider session for an early start before a thread’s first send', async context => {
+    // A draft whose worktree its first send makes names no folder yet (`ThreadSessionDraft`).
+    for (const folder of [true, false]) it(`creates no provider session for an early start before a thread’s first send${folder ? '' : ', when its folder does not exist yet'}`, async context => {
       if (!await open()) { context.skip(); return }
       const created = async () => (await f.driver.requests()).filter(record => ['thread/start', 'session/new'].includes(record.method ?? '')).length
       const before = await created()
       const draft = randomUUID()
-      await f.host.startThreadSession!(draft, { modelId: f.modelId, workingDirectory: f.root })
+      await f.host.startThreadSession!(draft, { modelId: f.modelId, ...(folder ? { workingDirectory: f.root } : {}) })
       expect((await f.host.snapshot()).threads.some(item => item.id === draft)).toBe(false)
       expect(await created()).toBe(before)
       // The send that creates it afterwards is the first thing that does.

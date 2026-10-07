@@ -122,15 +122,14 @@ export interface ThreadHistorySource {
 }
 /**
  * What a thread whose native session has not started will be created with on its first send, for an early start of
- * the client that send would use (#769). The working directory is the folder the thread already has: a draft whose
- * worktree does not exist yet has none, and gets no early start.
+ * the client that send would use (#769). The working directory is the folder the thread already has. A draft whose
+ * worktree the first send makes has none, and an adapter whose client runs in the thread's folder starts nothing for it.
  */
 export interface ThreadSessionDraft {
   readonly modelId: string
-  readonly workingDirectory: string
+  readonly workingDirectory?: string | undefined
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
-  readonly providerMode?: string | undefined
 }
 /** What an activity subscriber asks of the host it subscribes to. */
 export interface ActivitySubscriptionOptions {

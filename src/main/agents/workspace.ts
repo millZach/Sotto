@@ -2334,9 +2334,11 @@ export class WorkspaceHost implements AgentHost {
   }
   /**
    * Early start (#769), on the thread's own lane so it orders with its sends. A started thread's provider session is
-   * started the way its next action would. A thread whose native session has not started gets its first send's client
-   * only when its folder already exists and is the one that send would use, the project checkout it shares: a new
-   * worktree is made by the first send and by nothing before it (ADR-0014), so that thread gets nothing here.
+   * started the way its next action would. A thread whose native session has not started gets its first send's client,
+   * and the draft names the thread's folder only when that folder already exists and is the one the send would use,
+   * the project checkout it shares. A new worktree is made by the first send and by nothing before it (ADR-0014), so
+   * that thread's draft names no folder: a client that runs outside the thread's folder still starts, one that runs in
+   * it does not.
    */
   startThreadSession(threadId: string): Promise<void> {
     const start = this.inner.startThreadSession
@@ -2347,13 +2349,13 @@ export class WorkspaceHost implements AgentHost {
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
       if (thread.nativeSessionStarted !== false) return start.call(this.inner, threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
-      if (creation?.phase !== 'unstarted' || thread.worktree?.mode !== 'shared' || thread.worktree.status !== 'ready') return
+      if (creation?.phase !== 'unstarted') return
       const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
-      const workingDirectory = await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project))
-      return start.call(this.inner, threadId, { modelId: thread.modelId, workingDirectory,
+      const shared = thread.worktree?.mode === 'shared' && thread.worktree.status === 'ready'
+      const workingDirectory = shared ? await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project)) : undefined
+      return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
         ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
-        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
-        ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) })
+        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
     })
   }
   async clientUpdated(provider: ProviderId): Promise<void> { await this.inner.clientUpdated?.(provider) }

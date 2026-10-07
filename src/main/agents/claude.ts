@@ -1128,7 +1128,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
     if (!this.state.connected) return
     if (this.aliases[id]) { await this.start(id); return }
-    if (!draft || this.spares.has(id) || !this.state.models.some(model => model.id === draft.modelId && model.ready)) return
+    // A spare runs in the thread's folder, so a thread whose worktree its first send makes gets none.
+    if (!draft?.workingDirectory || this.spares.has(id) || !this.state.models.some(model => model.id === draft.modelId && model.ready)) return
     const generation = this.generation
     const cwd = await existingWorkingDirectory(draft.workingDirectory)
     if (generation !== this.generation || this.aliases[id] || this.spares.has(id)) return
