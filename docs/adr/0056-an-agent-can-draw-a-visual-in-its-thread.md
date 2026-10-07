@@ -24,7 +24,7 @@ An agent explaining how something works writes a wall of words, or a Mermaid fen
 
 ## Consequences
 
-- The card (`VisualCard`) draws the steps in one component, `VisualReadAll`, so #793's walkthrough replaces it without touching the card, and the steps' highlight names are already kept.
+- The card (`VisualCard`) draws the explanation as a walkthrough (`VisualStepper`, #793) or under Read all as one list (`VisualReadAll`). The walkthrough keeps no step of its own, so #794's interactive card can drive its page's steps with it. Each step's lighting is made from the drawing already sanitized, by adding classes the drawing's own Sotto stylesheet dims and lights (`diagramSteps.ts`), and is still shown as an `<img>`.
 - #794 adds the `interactive` kind to the input and to the card; a desktop on this version shows such a visual as its text.
 - A new scoped server is one more list entry: it implements `ScopedThreadTools` and is passed to `useThreadTools`.
 - Sotto has no thread deletion today. `ThreadStore.forget`, which a deletion would call, deletes a thread's visuals with its words.
