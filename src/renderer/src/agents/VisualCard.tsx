@@ -1,5 +1,6 @@
 import React, { memo, useMemo, useState, type ReactNode } from 'react'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
+import { keepRecent, readRecent } from '../../../shared/recentMap'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
 import { useMermaidRendering } from './diagrams/MermaidDiagram'
@@ -27,23 +28,22 @@ export function VisualReadAll({ intro, steps }: Pick<AgentVisual, 'intro' | 'ste
   </div>
 }
 
-/**
- * Where each visual's walkthrough is, by the visual's id. A card is drawn again when its turn finishes and folds, or the
- * thread is opened again, and the reader stays on the step they were reading. Kept for this window's life only.
- */
-const walkthroughs = new Map<string, { readonly step: number; readonly readAll: boolean }>()
-const MAX_WALKTHROUGHS = 200
+/** Where a reader is in one visual's walkthrough: the step shown, and whether every step is shown instead. */
+interface WalkthroughPlace { readonly step: number; readonly readAll: boolean }
+const FIRST_STEP: WalkthroughPlace = { step: 0, readAll: false }
 
-function useWalkthrough(id: string): [{ readonly step: number; readonly readAll: boolean }, (change: Partial<{ step: number; readAll: boolean }>) => void] {
-  const [state, setState] = useState(() => walkthroughs.get(id) ?? { step: 0, readAll: false })
-  const update = (change: Partial<{ step: number; readAll: boolean }>): void => setState(current => {
-    const next = { ...current, ...change }
-    walkthroughs.delete(id)
-    walkthroughs.set(id, next)
-    if (walkthroughs.size > MAX_WALKTHROUGHS) walkthroughs.delete(walkthroughs.keys().next().value!)
-    return next
-  })
-  return [state, update]
+/**
+ * Each visual's place, by the visual's id. A card is drawn again when its turn finishes and folds, or the thread is
+ * opened again, and the reader stays where they were. Kept for this window's life only, the most recent 200.
+ */
+const places = new Map<string, WalkthroughPlace>()
+const MAX_PLACES = 200
+
+/** One visual's place, and a function that moves it and keeps where it went. */
+function useWalkthroughPlace(id: string): [WalkthroughPlace, (change: Partial<WalkthroughPlace>) => void] {
+  const [place, setPlace] = useState(() => readRecent(places, id) ?? FIRST_STEP)
+  const move = (change: Partial<WalkthroughPlace>): void => setPlace(keepRecent(places, id, { ...place, ...change }, MAX_PLACES))
+  return [place, move]
 }
 
 /**
@@ -57,7 +57,7 @@ function useWalkthrough(id: string): [{ readonly step: number; readonly readAll:
 export const VisualCard = memo(function VisualCard({ visual }: { readonly visual: AgentVisual }): ReactNode {
   const rendering = useMermaidRendering(visual.source, true)
   const frame = useDiagramFrame(visual.source, rendering)
-  const [{ step, readAll }, walk] = useWalkthrough(visual.id)
+  const [{ step, readAll }, movePlace] = useWalkthroughPlace(visual.id)
   // The label is "Diagram" when the checks cannot name the kind.
   const kind = rendering.inspection.label
   const name = `${kind}: ${visual.title}`
@@ -78,14 +78,14 @@ export const VisualCard = memo(function VisualCard({ visual }: { readonly visual
       <div className="visual-card__actions">
         {/* Named for what a press does: Read all shows every step, Step through goes back to the walkthrough. */}
         {steps.length > 0 && <button type="button" className="tt-button visual-card__read-all tt-focusable" data-reading-all={readAll || undefined}
-          onClick={() => walk({ readAll: !readAll })}>{readAll ? 'Step through' : 'Read all'}</button>}
+          onClick={() => movePlace({ readAll: !readAll })}>{readAll ? 'Step through' : 'Read all'}</button>}
         <DiagramActions frame={frame} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} />
       </div>
     </header>
     <DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage"
       dataUrl={picture} crossFade />
     {walking
-      ? <VisualStepper steps={steps} index={current} onStep={index => walk({ step: index })} />
+      ? <VisualStepper steps={steps} index={current} onStep={index => movePlace({ step: index })} />
       : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
     <DiagramExpanded frame={frame} name={name} dataUrl={picture} />
   </section>
