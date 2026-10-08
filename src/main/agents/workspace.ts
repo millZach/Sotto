@@ -172,6 +172,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * in `workspace.json`; the thread itself carries only the published part, `babysitting`, so no client is sent the rest.
    */
   private babysitRecords = new Map<string, BabysitRecord[]>()
+  /** Babysitting, told of each Unlink so it can end babysitting that pull request (ADR-0061 decision 9). */
+  private readonly unlinkListeners = new Set<(threadId: string, url: string) => Promise<void>>()
   private readonly store: AtomicJsonStore<Workspace>
   private loading: Promise<void> | undefined
   private hostId: string | undefined
@@ -642,6 +644,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.dirty = true
         await this.saveLinks()
         this.publish()
+        // The link is gone whatever babysitting makes of it, so a babysitting that could not end is left to the next Unlink or Stop.
+        await Promise.all([...this.unlinkListeners].map(listener => listener(threadId, url).catch(() => undefined)))
       }
       return this.workspaceSnapshot()
     })
@@ -2682,6 +2686,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   babysitThread(threadId: string): BabysitThread | null {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return thread ? this.babysitView(thread) : null
+  }
+  /** Calls `listener` after the user unlinks a pull request from a thread (`BabysitStore`). */
+  onPullRequestUnlinked(listener: (threadId: string, url: string) => Promise<void>): () => void {
+    this.unlinkListeners.add(listener)
+    return () => { this.unlinkListeners.delete(listener) }
   }
   /** Every thread here that babysits a pull request. A thread that is gone took its records with it. */
   babysatThreads(): BabysitThread[] {

@@ -41,7 +41,11 @@ export interface BabysitThread {
   readonly id: string
   /** Why the thread cannot be babysat for now: settled or archived ends babysitting quietly (decision 9). */
   readonly closed: 'settled' | 'archived' | null
-  /** Whether the thread knows the pull request: its branch's own, or one linked to it (decision 5). */
+  /**
+   * Whether the thread knows the pull request: its branch's own, or one linked to it (decision 5). Asked when babysitting
+   * starts and when a link is removed, never on a pass: the branch's own pull request is unknown after a restart until
+   * the host asks GitHub again, which may not be for a long while with no window in front, and that is not an unlink.
+   */
   readonly knows: (url: string) => boolean
   readonly records: readonly BabysitRecord[]
 }
@@ -56,6 +60,11 @@ export interface BabysitStore {
    * A thread that is gone changes nothing.
    */
   changeBabysitting(threadId: string, change: (records: readonly BabysitRecord[]) => readonly BabysitRecord[]): Promise<void>
+  /**
+   * Calls `listener` after a link is removed from a thread, the user's Unlink (decision 9), resolving once it is done.
+   * Returns the function that stops it.
+   */
+  onPullRequestUnlinked?(listener: (threadId: string, url: string) => Promise<void>): () => void
 }
 /**
  * Hands one thread its news about one pull request, resolving once it is sent or durably queued; a rejection leaves it
@@ -118,10 +127,12 @@ export class Babysitter {
   private closed = false
   /** Whether this pass already logged a rate limit, so a paused pass logs it once. */
   private limitLogged = false
+  private readonly stopListening: (() => void) | undefined
 
   constructor(private readonly options: BabysitterOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
+    this.stopListening = options.store.onPullRequestUnlinked?.((threadId, url) => this.unlinked(threadId, url))
   }
 
   /** Starts the two-minute passes, the first at once, so what changed while the host was not reading is told now. */
@@ -135,6 +146,7 @@ export class Babysitter {
   /** Stops the passes, and waits for one under way to finish what it is doing. */
   async close(): Promise<void> {
     this.closed = true
+    this.stopListening?.()
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     await this.passing
@@ -186,6 +198,17 @@ export class Babysitter {
     return stopped
   }
 
+  /**
+   * A link removed from the thread ends babysitting that pull request quietly (decision 9), unless the thread still
+   * knows it as its branch's own.
+   */
+  private async unlinked(threadId: string, url: string): Promise<void> {
+    const key = pullRequestKey(url)
+    const thread = this.options.store.babysitThread(threadId)
+    if (!key || !thread || thread.knows(url)) return
+    for (const record of thread.records) if (pullRequestKey(record.url) === key) await this.endQuietly({ threadId, record }, 'unlinked')
+  }
+
   /** The pull requests babysat, by one thread or by every thread: which, who started each and since when. */
   list(threadId?: string): BabysitListing[] {
     const threads = threadId === undefined ? this.options.store.babysatThreads() : [this.options.store.babysitThread(threadId)].flatMap(thread => thread ? [thread] : [])
@@ -206,8 +229,7 @@ export class Babysitter {
     const seen = new Map<string, string>()
     for (const thread of store.babysatThreads()) {
       for (const record of thread.records) {
-        const ending = thread.closed ?? (thread.knows(record.url) ? null : 'unlinked')
-        if (ending) { await this.endQuietly({ threadId: thread.id, record }, ending); continue }
+        if (thread.closed) { await this.endQuietly({ threadId: thread.id, record }, thread.closed); continue }
         const address = pullRequestAddress(record.url), key = pullRequestKey(record.url)
         if (!address || !key) continue
         seen.set(recordKey(thread.id, record), thread.id)

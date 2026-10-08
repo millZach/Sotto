@@ -15,16 +15,24 @@ const START = Date.parse('2026-10-08T12:00:00Z')
 const at = (minutes: number): string => new Date(START + minutes * 60_000).toISOString().replace('.000Z', 'Z')
 const url = (number: number, name = 'r') => `https://github.com/o/${name}/pull/${number}`
 
-interface ThreadSetup { links: string[]; closed?: BabysitThread['closed'] }
+/** `branch` is the branch's own pull request as the host last read it. */
+interface ThreadSetup { links: string[]; branch?: string; closed?: BabysitThread['closed'] }
 function memoryStore(threads: Record<string, ThreadSetup>) {
   const records = new Map<string, BabysitRecord[]>()
-  const view = (id: string): BabysitThread => ({ id, closed: threads[id]!.closed ?? null, knows: link => threads[id]!.links.some(known => pullRequestKey(known) === pullRequestKey(link)), records: records.get(id) ?? [] })
+  const unlinked = new Set<(threadId: string, url: string) => Promise<void>>()
+  const view = (id: string): BabysitThread => ({ id, closed: threads[id]!.closed ?? null, knows: link => [...threads[id]!.links, threads[id]!.branch ?? ''].some(known => pullRequestKey(known) === pullRequestKey(link)), records: records.get(id) ?? [] })
   const store: BabysitStore = {
     babysitThread: id => threads[id] ? view(id) : null,
     babysatThreads: () => Object.keys(threads).filter(id => records.get(id)?.length).map(view),
     changeBabysitting: async (id, change) => { if (!threads[id]) return; records.set(id, [...change(records.get(id) ?? [])]) },
+    onPullRequestUnlinked: listener => { unlinked.add(listener); return () => { unlinked.delete(listener) } },
   }
-  return { store, records, threads }
+  /** The user's Unlink press on the Pull request surface. */
+  const unlink = async (id: string, link: string) => {
+    threads[id]!.links = threads[id]!.links.filter(known => pullRequestKey(known) !== pullRequestKey(link))
+    await Promise.all([...unlinked].map(listener => listener(id, link)))
+  }
+  return { store, records, threads, unlink }
 }
 
 function harness(pulls: ScriptedPull[], threads: Record<string, ThreadSetup>, options: { viewer?: string } = {}) {
@@ -385,13 +393,34 @@ describe('the endings', () => {
   it('ends quietly when the thread is settled or archived, or the pull request is unlinked', async () => {
     const h = harness([{ number: 1 }, { number: 2 }], { a: { links: [url(1)] }, b: { links: [url(1)] }, c: { links: [url(2)] } })
     for (const [thread, number] of [['a', 1], ['b', 1], ['c', 2]] as const) await h.babysitter.start(thread, url(number), 'agent')
-    h.memory.threads['a']!.closed = 'settled'; h.memory.threads['b']!.closed = 'archived'; h.memory.threads['c']!.links = []
     h.events.length = 0
+    // The Unlink press ends it at once.
+    await h.memory.unlink('c', url(2))
+    expect(h.events).toEqual(['babysit-ended-unlinked'])
+    h.memory.threads['a']!.closed = 'settled'; h.memory.threads['b']!.closed = 'archived'
     await h.pass()
     expect(h.github.questions).toEqual([])
     expect(h.delivered).toEqual([])
     expect(h.babysitter.list()).toEqual([])
-    expect(h.events).toEqual(['babysit-ended-settled', 'babysit-ended-archived', 'babysit-ended-unlinked'])
+    expect(h.events).toEqual(['babysit-ended-unlinked', 'babysit-ended-settled', 'babysit-ended-archived'])
+  })
+
+  it("goes on babysitting the branch's own pull request while the host has not read it from GitHub, and through an Unlink that leaves it the branch's", async () => {
+    const pull: ScriptedPull = { number: 1 }
+    const h = harness([pull], { a: { links: [], branch: url(1) } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    // After a restart the branch's pull request is unknown until GitHub is asked again, which may not be soon.
+    delete h.memory.threads['a']!.branch
+    pull.comments = [{ id: 'c-1', author: 'reviewer', at: at(5) }]
+    await h.pass(); await h.pass()
+    expect(h.babysitter.list()).toHaveLength(1)
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ author: 'reviewer' })] }])
+    // Unlinking a link the branch still names leaves the thread knowing it, so babysitting goes on.
+    h.memory.threads['a']!.links = [url(1)]; h.memory.threads['a']!.branch = url(1)
+    await h.memory.unlink('a', url(1))
+    expect(h.babysitter.list()).toHaveLength(1)
+    expect(h.events).not.toContain('babysit-ended-unlinked')
   })
 
   it('logs a babysitting that went with its forgotten thread as ended', async () => {

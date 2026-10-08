@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
 import { Babysitter, type BabysitEvent } from '../../../src/main/agents/babysitting'
@@ -9,6 +9,7 @@ import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import type { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { agentThreadSchema } from '../../../src/shared/agents'
+import type { GitStatus } from '../../../src/shared/gitStatus'
 
 /**
  * Babysitting on the thread's record (ADR-0061 decision 10): what a thread babysits and what it was last told live in
@@ -83,6 +84,63 @@ describe('babysitting on the thread\'s record', () => {
     await second.babysitter.pass()
     expect(second.delivered).toHaveLength(1)
     await second.babysitter.close()
+  })
+
+  it("keeps babysitting the branch's own pull request through a restart, while the host has not asked GitHub for it again", async () => {
+    let now = START
+    const clock = { now: () => now }
+    const pull: ScriptedPull = { number: 1 }
+    // A local read gives the branch's pull request from what the host last heard from GitHub, which a restart forgets.
+    let pullRequest: GitStatus['pullRequest'] = { number: 1, title: 'Pull 1', url, state: 'open', draft: false }
+    const status = (): GitStatus => ({ isRepository: true, branch: 'feat', upstream: 'origin/feat', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false,
+      dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: 1, pullRequest, fetchedAt: null, readAt: new Date(now).toISOString() })
+    const git = () => ({ read: vi.fn(async () => status()), invalidate: vi.fn() })
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    f.host.setGitStatus(git(), { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute({ type: 'send', commandId: 'send-local', threadId: 'local', messageId: 'message-local', text: 'Implement the task' })
+    const thread = (host: WorkspaceHost) => host.workspaceSnapshot().threads.find(item => item.id === 'local')!
+    await f.host.updateThreadWorktree('local', false)
+    await vi.waitFor(() => expect(thread(f.host).worktree?.git?.pullRequest?.url).toBe(url))
+    expect(thread(f.host).pullRequests).toBeUndefined()
+    const first = babysitterOver(f.host, pull, clock)
+    await expect(first.babysitter.start('local', url, 'agent')).resolves.toMatchObject({ started: true })
+    now += 2 * 60_000
+    await first.babysitter.pass()
+    await first.babysitter.close()
+    await f.stop()
+
+    // After the restart the first local read finds no pull request, and no window is in front to ask GitHub.
+    pullRequest = null
+    pull.comments = [{ id: 'c-1', author: 'reviewer', at: at(10) }]
+    now += 60 * 60_000
+    const reopened = await fixture(f.root)
+    reopened.host.setGitStatus(git(), { pollIntervalMs: () => 0 })
+    await reopened.host.updateThreadWorktree('local', false)
+    await vi.waitFor(() => expect(thread(reopened.host).worktree?.git?.readAt).toBe(new Date(now).toISOString()))
+    expect(thread(reopened.host).worktree?.git?.pullRequest).toBeNull()
+    const second = babysitterOver(reopened.host, pull, clock)
+    await second.babysitter.pass()
+    expect(second.events).not.toContain('babysit-ended-unlinked')
+    expect(second.babysitter.list('local')).toHaveLength(1)
+    expect(second.delivered.map(news => news.changes)).toEqual([[{ kind: 'remarks', remarks: [expect.objectContaining({ author: 'reviewer' })] }]])
+    await second.babysitter.close()
+  })
+
+  it('ends babysitting quietly when the user unlinks the pull request', async () => {
+    const f = await fixture()
+    await linkedThread(f)
+    const { babysitter, delivered, events } = babysitterOver(f.host, { number: 1 }, { now: () => START })
+    await babysitter.start('local', url, 'user')
+    await f.host.unlinkThreadPullRequest('local', url)
+    expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!.babysitting).toBeUndefined()
+    expect(babysitter.list()).toEqual([])
+    expect(events).toEqual(['babysit-started', 'babysit-ended-unlinked'])
+    expect(delivered).toEqual([])
+    await babysitter.close()
   })
 
   it('publishes only which pull request, who started it and since when, and drops it when babysitting ends', async () => {
