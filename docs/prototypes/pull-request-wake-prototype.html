@@ -676,7 +676,7 @@ const STORY = ['before', 'agent', 'user', 'failed', 'passed', 'queued', 'review'
 const URL_PR = 'https://github.com/example/review-app/pull/74'
 const params = new URLSearchParams(location.search)
 const state = {
-  variant: VARIANTS.some(([k]) => k === params.get('variant')) ? params.get('variant') : 'a',
+  variant: VARIANTS.some(([k]) => k === (params.get('variant') || '').toLowerCase()) ? params.get('variant').toLowerCase() : 'a',
   step: Math.max(0, STEPS.findIndex(([k]) => k === params.get('step'))),
   light: params.get('theme') === 'light',
   settings: params.get('settings') === '1',
