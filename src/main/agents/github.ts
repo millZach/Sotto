@@ -216,6 +216,8 @@ interface HostRateLimit {
   login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number
   /** The `asking` mark current when the last refusal paused the host: only an answer to a question sent after it ends the pause. */
   pausedAt: number
+  /** The mark of the question or refusal `reading` came from: only a later one replaces it. */
+  readingAt: number
 }
 
 /**
@@ -239,7 +241,7 @@ export class GitHubRateLimit {
   }
   private entry(host: string): HostRateLimit {
     let entry = this.hosts.get(host)
-    if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0, pausedAt: 0 }; this.hosts.set(host, entry) }
+    if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0, pausedAt: 0, readingAt: 0 }; this.hosts.set(host, entry) }
     return entry
   }
   /** When a question of this kind may be asked of `host`, or null when it may be asked now. */
@@ -262,8 +264,9 @@ export class GitHubRateLimit {
   /**
    * GitHub answered the question marked `asked` (`asking`): the reading it gave, if any, is kept, and the pause ends when
    * the question went after the refusal that began it. A question sent before that refusal, answered late, says nothing
-   * about GitHub since, so the pause holds until its reset. An answer from another sign-in on the same host is another
-   * rate limit, so what was known of the last one is dropped.
+   * about GitHub since, so the pause holds until its reset and the refusal's reading stands: a late answer's points
+   * left predate the refusal's. An answer from another sign-in on the same host is another rate limit, so what was
+   * known of the last one is dropped.
    */
   answered(host: string, asked: number, reading: GitHubRateLimitReading | null | undefined, login?: string | null): void {
     const entry = this.entry(host)
@@ -271,7 +274,7 @@ export class GitHubRateLimit {
     if (login) entry.login = login
     if (asked > entry.pausedAt) { entry.pauseUntil = 0; entry.failures = 0 }
     const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
-    if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
+    if (reading && Number.isFinite(resetAt) && asked > entry.readingAt) { entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }; entry.readingAt = asked }
   }
   /**
    * GitHub refused for its rate limit: background questions to `host` pause. `reading` is the one the refusal itself
@@ -283,7 +286,7 @@ export class GitHubRateLimit {
     entry.pausedAt = ++this.sequence
     entry.failures++
     const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
-    if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
+    if (reading && Number.isFinite(resetAt)) { entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }; entry.readingAt = entry.pausedAt }
     let until = now + Math.min(PAUSE_BASE_MS * 2 ** (entry.failures - 1), PAUSE_CAP_MS)
     // A primary limit, or a reading with no points left, lasts until the reset GitHub gave. A read the user asks for
     // still goes through while points remain, and says so if it is refused.

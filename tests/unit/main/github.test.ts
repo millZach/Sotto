@@ -159,6 +159,19 @@ describe('the rate limit of a sign-in', () => {
     f.limit.answered('github.com', f.limit.asking(), null, 'someone-else')
     expect(f.limit.retryAt('github.com', 'background')).toBeNull()
   })
+  it('keeps a refusal\'s reading of no points left over a late answer to a question sent before it', () => {
+    const f = setup()
+    const early = f.limit.asking()
+    f.limit.limited('github.com', 'GraphQL: API rate limit exceeded for user ID 1.', { limit: 5000, remaining: 0, resetAt: f.at(600_000) })
+    f.limit.answered('github.com', early, { limit: 5000, remaining: 4000, resetAt: f.at(600_000) }, 'me')
+    // The late answer's points predate the refusal: the user's reads stay refused until its reset.
+    expect(f.limit.retryAt('github.com', 'user')).toBe(f.now() + 600_000)
+    expect(f.limit.retryAt('github.com', 'background')).toBe(f.now() + 600_000)
+    // An answer to a question sent after the refusal is GitHub's word since, and replaces it.
+    f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 4000, resetAt: f.at(600_000) }, 'me')
+    expect(f.limit.retryAt('github.com', 'user')).toBeNull()
+    expect(f.limit.retryAt('github.com', 'background')).toBeNull()
+  })
   it('pauses until the reset after a primary limit, and logs only the event name', () => {
     const f = setup()
     f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 3, resetAt: f.at(900_000) }, 'me')
