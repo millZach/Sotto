@@ -1130,6 +1130,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return messages.map(message => message.role === 'user' && !message.wakeUp && (kept.has(message.id) || stored.has(message.id)) ? { ...message, wakeUp: true } : message)
   }
   /**
+   * Copies each thread's kept wake-up IDs from its record into the thread store once the store is durable: at start, and
+   * when Keep local history is turned on. The record keeps only the newest thousand; the store keeps every one from then
+   * on, so a wake-up recorded while history was off stays marked however many come after. A store that refuses them
+   * leaves the record to mark its thousand.
+   */
+  private seedWakeUps(): void {
+    if (this.storeUnavailable || this.threadStore.ephemeral) return
+    for (const thread of this.state.snapshot.threads) {
+      const ids = this.wakeUpRecords.get(thread.id)
+      if (ids?.length) try { this.threadStore.addWakeUps(thread.id, ids) } catch { /* The record still marks its own. */ }
+    }
+  }
+  /**
    * Records a wake-up's message ID on its thread's record, and in the thread store, before the provider hears the
    * prompt, so the message is Sotto's from its first echo, after a restart and after its history is read again
    * (ADR-0061 decision 8). A store that refuses it costs only the mark on a wake-up older than the record's newest thousand.
@@ -1203,6 +1216,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const wakeUps = this.wakeUpRecords.get(thread.id)
         if (wakeUps?.length) thread.wakeUpMessageIds = wakeUps.slice(-WAKE_UP_MESSAGE_IDS_MAX); else delete thread.wakeUpMessageIds
       }
+      this.seedWakeUps()
       snapshot.connected = false
       // A Git action that was running when the host stopped did not finish here; the folder says what it did.
       for (const thread of snapshot.threads) if (thread.gitAction?.status === 'running') thread.gitAction = { ...thread.gitAction, status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: 'Sotto stopped while this action ran. Check the folder before running it again.' }
@@ -2131,6 +2145,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           if (wanted) {
             this.saveActivities()
             this.threadStore.becomeDurable()
+            this.seedWakeUps()
           }
         } catch {
           const redactionFailed = redacting && this.historyRedactionPending

@@ -1,6 +1,9 @@
 // @vitest-environment node
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
+import { WAKE_UP_IDS_KEPT } from '../../../src/main/agents/workspace'
 import { WAKE_UP_MESSAGE_IDS_MAX } from '../../../src/shared/agents'
 
 /**
@@ -107,5 +110,45 @@ describe('a wake-up in the workspace', () => {
       expect(messages().filter(message => !message.wakeUp).map(message => message.id)).toEqual([])
       await reopened.stop()
     }
+  })
+
+  it('keeps a wake-up recorded while history was off marked once history is on, however many come after', async () => {
+    const f = await fixture(undefined, false)
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
+    await f.host.execute({ type: 'send', commandId: 'wake-0', threadId: 'local', messageId: 'wake-0', text: 'Wake-up', wakeUp: true })
+    const sessions = f.adapters.codex.state.threads
+    sessions.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!.status = 'idle'
+    await f.stop()
+    // The record is full: the thousand it keeps begin with this wake-up, as if that many had gone since.
+    const file = join(f.root, 'workspace.json')
+    const saved = JSON.parse(await readFile(file, 'utf8')) as { snapshot: { threads: Array<{ id: string; wakeUps?: string[] }> } }
+    saved.snapshot.threads.find(thread => thread.id === 'local')!.wakeUps = ['wake-0', ...Array.from({ length: WAKE_UP_IDS_KEPT - 1 }, (_, index) => `gone-${index}`)]
+    await writeFile(file, JSON.stringify(saved))
+
+    const reopened = await fixture(f.root, false)
+    reopened.adapters.codex.state.threads = structuredClone(sessions)
+    await reopened.host.connect()
+    reopened.setHistory(true); await reopened.host.privacyChanged()
+    // One more pushes the first out of the record; the thread store, kept from now on, still names it.
+    await reopened.host.execute({ type: 'send', commandId: 'wake-1', threadId: 'local', messageId: 'wake-1', text: 'Wake-up', wakeUp: true })
+    const kept = structuredClone(reopened.adapters.codex.state.threads)
+    await reopened.stop()
+    // The record no longer names the first, so after a restart only the thread store, seeded when history went on, can.
+    const restarted = await fixture(f.root)
+    restarted.adapters.codex.state.threads = kept
+    await restarted.host.connect()
+    restarted.host.observeThreads(['local'])
+    const messages = () => restarted.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+    for (let load = 0; load < 3; load++) await restarted.host.loadEarlierMessages('local')
+    const session = restarted.adapters.codex.state.threads.find(thread => thread.id === restarted.registry.byThread('local')!.sessionId)!
+    session.historyEpoch = 'rebuilt'
+    session.messages = session.messages.map(message => ({ ...message, text: `${message.text} ` }))
+    restarted.adapters.codex.emit()
+    await expect.poll(() => messages().map(message => message.id)).toEqual(['wake-0', 'wake-1'])
+    await expect.poll(() => messages()[0]?.text).toBe('Wake-up ')
+    expect(messages().map(message => [message.id, message.wakeUp ?? false])).toEqual([['wake-0', true], ['wake-1', true]])
   })
 })

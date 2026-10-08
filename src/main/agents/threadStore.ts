@@ -607,6 +607,20 @@ export class ThreadStore {
     this.wakeUpCache.set(threadId, new Set([...before, messageId]))
   }
 
+  /** Keeps every one of these wake-up message IDs with its thread, in one transaction. Throws when the store refuses them. */
+  addWakeUps(threadId: string, messageIds: readonly string[]): void {
+    const before = this.wakeUps(threadId)
+    const added = [...new Set(messageIds)].filter(id => !before.has(id))
+    if (!added.length) return
+    const db = this.requireOpen()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const id of added) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      db.exec('COMMIT')
+    } catch (error) { db.exec('ROLLBACK'); throw error }
+    this.wakeUpCache.set(threadId, new Set([...before, ...added]))
+  }
+
   /** Keeps one visual with its thread. Throws when the store refuses it, so nothing is shown that was not kept. */
   addVisual(threadId: string, stored: StoredVisual): void {
     const visual = agentVisualSchema.parse(stored.visual)
