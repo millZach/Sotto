@@ -135,9 +135,10 @@ function partialAnswer(error: unknown): z.infer<typeof rawAnswerSchema> | null {
 /**
  * Whether GitHub refused checks, rather than a detail of one: an error whose path stops at or above the check list
  * (the commit, its rollup, the list), or at one check whole. An error inside a check, such as its workflow's name,
- * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it.
+ * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it. Babysitting
+ * reads its checks' refusals the same way (ADR-0061).
  */
-function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
+export function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
   return errors.some(error => {
     const path = error?.path ?? []
     const commits = path.indexOf('commits')

@@ -20,6 +20,11 @@ export interface ScriptedPull {
   number: number; owner?: string; name?: string; title?: string
   state?: 'OPEN' | 'CLOSED' | 'MERGED'; mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'; head?: string; base?: string
   checks?: ScriptedCheck[]; comments?: ScriptedRemark[]; reviews?: ScriptedReview[]; threads?: Array<{ path: string; comments: ScriptedRemark[] }>
+  /**
+   * GitHub refuses the head's checks in the detail read, the way a partial refusal does: the whole rollup nulled, the
+   * check list nulled, or one check nulled, each with an error naming where. gh then fails with that answer on its output.
+   */
+  refuseChecks?: 'rollup' | 'list' | 'check'
 }
 export interface GhQuestion { readonly kind: 'fingerprint' | 'detail'; readonly variables: Readonly<Record<string, string>>; readonly query: string }
 
@@ -63,12 +68,19 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
         checkRunCountsByState: countsBy((pull.checks ?? []).filter(check => !check.status)), statusContextCountsByState: countsBy((pull.checks ?? []).filter(check => check.status)) } } : null } }] },
     }
   }
+  const checkNodes = (pull: ScriptedPull) => (pull.checks ?? []).map((check, index) => pull.refuseChecks === 'check' && index === 0 ? null : check.status
+    ? { __typename: 'StatusContext', context: check.name, state: check.state, targetUrl: check.url ?? `https://ci.example.com/${check.name}`, isRequired: check.required === true }
+    : { __typename: 'CheckRun', name: check.name, status: RUNNING.has(check.state) ? check.state : 'COMPLETED', conclusion: RUNNING.has(check.state) ? null : check.state,
+      detailsUrl: check.url ?? `https://github.com/o/r/actions/runs/${check.name}`, isRequired: check.required === true, checkSuite: null })
+  const rollupOf = (pull: ScriptedPull) => pull.refuseChecks === 'rollup' || !(pull.checks ?? []).length ? null
+    : { contexts: { nodes: pull.refuseChecks === 'list' ? null : checkNodes(pull) } }
+  const ROLLUP_PATH = ['repository', 'pullRequest', 'commits', 'nodes', 0, 'commit', 'statusCheckRollup']
+  /** Where GitHub says it refused the checks: the rollup, the list, or a part of the first check that cannot be empty. */
+  const checksErrorPath = (refused: NonNullable<ScriptedPull['refuseChecks']>) =>
+    refused === 'rollup' ? ROLLUP_PATH : refused === 'list' ? [...ROLLUP_PATH, 'contexts', 'nodes'] : [...ROLLUP_PATH, 'contexts', 'nodes', 0, 'checkSuite', 'workflowRun']
   const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean) => ({
     headRefOid: pull.head ?? 'head-1',
-    ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: (pull.checks ?? []).length ? { contexts: { nodes: (pull.checks ?? []).map(check => check.status
-      ? { __typename: 'StatusContext', context: check.name, state: check.state, targetUrl: check.url ?? `https://ci.example.com/${check.name}`, isRequired: check.required === true }
-      : { __typename: 'CheckRun', name: check.name, status: RUNNING.has(check.state) ? check.state : 'COMPLETED', conclusion: RUNNING.has(check.state) ? null : check.state,
-        detailsUrl: check.url ?? `https://github.com/o/r/actions/runs/${check.name}`, isRequired: check.required === true, checkSuite: null }) } } : null } }] } } : {},
+    ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: rollupOf(pull) } }] } } : {},
     ...remarks ? {
       comments: { nodes: (pull.comments ?? []).map(remarkNode) },
       reviews: { nodes: (pull.reviews ?? []).map(review => ({ ...remarkNode(review), state: review.state, submittedAt: review.publishedAt ?? review.at, comments: { totalCount: review.inline ?? 0 } })) },
@@ -98,7 +110,11 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
       return body
     }
     const pull = find(owner, name, Number(variables['number']))
-    return JSON.stringify({ data: { rateLimit: rateLimit(), repository: { pullRequest: pull ? detailOf(pull, variables['checks'] === 'true', variables['remarks'] === 'true') : null } } })
+    const checks = variables['checks'] === 'true'
+    const errors = pull?.refuseChecks && checks ? [{ type: 'FORBIDDEN', path: checksErrorPath(pull.refuseChecks), message: 'Resource not accessible by integration' }] : []
+    const body = JSON.stringify({ data: { rateLimit: rateLimit(), repository: { pullRequest: pull ? detailOf(pull, checks, variables['remarks'] === 'true') : null } }, ...errors.length ? { errors } : {} })
+    if (errors.length) throw Object.assign(new Error('gh: Resource not accessible by integration'), { stdout: body })
+    return body
   }
   return {
     run, questions,

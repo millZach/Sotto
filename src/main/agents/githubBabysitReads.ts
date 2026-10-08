@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { RATE_LIMIT_SELECTION, rateLimitSchema } from './github'
-import { checkOf } from './gitPullRequests'
+import { checkOf, checksRefused } from './gitPullRequests'
 import type { GitPullRequestCheck } from '../../shared/gitPullRequests'
 
 /**
@@ -151,7 +151,10 @@ const detailAnswerSchema = z.object({ data: z.object({
     reviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ ...remarkFields, state: loose(z.string()), submittedAt: loose(z.string()), comments: loose(z.object({ totalCount: z.number().int() })) })))) })),
     reviewThreads: loose(z.object({ nodes: loose(z.array(loose(z.object({ path: loose(z.string()), comments: loose(z.object({ nodes: loose(z.array(loose(z.object(remarkFields)))) })) })))) })),
   })) }).nullable(),
-}) })
+  }),
+  /** Where GitHub refused a part of the read: each error's path names the field it left empty. */
+  errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
+})
 
 /** One check on the head commit, as babysitting needs it. */
 export interface BabysitCheck { readonly name: string; readonly status: GitPullRequestCheck['status']; readonly url: string | null; readonly required: boolean }
@@ -175,7 +178,10 @@ export interface DetailAnswer {
   readonly rateLimit: z.infer<typeof rateLimitSchema>
   /** The head the pull request is on now, as this read saw it. */
   readonly head: string | null
-  /** The head's checks, or null when they were not asked for, or were read from another commit than the head. */
+  /**
+   * The head's checks, or null when they were not asked for, were read from another commit than the head, or GitHub
+   * refused them. Null is never no checks: the reader asks again next pass.
+   */
   readonly checks: readonly BabysitCheck[] | null
   /** Every remark read, or null when they were not asked for. */
   readonly remarks: readonly BabysitRemark[] | null
@@ -204,11 +210,17 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
   const head = pullRequest.headRefOid ?? null
   let checks: BabysitCheck[] | null = null
   if (asked.checks) {
-    const commit = pullRequest.commits?.nodes?.at(-1)?.commit
-    const nodes = commit?.statusCheckRollup?.contexts?.nodes ?? []
-    // A check GitHub nulled was refused; its absence would read as a pass, so the checks are taken as unread.
-    if ((commit === undefined || commit === null || commit.oid === head) && !nodes.some(node => node == null)) {
-      checks = nodes.flatMap(node => {
+    const commits = pullRequest.commits?.nodes
+    const commit = commits?.at(-1)?.commit
+    const rollup = commit?.statusCheckRollup
+    const nodes = rollup?.contexts?.nodes
+    // No rollup is a head with no checks. A refusal leaves the same gap with an error naming it, or nulls the check list
+    // or one check (GraphQL nulls the nearest field that may be empty), so each is taken as unread rather than as no
+    // checks, which would be recorded as read and never asked again with a failure behind it.
+    const refused = !commits || (commits.length > 0 && !commit) || checksRefused(answer.errors ?? [])
+      || (rollup != null && nodes == null) || (nodes ?? []).some(node => node == null)
+    if (!refused && (!commit || commit.oid === head)) {
+      checks = (nodes ?? []).flatMap(node => {
         if (!node) return []
         const check = checkOf({ __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
           detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: null, workflowName: node.checkSuite?.workflowRun?.workflow?.name })

@@ -371,6 +371,23 @@ describe('when GitHub cannot be read', () => {
     expect(h.delivered.map(item => [item.news.pullRequest.number, item.news.changes])).toEqual([[2, [{ kind: 'conflicting', base: 'main' }]]])
   })
 
+  it.each(['rollup', 'list', 'check'] as const)('asks again next pass for checks GitHub refused (the %s nulled), without counting a failed read', async refused => {
+    // A finished, failed check on a head that does not move: once read, nothing in the fingerprint moves to read it again.
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'lint', state: 'FAILURE' }, { name: 'test', state: 'SUCCESS' }], refuseChecks: refused }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    expect(h.delivered).toEqual([])
+    expect(h.told('a')?.failedReads).toBe(0)
+    await h.pass()
+    expect(h.github.questions.filter(question => question.kind === 'detail').map(question => question.variables['checks'])).toEqual(['true', 'true'])
+    delete pull.refuseChecks
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] }])
+    expect(h.babysitter.list()).toHaveLength(1)
+    expect(h.events).not.toContain('babysit-read-failed')
+  })
+
   it('skips a pass while only the reserve is left, without asking gh', async () => {
     const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
     await h.babysitter.start('a', url(1), 'agent')
