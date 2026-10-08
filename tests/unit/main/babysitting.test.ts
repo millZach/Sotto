@@ -200,11 +200,30 @@ describe('finding each event once', () => {
     ] }])
     await h.pass()
     expect(h.delivered).toHaveLength(2)
-    // An edit after it went out is news again.
+    // An edit after it went out is news again, found by the half-hourly read: it moves nothing in the fingerprint.
     pull.threads[0]!.comments[0]!.editedAt = at(13)
-    pull.reviews[0]!.editedAt = at(13)
-    await h.pass()
+    for (let index = 0; index < 15; index++) await h.pass()
+    expect(h.delivered).toHaveLength(3)
     expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review-comment', edited: true })] }])
+  })
+
+  it('tells a review that commented on code through its comments, and the review itself once its own text is edited', async () => {
+    const pull: ScriptedPull = { number: 1 }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    pull.threads = [{ path: 'src/a.ts', comments: [{ id: 't-1', author: 'reviewer', at: at(3) }] }]
+    pull.reviews = [{ id: 'r-1', author: 'reviewer', at: at(3), state: 'COMMENTED', inline: 1 }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review-comment', path: 'src/a.ts' })] }])
+    // The reviewer edits the review's own text after it went out: an edited review counts again (decision 6).
+    pull.reviews[0]!.editedAt = at(7)
+    await h.pass()
+    expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [
+      { kind: 'review', author: 'reviewer', review: 'commented', path: null, url: expect.stringContaining('r-1'), edited: true },
+    ] }])
+    await h.pass()
+    expect(h.delivered).toHaveLength(2)
   })
 
   it('tells each of a review\'s many comments on code once, however many went out in the same second', async () => {

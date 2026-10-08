@@ -243,10 +243,13 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
     }
     for (const node of pullRequest.reviews?.nodes ?? []) {
       const review = node?.state ? REVIEW_STATES[node.state.toUpperCase()] : undefined
-      // A pending review is the viewer's own draft. A review that only commented, with comments on the code, is told
-      // through those comments, each on its file: a reply in a review thread is such a review.
-      if (!node || !review || (review === 'commented' && (node.comments?.totalCount ?? 0) > 0)) continue
-      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, review, path: null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.submittedAt, node.lastEditedAt) })
+      // A pending review is the viewer's own draft.
+      if (!node || !review) continue
+      const times = remarkTimes(node.createdAt, node.submittedAt, node.lastEditedAt)
+      // A review that only commented, with comments on the code, is told through those comments, each on its file: a
+      // reply in a review thread is such a review. Once its own text is edited after it went out, the review is news itself.
+      if (review === 'commented' && (node.comments?.totalCount ?? 0) > 0 && times.editedAt === null) continue
+      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, review, path: null, url: linkOf(node.url), ...times })
     }
     for (const thread of pullRequest.reviewThreads?.nodes ?? []) {
       for (const node of thread?.comments?.nodes ?? []) {
