@@ -139,17 +139,24 @@ describe('worktree cleanup rules', () => {
     cleanup.start()
     await cleanup.request() // the sweep start asked for
     expect(pullRequestMerged).toHaveBeenCalledTimes(1)
-    // Saves that changed something else, such as the theme: no sweep, so GitHub is not asked.
+    // Every sweep a save asks for goes through request, which decides at once whether one runs.
+    const requested = vi.spyOn(cleanup, 'request')
+    const sweptAfter = async (index: number) => { await requested.mock.results[index]!.value }
+    // Saves that changed something else, such as the theme: no sweep is asked for, so GitHub is not asked.
     cleanup.settingsChanged(); cleanup.settingsChanged()
-    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(requested).not.toHaveBeenCalled()
     expect(pullRequestMerged).toHaveBeenCalledTimes(1)
     // A rule changed, then Auto-settle merged threads: each sweeps once.
     rules = { ...rules, afterDays: 30 }
     cleanup.settingsChanged()
-    await vi.waitFor(() => expect(pullRequestMerged).toHaveBeenCalledTimes(2))
+    expect(requested).toHaveBeenCalledTimes(1)
+    await sweptAfter(0)
+    expect(pullRequestMerged).toHaveBeenCalledTimes(2)
     autoSettle = true
     cleanup.settingsChanged()
-    await vi.waitFor(() => expect(pullRequestMerged).toHaveBeenCalledTimes(3))
+    expect(requested).toHaveBeenCalledTimes(2)
+    await sweptAfter(1)
+    expect(pullRequestMerged).toHaveBeenCalledTimes(3)
     cleanup.dispose()
   })
 })
