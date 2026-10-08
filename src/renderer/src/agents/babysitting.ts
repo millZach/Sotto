@@ -1,4 +1,4 @@
-import type { AgentClientHost, AgentThread } from '../../../shared/agents'
+import type { AgentClientHost, AgentFollowup, AgentMessage, AgentThread } from '../../../shared/agents'
 import type { AgentBabysitEnded, AgentBabysitting, BabysitEndedReason } from '../../../shared/babysitting'
 import { GITHUB_PULL_REQUEST_URL } from '../../../shared/gitPullRequests'
 
@@ -132,4 +132,28 @@ export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRe
     since: babysitClock(first.startedAt, now),
     title: babysat.map(named).join('\n'),
   }
+}
+
+/** A message babysitting sent, told by the host's own mark (ADR-0061 decision 8), never by what it says. */
+export const isWakeUpMessage = (message: Pick<AgentMessage, 'role' | 'wakeUp'>): boolean => message.role === 'user' && message.wakeUp === true
+/** Sotto's wake-up waiting in the follow-up queue: removable, never editable, moved or steered. */
+export const isWakeUpFollowup = (item: Pick<AgentFollowup, 'wakeUp'>): boolean => item.wakeUp === true
+
+const URL_IN_TEXT = /https?:\/\/[^\s<>]+/gu
+const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/gu
+/**
+ * A wake-up's text as Markdown that draws it exactly as the provider received it: every punctuation mark escaped so
+ * nothing in a check's name or a login becomes formatting, each line break kept, and each link a link.
+ */
+export function wakeUpMarkdown(text: string): string {
+  return text.split('\n').map(line => {
+    let out = '', from = 0
+    for (const match of line.matchAll(URL_IN_TEXT)) {
+      out += line.slice(from, match.index).replace(MARKDOWN_PUNCTUATION, '\\$&') + `<${match[0]}>`
+      from = match.index + match[0].length
+    }
+    return out + line.slice(from).replace(MARKDOWN_PUNCTUATION, '\\$&')
+  }).reduce((joined, line, index, lines) => index === 0 ? line
+    // A line inside a paragraph keeps its break; a blank line still parts paragraphs.
+    : joined + (lines[index - 1] !== '' && line !== '' ? '\\\n' : '\n') + line, '')
 }
