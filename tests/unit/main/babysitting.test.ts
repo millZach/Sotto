@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } from '../../../src/main/agents/babysitting'
-import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
+import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
 import { pullRequestKey } from '../../../src/main/agents/gitPullRequests'
@@ -611,5 +611,22 @@ describe('recording what a thread was told', () => {
     expect(h.github.count('fingerprint')).toBe(1)
     await h.babysitter.pass()
     expect(h.github.count('fingerprint')).toBe(1)
+  })
+})
+
+describe('whether a part of a wake-up may still go', () => {
+  const part = (patch: Partial<BabysitNews> = {}): BabysitNews => ({ pullRequest: { url: url(1), number: 1, title: 'One' }, startedBy: 'agent', head: null,
+    changes: [{ kind: 'conflicting', base: 'main' }], ended: null, startedAt: at(0), ...patch })
+  const standing = [{ url: url(1), number: 1, startedBy: 'agent' as const, startedAt: at(0) }]
+  it('sends nothing of babysitting an agent started once the switch is off, a last wake-up for a merge included', () => {
+    expect(wakeUpPartDue(part(), standing, false)).toBe(false)
+    expect(wakeUpPartDue(part({ changes: [], ended: 'merged' }), [], false)).toBe(false)
+  })
+  it('sends a last wake-up for an ending, and other news only while the same babysitting stands', () => {
+    expect(wakeUpPartDue(part({ changes: [], ended: 'merged' }), [], true)).toBe(true)
+    expect(wakeUpPartDue(part({ startedBy: 'user', changes: [], ended: 'closed' }), [], false)).toBe(true)
+    expect(wakeUpPartDue(part(), standing, true)).toBe(true)
+    expect(wakeUpPartDue(part(), [], true)).toBe(false)
+    expect(wakeUpPartDue(part(), [{ ...standing[0]!, startedAt: at(5) }], true)).toBe(false)
   })
 })

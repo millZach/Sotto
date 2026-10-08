@@ -163,12 +163,13 @@ describe('a wake-up', () => {
     expect(sends(f.host)).toHaveLength(0)
   })
 
-  it('sends nothing of babysitting the switch ended before its sweep came, while a last wake-up for a merge still goes', async () => {
+  it('sends nothing of babysitting the switch ended before its sweep came, while a last wake-up for a merge the user started still goes', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     let switchedOn = true
-    f.control.useBabysitting({ start: async () => { throw new Error('unused') }, stop: async () => 0 }, { due: (_threadId, item) => item.ended !== null || switchedOn, tool: () => true })
+    // The runtime's rule (wakeUpPartDue): an agent's news goes only while the switch is on; the user's last wake-up goes.
+    f.control.useBabysitting({ start: async () => { throw new Error('unused') }, stop: async () => 0 }, { due: (_threadId, item) => item.startedBy === 'user' || switchedOn, tool: () => true })
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
-    await f.control.deliverWakeUp('workshop', news(2, { changes: [], ended: 'merged' }), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(2, { startedBy: 'user', changes: [], ended: 'merged' }), { tool: true })
     // The switch is off, and the sweep that withdraws what agents started has not reached this thread yet.
     switchedOn = false
     complete(f.host)

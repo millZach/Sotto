@@ -23,8 +23,8 @@ import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitComm
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
-import type { BabysitNews } from './babysitNews'
-import { GitPullRequests, pullRequestKey } from './gitPullRequests'
+import { wakeUpPartDue, type BabysitNews } from './babysitNews'
+import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
@@ -189,14 +189,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
   // A part of a wake-up may go only while the babysitting it is news of still stands, and an agent's only while the
-  // switch is on; a last wake-up for an ending goes regardless. Asked as the wake-up goes, whatever withdrawal managed.
-  const wakeUpDue = (threadId: string, news: BabysitNews): boolean => {
-    if (news.ended !== null) return true
-    if (news.startedBy === 'agent' && options.babysitting?.agentTool?.() === false) return false
-    const key = pullRequestKey(news.pullRequest.url)
-    return babysitter?.list(threadId).some(item => pullRequestKey(item.url) === key && item.startedBy === news.startedBy
-      && (news.startedAt === undefined || item.startedAt === news.startedAt)) ?? true
-  }
+  // switch is on, a last one included; a user's last wake-up for an ending goes. Asked as the wake-up goes, whatever
+  // withdrawal managed.
+  const wakeUpDue = (threadId: string, news: BabysitNews): boolean =>
+    babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
   // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
   if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   let closing: Promise<void> | undefined
