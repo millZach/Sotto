@@ -1,0 +1,21 @@
+a-passed-1280x800-dark.png	A, On the surface: checks passed (two wake-ups in the thread), 1280x800, dark
+a-passed-1280x800-light.png	A, On the surface: checks passed, 1280x800, light
+a-passed-820x560-dark.png	A, On the surface: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
+a-agent-1280x800-dark.png	A, On the surface: started by the agent, 1280x800, dark
+a-received-1280x800-dark.png	A, On the surface: checks passed with what Claude received shown, 1280x800, dark
+a-merged-1280x800-dark.png	A, On the surface: merged, babysitting ended, 1280x800, dark
+a-settings-1280x800-dark.png	A, On the surface: the Settings switch's row, 1280x800, dark
+b-passed-1280x800-dark.png	B, In the transcript: checks passed (two wake-ups in the thread), 1280x800, dark
+b-passed-1280x800-light.png	B, In the transcript: checks passed, 1280x800, light
+b-passed-820x560-dark.png	B, In the transcript: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
+b-agent-1280x800-dark.png	B, In the transcript: started by the agent, 1280x800, dark
+b-received-1280x800-dark.png	B, In the transcript: checks passed with what Claude received shown, 1280x800, dark
+b-merged-1280x800-dark.png	B, In the transcript: merged, babysitting ended, 1280x800, dark
+b-settings-1280x800-dark.png	B, In the transcript: the Settings switch's row, 1280x800, dark
+c-passed-1280x800-dark.png	C, A state of its own: checks passed (two wake-ups in the thread), 1280x800, dark
+c-passed-1280x800-light.png	C, A state of its own: checks passed, 1280x800, light
+c-passed-820x560-dark.png	C, A state of its own: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
+c-agent-1280x800-dark.png	C, A state of its own: started by the agent, 1280x800, dark
+c-received-1280x800-dark.png	C, A state of its own: checks passed with what Claude received shown, 1280x800, dark
+c-merged-1280x800-dark.png	C, A state of its own: merged, babysitting ended, 1280x800, dark
+c-settings-1280x800-dark.png	C, A state of its own: the Settings switch's row, 1280x800, dark

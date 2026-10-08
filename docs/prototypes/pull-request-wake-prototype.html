@@ -1,0 +1,1013 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything. Issue #822, ADR-0061.
+
+  Question: a thread can babysit its pull request. While it does, Sotto reads GitHub on the thread's host and sends
+  the thread a wake-up when a check fails, the required checks pass, someone else comments or reviews, the branch
+  starts to conflict, or the pull request merges or closes (which ends it). Zach's decisions in #821 are settled.
+  What this file asks him to pick is the look:
+    1. where Start and Stop sit on the Pull request surface
+    2. how a babysitting thread looks in its sidebar row
+    3. how it looks in its pane
+    4. how a wake-up reads in the thread
+    5. what the Settings switch is called and where it sits
+
+  Three variants on ?variant=a|b|c, switched from the bar at the bottom (left and right arrow keys too, unless the
+  focus is in a field). Each answers every question differently where the options allow:
+   a  On the surface.     A switch row in the Pull request surface's foot (1C). The sidebar row keeps Done with a
+                          small pull request mark (2B). A quiet line above the composer, "Babysitting #74 · Stop"
+                          (3A). A wake-up is a compact row in Sotto's voice that opens to the full message (4A).
+                          Settings → Git (5B).
+   b  In the transcript.  An icon button in the surface's header, shown pressed while babysitting (1A). The row
+                          reads "Done · Babysitting #74" (2C). A ring on the branch toolbar's pull request badge
+                          (3B). Starting puts a live card in the transcript, and each wake-up is a card in the
+                          merge checklist's style with a press per link (4C). Settings → Application (5A).
+   c  A state of its own. A line docked under the checklist above Merge, Babysit pull request in the ··· menu when
+                          off (1B). The row's state word is Babysitting (2A). A fourth creature pose above the
+                          composer, and the state in the pane header (3C). A wake-up is a message on the user's
+                          side, labelled Sotto, showing the whole text (4B). Settings → Application (5A).
+
+  Step (the bar, or [ and ]) walks: before, started by the agent, started by you, a check failed, checks passed,
+  a review comment, conflict, merged. From "a check failed" on, the story continues from the agent's start.
+  Stop and Babysit pull request work in every state. "Open Settings" opens the variant's Settings page.
+  Query: ?variant=a&step=passed&theme=light&settings=1&open=last&bar=0 (bar=0 hides the bar for captures).
+  Open the file in a browser; nothing to run, no network.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - babysitting a pull request, three variants (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* The Sotto theme, copied from src/renderer/src/styles/tokens.css: the first-paint --theme-* roles for dark and
+   light, and the --tt-* tokens derived from them. Feature rules below read only --tt-*. */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-toolbar: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280); --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265); --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-secondary: oklch(0.155 0.008 265); --theme-muted: oklch(0.155 0.008 265); --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error: oklch(0.655108 0.221148 23.473); --theme-error-foreground: oklch(0.702184 0.189226 22.228); --theme-error-surface: oklch(0.29 0.04 20);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038); --theme-warning-surface: oklch(0.315 0.032 80);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-update-surface: oklch(0.26 0.04 185);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-sidebar: oklch(0.235 0.003 265); --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+  --theme-contrast-base: 100%; --theme-contrast-boost: 0%; --theme-contrast-border-boost: 0%; --theme-contrast-target: white;
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-claude: #e3b58e;
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-toolbar: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75); --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80); --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-secondary: oklch(0.93 0.01 85); --theme-muted: oklch(0.945 0.008 85); --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.535 0.015 78);
+  --theme-error: oklch(0.637823 0.237287 25.436); --theme-error-foreground: oklch(0.509494 0.208583 28.513); --theme-error-surface: oklch(0.94 0.02 25);
+  --theme-warning-foreground: oklch(0.546927 0.155556 45.359); --theme-warning-surface: oklch(0.955 0.018 80);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-update-surface: oklch(0.92 0.03 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-sidebar: oklch(0.955 0.008 85); --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --theme-contrast-target: black;
+  --tt-success: oklch(0.5 0.11 158);
+  --tt-provider-claude: #e2ad80;
+  --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+  --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-hairline: color-mix(in srgb, color-mix(in srgb, var(--theme-border) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-field-border: color-mix(in srgb, color-mix(in srgb, var(--theme-input) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-border: color-mix(in srgb, color-mix(in srgb, color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground)) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-secondary: var(--theme-secondary);
+  --tt-warning-text: color-mix(in oklab, color-mix(in oklab, var(--theme-warning-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-error-text: color-mix(in oklab, color-mix(in oklab, var(--theme-error-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-activity: var(--tt-accent-text);
+  --tt-link: var(--tt-accent-text);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-pill: 999px;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 var(--tt-font-ui); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.i { flex: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.pmark { flex: none; display: block; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.drag { -webkit-app-region: drag; user-select: none; }
+.drag :is(button, input, a, select) { -webkit-app-region: no-drag; }
+
+/* The window: sidebar, the thread pane, the Tools panel (src/renderer/src/agents/threads.css, tools/toolsRail.css).
+   At the 820 minimum the project sidebar steps aside while Tools is open, as the real window does. */
+:root { --side-w: 300px; --tools-w: 520px; }
+@media (min-width: 1500px) { :root { --side-w: 320px; --tools-w: 640px; } }
+@media (max-width: 1000px) { :root { --side-w: 0px; --tools-w: 452px; } .side { display: none !important; } }
+.app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--tools-w); height: 100vh; }
+@media (max-width: 1000px) { .app { grid-template-columns: minmax(0, 1fr) var(--tools-w); } }
+body[data-settings] .app { display: none; }
+
+/* ---------- Sidebar (threadSidebar.css) ---------- */
+.side { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
+.side__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; cursor: pointer; }
+.seg button[aria-pressed='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.seg--icons button { padding: 0 7px; }
+.ibtn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.ibtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.ibtn[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.search > svg { position: absolute; left: 9px; pointer-events: none; }
+.search input { width: 100%; height: 100%; padding: 0 10px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 13px; }
+.search input::placeholder { color: var(--tt-text-muted); }
+.side__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.folder { margin: 0 0 14px; }
+.folder__toggle { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.folder__toggle:hover { background: var(--tt-hover); }
+.folder__toggle > svg { color: var(--tt-text-muted); }
+.folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--tt-hover); }
+.row[data-current] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.row__item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 5px; align-items: center; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; }
+.row__title { overflow: hidden; font-size: 14px; font-weight: 500; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.row[data-current] .row__title { color: var(--tt-text); }
+.row__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.row__provider { color: var(--tt-provider-claude); }
+:root[data-theme='light'] .row__provider { color: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text)); }
+.row__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; white-space: nowrap; }
+.row__status > span { overflow: hidden; text-overflow: ellipsis; }
+.row__status[data-state='working'] { color: var(--tt-activity); }
+.row__status[data-state='working'] > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.row__status[data-state='babysitting'] { color: var(--tt-text-2); }
+/* B (sidebar): the small pull request mark beside the state, its number in the tooltip. */
+.row__pr { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--tt-accent-text); }
+.ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+@media (prefers-reduced-motion: no-preference) { .ring[data-state='working'] { animation: spin 1.5s linear infinite; } }
+@keyframes spin { to { rotate: 360deg; } }
+.settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; text-align: left; cursor: pointer; }
+.settled:hover { background: var(--tt-hover); color: var(--tt-text); }
+.side__foot { flex: none; padding: 8px 8px 10px; border-top: 1px solid var(--tt-hairline); }
+.side__foot .seg { display: flex; width: 100%; margin-bottom: 8px; padding: 3px; }
+.side__foot .seg button { flex: 1; height: 30px; font-size: 13px; }
+.side__pages { display: flex; align-items: center; gap: 2px; }
+.side__pages > :last-child { margin-left: auto; }
+
+/* ---------- Thread pane (threads.css) ---------- */
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; container: pane / inline-size; }
+.head { display: flex; flex: none; align-items: center; gap: 4px; height: 44px; padding: 0 6px 0 18px; }
+.head__title { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; }
+.head__mark { color: var(--tt-text); }
+.head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+.head__crumb { flex: none; color: var(--tt-text-muted); font-size: 14px; white-space: nowrap; }
+.head__branch { display: inline-flex; flex: 0 2 auto; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-size: 14px; white-space: nowrap; }
+.head__branch > svg { color: var(--tt-text-muted); }
+/* C (pane): the thread's state, said in its header. */
+.head__state { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.head__state > svg { color: var(--tt-accent-text); }
+.head__actions { display: flex; flex: none; align-items: center; gap: 4px; margin-left: 6px; }
+.git-action { display: inline-flex; align-items: stretch; height: 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
+.git-action > button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; background: transparent; color: var(--tt-text-2); font-size: 13.5px; cursor: pointer; border-radius: 7px 0 0 7px; }
+.git-action > button + button { width: 28px; justify-content: center; padding: 0; border-left: 1px solid var(--tt-hairline); border-radius: 0 7px 7px 0; }
+.git-action > button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pane-ibtn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-ibtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pane-ibtn[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+@container pane (max-width: 640px) { .head__crumb { display: none; } }
+@container pane (max-width: 560px) { .head__branch { display: none; } .git-action__word { display: none; } .head { padding-left: 14px; } }
+@container pane (max-width: 420px) { .head__state > span { display: none; } .head__state { padding: 0 6px; } }
+
+.transcript { flex: 1; min-height: 120px; overflow-y: auto; padding: 18px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@container pane (max-width: 520px) { .transcript { padding-inline: 16px; } }
+.msg { position: relative; margin: 0 0 26px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-weight: 500; }
+.msg time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.msg__text { margin: 0; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.msg__text + .msg__text { margin-top: 10px; }
+.msg__text code { padding: 1px 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; font-family: var(--tt-font-mono); font-size: 13px; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
+.msg[data-role='user'] .msg__text { color: var(--tt-text); }
+.activity { display: grid; gap: 2px; margin: 0 0 12px; padding-left: 12px; border-left: 1px solid var(--tt-hairline); }
+.act { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; color: var(--tt-text-2); font-size: 14px; }
+.act > svg { color: var(--tt-text-muted); }
+.act code { overflow: hidden; font-family: var(--tt-font-mono); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.act strong { font-weight: 500; color: var(--tt-text); }
+.act__by { margin-left: auto; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.working { display: flex; align-items: center; gap: 8px; margin: -8px 0 22px; color: var(--tt-activity); font-size: 14px; }
+.working > i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* The Sotto mark, small, for what Sotto says in a thread. */
+.smark { flex: none; display: block; }
+.smark rect:first-child { fill: var(--tt-accent); }
+.smark rect + rect, .smark path { fill: none; stroke: var(--tt-on-accent); }
+.smark rect + rect { fill: var(--tt-on-accent); stroke: none; }
+
+/* ---------- 4A: the compact wake-up row ---------- */
+.wake { margin: 0 0 22px; }
+.wake__row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 5px 8px 5px 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 14px; text-align: left; cursor: pointer; }
+.wake__row:hover { background: var(--tt-hover); }
+.wake__who { flex: none; color: var(--tt-text); font-weight: 500; }
+.wake__sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wake__time { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wake__row > .i:last-child { color: var(--tt-text-muted); transition: rotate .16s; }
+.wake__row[aria-expanded='true'] > .i:last-child { rotate: 90deg; }
+.wake__body { margin: 4px 0 0 30px; padding: 10px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; }
+.raw-caption { margin: 0 0 6px; color: var(--tt-text-muted); font-size: 12px; }
+.raw { margin: 0; color: var(--tt-text-2); font: 13px/1.6 var(--tt-font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- 4C: the wake-up card, in the merge checklist's style; and the live card a start puts in the transcript ---------- */
+.wcard { margin: 0 0 24px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); container: wcard / inline-size; }
+.wcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 9px 12px; color: var(--tt-text-muted); font-size: 12.5px; }
+.wcard__head strong { color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.wcard__head time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.wcard__lines { margin: 0; padding: 0; list-style: none; }
+.wcard__line { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 9px 12px; border-top: 1px solid var(--tt-hairline); }
+.wcard__line > svg { color: var(--tt-text-muted); }
+.wcard__line[data-tone='done'] > svg { color: var(--tt-success); }
+.wcard__line[data-tone='failed'] > svg { color: var(--tt-error-text); }
+.wcard__line[data-tone='open'] > svg { color: var(--tt-warning-text); }
+.wcard__line[data-tone='merged'] > svg { color: var(--tt-activity); }
+.wcard__line strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.wcard__line small { display: block; color: var(--tt-text-muted); font-size: 12.5px; }
+.wcard__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; border-top: 1px solid var(--tt-hairline); }
+.wcard__raw-wrap { padding: 4px 12px 12px; }
+.qbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font-size: 13px; cursor: pointer; }
+.qbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.qbtn > .i { transition: rotate .16s; }
+.qbtn[aria-expanded='true'] > .i { rotate: 90deg; }
+.babysit-card { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; margin: 0 0 24px; padding: 11px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); container: wcard / inline-size; }
+.babysit-card[data-ended] { border-color: var(--tt-hairline); }
+.babysit-card > svg { color: var(--tt-accent-text); }
+.babysit-card[data-ended] > svg { color: var(--tt-text-muted); }
+.babysit-card strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.babysit-card small { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+@container wcard (max-width: 420px) {
+  .wcard__line, .babysit-card { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
+  .wcard__line > .tt-button, .babysit-card > .tt-button { grid-column: 2; justify-self: start; margin-top: 6px; }
+  .wcard__line > svg, .babysit-card > svg { margin-top: 2px; }
+}
+
+/* ---------- 4B: the wake-up as a message on the user's side, labelled Sotto ---------- */
+.msg[data-role='sotto'] { margin-left: max(24px, 12%); padding: 12px 16px 14px; border: 1px solid var(--tt-accent-border); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
+.msg[data-role='sotto'] .msg__who { color: var(--tt-text); }
+.msg__tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 11.5px; line-height: 18px; }
+.msg[data-role='sotto'] .raw { color: var(--tt-text); font-size: 13.5px; line-height: 1.55; }
+
+/* ---------- Composer (threads.css, composer.css, branchToolbar.css) ---------- */
+.compose { position: relative; display: flex; flex: none; flex-direction: column; padding: 8px max(24px, calc((100% - 760px) / 2)) 16px; }
+@container pane (max-width: 520px) { .compose { padding-inline: 16px; } }
+.prompt { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt:focus-within { border-color: var(--tt-field-border-focus); }
+.prompt textarea { grid-column: 1 / -1; display: block; width: 100%; min-height: 60px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt__clip { grid-column: 1; align-self: end; margin: 0 2px 1px -8px; }
+.prompt__foot { grid-column: 2; display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.prompt__chips { display: flex; flex: 1; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.chip .pmark { color: var(--tt-provider-claude); }
+:root[data-theme='light'] .chip .pmark { color: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text)); }
+.send { display: grid; flex: none; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); cursor: pointer; }
+.branch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 8px 2px 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.branch-toolbar__end { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-left: auto; }
+.btb { position: relative; display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); white-space: nowrap; }
+button.btb { cursor: pointer; }
+button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hover); color: var(--tt-text); }
+.btb--static { padding-left: 9px; color: var(--tt-text-muted); }
+.btb--static > svg { color: var(--tt-text-faint); }
+.btb--branch { max-width: 220px; font-family: var(--tt-font-mono); font-size: 12px; }
+.btb--branch > span { overflow: hidden; text-overflow: ellipsis; }
+.btb--pr { gap: 4px; font-size: 12px; }
+.btb--pr > svg { color: var(--tt-success); }
+.btb--pr[data-state='merged'] > svg { color: var(--tt-accent-text); }
+/* 3B: a ring on the pull request badge while it is babysat, and a dot that says so without colour alone. */
+.btb--pr[data-babysat] { border-color: var(--tt-accent); box-shadow: 0 0 0 1px var(--tt-accent); }
+.btb--pr[data-babysat]::after { content: ''; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--tt-accent); box-shadow: 0 0 0 2px var(--tt-canvas); }
+
+/* 3A: the quiet line above the composer, where the creature would stand. */
+.babysit-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 30px; margin: 0 6px 6px; color: var(--tt-text-muted); font-size: 13px; }
+.babysit-line > svg { color: var(--tt-accent-text); }
+.babysit-line strong { color: var(--tt-text-2); font-weight: 500; }
+.linkbtn { min-height: 26px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-link); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.linkbtn:hover { background: var(--tt-hover); }
+
+/* 3C: a fourth pose for the composer's creature (threadMonitor.css): it stands by its pull request's sign. */
+.ornament { position: relative; height: 64px; margin-bottom: 4px; padding: 0 14px; display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, min(200px, 52%)); align-items: end; pointer-events: none; }
+.ornament svg { display: block; width: 80px; height: 64px; }
+.mon-color { fill: var(--tt-activity); }
+.mon-ink { fill: var(--tt-canvas); }
+.mon-shine { fill: var(--tt-text); }
+.mon-handle { fill: var(--tt-border); }
+.mon-task { pointer-events: auto; min-width: 0; margin-bottom: -5px; padding: 8px 12px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--tt-surface); }
+.mon-task b { display: block; overflow: hidden; color: var(--tt-text); font-size: 13px; font-weight: 400; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.mon-task span { display: block; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) { .mon-eyes { animation: blink 5s steps(1) infinite; } }
+@keyframes blink { 0%, 96% { opacity: 1; } 97%, 99% { opacity: 0; } }
+
+/* ---------- Tools panel and the Pull request surface (toolsRail.css, pullRequestSurface.css) ---------- */
+.tools { display: flex; min-width: 0; min-height: 0; border-left: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-text-2); }
+.rail { display: flex; flex: none; flex-direction: column; align-items: center; gap: 8px; width: 58px; padding: 50px 0 8px; border-left: 1px solid var(--tt-hairline); }
+.rail__tabs { display: flex; flex-direction: column; gap: 2px; }
+.rail__tab { position: relative; display: grid; place-items: center; align-content: center; gap: 4px; width: 50px; height: 50px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; line-height: 1; cursor: pointer; }
+.rail__tab:hover { background: var(--tt-hover); color: var(--tt-text); }
+.rail__tab[aria-current='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.rail__tab[aria-current='true']::before { content: ''; position: absolute; top: 13px; right: 0; bottom: 13px; width: 0; border-radius: 2px; box-shadow: 3px 0 0 1px var(--tt-activity); }
+.rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 40px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
+.tools__main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; container: tools-body / inline-size; }
+.chrome { position: relative; display: flex; flex: none; align-items: center; gap: 6px; min-width: 0; height: 44px; padding: 0 92px 0 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 14px; }
+.chrome__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.chrome__lead > svg[data-state='open'] { color: var(--tt-success); }
+.chrome__lead > svg[data-state='merged'] { color: var(--tt-activity); }
+.pr-name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pr-name span { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.tag { flex: none; padding: 1px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
+.chrome__actions { position: relative; display: flex; flex: none; align-items: center; gap: 2px; }
+.cbtn { position: relative; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.cbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.cbtn[aria-expanded='true'] { background: var(--tt-selected); color: var(--tt-text); }
+/* 1A: the header button, shown pressed while babysitting. */
+.cbtn[data-on] { background: var(--tt-selected); color: var(--tt-accent-text); box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
+.menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; display: grid; width: 250px; max-width: calc(100cqw - 24px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.menu button { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font-size: 13px; text-align: left; cursor: pointer; }
+.menu button > svg { color: var(--tt-text-muted); }
+.menu button:hover, .menu button:focus-visible { background: var(--tt-hover); outline: none; }
+.menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.menu hr { height: 1px; margin: 4px 2px; border: 0; background: var(--tt-hairline); }
+
+.pr-notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; }
+.pr-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pr-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: 16px; font-weight: 550; }
+.pr-heading small { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
+.pr-heading small[data-tone='done'] { color: var(--tt-success); }
+.pr-lines { margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); list-style: none; }
+.pr-line { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); }
+.pr-line:first-child { border-top: 0; }
+.pr-line > svg { color: var(--tt-text-muted); }
+.pr-line[data-tone='done'] > svg { color: var(--tt-success); }
+.pr-line[data-tone='failed'] > svg { color: var(--tt-error-text); }
+.pr-line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
+.pr-line strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.pr-line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
+.pr-why { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.tt-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 30px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; line-height: 1.2; white-space: nowrap; cursor: pointer; }
+.tt-button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.tt-button--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.tt-button--primary:hover:not(:disabled) { border-color: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.tt-button--primary[aria-disabled='true'] { border-color: var(--tt-field-border); background: var(--tt-secondary); color: var(--tt-text-muted); cursor: not-allowed; filter: none; }
+.pr-dock { position: sticky; bottom: -24px; z-index: 2; margin: 0 -16px; padding: 14px 16px 12px; background: var(--tt-sidebar); }
+.pr-merge { display: flex; gap: 8px; }
+.pr-merge .tt-button { min-height: 44px; font-size: 15px; }
+.pr-merge__go { flex: 1; min-width: 0; }
+.pr-hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.pr-finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+.pr-finished > svg { color: var(--tt-activity); }
+.pr-finished strong { display: block; color: var(--tt-text); font-weight: 500; }
+.pr-finished span { color: var(--tt-text-muted); font-size: 13px; }
+.pr-fold { border-top: 1px solid var(--tt-hairline); }
+.pr-dock + .pr-fold, .pr-finished + .pr-fold { margin-top: 6px; }
+.pr-fold__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.pr-fold__head > svg { color: var(--tt-text-muted); }
+.pr-fold__head span { color: var(--tt-text-muted); font-weight: 400; }
+/* 1B: the line docked under the checklist, above Merge. */
+.pr-babysat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; padding: 8px 8px 8px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); }
+.pr-babysat > svg { color: var(--tt-accent-text); }
+.pr-babysat__text { flex: 1 1 160px; min-width: 0; }
+.pr-babysat__text strong { display: block; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.pr-babysat__text small { display: block; color: var(--tt-text-muted); font-size: 12.5px; }
+.pr-babysat[data-ended] { border-color: var(--tt-hairline); background: transparent; }
+.pr-babysat[data-ended] > svg { color: var(--tt-text-muted); }
+.pr-babysat--after { margin: 14px 0 0; }
+/* 1C: a switch row in the surface's foot, with who started it and since when underneath. */
+.pr-foot-switch { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 2px 16px; width: 100%; flex: none; padding: 10px 16px; border: 0; border-top: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
+.pr-foot-switch:disabled { cursor: not-allowed; }
+.pr-foot-switch strong { display: block; font-size: 13.5px; font-weight: 500; }
+.pr-foot-switch small { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.pr-foot-switch:hover:not(:disabled) { background: var(--tt-hover); }
+.tools__foot { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 6px 0 14px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.tools__copy { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-2); }
+.tools__copy b { flex: none; font-weight: 500; }
+.tools__copy code { min-width: 0; overflow: hidden; font-family: var(--tt-font-mono); text-overflow: ellipsis; }
+.tools__copy .muted { color: var(--tt-text-muted); overflow: hidden; text-overflow: ellipsis; }
+.tools__foot-actions { display: flex; margin-left: auto; }
+@container tools-body (max-width: 479px) {
+  .pr-line { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
+  .pr-line > svg { margin-top: 1px; }
+  .pr-line .tt-button { grid-column: 2; justify-self: start; margin-top: 8px; }
+}
+@container tools-body (max-width: 439px) { .pr-body { padding-inline: 12px; } .pr-dock { margin-inline: -12px; padding-inline: 12px; } .tools__copy .muted { display: none; } }
+
+/* The switch (global.css .tt-toggle): checked is the text colour with a canvas thumb. */
+.track { position: relative; display: block; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); background: var(--tt-surface-sunken); }
+.track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform .12s; }
+[aria-checked='true'] > .track { border-color: var(--tt-text); background: var(--tt-text); }
+[aria-checked='true'] > .track::after { background: var(--tt-canvas); transform: translateX(16px); }
+:disabled > .track { opacity: .5; }
+
+/* The window's own controls (Windows): drawn by the system over the top right, not in the page's tab order. */
+.winctl { position: fixed; top: 0; right: 0; z-index: 30; display: flex; height: 44px; color: var(--tt-text-2); pointer-events: none; }
+.winctl span { display: grid; place-items: center; width: 46px; }
+
+/* ---------- Settings (global.css settings rows) ---------- */
+.settings { display: none; grid-template-columns: var(--side-w-settings, 300px) minmax(0, 1fr); height: 100vh; }
+body[data-settings] .settings { display: grid; }
+@media (max-width: 1000px) { .settings { --side-w-settings: 230px; } }
+.settings__nav { display: flex; flex-direction: column; min-height: 0; padding: 0 10px; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
+.settings__nav .side__top { padding-left: 4px; }
+.settings__nav h1 { margin: 10px 8px 14px; font-size: 22px; font-weight: 600; letter-spacing: -.4px; }
+.snav { display: grid; align-content: start; flex: 1 1 auto; gap: 2px; min-height: 0; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.snav hr { height: 1px; margin: 6px 10px; border: 0; background: var(--tt-hairline); }
+.snav button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 14px; text-align: left; cursor: pointer; }
+.snav button:hover { background: var(--tt-hover); }
+.snav button[aria-current='page'] { background: var(--tt-selected); color: var(--tt-text); }
+.snav button > svg { color: var(--tt-text-muted); }
+.settings__nav .side__foot { margin: 0 -10px; }
+.settings__main { min-width: 0; overflow-y: auto; padding: 56px 32px 64px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@media (max-width: 1000px) { .settings__main { padding: 52px 18px 64px; } }
+.settings__inner { max-width: 760px; margin: 0 auto; }
+.s-heading { display: flex; align-items: start; gap: 10px; margin: 0 0 10px; }
+.s-heading > svg { margin-top: 2px; color: var(--tt-accent-text); }
+.s-heading h2 { margin: 0; color: var(--tt-text); font-size: 13.5px; font-weight: 600; }
+.s-heading p { margin: 1px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.s-rows { margin: 0 0 26px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); box-shadow: var(--tt-shadow-sm); }
+.s-rows > * + * { border-top: 1px solid var(--tt-hairline); }
+.s-toggle { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 24px; width: 100%; min-height: 50px; padding: 10px 16px; border: 0; background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
+.s-toggle strong { display: block; font-size: 13px; font-weight: 500; }
+.s-toggle small, .s-field small { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.s-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1px 24px; min-height: 50px; padding: 10px 16px; }
+.s-field strong { display: block; font-size: 13px; font-weight: 500; }
+.s-field select { width: 200px; height: 34px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); }
+.s-row--new { position: relative; }
+.s-save { max-width: 760px; margin: 0 auto; color: var(--tt-text-muted); font-size: 12.5px; text-align: right; }
+@media (max-width: 760px) { .s-field { grid-template-columns: minmax(0, 1fr); } .s-field select { width: 100%; } }
+
+/* ---------- The prototype's own bar: not part of the design ---------- */
+.proto { position: fixed; left: 50%; bottom: 10px; z-index: 100; display: flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 4px; max-width: calc(100vw - 16px); padding: 5px 6px; border: 2px dashed #fff; border-radius: 18px; background: #a3134f; color: #fff; font: 600 12.5px/1.2 system-ui, 'Segoe UI', sans-serif; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); transform: translateX(-50%); }
+.proto button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 18%); color: #fff; font: inherit; cursor: pointer; white-space: nowrap; }
+.proto button:hover { background: rgb(255 255 255 / 30%); }
+.proto button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.proto output { padding: 0 6px; white-space: nowrap; text-align: center; }
+.proto__tag { padding: 2px 7px; border-radius: 6px; background: #fff; color: #a3134f; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.proto__sep { width: 1px; height: 18px; margin: 0 2px; background: rgb(255 255 255 / 45%); }
+body[data-nobar] .proto { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <nav class="side" id="side" aria-label="Threads"></nav>
+  <main class="pane" id="pane"></main>
+  <aside class="tools" id="tools" aria-label="Tools"></aside>
+</div>
+<div class="settings" id="settings"></div>
+<div class="winctl" aria-hidden="true"><span>&#x2014;</span><span>&#x25A2;</span><span>&#x2715;</span></div>
+
+<div class="proto" role="region" aria-label="Prototype controls, not part of the design">
+  <span class="proto__tag">Prototype</span>
+  <button type="button" id="pv" aria-label="Show the previous variant">&larr;</button>
+  <output id="vlabel" aria-live="polite"></output>
+  <button type="button" id="nv" aria-label="Show the next variant">&rarr;</button>
+  <span class="proto__sep"></span>
+  <button type="button" id="ps" aria-label="Go to the previous step">&lsaquo;</button>
+  <output id="slabel" aria-live="polite"></output>
+  <button type="button" id="ns" aria-label="Go to the next step">&rsaquo;</button>
+  <span class="proto__sep"></span>
+  <button type="button" id="sb"></button>
+  <button type="button" id="tb"></button>
+</div>
+
+<script>
+const CLAUDE = 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z'
+const I = {
+  pr: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>',
+  merge: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  ok: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  fail: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  run: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  open: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  alarm: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/>',
+  alarmOff: '<path d="M6.87 6.87a8 8 0 1 0 11.26 11.26"/><path d="M19.9 14.25a8 8 0 0 0-9.15-9.15"/><path d="m22 6-3-3"/><path d="M6.26 18.67 4 21"/><path d="m2 2 20 20"/><path d="M4 4 2 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  term: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/>',
+  tree: '<path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/>',
+  compare: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  expand: '<path d="m15 15 6 6"/><path d="m15 9 6-6"/><path d="M21 16v5h-5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="m3 21 6-6"/><path d="M3 8V3h5"/><path d="M9 9 3 3"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
+  panelLeft: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  panelRight: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  chats: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  folderOpen: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><path d="M8 2v3"/><path d="M2 8h3"/><path d="M16 22v-3"/><path d="M22 16h-3"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  wave: '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
+  spark: '<path d="M9.94 14.06 4 20"/><path d="m14 4 1.5 3L19 8.5 15.5 10 14 13l-1.5-3L9 8.5 12.5 7z"/>',
+  cmd: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
+  arrow: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  palette: '<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  sliders: '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>'
+}
+const ico = (name, size = 16, extra = '') => `<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false"${extra}>${I[name]}</svg>`
+const claude = (size = 16) => `<svg class="pmark" viewBox="0 0 256 257" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path d="${CLAUDE}"/></svg>`
+const smark = (size = 18) => `<svg class="smark" viewBox="0 0 96 96" width="${size}" height="${size}" aria-hidden="true" focusable="false"><rect width="96" height="96" rx="22"/><rect x="26" y="20" width="9" height="56" rx="4.5"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke-width="7.5" stroke-linecap="round"/></svg>`
+
+const VARIANTS = [['a', 'On the surface'], ['b', 'In the transcript'], ['c', 'A state of its own']]
+const STEPS = [
+  ['before', 'Before', '2:03 pm'],
+  ['agent', 'Started by the agent', '2:02 pm'],
+  ['user', 'Started by you', '2:04 pm'],
+  ['failed', 'A check failed', '2:10 pm'],
+  ['passed', 'Checks passed', '2:32 pm'],
+  ['review', 'A review comment', '3:11 pm'],
+  ['conflict', 'Conflict', '3:43 pm'],
+  ['merged', 'Merged', '4:06 pm']
+]
+const URL_PR = 'https://github.com/example/review-app/pull/74'
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: VARIANTS.some(([k]) => k === params.get('variant')) ? params.get('variant') : 'a',
+  step: Math.max(0, STEPS.findIndex(([k]) => k === params.get('step'))),
+  light: params.get('theme') === 'light',
+  settings: params.get('settings') === '1',
+  bar: params.get('bar') !== '0',
+  manual: null,
+  menu: false,
+  open: new Set(),
+  agentsMayBabysit: true,
+  toScroll: true
+}
+if (params.get('open') === 'last') state.openLast = true
+
+/* What babysitting is doing at this step, after any Stop or Babysit press. */
+function info() {
+  const i = state.step
+  const now = STEPS[i][2]
+  let on = i >= 1 && i <= 6
+  let by = i === 2 ? 'you' : 'Claude'
+  let at = i === 2 ? '2:04 pm' : '2:02 pm'
+  let ended = i === 7 ? 'merged' : null
+  if (state.manual === 'off' && on) { on = false; ended = 'stopped' }
+  if (state.manual === 'on' && !on && i !== 7) { on = true; by = 'you'; at = now; ended = null }
+  return { on, by, at, ended, now, merged: i === 7, working: [3, 5, 6].includes(i), agentStarted: i === 1 || i >= 3 }
+}
+const started = b => b.by === 'you' ? `Started by you at ${b.at}` : `Started by Claude at ${b.at}`
+const endedText = b => b.ended === 'merged' ? 'Ended when #74 merged at 4:05 pm.' : `You stopped it at ${b.now}.`
+
+/* The wake-ups, in order. `text` is what Claude receives, word for word: Sotto's words, never a commenter's. */
+const TAIL = '\n\nLook into each item and act as your task needs. Read the checks and comments yourself with gh. Sotto keeps babysitting this pull request and will wake you again when something else changes. To stop, call stop_babysitting.'
+const HEAD = 'Sotto is babysitting a pull request for this thread, and it changed.\n\n#74 Greet the reviewer\n' + URL_PR + '\n\n'
+const WAKES = [
+  { at: '2:09 pm', step: 3, sum: '#74: 1 check failed',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'CI / Owned build failed', link: 'View check' }],
+    text: HEAD + '- A check failed: CI / Owned build\n  https://github.com/example/review-app/actions/runs/4182/job/9921' + TAIL },
+  { at: '2:31 pm', step: 4, sum: '#74: required checks passed',
+    lines: [{ tone: 'done', icon: 'ok', text: 'Required checks passed', sub: '3 checks on 9f3c2ab', link: 'View checks' }],
+    text: HEAD + '- The required checks passed on 9f3c2ab: CI / Owned build, CI / Unit tests, CI / Lint\n  ' + URL_PR + '/checks' + TAIL },
+  { at: '3:10 pm', step: 5, sum: '#74: mira requested changes, 1 new comment',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'mira requested changes', link: 'View review' }, { tone: 'open', icon: 'msg', text: 'mira commented on src/greeting.ts', link: 'View comment' }],
+    text: HEAD + '- mira requested changes in a review\n  ' + URL_PR + '#pullrequestreview-2210\n- mira commented on src/greeting.ts\n  ' + URL_PR + '#discussion_r1873' + TAIL },
+  { at: '3:42 pm', step: 6, sum: '#74: conflicts with main',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'Conflicts with main', link: 'View on GitHub' }],
+    text: HEAD + '- The branch now conflicts with main.\n  ' + URL_PR + TAIL },
+  { at: '4:05 pm', step: 7, sum: '#74: merged into main. Babysitting ended.', end: true,
+    lines: [{ tone: 'merged', icon: 'merge', text: 'Merged into main', sub: 'Babysitting ended', link: 'View pull request' }],
+    text: HEAD + '- The pull request merged into main.\n  ' + URL_PR + '\n\nBabysitting has ended. Nothing else will wake you for #74. Tidy up as your task needs.' }
+]
+/* Claude's turn after each wake-up: in progress at its own step when that step is a working one. */
+const REPLIES = [
+  { at: '2:10 pm', step: 3, working: 'Reading the failed build’s log with gh.', done: 'The build failed on an unused import in <code>src/greeting.ts</code>. Removed it and pushed <code>9f3c2ab</code>.' },
+  { at: '2:31 pm', step: 4, done: 'All three checks pass on <code>9f3c2ab</code>. Nothing to do until someone reviews.' },
+  { at: '3:11 pm', step: 5, working: 'Reading mira’s review with gh.', done: 'mira asked for the greeting to use the reviewer’s name. Changed it in <code>4be71d0</code> and replied on the comment.' },
+  { at: '3:43 pm', step: 6, working: 'Rebasing <code>feat/greeting</code> on main.', done: 'Rebased on main and pushed. The conflict was in <code>README.md</code>; I kept both lines.' },
+  { at: '4:06 pm', step: 7, done: '#74 is merged. Nothing left to do on this thread.' }
+]
+
+/* ---------------- Sidebar ---------------- */
+function sidebarStatus(b) {
+  const v = state.variant
+  const base = b.working ? 'Working' : 'Done'
+  const st = b.working ? 'working' : 'done'
+  const dot = b.working ? '<i></i>' : ''
+  if (v === 'a') {
+    const mark = b.on ? `<span class="row__pr" title="Babysitting #74">${ico('pr', 13)}</span>` : ''
+    return { html: `<span class="row__status" data-state="${st}">${mark}${dot}<span>${base}</span></span>`, says: b.on ? `${base}, babysitting pull request #74` : base }
+  }
+  if (v === 'b') {
+    const text = b.on ? `${base} · Babysitting #74` : base
+    return { html: `<span class="row__status" data-state="${st}">${dot}<span>${text}</span></span>`, says: text }
+  }
+  if (b.working) return { html: `<span class="row__status" data-state="working"><i></i><span>Working</span></span>`, says: b.on ? 'Working, babysitting pull request #74' : 'Working' }
+  if (b.on) return { html: `<span class="row__status" data-state="babysitting"><span>Babysitting</span></span>`, says: 'Babysitting pull request #74' }
+  return { html: `<span class="row__status" data-state="done"><span>Done</span></span>`, says: 'Done' }
+}
+function renderSide() {
+  const b = info()
+  const s = sidebarStatus(b)
+  const row = (title, time, status, says, current, ring) => `<li class="row"${current ? ' data-current' : ''}>
+    <button type="button" class="row__item"${current ? ' aria-current="page"' : ''} aria-label="${title}. Claude. ${says}.">
+      <span class="ring" data-state="${ring}" aria-hidden="true"></span><span class="row__title">${title}</span><span class="row__time">${time}</span>
+      <span class="row__meta"><span class="row__provider">${claude(14)}</span>${status}</span></button></li>`
+  document.getElementById('side').innerHTML = `
+    <div class="side__top drag">
+      <span class="brand" aria-label="Sotto application">${smark(18)}<span>Sotto</span></span>
+      <span class="seg seg--icons" role="group" aria-label="Sidebar shows"><button type="button" aria-pressed="true" aria-label="Show threads">${ico('chats', 15)}</button><button type="button" aria-pressed="false" aria-label="Show terminals">${ico('term', 15)}</button></span>
+      <button type="button" class="ibtn" aria-label="Add a project">${ico('folderPlus')}</button>
+      <button type="button" class="ibtn" aria-label="Start a new thread">${ico('pen')}</button>
+      <button type="button" class="ibtn" aria-label="Collapse the sidebar">${ico('panelLeft')}</button>
+    </div>
+    <label class="search">${ico('search', 15)}<span class="vh">Search threads</span><input type="search" placeholder="Search threads"></label>
+    <div class="side__scroll">
+      <section class="folder"><button type="button" class="folder__toggle" aria-expanded="true">${ico('folder', 15)}<span>Review app</span><span class="folder__count">1</span></button>
+        <ul class="rows">${row('Greeting for reviewers', b.now, s.html, s.says, true, b.working ? 'working' : 'idle')}</ul></section>
+      <section class="folder"><button type="button" class="folder__toggle" aria-expanded="true">${ico('folder', 15)}<span>Sotto test</span><span class="folder__count">2</span></button>
+        <ul class="rows">
+          ${row('Docs', '1:12 pm', '<span class="row__status" data-state="done"><span>Done</span></span>', 'Done', false, 'idle')}
+          ${row('Workshop', '11:40 am', '<span class="row__status" data-state="done"><span>Done</span></span>', 'Done', false, 'idle')}
+        </ul></section>
+      <button type="button" class="settled" aria-expanded="false" aria-label="Show 4 settled threads">${ico('right', 14)}<span>Settled</span></button>
+    </div>
+    ${sideFoot()}`
+}
+function sideFoot() {
+  return `<div class="side__foot">
+      <span class="seg" role="group" aria-label="Room"><button type="button" aria-pressed="false">Dictate</button><button type="button" data-act="threads" aria-pressed="${!state.settings}">Threads</button></span>
+      <div class="side__pages">
+        <button type="button" class="ibtn" aria-label="Open Chats">${ico('msg')}</button>
+        <button type="button" class="ibtn" aria-label="Open History">${ico('history')}</button>
+        <button type="button" class="ibtn" data-act="settings" data-k="gear" aria-label="Open Settings"${state.settings ? ' aria-pressed="true"' : ''}>${ico('gear')}</button>
+        <button type="button" class="ibtn" aria-label="Open Help">${ico('help')}</button>
+        <button type="button" class="ibtn" aria-label="Check for updates">${ico('refresh')}</button>
+      </div></div>`
+}
+
+/* ---------------- Transcript ---------------- */
+function wakeHtml(w, idx) {
+  const v = state.variant
+  const key = 'w' + idx
+  const isOpen = state.open.has(key)
+  if (v === 'a') {
+    return `<div class="wake">
+      <button type="button" class="wake__row" data-toggle="${key}" data-k="${key}" aria-expanded="${isOpen}" aria-label="Wake-up from Sotto at ${w.at}: ${w.sum.replace(/\.$/, '')}. ${isOpen ? 'Hide' : 'Show'} the full message.\">
+        ${smark(18)}<span class="wake__who">Sotto</span><span class="wake__sum">${w.sum}</span><time class="wake__time">${w.at}</time>${ico('right', 14)}</button>
+      ${isOpen ? `<div class="wake__body"><p class="raw-caption">What Claude received</p><p class="raw">${w.text}</p></div>` : ''}</div>`
+  }
+  if (v === 'b') {
+    return `<article class="wcard" aria-label="Wake-up at ${w.at}">
+      <div class="wcard__head">${ico('alarm', 15)}<strong>Wake-up</strong><span>#74 Greet the reviewer</span><time>${w.at}</time></div>
+      <ul class="wcard__lines">${w.lines.map(l => `<li class="wcard__line" data-tone="${l.tone}">${ico(l.icon, 18)}<div><strong>${l.text}</strong>${l.sub ? `<small>${l.sub}</small>` : ''}</div><button type="button" class="tt-button">${l.link}${ico('ext', 13)}</button></li>`).join('')}</ul>
+      <div class="wcard__foot"><button type="button" class="qbtn" data-toggle="${key}" data-k="${key}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Hide' : 'Show'} what Claude received at ${w.at}">${ico('right', 14)}${isOpen ? 'Hide' : 'Show'} what Claude received</button></div>
+      ${isOpen ? `<div class="wcard__raw-wrap"><p class="raw">${w.text}</p></div>` : ''}</article>`
+  }
+  return `<div class="msg" data-role="sotto"><header><span class="msg__who">${smark(16)}Sotto</span><span class="msg__tag">Wake-up</span><time>${w.at}</time></header><p class="raw">${w.text}</p></div>`
+}
+function babysitCard(b) {
+  if (state.variant !== 'b' || !(b.on || b.ended)) return ''
+  if (b.on) return `<article class="babysit-card" aria-label="Babysitting pull request 74">${ico('alarm', 18)}<div><strong>Babysitting #74 Greet the reviewer</strong><small>${started(b)}. Sotto wakes this thread when a check fails, the required checks pass, someone else comments or reviews, the branch conflicts, or it merges.</small></div><button type="button" class="tt-button" data-act="stop" data-k="cardstop">Stop babysitting</button></article>`
+  const to = b.ended === 'merged' ? '4:05 pm' : b.now
+  return `<article class="babysit-card" data-ended aria-label="Babysitting pull request 74 ended">${ico('alarmOff', 18)}<div><strong>Babysat #74 from ${b.at} to ${to}</strong><small>${b.ended === 'merged' ? 'Ended when it merged.' : 'You stopped it. Nothing was sent to Claude.'}</small></div>${b.ended === 'stopped' ? '<button type="button" class="tt-button" data-act="start" data-k="cardstart">Babysit pull request</button>' : ''}</article>`
+}
+function renderTranscript(b) {
+  const parts = []
+  parts.push(`<div class="msg" data-role="user"><header><span class="msg__who">You</span><time>1:48 pm</time></header><p class="msg__text">Add a greeting for reviewers, open a pull request and see it through CI.</p></div>`)
+  const tool = b.agentStarted && state.manual !== 'on'
+  parts.push(`<div class="msg"><header><span class="msg__who">Claude</span><time>2:01 pm</time></header>
+    <div class="activity">
+      <div class="act">${ico('term')}<code>npm test -- greeting</code></div>
+      <div class="act">${ico('term')}<code>gh pr create --fill</code></div>
+      ${tool ? `<div class="act">${ico('alarm')}<span><strong>Babysit pull request</strong> #74</span><span class="act__by">Sotto tool</span></div>` : ''}
+    </div>
+    <p class="msg__text">Added a greeting for reviewers in <code>src/greeting.ts</code> with a test, and opened #74 Greet the reviewer. CI is running.</p>
+    ${tool ? '<p class="msg__text">I asked Sotto to babysit it, so I’ll be woken when the checks finish or someone reviews. Ending my turn here.</p>' : ''}</div>`)
+  parts.push(babysitCard(b))
+  WAKES.forEach((w, idx) => {
+    if (state.step < w.step) return
+    parts.push(wakeHtml(w, idx))
+    const r = REPLIES[idx]
+    const inProgress = r.working && state.step === r.step
+    parts.push(`<div class="msg"><header><span class="msg__who">Claude</span><time>${r.at}</time></header><p class="msg__text">${inProgress ? r.working : r.done}</p></div>`)
+    if (inProgress) parts.push(`<div class="working" role="status"><i></i>Working for 18s</div>`)
+  })
+  return parts.join('')
+}
+
+/* ---------------- Composer ---------------- */
+function creature() {
+  const BODY = 'M9 8h4v8H9z M21 7h4v9h-4z M11 6h2v5h-2z M23 5h2v5h-2z M9 13h17v15H9z M7 16h21v9H7z M11 11h12v18H11z M5 23h4v4H5z'
+  return `<svg viewBox="0 0 40 32" width="80" height="64" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+    <path class="mon-color" d="M11 29h5v3h-5z M21 29h5v3h-5z"/>
+    <path class="mon-color" d="${BODY}"/>
+    <path class="mon-shine" opacity=".24" d="M10 14h3v9h-3z"/>
+    <path class="mon-ink" opacity=".24" d="M13 25h10v3H13z"/>
+    <path class="mon-ink mon-eyes" d="M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z"/>
+    <path class="mon-color" d="M25 25h5v2h-5z"/>
+    <path class="mon-color" d="M28 17h3v2h-3z"/>
+    <path class="mon-handle" d="M31 11h2v21h-2z"/>
+    <path class="mon-color" opacity=".28" d="M28 3h9v8h-9z"/>
+    <path class="mon-shine" d="M28 2h9v1h-9z M28 11h9v1h-9z M27 3h1v8h-1z M37 3h1v8h-1z"/>
+    <path class="mon-shine" d="M30 4h1v1h-1z M30 6h1v3h-1z M30 9h1v1h-1z M33 4h2v1h-2z M35 5h1v3h-1z M35 9h1v1h-1z"/>
+  </svg>`
+}
+function renderCompose(b) {
+  const v = state.variant
+  let above = ''
+  if (v === 'a' && b.on) above = `<div class="babysit-line" role="status">${ico('pr', 15)}<strong>Babysitting #74</strong><span aria-hidden="true">·</span><span>since ${b.at}</span><span aria-hidden="true">·</span><button type="button" class="linkbtn" data-act="stop" data-k="linestop" aria-label="Stop babysitting #74">Stop</button></div>`
+  if (v === 'c' && b.on) above = `<div class="ornament" role="img" aria-label="Babysitting pull request #74. ${started(b)}.">${creature()}<div class="mon-task" aria-hidden="true"><b>Babysitting #74</b><span>Since ${b.at}</span></div></div>`
+  const babysat = v === 'b' && b.on
+  return `${above}
+    <form class="prompt" onsubmit="return false">
+      <label class="vh" for="promptbox">Prompt</label>
+      <textarea id="promptbox" rows="2" placeholder="${b.working ? 'Claude is working. Write a follow-up to queue it.' : 'What would you like to do next?'}"></textarea>
+      <button type="button" class="ibtn prompt__clip" aria-label="Attach screenshots">${ico('clip')}</button>
+      <div class="prompt__foot"><div class="prompt__chips">
+        <button type="button" class="chip">${claude(14)}Opus 5.5${ico('down', 13)}</button>
+        <button type="button" class="chip">Medium${ico('down', 13)}</button>
+        <button type="button" class="chip">Permissions${ico('down', 13)}</button></div>
+        <button type="submit" class="send" aria-label="${b.working ? 'Queue the follow-up' : 'Send'}">${ico('up', 16, ' style="stroke-width:2.25"')}</button></div>
+    </form>
+    <div class="branch-toolbar">
+      <span class="btb btb--static">${ico('laptop', 14)}<span>This computer</span></span>
+      <button type="button" class="btb">${ico('folder', 14)}<span>Current checkout</span>${ico('down', 12)}</button>
+      <span class="branch-toolbar__end">
+        <button type="button" class="btb btb--pr" data-state="${b.merged ? 'merged' : 'open'}"${babysat ? ' data-babysat' : ''} title="${babysat ? 'Babysitting #74. Stop it on the Pull request surface.' : '#74 Greet the reviewer'}" aria-label="${babysat ? 'Pull request #74, babysitting. Open the Pull request surface' : 'Pull request #74. Open the Pull request surface'}">${ico(b.merged ? 'merge' : 'pr', 14)}<span>#74</span></button>
+        <button type="button" class="btb btb--branch" aria-label="Branch feat/greeting. Change branch">${ico('branch', 14)}<span>feat/greeting</span>${ico('down', 12)}</button>
+      </span>
+    </div>`
+}
+
+function renderPane() {
+  const b = info()
+  const headState = state.variant === 'c' && b.on ? `<span class="head__state" title="Babysitting #74">${ico('pr', 13)}<span>Babysitting #74</span></span>` : ''
+  const pane = document.getElementById('pane')
+  const old = pane.querySelector('.transcript')
+  const keep = old && !state.toScroll ? old.scrollTop : null
+  pane.innerHTML = `
+    <header class="head drag">
+      <div class="head__title"><span class="head__mark">${claude(18)}</span><h2>Greeting for reviewers</h2><span class="head__crumb">/ Review app</span><span class="head__branch">${ico('branch', 15)}feat/greeting</span>${headState}</div>
+      <div class="head__actions">
+        <span class="git-action"><button type="button" aria-label="View pull request #74 on GitHub">${ico(b.merged ? 'merge' : 'pr', 15)}<span class="git-action__word">View PR</span></button><button type="button" aria-label="More Git actions">${ico('down', 14)}</button></span>
+        <button type="button" class="pane-ibtn" aria-pressed="true" aria-label="Close Tools">${ico('panelRight')}</button>
+        <button type="button" class="pane-ibtn" aria-label="More thread actions">${ico('more')}</button>
+      </div>
+    </header>
+    <div class="transcript" tabindex="0" aria-label="Conversation">${renderTranscript(b)}</div>
+    <div class="compose">${renderCompose(b)}</div>`
+  const t = pane.querySelector('.transcript')
+  if (keep === null) t.scrollTop = t.scrollHeight
+  else t.scrollTop = keep
+}
+
+/* ---------------- Tools: the Pull request surface ---------------- */
+function prLines() {
+  const i = state.step
+  const L = []
+  if (i <= 2) L.push(['running', 'run', 'Checks running', '2 of 3 checks finished'])
+  else if (i === 3) L.push(['failed', 'fail', 'Checks failing', 'CI / Owned build failed', 'View check'])
+  else L.push(['done', 'ok', 'Checks passing', '3 checks passed'])
+  if (i === 5) L.push(['failed', 'fail', 'Changes requested', 'mira asked for changes', 'View review'])
+  else if (i === 7) L.push(['done', 'ok', 'Review approved', 'Approved by mira'])
+  else if (i === 6) L.push(['open', 'open', 'Review required', 'Asked mira to look again'])
+  else L.push(['open', 'open', 'Review required', 'No review yet'])
+  if (i === 6) L.push(['open', 'open', 'Behind main', '2 commits behind main', 'Update branch'])
+  else L.push(['done', 'ok', 'Up to date with main', i === 7 ? 'Merged into main' : 'Has every commit on main'])
+  if (i === 6) L.push(['failed', 'fail', 'Conflicts with main', 'README.md conflicts'])
+  else L.push(['done', 'ok', 'No conflicts', i === 7 ? 'Merged without conflicts' : 'Merges cleanly into main'])
+  L.push(['done', 'ok', 'Ready for review', 'Not a draft'])
+  return L
+}
+function renderTools() {
+  const b = info()
+  const v = state.variant
+  const lines = prLines()
+  const done = lines.filter(l => l[0] === 'done').length
+  const all = done === lines.length
+  const lineHtml = lines.map(([tone, icon, title, why, fix]) => `<li class="pr-line" data-tone="${tone}">${ico(icon, 18)}<div><strong>${title}</strong><span class="pr-why">${why}</span></div>${fix ? `<button type="button" class="tt-button">${fix}</button>` : ''}</li>`).join('')
+  const headerBtn = v === 'b' && !b.merged
+    ? `<button type="button" class="cbtn" data-k="hbtn" data-act="${b.on ? 'stop' : 'start'}"${b.on ? ' data-on' : ''} aria-label="${b.on ? 'Stop babysitting' : 'Babysit pull request'}" title="${b.on ? `Stop babysitting. ${started(b)}.` : 'Babysit pull request'}">${ico('alarm')}</button>` : ''
+  const menuItems = `<button type="button" role="menuitem">${ico('copy')}Copy link</button>
+      ${v === 'c' && !b.on && !b.merged ? `<button type="button" role="menuitem" data-act="start" data-k="menustart">${ico('alarm')}Babysit pull request</button>` : ''}
+      ${v === 'c' && b.on ? `<button type="button" role="menuitem" data-act="stop" data-k="menustop">${ico('alarmOff')}Stop babysitting</button>` : ''}
+      <hr><button type="button" role="menuitem">${ico('unlink')}Unlink from this thread</button>`
+  const docked = v === 'c' ? (b.on
+    ? `<div class="pr-babysat" role="status">${ico('alarm', 18)}<div class="pr-babysat__text"><strong>Babysitting since ${b.at}</strong><small>${b.by === 'you' ? 'Started by you' : 'Started by Claude'}. Sotto wakes this thread when #74 needs it.</small></div><button type="button" class="tt-button" data-act="stop" data-k="dockstop" aria-label="Stop babysitting #74">Stop</button></div>`
+    : b.ended === 'stopped' ? `<div class="pr-babysat" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Not babysitting</strong><small>${endedText(b)} Babysit pull request is in the ··· menu.</small></div></div>` : '') : ''
+  const body = b.merged
+    ? `<h3 class="pr-heading">Merge checklist <small data-tone="done">5 of 5 done</small></h3><ul class="pr-lines">${lineHtml}</ul>
+       <div class="pr-finished">${ico('merge', 20)}<div><strong>Merged into main</strong><span>Oct 7, 4:05 PM</span></div></div>
+       ${v === 'c' ? `<div class="pr-babysat pr-babysat--after" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Babysitting ended</strong><small>${endedText(b)}</small></div></div>` : ''}`
+    : `<h3 class="pr-heading">${all ? 'Ready to merge' : 'Merge checklist'} <small${all ? ' data-tone="done"' : ''}>${done} of ${lines.length} done</small></h3><ul class="pr-lines">${lineHtml}</ul>
+       <div class="pr-dock">${docked}<div class="pr-merge"><button type="button" class="tt-button tt-button--primary pr-merge__go"${all ? '' : ' aria-disabled="true"'}>${ico('merge', 17)}Merge #74</button><button type="button" class="tt-button">Squash${ico('down', 13)}</button></div>
+       <p class="pr-hint">${all ? 'One commit on main.' : `Merge is ready when all five lines are done.`}</p></div>`
+  const footSwitch = v === 'a'
+    ? `<button type="button" class="pr-foot-switch" role="switch" data-k="footswitch" data-act="${b.on ? 'stop' : 'start'}" aria-checked="${b.on}"${b.merged ? ' disabled' : ''}>
+        <span><strong>Wake this thread when the pull request needs it</strong><small>${b.on ? started(b) + '.' : b.ended ? endedText(b) : 'Off. Claude can also start it.'}</small></span><span class="track" aria-hidden="true"></span></button>` : ''
+  document.getElementById('tools').innerHTML = `
+    <div class="tools__main">
+      <div class="chrome drag">
+        <div class="chrome__lead">${ico(b.merged ? 'merge' : 'pr', 17, ` data-state="${b.merged ? 'merged' : 'open'}"`)}<h3 class="pr-name"><span>#74</span> Greet the reviewer</h3><span class="tag">${b.merged ? 'Merged' : 'Open'}</span></div>
+        <div class="chrome__actions">
+          ${headerBtn}
+          <button type="button" class="cbtn" aria-label="Open #74 on GitHub">${ico('ext')}</button>
+          <button type="button" class="cbtn" aria-label="Refresh the pull request">${ico('refresh')}</button>
+          <button type="button" class="cbtn" data-act="menu" data-k="menu" aria-haspopup="menu" aria-expanded="${state.menu}" aria-label="More pull request actions">${ico('more')}</button>
+          ${state.menu ? `<div class="menu" role="menu" aria-label="Pull request actions">${menuItems}</div>` : ''}
+        </div>
+      </div>
+      ${b.merged ? '<p class="pr-notice">Pull request merged.</p>' : ''}
+      <div class="pr-body">${body}
+        <div class="pr-fold"><button type="button" class="pr-fold__head" aria-expanded="false">${ico('right', 15)}Description</button></div>
+        <div class="pr-fold"><button type="button" class="pr-fold__head" aria-expanded="false">${ico('right', 15)}Linked pull requests <span>1</span></button></div>
+      </div>
+      ${footSwitch}
+      <div class="tools__foot"><span class="tools__copy">${ico('folder', 14)}<b>Review app</b><span aria-hidden="true">·</span><code>feat/greeting</code><span class="muted">· Project folder</span></span>
+        <span class="tools__foot-actions"><button type="button" class="ibtn" aria-label="Copy the folder path">${ico('copy', 15)}</button><button type="button" class="ibtn" aria-label="Open the folder">${ico('folderOpen', 15)}</button></span></div>
+    </div>
+    <nav class="rail" aria-label="Tools surfaces">
+      <div class="rail__tabs">
+        <button type="button" class="rail__tab" aria-label="Open Browser">${ico('globe', 20)}<span aria-hidden="true">Browser</span></button>
+        <button type="button" class="rail__tab" aria-label="Open Terminal">${ico('term', 20)}<span aria-hidden="true">Terminal</span></button>
+        <button type="button" class="rail__tab" aria-label="Open Files">${ico('tree', 20)}<span aria-hidden="true">Files</span></button>
+        <button type="button" class="rail__tab" aria-label="Open Changes">${ico('compare', 20)}<span aria-hidden="true">Changes</span></button>
+        <button type="button" class="rail__tab" aria-current="true" aria-label="Pull request, open">${ico('pr', 20)}<span aria-hidden="true">PR</span></button>
+        <button type="button" class="rail__tab" aria-label="Open Agents">${ico('users', 20)}<span aria-hidden="true">Agents</span></button>
+      </div>
+      <div class="rail__foot">
+        <button type="button" class="ibtn" aria-label="Pin Tools to this thread">${ico('pin')}</button>
+        <button type="button" class="ibtn" aria-label="Fill the window with Tools">${ico('expand')}</button>
+        <button type="button" class="ibtn" aria-label="Close Tools">${ico('x')}</button>
+      </div>
+    </nav>`
+}
+
+/* ---------------- Settings ---------------- */
+function renderSettings() {
+  const v = state.variant
+  const on = state.agentsMayBabysit
+  const desc = `An agent can ask Sotto to babysit its pull request instead of checking GitHub itself. Sotto then wakes the thread when a check fails, the required checks pass, someone else comments or reviews, the branch starts to conflict, or the pull request merges or closes. It asks GitHub through gh, on your own sign-in, every two minutes. ${on ? 'When off, agents cannot start it and what they started stops.' : 'Off: agents cannot start it, and what they started has stopped.'} Babysitting you start on the Pull request surface stays.`
+  const toggle = (label, checked, small, extra = '') => `<button type="button" class="s-toggle${extra}" role="switch" aria-checked="${checked}"${extra ? ' data-act="agentswitch" data-k="agentswitch"' : ''}><span><strong>${label}</strong><small>${small}</small></span><span class="track" aria-hidden="true"></span></button>`
+  const row = v === 'a'
+    ? toggle('Let agents babysit their pull requests', on, desc, ' s-row--new')
+    : toggle('Let agents babysit pull requests', on, desc, ' s-row--new')
+  const section = v === 'a'
+    ? `<div class="s-heading">${ico('pr')}<div><h2>When a pull request is made or merged</h2></div></div>
+       <div class="s-rows">
+         ${toggle('Follow pull request templates', true, 'A pull request Sotto drafts follows the repository’s template when it has one.')}
+         <div class="s-field"><div><strong>Default merge method</strong><small>Merge on the Pull request surface starts on Squash.</small></div><select aria-label="Default merge method"><option>Squash</option><option>Merge commit</option><option>Rebase</option></select></div>
+         ${toggle('Auto-settle merged threads', false, 'A thread stays open after its pull request merges until you settle it.')}
+         ${row}
+       </div>
+       <div class="s-heading">${ico('refresh')}<div><h2>In the background</h2></div></div>
+       <div class="s-rows">
+         <div class="s-field"><div><strong>Git fetch interval</strong><small>Sotto asks origin every 30 seconds whether a thread’s branch is ahead or behind, while this window is in front.</small></div><select aria-label="Git fetch interval"><option>30 seconds</option></select></div>
+       </div>`
+    : `<div class="s-heading">${ico('sliders')}<div><h2>Application</h2><p>Startup, privacy &amp; updates</p></div></div>
+       <div class="s-rows">
+         ${toggle('Show the browser when an agent opens a page', true, 'When an agent opens a page, its thread’s browser player opens over the thread. When off, it stays closed and Tools still shows the work.')}
+         ${toggle('Let agents use the browser without asking', true, 'Agents can open pages, click and type in Sotto’s browser without asking first. Stop sharing one page, or stop it for one thread, in Tools &gt; Browser.')}
+         ${toggle('Let agents draw visuals in threads', true, 'An agent can draw a diagram, or a small interactive page sealed from the network, in its thread. When off, agents explain in text instead.')}
+         ${row}
+         <div class="s-field"><div><strong>Replies in threads</strong><small>Stream a reply word by word as the agent writes it, or show it once it is finished.</small></div><select aria-label="Replies in threads"><option>As written</option><option>When finished</option></select></div>
+       </div>`
+  const nav = (icon, label, current) => `<li><button type="button"${current ? ' aria-current="page"' : ''}>${ico(icon)}${label}</button></li>`
+  document.getElementById('settings').innerHTML = `
+    <nav class="settings__nav" aria-label="Settings sections">
+      <div class="side__top drag"><span class="brand" aria-label="Sotto application">${smark(18)}<span>Sotto</span></span></div>
+      <h1>Settings</h1>
+      <ul class="snav">
+        ${nav('mic', 'Dictation')}${nav('wave', 'Transcription')}${nav('spark', 'Cleanup')}<hr>
+        ${nav('cmd', 'Providers')}${nav('server', 'Hosts')}${nav('users', 'Agents')}${nav('arrow', 'Output')}<hr>
+        ${nav('palette', 'Appearance')}${nav('sliders', 'Application', v !== 'a')}${nav('branch', 'Git', v === 'a')}
+      </ul>
+      ${sideFoot()}
+    </nav>
+    <main class="settings__main"><div class="settings__inner">${section}</div><p class="s-save">Changes save as you make them.</p></main>`
+}
+
+/* ---------------- Glue ---------------- */
+function render() {
+  const keyed = document.activeElement?.dataset?.k
+  document.documentElement.toggleAttribute('data-theme', state.light)
+  if (state.light) document.documentElement.setAttribute('data-theme', 'light')
+  document.body.toggleAttribute('data-settings', state.settings)
+  document.body.toggleAttribute('data-nobar', !state.bar)
+  if (state.openLast) { const last = WAKES.filter(w => state.step >= w.step).length - 1; if (last >= 0) state.open.add('w' + last); state.openLast = false }
+  if (state.settings) renderSettings()
+  else { renderSide(); renderPane(); renderTools() }
+  state.toScroll = false
+  const vi = VARIANTS.findIndex(([k]) => k === state.variant)
+  document.getElementById('vlabel').textContent = `${state.variant.toUpperCase()} — ${VARIANTS[vi][1]}`
+  document.getElementById('slabel').textContent = `${state.step + 1}/8 ${STEPS[state.step][1]}`
+  document.getElementById('sb').textContent = state.settings ? 'Close Settings' : 'Open Settings'
+  document.getElementById('tb').textContent = state.light ? 'Dark theme' : 'Light theme'
+  const q = new URLSearchParams({ variant: state.variant, step: STEPS[state.step][0] })
+  if (state.light) q.set('theme', 'light')
+  if (state.settings) q.set('settings', '1')
+  if (!state.bar) q.set('bar', '0')
+  history.replaceState(null, '', '?' + q)
+  if (keyed) (document.querySelector(`[data-k="${keyed}"]`) ?? document.querySelector('[data-k="footswitch"], [data-k="hbtn"], [data-k="dockstop"], [data-k="menu"]'))?.focus()
+}
+function goVariant(d) { const i = VARIANTS.findIndex(([k]) => k === state.variant); state.variant = VARIANTS[(i + d + 3) % 3][0]; state.manual = null; state.menu = false; state.open.clear(); state.toScroll = true; render() }
+function goStep(d) { state.step = (state.step + d + STEPS.length) % STEPS.length; state.manual = null; state.menu = false; state.toScroll = true; render() }
+document.getElementById('pv').onclick = () => goVariant(-1)
+document.getElementById('nv').onclick = () => goVariant(1)
+document.getElementById('ps').onclick = () => goStep(-1)
+document.getElementById('ns').onclick = () => goStep(1)
+document.getElementById('sb').onclick = () => { state.settings = !state.settings; state.toScroll = true; render() }
+document.getElementById('tb').onclick = () => { state.light = !state.light; render() }
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act], [data-toggle]')
+  if (!t) { if (state.menu && !e.target.closest('.menu')) { state.menu = false; render() } return }
+  const act = t.dataset.act
+  if (t.dataset.toggle) { const k = t.dataset.toggle; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); return }
+  if (act === 'stop') { state.manual = 'off'; state.menu = false; render() }
+  else if (act === 'start') { state.manual = 'on'; state.menu = false; render() }
+  else if (act === 'menu') { state.menu = !state.menu; render(); if (state.menu) document.querySelector('.menu [role="menuitem"]')?.focus() }
+  else if (act === 'settings') { state.settings = true; render(); document.querySelector('[data-k="agentswitch"]')?.focus() }
+  else if (act === 'threads') { state.settings = false; state.toScroll = true; render() }
+  else if (act === 'agentswitch') { state.agentsMayBabysit = !state.agentsMayBabysit; render() }
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.menu) { state.menu = false; render(); document.querySelector('[data-k="menu"]')?.focus(); return }
+  if (state.menu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    const items = [...document.querySelectorAll('.menu [role="menuitem"]')]
+    const at = items.indexOf(document.activeElement)
+    items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); e.preventDefault(); return
+  }
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') goVariant(-1)
+  else if (e.key === 'ArrowRight') goVariant(1)
+  else if (e.key === '[') goStep(-1)
+  else if (e.key === ']') goStep(1)
+})
+render()
+</script>
+</body>
+</html>
