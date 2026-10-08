@@ -7,7 +7,7 @@ import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
-import { workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { rowStatus, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 
@@ -71,10 +71,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   readonly settle: ReturnType<typeof useSettleThread>['settle']
 }): ReactNode {
   const title = row.thread.title
-  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
-  // The host marks a thread that finished while no client showed it, until one does (ADR-0046).
-  const finished = row.thread.finishedUnread === true && label === 'Done'
-  const status = finished ? 'Just finished' : label
+  // Just finished (ADR-0046) and Babysitting #74 (ADR-0061) both stand where the row would say Done.
+  const { text: status, finished, babysitting } = rowStatus(row)
   const besideAvailable = panes.currentThreadId !== null && !current
   const [renaming, setRenaming] = useState(false)
   const renameButton = useRef<HTMLButtonElement>(null)
@@ -116,7 +114,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
           <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} /></span>
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
-        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{status}{disconnectedLabel(row)}</span>
+        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{status}{disconnectedLabel(row)}</span>
       </span>
       <span className="thread-nav__branch" data-working-copy-state={copy.status} title={branchName !== copyLabel ? `${branchName} · ${copyLabel}` : copyLabel}>
         <WorkingCopyIcon size={12} aria-hidden="true" />{row.thread.hostLabel ? <span>{row.thread.hostLabel} · </span> : null}

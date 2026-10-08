@@ -44,6 +44,13 @@ export function pullRequestNumbers(numbers: readonly number[]): string {
   return named.length <= 1 ? named.join('') : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`
 }
 
+/** The sidebar row's state word for a thread that babysits, where it would say Done: "Babysitting #74". */
+export function babysittingWord(thread: Pick<AgentThread, 'babysitting'>): string | undefined {
+  const numbers = (thread.babysitting ?? []).map(item => item.number)
+  if (numbers.length === 0) return undefined
+  return numbers.length > 2 ? `Babysitting ${numbers.length} pull requests` : `Babysitting ${pullRequestNumbers(numbers)}`
+}
+
 const time = (at: Date): string => at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase()
 const day = (at: Date): string => at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 /** A moment as "2:02 pm" today, or "Oct 7, 2:02 pm" before; empty when it cannot be read. */

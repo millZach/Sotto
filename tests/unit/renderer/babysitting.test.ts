@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  babysitClock, babysitEndedOf, babysitLine, babysittingOf, endedWords, offersBabysitting, pullRequestKeyOf, pullRequestNumbers,
+  babysitClock, babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting, pullRequestKeyOf, pullRequestNumbers,
 } from '../../../src/renderer/src/agents/babysitting'
 import type { AgentThread } from '../../../src/shared/agents'
 
@@ -71,5 +71,15 @@ describe('the words around it', () => {
     expect(pullRequestNumbers([74, 76, 78])).toBe('#74, #76 and #78')
     expect(babysitClock(at(14, 2), NOW)).toBe('2:02 pm')
     expect(babysitClock('not a time', NOW)).toBe('')
+  })
+})
+
+describe('the sidebar row’s state word', () => {
+  const thread = (numbers: number[]): Pick<AgentThread, 'babysitting'> => ({ babysitting: numbers.map(number => ({ url: `https://github.com/o/r/pull/${number}`, number, startedBy: 'user' as const, startedAt: at(14, 2) })) })
+  it('names one or two pull requests and counts more, so the row stays short', () => {
+    expect(babysittingWord({})).toBeUndefined()
+    expect(babysittingWord(thread([74]))).toBe('Babysitting #74')
+    expect(babysittingWord(thread([74, 76]))).toBe('Babysitting #74 and #76')
+    expect(babysittingWord(thread([74, 76, 78]))).toBe('Babysitting 3 pull requests')
   })
 })
