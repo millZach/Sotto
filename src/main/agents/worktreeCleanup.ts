@@ -60,6 +60,8 @@ export class WorktreeCleanup {
   private mergedAnswers = new Map<string, Promise<boolean>>()
   private defaults = new Map<string, string | null>()
   private disposed = false
+  /** The rules and Auto-settle merged threads as the last sweep request saw them. */
+  private seenSettings: string | undefined
   private readonly git: RunGit
   private readonly now: () => number
   constructor(private readonly dependencies: WorktreeCleanupDependencies) {
@@ -87,10 +89,26 @@ export class WorktreeCleanup {
     }
     this.timer = setInterval(() => this.request(), this.dependencies.intervalMs ?? HOUR_MS)
     this.timer.unref?.()
+    this.seenSettings = this.settingsKey()
     this.request()
   }
-  /** The rules changed; look again rather than wait for the hour. */
-  settingsChanged(): void { this.request() }
+  /**
+   * A setting was saved: look again rather than wait for the hour, but only when the rules or Auto-settle merged threads
+   * changed. Any other save asks GitHub nothing, so the merged check runs no more often than the sweep (#820).
+   */
+  settingsChanged(): void {
+    const key = this.settingsKey()
+    if (key === this.seenSettings) return
+    this.seenSettings = key
+    this.request()
+  }
+  /** What the sweep depends on among the settings, in one comparable string. */
+  private settingsKey(): string {
+    const rules = this.dependencies.rules()
+    let settle = false
+    try { settle = this.dependencies.autoSettleMerged?.() === true } catch { /* Read as off, as the sweep does. */ }
+    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle])
+  }
   dispose(): void { this.disposed = true; if (this.timer) clearInterval(this.timer); this.unsubscribe?.() }
   /** Stops sweeping and waits for a sweep already under way, which stops before its next worktree. */
   close(): Promise<void> { this.dispose(); return this.running }
