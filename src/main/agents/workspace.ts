@@ -1055,6 +1055,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return thread !== undefined && thread.providerId !== 'devin'
   }
+  /**
+   * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
+   * on Claude Code, Codex or Grok Build. Devin's client takes no server of Sotto's, so its threads are babysat only from
+   * the Pull request surface (decision 11).
+   */
+  admitsBabysitting(threadId: string): boolean {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread !== undefined && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
+  }
   /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
   visual(threadId: string, visualId: string): AgentVisual | undefined {
     if (this.storeUnavailable) return undefined

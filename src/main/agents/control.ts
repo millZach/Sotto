@@ -4,7 +4,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest } from './followups'
+import { FollowupStore, followupDigest, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -12,8 +12,10 @@ import { z } from 'zod'
 import {
   agentAssignmentSchema, agentConfigurationSchema, agentQueueItemSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, supportsAgentSupervision, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, defaultNewThreadModelId, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage, lastWrittenMessage,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
+import type { BabysitNews } from './babysitNews'
+import { wakeUpText } from './wakeUp'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { MemoryProfile } from '../memory/profile'
@@ -78,6 +80,15 @@ type ComposerContext = {
   feedback?: (error: string | null) => void
 }
 /** The send or steer a command is, or null for any other: what `dispatch` asks, once, of every command. */
+/** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8), before it has started to send. */
+const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>): boolean => item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
+/** A queued item as the window is sent it: a wake-up's words, without the news they were worded from. */
+function withoutNews(item: QueuedFollowup): AgentFollowup {
+  if (item.news === undefined) return item
+  const { news, ...rest } = item
+  void news
+  return rest
+}
 function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
 }
@@ -548,7 +559,8 @@ export class AgentControl {
   }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
   pendingThreadWorkReason(threadId: string): CheckoutPendingWork | null {
-    const items = this.followupStore.peek().items.filter(item => item.threadId === threadId)
+    // A wake-up still waiting is Sotto's news, not the user's work: it holds nothing back until it starts to send.
+    const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
     const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId)
     const assignment = this.state.assignments.find(item => item.threadId === threadId && item.mode === 'managed')
     if (items.some(item => item.status === 'uncertain') || deliveries.some(item => item.status === 'uncertain')) return 'uncertain-send'
@@ -682,7 +694,7 @@ export class AgentControl {
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds,
       ...(this.state.deliveries ?? []).filter(item => item.status !== 'accepted').map(item => item.threadId),
-      ...this.followupStore.peek().items.map(item => item.threadId),
+      ...this.queuedThreadIds(),
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []),
     ])].filter(id => this.state.host.threads.some(thread => thread.id === id))
   }
@@ -1268,7 +1280,39 @@ export class AgentControl {
     this.dependencies.host.observeThreads?.([...new Set([...this.state.assignments.map(a => a.threadId),
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
-      ...this.followupStore.peek().items.map(item => item.threadId), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
+      ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])])
+  }
+  /**
+   * The threads whose follow-up queue holds something of the user's, or a wake-up already sending. A queue holding only
+   * Sotto's waiting wake-up is the exception (ADR-0061 decision 14): babysitting is not background work, so it keeps
+   * the thread out of the watched set and its session open to the reaper; the send starts the session again.
+   */
+  private queuedThreadIds(): string[] {
+    return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
+  }
+  /**
+   * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
+   * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
+   * folded into a wake-up already waiting. Resolves once it is saved, which is when the news counts as told; a thread
+   * that is gone, settled or archived takes nothing, and the rejection leaves the news untold.
+   */
+  async deliverWakeUp(threadId: string, news: BabysitNews, options: { readonly tool: boolean }): Promise<void> {
+    if (this.disposed) throw new Error('Sotto is closing.')
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (!thread) throw new Error('This thread is not on this host.')
+    if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
+    // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
+    const reviewed = thread.status !== 'running' && thread.lastTurn?.status !== 'running' ? thread.lastTurn?.id ?? 'unknown' : undefined
+    await this.followupStore.queueWakeUp(threadId, news, items => wakeUpText(items, options), reviewed)
+    this.syncFollowups(); this.publish(); this.pumpFollowups()
+  }
+  /**
+   * Takes back a waiting wake-up's news of a pull request whose babysitting ended quietly, or all of it: a stop, a
+   * settle, an unlink or the switch sends the thread nothing (ADR-0061 decision 9).
+   */
+  async withdrawWakeUp(threadId: string, url: string | undefined, options: { readonly tool: boolean }): Promise<void> {
+    await this.followupStore.withdrawWakeUp(threadId, url, items => wakeUpText(items, options))
+    this.syncFollowups(); this.publish()
   }
   /**
    * Early start (#769): the user began typing in this thread's composer, so its provider session starts now rather
@@ -2091,7 +2135,7 @@ export class AgentControl {
   }
   private syncFollowups(): void {
     const { items, receipts } = this.followupStore.get()
-    this.state.followups = items; this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
+    this.state.followups = items.map(withoutNews); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
@@ -2181,7 +2225,7 @@ export class AgentControl {
       void (async () => {
         if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
         let claimed = false
-        const turn = this.beginTurn({ source: 'command', commandType: 'manual-send', text: first.text })
+        const turn = this.beginTurn(first.wakeUp ? { source: 'wake-up', commandType: 'wake-up', text: first.text } : { source: 'command', commandType: 'manual-send', text: first.text })
         // A queued follow-up is timed from the moment the queue takes it, not from when it was queued.
         if (turn) turn.receivedAt = performance.now()
         let failure: string | undefined
@@ -2209,7 +2253,7 @@ export class AgentControl {
           this.sendStages(turn)?.addRead(readMs)
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)) }, turn, validate, item.draftId)
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.draftId)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : 'Could not dispatch this follow-up.'
@@ -2264,6 +2308,7 @@ export class AgentControl {
   private async steerFollowup(command: Extract<AgentCommand, { type: 'steer-followup' }>, turn?: ActiveTurn): Promise<void> {
     const queued = this.followupStore.get().items.find(item => item.threadId === command.threadId && item.id === command.itemId)
     if (!queued) return // Already delivered or removed; a repeated click never creates another prompt.
+    if (queued.wakeUp) throw new Error('A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.')
     const validate = (): void => {
       this.canAct(command.threadId)
       const thread = this.thread(command.threadId)

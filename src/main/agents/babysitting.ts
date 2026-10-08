@@ -94,6 +94,12 @@ export interface BabysitterOptions {
   readonly run?: RunGitCommand
   readonly now?: () => number
   readonly log?: (event: BabysitEvent) => void
+  /**
+   * Told when babysitting a pull request ended, with why, once it is saved. A quiet ending (a stop, a settle, an
+   * unlink, the switch) takes back that pull request's part of a wake-up still waiting; one that ended with news has
+   * just handed its last wake-up over.
+   */
+  readonly ended?: (threadId: string, url: string, reason: BabysitEndReason) => void
 }
 
 interface Target { readonly threadId: string; readonly record: BabysitRecord }
@@ -199,7 +205,7 @@ export class Babysitter {
       const matches = (record: BabysitRecord): boolean => (key === undefined || pullRequestKey(record.url) === key) && (selector.startedBy === undefined || record.startedBy === selector.startedBy)
       let removed: BabysitRecord[] = []
       await this.options.store.changeBabysitting(thread.id, records => { removed = records.filter(matches); return removed.length ? records.filter(record => !matches(record)) : records })
-      for (const record of removed) { this.seen.delete(recordKey(thread.id, record)); this.options.log?.(`babysit-ended-${STOPPED[reason]}`) }
+      for (const record of removed) { this.seen.delete(recordKey(thread.id, record)); this.options.log?.(`babysit-ended-${STOPPED[reason]}`); this.options.ended?.(thread.id, record.url, STOPPED[reason]) }
       stopped += removed.length
     }
     return stopped
@@ -410,7 +416,7 @@ export class Babysitter {
       })
     } catch { return false }
     this.seen.delete(recordKey(target.threadId, target.record))
-    if (removed) this.options.log?.(`babysit-ended-${reason}`)
+    if (removed) { this.options.log?.(`babysit-ended-${reason}`); this.options.ended?.(target.threadId, target.record.url, reason) }
     return true
   }
   /** Records what the thread was told, on the record it was found for: a record stopped or started again since is left alone. */
