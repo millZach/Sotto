@@ -28,9 +28,12 @@ async function resize(launched: LaunchedSotto, width: number, height: number): P
   }, { width, height })
   await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
 }
-async function capture(page: Page, name: string): Promise<void> {
+/** The whole window, or only the part `subject` names, so each capture shows its own state. */
+async function capture(page: Page, name: string, subject?: Locator): Promise<void> {
   await mkdir(SHOTS, { recursive: true })
-  await page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled' })
+  const path = join(SHOTS, `${name}.png`)
+  if (subject) await subject.screenshot({ path, animations: 'disabled' })
+  else await page.screenshot({ path, animations: 'disabled' })
 }
 /**
  * Where the pose's "since" sits in its readout: whole on its line, dropped whole below it, or cut short. `since`, when
@@ -182,9 +185,14 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect(pose).toHaveAccessibleName(/^Babysitting #74 Greet the reviewer since \d/u)
     await expect(pose).not.toHaveAttribute('aria-live')
     await expect(passing).toBeEmpty()
-    await capture(page, 'c-surface-line-1280x800-dark')
-    await capture(page, 'c-sidebar-1280x800-dark')
-    await capture(page, 'c-pose-1280x800-dark')
+    await capture(page, 'c-babysitting-1280x800-dark')
+    await capture(page, 'c-surface-line-1280x800-dark', panel)
+    await capture(page, 'c-sidebar-1280x800-dark', page.locator('.thread-nav').first())
+    // The pose stands above the composer, outside its box, so its capture is the pane from a little above the pose down.
+    const [poseBox, paneBox] = [(await pose.boundingBox())!, (await pane(page).boundingBox())!]
+    const top = Math.max(paneBox.y, poseBox.y - 96)
+    await page.screenshot({ path: join(SHOTS, 'c-pose-1280x800-dark.png'), animations: 'disabled',
+      clip: { x: paneBox.x, y: top, width: paneBox.width, height: paneBox.y + paneBox.height - top } })
     const readable = {
       'line title': line.locator('strong'), 'line words': line.locator('.pr-surface__babysit-text span'), stop: line.getByRole('button', { name: 'Stop babysitting #74' }),
       'row state': status, 'pose label': pose.locator('.thread-monitor__label'), 'pose state': pose.locator('.thread-monitor__status'),
