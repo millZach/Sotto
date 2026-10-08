@@ -50,6 +50,9 @@ describe('what counts as a rate-limited answer', () => {
     expect(isRateLimitAnswer('You have triggered an abuse detection mechanism.')).toBe(true)
     expect(isRateLimitAnswer('HTTP 403: Resource not accessible by integration')).toBe(false)
     expect(isRateLimitAnswer('error connecting to api.github.com')).toBe(false)
+    // A repository or branch with the words in its name, named in another error, is not a refusal.
+    expect(isRateLimitAnswer("GraphQL: Could not resolve to a Repository with the name 'me/rate-limit'. (repository)")).toBe(false)
+    expect(isRateLimitAnswer('fatal: could not find remote ref feature/rate-limit-banner')).toBe(false)
   })
 })
 

@@ -89,10 +89,11 @@ export class GitHubRateLimited extends Error {
 
 /**
  * Whether gh's words say GitHub refused for its rate limit, primary or secondary: "API rate limit exceeded", "You have
- * exceeded a secondary rate limit", GraphQL's `RATE_LIMITED`, or HTTP 403 or 429 with rate-limit or abuse wording.
+ * exceeded a secondary rate limit", GraphQL's `RATE_LIMITED`, HTTP 429, or the abuse detection wording. GitHub's own
+ * phrases rather than the bare words, so an error that names a repository or branch called `rate-limit` is not one.
  */
 export function isRateLimitAnswer(message: string): boolean {
-  return /rate[ -]?limit|RATE_LIMITED|abuse detection|\bHTTP 429\b|too many requests/iu.test(message)
+  return /\bAPI rate limit\b|\bsecondary rate limit\b|\brate limit (?:already )?exceeded\b|\bRATE_LIMITED\b|abuse detection|\bHTTP 429\b|too many requests/iu.test(message)
 }
 const isPrimaryLimit = (message: string): boolean => /API rate limit (?:already )?exceeded|RATE_LIMITED/iu.test(message) && !/secondary/iu.test(message)
 

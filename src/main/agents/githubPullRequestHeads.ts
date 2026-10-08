@@ -128,8 +128,9 @@ export class PullRequestHeads {
     let answer: z.infer<typeof answerSchema>
     try { answer = answerSchema.parse(JSON.parse(await work)) }
     catch (error) {
-      // gh's words go no further than this test: a refusal for the rate limit pauses the host, anything else is the lookup's failure.
-      const message = error instanceof Error ? error.message : ''
+      // gh's words go no further than this test: a refusal for the rate limit pauses the host, anything else is the lookup's
+      // failure. Only gh's own error is read: an answer that failed to parse names its fields, `rateLimit` among them.
+      const message = error instanceof Error && !(error instanceof z.ZodError) && !(error instanceof SyntaxError) ? error.message : ''
       const failure = isRateLimitAnswer(message) ? new GitHubRateLimited(this.options.rateLimit.limited(repository.host, message)) : error
       for (const lookup of lookups) lookup.reject(failure)
       return
