@@ -132,6 +132,22 @@ function partialAnswer(error: unknown): z.infer<typeof rawAnswerSchema> | null {
   } catch { return null }
 }
 
+/**
+ * Whether GitHub refused checks, rather than a detail of one: an error whose path stops at or above the check list
+ * (the commit, its rollup, the list), or at one check whole. An error inside a check, such as its workflow's name,
+ * leaves the check itself, which is shown as GitHub sent it.
+ */
+function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
+  return errors.some(error => {
+    const path = error?.path ?? []
+    const commits = path.indexOf('commits')
+    if (commits === -1) return false
+    const contexts = path.indexOf('contexts', commits)
+    // Past `contexts`: the list (`nodes`), one check whole (`nodes`, its index), or a part of that one check.
+    return contexts === -1 || path.length - (contexts + 1) <= 2
+  })
+}
+
 /** A check as GraphQL names it, in the shape `gh pr view --json statusCheckRollup` gave it. */
 function rawCheckOf(node: z.infer<typeof rawContextSchema>): RawCheck {
   return { __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
@@ -272,13 +288,13 @@ export class GitPullRequests {
     const mergeable = raw.mergeable?.toUpperCase()
     const contexts = raw.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.nodes ?? []
     // No rollup is a pull request with no checks; a refused one leaves the same gap, and an error whose path names it.
-    const checksUnknown = !raw.commits || (answer.errors ?? []).some(error => error?.path?.includes('commits') === true)
+    const checksUnknown = !raw.commits || checksRefused(answer.errors ?? [])
     return {
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
       baseBranch: raw.baseRefName ?? '', headBranch: raw.headRefName ?? '', crossRepository: raw.isCrossRepository === true,
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,
       mergeable: mergeable === 'MERGEABLE' ? 'mergeable' : mergeable === 'CONFLICTING' ? 'conflicting' : 'unknown',
-      checks: checksUnknown ? [] : contexts.flatMap(node => node ? [checkOf(rawCheckOf(node))] : []).slice(0, 200), checksUnknown,
+      checks: contexts.flatMap(node => node ? [checkOf(rawCheckOf(node))] : []).slice(0, 200), checksUnknown,
       reviews: reviewsOf(raw.latestOpinionatedReviews?.nodes ?? []),
       mergeMethods: methods.mergeMethods, autoMergeAllowed: methods.autoMergeAllowed,
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,

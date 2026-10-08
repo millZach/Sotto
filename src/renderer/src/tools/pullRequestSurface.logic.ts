@@ -30,7 +30,7 @@ const plural = (count: number, one: string, many: string): string => count === 1
 function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): ChecklistLine {
   const line = { id: 'checks', label: 'Checks passing' } as const
   // Refused checks are not no checks: the line says they could not be read, and is not counted as done.
-  if (unknown) return { ...line, tone: 'unknown', why: 'GitHub did not let Sotto read the checks', fix: null }
+  if (unknown && checks.length === 0) return { ...line, tone: 'unknown', why: 'GitHub did not let Sotto read the checks', fix: null }
   if (checks.length === 0) return { ...line, label: 'No checks', tone: 'done', why: 'GitHub reports none for this pull request', fix: null }
   const failed = checks.filter(check => FAILED.has(check.status))
   const first = failed[0]
@@ -43,6 +43,8 @@ function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): C
   if (waiting) return { ...line, tone: 'todo', why: `${waiting.name} is waiting for approval on GitHub`, fix: waiting.url ? { kind: 'open-check', name: waiting.name, url: waiting.url } : null }
   const running = checks.filter(check => check.status === 'pending')
   if (running.length > 0) return { ...line, tone: 'running', why: running.length === 1 ? `${running[0]!.name} is still running` : `${running[0]!.name} and ${running.length - 1} more are still running`, fix: null }
+  // Some checks read, some refused: what the read checks hold back is said above; with nothing held back, the line is unknown, not done.
+  if (unknown) return { ...line, tone: 'unknown', why: 'GitHub did not let Sotto read every check', fix: null }
   const passed = checks.filter(check => check.status === 'success').length
   const why = passed < checks.length ? `${passed} passed, ${checks.length - passed} skipped` : checks.length === 1 ? `${checks[0]!.name} passed` : `All ${checks.length} passed`
   return { ...line, tone: 'done', why, fix: null }

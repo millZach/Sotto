@@ -103,6 +103,28 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const refusedRollup = scripted(() => Object.defineProperty(new Error('gh: Resource not accessible by integration'), 'stdout', { value: deep }))
     await expect(refusedRollup.service.view('C:/repo', URL_74)).resolves.toMatchObject({ checks: [], checksUnknown: true })
   })
+  it('keeps the checks GitHub returned when it refuses only a detail of one, or one check whole', async () => {
+    type Rollup = { data: { repository: { pullRequest: { commits: { nodes: Array<{ commit: { statusCheckRollup: { contexts: { nodes: Array<Record<string, unknown> | null> } } } }> } } } } }
+    const nodes = 'repository pullRequest commits nodes 0 commit statusCheckRollup contexts nodes'.split(' ').map(part => part === '0' ? 0 : part)
+    const refusing = (path: ReadonlyArray<string | number>, change: (rollup: Rollup) => void) => {
+      const body = JSON.parse(answerJson()) as Rollup
+      change(body)
+      const stdout = JSON.stringify({ ...body, errors: [{ type: 'FORBIDDEN', path, message: 'Resource not accessible by integration' }] })
+      return scripted(() => Object.defineProperty(new Error('gh: Resource not accessible by integration'), 'stdout', { value: stdout })).service
+    }
+    const contexts = (rollup: Rollup) => rollup.data.repository.pullRequest.commits.nodes[0]!.commit.statusCheckRollup.contexts.nodes
+    // The failing lint check's workflow name refused: lint is still a failure, and nothing is unknown.
+    const detail = refusing([...nodes, 1, 'checkSuite', 'workflowRun'], rollup => { contexts(rollup)[1]!.checkSuite = { workflowRun: null } })
+    const view = await detail.view('C:/repo', URL_74)
+    expect(view.checksUnknown).toBe(false)
+    expect(view.checks).toContainEqual({ name: 'lint', status: 'failure', url: 'https://github.com/sotto-fixture/owned/actions/runs/2', description: null })
+    expect(view.checks).toHaveLength(4)
+    // One check refused whole: the others stand, the failure among them, and the checks are not all known.
+    const whole = refusing([...nodes, 0], rollup => { contexts(rollup)[0] = null })
+    const partly = await whole.view('C:/repo', URL_74)
+    expect(partly.checksUnknown).toBe(true)
+    expect(partly.checks.map(check => [check.name, check.status])).toEqual([['CI / lint', 'failure'], ['e2e', 'pending'], ['deploy/preview', 'pending']])
+  })
   it('names who approved or asked for changes, with GitHub links only, and leaves out comments and reviewers GitHub no longer names', async () => {
     const reviews = [
       { state: 'APPROVED', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-1', author: { login: 'mira' } },

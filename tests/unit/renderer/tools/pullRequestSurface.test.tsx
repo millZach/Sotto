@@ -126,6 +126,13 @@ describe('the merge checklist, read from the pull request', () => {
     const refused = checklist(detail({ checks: [], checksUnknown: true }))
     expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks passing', 'unknown', 'GitHub did not let Sotto read the checks'])
     expect(checklistCount(refused)).toBe('4 of 5 done, 1 does not block')
+    // A failing check GitHub did return is never hidden behind unknown, and still holds the merge back.
+    const failing = checklist(detail({ checks: [check('lint', 'failure', 'https://github.com/o/r/actions/runs/2')], checksUnknown: true }))
+    expect([failing[0]!.tone, failing[0]!.why]).toEqual(['failed', 'lint failed'])
+    expect(mergeReady(detail(), failing)).toBe(false)
+    // Every returned check passed, but not every check was read: unknown, not done.
+    const passing = checklist(detail({ checks: [check('build', 'success')], checksUnknown: true }))
+    expect([passing[0]!.tone, passing[0]!.why]).toEqual(['unknown', 'GitHub did not let Sotto read every check'])
     // Where no review is required, a request for changes still standing is said and linked, in whichever order it came,
     // and holds the merge back no more than GitHub does.
     const openAfter = checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))
