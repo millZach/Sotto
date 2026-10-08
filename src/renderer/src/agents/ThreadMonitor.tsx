@@ -322,7 +322,7 @@ function ThreadOrnament({ kind, creature, label, title, status, wide = false }: 
     <div className="thread-monitor__track">{creature}</div>
     <div className="thread-monitor__task" title={title}>
       <span className="thread-monitor__label">{label}</span>
-      <span className="thread-monitor__status">{status}</span>
+      <span className={`thread-monitor__status thread-monitor__status--${kind}`}>{status}</span>
     </div>
   </div>
 }
@@ -389,7 +389,7 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
 export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>; readonly now: number | undefined }): ReactNode {
   const readout = babysitReadout(thread, new Date(now ?? Date.now()))
   if (!readout) return null
-  // The time gives way first in a narrow pane; the hover title and the Pull request surface still say it.
-  return <ThreadOrnament kind="babysitting" creature={<BabysittingCreature />} label={readout.label} title={readout.title} wide
-    status={<>Babysitting{readout.since ? <span className="thread-monitor__since"> since {readout.since}</span> : null}</>} />
+  // Where the time does not fit, it drops whole (threadMonitor.css); the hover title and the Pull request surface still say it.
+  return <ThreadOrnament kind="babysitting" creature={<BabysittingCreature />} label={readout.label} title={readout.title}
+    status={<>Babysitting{readout.since ? <span className="thread-monitor__since">{` since ${readout.since}`}</span> : null}</>} />
 }

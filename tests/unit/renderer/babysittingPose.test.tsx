@@ -50,8 +50,9 @@ describe('what the pose says', () => {
     const { container } = render(<ThreadBabysitting thread={thread([74])} now={NOW.getTime()} />)
     const ornament = screen.getByRole('status')
     expect(ornament).toHaveAttribute('data-ornament', 'babysitting')
-    expect(ornament).toHaveAttribute('data-readout', 'wide')
     expect(ornament).toHaveTextContent('#74 Greet the reviewerBabysitting since 2:02 pm')
+    // The time is one piece, so where it does not fit it drops whole rather than ending in an ellipsis.
+    expect(container.querySelector('.thread-monitor__status--babysitting .thread-monitor__since')).toHaveTextContent(/^since 2:02 pm$/u)
     // Nothing in it moves: no element is driven by a frame loop, so reduced motion shows the same pose.
     expect(container.querySelector('.thread-monitor__actor')).not.toHaveAttribute('style')
     expect(container.querySelector('.thread-monitor__sign')).not.toBeNull()

@@ -32,6 +32,24 @@ async function capture(page: Page, name: string): Promise<void> {
   await mkdir(SHOTS, { recursive: true })
   await page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled' })
 }
+/**
+ * Where the pose's "since" sits in its readout: whole on its line, dropped whole below it, or cut short. `since`, when
+ * given, stands in for the time the host stamped while it is measured, so the widest times are measured too.
+ */
+async function sinceFits(pose: Locator, since?: string): Promise<'whole' | 'dropped' | 'cut' | 'absent'> {
+  return pose.locator('.thread-monitor__status').evaluate((status, replacement) => {
+    const node = status.querySelector('.thread-monitor__since')?.firstChild
+    if (!node) return 'absent'
+    const before = node.nodeValue
+    if (replacement) node.nodeValue = replacement
+    const box = status.getBoundingClientRect(), part = node.parentElement!.getBoundingClientRect()
+    const fit = part.top >= box.bottom - 0.5 ? 'dropped' : part.right <= box.right + 0.5 && part.bottom <= box.bottom + 0.5 ? 'whole' : 'cut'
+    node.nodeValue = before
+    return fit
+  }, since)
+}
+/** The widest times the pose says: today's, and an earlier day's. */
+const WIDEST_TODAY = ' since 12:55 pm', WIDEST_EARLIER = ' since Oct 17, 12:55 pm'
 async function theme(page: Page, appearance: 'light' | 'dark'): Promise<void> {
   await page.emulateMedia({ colorScheme: appearance })
   await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
@@ -153,6 +171,10 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     const pose = pane(page).locator('.thread-monitor[data-ornament="babysitting"]')
     await expect(pose).toContainText('#74 Greet the reviewer')
     await expect(pose).toContainText(/Babysitting since \d/u)
+    // The pose says the whole time beside Tools at 1280x800, the widest of today's too; an earlier day's drops whole.
+    expect(await sinceFits(pose)).toBe('whole')
+    expect(await sinceFits(pose, WIDEST_TODAY)).toBe('whole')
+    expect(['whole', 'dropped']).toContain(await sinceFits(pose, WIDEST_EARLIER))
     await capture(page, 'c-surface-line-1280x800-dark')
     await capture(page, 'c-sidebar-1280x800-dark')
     await capture(page, 'c-pose-1280x800-dark')
@@ -176,8 +198,10 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await expect(line.getByRole('button', { name: 'Stop babysitting #74' })).toBeVisible()
     expect(await line.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    for (const since of [undefined, WIDEST_TODAY, WIDEST_EARLIER]) expect(['whole', 'dropped']).toContain(await sinceFits(pose, since))
     await capture(page, 'c-babysitting-820x560-dark')
     await resize(launched, 1600, 1000)
+    expect(await sinceFits(pose, WIDEST_TODAY)).toBe('whole')
     await capture(page, 'c-babysitting-1600x1000-dark')
     await resize(launched, 1280, 800)
 

@@ -20,4 +20,10 @@
 /* Babysitting (ADR-0061): the creature at rest in the muted colour, so it never reads as work or a watch; only its sign is the accent. */
 .thread-monitor[data-ornament="babysitting"] .thread-monitor__color { fill: var(--tt-text-muted); }
 .thread-monitor__sign { fill: var(--tt-accent-text); }
-@container thread-pane (max-width: 380px) { .thread-monitor__since { display: none; } }
+/* The creature stands still at the left, so the readout takes all but the creature's own width up to 240px: "since
+   12:55 pm" fits whole in a pane beside Tools at 1280x800. */
+.thread-monitor[data-ornament="babysitting"] { grid-template-columns: minmax(80px, 1fr) minmax(0, min(240px, calc(100% - 88px))); }
+/* Where "since" still does not fit, it drops whole to a second line the box never shows, rather than ending in an
+   ellipsis halfway through the time. The hover title and the Pull request surface still say it. */
+.thread-monitor__status--babysitting { display: flex; flex-wrap: wrap; height: 18px; overflow: hidden; }
+.thread-monitor__since { white-space: pre; }

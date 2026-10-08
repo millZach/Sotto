@@ -18,15 +18,18 @@ wake-up wording and the real send path through the follow-up queue.
    request, Unlink from thread and Close pull request, in that order. It opens from the keyboard, answers Escape with
    focus back on ···, and Babysit pull request is reached with the arrow keys and Enter. The host answers "Babysitting
    PR #74."
-2. **The line, the row and the pose.** A line docked under the checklist and above Merge says "Babysitting since 3:13
+2. **The line, the row and the pose.** A line docked under the checklist and above Merge says "Babysitting since 4:12
    pm" and "Started by you. Sotto sends this thread a wake-up when #74 needs it.", with **Stop**, named "Stop
    babysitting #74". The sidebar row reads **Babysitting #74**. Above the composer the creature rests in the muted
-   colour with its sign, over "#74 Greet the reviewer" and "Babysitting since 3:13 pm"
-   ([1280x800 dark](../../artifacts/babysitting-surfaces/babysitting-1280x800-dark.png)). The line's title, words and
+   colour with its sign, over "#74 Greet the reviewer" and "Babysitting since 4:12 pm"
+   ([1280x800 dark](../../artifacts/babysitting-surfaces/babysitting-1280x800-dark.png)). The journey measures where the time sits rather than trusting one capture: at
+   1280x800 with Tools open, today's time shows whole, and so does the widest one ("since 12:55 pm") put in its place;
+   an earlier day's ("since Oct 17, 12:55 pm") either shows whole or drops whole, never cut by an ellipsis. The line's title, words and
    Stop, the row's state and both lines of the pose measure 4.5:1 or better on what they sit on, in dark and in light.
    Under reduced motion the pose is the same still pose. At the 820x560 minimum nothing overflows, the line keeps its
-   words and Stop, and the pose drops "since 3:13 pm" in the narrow pane
-   ([820x560 dark](../../artifacts/babysitting-surfaces/babysitting-820x560-dark.png)); 1600x1000 was captured too.
+   words and Stop, and the pose's time, real or widest, shows whole or drops whole
+   ([820x560 dark](../../artifacts/babysitting-surfaces/babysitting-820x560-dark.png), where it shows whole); at
+   1600x1000 the widest shows whole.
 3. **A wake-up in the thread.** The first pass, with the build running, tells nothing. The build then fails on GitHub,
    and the next pass sends the thread a wake-up at once: on the user's side, labelled **Sotto** and **Wake-up**, with
    every word the provider received, "- Check CI / Owned build failed:" as text rather than a list, and both links as
