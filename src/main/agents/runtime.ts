@@ -220,6 +220,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   if (babysitter) agentControl.useBabysitting(babysitter)
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
+  // The switch turned off while Sotto was closed ends what agents started before the first pass reads anything
+  // (ADR-0061 decision 12); the desktop ends it again whenever the switch is saved off.
+  if (babysitter && options.babysitting?.agentTool?.() === false) await babysitter.stop({ startedBy: 'agent' }, 'switch').catch(() => 0)
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
 }

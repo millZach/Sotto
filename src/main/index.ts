@@ -770,12 +770,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.visualTools = visualTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
-  // GitHub for this computer's threads, so with it off no thread is offered the tool.
+  // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
+  // already ended what agents started, before its first pass.
   const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
     babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined })
   quitHandles.pullRequestTools = pullRequestTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools])
-  void pullRequestTools.settingChanged().catch(() => undefined)
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
