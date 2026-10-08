@@ -71,6 +71,21 @@ describe('a wake-up', () => {
     await expect.poll(() => f.control.get().followups ?? []).toEqual([])
   })
 
+  it('leaves no draft or delivery receipt when it goes, so the user\'s receipts are not spent on it', async () => {
+    const f = await fixture()
+    await f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+    const state = f.control.get()
+    expect(state.deliveredDrafts ?? []).toEqual([])
+    expect(state.deliveries ?? []).toEqual([])
+    // A restart reads the same: nothing of the wake-up was kept as a draft's.
+    f.control.dispose(); await f.control.privacyChanged()
+    const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+    expect(restored.get().deliveredDrafts ?? []).toEqual([])
+    expect(restored.get().deliveries ?? []).toEqual([])
+  })
+
   it('waits after the user\'s follow-ups while a turn runs, folds later news, cannot be edited or steered, and goes last', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'first of mine' })
