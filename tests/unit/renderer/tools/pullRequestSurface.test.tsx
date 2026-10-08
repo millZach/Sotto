@@ -157,6 +157,9 @@ describe('the merge checklist, read from the pull request', () => {
     expect(confirmationFor('merge', 74, 'squash', 'main')).toEqual({ title: 'Merge pull request?', description: 'This merges #74 into main using squash and merge.', confirm: 'Squash and merge', danger: false })
     expect(confirmationFor('close', 74, 'merge')).toMatchObject({ title: 'Close pull request?', description: 'This closes #74 without merging it.', danger: true })
     expect(limitedWords('not a date')).toBe('GitHub is limiting requests from your gh sign-in. Nothing was lost. Refresh in a few minutes.')
+    // The Link and Checkout dialogs have no Refresh button, so they do not name one.
+    expect(limitedWords('not a date', 'try-again')).toBe('GitHub is limiting requests from your gh sign-in. Nothing was lost. Try again in a few minutes.')
+    expect(limitedWords('2026-09-23T10:14:00Z', 'try-again', new Date('2026-09-23T10:00:00Z'))).toMatch(/Try again after .*\d/u)
     expect(mergedWhen(null)).toBeNull()
     expect(mergedWhen('not a date')).toBeNull()
     expect(mergedWhen('2026-09-23T10:14:00Z', new Date('2026-09-23T12:00:00Z'))).toMatch(/\d/u)

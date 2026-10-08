@@ -110,7 +110,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
     setResolving(true)
     const timer = window.setTimeout(() => {
       read({ threadId, reference: parsed })
-        .then(detail => { if (!live) return; if (detail && isPullRequestLimited(detail)) setResolveFailure(limitedWords(detail.limited.retryAt)); else if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure('No pull request answers to that reference.') },
+        .then(detail => { if (!live) return; if (detail && isPullRequestLimited(detail)) setResolveFailure(limitedWords(detail.limited.retryAt, 'try-again')); else if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure('No pull request answers to that reference.') },
           () => { if (live) setResolveFailure('Could not read that pull request. Check the reference and your gh sign-in.') })
         .finally(() => { if (live) setResolving(false) })
     }, RESOLVE_DELAY_MS)
