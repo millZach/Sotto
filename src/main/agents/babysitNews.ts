@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentBabysittingSchema, type BabysitStarter } from '../../shared/babysitting'
+import { agentBabysittingSchema, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
 import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './githubBabysitReads'
 
 /**
@@ -41,6 +41,9 @@ export type BabysitTold = z.infer<typeof babysitToldSchema>
 /** A pull request a thread babysits, as the host keeps it: what clients see, and what the thread was last told. */
 export const babysitRecordSchema = agentBabysittingSchema.extend({ told: babysitToldSchema }).strict()
 export type BabysitRecord = z.infer<typeof babysitRecordSchema>
+/** The part of a record clients are sent (decision 10): which pull request, who started it and since when, never what the thread was told. */
+export const publishedBabysitting = (record: BabysitRecord): AgentBabysitting =>
+  ({ url: record.url, number: record.number, startedBy: record.startedBy, startedAt: record.startedAt })
 
 /**
  * Nothing told yet. Remarks count from the start's whole second, because GitHub dates them to the second: a remark

@@ -36,7 +36,7 @@ import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestRefer
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
-import { babysitRecordSchema, type BabysitRecord } from './babysitNews'
+import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
 import { BABYSITTING_PER_THREAD_MAX } from '../../shared/babysitting'
 
@@ -150,8 +150,7 @@ function savedBabysitting(input: unknown): Map<string, BabysitRecord[]> {
   }
   return records
 }
-const babysittingSummary = (records: readonly BabysitRecord[]): AgentThread['babysitting'] =>
-  records.map(record => ({ url: record.url, number: record.number, startedBy: record.startedBy, startedAt: record.startedAt }))
+const babysittingSummary = (records: readonly BabysitRecord[]): AgentThread['babysitting'] => records.map(publishedBabysitting)
 
 /** How long a burst of provider snapshots is gathered into one publish. The coordinator's own
  * broadcast window is the same 16 ms, so this costs a window rather than a visible delay. */

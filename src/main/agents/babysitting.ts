@@ -5,7 +5,7 @@ import { isRateLimitAnswer, refusalReading, type GitHubRateLimit, type GitHubRat
 import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, fingerprintQuery, readDetail, readFingerprint, type DetailAnswer, type PullRequestFingerprint } from './githubBabysitReads'
 import { pullRequestAddress, pullRequestKey } from './gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
-import { FAILED_READ_LIMIT, findNews, printable, toldAtStart, type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold } from './babysitNews'
+import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtStart, type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold } from './babysitNews'
 
 /**
  * Babysitting on the thread's host (ADR-0061): the reader that finds, every two minutes, what changed on each pull
@@ -104,7 +104,6 @@ interface LastRead {
   readonly records: ReadonlySet<string>
 }
 
-const summaryOf = (record: BabysitRecord): AgentBabysitting => ({ url: record.url, number: record.number, startedBy: record.startedBy, startedAt: record.startedAt })
 const recordKey = (threadId: string, record: BabysitRecord): string => `${threadId}\0${pullRequestKey(record.url) ?? record.url}\0${record.startedAt}`
 const sameRecord = (left: BabysitRecord, right: BabysitRecord): boolean => left.startedAt === right.startedAt && pullRequestKey(left.url) === pullRequestKey(right.url)
 const sameTold = (left: BabysitTold, right: BabysitTold): boolean => JSON.stringify(left) === JSON.stringify(right)
@@ -170,9 +169,9 @@ export class Babysitter {
     let outcome: BabysitStart = { started: false, reason: 'unknown-thread' }
     await this.options.store.changeBabysitting(threadId, records => {
       const existing = records.find(item => pullRequestKey(item.url) === key)
-      if (existing) { outcome = { started: false, reason: 'already', babysitting: summaryOf(existing) }; return records }
+      if (existing) { outcome = { started: false, reason: 'already', babysitting: publishedBabysitting(existing) }; return records }
       if (records.length >= BABYSITTING_PER_THREAD_MAX) { outcome = { started: false, reason: 'limit' }; return records }
-      outcome = { started: true, babysitting: summaryOf(record) }
+      outcome = { started: true, babysitting: publishedBabysitting(record) }
       return [...records, record]
     })
     if (outcome.started) this.options.log?.('babysit-started')
@@ -212,7 +211,7 @@ export class Babysitter {
   /** The pull requests babysat, by one thread or by every thread: which, who started each and since when. */
   list(threadId?: string): BabysitListing[] {
     const threads = threadId === undefined ? this.options.store.babysatThreads() : [this.options.store.babysitThread(threadId)].flatMap(thread => thread ? [thread] : [])
-    return threads.flatMap(thread => thread.records.map(record => ({ threadId: thread.id, ...summaryOf(record) })))
+    return threads.flatMap(thread => thread.records.map(record => ({ threadId: thread.id, ...publishedBabysitting(record) })))
   }
 
   /** One pass over every babysat pull request. A pass under way is shared rather than run twice. */
