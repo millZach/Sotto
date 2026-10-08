@@ -5,7 +5,7 @@ import type { RunGitCommand } from './gitStatus'
 
 /**
  * What Sotto asks GitHub through `gh` on the user's own sign-in (ADR-0027 decision 7), and how much of that sign-in's
- * GitHub allowance it lets itself spend (#820). Electron-free: the headless host uses it too.
+ * GitHub rate limit it lets itself spend (#820). Electron-free: the headless host uses it too.
  */
 
 /** A repository on a GitHub host, as a remote URL names it. */
@@ -164,7 +164,7 @@ export function baseRepository(remotes: ReadonlyMap<string, GitHubRemote>): GitH
 /** Asked by the timer or the window on its own, which may wait, or by the user (Refresh, a Git action, the Pull request surface), who should not. */
 export type GitHubAsk = 'background' | 'user'
 
-/** Asked inside every GraphQL query Sotto sends: GitHub's own reading of the allowance, at no extra cost. */
+/** Asked inside every GraphQL query Sotto sends: GitHub's own reading of the rate limit, at no extra cost. */
 export const RATE_LIMIT_SELECTION = 'rateLimit { limit remaining resetAt }'
 export const rateLimitSchema = z.object({ limit: z.number().int().nonnegative(), remaining: z.number().int(), resetAt: z.string() }).nullable().optional()
 export type GitHubRateLimitReading = NonNullable<z.infer<typeof rateLimitSchema>>
@@ -184,31 +184,31 @@ export function isRateLimitAnswer(message: string): boolean {
 }
 const isPrimaryLimit = (message: string): boolean => /API rate limit (?:already )?exceeded|RATE_LIMITED/iu.test(message) && !/secondary/iu.test(message)
 
-/** Background reads stop below this share of the allowance (T3's `RESERVE_RATIO`); the rest is the user's. */
+/** Background reads stop below this share of the points (T3's `RESERVE_RATIO`); the rest is the user's. */
 const RESERVE_RATIO = 0.1
 const PAUSE_BASE_MS = 30_000
 const PAUSE_CAP_MS = 15 * 60_000
 
 export type GitHubRateLimitEvent = 'github-rate-limited' | 'github-reserve-reached'
-interface HostAllowance { login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number }
+interface HostRateLimit { login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number }
 
 /**
- * The GitHub allowance of each host's sign-in, as GitHub last reported it, and the pause after it refused. One per
+ * The GitHub rate limit of each host's sign-in, as GitHub last reported it, and the pause after it refused. One per
  * process, shared by the status reader and the Pull request surface, since both spend the same sign-in's points.
  *
  * - A background read is refused while less than 10% of the points remain, until GitHub's reset, and while a pause holds.
- * - A read the user asked for may spend the reserve and goes through a pause; only an allowance GitHub last reported
- *   empty refuses it, until the reset.
+ * - A read the user asked for may spend the reserve and goes through a pause; only a rate limit GitHub last reported
+ *   with no points left refuses it, until the reset.
  * - A rate-limited answer pauses background reads until the reset GitHub gave, or, with none known, for 30 seconds
  *   doubling up to 15 minutes. Any answer GitHub gives ends the pause.
  */
 export class GitHubRateLimit {
-  private readonly hosts = new Map<string, HostAllowance>()
+  private readonly hosts = new Map<string, HostRateLimit>()
   private readonly now: () => number
   constructor(private readonly options: { readonly now?: () => number; readonly log?: (event: GitHubRateLimitEvent) => void } = {}) {
     this.now = options.now ?? (() => Date.now())
   }
-  private entry(host: string): HostAllowance {
+  private entry(host: string): HostRateLimit {
     let entry = this.hosts.get(host)
     if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0 }; this.hosts.set(host, entry) }
     return entry
@@ -230,7 +230,7 @@ export class GitHubRateLimit {
   }
   /**
    * GitHub answered: the pause ends, and the reading it gave, if any, is kept. An answer from another sign-in on the same
-   * host is another allowance, so what was known of the last one is dropped.
+   * host is another rate limit, so what was known of the last one is dropped.
    */
   answered(host: string, reading: GitHubRateLimitReading | null | undefined, login?: string | null): void {
     const entry = this.entry(host)

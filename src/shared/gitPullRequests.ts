@@ -114,7 +114,7 @@ export const gitPullRequestRequestSchema = z.object({ threadId: id, reference: z
 export type GitPullRequestRequest = z.infer<typeof gitPullRequestRequestSchema>
 /**
  * A read the user asked for that GitHub's rate limit held back (#820): GitHub refused it, or reported nothing left of
- * the gh sign-in's allowance. `retryAt` is when it may be asked again, for the window to say in its own clock.
+ * the gh sign-in's rate limit. `retryAt` is when it may be asked again, for the window to say in its own clock.
  */
 export const gitPullRequestLimitedSchema = z.object({ limited: z.object({ retryAt: z.string().max(64) }).strict() }).strict()
 export type GitPullRequestLimited = z.infer<typeof gitPullRequestLimitedSchema>

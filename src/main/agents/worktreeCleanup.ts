@@ -25,7 +25,7 @@ export interface WorktreeCleanupDependencies {
   readonly autoSettleMerged?: () => boolean
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
-  readonly pullRequestMerged?: (repositoryRoot: string, branch: string, allowance?: GitHubAllowance) => Promise<boolean>
+  readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
   readonly now?: () => number
   readonly intervalMs?: number
   /** Stable event names only; never a path, a branch or a message. */
@@ -227,30 +227,30 @@ export class WorktreeCleanup {
   }
 }
 
-/** The process's GitHub allowance and its answer to which hosts gh asks as GitHub, which the merged check spends from too (#820). */
-export interface GitHubAllowance { readonly rateLimit: GitHubRateLimit; readonly hosts: GitHubHosts }
+/** The process's GitHub rate limit and its answer to which hosts gh asks as GitHub, which the merged check shares (#820). */
+export interface SharedGitHub { readonly rateLimit: GitHubRateLimit; readonly hosts: GitHubHosts }
 
 /**
  * Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request
- * is merged. With the process's `allowance` it asks as the timer does (#820): not while GitHub has paused the sign-in or
+ * is merged. With the process's shared `github` it asks as the timer does (#820): not while GitHub has paused the sign-in or
  * the reserve is reached, which rejects, so the branch is taken as not merged until the next sweep; and a rate-limited
  * answer pauses the status reader's background questions too. gh's words are only tested, never kept.
  */
-export async function githubPullRequestMerged(cwd: string, branch: string, allowance?: GitHubAllowance): Promise<boolean> {
+export async function githubPullRequestMerged(cwd: string, branch: string, github?: SharedGitHub): Promise<boolean> {
   const tip = await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
   if (!tip) return false
-  const host = allowance ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, allowance.hosts))?.host ?? null : null
-  const retryAt = allowance && host ? allowance.rateLimit.retryAt(host, 'background') : null
+  const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
+  const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
   if (retryAt !== null) throw new GitHubRateLimited(retryAt)
   const merged = await new Promise<boolean>((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
     execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) {
         const words = typeof stderr === 'string' ? stderr : ''
-        if (allowance && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(allowance.rateLimit.limited(host, words))); return }
+        if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
         reject(error); return
       }
-      if (allowance && host) allowance.rateLimit.answered(host, null)
+      if (github && host) github.rateLimit.answered(host, null)
       try {
         const prs: unknown = JSON.parse(stdout)
         accept(Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip))

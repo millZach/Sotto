@@ -121,7 +121,7 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     expect(refusal).toBeInstanceOf(GitPullRequestLimited)
     expect(refusal.message).toBe('GitHub is limiting requests from your gh sign-in, so Sotto could not read the pull request. Nothing was lost. Try again in a minute.')
     expect((refusal as GitPullRequestLimited).retryAt).toBe(now + 30_000)
-    // A known empty allowance refuses before gh is started, until GitHub's reset.
+    // A rate limit known to have no points left refuses before gh is started, until GitHub's reset.
     rateLimit.answered('github.com', { limit: 5000, remaining: 0, resetAt: new Date(now + 20 * 60_000).toISOString() }, 'sotto-fixture')
     const empty = scripted(() => new Error('unexpected'), { rateLimit, now: () => now })
     await expect(empty.service.view('C:/repo', URL_74)).rejects.toThrow('Try again in about 20 minutes.')

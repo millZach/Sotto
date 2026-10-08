@@ -29,7 +29,7 @@ export interface HeadPullRequest {
 /**
  * The query for up to 25 heads of one repository: one aliased `pullRequests` connection per head, each head passed as
  * a variable rather than written into the document (T3's `buildPullRequestsByHeadQuery`), and GitHub's reading of the
- * allowance and the sign-in beside them, which cost nothing more. Every lookup asks for all three states, so they are
+ * rate limit and the sign-in beside them, which cost nothing more. Every lookup asks for all three states, so they are
  * written in rather than passed.
  */
 export function pullRequestsByHeadQuery(count: number): string {

@@ -9,7 +9,7 @@ import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 /** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
 export class GitPullRequestRefusal extends Error {}
 /**
- * A read GitHub's rate limit held back (#820): GitHub refused it, or reported nothing left of the sign-in's allowance.
+ * A read GitHub's rate limit held back (#820): GitHub refused it, or reported no points left on the sign-in's rate limit.
  * The message says so in plain words for a press; the Pull request surface says it with `retryAt` in its own clock.
  */
 export class GitPullRequestLimited extends GitPullRequestRefusal {
@@ -29,7 +29,7 @@ const MERGE_SETTINGS = 'mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
 /**
  * Everything the Pull request surface shows, in one GraphQL read (#820): the pull request, its checks and reviews that
  * took a side, how far its head is behind its base, the repository's merge methods when they are not kept already, and
- * GitHub's reading of the allowance. `mergeStateStatus` says BEHIND only where the repository requires up-to-date
+ * GitHub's reading of the rate limit. `mergeStateStatus` says BEHIND only where the repository requires up-to-date
  * branches, so the commits are counted instead, the same number GitHub's own out-of-date banner shows; the head is
  * named by GitHub's own `refs/pull/<number>/head`, which the base repository has for a fork's pull request too.
  */
@@ -191,7 +191,7 @@ function branchFragment(head: string): string {
  * Pull request surface offers; and check one out, into the thread's folder or onto a branch a new worktree
  * will take. Everything goes through `gh` on the user's own sign-in, or through Git for the checkout. It never
  * forces a branch, and a press whose reply was lost is settled by reading the pull request again rather than
- * pressing twice. A read is one GraphQL query that spends the user's allowance (#820): it may use the reserve the
+ * pressing twice. A read is one GraphQL query that spends the sign-in's points (#820): it may use the reserve the
  * timer keeps back and goes through a pause, and is refused only when GitHub refuses it or last reported nothing left.
  */
 export class GitPullRequests {

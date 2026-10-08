@@ -93,7 +93,7 @@ export interface GitStatusReaderOptions {
   readonly now?: () => number
   /** Milliseconds between background fetches of a working copy's remote. Zero or less turns the fetch off. */
   readonly fetchIntervalMs: () => number
-  /** The GitHub allowance of the user's sign-in, shared with the Pull request surface; one of its own when absent. */
+  /** The GitHub rate limit of the user's sign-in, shared with the Pull request surface; one of its own when absent. */
   readonly rateLimit?: GitHubRateLimit
   /** Which hosts gh asks as GitHub, shared with the Pull request surface and the Git actions; one of its own when absent. */
   readonly hosts?: GitHubHosts

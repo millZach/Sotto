@@ -117,7 +117,7 @@ describe('what counts as a rate-limited answer', () => {
   })
 })
 
-describe('the allowance of a sign-in', () => {
+describe('the rate limit of a sign-in', () => {
   const setup = () => {
     let now = 1_000_000
     const events: GitHubRateLimitEvent[] = []
@@ -129,7 +129,7 @@ describe('the allowance of a sign-in', () => {
     f.limit.answered('github.com', { limit: 5000, remaining: 499, resetAt: f.at(600_000) }, 'me')
     expect(f.limit.retryAt('github.com', 'background')).toBe(f.now() + 600_000)
     expect(f.limit.retryAt('github.com', 'user')).toBeNull()
-    expect(f.limit.retryAt('ghe.example.com', 'background')).toBeNull() // another host is another allowance
+    expect(f.limit.retryAt('ghe.example.com', 'background')).toBeNull() // another host is another rate limit
     expect(f.events).toEqual(['github-reserve-reached'])
     f.advance(600_001)
     expect(f.limit.retryAt('github.com', 'background')).toBeNull()
