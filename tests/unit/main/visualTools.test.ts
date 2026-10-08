@@ -48,6 +48,13 @@ describe('the visualize tool', () => {
     expect(add).toHaveBeenCalledWith('thread', page)
   })
 
+  // A live page took the note colour, then named like a text colour, for its footnote and could hardly be read.
+  it('tells the agent what each colour is for, and that words go only in the text colours (ADR-0060)', () => {
+    for (const phrase of ['--sotto-text for text', '--sotto-muted for secondary text', '--sotto-note-fill for the fill behind a note', '--sotto-group-fill for the fill behind a group', 'Put words only in --sotto-text or --sotto-muted'])
+      expect(visualizeDefinition.description).toContain(phrase)
+    expect(visualizeDefinition.description).not.toMatch(/--sotto-(note|group)[,; ]/u)
+  })
+
   it('names the kind with its article and leaves out the steps line when there are none', () => {
     expect(visualShownText('Tables', 'Entity relationship diagram', 0, 'user')).toBe('Shown in the thread as "Tables": an entity relationship diagram, under the user\'s message.')
     expect(visualShownText('Calls', 'Sequence diagram', 1, 'none')).toBe('Shown in the thread as "Calls": a sequence diagram with 1 step, at the start of the thread. Do not repeat the steps in your reply.')

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { checkVisualInput, VISUAL_NOTHING_DRAWN, VISUAL_PAGE_SOURCE_MAX, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, visualInputSchema, visualRefusalText, type VisualInput } from '../../shared/visuals'
 import { MAX_DIAGRAM_SOURCE_LENGTH } from '../../shared/diagramSource'
-import { VISUAL_FONT_TOKEN, VISUAL_STEP_MESSAGE, VISUAL_THEME_MESSAGE, VISUAL_THEME_TOKENS } from '../../shared/visualGuest'
+import { VISUAL_FONT_TOKEN, VISUAL_STEP_MESSAGE, VISUAL_THEME_MESSAGE, VISUAL_THEME_TOKEN_ROLES, VISUAL_THEME_TOKENS } from '../../shared/visualGuest'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 import type { VisualAddition } from './workspace'
 
@@ -15,7 +15,7 @@ const DESCRIPTION = [
   `For kind "diagram", send Mermaid source for a flowchart, sequence, state, class or entity relationship diagram, up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters, with no init directives or configuration.`,
   `For kind "interactive", send one HTML page of up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters, with its script and style inline: a chart, a simulation, a clickable explainer.`,
   'The page runs sealed: it cannot load anything, so no fetch, no external script, style, font or image, no forms, popups, storage or navigation. Draw with inline SVG, canvas or the DOM; images must be data: URLs.',
-  `Colour it with the CSS variables Sotto sets, ${VISUAL_THEME_TOKENS.join(', ')}, and ${VISUAL_FONT_TOKEN} for text, so it matches the user's theme; the page's background is already --sotto-background.`,
+  `Colour it with the CSS variables Sotto sets, so it matches the user's theme: ${VISUAL_THEME_TOKENS.map(token => `${token} for ${VISUAL_THEME_TOKEN_ROLES[token]}`).join(', ')}, and ${VISUAL_FONT_TOKEN} for the font. Put words only in --sotto-text or --sotto-muted; the fills are for shapes. The page's background is already --sotto-background.`,
   `Sotto sends the page window messages: { type: "${VISUAL_STEP_MESSAGE}", step, total, highlight } once the page has loaded and whenever the reader moves through the walkthrough Sotto shows under it (step counts from 1, total is the number of steps, highlight is the names that step lists; step 0 with no names means every step is shown at once), and { type: "${VISUAL_THEME_MESSAGE}", tokens, mode, reducedMotion } once the page has loaded and whenever the theme changes. Attach window.addEventListener("message", ...) at the top of the page's script, before anything else runs, and redraw for the step's highlight names.`,
   "Sotto sizes the frame to the page's content, between 160 and 640 pixels; a taller page scrolls inside. Size the page by its content: do not use vh units or height: 100% for its layout, which follow the frame rather than the content.",
   'Add an intro of a sentence or two, and up to 12 steps that walk through the visual one part at a time.',

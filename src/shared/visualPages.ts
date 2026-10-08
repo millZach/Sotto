@@ -12,7 +12,7 @@ export const VISUAL_SCHEME = 'sotto-visual'
 /** The in-memory session every interactive visual runs in: no `persist:` prefix, so nothing it holds reaches disk. */
 export const VISUAL_PARTITION = 'sotto-visual'
 
-const TOKEN_NAMES = ['--sotto-text', '--sotto-muted', '--sotto-line', '--sotto-background', '--sotto-surface', '--sotto-border', '--sotto-group', '--sotto-note', '--sotto-accent'] as const
+const TOKEN_NAMES = ['--sotto-text', '--sotto-muted', '--sotto-line', '--sotto-background', '--sotto-surface', '--sotto-border', '--sotto-group-fill', '--sotto-note-fill', '--sotto-accent'] as const
 const hex = z.string().regex(/^#[0-9a-f]{6}$/u)
 
 export const visualPageThemeSchema = z.object({

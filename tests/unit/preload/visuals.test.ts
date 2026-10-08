@@ -4,7 +4,7 @@ import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload
 import { VISUAL_PAGE_OPEN, type VisualPageRequest } from '../../../src/shared/visualPages'
 
 const theme = { mode: 'dark', reducedMotion: false, tokens: Object.fromEntries(['--sotto-text', '--sotto-muted', '--sotto-line', '--sotto-background', '--sotto-surface',
-  '--sotto-border', '--sotto-group', '--sotto-note', '--sotto-accent'].map(name => [name, '#123456'])) } as VisualPageRequest['theme']
+  '--sotto-border', '--sotto-group-fill', '--sotto-note-fill', '--sotto-accent'].map(name => [name, '#123456'])) } as VisualPageRequest['theme']
 
 describe('interactive visual preload contract (ADR-0060)', () => {
   it('lets the main window ask for a page by thread and visual, never send one, and checks the answer', async () => {

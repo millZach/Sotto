@@ -16,7 +16,7 @@ import type { VisualTheme } from '../../../src/shared/visualGuest'
 
 const theme: VisualTheme = { mode: 'dark', reducedMotion: false, tokens: {
   '--sotto-text': '#fffaff', '--sotto-muted': '#a5aab3', '--sotto-line': '#a5aab3', '--sotto-background': '#252e38', '--sotto-surface': '#333b45',
-  '--sotto-border': '#848e9b', '--sotto-group': '#324e66', '--sotto-note': '#2c3d4e', '--sotto-accent': '#70b9ee',
+  '--sotto-border': '#848e9b', '--sotto-group-fill': '#324e66', '--sotto-note-fill': '#2c3d4e', '--sotto-accent': '#70b9ee',
 } }
 const page: AgentVisual = { id: 'page-1', title: 'A queue', kind: 'interactive', source: '<h1>Queue</h1><script>document.title = "drawn"</script>' }
 const diagram: AgentVisual = { id: 'diagram-1', title: 'A flow', kind: 'diagram', source: 'flowchart LR\n  A --> B' }

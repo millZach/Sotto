@@ -217,6 +217,6 @@ describe('the theme a page is given', () => {
   it('is the diagram palette under the names agents are told, every colour six-digit hex', () => {
     const theme = visualThemeFrom({ dark: true, text: '#FFF', muted: '#a5aab3', line: '#a5aab3', node: '#333b45', nodeBorder: '#848e9b', group: '#324e66', note: '#2c3d4e', block: '#252e38', accent: '#70b9ee' }, true)
     expect(theme).toEqual({ mode: 'dark', reducedMotion: true, tokens: { '--sotto-text': '#ffffff', '--sotto-muted': '#a5aab3', '--sotto-line': '#a5aab3', '--sotto-background': '#252e38',
-      '--sotto-surface': '#333b45', '--sotto-border': '#848e9b', '--sotto-group': '#324e66', '--sotto-note': '#2c3d4e', '--sotto-accent': '#70b9ee' } })
+      '--sotto-surface': '#333b45', '--sotto-border': '#848e9b', '--sotto-group-fill': '#324e66', '--sotto-note-fill': '#2c3d4e', '--sotto-accent': '#70b9ee' } })
   })
 })

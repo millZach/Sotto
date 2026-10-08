@@ -20,9 +20,24 @@ export const VISUAL_THEME_MESSAGE = 'sotto-visual-theme'
 /** The colours Sotto gives a page as CSS variables, by name, each a `#rrggbb` hex colour. */
 export const VISUAL_THEME_TOKENS = [
   '--sotto-text', '--sotto-muted', '--sotto-line', '--sotto-background', '--sotto-surface', '--sotto-border',
-  '--sotto-group', '--sotto-note', '--sotto-accent',
+  '--sotto-group-fill', '--sotto-note-fill', '--sotto-accent',
 ] as const
 export type VisualThemeToken = typeof VISUAL_THEME_TOKENS[number]
+/**
+ * What each colour is for, as an agent is told it. A live page took `--sotto-note`, then a fill behind Mermaid's notes,
+ * for note text and drew words that could hardly be read, so every name says whether it is for text or a fill.
+ */
+export const VISUAL_THEME_TOKEN_ROLES: Readonly<Record<VisualThemeToken, string>> = {
+  '--sotto-text': 'text',
+  '--sotto-muted': 'secondary text',
+  '--sotto-line': 'lines and axes',
+  '--sotto-background': 'the page background',
+  '--sotto-surface': 'the fill of boxes and bars that are not lit',
+  '--sotto-border': 'box borders',
+  '--sotto-group-fill': 'the fill behind a group of parts',
+  '--sotto-note-fill': 'the fill behind a note, with --sotto-text on it',
+  '--sotto-accent': 'the one highlight colour, for what a step lights',
+}
 /** The font a page is given, as a CSS variable. Figtree travels with the page, so nothing is fetched to show it. */
 export const VISUAL_FONT_TOKEN = '--sotto-font'
 export const VISUAL_FONT_STACK = FIGTREE_FONT_STACK

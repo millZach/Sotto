@@ -32,7 +32,7 @@ export function visualThemeFrom(palette: DiagramPalette, reducedMotion: boolean)
     tokens: {
       '--sotto-text': hex6(palette.text), '--sotto-muted': hex6(palette.muted), '--sotto-line': hex6(palette.line),
       '--sotto-background': hex6(palette.block), '--sotto-surface': hex6(palette.node), '--sotto-border': hex6(palette.nodeBorder),
-      '--sotto-group': hex6(palette.group), '--sotto-note': hex6(palette.note), '--sotto-accent': hex6(palette.accent),
+      '--sotto-group-fill': hex6(palette.group), '--sotto-note-fill': hex6(palette.note), '--sotto-accent': hex6(palette.accent),
     },
   }
 }

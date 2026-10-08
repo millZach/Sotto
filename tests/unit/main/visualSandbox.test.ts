@@ -15,7 +15,7 @@ import type { AgentVisual } from '../../../src/shared/visuals'
 const HERE = '11111111-2222-4333-8444-555555555555'
 const THERE = '99999999-2222-4333-8444-555555555555'
 const theme = { mode: 'dark', reducedMotion: false, tokens: Object.fromEntries(['--sotto-text', '--sotto-muted', '--sotto-line', '--sotto-background', '--sotto-surface',
-  '--sotto-border', '--sotto-group', '--sotto-note', '--sotto-accent'].map(name => [name, '#123456'])) }
+  '--sotto-border', '--sotto-group-fill', '--sotto-note-fill', '--sotto-accent'].map(name => [name, '#123456'])) }
 const page: AgentVisual = { id: 'v1', title: 'A queue', kind: 'interactive', source: '<h1>Queue</h1>' }
 
 function renderer(url = 'file:///C:/Sotto/out/renderer/index.html') {
