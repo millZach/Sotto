@@ -180,7 +180,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
-    && (feature !== 'client-updates' || options.clientUpdates === true))
+    && (feature !== 'client-updates' || options.clientUpdates === true)
+    && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature))
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)

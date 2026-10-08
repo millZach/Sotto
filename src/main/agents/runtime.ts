@@ -218,7 +218,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads })
+  if (babysitter) agentControl.useBabysitting(babysitter)
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
 }

@@ -15,6 +15,8 @@ import {
   type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAssignment, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
+import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
+import { pullRequestAddress } from './gitPullRequests'
 import { wakeUpText } from './wakeUp'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -208,6 +210,7 @@ import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/git
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
+type BabysitCommand = Extract<AgentCommand, { type: 'babysit-pull-request' | 'stop-babysitting' }>
 /**
  * The read immediately before a send, naming the message it is for so the adapter's own first read can be skipped
  * (#765). An answer to a request is not a send, so its read names none and stands for nothing.
@@ -216,6 +219,7 @@ const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose =>
 
 export class AgentControl {
   private readonly followupStore: FollowupStore
+  private babysitting: Pick<Babysitter, 'start' | 'stop'> | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -1672,6 +1676,30 @@ export class AgentControl {
     this.publish()
     return this.shell()
   }
+  /** The reader that babysits this host's threads' pull requests (ADR-0061), once the runtime has made it. */
+  useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>): void { this.babysitting = babysitting }
+  /**
+   * The user's Babysit pull request and Stop babysitting on the Pull request surface (ADR-0061 decision 3), from this
+   * computer's window or a paired client. A refusal says why and that nothing was started.
+   */
+  private async babysitCommand(command: BabysitCommand): Promise<AgentState> {
+    try {
+      this.thread(command.threadId)
+      if (!this.babysitting) throw new Error('This host cannot babysit pull requests: it reads GitHub through Git status, which is off here. Nothing was started.')
+      const number = pullRequestAddress(command.url)?.number
+      if (command.type === 'babysit-pull-request') {
+        const outcome = await this.babysitting.start(command.threadId, command.url, 'user')
+        if (!outcome.started && outcome.reason !== 'already') throw new Error(BABYSIT_REFUSALS[outcome.reason])
+        this.state.notice = outcome.started ? `Babysitting PR #${outcome.babysitting.number}.` : `Already babysitting PR #${outcome.babysitting.number}.`
+      } else {
+        const stopped = await this.babysitting.stop({ threadId: command.threadId, url: command.url }, 'user')
+        this.state.notice = stopped ? `Stopped babysitting PR #${number}.` : `This thread was not babysitting PR #${number}.`
+      }
+      this.state.error = null
+    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Babysitting could not be changed. Nothing was started.') }
+    this.publish()
+    return this.shell()
+  }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
     try {
@@ -1998,6 +2026,8 @@ export class AgentControl {
     }
     // A Git action runs as long as its hooks and its push take, on the thread's own lane in the host, never on the global one.
     if (isGitCommand(command)) return this.gitCommand(command)
+    // Babysitting is Sotto's own record on the thread, so starting or stopping it waits on no turn and no lane.
+    if (command.type === 'babysit-pull-request' || command.type === 'stop-babysitting') return this.babysitCommand(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.

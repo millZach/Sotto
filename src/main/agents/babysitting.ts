@@ -83,6 +83,14 @@ export type BabysitStart =
   /** `already`: it babysits this one, unchanged. The others started nothing. */
   | { readonly started: false; readonly reason: 'already'; readonly babysitting: AgentBabysitting }
   | { readonly started: false; readonly reason: 'not-github' | 'unknown-thread' | 'closed-thread' | 'unknown-pull-request' | 'limit' }
+/** Why nothing was started, in the words the user's control and the agent's tool both answer with (decision 5). */
+export const BABYSIT_REFUSALS: Readonly<Record<Exclude<Extract<BabysitStart, { started: false }>['reason'], 'already'>, string>> = {
+  'not-github': 'Sotto babysits pull requests on GitHub only. Nothing was started.',
+  'unknown-thread': 'This thread is not on this host any more. Nothing was started.',
+  'closed-thread': 'This thread is settled or archived. Restore it to babysit its pull request. Nothing was started.',
+  'unknown-pull-request': 'Link this pull request to the thread first. Nothing was started.',
+  limit: `This thread already babysits ${BABYSITTING_PER_THREAD_MAX} pull requests, the most one thread can. Stop one first. Nothing was started.`,
+}
 /** One pull request a thread babysits, as `list` gives it. */
 export interface BabysitListing extends AgentBabysitting { readonly threadId: string }
 

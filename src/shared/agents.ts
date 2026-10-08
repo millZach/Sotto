@@ -486,7 +486,9 @@ export type ClientUpdateRun = z.infer<typeof clientUpdateRunSchema>
 export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
   capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional(),
   /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
-  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional() })
+  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
+  /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
+  pullRequestBabysit: z.literal(true).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -982,6 +984,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Link a pull request to the thread by a GitHub URL or `#42`, or take the link away again. */
   z.object({ type: z.literal('git-link-pull-request'), threadId: id, reference: z.string().min(1).max(2_048) }).strict(),
   z.object({ type: z.literal('git-unlink-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  /** The user's Babysit pull request and Stop babysitting, on a pull request the thread knows (ADR-0061 decision 3). */
+  z.object({ type: z.literal('babysit-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  z.object({ type: z.literal('stop-babysitting'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
   /** T3's Checkout pull request: `local` checks it out in the thread's folder with `gh pr checkout`; `worktree` fetches its
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),

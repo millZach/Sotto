@@ -714,6 +714,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
+    offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })

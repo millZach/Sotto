@@ -62,6 +62,8 @@ export interface HostService {
   readonly supportsAtomicSend?: boolean
   /** Stable draft IDs, exact recovery revision guards and private socket save outcomes. */
   readonly supportsDraftRevisions?: boolean
+  /** The host babysits pull requests and takes the user's Babysit pull request and Stop babysitting (ADR-0061). */
+  readonly supportsBabysitting?: boolean
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -166,6 +168,7 @@ export interface LocalHostControl {
 export class LocalHostService implements HostService {
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true
+  readonly supportsBabysitting: boolean
   private readonly observations = new Map<string, string[]>()
   /**
    * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
@@ -178,8 +181,9 @@ export class LocalHostService implements HostService {
   private readonly tools: HostThreadToolReads | undefined
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads }) {
+  constructor(options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean }) {
     this.control = options.control
+    this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
     this.tools = options.tools
   }

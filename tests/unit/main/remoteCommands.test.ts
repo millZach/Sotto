@@ -48,6 +48,12 @@ describe('remote command allow-list', () => {
     }
     expect(remoteCommandRefusal({ type: 'update-client', provider: 'codex' }, { mayAnswer: true, clientUpdates: true })).toBe('forbidden')
   })
+  it('takes the user’s Babysit pull request and Stop babysitting without the answer policy, and no field beyond the pull request (ADR-0061)', () => {
+    const url = 'https://github.com/o/r/pull/42'
+    expect(refuse({ type: 'babysit-pull-request', threadId: 'thread', url })).toBeNull()
+    expect(refuse({ type: 'stop-babysitting', threadId: 'thread', url })).toBeNull()
+    expect(refuse({ type: 'babysit-pull-request', threadId: 'thread', url, startedBy: 'agent' } as AgentCommand, true)).toBe('forbidden')
+  })
   it('refuses host-local commands and fields outside the list', () => {
     for (const command of [
       { type: 'credential', slot: 'reasoning', value: 'not-a-real-key' },
