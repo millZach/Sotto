@@ -20,6 +20,7 @@ import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
 import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
+import { GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
@@ -66,7 +67,9 @@ export interface AgentRuntimeOptions {
    */
   gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
-    ghStandIn?: { executable: string; args: readonly string[] } }
+    ghStandIn?: { executable: string; args: readonly string[] }
+    /** When GitHub's rate limit holds Sotto's questions back (#820), as stable event names; never gh's words. */
+    log?: (event: GitHubRateLimitEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
@@ -97,12 +100,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
+  let gitHubRateLimit: GitHubRateLimit | undefined
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground, ghStandIn } = options.gitStatus
+    const { fetchIntervalMs, foreground, ghStandIn, log } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
-    gitStatus = new GitStatusReader({ fetchIntervalMs, ...(gitRun ? { run: gitRun } : {}) })
+    // One allowance for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
+    gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
+    gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
     agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
   }

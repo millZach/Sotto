@@ -145,6 +145,65 @@ describe('the head repository matches', () => {
   })
 })
 
+describe('the rate limit is read and respected', () => {
+  const reading = (f: { now: () => number }, remaining: number, resetInMs: number) => ({ rateLimit: { limit: 5000, remaining, resetAt: new Date(f.now() + resetInMs).toISOString() }, viewer: { login: 'sotto-fixture' } })
+  it('pauses background reads until the reset after a rate-limited answer, keeps the last answer, and still asks for a refresh', async () => {
+    let refuse: string | null = null
+    const folders = { 'C:/repo': { common: 'C:/repo/.git', branch: 'feature/open' } }
+    // Every answer gives the same reset, thirty minutes after the harness's clock starts.
+    const f = harness(folders, args => refuse !== null ? new Error(refuse) : headsAnswer(args, [{ head: 'feature/open', number: 9 }], reading({ now: () => 1_000_000 }, 4000, 30 * 60_000)))
+    expect((await f.round('C:/repo', true)).pullRequest?.number).toBe(9)
+    expect(f.calls[0]!.find(arg => arg.startsWith('query='))).toContain('rateLimit { limit remaining resetAt }')
+    refuse = 'GraphQL: API rate limit exceeded for user ID 1. (HTTP 403)'
+    f.advance(61_000)
+    // GitHub refuses: the last answer stands.
+    expect((await f.round('C:/repo', true)).pullRequest?.number).toBe(9)
+    expect(f.calls).toHaveLength(2)
+    // The timer asks nothing until the reset GitHub gave, not even Git where the branch is pushed.
+    const listings = () => f.git.filter(call => call[1] === 'for-each-ref').length
+    const before = listings()
+    for (let minute = 0; minute < 25; minute++) { f.advance(60_000); expect((await f.round('C:/repo', true)).pullRequest?.number).toBe(9) }
+    expect(f.calls).toHaveLength(2)
+    expect(listings()).toBe(before)
+    // A refresh is the user's: it goes through the pause.
+    refuse = null
+    await f.round('C:/repo')
+    expect(f.calls).toHaveLength(3)
+    // GitHub answered, so the pause is over for the timer too.
+    f.advance(61_000)
+    await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(4)
+  })
+  it('pauses for 30 seconds, doubling, when GitHub gives no reset, as for a secondary limit', async () => {
+    const f = harness({ 'C:/repo': { common: 'C:/repo/.git', branch: 'feature/x' } }, () => new Error('gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)'))
+    await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(1)
+    f.advance(29_000); await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(1)
+    f.advance(2_000); await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(2)
+    // The second refusal doubles the pause.
+    f.advance(59_000); await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(2)
+    f.advance(2_000); await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(3)
+  })
+  it('stops background reads while less than a tenth of the points remain, and lets the user spend the rest', async () => {
+    // Every answer gives the same reset, twenty minutes after the harness's clock starts.
+    const f = harness({ 'C:/repo': { common: 'C:/repo/.git', branch: 'feature/open' } }, args => headsAnswer(args, [{ head: 'feature/open', number: 9 }], reading({ now: () => 1_000_000 }, 499, 20 * 60_000)))
+    await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(1)
+    for (let minute = 0; minute < 19; minute++) { f.advance(60_000); await f.round('C:/repo', true) }
+    expect(f.calls).toHaveLength(1)
+    await f.round('C:/repo')
+    expect(f.calls).toHaveLength(2)
+    // Past the reset the reading no longer holds, and the timer asks again.
+    f.advance(2 * 60_000)
+    await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(3)
+  })
+})
+
 describe('answers last as long as they safely can', () => {
   it('keeps an open answer a minute, none five minutes, and a merged one fifteen minutes or until the branch moves', async () => {
     let pulls: Pull[] = [{ head: 'feature/open', number: 1 }, { head: 'feature/merged', number: 2, state: 'MERGED' }]

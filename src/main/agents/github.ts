@@ -1,6 +1,10 @@
+import { z } from 'zod'
 import type { RunGitCommand } from './gitStatus'
 
-/** What Sotto asks GitHub through `gh` on the user's own sign-in (ADR-0027 decision 7). Electron-free: the headless host uses it too. */
+/**
+ * What Sotto asks GitHub through `gh` on the user's own sign-in (ADR-0027 decision 7), and how much of that sign-in's
+ * GitHub allowance it lets itself spend (#820). Electron-free: the headless host uses it too.
+ */
 
 /** A repository on a GitHub host, as a remote URL names it. */
 export interface GitHubRepository { readonly host: string; readonly owner: string; readonly name: string }
@@ -44,3 +48,92 @@ export function baseRepository(remotes: ReadonlyMap<string, { url: string | null
 
 /** Asked by the timer, which may wait, or by the user (a refresh, a Git action, the Pull request surface), who should not. */
 export type GitHubAsk = 'background' | 'user'
+
+/** Asked inside every GraphQL query Sotto sends: GitHub's own reading of the allowance, at no extra cost. */
+export const RATE_LIMIT_SELECTION = 'rateLimit { limit remaining resetAt }'
+export const rateLimitSchema = z.object({ limit: z.number().int().nonnegative(), remaining: z.number().int(), resetAt: z.string() }).nullable().optional()
+export type GitHubRateLimitReading = NonNullable<z.infer<typeof rateLimitSchema>>
+
+/** A GitHub question not asked, or refused, for the rate limit; `retryAt` (epoch milliseconds) is when it may be asked again. */
+export class GitHubRateLimited extends Error {
+  constructor(readonly retryAt: number) { super('GitHub is limiting requests from this sign-in.') }
+}
+
+/**
+ * Whether gh's words say GitHub refused for its rate limit, primary or secondary: "API rate limit exceeded", "You have
+ * exceeded a secondary rate limit", GraphQL's `RATE_LIMITED`, or HTTP 403 or 429 with rate-limit or abuse wording.
+ */
+export function isRateLimitAnswer(message: string): boolean {
+  return /rate[ -]?limit|RATE_LIMITED|abuse detection|\bHTTP 429\b|too many requests/iu.test(message)
+}
+const isPrimaryLimit = (message: string): boolean => /API rate limit (?:already )?exceeded|RATE_LIMITED/iu.test(message) && !/secondary/iu.test(message)
+
+/** Background reads stop below this share of the allowance (T3's `RESERVE_RATIO`); the rest is the user's. */
+const RESERVE_RATIO = 0.1
+const PAUSE_BASE_MS = 30_000
+const PAUSE_CAP_MS = 15 * 60_000
+
+export type GitHubRateLimitEvent = 'github-rate-limited' | 'github-reserve-reached'
+interface HostAllowance { login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number }
+
+/**
+ * The GitHub allowance of each host's sign-in, as GitHub last reported it, and the pause after it refused. One per
+ * process, shared by the status reader and the Pull request surface, since both spend the same sign-in's points.
+ *
+ * - A background read is refused while less than 10% of the points remain, until GitHub's reset, and while a pause holds.
+ * - A read the user asked for may spend the reserve and goes through a pause; only an allowance GitHub last reported
+ *   empty refuses it, until the reset.
+ * - A rate-limited answer pauses background reads until the reset GitHub gave, or, with none known, for 30 seconds
+ *   doubling up to 15 minutes. Any answer GitHub gives ends the pause.
+ */
+export class GitHubRateLimit {
+  private readonly hosts = new Map<string, HostAllowance>()
+  private readonly now: () => number
+  constructor(private readonly options: { readonly now?: () => number; readonly log?: (event: GitHubRateLimitEvent) => void } = {}) {
+    this.now = options.now ?? (() => Date.now())
+  }
+  private entry(host: string): HostAllowance {
+    let entry = this.hosts.get(host)
+    if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0 }; this.hosts.set(host, entry) }
+    return entry
+  }
+  /** When a question of this kind may be asked of `host`, or null when it may be asked now. */
+  retryAt(host: string, ask: GitHubAsk): number | null {
+    const entry = this.hosts.get(host)
+    if (!entry) return null
+    const now = this.now()
+    const reading = entry.reading && entry.reading.resetAt > now ? entry.reading : null
+    if (reading && reading.remaining <= 0) return reading.resetAt
+    if (ask === 'user') return null
+    if (entry.pauseUntil > now) return entry.pauseUntil
+    if (reading && reading.remaining < reading.limit * RESERVE_RATIO) {
+      if (entry.reserveLogged !== reading.resetAt) { entry.reserveLogged = reading.resetAt; this.options.log?.('github-reserve-reached') }
+      return reading.resetAt
+    }
+    return null
+  }
+  /**
+   * GitHub answered: the pause ends, and the reading it gave, if any, is kept. An answer from another sign-in on the same
+   * host is another allowance, so what was known of the last one is dropped.
+   */
+  answered(host: string, reading: GitHubRateLimitReading | null | undefined, login?: string | null): void {
+    const entry = this.entry(host)
+    if (login && entry.login && login.toLowerCase() !== entry.login.toLowerCase()) entry.reading = null
+    if (login) entry.login = login
+    entry.pauseUntil = 0; entry.failures = 0
+    const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
+    if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
+  }
+  /** GitHub refused for its rate limit: background questions to `host` pause. Returns when the pause ends. */
+  limited(host: string, message: string): number {
+    const entry = this.entry(host)
+    const now = this.now()
+    entry.failures++
+    let until = now + Math.min(PAUSE_BASE_MS * 2 ** (entry.failures - 1), PAUSE_CAP_MS)
+    // A primary limit lasts until the reset GitHub last gave. A read the user asks for still goes through, and says so if it is refused.
+    if (isPrimaryLimit(message) && entry.reading && entry.reading.resetAt > now) until = entry.reading.resetAt
+    entry.pauseUntil = Math.max(entry.pauseUntil, until)
+    this.options.log?.('github-rate-limited')
+    return entry.pauseUntil
+  }
+}

@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
-import { baseRepository, parseGitHubRemote, readRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
+import { baseRepository, GitHubRateLimit, GitHubRateLimited, parseGitHubRemote, readRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
 export interface GitCommandOptions {
@@ -91,6 +91,8 @@ export interface GitStatusReaderOptions {
   readonly now?: () => number
   /** Milliseconds between background fetches of a working copy's remote. Zero or less turns the fetch off. */
   readonly fetchIntervalMs: () => number
+  /** The GitHub allowance of the user's sign-in, shared with the Pull request surface; one of its own when absent. */
+  readonly rateLimit?: GitHubRateLimit
   /** How long pull request lookups gather before their query goes; T3's figures when absent. */
   readonly headGatherMs?: Readonly<Record<GitHubAsk, number>>
 }
@@ -160,8 +162,11 @@ interface RefsSnapshot { at: number; locals: Array<{ name: string; date: number;
 const backoff = (base: number, failures: number): number => Math.min(base * 2 ** Math.max(0, failures - 1), BACKOFF_CAP_MS)
 
 interface FetchRecord { failures: number; nextAt: number; fetchedAt: number | null; inFlight?: { readonly epoch: number; readonly done: Promise<void> } }
-/** A branch's pull request answer, the `invalidate` count it was asked under, and the branch's tip when it was asked. */
-interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null; tip: string | null }
+/**
+ * A branch's pull request answer: the `invalidate` count it was asked under, the branch's tip when it was asked, and the
+ * GitHub host it was asked of, so the timer can keep it without asking anything while that host is paused.
+ */
+interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null; tip: string | null; host?: string }
 /** What the last read of a folder found that its remote half asks about, and the `invalidate` count it was read under. */
 interface KnownFolder { readonly epoch: number; readonly common: string | null; readonly hasRemote: boolean; readonly branch: string | null; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
 /** Where a branch's pull requests are asked about: the repository gh reads pull requests from, and the head's name and repository. */
@@ -200,11 +205,13 @@ export class GitStatusReader implements GitStatusSource {
   /** Pull request lookups asked and not yet answered, by repository and branch, so a second caller shares the first. */
   private readonly asking = new Map<string, { readonly epoch: number; readonly ask: GitHubAsk; readonly done: Promise<GitPullRequestSummary | null> }>()
   private readonly heads: PullRequestHeads
+  private readonly rateLimit: GitHubRateLimit
   private epoch = 0
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
-    this.heads = new PullRequestHeads({ run: this.run, env: QUIET_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
+    this.rateLimit = options.rateLimit ?? new GitHubRateLimit({ now: this.now })
+    this.heads = new PullRequestHeads({ run: this.run, rateLimit: this.rateLimit, env: QUIET_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
       held: cwd => this.isHeld(this.folderKey(cwd)), track: (cwds, work) => { for (const cwd of cwds) this.tracked(cwd, work) } })
   }
   private git(cwd: string, args: readonly string[], options?: GitCommandOptions): Promise<string> { return this.tracked(cwd, this.run(cwd, 'git', args, options)) }
@@ -489,6 +496,8 @@ export class GitStatusReader implements GitStatusSource {
     const key = `${common}\0${branch}`
     const record = this.pullRequests.get(key)
     if (!ask || (record && !this.pullRequestStale(record, tip))) return Promise.resolve(record?.value ?? null)
+    // While GitHub is paused for this host, or the reserve is reached, the timer keeps the last answer and asks nothing, Git included.
+    if (ask === 'background' && record?.host !== undefined && this.rateLimit.retryAt(record.host, 'background') !== null) return Promise.resolve(record.value)
     const flight = this.asking.get(key)
     if (flight) {
       if (flight.epoch === this.epoch && (flight.ask === 'user' || ask === 'background')) return flight.done
@@ -505,7 +514,11 @@ export class GitStatusReader implements GitStatusSource {
     return record.epoch !== this.epoch || this.now() >= record.nextAt || (record.value !== null && record.value.state !== 'open' && record.tip !== tip)
   }
 
-  /** Asks GitHub about the branch; never rejects. While GitHub cannot be asked the last answer stands, and a failure is retried later, not on the next read. */
+  /**
+   * Asks GitHub about the branch; never rejects. While GitHub cannot be asked the last answer stands. A refusal for the
+   * rate limit leaves the answer due, so the user's next read asks again while the timer's waits for the host's pause
+   * (`GitHubRateLimit`); any other failure is retried later, not on the next read.
+   */
   private async askPullRequest(key: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk, epoch: number): Promise<GitPullRequestSummary | null> {
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
       const latest = this.pullRequests.get(key)
@@ -524,11 +537,15 @@ export class GitStatusReader implements GitStatusSource {
       const chosen = own.find(item => item.state === 'open') ?? (isDefaultBranch ? undefined : own[0])
       const value = chosen ? { number: chosen.number, title: chosen.title, url: chosen.url, state: chosen.state, draft: chosen.draft } : null
       const fresh = value === null ? PULL_REQUEST_NONE_FRESH_MS : value.state === 'open' ? PULL_REQUEST_OPEN_FRESH_MS : PULL_REQUEST_SETTLED_FRESH_MS
-      return keep({ epoch, failures: 0, nextAt: this.now() + fresh, value, tip })
-    } catch {
+      return keep({ epoch, failures: 0, nextAt: this.now() + fresh, value, tip, host: target.repository.host })
+    } catch (error) {
       const record = this.pullRequests.get(key)
+      if (error instanceof GitHubRateLimited) {
+        this.pullRequests.set(key, record ? { ...record, host: target.repository.host } : { epoch: -1, failures: 0, nextAt: 0, value: null, tip, host: target.repository.host })
+        return record?.value ?? null
+      }
       const failures = (record?.failures ?? 0) + 1
-      return keep({ epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null, tip: record?.tip ?? tip })
+      return keep({ epoch, failures, nextAt: this.now() + backoff(PULL_REQUEST_BACKOFF_MS, failures), value: record?.value ?? null, tip: record?.tip ?? tip, host: target.repository.host })
     }
   }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { repositoryKey, type GitHubAsk, type GitHubRepository } from './github'
+import { GitHubRateLimited, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, repositoryKey, type GitHubAsk, type GitHubRateLimit, type GitHubRepository } from './github'
 import type { GitCommandOptions, RunGitCommand } from './gitStatus'
 
 /** Heads asked about in one query: 50 took GitHub about ten seconds, its processing limit, so T3 settled on 25 (#16760). */
@@ -16,6 +16,7 @@ const nodeSchema = z.object({
   headRepositoryOwner: z.object({ login: z.string().nullable().optional() }).nullable().optional(),
 })
 const answerSchema = z.object({ data: z.object({
+  rateLimit: rateLimitSchema, viewer: z.object({ login: z.string().nullable().optional() }).nullable().optional(),
   repository: z.record(z.string(), z.object({ nodes: z.array(nodeSchema.nullable()) }).nullable()).nullable(),
 }) })
 
@@ -27,14 +28,15 @@ export interface HeadPullRequest {
 
 /**
  * The query for up to 25 heads of one repository: one aliased `pullRequests` connection per head, each head passed as
- * a variable rather than written into the document (T3's `buildPullRequestsByHeadQuery`). Every lookup asks for all
- * three states, so they are written in rather than passed.
+ * a variable rather than written into the document (T3's `buildPullRequestsByHeadQuery`), and GitHub's reading of the
+ * allowance and the sign-in beside them, which cost nothing more. Every lookup asks for all three states, so they are
+ * written in rather than passed.
  */
 export function pullRequestsByHeadQuery(count: number): string {
   const declarations = ['$owner: String!', '$name: String!', ...Array.from({ length: count }, (_, index) => `$h${index}: String!`)]
   const selections = Array.from({ length: count }, (_, index) =>
     `    h${index}: pullRequests(headRefName: $h${index}, states: [OPEN, CLOSED, MERGED], first: ${PULL_REQUESTS_PER_HEAD}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${NODE_SELECTION} } }`)
-  return `query PullRequestsByHead(${declarations.join(', ')}) {\n  repository(owner: $owner, name: $name) {\n${selections.join('\n')}\n  }\n}`
+  return `query PullRequestsByHead(${declarations.join(', ')}) {\n  ${RATE_LIMIT_SELECTION}\n  viewer { login }\n  repository(owner: $owner, name: $name) {\n${selections.join('\n')}\n  }\n}`
 }
 
 interface Lookup { readonly head: string; ask: GitHubAsk; readonly cwds: Set<string>; readonly done: Promise<HeadPullRequest[]>; resolve(value: HeadPullRequest[]): void; reject(error: unknown): void }
@@ -42,6 +44,7 @@ interface Gathering { readonly repository: GitHubRepository; readonly lookups: M
 
 export interface PullRequestHeadsOptions {
   readonly run: RunGitCommand
+  readonly rateLimit: GitHubRateLimit
   readonly env?: Readonly<Record<string, string>>
   readonly gatherMs?: Readonly<Record<GitHubAsk, number>>
   /** Whether a folder is being removed, so the query runs elsewhere if another lookup's folder will do. */
@@ -53,7 +56,9 @@ export interface PullRequestHeadsOptions {
 /**
  * Pull requests by head branch, asked about in batches (#820). Lookups of one repository that arrive within a short
  * window share one `gh api graphql` query, 25 heads at most a query, and a lookup of a repository and head already
- * waiting or in flight is shared rather than asked twice.
+ * waiting or in flight is shared rather than asked twice. The rate limit is asked before every query, for the user's
+ * ask when any lookup in it is the user's, and read from every answer: a refused query rejects each of its lookups with
+ * `GitHubRateLimited`, and the caller keeps its last answer.
  */
 export class PullRequestHeads {
   private readonly gathering = new Map<string, Gathering>()
@@ -109,6 +114,9 @@ export class PullRequestHeads {
   }
 
   private async ask(repository: GitHubRepository, lookups: readonly Lookup[]): Promise<void> {
+    const ask: GitHubAsk = lookups.some(lookup => lookup.ask === 'user') ? 'user' : 'background'
+    const retryAt = this.options.rateLimit.retryAt(repository.host, ask)
+    if (retryAt !== null) { for (const lookup of lookups) lookup.reject(new GitHubRateLimited(retryAt)); return }
     const cwds = [...new Set(lookups.flatMap(lookup => [...lookup.cwds]))]
     const cwd = cwds.find(folder => !this.options.held?.(folder)) ?? cwds[0]!
     const args = ['api', 'graphql', ...repository.host === 'github.com' ? [] : ['--hostname', repository.host],
@@ -119,7 +127,14 @@ export class PullRequestHeads {
     this.options.track?.(cwds, work)
     let answer: z.infer<typeof answerSchema>
     try { answer = answerSchema.parse(JSON.parse(await work)) }
-    catch (error) { for (const lookup of lookups) lookup.reject(error); return }
+    catch (error) {
+      // gh's words go no further than this test: a refusal for the rate limit pauses the host, anything else is the lookup's failure.
+      const message = error instanceof Error ? error.message : ''
+      const failure = isRateLimitAnswer(message) ? new GitHubRateLimited(this.options.rateLimit.limited(repository.host, message)) : error
+      for (const lookup of lookups) lookup.reject(failure)
+      return
+    }
+    this.options.rateLimit.answered(repository.host, answer.data.rateLimit, answer.data.viewer?.login ?? null)
     lookups.forEach((lookup, index) => {
       const nodes = answer.data.repository?.[`h${index}`]?.nodes ?? []
       lookup.resolve(nodes.flatMap((node): HeadPullRequest[] => {
