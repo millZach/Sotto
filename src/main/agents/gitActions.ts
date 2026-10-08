@@ -7,6 +7,7 @@ import type { GitStatus } from '../../shared/gitStatus'
 import { diffExcerpt } from '../llm/diffExcerpt'
 import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, type CommitMaterial } from '../llm/commitMessage'
 import type { PullRequestMaterial, PullRequestText } from '../llm/pullRequestText'
+import { baseRepository, GitHubHosts, readGitHubRemotes, sameRepository } from './github'
 import { parseChangedRecords, runGitStatusCommand, type GitStatusSource, type RunGitCommand } from './gitStatus'
 
 /** What the host tells the client as a stacked action runs, in T3's shape. */
@@ -38,6 +39,8 @@ export interface GitActionsDependencies {
   readonly writePullRequestText: (threadId: string, material: PullRequestMaterial) => Promise<PullRequestText | null>
   /** The Follow pull request templates setting, read for each pull request; absent, the template is followed. */
   readonly followPullRequestTemplates?: () => boolean | Promise<boolean>
+  /** Which hosts gh asks as GitHub, shared with the status reader; one of its own when absent. */
+  readonly hosts?: GitHubHosts
   readonly now?: () => number
 }
 
@@ -56,7 +59,8 @@ const RANGE_PATCH_MAX = 60_000
 const FEATURE_BRANCH_MAX = 64
 const STAND_IN_SUBJECT = 'Update project files'
 
-const openPullRequestSchema = z.array(z.object({ number: z.number().int().positive(), title: z.string(), url: z.string(), baseRefName: z.string(), headRefName: z.string(), state: z.string() }))
+const openPullRequestSchema = z.array(z.object({ number: z.number().int().positive(), title: z.string(), url: z.string(), baseRefName: z.string(), headRefName: z.string(), state: z.string(),
+  headRepositoryOwner: z.object({ login: z.string().nullable().optional() }).nullable().optional(), isCrossRepository: z.boolean().nullable().optional() }))
 const repositorySchema = z.object({ defaultBranchRef: z.object({ name: z.string() }).nullable() })
 
 /** T3's branch fragment: lowercase, quotes gone, anything odd a dash, 64 characters, a `feature/` namespace unless one is given. */
@@ -76,11 +80,13 @@ export function featureBranchName(fragment: string): string {
 export class GitActions {
   private readonly run: RunGitCommand
   private readonly now: () => number
+  private readonly hosts: GitHubHosts
   /** One action per folder at a time, whichever thread asked, and whether it is Automatically pull's. */
   private readonly busy = new Map<string, 'action' | 'automatic-pull'>()
   constructor(private readonly dependencies: GitActionsDependencies) {
     this.run = dependencies.run ?? runGitStatusCommand
     this.now = dependencies.now ?? (() => Date.now())
+    this.hosts = dependencies.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
   }
   private git(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'git', args, options) }
   private gh(cwd: string, args: readonly string[], options?: Parameters<RunGitCommand>[3]): Promise<string> { return this.run(cwd, 'gh', args, options) }
@@ -308,10 +314,26 @@ export class GitActions {
     }
   }
 
+  /**
+   * The branch's open pull request, if GitHub has one. Only one whose head is in the repository the branch is pushed to
+   * is the branch's own (#820): an open pull request from a fork's branch of the same name is someone else's, and is
+   * neither reported as opened nor linked. When Sotto cannot name both repositories on GitHub (a remote that is a local
+   * path), the branch name alone decides, as gh's `--head` does.
+   */
   private async openPullRequest(cwd: string, branch: string): Promise<{ number: number; title: string; url: string; base: string } | null> {
-    const raw = await this.gh(cwd, ['pr', 'list', '--head', branch, '--state', 'open', '--limit', '1', '--json', 'number,title,url,baseRefName,headRefName,state'])
-    const found = openPullRequestSchema.parse(JSON.parse(raw)).find(item => item.headRefName === branch)
+    const raw = await this.gh(cwd, ['pr', 'list', '--head', branch, '--state', 'open', '--limit', '20', '--json', 'number,title,url,baseRefName,headRefName,state,headRepositoryOwner,isCrossRepository'])
+    const head = await this.headRepository(cwd, branch).catch(() => null)
+    const found = openPullRequestSchema.parse(JSON.parse(raw)).find(item => item.headRefName === branch
+      && (!head || (item.headRepositoryOwner?.login?.toLowerCase() === head.owner.toLowerCase() && (item.isCrossRepository === true) === head.crossRepository)))
     return found ? { number: found.number, title: found.title, url: found.url, base: found.baseRefName } : null
+  }
+  /** Whose repository the branch is pushed to, and whether it is another than the one gh reads pull requests from. */
+  private async headRepository(cwd: string, branch: string): Promise<{ owner: string; crossRepository: boolean } | null> {
+    const remotes = await readGitHubRemotes(this.run, cwd, this.hosts)
+    const base = baseRepository(remotes)
+    const remote = await this.pushRemote(cwd, branch)
+    const pushed = remote ? remotes.get(remote)?.repository ?? null : null
+    return base && pushed ? { owner: pushed.owner, crossRepository: !sameRepository(base, pushed) } : null
   }
 
   /** T3's base order: the recorded merge base, the upstream when it is another branch, GitHub's default, `origin/HEAD`, `main`. */

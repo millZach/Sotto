@@ -32,7 +32,7 @@ if (args[0] === 'pr' && args[1] === 'list') {
   const head = flag('--head'), wanted = flag('--state') ?? 'open'
   const pulls = data.pulls.filter(pull => pull.headRefName === head && (wanted === 'all' || pull.state.toLowerCase() === wanted))
   save(data)
-  process.stdout.write(JSON.stringify(pulls.map(pull => ({ ...pull, isDraft: pull.isDraft ?? false, updatedAt: '2026-09-23T00:00:00Z' }))) + '\n')
+  process.stdout.write(JSON.stringify(pulls.map(pull => ({ ...pull, isDraft: pull.isDraft ?? false, updatedAt: '2026-09-23T00:00:00Z', headRepositoryOwner: { login: 'sotto-fixture' }, isCrossRepository: false }))) + '\n')
 } else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query PullRequestsByHead'))) {
   // The status reader's batched lookup: each aliased head (`h0=feat/greeting`) gets the pull requests with that head.
   const repository = {}
