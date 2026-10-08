@@ -88,7 +88,6 @@ export interface BabysitterOptions {
   readonly run?: RunGitCommand
   readonly now?: () => number
   readonly log?: (event: BabysitEvent) => void
-  readonly passMs?: number
 }
 
 interface Target { readonly threadId: string; readonly record: BabysitRecord }
@@ -137,7 +136,7 @@ export class Babysitter {
   /** Starts the two-minute passes, the first at once, so what changed while the host was not reading is told now. */
   begin(): void {
     if (this.timer || this.closed) return
-    this.timer = setInterval(() => { void this.pass() }, this.options.passMs ?? BABYSIT_PASS_MS)
+    this.timer = setInterval(() => { void this.pass() }, BABYSIT_PASS_MS)
     this.timer.unref?.()
     void this.pass()
   }
