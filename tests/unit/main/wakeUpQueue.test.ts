@@ -138,6 +138,29 @@ describe('a wake-up', () => {
     expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
   })
 
+  it('folds later news of a pull request into that pull request\'s part, so one that merged is told once, as ended', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    await f.control.deliverWakeUp('workshop', news(7), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(7, { changes: [{ kind: 'remarks', remarks: [{ kind: 'comment', author: 'lead', review: null, path: null, url: null, edited: false }] }] }), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(7, { changes: [], ended: 'merged' }), { tool: true })
+    const [wakeUp] = f.control.get().followups!
+    expect(wakeUp!.text.split('\n')[0]).toBe('Sotto has stopped babysitting a pull request for this thread.')
+    expect(wakeUp!.text.match(/Pull request #7/gu)).toHaveLength(1)
+    expect(wakeUp!.text).toContain('- Check build-7 failed\n- lead commented\nIt merged')
+    expect(wakeUp!.text).not.toContain('keeps babysitting')
+  })
+
+  it('keeps the user\'s queue across a restart however much news a waiting wake-up gathers', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'mine' })
+    for (let number = 1; number <= 60; number++) await f.control.deliverWakeUp('workshop', news(number), { tool: true })
+    f.control.dispose(); await f.control.privacyChanged()
+    const restored = f.create(); await restored.start(); await restored.command({ type: 'connect' })
+    const queue = restored.get().followups!
+    expect(queue.map(item => item.wakeUp ? 'wake-up' : item.text)).toEqual(['mine', 'wake-up'])
+    expect(queue[1]!.text).toContain('Pull request #60')
+  })
+
   it('is kept across a restart, and refused for a settled thread so the news stays untold', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })

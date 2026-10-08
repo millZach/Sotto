@@ -7,7 +7,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import type { BabysitNews } from './babysitNews'
 import { pullRequestKey } from './gitPullRequests'
-import { babysitNewsSchema } from './wakeUp'
+import { babysitNewsSchema, foldNews, WAKE_UP_NEWS_MAX } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
@@ -19,10 +19,10 @@ export function followupDigest(input: Pick<AgentFollowup, 'text' | 'skills' | 'f
 }
 const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ digest: z.string().optional() })).max(MAX_DELIVERED_DRAFTS)
 /**
- * A queued item as the store keeps it. A wake-up keeps the news it was worded from, so news that comes later folds into
- * it and a stop takes back its pull request's part; the window is sent the words alone.
+ * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
+ * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ news: z.array(babysitNewsSchema).max(50).optional() })
+const queuedSchema = agentFollowupSchema.extend({ news: z.array(babysitNewsSchema).max(WAKE_UP_NEWS_MAX).optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -146,8 +146,10 @@ export class FollowupStore {
       const now = new Date().toISOString()
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
       if (waiting) {
-        const folded = [...waiting.news ?? [], babysitNewsSchema.parse(news)]
-        Object.assign(waiting, { news: folded, text: word(folded), updatedAt: now }, resumeAfterTurnId ? { resumeAfterTurnId } : {})
+        const folded = foldNews(waiting.news ?? [], babysitNewsSchema.parse(news))
+        // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
+        const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {} })
+        state.items = state.items.map(item => item === waiting ? next : item)
         return
       }
       state.items.push(queuedSchema.parse({ id: randomUUID(), threadId, draftId: randomUUID(), text: word([news]), attachments: [], status: 'queued', wakeUp: true,

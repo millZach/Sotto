@@ -68,7 +68,9 @@ const id = z.string().min(1).max(512)
 export const WAKE_UP_MESSAGE_IDS_MAX = 50
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
-const text = z.string().max(100_000)
+/** The longest text a message, a prompt or a follow-up carries. */
+export const AGENT_TEXT_MAX = 100_000
+const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024

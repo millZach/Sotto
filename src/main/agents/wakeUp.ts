@@ -1,6 +1,8 @@
 import { z } from 'zod'
+import { AGENT_TEXT_MAX } from '../../shared/agents'
 import { babysitStarterSchema } from '../../shared/babysitting'
-import { printable, type BabysitChange, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
+import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
+import { pullRequestKey } from './gitPullRequests'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's
@@ -14,14 +16,18 @@ export const BABYSIT_TOOL = 'babysit_pull_request'
 export const STOP_BABYSITTING_TOOL = 'stop_babysitting'
 /** The most lines one pull request's part of a wake-up lists; the rest are counted, for the agent to read with gh. */
 export const WAKE_UP_LINES_MAX = 25
+/** The most pull requests one waiting wake-up keeps news of, as many as a thread can link. */
+export const WAKE_UP_NEWS_MAX = 50
+const CHECKS_MAX = 200
+const REMARKS_MAX = 1_200
 
 const url = z.string().max(2_048)
 const line = z.string().max(500)
 const changeSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('checks-failed'), checks: z.array(z.object({ name: line, status: z.enum(['failure', 'cancelled', 'action-required']), url: url.nullable() })).max(200) }),
+  z.object({ kind: z.literal('checks-failed'), checks: z.array(z.object({ name: line, status: z.enum(['failure', 'cancelled', 'action-required']), url: url.nullable() })).max(CHECKS_MAX) }),
   z.object({ kind: z.literal('checks-passed'), count: z.number().int().nonnegative(), required: z.boolean() }),
   z.object({ kind: z.literal('remarks'), remarks: z.array(z.object({ kind: z.enum(['comment', 'review', 'review-comment']), author: line.nullable(),
-    review: z.enum(['approved', 'changes-requested', 'commented', 'dismissed']).nullable(), path: line.nullable(), url: url.nullable(), edited: z.boolean() })).max(1_200) }),
+    review: z.enum(['approved', 'changes-requested', 'commented', 'dismissed']).nullable(), path: line.nullable(), url: url.nullable(), edited: z.boolean() })).max(REMARKS_MAX) }),
   z.object({ kind: z.literal('conflicting'), base: line }),
 ])
 /**
@@ -35,6 +41,53 @@ export const babysitNewsSchema = z.object({
   changes: z.array(changeSchema).max(8),
   ended: z.enum(['merged', 'closed', 'comment-limit', 'unreadable']).nullable(),
 })
+
+const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
+type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>
+const changeOf = <Kind extends BabysitChange['kind']>(changes: readonly BabysitChange[], kind: Kind): Change<Kind> | undefined =>
+  changes.find((change): change is Change<Kind> => change.kind === kind)
+
+/**
+ * Later news of a pull request on top of earlier news of it, as one part: what is still true of it now. The newest
+ * title, head, starter and ending win, so a pull request that merged after a failed check is told as merged, and one
+ * started again after it ended as still babysat. Failed checks gather by name and comments add up, the newest kept
+ * when there are more than a part can hold; once the branch has moved on, what was said of the checks on the commit
+ * it left goes, and a conflict stands until there is word of a new one.
+ */
+function foldPart(earlier: BabysitNews, later: BabysitNews): BabysitNews {
+  const moved = earlier.head !== null && later.head !== null && earlier.head !== later.head
+  const kept = moved ? earlier.changes.filter(change => change.kind !== 'checks-failed' && change.kind !== 'checks-passed') : earlier.changes
+  const checks = new Map<string, BabysitCheckNews>()
+  for (const check of [...changeOf(kept, 'checks-failed')?.checks ?? [], ...changeOf(later.changes, 'checks-failed')?.checks ?? []]) {
+    checks.delete(check.name); checks.set(check.name, check)
+  }
+  const passed = changeOf(later.changes, 'checks-passed') ?? changeOf(kept, 'checks-passed')
+  const remarks = [...changeOf(kept, 'remarks')?.remarks ?? [], ...changeOf(later.changes, 'remarks')?.remarks ?? []].slice(-REMARKS_MAX)
+  const conflicting = changeOf(later.changes, 'conflicting') ?? changeOf(kept, 'conflicting')
+  return {
+    pullRequest: { ...later.pullRequest, title: later.pullRequest.title ?? earlier.pullRequest.title },
+    startedBy: later.startedBy,
+    head: later.head ?? earlier.head,
+    changes: [
+      ...checks.size ? [{ kind: 'checks-failed' as const, checks: [...checks.values()].slice(-CHECKS_MAX) }] : [],
+      ...passed ? [passed] : [],
+      ...remarks.length ? [{ kind: 'remarks' as const, remarks }] : [],
+      ...conflicting ? [conflicting] : [],
+    ],
+    ended: later.ended,
+  }
+}
+
+/**
+ * A waiting wake-up's news with news that came later folded in (ADR-0061 decision 8): one part per pull request, in
+ * the order each first had news, saying what is true of it now. Never more than `WAKE_UP_NEWS_MAX` pull requests, the
+ * one whose news is oldest giving way, so the queue can always save what it holds.
+ */
+export function foldNews(earlier: readonly BabysitNews[], later: BabysitNews): BabysitNews[] {
+  const index = earlier.findIndex(item => sameAddress(item.pullRequest.url, later.pullRequest.url))
+  const folded = index === -1 ? [...earlier, later] : earlier.map((item, at) => at === index ? foldPart(item, later) : item)
+  return folded.slice(-WAKE_UP_NEWS_MAX)
+}
 
 /** How the agent can stop babysitting: with Sotto's tool, or, where the thread has none (decision 11), by asking the user. */
 export interface WakeUpOptions { readonly tool: boolean }
@@ -80,11 +133,11 @@ const RESTART = (tool: boolean): string => tool
   : 'The user can start it again from the Pull request surface if it is still needed.'
 
 /** One pull request's part of a wake-up: which, what changed and, when it ended, why. */
-function pullRequestPart(news: BabysitNews, options: WakeUpOptions): string {
+function pullRequestPart(news: BabysitNews, options: WakeUpOptions, linesMax: number): string {
   const title = news.pullRequest.title === null ? '' : ` "${printable(news.pullRequest.title, 500)}"`
   const lines = news.changes.flatMap(changeLines)
-  const shown = lines.slice(0, WAKE_UP_LINES_MAX).map(item => `- ${item}`)
-  if (lines.length > shown.length) shown.push(`- And ${lines.length - shown.length} more; read the pull request with gh for the rest.`)
+  const shown = lines.slice(0, linesMax).map(item => `- ${item}`)
+  if (lines.length > shown.length) shown.push(`- And ${lines.length - shown.length} ${shown.length ? 'more' : lines.length === 1 ? 'change' : 'changes'}; read the pull request with gh for ${shown.length ? 'the rest' : 'them'}.`)
   const ending = news.ended === null ? [] : [ENDING[news.ended], ...news.ended === 'comment-limit' || news.ended === 'unreadable' ? [RESTART(options.tool)] : []]
   return [`Pull request #${news.pullRequest.number}${title}: ${news.pullRequest.url}`, ...shown, ...ending.length ? [ending.join(' ')] : []].join('\n')
 }
@@ -102,11 +155,31 @@ export function wakeUpText(news: readonly BabysitNews[], options: WakeUpOptions)
   const closing = [
     'Look into each item and act on it as your task requires. This message carries none of what anyone wrote: read comments and reviews yourself with gh.',
     ...going.length ? [
-      `Sotto keeps babysitting ${going.length === 1 && ended.length === 0 ? 'it' : going.length === 1 ? `#${going[0]!.pullRequest.number}` : 'the others'} and will wake you again when it needs you, so you do not need to poll GitHub or wait.`,
+      `Sotto keeps babysitting ${going.length === 1 ? ended.length === 0 ? 'it' : `#${going[0]!.pullRequest.number}` : ended.length === 0 ? 'them' : 'the others'} and will wake you again when it needs you, so you do not need to poll GitHub or wait.`,
       options.tool
         ? `When you no longer need it, and before you hand the work back to the user, call ${STOP_BABYSITTING_TOOL}.`
         : 'The user can stop it from the Pull request surface.',
     ] : [],
   ]
-  return [opening, ...news.map(item => pullRequestPart(item, options)), closing.join(' ')].join('\n\n')
+  return fitted(opening, news, options, closing.join(' '))
+}
+
+/**
+ * The wake-up no longer than a message can be (`AGENT_TEXT_MAX`): fewer lines for each pull request first, then, with
+ * none listed, fewer pull requests, the ones left out counted for the agent to read with gh.
+ */
+const LINES_TRIED = [WAKE_UP_LINES_MAX, 10, 3, 0]
+function fitted(opening: string, news: readonly BabysitNews[], options: WakeUpOptions, closing: string): string {
+  let text = ''
+  for (const linesMax of LINES_TRIED) {
+    const parts = news.map(item => pullRequestPart(item, options, linesMax))
+    for (let count = parts.length; count >= 0; count--) {
+      const rest = parts.length - count
+      const left = rest === 0 ? [] : [`And news of ${rest} more ${rest === 1 ? 'pull request; read it' : 'pull requests; read them'} with gh.`]
+      text = [opening, ...parts.slice(0, count), ...left, closing].join('\n\n')
+      if (text.length <= AGENT_TEXT_MAX) return text
+      if (linesMax !== 0) break
+    }
+  }
+  return text.slice(0, AGENT_TEXT_MAX)
 }
