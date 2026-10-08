@@ -7,7 +7,11 @@ import type { RunGitCommand } from '../../src/main/agents/gitStatus'
  */
 export type CheckState = 'QUEUED' | 'IN_PROGRESS' | 'WAITING' | 'SUCCESS' | 'FAILURE' | 'CANCELLED' | 'SKIPPED' | 'NEUTRAL'
 export interface ScriptedCheck { name: string; state: CheckState; required?: boolean; url?: string }
-export interface ScriptedRemark { id: string; author: string | null; at: string; editedAt?: string; url?: string }
+/**
+ * A comment or review. `at` is when it was written; `publishedAt`, when it differs, is when a comment drafted in a pending
+ * review went out with that review, which on GitHub keeps the comment's `createdAt` at the drafting.
+ */
+export interface ScriptedRemark { id: string; author: string | null; at: string; publishedAt?: string; editedAt?: string; url?: string }
 export interface ScriptedReview extends ScriptedRemark { state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING'; inline?: number }
 export interface ScriptedPull {
   number: number; owner?: string; name?: string; title?: string
@@ -42,7 +46,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     for (const check of checks) counts.set(check.state, (counts.get(check.state) ?? 0) + 1)
     return [...counts].map(([state, count]) => ({ state, count }))
   }
-  const remarkNode = (remark: ScriptedRemark) => ({ id: remark.id, url: remark.url ?? `https://github.com/o/r/pull/1#${remark.id}`, createdAt: remark.at, lastEditedAt: remark.editedAt ?? null, author: remark.author === null ? null : { login: remark.author } })
+  const remarkNode = (remark: ScriptedRemark) => ({ id: remark.id, url: remark.url ?? `https://github.com/o/r/pull/1#${remark.id}`, createdAt: remark.at, publishedAt: remark.publishedAt ?? remark.at, lastEditedAt: remark.editedAt ?? null, author: remark.author === null ? null : { login: remark.author } })
   const fingerprintOf = (pull: ScriptedPull) => {
     const comments = pull.comments ?? [], reviews = pull.reviews ?? [], threads = pull.threads ?? []
     return {
@@ -63,7 +67,7 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
     })) } } : null } }] } } : {},
     ...remarks ? {
       comments: { nodes: (pull.comments ?? []).map(remarkNode) },
-      reviews: { nodes: (pull.reviews ?? []).map(review => ({ ...remarkNode(review), state: review.state, submittedAt: review.at, comments: { totalCount: review.inline ?? 0 } })) },
+      reviews: { nodes: (pull.reviews ?? []).map(review => ({ ...remarkNode(review), state: review.state, submittedAt: review.publishedAt ?? review.at, comments: { totalCount: review.inline ?? 0 } })) },
       reviewThreads: { nodes: (pull.threads ?? []).map(thread => ({ path: thread.path, comments: { nodes: thread.comments.map(remarkNode) } })) },
     } : {},
   })

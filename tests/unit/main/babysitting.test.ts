@@ -61,6 +61,7 @@ describe('the GraphQL babysitting asks', () => {
     expect(DETAIL_QUERY).toContain('commits(last: 1) @include(if: $checks)')
     expect(DETAIL_QUERY).toContain('isRequired(pullRequestNumber: $number)')
     expect(DETAIL_QUERY).toContain('reviewThreads(last: 50) @include(if: $remarks)')
+    expect(DETAIL_QUERY).toContain('comments(last: 20) { nodes { id url createdAt publishedAt lastEditedAt')
     expect(DETAIL_QUERY).not.toMatch(/\bbody\b|\bbodyText\b/u)
   })
 })
@@ -171,6 +172,31 @@ describe('finding each event once', () => {
     await h.pass()
     expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review-comment', path: 'src/a.ts' })] }])
     expect(JSON.stringify(h.delivered)).not.toMatch(/body/u)
+  })
+
+  it('tells a review\'s comments on code by when the review went out, not when they were drafted', async () => {
+    const pull: ScriptedPull = { number: 1 }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    // A bot's comment at 12:05 is told, which moves what the thread was told up to 12:05.
+    pull.comments = [{ id: 'c-bot', author: 'coderabbitai[bot]', at: at(5) }]
+    await h.pass(); await h.pass()
+    expect(h.delivered).toHaveLength(1)
+    // The reviewer drafted at 12:01, before babysitting's first look, edited the draft at 12:03, and submitted at 12:09.
+    pull.threads = [{ path: 'src/a.ts', comments: [{ id: 't-1', author: 'reviewer', at: at(1), editedAt: at(3), publishedAt: at(9) }] }]
+    pull.reviews = [{ id: 'r-1', author: 'reviewer', at: at(1), publishedAt: at(9), state: 'COMMENTED', inline: 1 }]
+    await h.pass()
+    expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [
+      { kind: 'review-comment', author: 'reviewer', review: null, path: 'src/a.ts', url: expect.stringContaining('t-1'), edited: false },
+    ] }])
+    await h.pass()
+    expect(h.delivered).toHaveLength(2)
+    // An edit after it went out is news again.
+    pull.threads[0]!.comments[0]!.editedAt = at(13)
+    pull.reviews[0]!.editedAt = at(13)
+    await h.pass()
+    expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review-comment', edited: true })] }])
   })
 
   it('tells a conflict once per move into it, keeping it through GitHub\'s unknown', async () => {

@@ -127,13 +127,13 @@ export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!
       } } } } } }
       comments(first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks) { nodes { id url createdAt lastEditedAt author { login } } }
       reviews(last: 100) @include(if: $remarks) { nodes { id url state createdAt submittedAt lastEditedAt author { login } comments { totalCount } } }
-      reviewThreads(last: ${REVIEW_THREADS_READ}) @include(if: $remarks) { nodes { path comments(last: ${THREAD_COMMENTS_READ}) { nodes { id url createdAt lastEditedAt author { login } } } } }
+      reviewThreads(last: ${REVIEW_THREADS_READ}) @include(if: $remarks) { nodes { path comments(last: ${THREAD_COMMENTS_READ}) { nodes { id url createdAt publishedAt lastEditedAt author { login } } } } }
     }
   }
 }`
 
 const authorSchema = loose(z.object({ login: loose(z.string()) }))
-const remarkFields = { id: z.string(), url: loose(z.string()), createdAt: z.string(), lastEditedAt: loose(z.string()), author: authorSchema }
+const remarkFields = { id: z.string(), url: loose(z.string()), createdAt: z.string(), publishedAt: loose(z.string()), lastEditedAt: loose(z.string()), author: authorSchema }
 const detailAnswerSchema = z.object({ data: z.object({
   rateLimit: rateLimitSchema,
   repository: z.object({ pullRequest: loose(z.object({
@@ -162,7 +162,9 @@ export interface BabysitRemark {
   /** The file a review comment is on. */
   readonly path: string | null
   readonly url: string | null
+  /** When others could first see it: a review's submission, and a comment drafted in a review its review's. */
   readonly createdAt: string
+  /** When it was last edited after that; an edit to a draft is part of what went out. */
   readonly editedAt: string | null
 }
 export interface DetailAnswer {
@@ -178,6 +180,17 @@ export interface DetailAnswer {
 /** A link GitHub gave, kept only when it is an https link of a sensible length. */
 const linkOf = (url: string | null | undefined): string | null => url && /^https:\/\//iu.test(url) && url.length <= 2_048 ? url : null
 const REVIEW_STATES: Readonly<Record<string, BabysitRemark['review']>> = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes-requested', COMMENTED: 'commented', DISMISSED: 'dismissed' }
+/**
+ * A remark's times as others saw them. A comment drafted in a pending review keeps the time it was drafted as its
+ * `createdAt` and goes out when the review is submitted, so it is timed by when it went out (`publishedAt`, or the
+ * review's `submittedAt`), or it could fall before what the thread was already told and never be told. An edit counts
+ * only when it came after that: editing a draft is part of the writing.
+ */
+function remarkTimes(written: string, out: string | null | undefined, edited: string | null | undefined): Pick<BabysitRemark, 'createdAt' | 'editedAt'> {
+  const later = (left: string | null | undefined, right: string): boolean => !!left && Date.parse(left) > Date.parse(right)
+  const createdAt = later(out, written) ? out! : written
+  return { createdAt, editedAt: later(edited, createdAt) ? edited! : null }
+}
 
 /** Reads a detail answer for the parts asked. Throws when it is not GitHub's answer, or names no pull request. */
 export function readDetail(text: string, asked: { readonly checks: boolean; readonly remarks: boolean }): DetailAnswer {
@@ -203,18 +216,18 @@ export function readDetail(text: string, asked: { readonly checks: boolean; read
   if (asked.remarks) {
     remarks = []
     for (const node of pullRequest.comments?.nodes ?? []) {
-      if (node) remarks.push({ id: node.id, kind: 'comment', author: node.author?.login ?? null, review: null, path: null, url: linkOf(node.url), createdAt: node.createdAt, editedAt: node.lastEditedAt ?? null })
+      if (node) remarks.push({ id: node.id, kind: 'comment', author: node.author?.login ?? null, review: null, path: null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
     }
     for (const node of pullRequest.reviews?.nodes ?? []) {
       const review = node?.state ? REVIEW_STATES[node.state.toUpperCase()] : undefined
       // A pending review is the viewer's own draft. A review that only commented, with comments on the code, is told
       // through those comments, each on its file: a reply in a review thread is such a review.
       if (!node || !review || (review === 'commented' && (node.comments?.totalCount ?? 0) > 0)) continue
-      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, review, path: null, url: linkOf(node.url), createdAt: node.submittedAt ?? node.createdAt, editedAt: node.lastEditedAt ?? null })
+      remarks.push({ id: node.id, kind: 'review', author: node.author?.login ?? null, review, path: null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.submittedAt, node.lastEditedAt) })
     }
     for (const thread of pullRequest.reviewThreads?.nodes ?? []) {
       for (const node of thread?.comments?.nodes ?? []) {
-        if (node) remarks.push({ id: node.id, kind: 'review-comment', author: node.author?.login ?? null, review: null, path: thread?.path ?? null, url: linkOf(node.url), createdAt: node.createdAt, editedAt: node.lastEditedAt ?? null })
+        if (node) remarks.push({ id: node.id, kind: 'review-comment', author: node.author?.login ?? null, review: null, path: thread?.path ?? null, url: linkOf(node.url), ...remarkTimes(node.createdAt, node.publishedAt, node.lastEditedAt) })
       }
     }
   }

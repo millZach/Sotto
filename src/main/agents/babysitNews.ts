@@ -16,7 +16,7 @@ const LIST_MAX = 200
 /**
  * What a thread was last told about one pull request (decision 10), kept on the thread's record in the host's
  * `workspace.json`. Remarks are told up to `remarksThrough`, GitHub's time of the newest one reported (its edit, or
- * its writing), with the IDs reported at that very second, since GitHub's times are whole seconds; an edit moves a
+ * when it went out), with the IDs reported at that very second, since GitHub's times are whole seconds; an edit moves a
  * remark past it, so an edited one is news again. It starts at the time babysitting started.
  */
 export const babysitToldSchema = z.object({
