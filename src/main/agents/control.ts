@@ -1698,7 +1698,7 @@ export class AgentControl {
   }
   /**
    * The reader that babysits this host's threads' pull requests (ADR-0061), and what the queue asks it before each
-   * wake-up goes.
+   * wake-up goes. Given before `start`, so no wake-up restored from the queue can go unasked.
    */
   useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void { this.babysitting = babysitting; this.wakeUpGuard = guard }
   /**

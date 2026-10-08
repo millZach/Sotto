@@ -197,6 +197,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     return babysitter?.list(threadId).some(item => pullRequestKey(item.url) === key && item.startedBy === news.startedBy
       && (news.startedAt === undefined || item.startedAt === news.startedAt)) ?? true
   }
+  // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
+  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
@@ -234,7 +236,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
