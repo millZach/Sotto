@@ -391,7 +391,10 @@ export class Babysitter {
     const now = this.now()
     const last = this.lastReads.get(group.key)
     const firstLook = !last || group.targets.some(target => !last.records.has(recordKey(target.threadId, target.record)))
-    const checks = firstLook || last.status !== fingerprint.status || fingerprint.checksRunning || (last.checksDueAt !== null && now >= last.checksDueAt)
+    // A running check is read every pass, except while refused checks are backed off: then a status move or the
+    // half-hourly retry reads them, so a check that runs for hours behind a refusal costs no more than a finished one.
+    const backedOff = !firstLook && last.refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
+    const checks = firstLook || last.status !== fingerprint.status || (fingerprint.checksRunning && !backedOff) || (last.checksDueAt !== null && now >= last.checksDueAt)
     const remarks = firstLook || last.remarks !== fingerprint.remarks || (fingerprint.reviewThreads > 0 && now - last.remarksAt >= REMARKS_REREAD_MS)
     let detail: DetailAnswer | null = null
     if (checks || remarks) {
@@ -406,11 +409,11 @@ export class Babysitter {
     // once refused REFUSED_CHECKS_BEFORE_BACK_OFF times in a row, when the status moves or every REMARKS_REREAD_MS.
     const checksRead = checks ? detail?.checks != null : true
     const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
-    const backedOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
+    const backOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
     this.lastReads.set(group.key, {
-      status: checksRead || backedOff ? fingerprint.status : '',
+      status: checksRead || backOff ? fingerprint.status : '',
       refusedChecks,
-      checksDueAt: !checks ? last?.checksDueAt ?? null : backedOff ? now + REMARKS_REREAD_MS : null,
+      checksDueAt: !checks ? last?.checksDueAt ?? null : backOff ? now + REMARKS_REREAD_MS : null,
       remarks: remarks ? fingerprint.remarks : last?.remarks ?? '',
       remarksAt: remarks ? now : last?.remarksAt ?? now,
       records: new Set(group.targets.map(target => recordKey(target.threadId, target.record))),
