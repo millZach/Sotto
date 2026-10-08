@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   enableWasmThreadSupport,
+  disableDnsPrefetching,
   blockSpellcheckDictionaryDownloads,
   selectRendererSource,
   secureWebPreferences,
@@ -87,5 +88,19 @@ describe('wasm thread support', () => {
     })
 
     expect(appended).toEqual([['enable-features', 'SharedArrayBuffer']])
+  })
+})
+
+describe('DNS prefetching', () => {
+  it.each([
+    ['', 'dnsPrefetchingEnabled=false'],
+    ['preferredColorScheme=2', 'preferredColorScheme=2,dnsPrefetchingEnabled=false'],
+    ['dnsPrefetchingEnabled=true', 'dnsPrefetchingEnabled=true,dnsPrefetchingEnabled=false'],
+  ])('disables prefetching while keeping existing Blink settings: %s', (existing, expected) => {
+    const appendSwitch = vi.fn()
+    const getSwitchValue = vi.fn(() => existing)
+    disableDnsPrefetching({ appendSwitch, getSwitchValue })
+    expect(getSwitchValue).toHaveBeenCalledWith('blink-settings')
+    expect(appendSwitch).toHaveBeenCalledWith('blink-settings', expected)
   })
 })

@@ -50,11 +50,13 @@ const denied = (): never => { throw new ModelPathDeniedError() }
 function parseUrl(raw: string): URL { try { return new URL(raw) } catch { return denied() } }
 function decode(raw: string): string { try { return decodeURIComponent(raw) } catch { return denied() } }
 
-export function registerModelSchemesAsPrivileged(protocol: SchemeRegistrar): void {
+/** Electron takes one list of privileged schemes for the whole run, so any other scheme comes in `alongside`. */
+export function registerModelSchemesAsPrivileged(protocol: SchemeRegistrar, alongside: readonly unknown[] = []): void {
   const privileges = { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
   protocol.registerSchemesAsPrivileged([
     { scheme: MODEL_SCHEME, privileges: { ...privileges } },
     { scheme: RUNTIME_SCHEME, privileges: { ...privileges } },
+    ...alongside,
   ])
 }
 

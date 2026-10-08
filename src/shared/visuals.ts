@@ -15,16 +15,21 @@ export const VISUAL_KEPT_STEPS_MAX = VISUAL_STEPS_MAX * 2
 export const VISUAL_STEP_TEXT_MAX = 1_000
 export const VISUAL_HIGHLIGHTS_MAX = 12
 export const VISUAL_HIGHLIGHT_MAX = 120
+/** The most names a kept step holds, and characters a kept name: twice the input's, as for the other kept bounds. */
+export const VISUAL_KEPT_HIGHLIGHTS_MAX = VISUAL_HIGHLIGHTS_MAX * 2
+export const VISUAL_KEPT_HIGHLIGHT_MAX = VISUAL_HIGHLIGHT_MAX * 2
 /** How many visuals one turn may draw, and one thread may hold. */
 export const VISUALS_PER_TURN_MAX = 6
 export const VISUALS_PER_THREAD_MAX = 100
+/** The longest page an interactive visual may be: an agent's own HTML, served sealed (ADR-0060). */
+export const VISUAL_PAGE_SOURCE_MAX = 60_000
 /**
  * The longest source a kept visual is read with, well past any kind's input limit (a diagram's 12,000 characters, an
- * interactive page's 60,000 in #794), so a visual a newer version kept is not refused on the way to a window.
+ * interactive page's 60,000), so a visual a newer version kept is not refused on the way to a window.
  */
 export const VISUAL_KEPT_SOURCE_MAX = 200_000
-/** The kinds an agent may send. Interactive pages are a later kind (#794). */
-export const VISUAL_KINDS = ['diagram'] as const
+/** The kinds an agent may send: Mermaid source, or its own HTML page run sealed from the network (ADR-0060). */
+export const VISUAL_KINDS = ['diagram', 'interactive'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
 /** Whether this version draws a visual of this kind; a visual of any other kind is shown as its words. */
 export const isKnownVisualKind = (kind: string): kind is VisualKind => (VISUAL_KINDS as readonly string[]).includes(kind)
@@ -39,7 +44,7 @@ const visualStepTextSchema = z.string().min(1).max(VISUAL_STEP_TEXT_MAX).refine(
 const visualStepObjectSchema = z.object({
   text: visualStepTextSchema.describe('What this step says, in one or two sentences.'),
   highlight: z.array(z.string().min(1).max(VISUAL_HIGHLIGHT_MAX)).max(VISUAL_HIGHLIGHTS_MAX).optional()
-    .describe('The parts of the diagram this step is about, by name. Unknown names are ignored.'),
+    .describe('The parts of the visual this step is about, by name. A diagram ignores unknown names; an interactive page is sent them with the step.'),
 }).strict()
 /**
  * A step as an object, or as its words alone. Codex sent its steps as a list of sentences in a live turn, and a sentence
@@ -52,9 +57,9 @@ const visualStepInputSchema = z.union([visualStepTextSchema.describe('A step as 
 export const visualInputSchema = z.object({
   title: z.string().min(1).max(VISUAL_TITLE_MAX).refine(notBlank, 'A visual needs a title.')
     .describe('A short name for the visual, shown above it.'),
-  kind: z.enum(VISUAL_KINDS).describe('diagram: Mermaid source.'),
-  source: z.string().min(1).max(MAX_DIAGRAM_SOURCE_LENGTH)
-    .describe('Mermaid source: a flowchart, sequence, state, class or entity relationship diagram. No init directives or front-matter configuration.'),
+  kind: z.enum(VISUAL_KINDS).describe('diagram: Mermaid source. interactive: an HTML page of your own that never reaches the network.'),
+  source: z.string().min(1).max(VISUAL_PAGE_SOURCE_MAX)
+    .describe(`For a diagram, Mermaid source of up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters: a flowchart, sequence, state, class or entity relationship diagram, with no init directives or front-matter configuration. For an interactive visual, one HTML page of up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters with inline script and style.`),
   intro: z.string().max(VISUAL_INTRO_MAX).optional().describe('One or two sentences shown under the visual, before any steps.'),
   steps: z.array(visualStepInputSchema).max(VISUAL_STEPS_MAX).optional()
     .describe('An ordered walk through the visual, one part at a time.'),
@@ -72,11 +77,11 @@ export const agentVisualSchema = z.object({
   kind: z.string().max(64),
   source: z.string().max(VISUAL_KEPT_SOURCE_MAX),
   intro: z.string().max(VISUAL_INTRO_MAX * 2).optional(),
-  steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_HIGHLIGHT_MAX * 2)).max(VISUAL_HIGHLIGHTS_MAX * 2).optional() })).max(VISUAL_KEPT_STEPS_MAX).optional(),
+  steps: z.array(z.object({ text: z.string().max(VISUAL_STEP_TEXT_MAX * 2), highlight: z.array(z.string().max(VISUAL_KEPT_HIGHLIGHT_MAX)).max(VISUAL_KEPT_HIGHLIGHTS_MAX).optional() })).max(VISUAL_KEPT_STEPS_MAX).optional(),
 })
 export type AgentVisual = z.infer<typeof agentVisualSchema>
 
-/** A checked call: the visual to keep, and the diagram's kind in words for the reply. Or what was wrong and what to do. */
+/** A checked call: the visual to keep, and its kind in words for the reply. Or what was wrong and what to do. */
 export type VisualCheck =
   | { readonly ok: true; readonly input: VisualInput; readonly label: string }
   | { readonly ok: false; readonly reason: string; readonly next: string }
@@ -107,21 +112,39 @@ function inputProblem(error: z.ZodError): string {
     if (inner?.code === 'unrecognized_keys') return `Step ${step} has fields it does not take: ${inner.keys.join(', ')}.`
     return `Step ${step} needs text of 1 to ${VISUAL_STEP_TEXT_MAX.toLocaleString('en-US')} characters, as a sentence or as { "text": "..." }.`
   }
+  if (issue.code === 'too_big' && issue.path[0] === 'source') return `The page is too long. An interactive page takes up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters.`
   if (issue.code === 'too_big') return issue.path[0] === 'steps' ? `There are too many steps. Send up to ${VISUAL_STEPS_MAX}.`
     : `${field} is too long. It takes up to ${Number(issue.maximum).toLocaleString('en-US')} characters.`
   if (issue.code === 'too_small' || issue.code === 'custom') return `${field} is empty.`
   return `${field} is not in the shape the tool takes.`
 }
 
-/** The schema and the diagram source checks, in that order: the same checks the card makes before drawing. */
+const diagramTooLong = (): VisualRefusal => ({ ok: false, next: SPLIT_IT,
+  reason: `This diagram is too long for Sotto to draw: it takes up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters.` })
+
+/** What an interactive visual is called in the tool's reply: "an interactive page with 3 steps". */
+export const INTERACTIVE_VISUAL_LABEL = 'Interactive page'
+
+/**
+ * The schema, then for a diagram the source checks, in that order: the same checks the card makes before drawing. An
+ * interactive page is not inspected; it is contained instead (ADR-0060), so what it says cannot reach anything.
+ */
 export function checkVisualInput(args: unknown): VisualCheck {
   const parsed = visualInputSchema.safeParse(args)
-  if (!parsed.success) return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
+  if (!parsed.success) {
+    // The schema holds every source to a page's limit; a diagram past it is refused with a diagram's own limit.
+    const kind = args !== null && typeof args === 'object' && 'kind' in args ? args.kind : undefined
+    if (kind !== 'interactive' && parsed.error.issues[0]?.code === 'too_big' && parsed.error.issues[0].path[0] === 'source') return diagramTooLong()
+    return { ok: false, reason: inputProblem(parsed.error), next: FIX_IT }
+  }
+  if (parsed.data.kind === 'interactive') {
+    if (!notBlank(parsed.data.source)) return { ok: false, reason: 'The source is empty.', next: FIX_IT }
+    return { ok: true, input: parsed.data, label: INTERACTIVE_VISUAL_LABEL }
+  }
   const inspection = inspectDiagramSource(parsed.data.source)
   // The card's words for an oversized diagram say its source is shown instead; a refused call shows nothing, so it
   // says what is too big in its own words.
-  if (inspection.exceeds === 'length') return { ok: false, next: SPLIT_IT,
-    reason: `This diagram is too long for Sotto to draw: it takes up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters.` }
+  if (inspection.exceeds === 'length') return diagramTooLong()
   if (inspection.exceeds === 'work') return { ok: false, next: SPLIT_IT,
     reason: 'This diagram is too large for Sotto to draw: it has more parts than Sotto draws safely.' }
   if (inspection.problem) return { ok: false, reason: `The diagram cannot be drawn. ${inspection.problem}`, next: FIX_IT }

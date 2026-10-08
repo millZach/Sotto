@@ -19,6 +19,12 @@ export interface CommandLineAdapter {
   appendSwitch(key: string, value: string): void
 }
 
+/** Turn off DNS prefetching before app readiness, preserving other Blink settings. */
+export function disableDnsPrefetching(commandLine: CommandLineAdapter & { getSwitchValue(key: string): string }): void {
+  const existing = commandLine.getSwitchValue('blink-settings')
+  commandLine.appendSwitch('blink-settings', `${existing ? `${existing},` : ''}dnsPrefetchingEnabled=false`)
+}
+
 /**
  * Chromium withholds SharedArrayBuffer without cross-origin isolation, which
  * file:// renderers can never satisfy. Enabling the feature directly keeps the

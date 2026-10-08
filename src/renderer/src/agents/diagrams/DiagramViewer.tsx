@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ViewerDialog } from './ViewerDialog'
 import { DiagramImage } from './DiagramImage'
 
 export interface DiagramViewerProps {
@@ -40,26 +41,16 @@ export function clampPan(view: View, width: number, height: number, viewportWidt
 
 /** The expanded drawing: zoom, pan, copy source and close, all from the keyboard or pointer. */
 export function DiagramViewer({ dataUrl, width, height, name, description, copyFeedback, onCopy, onClose }: DiagramViewerProps): ReactNode {
-  const dialog = useRef<HTMLDialogElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const drag = useRef<{ pointer: number; startX: number; startY: number; x: number; y: number } | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0, fitted: true })
   const [dragging, setDragging] = useState(false)
   const [settled, setSettled] = useState(false)
-  const titleId = useId()
   const hintId = useId()
   const descriptionId = useId()
   const fit = fitScale(width, height, size.width, size.height)
 
-  // Opened before the viewport is measured, so the first painted frame is already fitted.
-  useLayoutEffect(() => {
-    const element = dialog.current
-    if (element?.showModal && !element.open) element.showModal()
-    else element?.setAttribute('open', '')
-    viewport.current?.focus({ preventScroll: true })
-    return () => { element?.close?.() }
-  }, [])
 
   useLayoutEffect(() => {
     const element = viewport.current
@@ -134,12 +125,9 @@ export function DiagramViewer({ dataUrl, width, height, name, description, copyF
   }, [])
 
   const percent = `${Math.round(view.scale * 100)}%`
-  return <dialog ref={dialog} className="rich-diagram-viewer" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}
-    onCancel={event => { event.preventDefault(); onClose() }} onKeyDown={onKeyDown}>
-    <header className="rich-diagram-viewer__bar">
-      <h2 id={titleId} className="rich-diagram-viewer__title">{name}</h2>
-      <span className="rich-code__status" role="status" aria-live="polite">{copyFeedback}</span>
-      <div className="rich-diagram-viewer__controls">
+  // Opened before the viewport is measured, so the first painted frame is already fitted.
+  return <ViewerDialog title={name} describedBy={description ? descriptionId : undefined} status={copyFeedback} focusOnOpen={viewport} onClose={onClose} onKeyDown={onKeyDown}
+    controls={<>
         <button type="button" className="rich-code__copy tt-focusable" aria-label="Zoom out" title="Zoom out (−)" aria-disabled={view.scale <= clampScale(0, fit) + 1e-6} onClick={() => zoomTo(scale => scale / STEP)}><ZoomOut size={16} aria-hidden="true" /></button>
         <output className="rich-diagram-viewer__zoom" aria-label="Zoom">{percent}</output>
         <button type="button" className="rich-code__copy tt-focusable" aria-label="Zoom in" title="Zoom in (+)" aria-disabled={view.scale >= clampScale(Infinity, fit) - 1e-6} onClick={() => zoomTo(scale => scale * STEP)}><ZoomIn size={16} aria-hidden="true" /></button>
@@ -149,8 +137,7 @@ export function DiagramViewer({ dataUrl, width, height, name, description, copyF
           {copyFeedback === 'Copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
         </button>
         <button type="button" className="rich-code__copy tt-focusable" aria-label="Close diagram" title="Close (Esc)" onClick={onClose}><X size={17} aria-hidden="true" /></button>
-      </div>
-    </header>
+    </>}>
     <div ref={viewport} className="rich-diagram-viewer__viewport" tabIndex={0} role="group" aria-label="Diagram view" aria-describedby={hintId}
       data-dragging={dragging || undefined} data-settled={settled || undefined}
       onPointerDown={event => {
@@ -173,5 +160,5 @@ export function DiagramViewer({ dataUrl, width, height, name, description, copyF
       {description && <p id={descriptionId} className="tt-visually-hidden">{description}</p>}
     </div>
     <p id={hintId} className="rich-diagram-viewer__hint">Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit</p>
-  </dialog>
+  </ViewerDialog>
 }

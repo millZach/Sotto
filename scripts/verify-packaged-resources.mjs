@@ -254,6 +254,7 @@ export async function verifyPackagedResources(input, options = {}) {
     'out/main/wakeWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
+    'out/preload/visual.js',
     'out/preload/external-dependencies.json',
     'out/build-provenance.json',
     'out/renderer/index.html',

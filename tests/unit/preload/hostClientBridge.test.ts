@@ -25,6 +25,7 @@ function setup() {
     files: { list: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), reveal: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
     gitChanges: { review: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })), watch: vi.fn(async (request: { threadId: string }) => ({ ok: true, value: { ...request } })) },
     subagents: { page: vi.fn(async (request: { threadId: string }) => ({ ...request })) },
+    visuals: { open: vi.fn(async (request: { threadId: string }) => ({ ...request })) },
     requestDrafts: { list: vi.fn(async (owner: { kind: string; ownerId: string }) => [owner]) } }
   return { state, raw, bridge: hostClientBridge(raw), push: (detail: AgentThreadDetail) => detailListener?.(detail) }
 }
@@ -97,6 +98,9 @@ it('keeps routed agent and remote answer references intact, passes a paired host
   // Changes' comparison and Agents' roster pass the same way; Changes' watch does not.
   expect(await bridge.gitChanges.review({ threadId: key })).toEqual({ ok: true, value: { threadId: key } })
   expect(await bridge.subagents.page({ threadId: key })).toEqual({ threadId: key })
+  // An interactive visual's page is asked of main, which answers for a paired host's thread itself (ADR-0060).
+  expect(await bridge.visuals.open({ threadId: key })).toEqual({ threadId: key })
+  expect(raw.visuals.open).toHaveBeenLastCalledWith({ threadId: key })
   expect(() => bridge.gitChanges.watch({ threadId: key })).toThrow('another host')
   expect(raw.gitChanges.watch).not.toHaveBeenCalled()
   state.connections = [{ hostId: remote, name: 'Forge', kind: 'remote', connected: true }]

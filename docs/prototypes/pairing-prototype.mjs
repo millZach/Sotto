@@ -7,7 +7,7 @@ import { URL } from 'node:url'
 const routes = new Map([
   ['/', [new URL('./pairing-prototype.html', import.meta.url), 'text/html; charset=utf-8']],
   ['/src/renderer/src/styles/tokens.css', [new URL('../../src/renderer/src/styles/tokens.css', import.meta.url), 'text/css; charset=utf-8']],
-  ['/src/renderer/src/assets/fonts/figtree-latin.woff2', [new URL('../../src/renderer/src/assets/fonts/figtree-latin.woff2', import.meta.url), 'font/woff2']],
+  ['/src/shared/fonts/figtree-latin.woff2', [new URL('../../src/shared/fonts/figtree-latin.woff2', import.meta.url), 'font/woff2']],
 ])
 createServer(async (req, res) => {
   const route = routes.get(new URL(req.url, 'http://127.0.0.1').pathname)

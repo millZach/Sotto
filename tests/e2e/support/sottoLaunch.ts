@@ -97,6 +97,21 @@ export async function resizeWindow(launched: LaunchedSotto, width: number, heigh
   await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
 }
 
+/**
+ * The main window as it is drawn on screen, through Electron's own capture of its composited frame. Playwright's
+ * screenshot of the page composes a `<webview>` guest (an interactive visual's page, ADR-0060) at the wrong scale on a
+ * scaled display, 1.5 times too large and cut off at 150%, though the screen shows it right; a capture that shows one
+ * is taken here instead.
+ */
+export async function captureWindow(application: ElectronApplication, path: string): Promise<void> {
+  const png = await application.evaluate(async ({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))
+    if (!window) throw new Error('No main window to capture.')
+    return (await window.webContents.capturePage()).toPNG().toString('base64')
+  })
+  await writeFile(path, Buffer.from(png, 'base64'))
+}
+
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
   if (launched.ownsUserData) await removeOwnedProfile(launched.userData)

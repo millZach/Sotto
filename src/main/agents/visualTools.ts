@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { checkVisualInput, VISUAL_NOTHING_DRAWN, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, visualInputSchema, visualRefusalText, type VisualInput } from '../../shared/visuals'
+import { checkVisualInput, VISUAL_NOTHING_DRAWN, VISUAL_PAGE_SOURCE_MAX, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, visualInputSchema, visualRefusalText, type VisualInput } from '../../shared/visuals'
 import { MAX_DIAGRAM_SOURCE_LENGTH } from '../../shared/diagramSource'
+import { VISUAL_FONT_TOKEN, VISUAL_STEP_MESSAGE, VISUAL_THEME_MESSAGE, VISUAL_THEME_TOKEN_ROLES, VISUAL_THEME_TOKENS } from '../../shared/visualGuest'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 import type { VisualAddition } from './workspace'
 
@@ -9,11 +10,16 @@ export const VISUAL_MCP_SERVER = 'sotto_visual'
 export const VISUALIZE_TOOL = 'visualize'
 
 const DESCRIPTION = [
-  'Draw a diagram in this thread, where the user reads your replies, to show how something works: a flow, an architecture, a state machine, a sequence of calls between parts.',
+  'Draw a visual in this thread, where the user reads your replies, to show how something works: a flow, an architecture, a state machine, a sequence of calls between parts, or something the user can explore.',
   'Use it when a picture explains better than words, and whenever the user asks for a diagram or a visual.',
-  `Send a title, kind "diagram" and Mermaid source for a flowchart, sequence, state, class or entity relationship diagram, up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters, with no init directives or configuration.`,
-  'Add an intro of a sentence or two, and up to 12 steps that walk through the diagram one part at a time.',
-  'A step\'s highlight names the parts it is about: flowchart node ids, subgraph ids and edges written A->B; state ids; class or entity names; for a sequence diagram, participant names and arrow numbers counted from 1. Unknown names are ignored.',
+  `For kind "diagram", send Mermaid source for a flowchart, sequence, state, class or entity relationship diagram, up to ${MAX_DIAGRAM_SOURCE_LENGTH.toLocaleString('en-US')} characters, with no init directives or configuration.`,
+  `For kind "interactive", send one HTML page of up to ${VISUAL_PAGE_SOURCE_MAX.toLocaleString('en-US')} characters, with its script and style inline: a chart, a simulation, a clickable explainer.`,
+  'The page runs sealed: it cannot load anything, so no fetch, no external script, style, font or image, no forms, popups, storage or navigation. Draw with inline SVG, canvas or the DOM; images must be data: URLs.',
+  `Colour it with the CSS variables Sotto sets, so it matches the user's theme: ${VISUAL_THEME_TOKENS.map(token => `${token} for ${VISUAL_THEME_TOKEN_ROLES[token]}`).join(', ')}, and ${VISUAL_FONT_TOKEN} for the font. Put words only in --sotto-text or --sotto-muted; the fills are for shapes. The page's background is already --sotto-background.`,
+  `Sotto sends the page window messages: { type: "${VISUAL_STEP_MESSAGE}", step, total, highlight } once the page has loaded and whenever the reader moves through the walkthrough Sotto shows under it (step counts from 1, total is the number of steps, highlight is the names that step lists; step 0 with no names means every step is shown at once), and { type: "${VISUAL_THEME_MESSAGE}", tokens, mode, reducedMotion } once the page has loaded and whenever the theme changes. Attach window.addEventListener("message", ...) at the top of the page's script, before anything else runs, and redraw for the step's highlight names.`,
+  "Sotto sizes the frame to the page's content, between 160 and 640 pixels; a taller page scrolls inside. Size the page by its content: do not use vh units or height: 100% for its layout, which follow the frame rather than the content.",
+  'Add an intro of a sentence or two, and up to 12 steps that walk through the visual one part at a time.',
+  "A diagram step's highlight names the parts it is about: flowchart node ids, subgraph ids and edges written A->B; state ids; class or entity names; for a sequence diagram, participant names and arrow numbers counted from 1. Unknown names are ignored. An interactive page is sent its step's names as they are.",
   `A turn can draw up to ${VISUALS_PER_TURN_MAX} visuals and a thread up to ${VISUALS_PER_THREAD_MAX}.`,
   'The visual appears under your last message, so carry on from it in your reply rather than repeating its steps.',
 ].join(' ')
@@ -25,7 +31,7 @@ const DESCRIPTION = [
  */
 export const VISUAL_REQUEST_MAX_BYTES = 512 * 1024
 // Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full name is answered.
-const INSTRUCTIONS = 'visualize draws a diagram in this thread, under your last message. It changes nothing outside the thread and asks the user nothing. Use it to show how something works, or when the user asks for a visual. If a call is refused, nothing was drawn: explain in text instead. Where tools are found by search and called through use_tool, search for it first and call it by its full name, sotto_visual__visualize.'
+const INSTRUCTIONS = 'visualize draws a diagram or a sealed interactive page in this thread, under your last message. It changes nothing outside the thread and asks the user nothing. Use it to show how something works, or when the user asks for a visual. If a call is refused, nothing was drawn: explain in text instead. Where tools are found by search and called through use_tool, search for it first and call it by its full name, sotto_visual__visualize.'
 export const visualizeDefinition: ThreadToolDefinition = { name: VISUALIZE_TOOL, description: DESCRIPTION, inputSchema: z.toJSONSchema(visualInputSchema, { io: 'input' }) as Record<string, unknown> }
 
 /** What the tool asks of Sotto for the thread that called. */

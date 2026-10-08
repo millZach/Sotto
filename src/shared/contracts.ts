@@ -320,6 +320,7 @@ export interface SottoBridge {
   readonly gitChanges?: import('./gitChanges').GitChangesBridge
   readonly subagents?: import('./subagents').SubagentsBridge
   readonly files?: import('./files').FilesBridge
+  readonly visuals?: import('./visualPages').VisualPagesBridge
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentWireBridge
   readonly platform: SottoPlatform

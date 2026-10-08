@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DiagramActions, DiagramCopyStatus, DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './DiagramFrame'
+import { DiagramExpanded, VisualActions, VisualCopyStatus, DiagramStage, diagramFrameState, useDiagramFrame } from './DiagramFrame'
 import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
 import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
@@ -92,8 +92,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, complete }:
   return <figure className="rich-diagram rich-code" data-state={diagramFrameState(rendering)} aria-label={name}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{rendering.drawing || inspection.kind ? inspection.label : 'Mermaid'}</span>
-      <DiagramCopyStatus frame={frame} />
-      <DiagramActions frame={frame} copyLabel="Copy diagram source" expandLabel="Expand diagram" />
+      <VisualCopyStatus frame={frame} />
+      <VisualActions frame={frame} showing={Boolean(frame.rendering.drawing)} shownTitle="Show diagram" copyLabel="Copy diagram source" expandLabel="Expand diagram" />
     </div>
     <DiagramStage frame={frame} name={name} sourceLabel={`${inspection.label} source`} block="rich-diagram" />
     <DiagramExpanded frame={frame} name={name} />
