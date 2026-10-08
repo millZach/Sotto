@@ -22,7 +22,9 @@ wake-up wording and the real send path through the follow-up queue.
    pm" and "Started by you. Sotto sends this thread a wake-up when #74 needs it.", with **Stop**, named "Stop
    babysitting #74". The sidebar row reads **Babysitting #74**. Above the composer the creature rests in the muted
    colour with its sign, over "#74 Greet the reviewer" and "Babysitting since 4:12 pm"
-   ([1280x800 dark](../../artifacts/babysitting-surfaces/babysitting-1280x800-dark.png)). The journey measures where the time sits rather than trusting one capture: at
+   ([1280x800 dark](../../artifacts/babysitting-surfaces/babysitting-1280x800-dark.png)). The pose is named as one
+   picture, "Babysitting #74 Greet the reviewer since 4:12 pm", and is not a live region, so it is not read out again
+   each time it comes back after a turn. The journey measures where the time sits rather than trusting one capture: at
    1280x800 with Tools open, today's time shows whole, and so does the widest one ("since 12:55 pm") put in its place;
    an earlier day's ("since Oct 17, 12:55 pm") either shows whole or drops whole, never cut by an ellipsis. The line's title, words and
    Stop, the row's state and both lines of the pose measure 4.5:1 or better on what they sit on, in dark and in light.

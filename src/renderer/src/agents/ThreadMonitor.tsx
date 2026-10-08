@@ -309,7 +309,7 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
-function ThreadOrnament({ kind, creature, label, title, status, wide = false }: {
+function ThreadOrnament({ kind, creature, label, title, status, wide = false, quiet }: {
   readonly kind: 'monitoring' | 'working' | 'held' | 'babysitting'
   readonly creature: ReactNode
   readonly label: string
@@ -317,8 +317,14 @@ function ThreadOrnament({ kind, creature, label, title, status, wide = false }: 
   readonly status: ReactNode
   /** The readout carries more than a word and a count, so it gets the wider column. */
   readonly wide?: boolean
+  /**
+   * A pose that comes back on its own after every turn is not news, so it is not announced: it is read as one picture
+   * named by this, in its place on the page, the way the prototype draws it.
+   */
+  readonly quiet?: string
 }): ReactNode {
-  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} role="status" aria-live="polite" aria-atomic="true">
+  const named = quiet === undefined ? { role: 'status', 'aria-live': 'polite', 'aria-atomic': true } as const : { role: 'img', 'aria-label': quiet } as const
+  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} {...named}>
     <div className="thread-monitor__track">{creature}</div>
     <div className="thread-monitor__task" title={title}>
       <span className="thread-monitor__label">{label}</span>
@@ -389,7 +395,9 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
 export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>; readonly now: number | undefined }): ReactNode {
   const readout = babysitReadout(thread, new Date(now ?? Date.now()))
   if (!readout) return null
-  // Where the time does not fit, it drops whole (threadMonitor.css); the hover title and the Pull request surface still say it.
+  // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
+  // (threadMonitor.css); the hover title and the Pull request surface still say it.
   return <ThreadOrnament kind="babysitting" creature={<BabysittingCreature />} label={readout.label} title={readout.title}
+    quiet={`Babysitting ${readout.label}${readout.since ? ` since ${readout.since}` : ''}`}
     status={<>Babysitting{readout.since ? <span className="thread-monitor__since">{` since ${readout.since}`}</span> : null}</>} />
 }

@@ -46,10 +46,13 @@ describe('what the pose says', () => {
     expect(babysitReadout(thread([]), NOW)).toBeUndefined()
   })
 
-  it('stands still, in the babysitting pose, and is read as a status', () => {
+  it('stands still, in the babysitting pose, named as one picture rather than announced', () => {
     const { container } = render(<ThreadBabysitting thread={thread([74])} now={NOW.getTime()} />)
-    const ornament = screen.getByRole('status')
+    // It comes back after every turn, so a live region would say it again each time; it is named in place instead.
+    expect(screen.queryByRole('status')).toBeNull()
+    const ornament = screen.getByRole('img', { name: 'Babysitting #74 Greet the reviewer since 2:02 pm' })
     expect(ornament).toHaveAttribute('data-ornament', 'babysitting')
+    expect(ornament).not.toHaveAttribute('aria-live')
     expect(ornament).toHaveTextContent('#74 Greet the reviewerBabysitting since 2:02 pm')
     // The time is one piece, so where it does not fit it drops whole rather than ending in an ellipsis.
     expect(container.querySelector('.thread-monitor__status--babysitting .thread-monitor__since')).toHaveTextContent(/^since 2:02 pm$/u)
