@@ -85,8 +85,9 @@ export function startDeadProxy(onLost: () => void, create: (onSocket: (socket: {
 
 /** The preferences a visual's guest gets, whatever the `<webview>` element asked for. */
 export function visualGuestPreferences(preload: string): Record<string, unknown> {
+  // Run the isolated, sandboxed preload in frames too, so they get the same protections as the page.
   return {
-    sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false, nodeIntegrationInWorker: false,
+    sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, nodeIntegrationInWorker: false,
     webSecurity: true, allowRunningInsecureContent: false, webviewTag: false, plugins: false, experimentalFeatures: false,
     enableWebSQL: false, spellcheck: false, navigateOnDragDrop: false, disableDialogs: true, disablePopups: true,
     autoplayPolicy: 'document-user-activation-required', partition: VISUAL_PARTITION, preload,

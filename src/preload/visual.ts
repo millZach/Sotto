@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, type WebFrame } from 'electron'
 import {
   VISUAL_IPC_ESCAPE, VISUAL_IPC_HEIGHT, VISUAL_IPC_STEP, VISUAL_IPC_THEME, VISUAL_THEME_MESSAGE,
   clampVisualPageHeight, measuredPageHeight, readVisualStep, readVisualTheme, returnsFocus, visualThemeCss,
@@ -14,10 +14,57 @@ interface PageKeyEvent { readonly key: string; readonly repeat: boolean; readonl
 declare const window: {
   postMessage(message: unknown, targetOrigin: string): void
   addEventListener(type: 'keydown', listener: (event: PageKeyEvent) => void, capture: true): void
+  addEventListener(type: 'copy' | 'cut', listener: (event: PageClipboardEvent) => void, capture: true): void
   addEventListener(type: 'DOMContentLoaded' | 'load', listener: () => void): void
 }
 declare const document: { readonly documentElement: PageElement; readonly body: PageElement | null; getElementById(id: string): PageElement | null; querySelector(selector: string): PageElement | null }
 declare class ResizeObserver { constructor(callback: () => void); observe(target: PageElement): void }
+declare const Document: { readonly prototype: { execCommand(commandId: string, showUI?: boolean, value?: string): boolean } }
+declare class MutationObserver { constructor(callback: () => void); observe(target: typeof document, options: { childList: true; subtree: true }): void }
+
+// Run before the page's scripts in its main world. No Electron API is exposed.
+const protectPage = (): void => {
+  for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection']) {
+    Object.defineProperty(globalThis, name, { value: undefined, writable: false, configurable: false })
+  }
+  // Keep the native functions before the page can change their prototypes.
+  const execCommand = Function.prototype.call.bind(Document.prototype.execCommand)
+  const lowerCase = Function.prototype.call.bind(String.prototype.toLowerCase)
+  const commandText = String
+  Object.defineProperty(Document.prototype, 'execCommand', {
+    value: function (this: typeof document, command: string, showUI?: boolean, value?: string): boolean {
+      const action = commandText(command)
+      const name = lowerCase(action)
+      if (name === 'copy' || name === 'cut') return false
+      return execCommand(this, action, showUI, value)
+    }, writable: false, configurable: false,
+  })
+}
+contextBridge.executeInMainWorld({ func: protectPage })
+
+// Electron skips preloads in about:blank frames. Apply the same protections there from the guest's preload.
+const protectedFrames = new Set<number>()
+const protectFrames = (parent: WebFrame): void => {
+  for (let frame = parent.firstChild; frame; frame = frame.nextSibling) {
+    if (!protectedFrames.has(frame.routingId)) {
+      protectedFrames.add(frame.routingId)
+      void frame.executeJavaScript(`(${protectPage.toString()})()`).catch(() => undefined)
+    }
+    protectFrames(frame)
+  }
+}
+if (process.isMainFrame) {
+  new MutationObserver(() => protectFrames(webFrame)).observe(document, { childList: true, subtree: true })
+}
+
+// The reader's copy uses the browser's default action. Keep page listeners from replacing what was selected.
+interface PageClipboardEvent { readonly isTrusted: boolean; preventDefault(): void; stopImmediatePropagation(): void }
+const keepReaderCopy = (event: PageClipboardEvent): void => {
+  event.stopImmediatePropagation()
+  if (!event.isTrusted) event.preventDefault()
+}
+window.addEventListener('copy', keepReaderCopy, true)
+window.addEventListener('cut', keepReaderCopy, true)
 
 const post = (message: unknown): void => window.postMessage(message, '*')
 
@@ -43,6 +90,7 @@ window.addEventListener('keydown', event => {
 
 let sent = 0
 const measure = (): void => {
+  if (!process.isMainFrame) return
   const height = clampVisualPageHeight(measuredPageHeight(document.documentElement.getBoundingClientRect().height, document.body?.scrollHeight))
   if (height === sent) return
   sent = height

@@ -6,15 +6,29 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { returnsFocus, VISUAL_IPC_ESCAPE, VISUAL_IPC_STEP } from '../../../src/shared/visualGuest'
 
 const ipc = vi.hoisted(() => ({ on: vi.fn(), sendToHost: vi.fn() }))
-vi.mock('electron', () => ({ ipcRenderer: ipc }))
+vi.mock('electron', () => ({ ipcRenderer: ipc, contextBridge: { executeInMainWorld: vi.fn() } }))
+const listen = vi.spyOn(window, 'addEventListener')
 
 beforeAll(async () => {
   vi.stubGlobal('ResizeObserver', class { observe(): void {} })
   await import('../../../src/preload/visual')
 })
-afterAll(() => { vi.unstubAllGlobals() })
+afterAll(() => { listen.mockRestore(); vi.unstubAllGlobals() })
 
 describe('the guest preload', () => {
+  it.each(['copy', 'cut'])('keeps the reader\'s %s default action and stops page-made events', type => {
+    const handler = listen.mock.calls.find(call => call[0] === type)![1] as (event: {
+      isTrusted: boolean; preventDefault(): void; stopImmediatePropagation(): void
+    }) => void
+    const preventDefault = vi.fn()
+    const stopImmediatePropagation = vi.fn()
+    handler({ isTrusted: true, preventDefault, stopImmediatePropagation })
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(stopImmediatePropagation).toHaveBeenCalledOnce()
+    handler({ isTrusted: false, preventDefault, stopImmediatePropagation })
+    expect(preventDefault).toHaveBeenCalledOnce()
+  })
+
   it('gives focus back only for the user\'s own Escape', () => {
     expect(returnsFocus({ key: 'Escape', repeat: false, isTrusted: true })).toBe(true)
     expect(returnsFocus({ key: 'Escape', repeat: false, isTrusted: false })).toBe(false)

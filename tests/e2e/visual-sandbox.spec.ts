@@ -385,3 +385,33 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }
 })
+
+test('an ordinary interactive page has the three protective settings, including in an empty frame', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-visual-settings-'))
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launchSotto('success', profile)
+    const log = await openWorkshop(launched)
+    const source = '<!doctype html><title>Protective settings</title><p>A page still draws.</p>'
+      + '<script>document.body.dataset.script = "ran"; document.body.append(document.createElement("iframe"))</script>'
+    expect((await visualize(launched.page, { title: 'An ordinary page', kind: 'interactive', source })).isError).not.toBe(true)
+    const card = log.getByRole('region', { name: 'Visual: An ordinary page' })
+    await expect(card.locator('.interactive-visual')).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
+    await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
+    expect(await inGuest(launched, 'document.querySelector("p").getBoundingClientRect().height > 0')).toBe(true)
+
+    const blink = await launched.app.evaluate(({ app }) => app.commandLine.getSwitchValue('blink-settings'))
+    expect(blink.split(',')).toContain('dnsPrefetchingEnabled=false')
+    expect(await inGuest(launched, '[typeof RTCPeerConnection, typeof webkitRTCPeerConnection]')).toEqual(['undefined', 'undefined'])
+    await expect.poll(() => launched!.app.evaluate(async ({ webContents }) => {
+      const guest = webContents.getAllWebContents().find(contents => contents.getType() === 'webview' && !contents.isDestroyed())!
+      const frame = guest.mainFrame.frames[0]
+      return frame?.executeJavaScript('[typeof RTCPeerConnection, typeof webkitRTCPeerConnection, typeof require, typeof process]')
+    })).toEqual(['undefined', 'undefined', 'undefined', 'undefined'])
+    expect(await inGuest(launched, 'document.execCommand("copy")')).toBe(false)
+    expect(await inGuest(launched, 'document.execCommand("cut")')).toBe(false)
+  } finally {
+    if (launched) await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})

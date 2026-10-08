@@ -277,7 +277,7 @@ describe('a visual\'s guest', () => {
     const params: Record<string, string> = { src: url, allowpopups: 'true', partition: 'persist:other', preload: 'file:///C:/elsewhere.js', webpreferences: 'nodeIntegration=yes' }
     expect(admitVisualGuest({ embedderTrusted: true, webPreferences, params, preload: '/out/preload/visual.js', isAwaitingLoad: value => target.isAwaitingLoad(value) })).toBe(true)
     expect(webPreferences).toMatchObject({ nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false,
-      disablePopups: true, disableDialogs: true, partition: 'sotto-visual', preload: '/out/preload/visual.js', nodeIntegrationInSubFrames: false })
+      disablePopups: true, disableDialogs: true, partition: 'sotto-visual', preload: '/out/preload/visual.js', nodeIntegrationInSubFrames: true })
     expect(params).toEqual({ src: url, partition: 'sotto-visual' })
   })
 

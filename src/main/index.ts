@@ -150,7 +150,7 @@ import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
-import { blockSpellcheckDictionaryDownloads, enableWasmThreadSupport } from './security'
+import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   beginRuntimeVerification,
   registerLocalAssetProtocols,
@@ -1459,6 +1459,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 // Electron takes one list of privileged schemes: the model schemes and an interactive visual's page (ADR-0060).
 registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
+disableDnsPrefetching(app.commandLine)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
 if (process.platform === 'win32') {
