@@ -24,6 +24,12 @@ import { FAILED_READ_LIMIT, findNews, printable, publishedBabysitting, toldAtSta
 export const BABYSIT_PASS_MS = 2 * 60_000
 /** How long a pull request with review threads goes before its remarks are read anyway (decision 13). */
 export const REMARKS_REREAD_MS = 30 * 60_000
+/**
+ * Refused checks are asked for again next pass, and after this many refusals in a row only when the status moves or
+ * every REMARKS_REREAD_MS: a sign-in that may never read a pull request's checks, such as a fine-grained token without
+ * checks access, would otherwise cost a checks read every pass for as long as babysitting lasts.
+ */
+export const REFUSED_CHECKS_BEFORE_BACK_OFF = 3
 /** Sotto links pull requests from github.com only (ADR-0027), so that is the host every read asks. */
 const HOST = 'github.com'
 const READ_TIMEOUT_MS = 30_000
@@ -99,6 +105,9 @@ interface LastRead {
   /** The fingerprint's remarks the remarks were read against; empty when they still need reading. */
   readonly remarks: string
   readonly remarksAt: number
+  /** Checks reads in a row GitHub refused, and when refused checks are next asked for once they are backed off. */
+  readonly refusedChecks: number
+  readonly checksDueAt: number | null
   /** The records it was evaluated for: one started since takes its first look with everything read. */
   readonly records: ReadonlySet<string>
 }
@@ -319,7 +328,7 @@ export class Babysitter {
     const now = this.now()
     const last = this.lastReads.get(group.key)
     const firstLook = !last || group.targets.some(target => !last.records.has(recordKey(target.threadId, target.record)))
-    const checks = firstLook || last.status !== fingerprint.status || fingerprint.checksRunning
+    const checks = firstLook || last.status !== fingerprint.status || fingerprint.checksRunning || (last.checksDueAt !== null && now >= last.checksDueAt)
     const remarks = firstLook || last.remarks !== fingerprint.remarks || (fingerprint.reviewThreads > 0 && now - last.remarksAt >= REMARKS_REREAD_MS)
     let detail: DetailAnswer | null = null
     if (checks || remarks) {
@@ -330,10 +339,15 @@ export class Babysitter {
       if (answer === 'failed') { this.lastReads.delete(group.key); await this.failedRead(group); return }
       detail = answer
     }
-    // Checks asked for and not read (a check refused, or the head moved under the read) are asked again next pass.
+    // Checks asked for and not read (a check refused, or the head moved under the read) are asked again next pass, and
+    // once refused REFUSED_CHECKS_BEFORE_BACK_OFF times in a row, when the status moves or every REMARKS_REREAD_MS.
     const checksRead = checks ? detail?.checks != null : true
+    const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
+    const backedOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
     this.lastReads.set(group.key, {
-      status: checksRead ? fingerprint.status : '',
+      status: checksRead || backedOff ? fingerprint.status : '',
+      refusedChecks,
+      checksDueAt: !checks ? last?.checksDueAt ?? null : backedOff ? now + REMARKS_REREAD_MS : null,
       remarks: remarks ? fingerprint.remarks : last?.remarks ?? '',
       remarksAt: remarks ? now : last?.remarksAt ?? now,
       records: new Set(group.targets.map(target => recordKey(target.threadId, target.record))),

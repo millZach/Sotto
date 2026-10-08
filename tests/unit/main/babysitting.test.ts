@@ -431,6 +431,25 @@ describe('when GitHub cannot be read', () => {
     expect(h.events).not.toContain('babysit-read-failed')
   })
 
+  it('asks for checks GitHub keeps refusing every 30 minutes after three refusals in a row, and at once when the status moves', async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'lint', state: 'FAILURE' }], refuseChecks: 'list' }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    const checksAsked = () => h.github.questions.filter(question => question.kind === 'detail' && question.variables['checks'] === 'true').length
+    for (let pass = 0; pass < 6; pass++) await h.pass()
+    // Three passes ask and are refused; the next three ask nothing more.
+    expect(checksAsked()).toBe(3)
+    for (let pass = 0; pass < 12; pass++) await h.pass()
+    // Thirty minutes after the third refusal it asks once more.
+    expect(checksAsked()).toBe(4)
+    // A new head moves the status: asked at once, and read now that GitHub lets it.
+    delete pull.refuseChecks
+    pull.head = 'b'.repeat(40)
+    await h.pass()
+    expect(checksAsked()).toBe(5)
+    expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] }])
+  })
+
   it('skips a pass while only the reserve is left, without asking gh', async () => {
     const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
     await h.babysitter.start('a', url(1), 'agent')
