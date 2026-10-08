@@ -454,7 +454,7 @@ export class WorkspaceHost implements AgentHost {
    * status follow at once, in the lane that moved it. The remote half follows once the lane is free.
    */
   private async followGitChange(threadId: string, options: { readonly followSentBranch?: boolean } = {}): Promise<void> {
-    this.gitStatus?.invalidate()
+    this.invalidateGitStatus(threadId)
     const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
     if (worktree?.status === 'ready' && worktree.path) {
       try {
@@ -584,7 +584,7 @@ export class WorkspaceHost implements AgentHost {
       const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method)
       const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
-      this.gitStatus?.invalidate()
+      this.invalidateGitStatus(command.threadId)
     }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))
   }
   /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
@@ -683,8 +683,17 @@ export class WorkspaceHost implements AgentHost {
   }
   /** A Git action changed this thread's folder: read it again, remote and all, without waiting for the timer. */
   gitActionFinished(threadId: string): Promise<void> {
-    this.gitStatus?.invalidate()
+    this.invalidateGitStatus(threadId)
     return this.readRemoteStatus(threadId)
+  }
+  /**
+   * A Git or pull request action ran in the thread's folder: that repository's fetch timing and pull request answers
+   * go stale, and every other repository keeps its own (#820). A thread with no folder to name stales every repository.
+   */
+  private invalidateGitStatus(threadId: string): void {
+    const folder = this.statusFolder(threadId)
+    if (folder === undefined) this.gitStatus?.invalidate()
+    else this.gitStatus?.invalidate(folder)
   }
   private async pollGitStatus(): Promise<void> {
     if (this.gitStatusPolling || this.stopping || !this.gitStatus || !this.declared) return
@@ -2218,7 +2227,7 @@ export class WorkspaceHost implements AgentHost {
       }
       const switched = await this.worktrees.switchBranch(inspected, target)
       // The branch moved under any status read of the folder begun before now, so the read below is one of its own.
-      this.gitStatus?.invalidate()
+      this.invalidateGitStatus(threadId)
       this.thread(threadId).worktree = { ...switched, sentBranch: target }
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }

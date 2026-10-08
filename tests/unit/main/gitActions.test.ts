@@ -306,7 +306,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
     const status = { read: (cwd: string, options: { remote: boolean; fresh?: boolean }) => {
       if (committed && !options.remote) go()
       return reader.read(cwd, options)
-    }, invalidate: () => reader.invalidate() }
+    }, invalidate: (folder?: string) => reader.invalidate(folder) }
     const actions = new GitActions({ run, status, writeCommitMessage: async () => null, writePullRequestText: async () => null })
     // The read begins on a clean main level with origin.
     const earlier = reader.read(f.repo, { remote: false })

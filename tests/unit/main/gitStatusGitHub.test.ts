@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { GitStatusReader, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 /**
@@ -200,6 +200,59 @@ describe('the rate limit is read and respected', () => {
     // Past the reset the reading no longer holds, and the timer asks again.
     f.advance(2 * 60_000)
     await f.round('C:/repo', true)
+    expect(f.calls).toHaveLength(3)
+  })
+})
+
+describe('an action refreshes only its own repository', () => {
+  const two = (): Record<string, Folder> => ({
+    'C:/a': { common: 'C:/a/.git', branch: 'feature/a' },
+    'C:/b': { common: 'C:/b/.git', branch: 'feature/b', remotes: { origin: 'https://github.com/sotto-fixture/other' } },
+  })
+  it('leaves another repository\'s fetch and pull request answers fresh', async () => {
+    const f = harness(two(), args => headsAnswer(args, [{ head: 'feature/a', number: 1 }, { head: 'feature/b', number: 2 }]))
+    await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
+    const fetches = () => f.git.filter(call => call[1] === 'fetch').map(call => call[0])
+    const asked = () => f.calls.flatMap(call => call.filter(arg => /^h\d+=/u.test(arg)))
+    expect(asked()).toEqual(['h0=feature/a', 'h0=feature/b'])
+    f.advance(1_000)
+    // A Git action in a: its fetch is due again and its answer is asked again; b keeps both.
+    f.reader.invalidate('C:/a')
+    await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
+    expect(fetches()).toEqual(['C:/a', 'C:/b', 'C:/a'])
+    expect(asked()).toEqual(['h0=feature/a', 'h0=feature/b', 'h0=feature/a'])
+    // Named by its common Git directory, the repository is found the same way.
+    f.reader.invalidate('C:/b/.git')
+    await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
+    expect(asked()).toEqual(['h0=feature/a', 'h0=feature/b', 'h0=feature/a', 'h0=feature/b'])
+  })
+  it('lets an answer asked before an action in its own repository not stand, and one asked before an action elsewhere stand', async () => {
+    let release: (() => void) | undefined
+    const f = harness(two(), async args => {
+      if (release === undefined && args.some(arg => arg === 'h0=feature/a')) await new Promise<void>(go => { release = go })
+      return headsAnswer(args, [{ head: 'feature/a', number: 1 }])
+    })
+    await f.reader.read('C:/a', { remote: false })
+    await f.reader.read('C:/b', { remote: false })
+    // An action elsewhere while a's question is out: a's answer, when it comes, stands.
+    const first = f.reader.readRemote('C:/a')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    f.reader.invalidate('C:/b')
+    release!()
+    await first
+    expect(await f.reader.readRemote('C:/a')).toBe(true)
+    expect(f.calls).toHaveLength(1)
+    expect((await f.reader.read('C:/a', { remote: false })).pullRequest?.number).toBe(1)
+    // An action in a while its question is out: the answer lands, and is asked for again.
+    f.advance(61_000)
+    release = undefined
+    const second = f.reader.readRemote('C:/a')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    f.reader.invalidate('C:/a')
+    release!()
+    await second
+    await f.reader.read('C:/a', { remote: false })
+    await f.reader.readRemote('C:/a')
     expect(f.calls).toHaveLength(3)
   })
 })

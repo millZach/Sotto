@@ -598,7 +598,8 @@ describe('durable project/thread organization', () => {
     expect(record()?.git?.ahead).toBe(2)
     // A Git action drops the caches and reads at once.
     await f.host.gitActionFinished('local')
-    expect(source.invalidate).toHaveBeenCalled()
+    // Only the thread's own repository goes stale (#820).
+    expect(source.invalidate).toHaveBeenCalledWith(project.path)
     expect(record()?.git?.ahead).toBe(3)
     // An unchanged status publishes nothing.
     const published: AgentHostSnapshot[] = []
@@ -1143,7 +1144,7 @@ describe('durable project/thread organization', () => {
     expect(seen).toEqual([project.path])
     expect(published.some(entry => entry.startsWith('running:Committing...'))).toBe(true)
     expect(published.some(entry => entry === 'running:Committing...:checking')).toBe(true)
-    expect(source.invalidate).toHaveBeenCalled()
+    expect(source.invalidate).toHaveBeenCalledWith(project.path)
     // The folder is read in the thread's lane once the action is done, so the remote half outside the lane asks about
     // the branch it is on now; a read of its own after it takes what the remote half brought.
     expect(source.read).toHaveBeenCalledWith(project.path, { remote: false })

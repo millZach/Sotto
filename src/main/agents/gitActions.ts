@@ -97,7 +97,8 @@ export class GitActions {
     if (held === 'automatic-pull') throw new GitActionRefusal('Sotto is pulling this folder. Try again in a moment.')
     if (held) throw new GitActionRefusal('Git action in progress.')
     this.busy.set(cwd, holder)
-    try { return await work() } finally { this.busy.delete(cwd); this.dependencies.status.invalidate() }
+    // Only this folder's repository goes stale; another repository's answers stand (#820).
+    try { return await work() } finally { this.busy.delete(cwd); this.dependencies.status.invalidate(cwd) }
   }
 
   /** T3's `runStackedAction`: branch, commit, push and pull request steps in that order, each reported as it starts. */

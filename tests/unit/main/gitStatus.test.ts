@@ -134,7 +134,7 @@ describe('Git status the way T3 reads it', () => {
     expect(f.ghCalls()).toBe(1)
     await f.reader.read(f.repo, { remote: true }); await f.reader.read(f.repo, { remote: false })
     expect(f.ghCalls()).toBe(1) // cached for a minute; a local read never asks
-    f.reader.invalidate()
+    f.reader.invalidate(f.repo)
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest?.number).toBe(9)
     expect(f.ghCalls()).toBe(2)
     // On the default branch only an open pull request counts.
@@ -191,7 +191,7 @@ describe('Git status the way T3 reads it', () => {
     const older = reader.read(f.repo, { remote: false })
     await held.reached
     git(f.repo, 'switch', '-q', 'main')
-    reader.invalidate()
+    reader.invalidate(f.repo)
     const after = reader.read(f.repo, { remote: false })
     held.go()
     expect(await after).toMatchObject({ branch: 'main' })
@@ -224,8 +224,8 @@ describe('the remote half of a read, on its own', () => {
     expect(remoteCalls.find(place => place.call[1] === 'fetch')?.call).toContain('--no-write-fetch-head')
     await expect(readFile(join(ownGitDirectory, 'FETCH_HEAD'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await f.reader.read(side, { remote: false })).toMatchObject({ behind: 1, pullRequest: { number: 5 } })
-    // A Git action since: the folder is read again before its remote half is asked.
-    f.reader.invalidate()
+    // A Git action since, in another folder of the same repository: the folder is read again before its remote half is asked.
+    f.reader.invalidate(f.repo)
     expect(await f.reader.readRemote(side)).toBe(false)
   })
   it('starts no remote half in a folder held for removal, and lets the removal wait for one already running', async () => {
@@ -292,7 +292,7 @@ describe('the remote half of a read, on its own', () => {
     let hold = holdNext('fetch')
     const first = f.reader.readRemote(f.repo)
     await hold.started
-    f.reader.invalidate()
+    f.reader.invalidate(f.repo)
     await f.reader.read(f.repo, { remote: false })
     const second = f.reader.readRemote(f.repo)
     hold.go()
@@ -305,7 +305,7 @@ describe('the remote half of a read, on its own', () => {
     hold = holdNext('gh')
     const lookup = f.reader.readRemote(f.repo)
     await hold.started
-    f.reader.invalidate()
+    f.reader.invalidate(f.repo)
     hold.go()
     await lookup
     await f.reader.read(f.repo, { remote: false })

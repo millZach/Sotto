@@ -193,7 +193,8 @@ export class GitStatusReader implements GitStatusSource {
   private readonly fetches = new Map<string, FetchRecord>()
   private readonly pullRequests = new Map<string, PullRequestRecord>()
   private readonly defaults = new Map<string, { at: number; value: string | null }>()
-  private readonly reads = new Map<string, Promise<GitStatus>>()
+  /** Reads under way, each with the `invalidate` count it began under and the repository it found, once it has. */
+  private readonly reads = new Map<string, { readonly start: number; readonly place: { common?: string | null }; readonly task: Promise<GitStatus> }>()
   private readonly remoteReads = new Map<string, Promise<boolean>>()
   private readonly known = new Map<string, KnownFolder>()
   /** The processes and remote halves running in each folder, by `folderKey`, so a removal can wait for them. */
@@ -206,7 +207,12 @@ export class GitStatusReader implements GitStatusSource {
   private readonly asking = new Map<string, { readonly epoch: number; readonly ask: GitHubAsk; readonly done: Promise<GitPullRequestSummary | null> }>()
   private readonly heads: PullRequestHeads
   private readonly rateLimit: GitHubRateLimit
-  private epoch = 0
+  /** Every `invalidate` takes the next number; a read, fetch or answer is stamped with the number current when it began. */
+  private counter = 0
+  /** The number of the last `invalidate` that reached every repository. */
+  private everywhere = 0
+  /** The number of the last `invalidate` of each repository, by common Git directory. */
+  private readonly invalidated = new Map<string, number>()
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
@@ -248,11 +254,37 @@ export class GitStatusReader implements GitStatusSource {
   /** Whether `key` is a held folder or inside one. */
   private isHeld(key: string): boolean { return [...this.held.keys()].some(held => within(key, held)) }
 
-  invalidate(): void {
-    this.epoch++
-    for (const record of this.fetches.values()) record.nextAt = 0
-    this.defaults.clear()
-    this.refs.clear()
+  invalidate(folder?: string): void {
+    const epoch = ++this.counter
+    const common = folder === undefined ? undefined : this.repositoryOf(folder)
+    if (common === undefined) {
+      this.everywhere = epoch
+      for (const record of this.fetches.values()) record.nextAt = 0
+      this.defaults.clear()
+      this.refs.clear()
+      return
+    }
+    this.invalidated.set(common, epoch)
+    const fetch = this.fetches.get(common)
+    if (fetch) fetch.nextAt = 0
+    this.defaults.delete(common)
+    this.refs.delete(common)
+  }
+  /** The common Git directory of a folder read before, or a common Git directory named itself; undefined for one never read. */
+  private repositoryOf(folder: string): string | undefined {
+    const direct = this.known.get(folder)?.common
+    if (direct) return direct
+    const key = this.folderKey(folder)
+    for (const [cwd, known] of this.known) if (known.common && (this.folderKey(cwd) === key || this.folderKey(known.common) === key)) return known.common
+    return undefined
+  }
+  /**
+   * The number of the last `invalidate` that reached a repository: its own or every repository's. For a folder whose
+   * repository is not known yet, any `invalidate` at all.
+   */
+  private epochOf(common: string | null | undefined): number {
+    if (common === undefined) return this.counter
+    return Math.max(this.everywhere, common === null ? 0 : this.invalidated.get(common) ?? 0)
   }
 
   /**
@@ -347,15 +379,16 @@ export class GitStatusReader implements GitStatusSource {
 
   /**
    * One read per folder at a time: two threads sharing a checkout share the answer. A read begun before the last
-   * `invalidate` is not shared after it, and a fresh read is never shared.
+   * `invalidate` of its repository is not shared after it, and a fresh read is never shared.
    */
   read(cwd: string, options: { readonly remote: boolean; readonly fresh?: boolean }): Promise<GitStatus> {
     if (options.fresh) return this.readNow(cwd, options)
-    const key = `${this.epoch}\0${cwd}\0${options.remote}`
+    const key = `${cwd}\0${options.remote}`
     const pending = this.reads.get(key)
-    if (pending) return pending
-    const task = this.readNow(cwd, options).finally(() => { if (this.reads.get(key) === task) this.reads.delete(key) })
-    this.reads.set(key, task)
+    if (pending && this.epochOf(pending.place.common) <= pending.start) return pending.task
+    const place: { common?: string | null } = {}
+    const task = this.readNow(cwd, options, place).finally(() => { if (this.reads.get(key)?.task === task) this.reads.delete(key) })
+    this.reads.set(key, { start: this.counter, place, task })
     return task
   }
 
@@ -366,7 +399,7 @@ export class GitStatusReader implements GitStatusSource {
   readRemote(cwd: string, options: { readonly background?: boolean } = {}): Promise<boolean> {
     if (this.isHeld(this.folderKey(cwd))) return Promise.resolve(true)
     const known = this.known.get(cwd)
-    if (!known || known.epoch !== this.epoch) return Promise.resolve(false)
+    if (!known || this.epochOf(known.common) > known.epoch) return Promise.resolve(false)
     const ask: GitHubAsk = options.background ? 'background' : 'user'
     const key = `${known.epoch}\0${cwd}\0${ask}`
     const pending = this.remoteReads.get(key)
@@ -381,15 +414,16 @@ export class GitStatusReader implements GitStatusSource {
     return this.tracked(cwd, task)
   }
 
-  private async readNow(cwd: string, options: { readonly remote: boolean }): Promise<GitStatus> {
-    const epoch = this.epoch
+  private async readNow(cwd: string, options: { readonly remote: boolean }, place: { common?: string | null } = {}): Promise<GitStatus> {
+    const epoch = this.counter
     const readAt = new Date(this.now()).toISOString()
-    // What `readRemote` asks about for this folder, unless a Git action has run since this read began.
-    const remember = (known: Omit<KnownFolder, 'epoch'>): void => { if (epoch === this.epoch) this.known.set(cwd, { epoch, ...known }) }
+    // What `readRemote` asks about for this folder, unless a Git action in its repository has run since this read began.
+    const remember = (known: Omit<KnownFolder, 'epoch'>): void => { if (this.epochOf(known.common) <= epoch) this.known.set(cwd, { epoch, ...known }) }
     let common: string
-    try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim() }
+    try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim(); place.common = common }
     catch (error) {
       if (error instanceof GitUnavailableError) throw error
+      place.common = null
       remember({ common: null, hasRemote: false, branch: null, upstream: null, isDefaultBranch: false, tip: null })
       return { ...EMPTY, readAt }
     }
@@ -467,9 +501,9 @@ export class GitStatusReader implements GitStatusSource {
     if (this.options.fetchIntervalMs() <= 0) return Promise.resolve()
     const record = this.fetches.get(common) ?? { failures: 0, nextAt: 0, fetchedAt: null }
     this.fetches.set(common, record)
-    if (record.inFlight) return record.inFlight.epoch === this.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd))
+    if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd))
     if (this.now() < record.nextAt) return Promise.resolve()
-    const epoch = this.epoch
+    const epoch = this.counter
     const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
       { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_ENV })
     const done: Promise<void> = fetch().catch((error: unknown) => {
@@ -478,8 +512,8 @@ export class GitStatusReader implements GitStatusSource {
       this.fetchHeadFlag = false
       return fetch()
     })
-      .then(() => { record.failures = 0; record.fetchedAt = this.now(); if (epoch === this.epoch) record.nextAt = this.now() + FETCH_FRESH_MS },
-        () => { record.failures++; if (epoch === this.epoch) record.nextAt = this.now() + backoff(FETCH_BACKOFF_MS, record.failures) })
+      .then(() => { record.failures = 0; record.fetchedAt = this.now(); if (this.epochOf(common) <= epoch) record.nextAt = this.now() + FETCH_FRESH_MS },
+        () => { record.failures++; if (this.epochOf(common) <= epoch) record.nextAt = this.now() + backoff(FETCH_BACKOFF_MS, record.failures) })
       .finally(() => { if (record.inFlight?.done === done) delete record.inFlight })
     record.inFlight = { epoch, done }
     return done
@@ -495,23 +529,23 @@ export class GitStatusReader implements GitStatusSource {
   private pullRequest(common: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk | null): Promise<GitPullRequestSummary | null> {
     const key = `${common}\0${branch}`
     const record = this.pullRequests.get(key)
-    if (!ask || (record && !this.pullRequestStale(record, tip))) return Promise.resolve(record?.value ?? null)
+    if (!ask || (record && !this.pullRequestStale(common, record, tip))) return Promise.resolve(record?.value ?? null)
     // While GitHub is paused for this host, or the reserve is reached, the timer keeps the last answer and asks nothing, Git included.
     if (ask === 'background' && record?.host !== undefined && this.rateLimit.retryAt(record.host, 'background') !== null) return Promise.resolve(record.value)
     const flight = this.asking.get(key)
     if (flight) {
-      if (flight.epoch === this.epoch && (flight.ask === 'user' || ask === 'background')) return flight.done
+      if (this.epochOf(common) <= flight.epoch && (flight.ask === 'user' || ask === 'background')) return flight.done
       return flight.done.then(() => this.pullRequest(common, cwd, branch, upstream, isDefaultBranch, tip, ask))
     }
-    const entry = { epoch: this.epoch, ask, done: this.askPullRequest(key, cwd, branch, upstream, isDefaultBranch, tip, ask, this.epoch) }
+    const entry = { epoch: this.counter, ask, done: this.askPullRequest(key, cwd, branch, upstream, isDefaultBranch, tip, ask, this.counter) }
     this.asking.set(key, entry)
     void entry.done.finally(() => { if (this.asking.get(key) === entry) this.asking.delete(key) })
     return entry.done
   }
 
-  /** Whether a kept answer is due to be asked again: a Git action since, its time is up, or a merged or closed one whose branch has moved. */
-  private pullRequestStale(record: PullRequestRecord, tip: string | null): boolean {
-    return record.epoch !== this.epoch || this.now() >= record.nextAt || (record.value !== null && record.value.state !== 'open' && record.tip !== tip)
+  /** Whether a kept answer is due to be asked again: a Git action in its repository since, its time is up, or a merged or closed one whose branch has moved. */
+  private pullRequestStale(common: string, record: PullRequestRecord, tip: string | null): boolean {
+    return record.epoch < this.epochOf(common) || this.now() >= record.nextAt || (record.value !== null && record.value.state !== 'open' && record.tip !== tip)
   }
 
   /**
