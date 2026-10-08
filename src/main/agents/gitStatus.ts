@@ -174,6 +174,8 @@ interface FetchRecord { failures: number; nextAt: number; fetchedAt: number | nu
 interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null; tip: string | null; host?: string }
 /** What the last read of a folder found that its remote half asks about, and the `invalidate` count it was read under. */
 interface KnownFolder { readonly epoch: number; readonly common: string | null; readonly hasRemote: boolean; readonly branch: string | null; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
+/** The branch a pull request is looked up for, as a read found it: its name, its upstream, whether it is the default branch, and its tip. */
+interface BranchLookup { readonly branch: string; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
 /** Where a branch's pull requests are asked about: the repository gh reads pull requests from, and the head's name and repository. */
 interface HeadTarget { readonly repository: GitHubRepository; readonly head: string; readonly headOwner: string; readonly crossRepository: boolean }
 
@@ -428,7 +430,7 @@ export class GitStatusReader implements GitStatusSource {
     const task = (async () => {
       if (!known.common || !known.hasRemote) return true
       await this.fetchIfStale(known.common, cwd)
-      if (known.branch) await this.pullRequest(known.common, cwd, known.branch, known.upstream, known.isDefaultBranch, known.tip, ask)
+      if (known.branch) await this.pullRequest(known.common, cwd, { branch: known.branch, upstream: known.upstream, isDefaultBranch: known.isDefaultBranch, tip: known.tip }, ask)
       return true
     })().finally(() => { if (this.remoteReads.get(key) === task) this.remoteReads.delete(key) })
     this.remoteReads.set(key, task)
@@ -464,7 +466,7 @@ export class GitStatusReader implements GitStatusSource {
     const ahead = parsed.upstream ? parsed.ahead : aheadOfDefault ?? 0
     const behind = parsed.upstream ? parsed.behind : 0
     // A read with the remote is a Git action's or the user's own; the timer asks GitHub through `readRemote`.
-    const pullRequest = branch && hasRemote ? await this.pullRequest(common, cwd, branch, parsed.upstream, isDefaultBranch, parsed.oid, options.remote ? 'user' : null) : null
+    const pullRequest = branch && hasRemote ? await this.pullRequest(common, cwd, { branch, upstream: parsed.upstream, isDefaultBranch, tip: parsed.oid }, options.remote ? 'user' : null) : null
     remember({ common, hasRemote, branch, upstream: parsed.upstream, isDefaultBranch, tip: parsed.oid })
     return {
       isRepository: true, branch, upstream: parsed.upstream, hasRemote, defaultBranch, isDefaultBranch,
@@ -547,7 +549,8 @@ export class GitStatusReader implements GitStatusSource {
    * asked before a Git action is asked again after it, and never lands over an answer asked after it. A lookup under
    * way from before a Git action is waited for, then asked again, never shared.
    */
-  private pullRequest(common: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk | null): Promise<GitPullRequestSummary | null> {
+  private pullRequest(common: string, cwd: string, lookup: BranchLookup, ask: GitHubAsk | null): Promise<GitPullRequestSummary | null> {
+    const { branch, tip } = lookup
     const key = `${common}\0${branch}`
     const record = this.pullRequests.get(key)
     if (!ask || (record && !this.pullRequestStale(common, record, tip))) return Promise.resolve(record?.value ?? null)
@@ -556,9 +559,9 @@ export class GitStatusReader implements GitStatusSource {
     const flight = this.asking.get(key)
     if (flight) {
       if (this.epochOf(common) <= flight.epoch && (flight.ask === 'user' || ask === 'background')) return flight.done
-      return flight.done.then(() => this.pullRequest(common, cwd, branch, upstream, isDefaultBranch, tip, ask))
+      return flight.done.then(() => this.pullRequest(common, cwd, lookup, ask))
     }
-    const entry = { epoch: this.counter, ask, done: this.askPullRequest(key, cwd, branch, upstream, isDefaultBranch, tip, ask, this.counter, `${common}\0${this.epochOf(common)}`) }
+    const entry = { epoch: this.counter, ask, done: this.askPullRequest(key, cwd, lookup, ask, this.counter, `${common}\0${this.epochOf(common)}`) }
     this.asking.set(key, entry)
     void entry.done.finally(() => { if (this.asking.get(key) === entry) this.asking.delete(key) })
     return entry.done
@@ -574,14 +577,15 @@ export class GitStatusReader implements GitStatusSource {
    * rate limit leaves the answer due, so the user's next read asks again while the timer's waits for the host's pause
    * (`GitHubRateLimit`); any other failure is retried later, not on the next read.
    */
-  private async askPullRequest(key: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk, epoch: number, scope: string): Promise<GitPullRequestSummary | null> {
+  private async askPullRequest(key: string, cwd: string, lookup: BranchLookup, ask: GitHubAsk, epoch: number, scope: string): Promise<GitPullRequestSummary | null> {
+    const { tip } = lookup
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
       const latest = this.pullRequests.get(key)
       if (latest && latest.epoch > next.epoch) return latest.value
       this.pullRequests.set(key, next)
       return next.value
     }
-    const target = await this.headTarget(cwd, branch, upstream)
+    const target = await this.headTarget(cwd, lookup.branch, lookup.upstream)
     // Not pushed, or not on GitHub: nothing to ask, and nothing kept, so a push made in a terminal is seen as soon as the fetch brings its ref.
     if (!target) return null
     try {
@@ -590,7 +594,7 @@ export class GitStatusReader implements GitStatusSource {
       // Only a pull request whose head is in the repository the branch is pushed to is the branch's own: a fork's branch of the same name is not.
       const own = found.filter(item => isOwnHead({ owner: item.headOwner, crossRepository: item.crossRepository }, { owner: target.headOwner, crossRepository: target.crossRepository }))
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-      const chosen = own.find(item => item.state === 'open') ?? (isDefaultBranch ? undefined : own[0])
+      const chosen = own.find(item => item.state === 'open') ?? (lookup.isDefaultBranch ? undefined : own[0])
       const value = chosen ? { number: chosen.number, title: chosen.title, url: chosen.url, state: chosen.state, draft: chosen.draft } : null
       const fresh = value === null ? PULL_REQUEST_NONE_FRESH_MS : value.state === 'open' ? PULL_REQUEST_OPEN_FRESH_MS : PULL_REQUEST_SETTLED_FRESH_MS
       return keep({ epoch, failures: 0, nextAt: this.now() + fresh, value, tip, host: target.repository.host })
