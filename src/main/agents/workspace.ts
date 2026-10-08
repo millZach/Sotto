@@ -38,7 +38,7 @@ import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type Ag
 import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
-import { BABYSITTING_PER_THREAD_MAX } from '../../shared/babysitting'
+import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../shared/babysitting'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -1907,6 +1907,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
+        ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
@@ -2812,6 +2813,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (next === current) return
     if (next.length) { this.babysitRecords.set(threadId, [...next]); thread.babysitting = babysittingSummary(next) }
     else { this.babysitRecords.delete(threadId); delete thread.babysitting }
+    // A pull request babysat again is no longer one whose babysitting ended.
+    const babysat = new Set(next.map(record => pullRequestKey(record.url)))
+    const ended = thread.babysitEnded?.filter(item => !babysat.has(pullRequestKey(item.url)))
+    if (ended?.length) thread.babysitEnded = ended; else delete thread.babysitEnded
+    this.dirty = true
+    try { await this.flush() } finally { this.publish() }
+  }
+  /**
+   * Records why babysitting a pull request ended, where it ended on its own or with the switch, on the thread's record,
+   * so every client's Pull request surface can say so and why (ADR-0061, #825). One per pull request, the newest kept.
+   */
+  async recordBabysitEnded(threadId: string, url: string, reason: BabysitEndedReason): Promise<void> {
+    await this.initialize()
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const number = pullRequestAddress(url)?.number
+    if (!thread || number === undefined) return
+    const key = pullRequestKey(url)
+    const kept = (thread.babysitEnded ?? []).filter(item => pullRequestKey(item.url) !== key)
+    thread.babysitEnded = [...kept, { url, number, reason, endedAt: new Date().toISOString() }].slice(-BABYSITTING_PER_THREAD_MAX)
     this.dirty = true
     try { await this.flush() } finally { this.publish() }
   }

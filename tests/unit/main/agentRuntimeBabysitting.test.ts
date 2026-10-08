@@ -11,6 +11,8 @@ import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
+import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { scriptedGitHub } from '../../fixtures/babysitGitHub'
 
 /**
  * The switch at start (ADR-0061 decision 12 and its #824 amendment): turned off while Sotto was closed, it ends what
@@ -25,7 +27,7 @@ afterEach(async () => {
   }
 })
 
-async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHost()) {
+async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHost(), run: RunGitCommand = async () => { throw new Error('No gh in this test') }) {
   if (!root) { root = await mkdtemp(join(tmpdir(), 'sotto-runtime-babysitting-')); roots.push(root) }
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' })
   await credentials.load()
@@ -33,7 +35,7 @@ async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHos
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, host, reasoner: e2eAgentReasoner,
     gitStatus: { fetchIntervalMs: () => 3_600_000, foreground: () => false },
-    babysitting: { agentTool: () => agentTool, run: async () => { throw new Error('No gh in this test') } },
+    babysitting: { agentTool: () => agentTool, run },
   })
 }
 
@@ -77,5 +79,25 @@ describe('babysitting when the host starts', () => {
     vi.spyOn(Babysitter.prototype, 'begin').mockImplementation(() => { order.push('begin') })
     const host = await runtime(true)
     try { expect(order).toEqual(['begin']) } finally { await host.close() }
+  })
+})
+
+describe('why babysitting ended, on the thread', () => {
+  it('keeps an ending on its own for the Pull request surface to say, and nothing for the user’s own stop', async () => {
+    const url = 'https://github.com/o/r/pull/1', other = 'https://github.com/o/r/pull/2'
+    const github = scriptedGitHub([{ number: 1, state: 'MERGED' }, { number: 2 }])
+    const host = await runtime(true, undefined, new E2EAgentHost(), github.run)
+    try {
+      await host.agentControl.command({ type: 'connect' })
+      const startedAt = new Date().toISOString()
+      await host.agentHost.changeBabysitting('workshop', () => [
+        { url, number: 1, startedBy: 'agent', startedAt, told: toldAtStart(startedAt) },
+        { url: other, number: 2, startedBy: 'user', startedAt, told: toldAtStart(startedAt) }])
+      await host.babysitter!.pass()
+      await host.babysitter!.stop({ threadId: 'workshop', url: other }, 'user')
+      const thread = host.agentHost.workspaceSnapshot().threads.find(item => item.id === 'workshop')!
+      expect(thread.babysitting).toBeUndefined()
+      expect(thread.babysitEnded).toEqual([{ url, number: 1, reason: 'merged', endedAt: expect.any(String) }])
+    } finally { await host.close() }
   })
 })
