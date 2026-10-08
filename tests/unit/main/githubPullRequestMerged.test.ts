@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
+import { GitHubHosts, GitHubRateLimit, GitHubRateLimited } from '../../../src/main/agents/github'
 import { runWorktreeGit } from '../../../src/main/agents/threadWorktrees'
 import { githubPullRequestMerged } from '../../../src/main/agents/worktreeCleanup'
 
@@ -43,6 +44,38 @@ it('leaves a branch alone if its tip changes while GitHub answers', async () => 
   prs = [{ headRefOid: tip }]
   vi.mocked(runWorktreeGit).mockResolvedValueOnce(tip).mockResolvedValueOnce('d'.repeat(40))
   await expect(githubPullRequestMerged('repo', 'feature')).resolves.toBe(false)
+})
+describe('within the sign-in\'s GitHub allowance (#820)', () => {
+  const allowance = () => {
+    let now = 1_000_000
+    const rateLimit = new GitHubRateLimit({ now: () => now })
+    const hosts = new GitHubHosts({ run: async () => { throw new Error('unexpected') }, now: () => now })
+    return { allowance: { rateLimit, hosts }, rateLimit, advance: (ms: number) => { now += ms }, at: (ms: number) => new Date(now + ms).toISOString() }
+  }
+  beforeEach(() => {
+    vi.mocked(execFile).mockClear()
+    vi.mocked(runWorktreeGit).mockImplementation(async (_cwd, args) => args[0] === 'config' ? 'remote.origin.url https://github.com/me/repo.git\n' : `${tip}\n`)
+  })
+  it('asks nothing while the reserve is reached, and asks once it resets', async () => {
+    const f = allowance()
+    f.rateLimit.answered('github.com', { limit: 5000, remaining: 100, resetAt: f.at(60_000) })
+    prs = [{ headRefOid: tip }]
+    await expect(githubPullRequestMerged('repo', 'feature', f.allowance)).rejects.toBeInstanceOf(GitHubRateLimited)
+    expect(execFile).not.toHaveBeenCalled()
+    f.advance(60_001)
+    await expect(githubPullRequestMerged('repo', 'feature', f.allowance)).resolves.toBe(true)
+  })
+  it('pauses the sign-in\'s background questions when GitHub refuses it for the rate limit', async () => {
+    const f = allowance()
+    vi.mocked(execFile).mockImplementation((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error | null, stdout: string, stderr: string) => void
+      callback(new Error('Command failed'), '', 'GraphQL: API rate limit exceeded for user ID 1.')
+      return {} as ReturnType<typeof execFile>
+    })
+    await expect(githubPullRequestMerged('repo', 'feature', f.allowance)).rejects.toBeInstanceOf(GitHubRateLimited)
+    expect(f.rateLimit.retryAt('github.com', 'background')).not.toBeNull()
+    expect(f.rateLimit.retryAt('github.com', 'user')).toBeNull()
+  })
 })
 it('finds the matching current tip among older reused branch results', async () => {
   prs = [{ headRefOid: 'b'.repeat(40) }, { headRefOid: tip }]

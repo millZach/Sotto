@@ -159,8 +159,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
   // checks are wired (the desktop's open terminals), and close drains it before anything it asks is closed.
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
+  // The merged check spends the same sign-in's allowance as the status reader, and asks as its timer does (#820).
+  const merged = options.worktreeCleanup?.pullRequestMerged
+  const allowance = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
-    autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup })
+    autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    ...merged && allowance ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, allowance) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
