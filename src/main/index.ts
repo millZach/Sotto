@@ -199,6 +199,7 @@ import { TerminalWorkspaceService } from './terminals/service'
 import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
 import { githubPullRequestMerged } from './agents/worktreeCleanup'
+import type { GitHubRateLimitEvent } from './agents/github'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import { CodexAppServerHost } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
@@ -250,6 +251,7 @@ type NativeDiagnostic =
   | 'worktree-cleanup-skipped'
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
+  | GitHubRateLimitEvent
   | ClaudeAdapterEvent
   | PhoneAccessEvent
   | 'host-phones-read-failed'
@@ -652,7 +654,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
-    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}) },
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }

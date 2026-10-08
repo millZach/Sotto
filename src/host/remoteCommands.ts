@@ -36,7 +36,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
     'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode', 'managed'],
-  'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId'],
+  'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
   'reclaim-thread-worktree': ['threadId', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],

@@ -17,7 +17,8 @@ describe('reading a pull request from a host', () => {
       autoMerge: { method: 'squash', enabledBy: 'mira' },
     }
     const read = gitPullRequestResultSchema.parse(later)
-    expect(read).toEqual({ ...answer, autoMerge: { method: 'squash' } })
+    // An answer without checksUnknown, as a host on an earlier build gives it, reads its checks as given.
+    expect(read).toEqual({ ...answer, checksUnknown: false, autoMerge: { method: 'squash' } })
     expect(read).not.toHaveProperty('labels')
   })
   it('still refuses a field of the wrong kind, and keeps what a client sends strict', () => {

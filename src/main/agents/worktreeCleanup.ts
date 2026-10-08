@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import type { WorktreeCleanupRules } from '../../shared/settings'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 
 /**
@@ -24,7 +25,7 @@ export interface WorktreeCleanupDependencies {
   readonly autoSettleMerged?: () => boolean
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
-  readonly pullRequestMerged?: (repositoryRoot: string, branch: string) => Promise<boolean>
+  readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
   readonly now?: () => number
   readonly intervalMs?: number
   /** Stable event names only; never a path, a branch or a message. */
@@ -60,6 +61,8 @@ export class WorktreeCleanup {
   private mergedAnswers = new Map<string, Promise<boolean>>()
   private defaults = new Map<string, string | null>()
   private disposed = false
+  /** The rules and Auto-settle merged threads as the last sweep request saw them. */
+  private seenSettings: string | undefined
   private readonly git: RunGit
   private readonly now: () => number
   constructor(private readonly dependencies: WorktreeCleanupDependencies) {
@@ -87,10 +90,26 @@ export class WorktreeCleanup {
     }
     this.timer = setInterval(() => this.request(), this.dependencies.intervalMs ?? HOUR_MS)
     this.timer.unref?.()
+    this.seenSettings = this.settingsKey()
     this.request()
   }
-  /** The rules changed; look again rather than wait for the hour. */
-  settingsChanged(): void { this.request() }
+  /**
+   * A setting was saved: look again rather than wait for the hour, but only when the rules or Auto-settle merged threads
+   * changed. Any other save asks GitHub nothing, so the merged check runs no more often than the sweep (#820).
+   */
+  settingsChanged(): void {
+    const key = this.settingsKey()
+    if (key === this.seenSettings) return
+    this.seenSettings = key
+    this.request()
+  }
+  /** What the sweep depends on among the settings, in one comparable string. */
+  private settingsKey(): string {
+    const rules = this.dependencies.rules()
+    let settle = false
+    try { settle = this.dependencies.autoSettleMerged?.() === true } catch { /* Read as off, as the sweep does. */ }
+    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle])
+  }
   dispose(): void { this.disposed = true; if (this.timer) clearInterval(this.timer); this.unsubscribe?.() }
   /** Stops sweeping and waits for a sweep already under way, which stops before its next worktree. */
   close(): Promise<void> { this.dispose(); return this.running }
@@ -208,14 +227,31 @@ export class WorktreeCleanup {
   }
 }
 
-/** Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request is merged. */
-export async function githubPullRequestMerged(cwd: string, branch: string): Promise<boolean> {
+/** The process's GitHub rate limit and its answer to which hosts gh asks as GitHub, which the merged check shares (#820). */
+export interface SharedGitHub { readonly rateLimit: GitHubRateLimit; readonly hosts: GitHubHosts }
+
+/**
+ * Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request
+ * is merged. With the process's shared `github` it asks as the timer does (#820): not while GitHub has paused the sign-in or
+ * the reserve is reached, which rejects, so the branch is taken as not merged until the next sweep; and a rate-limited
+ * answer pauses the status reader's background questions too. gh's words are only tested, never kept.
+ */
+export async function githubPullRequestMerged(cwd: string, branch: string, github?: SharedGitHub): Promise<boolean> {
   const tip = await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
   if (!tip) return false
+  const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
+  const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
+  if (retryAt !== null) throw new GitHubRateLimited(retryAt)
+  const asked = github && host ? github.rateLimit.asking() : 0
   const merged = await new Promise<boolean>((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
-    execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout) => {
-      if (error) { reject(error); return }
+    execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) {
+        const words = typeof stderr === 'string' ? stderr : ''
+        if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
+        reject(error); return
+      }
+      if (github && host) github.rateLimit.answered(host, asked, null)
       try {
         const prs: unknown = JSON.parse(stdout)
         accept(Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip))

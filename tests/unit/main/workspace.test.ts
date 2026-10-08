@@ -9,6 +9,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 import { GitActions } from '../../../src/main/agents/gitActions'
 import { GitStatusReader } from '../../../src/main/agents/gitStatus'
+import { GitPullRequestLimited } from '../../../src/main/agents/gitPullRequests'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -556,12 +557,19 @@ describe('durable project/thread organization', () => {
     await vi.waitFor(() => expect(record()?.git).toMatchObject({ branch: 'main', ahead: 0 }))
     expect(reads.slice(-2)).toEqual([{ cwd: project.path, remote: true }, { cwd: project.path, remote: false }])
     expect(source.read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
+    // A refresh is the user's read, which may pass a GitHub pause (#820).
+    expect(source.readRemote).toHaveBeenLastCalledWith(project.path, {})
+    // The window's own refresh, when it regains focus or a draft begins, asks GitHub as the timer does.
+    await f.host.updateThreadWorktree('local', false, { background: true })
+    await vi.waitFor(() => expect(source.readRemote).toHaveBeenLastCalledWith(project.path, { background: true }))
     // The timer reads only the threads a window is looking at.
     current = { ...base, ahead: 2 }
     await new Promise(resolve => setTimeout(resolve, 40))
     expect(record()?.git?.ahead).toBe(0)
     f.host.observeThreads(['local'])
     await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2))
+    // The timer's remote half is a background read, which GitHub's pause and reserve hold back (#820).
+    expect(source.readRemote).toHaveBeenLastCalledWith(project.path, { background: true })
     // A thread coming into view with no status yet is read at once, locally, ahead of the timer.
     f.host.observeThreads([])
     await f.host.execute({ type: 'create-thread', commandId: 'create-second', threadId: 'second', projectId: project.id, title: 'Second task', modelId: model.id })
@@ -594,7 +602,8 @@ describe('durable project/thread organization', () => {
     expect(record()?.git?.ahead).toBe(2)
     // A Git action drops the caches and reads at once.
     await f.host.gitActionFinished('local')
-    expect(source.invalidate).toHaveBeenCalled()
+    // Only the thread's own repository goes stale (#820).
+    expect(source.invalidate).toHaveBeenCalledWith(project.path)
     expect(record()?.git?.ahead).toBe(3)
     // An unchanged status publishes nothing.
     const published: AgentHostSnapshot[] = []
@@ -1022,6 +1031,9 @@ describe('durable project/thread organization', () => {
     expect(service.view).toHaveBeenLastCalledWith(project.path, '#74')
     // With no reference the surface reads the one linked last.
     await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toMatchObject({ number: 74, linked: 'linked', branch: false })
+    // A read GitHub's rate limit holds back answers when to ask again, for the surface to say (#820).
+    service.view.mockRejectedValueOnce(new GitPullRequestLimited(Date.parse('2026-10-07T12:00:00Z'), Date.parse('2026-10-07T11:40:00Z')))
+    await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toEqual({ limited: { retryAt: '2026-10-07T12:00:00.000Z' } })
     const done = await f.host.runPullRequestAction({ threadId: 'local', url, action: 'merge', method: 'squash' })
     expect(service.act).toHaveBeenCalledWith(project.path, url, 'merge', 'squash')
     expect(done.notice).toBe('Pull request merged.')
@@ -1139,11 +1151,11 @@ describe('durable project/thread organization', () => {
     expect(seen).toEqual([project.path])
     expect(published.some(entry => entry.startsWith('running:Committing...'))).toBe(true)
     expect(published.some(entry => entry === 'running:Committing...:checking')).toBe(true)
-    expect(source.invalidate).toHaveBeenCalled()
+    expect(source.invalidate).toHaveBeenCalledWith(project.path)
     // The folder is read in the thread's lane once the action is done, so the remote half outside the lane asks about
     // the branch it is on now; a read of its own after it takes what the remote half brought.
     expect(source.read).toHaveBeenCalledWith(project.path, { remote: false })
-    expect(source.readRemote).toHaveBeenCalledWith(project.path)
+    expect(source.readRemote).toHaveBeenCalledWith(project.path, {})
     expect(source.read.mock.invocationCallOrder[0]).toBeLessThan(source.readRemote.mock.invocationCallOrder[0]!)
     await vi.waitFor(() => expect(source.read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
     // The record is Sotto's: a provider snapshot that follows keeps it.

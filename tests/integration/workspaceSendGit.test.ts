@@ -73,11 +73,16 @@ describe('a send and Git', () => {
     let startedIn: string | undefined
     const run: RunGitCommand = async (cwd, command, args, options) => {
       const call = command === 'gh' ? 'GitHub lookup' : command === 'git' && args[0] === 'fetch' ? 'fetch' : undefined
-      if (call === held) { startedIn = cwd; started.release(); await done.promise; return command === 'gh' ? '[]' : '' }
+      if (call === held) { startedIn = cwd; started.release(); await done.promise; return command === 'gh' ? '{"data":{"repository":{}}}' : '' }
       // Nothing else asks GitHub; a lookup the test does not hold fails quietly, as it does signed out.
       if (command === 'gh') throw new Error('gh is not used here.')
       return runGitStatusCommand(cwd, command, args, options)
     }
+    // GitHub is asked only about a repository on GitHub (#820): origin is written as GitHub's URL, which Git rewrites
+    // to the owned remote.
+    const origin = (await git(f.project, ['remote', 'get-url', 'origin'])).trim()
+    await git(f.project, ['config', `url.${origin}.insteadOf`, 'https://github.com/sotto-fixture/owned'])
+    await git(f.project, ['remote', 'set-url', 'origin', 'https://github.com/sotto-fixture/owned'])
     f.host.setGitStatus(new GitStatusReader({ run, fetchIntervalMs: () => 30_000 }), { pollIntervalMs: () => 0 })
     // The refresh a draft starts answers once the record is read, and leaves its remote half running.
     await f.host.updateThreadWorktree('local', false)

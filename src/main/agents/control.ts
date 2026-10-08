@@ -192,7 +192,7 @@ const withOutcome = (reading: ProviderClientUpdate, before: ProviderClientUpdate
 /** Owns assignment authority, queue ordering and durable dispatch intent across all host adapters. */
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
@@ -721,7 +721,7 @@ export class AgentControl {
     return this.dependencies.host.listThreadChangedFiles(request)
   }
   /** One pull request of a thread's, read when the Pull request surface or a pull request dialog asks for it (ADR-0027). */
-  gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+  gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.dependencies.host.readThreadPullRequest) throw new Error('Pull requests are unavailable on this host.')
     return this.dependencies.host.readThreadPullRequest(request)
   }
@@ -2659,7 +2659,8 @@ export class AgentControl {
       case 'retry-thread-worktree':
       case 'refresh-thread-worktree': {
         if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
-        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
+        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree',
+          command.type === 'refresh-thread-worktree' && command.background === true ? { background: true } : {}))
         return
       }
       case 'configure-thread-working-copy': {

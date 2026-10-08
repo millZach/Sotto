@@ -3,51 +3,88 @@ import {
   GITHUB_PULL_REQUEST_URL, parsePullRequestReference,
   type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
 /** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
 export class GitPullRequestRefusal extends Error {}
+/**
+ * A read GitHub's rate limit held back (#820): GitHub refused it, or reported no points left on the sign-in's rate limit.
+ * The message says so in plain words for a press; the Pull request surface says it with `retryAt` in its own clock.
+ */
+export class GitPullRequestLimited extends GitPullRequestRefusal {
+  constructor(readonly retryAt: number, now: number) {
+    super(`GitHub is limiting requests from your gh sign-in, so Sotto could not read the pull request. Nothing was lost. Try again ${retryWords(retryAt, now)}.`)
+  }
+}
 
 /** A pull request as GitHub describes it, before the host says how it stands to the thread. */
 export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'>
 
-const DETAIL_FIELDS = 'number,title,url,body,state,isDraft,mergeable,reviewDecision,statusCheckRollup,baseRefName,headRefName,isCrossRepository,headRepositoryOwner,autoMergeRequest,mergedAt'
+/** The repository's merge settings are read with a pull request at most this often (#820); they change rarely. */
+const MERGE_SETTINGS_FRESH_MS = 15 * 60_000
 /**
- * The repository's merge methods, how far the head is behind its base and each reviewer's latest review that
- * took a side, in one GraphQL read, the way T3 asks: `mergeStateStatus` says BEHIND only where the repository
- * requires up-to-date branches, so the commits are counted instead, the same number GitHub's own out-of-date
- * banner shows. The reviews name who approved or asked for changes, and link to the review itself.
+ * A read made just after a press stands for the surface's own read that follows it, so a press costs one read, not two.
+ * A read the rate limit refused stands for it too, so the window shows the refusal rather than asking again.
  */
-const COMPARISON_QUERY = `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
-  repository(owner: $owner, name: $name) {
-    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed
+const PRIMED_FRESH_MS = 15_000
+const MERGE_SETTINGS = 'mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed'
+/**
+ * Everything the Pull request surface shows, in one GraphQL read (#820): the pull request, its checks and reviews that
+ * took a side, how far its head is behind its base, the repository's merge methods when they are not kept already, and
+ * GitHub's reading of the rate limit. `mergeStateStatus` says BEHIND only where the repository requires up-to-date
+ * branches, so the commits are counted instead, the same number GitHub's own out-of-date banner shows; the head is
+ * named by GitHub's own `refs/pull/<number>/head`, which the base repository has for a fork's pull request too.
+ */
+export function pullRequestQuery(withMergeSettings: boolean): string {
+  return `query PullRequestDetail($owner: String!, $name: String!, $number: Int!, $pullRef: String!) {
+  ${RATE_LIMIT_SELECTION}
+  viewer { login }
+  repository(owner: $owner, name: $name) {${withMergeSettings ? `\n    ${MERGE_SETTINGS}` : ''}
     pullRequest(number: $number) {
-      viewerCanUpdateBranch baseRef { compare(headRef: $headRef) { behindBy } }
+      number title url body state isDraft mergeable reviewDecision baseRefName headRefName isCrossRepository mergedAt
+      headRepositoryOwner { login } autoMergeRequest { mergeMethod } viewerCanUpdateBranch
+      baseRef { compare(headRef: $pullRef) { behindBy } }
       latestOpinionatedReviews(last: 50) { nodes { state url author { login } } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+        __typename
+        ... on CheckRun { name status conclusion detailsUrl checkSuite { workflowRun { workflow { name } } } }
+        ... on StatusContext { context state targetUrl description }
+      } } } } } }
     }
   }
 }`
+}
 
 const loose = <T extends z.ZodTypeAny>(schema: T) => schema.nullable().optional()
-const rawCheckSchema = z.object({
-  __typename: loose(z.string()), name: loose(z.string()), context: loose(z.string()), workflowName: loose(z.string()),
-  status: loose(z.string()), conclusion: loose(z.string()), state: loose(z.string()),
+const rawContextSchema = z.object({
+  __typename: loose(z.string()), name: loose(z.string()), context: loose(z.string()), status: loose(z.string()), conclusion: loose(z.string()), state: loose(z.string()),
   detailsUrl: loose(z.string()), targetUrl: loose(z.string()), description: loose(z.string()),
+  checkSuite: loose(z.object({ workflowRun: loose(z.object({ workflow: loose(z.object({ name: loose(z.string()) })) })) })),
 })
-const rawViewSchema = z.object({
+const rawPullRequestSchema = z.object({
   number: z.number().int().positive(), title: z.string(), url: z.string(), body: loose(z.string()),
   state: z.string(), isDraft: loose(z.boolean()), mergeable: loose(z.string()), reviewDecision: loose(z.string()),
-  statusCheckRollup: loose(z.array(rawCheckSchema)), baseRefName: loose(z.string()), headRefName: loose(z.string()),
-  isCrossRepository: loose(z.boolean()), headRepositoryOwner: loose(z.object({ login: loose(z.string()) })),
-  autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })), mergedAt: loose(z.string()),
+  baseRefName: loose(z.string()), headRefName: loose(z.string()), isCrossRepository: loose(z.boolean()), mergedAt: loose(z.string()),
+  headRepositoryOwner: loose(z.object({ login: loose(z.string()) })), autoMergeRequest: loose(z.object({ mergeMethod: loose(z.string()) })),
+  viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
+  latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
+  commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(rawContextSchema))) })) })) })) })))) })),
 })
-const rawComparisonSchema = z.object({ data: z.object({ repository: z.object({
-  mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
-  pullRequest: loose(z.object({
-    viewerCanUpdateBranch: loose(z.boolean()), baseRef: loose(z.object({ compare: loose(z.object({ behindBy: z.number().int().nonnegative() })) })),
-    latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
-  })),
-}).nullable() }) })
+const rawAnswerSchema = z.object({
+  data: z.object({
+    rateLimit: rateLimitSchema, viewer: loose(z.object({ login: loose(z.string()) })),
+    repository: z.object({
+      mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
+      pullRequest: loose(rawPullRequestSchema),
+    }).nullable(),
+  }),
+  /** Where GitHub refused a part of the read: each error's path names the field it left empty. */
+  errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
+})
+/** A check in the shape `gh pr view --json statusCheckRollup` gave it, which `checkOf` reads. */
+type RawCheck = Omit<z.infer<typeof rawContextSchema>, 'checkSuite'> & { readonly workflowName?: string | null | undefined }
+interface MergeSettings { readonly at: number; readonly mergeMethods: GitPullRequestMergeMethod[]; readonly autoMergeAllowed: boolean }
 
 /** What each press did, said the way T3 says it once it has happened. */
 export const PULL_REQUEST_ACTION_DONE: Record<GitPullRequestAction, string> = {
@@ -85,8 +122,38 @@ function reasonOf(error: unknown): string {
   return text.replace(/((?:https?|ssh):\/\/)[^\s/@]+@/giu, '$1').split('\n').map(line => line.trim()).filter(Boolean).slice(-2).join(' ').slice(0, 600)
 }
 const cut = (text: string, max: number): string => text.length > max ? text.slice(0, max) : text
+/** What gh printed before it failed, when that is GitHub's answer with the pull request in it. */
+function partialAnswer(error: unknown): z.infer<typeof rawAnswerSchema> | null {
+  const stdout = error instanceof Error && 'stdout' in error && typeof error.stdout === 'string' ? error.stdout : ''
+  if (!stdout.trim()) return null
+  try {
+    const parsed = rawAnswerSchema.safeParse(JSON.parse(stdout))
+    return parsed.success && parsed.data.data.repository?.pullRequest ? parsed.data : null
+  } catch { return null }
+}
 
-function checkOf(raw: z.infer<typeof rawCheckSchema>): GitPullRequestCheck {
+/**
+ * Whether GitHub refused checks, rather than a detail of one: an error whose path stops at or above the check list
+ * (the commit, its rollup, the list), or at one check whole. An error inside a check, such as its workflow's name,
+ * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it.
+ */
+function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
+  return errors.some(error => {
+    const path = error?.path ?? []
+    const commits = path.indexOf('commits')
+    if (commits === -1) return false
+    const contexts = path.indexOf('contexts', commits)
+    // Past `contexts`: the list (`nodes`), one check whole (`nodes`, its index), or a part of that one check.
+    return contexts === -1 || path.length - (contexts + 1) <= 2
+  })
+}
+
+/** A check as GraphQL names it, in the shape `gh pr view --json statusCheckRollup` gave it. */
+function rawCheckOf(node: z.infer<typeof rawContextSchema>): RawCheck {
+  return { __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
+    detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: node.description, workflowName: node.checkSuite?.workflowRun?.workflow?.name }
+}
+function checkOf(raw: RawCheck): GitPullRequestCheck {
   const upper = (value: string | null | undefined) => value?.trim().toUpperCase() ?? ''
   const isStatus = raw.__typename === 'StatusContext' || (raw.context != null && raw.name == null)
   let status: GitPullRequestCheck['status']
@@ -147,62 +214,116 @@ function branchFragment(head: string): string {
  * Pull request surface offers; and check one out, into the thread's folder or onto a branch a new worktree
  * will take. Everything goes through `gh` on the user's own sign-in, or through Git for the checkout. It never
  * forces a branch, and a press whose reply was lost is settled by reading the pull request again rather than
- * pressing twice.
+ * pressing twice. A read is one GraphQL query that spends the sign-in's points (#820): it may use the reserve the
+ * timer keeps back and goes through a pause, and is refused only when GitHub refuses it or last reported nothing left.
  */
 export class GitPullRequests {
   private readonly run: RunGitCommand
-  constructor(dependencies: { readonly run?: RunGitCommand } = {}) { this.run = dependencies.run ?? runGitStatusCommand }
+  private readonly rateLimit: GitHubRateLimit
+  private readonly now: () => number
+  /** Each repository's merge methods, kept fifteen minutes, by `repositoryKey`. */
+  private readonly mergeSettings = new Map<string, MergeSettings>()
+  /** The read a press made, by `pullRequestKey`, or when the rate limit refused it, waiting to stand for the surface's read that follows it. */
+  private readonly primed = new Map<string, { readonly at: number; readonly view: GitPullRequestView } | { readonly at: number; readonly retryAt: number }>()
+  private readonly hosts: GitHubHosts
+  constructor(dependencies: { readonly run?: RunGitCommand; readonly rateLimit?: GitHubRateLimit; readonly hosts?: GitHubHosts; readonly now?: () => number } = {}) {
+    this.run = dependencies.run ?? runGitStatusCommand
+    this.now = dependencies.now ?? (() => Date.now())
+    this.rateLimit = dependencies.rateLimit ?? new GitHubRateLimit({ now: this.now })
+    this.hosts = dependencies.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
+  }
   private gh(cwd: string, args: readonly string[], timeoutMs = VIEW_TIMEOUT_MS): Promise<string> { return this.run(cwd, 'gh', args, { timeoutMs }) }
   private git(cwd: string, args: readonly string[], timeoutMs = 30_000): Promise<string> { return this.run(cwd, 'git', args, { timeoutMs }) }
 
-  /** One pull request, by URL or number, with what the Pull request surface shows. */
+  /**
+   * One pull request, by URL or number, with what the Pull request surface shows. The read a press just made stands for
+   * this one once, so the surface's read after a press asks GitHub nothing; when the rate limit refused that read, this
+   * one is refused the same way, until the time it gave.
+   */
   async view(cwd: string, reference: string): Promise<GitPullRequestView> {
+    const key = pullRequestKey(reference)
+    const primed = key ? this.primed.get(key) : undefined
+    if (key && primed) {
+      this.primed.delete(key)
+      if (this.now() - primed.at < PRIMED_FRESH_MS) {
+        if ('view' in primed) return primed.view
+        if (this.now() < primed.retryAt) throw new GitPullRequestLimited(primed.retryAt, this.now())
+      }
+    }
+    return this.read(cwd, reference)
+  }
+
+  private async read(cwd: string, reference: string): Promise<GitPullRequestView> {
     const selector = parsePullRequestReference(reference)
     if (!selector) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
-    let raw: z.infer<typeof rawViewSchema>
-    try { raw = rawViewSchema.parse(JSON.parse(await this.gh(cwd, ['pr', 'view', selector, '--json', DETAIL_FIELDS]))) }
+    const address = await this.addressOf(cwd, selector)
+    const repository: GitHubRepository = { host: address.host, owner: address.owner, name: address.name }
+    const retryAt = this.rateLimit.retryAt(repository.host, 'user')
+    if (retryAt !== null) throw new GitPullRequestLimited(retryAt, this.now())
+    const settingsKey = repositoryKey(repository)
+    const kept = this.mergeSettings.get(settingsKey)
+    const settings = kept && this.now() - kept.at < MERGE_SETTINGS_FRESH_MS ? kept : undefined
+    const args = ['api', 'graphql', ...repository.host === 'github.com' ? [] : ['--hostname', repository.host], '-f', `query=${pullRequestQuery(!settings)}`,
+      '-f', `owner=${repository.owner}`, '-f', `name=${repository.name}`, '-F', `number=${address.number}`, '-f', `pullRef=refs/pull/${address.number}/head`]
+    let answer: z.infer<typeof rawAnswerSchema>
+    const asked = this.rateLimit.asking()
+    try { answer = rawAnswerSchema.parse(JSON.parse(await this.gh(cwd, args))) }
     catch (error) {
       if (error instanceof z.ZodError || error instanceof SyntaxError) throw new GitPullRequestRefusal('GitHub answered in a form Sotto could not read. Refresh to try again.')
-      throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim())
+      const message = error instanceof Error ? error.message : ''
+      if (isRateLimitAnswer(message)) throw new GitPullRequestLimited(this.rateLimit.limited(repository.host, message, refusalReading(error)), this.now())
+      // GitHub can answer the pull request and refuse a part of it (a comparison it cannot make, reviews a token may not
+      // read); gh then fails with what it did read on its output, and the rest is shown as unknown.
+      const partial = partialAnswer(error)
+      if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim())
+      answer = partial
     }
-    const address = pullRequestAddress(raw.url)
-    if (!address) throw new GitPullRequestRefusal('Sotto shows pull requests from GitHub only.')
+    this.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
+    const raw = answer.data.repository?.pullRequest
+    if (!answer.data.repository || !raw) throw new GitPullRequestRefusal(`Could not read the pull request. GitHub has no pull request #${address.number} in ${repository.owner}/${repository.name} that your gh sign-in can see.`)
+    const methods = settings ?? this.keepMergeSettings(settingsKey, answer.data.repository)
+    if (!pullRequestAddress(raw.url)) throw new GitPullRequestRefusal('Sotto shows pull requests from GitHub only.')
     const state = raw.mergedAt || raw.state.toUpperCase() === 'MERGED' ? 'merged' : raw.state.toUpperCase() === 'CLOSED' ? 'closed' : 'open'
     const review = raw.reviewDecision?.toUpperCase()
     const mergeable = raw.mergeable?.toUpperCase()
-    const headOwner = raw.headRepositoryOwner?.login?.trim() || null
-    const headBranch = raw.headRefName ?? ''
-    const crossRepository = raw.isCrossRepository === true
-    const comparison = await this.comparison(cwd, address, crossRepository && headOwner ? `${headOwner}:${headBranch}` : headBranch)
+    const contexts = raw.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.nodes ?? []
+    // No rollup is a pull request with no checks; a refused one leaves the same gap, and an error whose path names it.
+    // A check GitHub sent back as null was refused whole, whatever its error's path: GraphQL nulls the check when a
+    // part of it that cannot be empty, such as a check run's suite, is refused.
+    const checksUnknown = !raw.commits || checksRefused(answer.errors ?? []) || contexts.some(node => node == null)
     return {
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
-      baseBranch: raw.baseRefName ?? '', headBranch, crossRepository,
+      baseBranch: raw.baseRefName ?? '', headBranch: raw.headRefName ?? '', crossRepository: raw.isCrossRepository === true,
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,
       mergeable: mergeable === 'MERGEABLE' ? 'mergeable' : mergeable === 'CONFLICTING' ? 'conflicting' : 'unknown',
-      checks: (raw.statusCheckRollup ?? []).slice(0, 200).map(checkOf),
-      reviews: comparison.reviews,
-      mergeMethods: comparison.mergeMethods, autoMergeAllowed: comparison.autoMergeAllowed,
+      checks: contexts.flatMap(node => node ? [checkOf(rawCheckOf(node))] : []).slice(0, 200), checksUnknown,
+      reviews: reviewsOf(raw.latestOpinionatedReviews?.nodes ?? []),
+      mergeMethods: methods.mergeMethods, autoMergeAllowed: methods.autoMergeAllowed,
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,
       mergedAt: raw.mergedAt ? cut(raw.mergedAt, 64) : null,
-      behindBy: comparison.behindBy, canUpdateBranch: comparison.canUpdateBranch,
+      behindBy: raw.baseRef?.compare?.behindBy ?? null, canUpdateBranch: raw.viewerCanUpdateBranch === true,
     }
   }
 
-  /** The GraphQL half of the read; a repository GitHub will not compare leaves every method offered, the distance unknown and no reviews named. */
-  private async comparison(cwd: string, address: { owner: string; name: string; number: number }, headRef: string): Promise<{ mergeMethods: GitPullRequestMergeMethod[]; autoMergeAllowed: boolean; behindBy: number | null; canUpdateBranch: boolean; reviews: GitPullRequestReview[] }> {
-    const unknown = { mergeMethods: ['merge', 'squash', 'rebase'] as GitPullRequestMergeMethod[], autoMergeAllowed: true, behindBy: null, canUpdateBranch: false, reviews: [] }
-    if (!headRef) return unknown
-    try {
-      const raw = rawComparisonSchema.parse(JSON.parse(await this.gh(cwd, ['api', 'graphql', '-f', `query=${COMPARISON_QUERY}`, '-f', `owner=${address.owner}`, '-f', `name=${address.name}`, '-F', `number=${address.number}`, '-f', `headRef=${headRef}`])))
-      const repository = raw.data.repository
-      if (!repository) return unknown
-      const allowed: GitPullRequestMergeMethod[] = []
-      if (repository.mergeCommitAllowed !== false) allowed.push('merge')
-      if (repository.squashMergeAllowed !== false) allowed.push('squash')
-      if (repository.rebaseMergeAllowed !== false) allowed.push('rebase')
-      return { mergeMethods: allowed, autoMergeAllowed: repository.autoMergeAllowed !== false, behindBy: repository.pullRequest?.baseRef?.compare?.behindBy ?? null,
-        canUpdateBranch: repository.pullRequest?.viewerCanUpdateBranch === true, reviews: reviewsOf(repository.pullRequest?.latestOpinionatedReviews?.nodes ?? []) }
-    } catch { return unknown }
+  /** Where a reference points: a URL names its repository; a number is the one gh reads pull requests from in this folder. */
+  private async addressOf(cwd: string, selector: string): Promise<{ host: string; owner: string; name: string; number: number }> {
+    const fromUrl = pullRequestAddress(selector)
+    if (fromUrl) return { host: 'github.com', ...fromUrl }
+    const repository = baseRepository(await readGitHubRemotes(this.run, cwd, this.hosts))
+    if (!repository) throw new GitPullRequestRefusal('This project has no GitHub remote to read the pull request from. Use its full GitHub URL.')
+    return { ...repository, number: Number(selector) }
+  }
+
+  /** The merge methods a repository allows, as GitHub just said; every method, and auto-merge, when it did not say. */
+  private keepMergeSettings(key: string, repository: { mergeCommitAllowed?: boolean | null | undefined; squashMergeAllowed?: boolean | null | undefined; rebaseMergeAllowed?: boolean | null | undefined; autoMergeAllowed?: boolean | null | undefined }): MergeSettings {
+    const mergeMethods: GitPullRequestMergeMethod[] = []
+    if (repository.mergeCommitAllowed !== false) mergeMethods.push('merge')
+    if (repository.squashMergeAllowed !== false) mergeMethods.push('squash')
+    if (repository.rebaseMergeAllowed !== false) mergeMethods.push('rebase')
+    const settings = { at: this.now(), mergeMethods, autoMergeAllowed: repository.autoMergeAllowed !== false }
+    // Only an answer that named them is kept; one GitHub withheld is asked again with the next read.
+    if (typeof repository.mergeCommitAllowed === 'boolean') this.mergeSettings.set(key, settings)
+    return settings
   }
 
   /**
@@ -229,7 +350,13 @@ export class GitPullRequests {
     }
     let failed = false, failure: unknown
     try { await this.gh(cwd, args, ACTION_TIMEOUT_MS) } catch (error) { failed = true; failure = error }
-    const after = await this.view(cwd, url).catch(() => null)
+    let after: GitPullRequestView | null = null, retryAt: number | null = null
+    try { after = await this.read(cwd, url) } catch (error) { if (error instanceof GitPullRequestLimited) retryAt = error.retryAt }
+    // The surface reads again once the press is over; this read answers it, so the press costs one read (#820). A read
+    // the rate limit refused answers it as well, with the same refusal, rather than letting the window ask again.
+    const key = pullRequestKey(url)
+    if (key && after) this.primed.set(key, { at: this.now(), view: after })
+    else if (key && retryAt !== null) this.primed.set(key, { at: this.now(), retryAt })
     if (!failed) return after
     if (after && settled(action, after)) return after
     const hint = action === 'update-branch' && method === 'rebase' ? UPDATE_WITH_REBASE_HINT : ACTION_HINT[action]

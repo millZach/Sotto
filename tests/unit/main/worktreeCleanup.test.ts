@@ -128,6 +128,37 @@ describe('worktree cleanup rules', () => {
     expect(host.reclaimed).toEqual(['a'])
     cleanup.dispose()
   })
+  it('sweeps on a settings save only when the rules or Auto-settle merged threads changed (#820)', async () => {
+    let rules: WorktreeCleanupRules = { ...DEFAULT_WORKTREE_CLEANUP, merged: true }
+    let autoSettle = false
+    const pullRequestMerged = vi.fn(async () => false)
+    const own: AgentWorktree = { mode: 'independent', status: 'ready', path: '/w/feature', repositoryRoot: '/repo', branch: 'feature' }
+    const host = { ...fakeHost([thread('a', own)], new ThreadWorktrees('/unused')), reclaimThreadWorktree: vi.fn(async () => undefined) }
+    // The branch's tip is all the merged check reads of Git here; GitHub is the scripted answer above.
+    const cleanup = new WorktreeCleanup({ host, rules: () => rules, autoSettleMerged: () => autoSettle, pullRequestMerged, git: async () => `${'a'.repeat(40)}\n`, intervalMs: 60_000_000 })
+    cleanup.start()
+    await cleanup.request() // the sweep start asked for
+    expect(pullRequestMerged).toHaveBeenCalledTimes(1)
+    // Every sweep a save asks for goes through request, which decides at once whether one runs.
+    const requested = vi.spyOn(cleanup, 'request')
+    const sweptAfter = async (index: number) => { await requested.mock.results[index]!.value }
+    // Saves that changed something else, such as the theme: no sweep is asked for, so GitHub is not asked.
+    cleanup.settingsChanged(); cleanup.settingsChanged()
+    expect(requested).not.toHaveBeenCalled()
+    expect(pullRequestMerged).toHaveBeenCalledTimes(1)
+    // A rule changed, then Auto-settle merged threads: each sweeps once.
+    rules = { ...rules, afterDays: 30 }
+    cleanup.settingsChanged()
+    expect(requested).toHaveBeenCalledTimes(1)
+    await sweptAfter(0)
+    expect(pullRequestMerged).toHaveBeenCalledTimes(2)
+    autoSettle = true
+    cleanup.settingsChanged()
+    expect(requested).toHaveBeenCalledTimes(2)
+    await sweptAfter(1)
+    expect(pullRequestMerged).toHaveBeenCalledTimes(3)
+    cleanup.dispose()
+  })
 })
 
 describe('auto-settle merged threads', () => {

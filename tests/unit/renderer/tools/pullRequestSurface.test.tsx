@@ -3,13 +3,13 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, limitedWords, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
-import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
@@ -27,7 +27,7 @@ const check = (name: string, status: GitPullRequestCheck['status'], url: string 
 const review = (author: string, state: GitPullRequestReview['state'], url: string | null = `${URL}#pullrequestreview-${author}`): GitPullRequestReview => ({ author, state, url })
 function detail(change: Partial<GitPullRequestDetail> = {}): GitPullRequestDetail {
   return { number: 74, url: URL, title: 'Make the greeting friendlier', body: 'Says hello.\n\n- One change', state: 'open', draft: false, baseBranch: 'main', headBranch: 'feat/greeting',
-    crossRepository: false, reviewDecision: 'approved', reviews: [review('mira', 'approved')], mergeable: 'mergeable', checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1')],
+    crossRepository: false, reviewDecision: 'approved', reviews: [review('mira', 'approved')], mergeable: 'mergeable', checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1')], checksUnknown: false,
     mergeMethods: ['merge', 'squash', 'rebase'], autoMergeAllowed: true, autoMerge: null, mergedAt: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: true, ...change }
 }
 const git = (change: Record<string, unknown> = {}) => ({ isRepository: true, branch: 'feat/greeting', upstream: 'origin/feat/greeting', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false,
@@ -37,7 +37,7 @@ function thread(change: Partial<AgentThread> = {}): AgentThread {
     worktree: { mode: 'shared', status: 'ready', path: 'C:/app', branch: 'feat/greeting', git: git({ pullRequest: { number: 74, title: 'Make the greeting friendlier', url: URL, state: 'open', draft: false } }) },
     ...change } as AgentThread
 }
-function mount(options: { detail?: GitPullRequestDetail | null | ((request: { reference?: string }) => GitPullRequestDetail | null); thread?: AgentThread; result?: Partial<AgentState> } = {}) {
+function mount(options: { detail?: GitPullRequestRead | ((request: { reference?: string }) => GitPullRequestRead); thread?: AgentThread; result?: Partial<AgentState> } = {}) {
   const gitPullRequest = vi.fn(async (request: { threadId: string; reference?: string }) => typeof options.detail === 'function' ? options.detail(request) : options.detail === undefined ? detail() : options.detail)
   const openExternalLink = vi.fn(async () => ({ ok: true }))
   const writeText = vi.fn(async () => undefined)
@@ -122,6 +122,17 @@ describe('the merge checklist, read from the pull request', () => {
     expect(checklistCount(noted)).toBe('4 of 5 done, 1 does not block')
     expect(checklistCount(checklist(detail()))).toBe('5 of 5 done')
     expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
+    // Checks GitHub refused to show are not "No checks": the line says they could not be read, and is not counted as done.
+    const refused = checklist(detail({ checks: [], checksUnknown: true }))
+    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks passing', 'unknown', 'GitHub did not let Sotto read the checks'])
+    expect(checklistCount(refused)).toBe('4 of 5 done, 1 does not block')
+    // A failing check GitHub did return is never hidden behind unknown, and still holds the merge back.
+    const failing = checklist(detail({ checks: [check('lint', 'failure', 'https://github.com/o/r/actions/runs/2')], checksUnknown: true }))
+    expect([failing[0]!.tone, failing[0]!.why]).toEqual(['failed', 'lint failed'])
+    expect(mergeReady(detail(), failing)).toBe(false)
+    // Every returned check passed, but not every check was read: unknown, not done.
+    const passing = checklist(detail({ checks: [check('build', 'success')], checksUnknown: true }))
+    expect([passing[0]!.tone, passing[0]!.why]).toEqual(['unknown', 'GitHub did not let Sotto read every check'])
     // Where no review is required, a request for changes still standing is said and linked, in whichever order it came,
     // and holds the merge back no more than GitHub does.
     const openAfter = checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))
@@ -156,6 +167,10 @@ describe('the merge checklist, read from the pull request', () => {
     expect(mergeEffect('merge', 'main')).toBe('Every commit, plus a merge commit')
     expect(confirmationFor('merge', 74, 'squash', 'main')).toEqual({ title: 'Merge pull request?', description: 'This merges #74 into main using squash and merge.', confirm: 'Squash and merge', danger: false })
     expect(confirmationFor('close', 74, 'merge')).toMatchObject({ title: 'Close pull request?', description: 'This closes #74 without merging it.', danger: true })
+    expect(limitedWords('not a date')).toBe('GitHub is limiting requests from your gh sign-in. Nothing was lost. Refresh in a few minutes.')
+    // The Link and Checkout dialogs have no Refresh button, so they do not name one.
+    expect(limitedWords('not a date', 'try-again')).toBe('GitHub is limiting requests from your gh sign-in. Nothing was lost. Try again in a few minutes.')
+    expect(limitedWords('2026-09-23T10:14:00Z', 'try-again', new Date('2026-09-23T10:00:00Z'))).toMatch(/Try again after .*\d/u)
     expect(mergedWhen(null)).toBeNull()
     expect(mergedWhen('not a date')).toBeNull()
     expect(mergedWhen('2026-09-23T10:14:00Z', new Date('2026-09-23T12:00:00Z'))).toMatch(/\d/u)
@@ -406,6 +421,17 @@ describe('the Pull request surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not read the pull request from GitHub. Check your gh sign-in and connection, then refresh. What shows below is from the last read.')
     expect(gitPullRequest).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('list', { name: 'Merge checklist' })).toBeInTheDocument()
+  })
+  it('says when GitHub limits the sign-in and when to refresh, over the checklist it keeps (#820)', async () => {
+    const retryAt = new Date(Date.now() + 20 * 60_000).toISOString()
+    let limited = false
+    mount({ detail: () => limited ? { limited: { retryAt } } : detail() })
+    await opened()
+    limited = true
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    const when = mergedWhen(retryAt)!
+    expect(await screen.findByRole('alert')).toHaveTextContent(`GitHub is limiting requests from your gh sign-in until ${when}. Nothing was lost. Refresh after ${when}. What shows below is from the last read.`)
     expect(screen.getByRole('list', { name: 'Merge checklist' })).toBeInTheDocument()
   })
   it('puts focus back on the pull request when a press settles its line and takes its button away', async () => {

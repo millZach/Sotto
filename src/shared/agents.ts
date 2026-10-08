@@ -11,7 +11,7 @@ import { gitStatusSchema } from './gitStatus'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestDetail, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 /** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
@@ -927,7 +927,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(), managed: z.boolean().optional() }).strict(),
-  z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
+  z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
+  /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
+   * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
+  z.object({ type: z.literal('refresh-thread-worktree'), threadId: id, background: z.boolean().optional() }).strict(),
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
   z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),
@@ -990,7 +993,7 @@ export interface AgentBridge {
   /** The changed files of a thread's folder with their line counts, for the commit dialog. */
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   /** One pull request of a thread's, with its checks and what the surface may do; null when the thread has none. */
-  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>

@@ -59,6 +59,8 @@ describe('remote command allow-list', () => {
     expect(remoteCommandRefusal({ type: 'send' }, { mayAnswer: true, draftRequestId: 'request' })).toBeNull()
     expect(remoteCommandRefusal({ type: 'send' }, { mayAnswer: false, draftRequestId: null })).toBeNull()
     expect(refuse({ type: 'save-thread-draft', threadId: 'thread', draftId: 'draft', text: 'Blue' })).toBeNull()
+    // The window's own refresh is a read, which asks GitHub less, not more (#820).
+    expect(refuse({ type: 'refresh-thread-worktree', threadId: 'thread', background: true })).toBeNull()
   })
   it('binds an atomic Send to this socket selection and refuses every unlisted draft field', () => {
     const draft = { threadId: 'thread', text: 'Blue', attachments: [] }

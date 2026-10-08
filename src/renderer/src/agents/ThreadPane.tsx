@@ -180,13 +180,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     if (!composing) { branchRead.current = null; return }
     if (!worktreeReady || branchRead.current === thread.id) return
     branchRead.current = thread.id
-    void command({ type: 'refresh-thread-worktree', threadId: thread.id })
+    void command({ type: 'refresh-thread-worktree', threadId: thread.id, background: true })
   }, [composing, worktreeReady, thread.id, command])
   // Coming back from a terminal is the other moment a switch made elsewhere can show; the window regaining
-  // focus re-reads the folder once, so the label follows without a keystroke or a send.
+  // focus re-reads the folder once, so the label follows without a keystroke or a send. Both are the window's own reads,
+  // not the user's, so GitHub is asked about the pull request only as the timer would ask it (#820).
   useEffect(() => {
     if (!worktreeReady) return
-    const onFocus = (): void => { void command({ type: 'refresh-thread-worktree', threadId: thread.id }) }
+    const onFocus = (): void => { void command({ type: 'refresh-thread-worktree', threadId: thread.id, background: true }) }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [worktreeReady, thread.id, command])

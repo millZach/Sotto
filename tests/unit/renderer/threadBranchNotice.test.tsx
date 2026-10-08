@@ -129,7 +129,8 @@ describe('a thread pane whose worktree moved', () => {
     vi.mocked(useAgents).mockImplementation(live.useLive)
     render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
     fireEvent(window, new Event('focus'))
-    await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'refresh-thread-worktree', threadId: THREAD }))
+    // The window's own read, which asks GitHub only as the timer would (#820).
+    await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'refresh-thread-worktree', threadId: THREAD, background: true }))
     expect(legacy.workingDirectory).toBe(worktreePath)
   })
 
@@ -143,6 +144,6 @@ describe('a thread pane whose worktree moved', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Carry on with the migration' } })
     await waitFor(() => expect(screen.getByText(/Branch changed, was sotto\/thread-7f1c\./u)).toBeInTheDocument())
     // A switch made in a terminal leaves no activity behind, so the draft itself asks for a fresh read.
-    expect(reads()).toEqual([{ type: 'refresh-thread-worktree', threadId: THREAD }])
+    expect(reads()).toEqual([{ type: 'refresh-thread-worktree', threadId: THREAD, background: true }])
   })
 })

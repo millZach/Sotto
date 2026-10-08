@@ -306,7 +306,7 @@ describe('the stacked Git action, the way T3 runs it', () => {
     const status = { read: (cwd: string, options: { remote: boolean; fresh?: boolean }) => {
       if (committed && !options.remote) go()
       return reader.read(cwd, options)
-    }, invalidate: () => reader.invalidate() }
+    }, invalidate: (folder?: string) => reader.invalidate(folder) }
     const actions = new GitActions({ run, status, writeCommitMessage: async () => null, writePullRequestText: async () => null })
     // The read begins on a clean main level with origin.
     const earlier = reader.read(f.repo, { remote: false })
@@ -333,6 +333,26 @@ describe('the stacked Git action, the way T3 runs it', () => {
     git(f.repo, 'switch', '-q', '--detach')
     // With no upstream the action would push first, so the push refusal comes first, as in T3.
     await expect(f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'create_pr' })).rejects.toThrow('Cannot push from detached HEAD.')
+  }, 40000)
+  it('takes only a pull request whose head is in the repository the branch is pushed to as already open, not a fork\'s of the same name', async () => {
+    let created = false
+    const own = { number: 35, title: 'Ship the feature', url: 'https://github.com/o/r/pull/35', baseRefName: 'main', headRefName: 'feature', state: 'OPEN', headRepositoryOwner: { login: 'o' }, isCrossRepository: false }
+    const fork = { number: 9, title: 'Someone else\'s feature', url: 'https://github.com/o/r/pull/9', baseRefName: 'main', headRefName: 'feature', state: 'OPEN', headRepositoryOwner: { login: 'someone' }, isCrossRepository: true }
+    const f = await fixture({ gh: async args => {
+      if (args[1] === 'list') return JSON.stringify(created ? [fork, own] : [fork])
+      if (args[1] === 'create') { created = true; return `${own.url}\n` }
+      if (args[0] === 'repo') return JSON.stringify({ defaultBranchRef: { name: 'main' } })
+      return ''
+    } })
+    // origin is written as GitHub's URL and Git rewrites it to the owned remote, so Sotto can name the repository.
+    git(f.repo, 'config', `url.${f.remote}.insteadOf`, 'https://github.com/o/r')
+    git(f.repo, 'remote', 'set-url', 'origin', 'https://github.com/o/r')
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    await writeFile(join(f.repo, 'work.txt'), 'feature\n'); commit(f.repo, 'Feature work')
+    git(f.repo, 'push', '-q', '-u', 'origin', 'feature')
+    const result = await f.actions.runStackedAction({ threadId: 't', cwd: f.repo, action: 'create_pr' })
+    expect(result.pr).toMatchObject({ status: 'created', number: 35, url: own.url })
+    expect(f.gh().filter(call => call[2] === 'create')).toHaveLength(1)
   }, 40000)
   it('pushes first when needed, writes the pull request from the range and the template, and creates it once', async () => {
     let created = false

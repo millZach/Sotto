@@ -85,6 +85,12 @@ export const gitPullRequestDetailSchema = z.object({
   reviews: z.array(gitPullRequestReviewSchema).max(50).default([]),
   mergeable: z.enum(['mergeable', 'conflicting', 'unknown']),
   checks: z.array(gitPullRequestCheckSchema).max(200),
+  /**
+   * GitHub refused the checks to this sign-in, the list or a check in it whole, so `checks` holds only those it did
+   * return, and may be empty, unlike a pull request GitHub reports no checks for. A host on an earlier build answers
+   * without it.
+   */
+  checksUnknown: z.boolean().default(false),
   /** The methods this repository allows; all three when GitHub did not say, and a press is left to GitHub to refuse. */
   mergeMethods: z.array(gitPullRequestMergeMethodSchema).max(3),
   /** Whether the repository allows auto-merge; true when GitHub did not say, and a press is left to GitHub to refuse. */
@@ -112,7 +118,17 @@ export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
  */
 export const gitPullRequestRequestSchema = z.object({ threadId: id, reference: z.string().min(1).max(2_048).optional() }).strict()
 export type GitPullRequestRequest = z.infer<typeof gitPullRequestRequestSchema>
-export const gitPullRequestResultSchema = gitPullRequestDetailSchema.nullable()
+/**
+ * A read the user asked for that GitHub's rate limit held back (#820): GitHub refused it, or reported nothing left of
+ * the gh sign-in's rate limit. `retryAt` is when it may be asked again, for the window to say in its own clock.
+ */
+export const gitPullRequestLimitedSchema = z.object({ limited: z.object({ retryAt: z.string().max(64) }).strict() }).strict()
+export type GitPullRequestLimited = z.infer<typeof gitPullRequestLimitedSchema>
+export const gitPullRequestResultSchema = z.union([gitPullRequestDetailSchema, gitPullRequestLimitedSchema]).nullable()
+/** What a pull request read answers: the detail, a rate-limit refusal, or null when the thread has none to show. */
+export type GitPullRequestRead = GitPullRequestDetail | GitPullRequestLimited | null
+/** Whether a read was held back by GitHub's rate limit rather than answered. */
+export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'
 
 /** The URL of the pull request on the branch a thread's folder is on, as the host last read it. */

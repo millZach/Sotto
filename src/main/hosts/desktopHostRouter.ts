@@ -7,7 +7,7 @@ import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraf
 import type { HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestDetail, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -30,7 +30,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   content?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
-  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** Whether this host lists `client-updates`: only then do its client updates reach the window (#480). */
   offersClientUpdates?(): boolean
@@ -364,7 +364,7 @@ export class DesktopHostRouter {
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its changes.')
     return connection.gitChangedFiles({ ...request, threadId: id! })
   }
-  async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+  async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     const { connection, id } = this.target(request.threadId)
     if (!connection.gitPullRequest) throw new Error('Pull requests are unavailable on this host.')
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its pull requests.')

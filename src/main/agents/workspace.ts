@@ -32,8 +32,8 @@ import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitAct
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
-import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
@@ -454,7 +454,7 @@ export class WorkspaceHost implements AgentHost {
    * status follow at once, in the lane that moved it. The remote half follows once the lane is free.
    */
   private async followGitChange(threadId: string, options: { readonly followSentBranch?: boolean } = {}): Promise<void> {
-    this.gitStatus?.invalidate()
+    this.invalidateGitStatus(threadId)
     const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
     if (worktree?.status === 'ready' && worktree.path) {
       try {
@@ -554,15 +554,18 @@ export class WorkspaceHost implements AgentHost {
   /**
    * One pull request of the thread's, read through gh: the one named, else its branch's own, else the one
    * linked last. A draft reads through its project's folder, as it does for branches. A linked pull request's
-   * title and state on the record follow what GitHub just said.
+   * title and state on the record follow what GitHub just said. A read GitHub's rate limit held back answers when it may
+   * be asked again, for the surface to say (#820).
    */
-  async readThreadPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+  async readThreadPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     await this.initialize()
     const service = this.pullRequestsOrRefuse()
     const thread = this.thread(request.threadId)
     const reference = request.reference ?? branchPullRequestUrl(thread) ?? thread.pullRequests?.at(-1)?.url
     if (!reference) return null
-    const view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference)
+    let view: GitPullRequestView
+    try { view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference) }
+    catch (error) { if (error instanceof GitPullRequestLimited) return { limited: { retryAt: new Date(error.retryAt).toISOString() } }; throw error }
     const current = this.thread(request.threadId)
     const key = pullRequestKey(view.url)
     const link = current.pullRequests?.find(item => pullRequestKey(item.url) === key)
@@ -584,7 +587,7 @@ export class WorkspaceHost implements AgentHost {
       const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method)
       const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
-      this.gitStatus?.invalidate()
+      this.invalidateGitStatus(command.threadId)
     }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))
   }
   /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
@@ -683,8 +686,17 @@ export class WorkspaceHost implements AgentHost {
   }
   /** A Git action changed this thread's folder: read it again, remote and all, without waiting for the timer. */
   gitActionFinished(threadId: string): Promise<void> {
-    this.gitStatus?.invalidate()
+    this.invalidateGitStatus(threadId)
     return this.readRemoteStatus(threadId)
+  }
+  /**
+   * A Git or pull request action ran in the thread's folder: that repository's fetch timing and pull request answers
+   * go stale, and every other repository keeps its own (#820). A thread with no folder to name stales every repository.
+   */
+  private invalidateGitStatus(threadId: string): void {
+    const folder = this.statusFolder(threadId)
+    if (folder === undefined) this.gitStatus?.invalidate()
+    else this.gitStatus?.invalidate(folder)
   }
   private async pollGitStatus(): Promise<void> {
     if (this.gitStatusPolling || this.stopping || !this.gitStatus || !this.declared) return
@@ -692,12 +704,10 @@ export class WorkspaceHost implements AgentHost {
     if (interval <= 0 || Date.now() - this.gitStatusPolledAt < interval || !this.gitStatusOptions.foreground()) return
     this.gitStatusPolling = true
     this.gitStatusPolledAt = Date.now()
-    try {
-      for (const threadId of [...this.watched.keys()]) {
-        if (this.stopping) break
-        await this.readRemoteStatus(threadId)
-      }
-    } finally { this.gitStatusPolling = false }
+    // Every watched thread at once, so the pull request lookups of one repository arrive together and share one
+    // GitHub query (#820). Each thread's own reads still run in its lane, one after another.
+    try { await Promise.all([...this.watched.keys()].map(threadId => this.readRemoteStatus(threadId, { background: true }))) }
+    finally { this.gitStatusPolling = false }
   }
   /**
    * The folder's status with its remote half, for the timer, a refresh and after a Git action. The slow calls, a
@@ -705,9 +715,10 @@ export class WorkspaceHost implements AgentHost {
    * waits for them (issue #766); they run in the folder, and a folder being removed holds them off and waits for them
    * (`reclaimThreadWorktree`). A local read in the lane comes first, so the remote calls ask about the branch the folder
    * is on now, even after a switch made outside Sotto; a local read in the lane then takes what they brought, and
-   * decides an automatic pull. Never rejects.
+   * decides an automatic pull. `background` is the timer's read, which GitHub may hold back (#820); every other is the
+   * user's or a Git action's. Never rejects.
    */
-  private readRemoteStatus(threadId: string): Promise<void> {
+  private readRemoteStatus(threadId: string, options: { readonly background?: boolean } = {}): Promise<void> {
     const read = (async () => {
       const source = this.gitStatus
       if (!source || this.statusFolder(threadId) === undefined || this.stopping) return
@@ -718,7 +729,7 @@ export class WorkspaceHost implements AgentHost {
           await this.onLane(threadId, () => this.readGitStatus(threadId, false))
           const folder = this.statusFolder(threadId)
           if (folder === undefined || this.stopping) return
-          if (await source.readRemote(folder)) break
+          if (await source.readRemote(folder, options)) break
         }
       }
       await this.onLane(threadId, () => this.readGitStatus(threadId, true))
@@ -2175,7 +2186,7 @@ export class WorkspaceHost implements AgentHost {
     }
     this.dirty = true; await this.flush(); this.publish()
   }
-  async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
+  async updateThreadWorktree(threadId: string, retry: boolean, options: { readonly background?: boolean } = {}): Promise<AgentHostSnapshot> {
     const recordRead = await this.onLane(threadId, async () => {
       await this.initialize()
       await this.discoverWorkingCopy(threadId)
@@ -2200,8 +2211,9 @@ export class WorkspaceHost implements AgentHost {
     })
     // A refresh is the user's or the window's ask, so the remote is read too, fetching when the interval allows. The
     // refresh answers once the record is read: the fetch and the GitHub lookup run outside the thread's lane, so
-    // neither the refresh nor a send waits for them (issue #766), and the status publishes when it lands.
-    if (recordRead) void this.readRemoteStatus(threadId)
+    // neither the refresh nor a send waits for them (issue #766), and the status publishes when it lands. The window's
+    // own ask (`background`) asks GitHub as the timer does, so regaining focus never spends the reserve or a pause (#820).
+    if (recordRead) void this.readRemoteStatus(threadId, options.background ? { background: true } : {})
     return this.workspaceSnapshot()
   }
   /**
@@ -2224,7 +2236,7 @@ export class WorkspaceHost implements AgentHost {
       }
       const switched = await this.worktrees.switchBranch(inspected, target)
       // The branch moved under any status read of the folder begun before now, so the read below is one of its own.
-      this.gitStatus?.invalidate()
+      this.invalidateGitStatus(threadId)
       this.thread(threadId).worktree = { ...switched, sentBranch: target }
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }

@@ -4,7 +4,7 @@ import {
   GitPullRequest, GitPullRequestDraft, Link2, RotateCw, Unlink, type LucideIcon,
 } from 'lucide-react'
 import type { AgentCommand, AgentState, AgentThread } from '../../../shared/agents'
-import { branchPullRequestUrl, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
+import { branchPullRequestUrl, isPullRequestLimited, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 import { PR_ICONS } from '../agents/BranchToolbar'
 import { writeClipboard } from '../agents/richActions'
 import { menuEntries } from '../agents/gitActionButton.logic'
@@ -13,7 +13,7 @@ import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, limitedWords, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
   resolveMergeMethod, stateLabel, type ChecklistLine, type ConfirmedAction, type LineFix, type LineTone,
 } from './pullRequestSurface.logic'
 import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
@@ -70,6 +70,8 @@ export function PullRequestSurface({ thread, command, onStatus }: { readonly thr
     try {
       const next = await read({ threadId: thread.id, ...(chosen ? { reference: chosen } : {}) })
       if (turn !== generation.current) return
+      // GitHub's rate limit held the read back: the last reading stays, under the words that say when to ask again.
+      if (next && isPullRequestLimited(next)) { setFailure(limitedWords(next.limited.retryAt)); return }
       setDetail(next)
     } catch {
       if (turn === generation.current) setFailure('Could not read the pull request from GitHub. Check your gh sign-in and connection, then refresh.')

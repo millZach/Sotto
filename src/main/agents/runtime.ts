@@ -19,7 +19,8 @@ import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
 import { threadToolReads } from './threadToolReads'
-import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
+import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
+import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
@@ -66,7 +67,9 @@ export interface AgentRuntimeOptions {
    */
   gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
-    ghStandIn?: { executable: string; args: readonly string[] } }
+    ghStandIn?: { executable: string; args: readonly string[] }
+    /** When GitHub's rate limit holds Sotto's questions back (#820), as stable event names; never gh's words. */
+    log?: (event: GitHubRateLimitEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
@@ -97,12 +100,18 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }), directory, options.historyEnabled)
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
+  let gitHubRateLimit: GitHubRateLimit | undefined
+  let gitHubHosts: GitHubHosts | undefined
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground, ghStandIn } = options.gitStatus
+    const { fetchIntervalMs, foreground, ghStandIn, log } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
-    gitStatus = new GitStatusReader({ fetchIntervalMs, ...(gitRun ? { run: gitRun } : {}) })
+    // One rate limit for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
+    gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
+    // One answer, too, to which hosts gh asks as GitHub, so `gh auth status` and `ssh -G` run once for everything that asks.
+    gitHubHosts = new GitHubHosts({ run: gitRun ?? runGitStatusCommand })
+    gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, hosts: gitHubHosts, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
     agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
   }
@@ -114,12 +123,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
-  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}),
+  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
     followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
-  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests(gitRun ? { run: gitRun } : {}))
+  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
   const reasoner = options.reasoner ?? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {
@@ -150,8 +159,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // local host and a headless host both own worktrees, so both get it. Its owner starts it once the owner's own
   // checks are wired (the desktop's open terminals), and close drains it before anything it asks is closed.
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
+  // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
+  const merged = options.worktreeCleanup?.pullRequestMerged
+  const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
-    autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup })
+    autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })

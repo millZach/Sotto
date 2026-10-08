@@ -8,7 +8,7 @@ import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { gitPullRequestResultSchema, type GitPullRequestDetail, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { gitPullRequestResultSchema, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
 import { fileListingSchema, filePreviewSchema, filesResultSchema, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
@@ -456,6 +456,8 @@ export class SocketHostService implements HostService {
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.recoveryError = undefined
     const admitted = structuredClone(command)
+    // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
+    if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
       const edit = this.retainCompose(admitted as TargetedCompose, commandId)
       if (this.supportsDraftRevisions) return this.queueCompose({ ...admitted, draftId: edit.draft.draftId, attachments: edit.draft.attachments } as TargetedCompose, edit.draft.draftId, commandId)
@@ -835,7 +837,7 @@ export class SocketHostService implements HostService {
     if (!this.features.includes('git-changed-files')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     return this.read(gitChangedFilesSchema, await this.call({ op: 'git-changed-files', request }))
   }
-  async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+  async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
   }
