@@ -151,6 +151,28 @@ function savedBabysitting(input: unknown): Map<string, BabysitRecord[]> {
   return records
 }
 const babysittingSummary = (records: readonly BabysitRecord[]): AgentThread['babysitting'] => records.map(publishedBabysitting)
+/**
+ * How many of a thread's wake-up message IDs its record in `workspace.json` keeps, newest last (ADR-0061 decision 8).
+ * Kept whether or not Keep local history is on, since they are IDs and carry nothing anyone wrote: with history off the
+ * thread store is in memory, and the record is what still marks a wake-up after a restart. A thousand IDs is about 40 KB.
+ */
+export const WAKE_UP_IDS_KEPT = 1_000
+/**
+ * Each thread's kept wake-up IDs as `workspace.json` holds them, `wakeUps` on the thread's record. Read from the file
+ * before the thread schema, which drops the field; a file written before it was kept gives the newest it published.
+ */
+function savedWakeUps(input: unknown): Map<string, string[]> {
+  const kept = new Map<string, string[]>()
+  const threads = (input as { snapshot?: { threads?: unknown } } | null)?.snapshot?.threads
+  if (!Array.isArray(threads)) return kept
+  for (const thread of threads as unknown[]) {
+    const { id, wakeUps, wakeUpMessageIds } = (thread ?? {}) as { id?: unknown; wakeUps?: unknown; wakeUpMessageIds?: unknown }
+    const listed: unknown[] = Array.isArray(wakeUps) ? wakeUps : Array.isArray(wakeUpMessageIds) ? wakeUpMessageIds : []
+    const ids = [...new Set(listed.filter((item): item is string => typeof item === 'string' && item.length > 0 && item.length <= 512))].slice(-WAKE_UP_IDS_KEPT)
+    if (typeof id === 'string' && ids.length) kept.set(id, ids)
+  }
+  return kept
+}
 /** A send as its provider hears it: whether it is a wake-up is the workspace's record, not the adapter's business. */
 function withoutWakeUp<C extends Extract<AgentHostCommand, { type: 'send' }>>(command: C): C {
   if (command.wakeUp === undefined) return command
@@ -178,6 +200,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * in `workspace.json`; the thread itself carries only the published part, `babysitting`, so no client is sent the rest.
    */
   private babysitRecords = new Map<string, BabysitRecord[]>()
+  /**
+   * Each thread's newest wake-up message IDs, up to WAKE_UP_IDS_KEPT, by thread (ADR-0061 decision 8). Saved on the
+   * thread's record in `workspace.json` as `wakeUps`; the thread publishes only the newest fifty, `wakeUpMessageIds`.
+   */
+  private wakeUpRecords = new Map<string, string[]>()
   /** Babysitting, told of each Unlink so it can end babysitting that pull request (ADR-0061 decision 9). */
   private readonly unlinkListeners = new Set<(threadId: string, url: string) => Promise<void>>()
   /** Babysitting, told when a thread that babysits is settled or archived, so it ends then (ADR-0061 decision 9). */
@@ -1091,26 +1118,30 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return placeVisuals(messages, visuals, windowStartsThread)
   }
   /**
-   * The thread's record names its newest wake-ups and the thread store keeps every one, so a wake-up older than the
-   * newest fifty stays Sotto's. The record alone answers when the store cannot.
+   * The thread's record keeps its newest thousand wake-ups whatever Keep local history says, and with history on the
+   * thread store keeps every one, so a wake-up stays Sotto's after a restart. The record alone answers when the store cannot.
    */
   private withWakeUps(threadId: string, messages: AgentMessage[]): AgentMessage[] {
-    const newest = this.state.snapshot.threads.find(item => item.id === threadId)?.wakeUpMessageIds ?? []
-    let kept: ReadonlySet<string> = new Set()
-    if (!this.storeUnavailable) try { kept = this.threadStore.wakeUps(threadId) } catch { /* The record still answers for the newest. */ }
-    if (!newest.length && !kept.size) return messages
-    return messages.map(message => message.role === 'user' && !message.wakeUp && (kept.has(message.id) || newest.includes(message.id)) ? { ...message, wakeUp: true } : message)
+    const recorded = this.wakeUpRecords.get(threadId) ?? []
+    let stored: ReadonlySet<string> = new Set()
+    if (!this.storeUnavailable) try { stored = this.threadStore.wakeUps(threadId) } catch { /* The record still answers. */ }
+    if (!recorded.length && !stored.size) return messages
+    const kept = new Set(recorded)
+    return messages.map(message => message.role === 'user' && !message.wakeUp && (kept.has(message.id) || stored.has(message.id)) ? { ...message, wakeUp: true } : message)
   }
   /**
-   * Records a wake-up's message ID on its thread, and in the thread store, before the provider hears the prompt, so
-   * the message is Sotto's from its first echo, after a restart and after its history is read again (ADR-0061 decision
-   * 8). A store that refuses it costs only the mark on a wake-up older than the record's newest fifty.
+   * Records a wake-up's message ID on its thread's record, and in the thread store, before the provider hears the
+   * prompt, so the message is Sotto's from its first echo, after a restart and after its history is read again
+   * (ADR-0061 decision 8). A store that refuses it costs only the mark on a wake-up older than the record's newest thousand.
    */
   private async recordWakeUp(threadId: string, messageId: string): Promise<void> {
     const thread = this.thread(threadId)
     if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId) } catch { /* The record below still names it. */ }
-    if (thread.wakeUpMessageIds?.includes(messageId)) return
-    thread.wakeUpMessageIds = [...thread.wakeUpMessageIds ?? [], messageId].slice(-WAKE_UP_MESSAGE_IDS_MAX)
+    const kept = this.wakeUpRecords.get(threadId) ?? []
+    if (kept.includes(messageId)) return
+    const next = [...kept, messageId].slice(-WAKE_UP_IDS_KEPT)
+    this.wakeUpRecords.set(threadId, next)
+    thread.wakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
     this.dirty = true
     await this.flush()
   }
@@ -1121,7 +1152,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.worktrees = new ThreadWorktrees(directory)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
-    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); return workspaceSchema.parse(input) }, () => this.state)
+    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); return workspaceSchema.parse(input) }, () => this.state)
     // A host that says what changed is believed: its events are this thread's history, and the array
     // comparison below is left for a host that publishes whole histories and nothing else. Such a host
     // is asked to leave the messages out of its snapshots, since none would be read (#322).
@@ -1169,6 +1200,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       for (const thread of snapshot.threads) {
         const records = this.babysitRecords.get(thread.id)
         if (records?.length) thread.babysitting = babysittingSummary(records); else delete thread.babysitting
+        const wakeUps = this.wakeUpRecords.get(thread.id)
+        if (wakeUps?.length) thread.wakeUpMessageIds = wakeUps.slice(-WAKE_UP_MESSAGE_IDS_MAX); else delete thread.wakeUpMessageIds
       }
       snapshot.connected = false
       // A Git action that was running when the host stopped did not finish here; the folder says what it did.
@@ -2722,12 +2755,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
   }
-  /** The thread as `workspace.json` keeps it: what it babysits carries what it was last told. */
+  /** The thread as `workspace.json` keeps it: what it babysits carries what it was last told, and its kept wake-ups go with it. */
   private withBabysitting(thread: AgentThread): AgentThread {
     const records = this.babysitRecords.get(thread.id)
     if (records?.length) thread.babysitting = records
     else delete thread.babysitting
-    return thread
+    const wakeUps = this.wakeUpRecords.get(thread.id)
+    return wakeUps?.length ? Object.assign(thread, { wakeUps }) : thread
   }
   private babysitView(thread: AgentThread): BabysitThread {
     const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)

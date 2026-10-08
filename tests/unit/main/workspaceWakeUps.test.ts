@@ -11,8 +11,8 @@ import { WAKE_UP_MESSAGE_IDS_MAX } from '../../../src/shared/agents'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
-async function fixture(root?: string) {
-  const f = await workspaceFixture(root)
+async function fixture(root?: string, history = true) {
+  const f = await workspaceFixture(root, { history })
   cleanup.push(async () => { await f.stop(); if (!root) await f.remove() })
   return f
 }
@@ -81,5 +81,31 @@ describe('a wake-up in the workspace', () => {
     for (let load = 0; load < 3; load++) await reopened.host.loadEarlierMessages('local')
     await expect.poll(() => reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.length).toBe(WAKE_UP_MESSAGE_IDS_MAX + 1)
     expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.filter(message => !message.wakeUp)).toEqual([])
+  })
+
+  it('keeps every wake-up marked across a restart while Keep local history is off, and once it is turned on again', async () => {
+    const f = await fixture(undefined, false)
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
+    for (let index = 0; index <= WAKE_UP_MESSAGE_IDS_MAX; index++) {
+      await f.host.execute({ type: 'send', commandId: `wake-${index}`, threadId: 'local', messageId: `wake-${index}`, text: 'Wake-up', wakeUp: true })
+      f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!.status = 'idle'
+    }
+    const sessions = f.adapters.codex.state.threads
+    await f.stop()
+    for (const history of [false, true]) {
+      // Nothing was kept of what the thread said: its history is read from the provider again.
+      const reopened = await fixture(f.root, history)
+      reopened.adapters.codex.state.threads = structuredClone(sessions)
+      await reopened.host.connect()
+      reopened.host.observeThreads(['local'])
+      for (let load = 0; load < 3; load++) await reopened.host.loadEarlierMessages('local')
+      const messages = () => reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+      await expect.poll(() => messages().length).toBe(WAKE_UP_MESSAGE_IDS_MAX + 1)
+      expect(messages().filter(message => !message.wakeUp).map(message => message.id)).toEqual([])
+      await reopened.stop()
+    }
   })
 })
