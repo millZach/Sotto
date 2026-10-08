@@ -75,6 +75,23 @@ GitHub; the tests in `tests/unit/main/gitStatusGitHub.test.ts`, `tests/unit/main
 `tests/unit/main/github.test.ts` cover them over a scripted gh, among them a refusal that carries GitHub's reset and a
 late answer to a query sent before a refusal, which leaves the pause in place.
 
+## Ten real branches against GitHub
+
+October 8, 2026, on the branch's final code, with the real gh signed in to github.com. A script outside the repository
+bundled `src/main/agents/gitStatus.ts` and `gitPullRequests.ts` with esbuild and ran them over ten existing worktrees of
+this repository, each on its own pushed branch with a pull request (all merged), plus one branch never pushed. It wrapped
+the real command runner to count gh processes, and compared each answer with `gh pr list --head <branch> --state all`
+run separately in the same folder.
+
+- **The timer's path** (`readRemote` as a background read for all ten at once): one `gh api graphql` for the ten
+  branches, in 3.9 seconds, every answer the right pull request. Before #820 the same reads were ten `gh pr list`.
+- **Reads asked for together** (`read` with the remote half, the 50 ms gathering window): two or three `gh api graphql`
+  over two runs, because the local half of each read ends at a different moment; every answer matched gh's, and the
+  never-pushed branch was not asked about.
+- **The same reads again at once:** no gh at all.
+- **The Pull request surface's read** of one of those pull requests: one `gh api graphql`, its state and its five checks
+  the same as `gh pr view` gave.
+
 ## Which hosts count as GitHub
 
 The lookup first took a remote as GitHub only when its host's name said so, which lost the badge for an Enterprise
