@@ -150,7 +150,8 @@ import XCTest
                        "Back must be hittable after a request sheet closes")
         button.tap()
     }
-    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    /// Generous on purpose: it ends as soon as the element goes, and a loaded CI simulator can take seconds just to look.
+    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 20) -> Bool {
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
         return XCTWaiter.wait(for: [gone], timeout: timeout) == .completed
     }
