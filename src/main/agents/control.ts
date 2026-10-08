@@ -2250,7 +2250,7 @@ export class AgentControl {
       if (first.status === 'queued' && terminalBlocked) {
         this.pumping.add(threadId)
         let paused = false
-        void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume queued follow-ups when ready.')
+        void this.followupStore.pause(threadId, 'The last turn did not confirm completion. Review the thread and resume its queue when ready.')
           .then(() => { paused = true })
           .catch(() => { this.state.error = 'Could not pause the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (paused) this.pumpFollowups() })
@@ -2278,7 +2278,7 @@ export class AgentControl {
           const readMs = performance.now() - readStartedAt
           this.acceptSnapshot(read)
           const validate = (): void => {
-            if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and explicitly resume queued follow-ups.')
+            if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')
             const latest = this.thread(threadId)
             if (latest.status === 'running' || latest.requests.length || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))
@@ -2293,7 +2293,7 @@ export class AgentControl {
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
-          failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : 'Could not dispatch this follow-up.'
+          failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
           if (claimed) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
@@ -2318,7 +2318,7 @@ export class AgentControl {
       this.validateInterrupt(command.threadId)
       if (assignment) assignment.paused = true
       let pauseFailure: string | undefined
-      try { await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume queued follow-ups when ready.') }
+      try { await this.followupStore.pause(command.threadId, 'The turn was interrupted. Review the thread and resume its queue when ready.') }
       catch { pauseFailure = 'Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.' }
       this.syncFollowups(); await this.execute(command, turn); await this.persist()
       if (pauseFailure) this.setCommandError(undefined, pauseFailure)
