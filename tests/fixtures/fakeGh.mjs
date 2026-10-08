@@ -38,6 +38,16 @@ if (args[0] === 'pr' && args[1] === 'list') {
   if (!pull) fail('GraphQL: Could not resolve to a PullRequest with the number of 0. (repository.pullRequest)')
   save(data)
   process.stdout.write(JSON.stringify(view(pull)) + '\n')
+} else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query PullRequestsByHead'))) {
+  // The status reader's batched lookup: each aliased head (`h0=feat/greeting`) gets the pull requests with that head.
+  const repository = {}
+  for (const argument of args) {
+    const match = /^(h\d+)=(.*)$/su.exec(argument)
+    if (match) repository[match[1]] = { nodes: data.pulls.filter(pull => pull.headRefName === match[2]).map(pull => ({ number: pull.number, title: pull.title, url: pull.url,
+      state: pull.state, isDraft: pull.isDraft ?? false, updatedAt: '2026-09-23T00:00:00Z', headRefName: pull.headRefName, isCrossRepository: false, headRepositoryOwner: { login: 'sotto-fixture' } })) }
+  }
+  save(data)
+  process.stdout.write(JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4999, resetAt: '2099-01-01T00:00:00Z' }, viewer: { login: 'sotto-fixture' }, repository } }) + '\n')
 } else if (args[0] === 'api' && args[1] === 'graphql') {
   const number = Number(args.find(argument => argument.startsWith('number='))?.slice('number='.length))
   const pull = data.pulls.find(item => item.number === number)

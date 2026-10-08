@@ -556,12 +556,16 @@ describe('durable project/thread organization', () => {
     await vi.waitFor(() => expect(record()?.git).toMatchObject({ branch: 'main', ahead: 0 }))
     expect(reads.slice(-2)).toEqual([{ cwd: project.path, remote: true }, { cwd: project.path, remote: false }])
     expect(source.read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
+    // A refresh is the user's read, which may pass a GitHub pause (#820).
+    expect(source.readRemote).toHaveBeenLastCalledWith(project.path, {})
     // The timer reads only the threads a window is looking at.
     current = { ...base, ahead: 2 }
     await new Promise(resolve => setTimeout(resolve, 40))
     expect(record()?.git?.ahead).toBe(0)
     f.host.observeThreads(['local'])
     await vi.waitFor(() => expect(record()?.git?.ahead).toBe(2))
+    // The timer's remote half is a background read, which GitHub's pause and reserve hold back (#820).
+    expect(source.readRemote).toHaveBeenLastCalledWith(project.path, { background: true })
     // A thread coming into view with no status yet is read at once, locally, ahead of the timer.
     f.host.observeThreads([])
     await f.host.execute({ type: 'create-thread', commandId: 'create-second', threadId: 'second', projectId: project.id, title: 'Second task', modelId: model.id })
@@ -1143,7 +1147,7 @@ describe('durable project/thread organization', () => {
     // The folder is read in the thread's lane once the action is done, so the remote half outside the lane asks about
     // the branch it is on now; a read of its own after it takes what the remote half brought.
     expect(source.read).toHaveBeenCalledWith(project.path, { remote: false })
-    expect(source.readRemote).toHaveBeenCalledWith(project.path)
+    expect(source.readRemote).toHaveBeenCalledWith(project.path, {})
     expect(source.read.mock.invocationCallOrder[0]).toBeLessThan(source.readRemote.mock.invocationCallOrder[0]!)
     await vi.waitFor(() => expect(source.read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
     // The record is Sotto's: a provider snapshot that follows keeps it.

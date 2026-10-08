@@ -21,6 +21,8 @@ async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh
   if (options.remote !== false) {
     git(root, 'init', '--bare', '-q', '-b', 'main', remote); git(repo, 'remote', 'add', 'origin', remote)
     git(repo, 'push', '-q', '-u', 'origin', 'main'); git(repo, 'remote', 'set-head', 'origin', 'main')
+    // origin is written as GitHub's URL and Git rewrites it to the owned remote, so gh is asked about o/r.
+    git(repo, 'config', `url.${remote}.insteadOf`, 'https://github.com/o/r'); git(repo, 'remote', 'set-url', 'origin', 'https://github.com/o/r')
     git(root, 'clone', '-q', '-b', 'main', remote, other); git(other, 'config', 'user.name', 'Fixture'); git(other, 'config', 'user.email', 'fixture@example.invalid'); git(other, 'config', 'commit.gpgSign', 'false'); git(other, 'config', 'core.autocrlf', 'false')
   }
   const calls: string[][] = []
@@ -33,8 +35,18 @@ async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh
     if (command === 'gh') { if (!options.gh) throw new Error('gh: not signed in'); return options.gh(args) }
     return runGitStatusCommand(cwd, command, args, runOptions)
   }
-  const reader = new GitStatusReader({ run, now: () => now, fetchIntervalMs: () => options.fetchIntervalMs ?? 30_000 })
+  const reader = new GitStatusReader({ run, now: () => now, fetchIntervalMs: () => options.fetchIntervalMs ?? 30_000, headGatherMs: { user: 1, background: 1 } })
   return { root, repo, remote, other, reader, calls, places, advance: (ms: number) => { now += ms }, fetches: () => calls.filter(call => call[1] === 'fetch').length, ghCalls: () => calls.filter(call => call[0] === 'gh').length }
+}
+
+/** GitHub's answer to the batched head query, from pull requests in `gh pr list --json`'s spelling. */
+function headsAnswer(args: readonly string[], pulls: ReadonlyArray<{ number: number; title: string; url: string; state: string; isDraft: boolean; headRefName: string; updatedAt?: string }>): string {
+  const repository: Record<string, unknown> = {}
+  for (const argument of args) {
+    const match = /^(h\d+)=(.*)$/su.exec(argument)
+    if (match) repository[match[1]!] = { nodes: pulls.filter(pull => pull.headRefName === match[2]).map(pull => ({ ...pull, isCrossRepository: false, headRepositoryOwner: { login: 'o' } })) }
+  }
+  return JSON.stringify({ data: { repository } })
 }
 
 describe('Git status the way T3 reads it', () => {
@@ -107,12 +119,12 @@ describe('Git status the way T3 reads it', () => {
     expect(await f.reader.read(f.repo, { remote: false })).toMatchObject({ branch: 'feature', upstream: null, isDefaultBranch: false, aheadOfDefault: 1, ahead: 1, behind: 0 })
   })
   it('asks GitHub for the branch pull request only once it is published, caches the answer, and asks again after an action', async () => {
-    const answers: string[] = [JSON.stringify([
+    const answers: Array<Array<Parameters<typeof headsAnswer>[1][number]>> = [[
       { number: 7, title: 'Older', url: 'https://github.com/o/r/pull/7', state: 'MERGED', isDraft: false, headRefName: 'feature', updatedAt: '2026-09-01T00:00:00Z' },
       { number: 9, title: 'Newer', url: 'https://github.com/o/r/pull/9', state: 'OPEN', isDraft: true, headRefName: 'feature', updatedAt: '2026-09-02T00:00:00Z' },
       { number: 8, title: 'Other branch', url: 'https://github.com/o/r/pull/8', state: 'OPEN', isDraft: false, headRefName: 'elsewhere', updatedAt: '2026-09-03T00:00:00Z' },
-    ])]
-    const f = await fixture({ gh: async () => answers[0]! })
+    ]]
+    const f = await fixture({ gh: async args => headsAnswer(args, answers[0]!) })
     git(f.repo, 'switch', '-q', '-c', 'feature')
     await writeFile(join(f.repo, 'feature.txt'), 'feature\n'); commit(f.repo, 'Feature work')
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest).toBeNull()
@@ -126,13 +138,13 @@ describe('Git status the way T3 reads it', () => {
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest?.number).toBe(9)
     expect(f.ghCalls()).toBe(2)
     // On the default branch only an open pull request counts.
-    answers[0] = JSON.stringify([{ number: 3, title: 'Landed', url: 'https://github.com/o/r/pull/3', state: 'MERGED', isDraft: false, headRefName: 'main' }])
+    answers[0] = [{ number: 3, title: 'Landed', url: 'https://github.com/o/r/pull/3', state: 'MERGED', isDraft: false, headRefName: 'main' }]
     git(f.repo, 'switch', '-q', 'main')
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest).toBeNull()
   })
   it('keeps the last pull request answer while GitHub cannot be asked, and waits before asking again', async () => {
     let fail = false
-    const f = await fixture({ gh: async () => { if (fail) throw new Error('gh: rate limited'); return JSON.stringify([{ number: 4, title: 'Open', url: 'https://github.com/o/r/pull/4', state: 'OPEN', isDraft: false, headRefName: 'main' }]) } })
+    const f = await fixture({ gh: async args => { if (fail) throw new Error('error connecting to api.github.com'); return headsAnswer(args, [{ number: 4, title: 'Open', url: 'https://github.com/o/r/pull/4', state: 'OPEN', isDraft: false, headRefName: 'main' }]) } })
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest?.number).toBe(4)
     fail = true; f.reader.invalidate()
     expect((await f.reader.read(f.repo, { remote: true })).pullRequest?.number).toBe(4)
@@ -190,7 +202,7 @@ describe('Git status the way T3 reads it', () => {
 describe('the remote half of a read, on its own', () => {
   const samePlace = (a: string, b: string) => { const key = (path: string) => resolve(path).toLowerCase(); return key(a) === key(b) }
   it('fetches and asks GitHub in the folder that asked, writing no FETCH_HEAD, and only for a folder read since the last Git action', async () => {
-    const f = await fixture({ gh: async () => JSON.stringify([{ number: 5, title: 'Side work', url: 'https://github.com/o/r/pull/5', state: 'OPEN', isDraft: false, headRefName: 'side' }]) })
+    const f = await fixture({ gh: async args => headsAnswer(args, [{ number: 5, title: 'Side work', url: 'https://github.com/o/r/pull/5', state: 'OPEN', isDraft: false, headRefName: 'side' }]) })
     // A linked worktree on a branch of its own that tracks main, the way a thread's worktree is.
     const side = join(f.root, 'side-worktree')
     git(f.repo, 'worktree', 'add', '-q', '--track', '-b', 'side', side, 'origin/main')
@@ -268,7 +280,7 @@ describe('the remote half of a read, on its own', () => {
       return { started: state.started, go }
     }
     const f = await fixture({
-      gh: async () => JSON.stringify([{ number: 4, title: 'Open', url: 'https://github.com/o/r/pull/4', state: 'OPEN', isDraft: false, headRefName: 'main' }]),
+      gh: async args => headsAnswer(args, [{ number: 4, title: 'Open', url: 'https://github.com/o/r/pull/4', state: 'OPEN', isDraft: false, headRefName: 'main' }]),
       before: async (command, args) => {
         const hold = held
         if (hold && (command === 'gh' ? hold.call === 'gh' : args[0] === 'fetch' && hold.call === 'fetch')) { held = undefined; hold.started(); await hold.go }
@@ -395,7 +407,7 @@ describe('porcelain v2 parsing', () => {
   it('reads the branch headers and counts records, a rename once', () => {
     const output = ['# branch.oid abc', '# branch.head main', '# branch.upstream origin/main', '# branch.ab +2 -1',
       '1 .M N... 100644 100644 100644 abc abc work.txt', '2 R. N... 100644 100644 100644 abc abc R100 new.txt', 'old.txt', '? untracked.txt', ''].join('\0')
-    expect(parsePorcelain(output)).toEqual({ branch: 'main', upstream: 'origin/main', ahead: 2, behind: 1, changedFiles: 3, unborn: false })
-    expect(parsePorcelain(['# branch.oid (initial)', '# branch.head (detached)', ''].join('\0'))).toEqual({ branch: null, upstream: null, ahead: 0, behind: 0, changedFiles: 0, unborn: true })
+    expect(parsePorcelain(output)).toEqual({ branch: 'main', upstream: 'origin/main', ahead: 2, behind: 1, changedFiles: 3, unborn: false, oid: 'abc' })
+    expect(parsePorcelain(['# branch.oid (initial)', '# branch.head (detached)', ''].join('\0'))).toEqual({ branch: null, upstream: null, ahead: 0, behind: 0, changedFiles: 0, unborn: true, oid: null })
   })
 })

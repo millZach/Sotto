@@ -692,12 +692,10 @@ export class WorkspaceHost implements AgentHost {
     if (interval <= 0 || Date.now() - this.gitStatusPolledAt < interval || !this.gitStatusOptions.foreground()) return
     this.gitStatusPolling = true
     this.gitStatusPolledAt = Date.now()
-    try {
-      for (const threadId of [...this.watched.keys()]) {
-        if (this.stopping) break
-        await this.readRemoteStatus(threadId)
-      }
-    } finally { this.gitStatusPolling = false }
+    // Every watched thread at once, so the pull request lookups of one repository arrive together and share one
+    // GitHub query (#820). Each thread's own reads still run in its lane, one after another.
+    try { await Promise.all([...this.watched.keys()].map(threadId => this.readRemoteStatus(threadId, { background: true }))) }
+    finally { this.gitStatusPolling = false }
   }
   /**
    * The folder's status with its remote half, for the timer, a refresh and after a Git action. The slow calls, a
@@ -705,9 +703,10 @@ export class WorkspaceHost implements AgentHost {
    * waits for them (issue #766); they run in the folder, and a folder being removed holds them off and waits for them
    * (`reclaimThreadWorktree`). A local read in the lane comes first, so the remote calls ask about the branch the folder
    * is on now, even after a switch made outside Sotto; a local read in the lane then takes what they brought, and
-   * decides an automatic pull. Never rejects.
+   * decides an automatic pull. `background` is the timer's read, which GitHub may hold back (#820); every other is the
+   * user's or a Git action's. Never rejects.
    */
-  private readRemoteStatus(threadId: string): Promise<void> {
+  private readRemoteStatus(threadId: string, options: { readonly background?: boolean } = {}): Promise<void> {
     const read = (async () => {
       const source = this.gitStatus
       if (!source || this.statusFolder(threadId) === undefined || this.stopping) return
@@ -718,7 +717,7 @@ export class WorkspaceHost implements AgentHost {
           await this.onLane(threadId, () => this.readGitStatus(threadId, false))
           const folder = this.statusFolder(threadId)
           if (folder === undefined || this.stopping) return
-          if (await source.readRemote(folder)) break
+          if (await source.readRemote(folder, options)) break
         }
       }
       await this.onLane(threadId, () => this.readGitStatus(threadId, true))

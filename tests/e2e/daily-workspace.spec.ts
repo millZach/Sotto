@@ -59,6 +59,10 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
   git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Owned daily baseline')
   const original = git(repository, 'rev-parse', 'HEAD')
   git(repository, 'init', '--bare', '-q', remote); git(repository, 'remote', 'add', 'origin', remote)
+  // origin is written as GitHub's URL and Git rewrites it to the owned remote: the status reader asks gh only about a
+  // repository on GitHub (#820).
+  git(repository, 'config', `url.${remote}.insteadOf`, 'https://github.com/sotto-fixture/owned')
+  git(repository, 'remote', 'set-url', 'origin', 'https://github.com/sotto-fixture/owned')
   const server = createServer((_request, response) => { response.writeHead(200, { 'content-type': 'text/html' }); response.end('<!doctype html><title>Daily local preview</title><h1>Hello, daily workspace</h1>') })
   await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
   const address = server.address()

@@ -110,6 +110,10 @@ test('the Git action commits and pushes from the header, asks before the default
   git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Owned baseline')
   git(directory, 'init', '--bare', '-q', '-b', 'main', remote); git(repository, 'remote', 'add', 'origin', remote)
   git(repository, 'push', '-q', '-u', 'origin', 'main'); git(repository, 'remote', 'set-head', 'origin', 'main')
+  // origin is written as GitHub's URL and Git rewrites it to the owned remote: the status reader asks gh only about a
+  // repository on GitHub (#820).
+  git(repository, 'config', `url.${remote}.insteadOf`, 'https://github.com/sotto-fixture/owned')
+  git(repository, 'remote', 'set-url', 'origin', 'https://github.com/sotto-fixture/owned')
   git(directory, 'clone', '-q', '-b', 'main', remote, other)
   await writeFile(join(plain, 'notes.txt'), 'Not a repository yet\n')
   const previous = { script: process.env.SOTTO_E2E_GH_SCRIPT, executable: process.env.SOTTO_E2E_GH_EXECUTABLE, state: process.env.FAKE_GH_STATE }
