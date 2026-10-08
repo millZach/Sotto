@@ -71,13 +71,17 @@ const rawPullRequestSchema = z.object({
   latestOpinionatedReviews: loose(z.object({ nodes: loose(z.array(loose(z.object({ state: loose(z.string()), url: loose(z.string()), author: loose(z.object({ login: loose(z.string()) })) })))) })),
   commits: loose(z.object({ nodes: loose(z.array(loose(z.object({ commit: loose(z.object({ statusCheckRollup: loose(z.object({ contexts: loose(z.object({ nodes: loose(z.array(loose(rawContextSchema))) })) })) })) })))) })),
 })
-const rawAnswerSchema = z.object({ data: z.object({
-  rateLimit: rateLimitSchema, viewer: loose(z.object({ login: loose(z.string()) })),
-  repository: z.object({
-    mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
-    pullRequest: loose(rawPullRequestSchema),
-  }).nullable(),
-}) })
+const rawAnswerSchema = z.object({
+  data: z.object({
+    rateLimit: rateLimitSchema, viewer: loose(z.object({ login: loose(z.string()) })),
+    repository: z.object({
+      mergeCommitAllowed: loose(z.boolean()), squashMergeAllowed: loose(z.boolean()), rebaseMergeAllowed: loose(z.boolean()), autoMergeAllowed: loose(z.boolean()),
+      pullRequest: loose(rawPullRequestSchema),
+    }).nullable(),
+  }),
+  /** Where GitHub refused a part of the read: each error's path names the field it left empty. */
+  errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
+})
 /** A check in the shape `gh pr view --json statusCheckRollup` gave it, which `checkOf` reads. */
 type RawCheck = Omit<z.infer<typeof rawContextSchema>, 'checkSuite'> & { readonly workflowName?: string | null | undefined }
 interface MergeSettings { readonly at: number; readonly mergeMethods: GitPullRequestMergeMethod[]; readonly autoMergeAllowed: boolean }
@@ -267,12 +271,14 @@ export class GitPullRequests {
     const review = raw.reviewDecision?.toUpperCase()
     const mergeable = raw.mergeable?.toUpperCase()
     const contexts = raw.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.nodes ?? []
+    // No rollup is a pull request with no checks; a refused one leaves the same gap, and an error whose path names it.
+    const checksUnknown = !raw.commits || (answer.errors ?? []).some(error => error?.path?.includes('commits') === true)
     return {
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
       baseBranch: raw.baseRefName ?? '', headBranch: raw.headRefName ?? '', crossRepository: raw.isCrossRepository === true,
       reviewDecision: review === 'APPROVED' ? 'approved' : review === 'CHANGES_REQUESTED' ? 'changes_requested' : review === 'REVIEW_REQUIRED' ? 'review_required' : null,
       mergeable: mergeable === 'MERGEABLE' ? 'mergeable' : mergeable === 'CONFLICTING' ? 'conflicting' : 'unknown',
-      checks: contexts.flatMap(node => node ? [checkOf(rawCheckOf(node))] : []).slice(0, 200),
+      checks: checksUnknown ? [] : contexts.flatMap(node => node ? [checkOf(rawCheckOf(node))] : []).slice(0, 200), checksUnknown,
       reviews: reviewsOf(raw.latestOpinionatedReviews?.nodes ?? []),
       mergeMethods: methods.mergeMethods, autoMergeAllowed: methods.autoMergeAllowed,
       autoMerge: raw.autoMergeRequest ? { method: methodOf(raw.autoMergeRequest.mergeMethod) } : null,

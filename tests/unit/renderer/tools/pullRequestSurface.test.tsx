@@ -27,7 +27,7 @@ const check = (name: string, status: GitPullRequestCheck['status'], url: string 
 const review = (author: string, state: GitPullRequestReview['state'], url: string | null = `${URL}#pullrequestreview-${author}`): GitPullRequestReview => ({ author, state, url })
 function detail(change: Partial<GitPullRequestDetail> = {}): GitPullRequestDetail {
   return { number: 74, url: URL, title: 'Make the greeting friendlier', body: 'Says hello.\n\n- One change', state: 'open', draft: false, baseBranch: 'main', headBranch: 'feat/greeting',
-    crossRepository: false, reviewDecision: 'approved', reviews: [review('mira', 'approved')], mergeable: 'mergeable', checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1')],
+    crossRepository: false, reviewDecision: 'approved', reviews: [review('mira', 'approved')], mergeable: 'mergeable', checks: [check('CI / build', 'success', 'https://github.com/o/r/actions/runs/1')], checksUnknown: false,
     mergeMethods: ['merge', 'squash', 'rebase'], autoMergeAllowed: true, autoMerge: null, mergedAt: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: true, ...change }
 }
 const git = (change: Record<string, unknown> = {}) => ({ isRepository: true, branch: 'feat/greeting', upstream: 'origin/feat/greeting', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false,
@@ -122,6 +122,10 @@ describe('the merge checklist, read from the pull request', () => {
     expect(checklistCount(noted)).toBe('4 of 5 done, 1 does not block')
     expect(checklistCount(checklist(detail()))).toBe('5 of 5 done')
     expect(checklistCount(checklist(detail({ draft: true })))).toBe('4 of 5 done')
+    // Checks GitHub refused to show are not "No checks": the line says they could not be read, and is not counted as done.
+    const refused = checklist(detail({ checks: [], checksUnknown: true }))
+    expect([refused[0]!.label, refused[0]!.tone, refused[0]!.why]).toEqual(['Checks passing', 'unknown', 'GitHub did not let Sotto read the checks'])
+    expect(checklistCount(refused)).toBe('4 of 5 done, 1 does not block')
     // Where no review is required, a request for changes still standing is said and linked, in whichever order it came,
     // and holds the merge back no more than GitHub does.
     const openAfter = checklist(detail({ reviewDecision: null, reviews: [review('mira', 'approved'), review('ola', 'changes_requested')] }))

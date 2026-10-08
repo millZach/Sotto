@@ -1,6 +1,6 @@
 import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestLinkSource, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 
-type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'reviewDecision' | 'reviews' | 'mergeable' | 'behindBy' | 'canUpdateBranch' | 'baseBranch' | 'url'>
+type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'checksUnknown' | 'reviewDecision' | 'reviews' | 'mergeable' | 'behindBy' | 'canUpdateBranch' | 'baseBranch' | 'url'>
 
 /**
  * How a line of the merge checklist stands: done, failed (something must change), running (GitHub is still
@@ -27,8 +27,10 @@ export interface ChecklistLine {
 const FAILED: ReadonlySet<GitPullRequestCheck['status']> = new Set(['failure', 'cancelled'])
 const plural = (count: number, one: string, many: string): string => count === 1 ? one : many
 
-function checksLine(checks: readonly GitPullRequestCheck[]): ChecklistLine {
+function checksLine(checks: readonly GitPullRequestCheck[], unknown: boolean): ChecklistLine {
   const line = { id: 'checks', label: 'Checks passing' } as const
+  // Refused checks are not no checks: the line says they could not be read, and is not counted as done.
+  if (unknown) return { ...line, tone: 'unknown', why: 'GitHub did not let Sotto read the checks', fix: null }
   if (checks.length === 0) return { ...line, label: 'No checks', tone: 'done', why: 'GitHub reports none for this pull request', fix: null }
   const failed = checks.filter(check => FAILED.has(check.status))
   const first = failed[0]
@@ -108,7 +110,7 @@ function readyLine(detail: Detail): ChecklistLine {
  * one press that fixes it where there is one.
  */
 export function checklist(detail: Detail): ChecklistLine[] {
-  return [checksLine(detail.checks), reviewLine(detail), upToDateLine(detail), conflictsLine(detail), readyLine(detail)]
+  return [checksLine(detail.checks, detail.checksUnknown), reviewLine(detail), upToDateLine(detail), conflictsLine(detail), readyLine(detail)]
 }
 /** A line that holds the merge back. An unknown one does not: GitHub decides when the merge is pressed. */
 export const holdsBack = (line: ChecklistLine): boolean => line.tone === 'failed' || line.tone === 'running' || line.tone === 'todo'

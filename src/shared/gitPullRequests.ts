@@ -85,6 +85,11 @@ export const gitPullRequestDetailSchema = z.object({
   reviews: z.array(gitPullRequestReviewSchema).max(50).default([]),
   mergeable: z.enum(['mergeable', 'conflicting', 'unknown']),
   checks: z.array(gitPullRequestCheckSchema).max(200),
+  /**
+   * GitHub refused the checks to this sign-in, so `checks` is empty and says nothing about them, unlike a pull request
+   * GitHub reports no checks for. A host on an earlier build answers without it.
+   */
+  checksUnknown: z.boolean().default(false),
   /** The methods this repository allows; all three when GitHub did not say, and a press is left to GitHub to refuse. */
   mergeMethods: z.array(gitPullRequestMergeMethodSchema).max(3),
   /** Whether the repository allows auto-merge; true when GitHub did not say, and a press is left to GitHub to refuse. */

@@ -89,6 +89,20 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const { service } = scripted(() => Object.defineProperty(new Error("gh: Could not resolve head ref 'refs/pull/74/head'."), 'stdout', { value: partial }))
     await expect(service.view('C:/repo', URL_74)).resolves.toMatchObject({ number: 74, behindBy: null, mergeMethods: ['merge', 'squash'] })
   })
+  it('tells checks GitHub refused from no checks at all', async () => {
+    const none = scripted(args => reads(() => answerJson({ pull: { commits: { nodes: [{ commit: { statusCheckRollup: null } }] } } }))(args) ?? new Error('unexpected'))
+    await expect(none.service.view('C:/repo', URL_74)).resolves.toMatchObject({ checks: [], checksUnknown: false })
+    // GitHub answers the rest and names the part it refused; gh fails with that answer on its output.
+    const body = JSON.parse(answerJson({ pull: { commits: null } })) as Record<string, unknown>
+    const partial = JSON.stringify({ ...body, errors: [{ type: 'FORBIDDEN', path: ['repository', 'pullRequest', 'commits'], message: 'Resource not accessible by integration' }] })
+    const refused = scripted(() => Object.defineProperty(new Error('gh: Resource not accessible by integration'), 'stdout', { value: partial }))
+    await expect(refused.service.view('C:/repo', URL_74)).resolves.toMatchObject({ number: 74, checks: [], checksUnknown: true })
+    const rollup = JSON.parse(answerJson()) as { data: { repository: { pullRequest: { commits: { nodes: Array<{ commit: { statusCheckRollup: unknown } }> } } } } }
+    rollup.data.repository.pullRequest.commits.nodes[0]!.commit.statusCheckRollup = null
+    const deep = JSON.stringify({ ...rollup, errors: [{ path: ['repository', 'pullRequest', 'commits', 'nodes', 0, 'commit', 'statusCheckRollup'] }] })
+    const refusedRollup = scripted(() => Object.defineProperty(new Error('gh: Resource not accessible by integration'), 'stdout', { value: deep }))
+    await expect(refusedRollup.service.view('C:/repo', URL_74)).resolves.toMatchObject({ checks: [], checksUnknown: true })
+  })
   it('names who approved or asked for changes, with GitHub links only, and leaves out comments and reviewers GitHub no longer names', async () => {
     const reviews = [
       { state: 'APPROVED', url: 'https://github.com/sotto-fixture/owned/pull/74#pullrequestreview-1', author: { login: 'mira' } },
