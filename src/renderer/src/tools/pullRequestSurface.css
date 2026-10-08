@@ -62,6 +62,19 @@
 .pr-surface__finished strong { display: block; color: var(--tt-text); font-weight: 500; }
 .pr-surface__finished span { color: var(--tt-text-muted); font-size: 13px; }
 
+/* Babysitting (ADR-0061, variant C): a line docked above Merge while the thread babysits, in the accent's wash, with Stop;
+   once it ended on its own, the same line in quiet text under what happened to the pull request. */
+.pr-surface__babysit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; padding: 8px 8px 8px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); }
+.pr-surface__babysit > svg { flex: none; color: var(--tt-accent-text); }
+.pr-surface__babysit-text { flex: 1 1 160px; min-width: 0; }
+.pr-surface__babysit-text strong { display: block; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.pr-surface__babysit-text span { display: block; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.pr-surface__babysit .tt-button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.pr-surface__babysit[data-state='ended'] { padding-right: 12px; border-color: var(--tt-hairline); background: transparent; }
+.pr-surface__babysit[data-state='ended'] > svg { color: var(--tt-text-muted); }
+.pr-surface__babysit[data-state='ended'] .pr-surface__babysit-text span { color: var(--tt-text-muted); }
+.pr-surface__finished + .pr-surface__babysit { margin: 12px 0 0; }
+
 /* The folds: Description, Linked pull requests. */
 .pr-surface__fold { border-top: 1px solid var(--tt-hairline); }
 .pr-surface__dock + .pr-surface__fold { margin-top: 6px; }

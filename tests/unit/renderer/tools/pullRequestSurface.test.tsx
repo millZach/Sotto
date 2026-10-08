@@ -37,7 +37,7 @@ function thread(change: Partial<AgentThread> = {}): AgentThread {
     worktree: { mode: 'shared', status: 'ready', path: 'C:/app', branch: 'feat/greeting', git: git({ pullRequest: { number: 74, title: 'Make the greeting friendlier', url: URL, state: 'open', draft: false } }) },
     ...change } as AgentThread
 }
-function mount(options: { detail?: GitPullRequestRead | ((request: { reference?: string }) => GitPullRequestRead); thread?: AgentThread; result?: Partial<AgentState> } = {}) {
+function mount(options: { detail?: GitPullRequestRead | ((request: { reference?: string }) => GitPullRequestRead); thread?: AgentThread; result?: Partial<AgentState>; babysit?: { agent: string } } = {}) {
   const gitPullRequest = vi.fn(async (request: { threadId: string; reference?: string }) => typeof options.detail === 'function' ? options.detail(request) : options.detail === undefined ? detail() : options.detail)
   const openExternalLink = vi.fn(async () => ({ ok: true }))
   const writeText = vi.fn(async () => undefined)
@@ -45,7 +45,7 @@ function mount(options: { detail?: GitPullRequestRead | ((request: { reference?:
   vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ notice: 'Pull request merged.', error: null, ...options.result }) as AgentState)
   const onStatus = vi.fn()
-  const view = render(<PullRequestSurface thread={options.thread ?? thread()} command={command} onStatus={onStatus} />)
+  const view = render(<PullRequestSurface thread={options.thread ?? thread()} command={command} onStatus={onStatus} babysit={options.babysit} />)
   return { ...view, command, gitPullRequest, openExternalLink, writeText, onStatus }
 }
 const sent = (command: ReturnType<typeof mount>['command']) => command.mock.calls.map(call => call[0])
@@ -492,4 +492,58 @@ it('explains how to recover when copying the pull request link fails', async () 
   await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Could not copy the link. Open on GitHub and copy the address from your browser.'))
   fireEvent.click(screen.getByRole('button', { name: 'Open on GitHub' }))
   expect(openExternalLink).toHaveBeenCalledWith(URL)
+})
+
+describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
+  const startedAt = new Date(Date.now() - 60_000).toISOString()
+  const babysat = (startedBy: 'agent' | 'user') => thread({ babysitting: [{ url: URL, number: 74, startedBy, startedAt }] })
+  it('offers Babysit pull request in the ··· menu, after the merge items, and says what the host answered', async () => {
+    const { command } = mount({ babysit: { agent: 'Claude Code' }, result: { notice: 'Babysitting PR #74.' } })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      'Convert to draft', 'Merge when ready (auto-merge)', 'Babysit pull request', 'Copy link', 'Link pull request', 'Close pull request'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Babysit pull request' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'babysit-pull-request', threadId: 'thread-1', url: URL }]))
+    expect(await screen.findByRole('status')).toHaveTextContent('Babysitting PR #74.')
+  })
+
+  it('docks the line above Merge while it babysits, and stops it with Stop', async () => {
+    const { command } = mount({ babysit: { agent: 'Claude Code' }, thread: babysat('agent'), result: { notice: 'Stopped babysitting PR #74.' } })
+    await opened()
+    const line = screen.getByRole('group', { name: /^Babysitting since / })
+    expect(line).toHaveTextContent('Started by Claude Code. Sotto sends this thread a wake-up when #74 needs it.')
+    // Docked under the checklist, before Merge in the reading order.
+    expect(line.compareDocumentPosition(mergeButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    fireEvent.click(within(line).getByRole('button', { name: 'Stop babysitting #74' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'stop-babysitting', threadId: 'thread-1', url: URL }]))
+    expect(await screen.findByRole('status')).toHaveTextContent('Stopped babysitting PR #74.')
+  })
+
+  it('says the host’s refusal in its own words', async () => {
+    mount({ babysit: { agent: 'Codex' }, result: { error: 'Link this pull request to the thread first. Nothing was started.' } })
+    await opened()
+    await menu('Babysit pull request')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Link this pull request to the thread first. Nothing was started.')
+  })
+
+  it('offers nothing where the host cannot babysit, still showing what the thread babysits', async () => {
+    mount({ thread: babysat('user') })
+    await opened()
+    expect(screen.getByRole('group', { name: /^Babysitting since / })).toHaveTextContent('Started by you.')
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
+  })
+
+  it('says babysitting ended and why under a merged pull request, and offers nothing to start', async () => {
+    const endedAt = new Date().toISOString()
+    mount({ babysit: { agent: 'Claude Code' }, thread: thread({ babysitEnded: [{ url: URL, number: 74, reason: 'merged', endedAt }] }), detail: detail({ state: 'merged', mergedAt: endedAt }) })
+    await opened()
+    expect(screen.getByRole('group', { name: 'Babysitting ended' })).toHaveTextContent(/Ended when #74 merged at /u)
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
+  })
 })
