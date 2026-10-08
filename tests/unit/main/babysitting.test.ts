@@ -498,7 +498,7 @@ describe('when GitHub cannot be read', () => {
     // A pull request GitHub answers nothing for is a failed read too.
     pull.number = 99
     for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
-    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', head: 'head-1', changes: [], ended: 'unreadable' }])
+    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', startedAt: at(0).replace('Z', '.000Z'), head: 'head-1', changes: [], ended: 'unreadable' }])
     expect(h.babysitter.list()).toEqual([])
     expect(h.events.filter(event => event === 'babysit-read-failed')).toHaveLength(2 * FAILED_READ_LIMIT - 1)
     expect(h.events.at(-1)).toBe('babysit-ended-unreadable')

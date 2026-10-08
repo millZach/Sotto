@@ -23,7 +23,8 @@ import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitComm
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
-import { GitPullRequests } from './gitPullRequests'
+import type { BabysitNews } from './babysitNews'
+import { GitPullRequests, pullRequestKey } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
@@ -187,6 +188,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
+  // A part of a wake-up may go only while the babysitting it is news of still stands, and an agent's only while the
+  // switch is on; a last wake-up for an ending goes regardless. Asked as the wake-up goes, whatever withdrawal managed.
+  const wakeUpDue = (threadId: string, news: BabysitNews): boolean => {
+    if (news.ended !== null) return true
+    if (news.startedBy === 'agent' && options.babysitting?.agentTool?.() === false) return false
+    const key = pullRequestKey(news.pullRequest.url)
+    return babysitter?.list(threadId).some(item => pullRequestKey(item.url) === key && item.startedBy === news.startedBy
+      && (news.startedAt === undefined || item.startedAt === news.startedAt)) ?? true
+  }
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
@@ -224,7 +234,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  if (babysitter) agentControl.useBabysitting(babysitter)
+  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }

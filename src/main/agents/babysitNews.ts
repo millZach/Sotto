@@ -77,6 +77,11 @@ export interface BabysitNews {
   readonly pullRequest: { readonly url: string; readonly number: number; readonly title: string | null }
   /** Who started babysitting it, so the wake-up can say how to stop. */
   readonly startedBy: BabysitStarter
+  /**
+   * When the babysitting it is news of started, so a wake-up about to go can tell that babysitting from one started
+   * again since. Absent from news queued before it was kept.
+   */
+  readonly startedAt?: string | undefined
   /** The head commit the news is about, when it was read. */
   readonly head: string | null
   readonly changes: readonly BabysitChange[]
