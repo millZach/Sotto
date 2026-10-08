@@ -11,14 +11,26 @@ export interface GitHubRepository { readonly host: string; readonly owner: strin
 
 /**
  * The GitHub repository a remote URL names: HTTPS, `git@host:` or `ssh://`, on github.com or a host whose name says
- * GitHub (an Enterprise server). Null for any other remote, a local path among them, which gh cannot be asked about.
+ * GitHub (an Enterprise server). The host is the one gh is asked through (`gitHubApiHost`), so an SSH alias for
+ * github.com is github.com. Null for any other remote, a local path among them, which gh cannot be asked about.
  */
 export function parseGitHubRemote(url: string): GitHubRepository | null {
   const match = /^(?:https:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/|(?:[^@/\s]+@)?([^/:\s]+):(?!\/)|ssh:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/iu.exec(url.trim())
   if (!match) return null
-  const host = (match[1] ?? match[2] ?? match[3] ?? '').toLowerCase()
-  if (!/github/u.test(host)) return null
-  return { host, owner: match[4]!, name: match[5]! }
+  const host = gitHubApiHost((match[1] ?? match[2] ?? match[3] ?? '').toLowerCase(), match[1] === undefined)
+  return host ? { host, owner: match[4]!, name: match[5]! } : null
+}
+/**
+ * The GitHub host gh is asked through for a remote on `host`, or null for a host that is not GitHub. github.com and any
+ * name under it, `ssh.github.com` (GitHub's SSH over port 443) among them, are github.com, as gh itself takes them. Over
+ * SSH, a name from `~/.ssh/config` that stands for GitHub, the usual way to keep two accounts apart (`github-work`,
+ * `github.com-work`), names no API host of its own and is read through github.com (T3's `gitHubApiHostForRemote`).
+ * Any other host whose name says GitHub is an Enterprise server, asked as itself.
+ */
+function gitHubApiHost(host: string, ssh: boolean): string | null {
+  if (host === 'github.com' || host.endsWith('.github.com')) return 'github.com'
+  if (ssh && ((!host.includes('.') && host.includes('github')) || /^github\.com[-_]/u.test(host))) return 'github.com'
+  return host.includes('github') ? host : null
 }
 export const sameRepository = (a: GitHubRepository, b: GitHubRepository): boolean =>
   a.host === b.host && a.owner.toLowerCase() === b.owner.toLowerCase() && a.name.toLowerCase() === b.name.toLowerCase()
@@ -39,11 +51,27 @@ export async function readRemotes(run: RunGitCommand, cwd: string): Promise<Map<
   }
   return remotes
 }
-/** The repository `gh pr list` would read in this folder: the remote `gh repo set-default` marked, else `origin`. */
+/**
+ * The repository gh reads pull requests from in this folder, picked the way gh picks it without a prompt (T3's
+ * `selectGitHubBaseRepository`): gh orders the remotes `upstream`, `github`, `origin` (in any case), then the rest as
+ * they are configured. The first remote `gh repo set-default` marked wins: `base` names that remote's own repository,
+ * and `owner/name` another repository on the remote's host. With no mark, the first remote in that order. A fork whose
+ * parent is `upstream` therefore reads the parent's pull requests, as `gh pr list` there does. Only remotes on GitHub count.
+ */
 export function baseRepository(remotes: ReadonlyMap<string, { url: string | null; ghResolved: string | null }>): GitHubRepository | null {
-  const marked = [...remotes].find(([, remote]) => remote.ghResolved === 'base')?.[1]
-  const url = marked?.url ?? remotes.get('origin')?.url
-  return url ? parseGitHubRemote(url) : null
+  const rank = (name: string): number => { const index = ['upstream', 'github', 'origin'].indexOf(name.toLowerCase()); return index === -1 ? 3 : index }
+  const ordered = [...remotes].flatMap(([name, remote]) => {
+    const repository = remote.url ? parseGitHubRemote(remote.url) : null
+    return repository ? [{ name, repository, mark: remote.ghResolved?.trim() || null }] : []
+  }).sort((a, b) => rank(a.name) - rank(b.name))
+  const marked = ordered.find(remote => remote.mark !== null)
+  if (marked?.mark === 'base') return marked.repository
+  if (marked?.mark) {
+    // gh writes `owner/name`, and reads `host/owner/name` too; either way the remote's own host is the one it asks.
+    const parts = marked.mark.split('/')
+    if ((parts.length === 2 || parts.length === 3) && parts.every(Boolean)) return { host: marked.repository.host, owner: parts.at(-2)!, name: parts.at(-1)! }
+  }
+  return ordered[0]?.repository ?? null
 }
 
 /** Asked by the timer, which may wait, or by the user (a refresh, a Git action, the Pull request surface), who should not. */

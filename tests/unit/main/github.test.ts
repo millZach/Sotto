@@ -12,10 +12,32 @@ describe('the GitHub repository a remote names', () => {
     expect(parseGitHubRemote('C:/remotes/owned.git')).toBeNull()
     expect(parseGitHubRemote('/srv/git/owned.git')).toBeNull()
   })
-  it('takes the remote gh repo set-default marked over origin', () => {
-    const remotes = new Map([['origin', { url: 'https://github.com/me/fork', ghResolved: null }], ['upstream', { url: 'https://github.com/them/repo', ghResolved: 'base' }]])
-    expect(baseRepository(remotes)).toMatchObject({ owner: 'them', name: 'repo' })
-    expect(baseRepository(new Map([['origin', { url: 'https://github.com/me/fork', ghResolved: null }]]))).toMatchObject({ owner: 'me', name: 'fork' })
+  it('reads an SSH alias for github.com, and the port-443 SSH host, as github.com', () => {
+    expect(parseGitHubRemote('git@github-work:me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(parseGitHubRemote('git@github.com-work:me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(parseGitHubRemote('ssh://git@ssh.github.com:443/me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(parseGitHubRemote('git@github.company.com:me/repo.git')).toEqual({ host: 'github.company.com', owner: 'me', name: 'repo' })
+    expect(parseGitHubRemote('git@gitlab-work:me/repo.git')).toBeNull()
+  })
+})
+
+describe('the repository gh reads pull requests from', () => {
+  const remotes = (...entries: [string, string, string?][]) => new Map(entries.map(([name, url, ghResolved]) => [name, { url, ghResolved: ghResolved ?? null }]))
+  it('takes the remote gh repo set-default marked over the others', () => {
+    expect(baseRepository(remotes(['origin', 'https://github.com/me/fork'], ['upstream', 'https://github.com/them/repo', 'base']))).toMatchObject({ owner: 'them', name: 'repo' })
+    expect(baseRepository(remotes(['upstream', 'https://github.com/them/repo'], ['origin', 'https://github.com/me/fork', 'base']))).toMatchObject({ owner: 'me', name: 'fork' })
+  })
+  it('reads a mark that names another repository on the host of the marked remote', () => {
+    expect(baseRepository(remotes(['origin', 'git@github-work:me/fork.git', 'them/repo']))).toEqual({ host: 'github.com', owner: 'them', name: 'repo' })
+    expect(baseRepository(remotes(['origin', 'https://github.example.com/me/fork', 'github.example.com/them/repo']))).toEqual({ host: 'github.example.com', owner: 'them', name: 'repo' })
+  })
+  it('without a mark, takes upstream, then github, then origin, then the first remote, as gh does', () => {
+    expect(baseRepository(remotes(['origin', 'https://github.com/me/fork'], ['upstream', 'https://github.com/them/repo']))).toMatchObject({ owner: 'them', name: 'repo' })
+    expect(baseRepository(remotes(['origin', 'https://github.com/me/fork'], ['GitHub', 'https://github.com/them/repo']))).toMatchObject({ owner: 'them', name: 'repo' })
+    expect(baseRepository(remotes(['mine', 'https://github.com/me/other'], ['origin', 'https://github.com/me/fork']))).toMatchObject({ owner: 'me', name: 'fork' })
+    expect(baseRepository(remotes(['mine', 'https://github.com/me/other'], ['theirs', 'https://github.com/them/repo']))).toMatchObject({ owner: 'me', name: 'other' })
+    expect(baseRepository(remotes(['upstream', 'https://gitlab.com/them/repo'], ['origin', 'https://github.com/me/fork']))).toMatchObject({ owner: 'me', name: 'fork' })
+    expect(baseRepository(remotes(['origin', 'C:/remotes/owned.git']))).toBeNull()
   })
 })
 

@@ -587,9 +587,9 @@ export class GitStatusReader implements GitStatusSource {
 
   /**
    * Where the branch's pull requests are asked about. The repository is the one gh reads pull requests from in this
-   * folder (the remote `gh repo set-default` marked, else `origin`); the head is the branch's name where Git pushes it
-   * (`branch.<name>.pushRemote`, `remote.pushDefault`, its upstream's remote, `origin`), and so is the head's
-   * repository. Null for a branch nobody has pushed, or a repository not on GitHub.
+   * folder (`baseRepository`: the remote `gh repo set-default` marked, else `upstream`, `github`, `origin`); the head
+   * is the branch's name where Git pushes it (`branch.<name>.pushRemote`, `remote.pushDefault`, its upstream's remote,
+   * `origin`), and so is the head's repository. Null for a branch nobody has pushed, or a repository not on GitHub.
    */
   private async headTarget(cwd: string, branch: string, upstream: string | null): Promise<HeadTarget | null> {
     const listing = await this.git(cwd, ['for-each-ref', '--format=%(refname)%09%(push)%09%(push:remotename)', `refs/heads/${branch}`, `refs/remotes/*/${branch}`]).catch(() => '')

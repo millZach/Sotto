@@ -143,6 +143,19 @@ describe('the head repository matches', () => {
     // Asked of the repository pull requests are opened against, not of the fork.
     expect(f.calls[0]).toEqual(expect.arrayContaining(['owner=sotto-fixture', 'name=owned']))
   })
+  it('asks the upstream repository of a fork cloned as origin, as gh does without a default set', async () => {
+    const f = harness({ 'C:/fork': { common: 'C:/fork/.git', branch: 'feature/fix',
+      remotes: { origin: 'https://github.com/me/owned.git', upstream: 'https://github.com/sotto-fixture/owned.git' } } },
+    args => headsAnswer(args, [{ head: 'feature/fix', number: 52, owner: 'me', cross: true }]))
+    expect((await f.round('C:/fork')).pullRequest?.number).toBe(52)
+    expect(f.calls[0]).toEqual(expect.arrayContaining(['owner=sotto-fixture', 'name=owned']))
+  })
+  it('asks github.com about a remote behind an SSH alias for it', async () => {
+    const f = harness({ 'C:/work': { common: 'C:/work/.git', branch: 'feature/fix', remotes: { origin: 'git@github-work:sotto-fixture/owned.git' } } },
+      args => headsAnswer(args, [{ head: 'feature/fix', number: 53 }]))
+    expect((await f.round('C:/work')).pullRequest?.number).toBe(53)
+    expect(f.calls[0]).not.toContain('--hostname')
+  })
 })
 
 describe('the rate limit is read and respected', () => {
