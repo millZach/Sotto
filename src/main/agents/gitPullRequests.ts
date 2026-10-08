@@ -239,6 +239,7 @@ export class GitPullRequests {
     const args = ['api', 'graphql', ...repository.host === 'github.com' ? [] : ['--hostname', repository.host], '-f', `query=${pullRequestQuery(!settings)}`,
       '-f', `owner=${repository.owner}`, '-f', `name=${repository.name}`, '-F', `number=${address.number}`, '-f', `pullRef=refs/pull/${address.number}/head`]
     let answer: z.infer<typeof rawAnswerSchema>
+    const asked = this.rateLimit.asking()
     try { answer = rawAnswerSchema.parse(JSON.parse(await this.gh(cwd, args))) }
     catch (error) {
       if (error instanceof z.ZodError || error instanceof SyntaxError) throw new GitPullRequestRefusal('GitHub answered in a form Sotto could not read. Refresh to try again.')
@@ -250,7 +251,7 @@ export class GitPullRequests {
       if (!partial) throw new GitPullRequestRefusal(`Could not read the pull request. ${reasonOf(error) || 'Check gh authentication and network access.'}`.trim())
       answer = partial
     }
-    this.rateLimit.answered(repository.host, answer.data.rateLimit, answer.data.viewer?.login ?? null)
+    this.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
     const raw = answer.data.repository?.pullRequest
     if (!answer.data.repository || !raw) throw new GitPullRequestRefusal(`Could not read the pull request. GitHub has no pull request #${address.number} in ${repository.owner}/${repository.name} that your gh sign-in can see.`)
     const methods = settings ?? this.keepMergeSettings(settingsKey, answer.data.repository)

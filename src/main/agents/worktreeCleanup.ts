@@ -242,6 +242,7 @@ export async function githubPullRequestMerged(cwd: string, branch: string, githu
   const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
   const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
   if (retryAt !== null) throw new GitHubRateLimited(retryAt)
+  const asked = github && host ? github.rateLimit.asking() : 0
   const merged = await new Promise<boolean>((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
     execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout, stderr) => {
@@ -250,7 +251,7 @@ export async function githubPullRequestMerged(cwd: string, branch: string, githu
         if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
         reject(error); return
       }
-      if (github && host) github.rateLimit.answered(host, null)
+      if (github && host) github.rateLimit.answered(host, asked, null)
       try {
         const prs: unknown = JSON.parse(stdout)
         accept(Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip))

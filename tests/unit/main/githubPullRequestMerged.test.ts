@@ -58,7 +58,7 @@ describe('within the sign-in\'s GitHub rate limit (#820)', () => {
   })
   it('asks nothing while the reserve is reached, and asks once it resets', async () => {
     const f = shared()
-    f.rateLimit.answered('github.com', { limit: 5000, remaining: 100, resetAt: f.at(60_000) })
+    f.rateLimit.answered('github.com', f.rateLimit.asking(), { limit: 5000, remaining: 100, resetAt: f.at(60_000) })
     prs = [{ headRefOid: tip }]
     await expect(githubPullRequestMerged('repo', 'feature', f.github)).rejects.toBeInstanceOf(GitHubRateLimited)
     expect(execFile).not.toHaveBeenCalled()

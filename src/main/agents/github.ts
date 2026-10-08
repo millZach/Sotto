@@ -190,7 +190,11 @@ const PAUSE_BASE_MS = 30_000
 const PAUSE_CAP_MS = 15 * 60_000
 
 export type GitHubRateLimitEvent = 'github-rate-limited' | 'github-reserve-reached'
-interface HostRateLimit { login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number }
+interface HostRateLimit {
+  login: string | null; reading: { limit: number; remaining: number; resetAt: number } | null; pauseUntil: number; failures: number; reserveLogged: number
+  /** The `asking` mark current when the last refusal paused the host: only an answer to a question sent after it ends the pause. */
+  pausedAt: number
+}
 
 /**
  * The GitHub rate limit of each host's sign-in, as GitHub last reported it, and the pause after it refused. One per
@@ -200,17 +204,20 @@ interface HostRateLimit { login: string | null; reading: { limit: number; remain
  * - A read the user asked for may spend the reserve and goes through a pause; only a rate limit GitHub last reported
  *   with no points left refuses it, until the reset.
  * - A rate-limited answer pauses background reads until the reset GitHub gave, or, with none known, for 30 seconds
- *   doubling up to 15 minutes. Any answer GitHub gives ends the pause.
+ *   doubling up to 15 minutes. An answer to a question sent after the refusal ends the pause; one sent before it, which
+ *   GitHub answered before it began refusing, does not.
  */
 export class GitHubRateLimit {
   private readonly hosts = new Map<string, HostRateLimit>()
   private readonly now: () => number
+  /** Counts questions and refusals in the order they happen, so an answer can be placed before or after a pause. */
+  private sequence = 0
   constructor(private readonly options: { readonly now?: () => number; readonly log?: (event: GitHubRateLimitEvent) => void } = {}) {
     this.now = options.now ?? (() => Date.now())
   }
   private entry(host: string): HostRateLimit {
     let entry = this.hosts.get(host)
-    if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0 }; this.hosts.set(host, entry) }
+    if (!entry) { entry = { login: null, reading: null, pauseUntil: 0, failures: 0, reserveLogged: 0, pausedAt: 0 }; this.hosts.set(host, entry) }
     return entry
   }
   /** When a question of this kind may be asked of `host`, or null when it may be asked now. */
@@ -228,15 +235,19 @@ export class GitHubRateLimit {
     }
     return null
   }
+  /** Marks a question about to be sent. Its answer hands the mark to `answered`, which places it before or after a pause. */
+  asking(): number { return ++this.sequence }
   /**
-   * GitHub answered: the pause ends, and the reading it gave, if any, is kept. An answer from another sign-in on the same
-   * host is another rate limit, so what was known of the last one is dropped.
+   * GitHub answered the question marked `asked` (`asking`): the reading it gave, if any, is kept, and the pause ends when
+   * the question went after the refusal that began it. A question sent before that refusal, answered late, says nothing
+   * about GitHub since, so the pause holds until its reset. An answer from another sign-in on the same host is another
+   * rate limit, so what was known of the last one is dropped.
    */
-  answered(host: string, reading: GitHubRateLimitReading | null | undefined, login?: string | null): void {
+  answered(host: string, asked: number, reading: GitHubRateLimitReading | null | undefined, login?: string | null): void {
     const entry = this.entry(host)
     if (login && entry.login && login.toLowerCase() !== entry.login.toLowerCase()) entry.reading = null
     if (login) entry.login = login
-    entry.pauseUntil = 0; entry.failures = 0
+    if (asked > entry.pausedAt) { entry.pauseUntil = 0; entry.failures = 0 }
     const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
     if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
   }
@@ -244,6 +255,7 @@ export class GitHubRateLimit {
   limited(host: string, message: string): number {
     const entry = this.entry(host)
     const now = this.now()
+    entry.pausedAt = ++this.sequence
     entry.failures++
     let until = now + Math.min(PAUSE_BASE_MS * 2 ** (entry.failures - 1), PAUSE_CAP_MS)
     // A primary limit lasts until the reset GitHub last gave. A read the user asks for still goes through, and says so if it is refused.

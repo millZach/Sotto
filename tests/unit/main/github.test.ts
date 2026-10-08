@@ -126,7 +126,7 @@ describe('the rate limit of a sign-in', () => {
   }
   it('holds the timer back below the reserve and lets the user through, until the reset', () => {
     const f = setup()
-    f.limit.answered('github.com', { limit: 5000, remaining: 499, resetAt: f.at(600_000) }, 'me')
+    f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 499, resetAt: f.at(600_000) }, 'me')
     expect(f.limit.retryAt('github.com', 'background')).toBe(f.now() + 600_000)
     expect(f.limit.retryAt('github.com', 'user')).toBeNull()
     expect(f.limit.retryAt('ghe.example.com', 'background')).toBeNull() // another host is another rate limit
@@ -136,18 +136,18 @@ describe('the rate limit of a sign-in', () => {
   })
   it('refuses even the user once GitHub reports nothing left, until the reset', () => {
     const f = setup()
-    f.limit.answered('github.com', { limit: 5000, remaining: 0, resetAt: f.at(60_000) }, 'me')
+    f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 0, resetAt: f.at(60_000) }, 'me')
     expect(f.limit.retryAt('github.com', 'user')).toBe(f.now() + 60_000)
   })
   it('forgets the reading of a sign-in that is no longer the one gh uses', () => {
     const f = setup()
-    f.limit.answered('github.com', { limit: 5000, remaining: 10, resetAt: f.at(600_000) }, 'me')
-    f.limit.answered('github.com', null, 'someone-else')
+    f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 10, resetAt: f.at(600_000) }, 'me')
+    f.limit.answered('github.com', f.limit.asking(), null, 'someone-else')
     expect(f.limit.retryAt('github.com', 'background')).toBeNull()
   })
   it('pauses until the reset after a primary limit, and logs only the event name', () => {
     const f = setup()
-    f.limit.answered('github.com', { limit: 5000, remaining: 3, resetAt: f.at(900_000) }, 'me')
+    f.limit.answered('github.com', f.limit.asking(), { limit: 5000, remaining: 3, resetAt: f.at(900_000) }, 'me')
     const until = f.limit.limited('github.com', 'GraphQL: API rate limit exceeded for user ID 1.')
     expect(until).toBe(f.now() + 900_000)
     expect(f.limit.retryAt('github.com', 'user')).toBeNull()

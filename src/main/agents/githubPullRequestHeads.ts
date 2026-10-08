@@ -129,6 +129,7 @@ export class PullRequestHeads {
       '-f', `query=${pullRequestsByHeadQuery(lookups.length)}`, '-f', `owner=${repository.owner}`, '-f', `name=${repository.name}`,
       ...lookups.flatMap((lookup, index) => ['-f', `h${index}=${lookup.head}`])]
     const options: GitCommandOptions = this.options.env ? { env: this.options.env } : {}
+    const asked = this.options.rateLimit.asking()
     const work = this.options.run(cwd, 'gh', args, options)
     this.options.track?.(cwds, work)
     let answer: z.infer<typeof answerSchema>
@@ -141,7 +142,7 @@ export class PullRequestHeads {
       for (const lookup of lookups) lookup.reject(failure)
       return
     }
-    this.options.rateLimit.answered(repository.host, answer.data.rateLimit, answer.data.viewer?.login ?? null)
+    this.options.rateLimit.answered(repository.host, asked, answer.data.rateLimit, answer.data.viewer?.login ?? null)
     lookups.forEach((lookup, index) => {
       const nodes = answer.data.repository?.[`h${index}`]?.nodes ?? []
       lookup.resolve(nodes.flatMap((node): HeadPullRequest[] => {
