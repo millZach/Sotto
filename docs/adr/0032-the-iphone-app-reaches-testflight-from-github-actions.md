@@ -2,6 +2,10 @@
 
 Accepted September 26, 2026, by the owner's choice. The owner develops on Windows and has no Mac, but has an Apple Developer Program membership and wants the iPhone app (#225) on their phone. An iPhone build has to be archived and signed by Xcode, which runs only on macOS. TestFlight was already the planned delivery path (ADR-0025, `docs/plans/ios-client.md`). This decides where the Mac work happens. It amends `docs/ci.md`, whose CI "never publishes and uses no secrets": that stays true of every workflow but this one.
 
+## October 8 amendment: only the export signs
+
+The archive step signed the app with an Apple Development certificate. A fresh runner holds none, so Xcode made a new one on every run, and on October 8 the account reached Apple's limit and the next archive was refused ("Your account has reached the maximum number of certificates"). `testflight.sh` now archives with signing turned off, and the export signs the build with the team's cloud-managed distribution certificate, which is made once and reused. The app has no entitlements, so an unsigned archive loses nothing the export needs. The development certificates the earlier runs made can be revoked under Certificates, Identifiers & Profiles; nothing uses them.
+
 ## Considered options
 
 **Rewrite the app with Expo.** Expo Go shows a React Native app on the phone within minutes without signing, but it throws away the SwiftUI client that compiles and passes its tests, reverses ADR-0025's choice of SwiftUI, and an installed build still needs EAS, which uploads the source to Expo's build servers. Rejected by the owner.
