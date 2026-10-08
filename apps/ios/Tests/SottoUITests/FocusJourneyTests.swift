@@ -800,6 +800,21 @@ import XCTest
         }
     }
 
+    /// A thread whose computer loses its connection keeps its messages on screen, with Reconnecting over the reply box,
+    /// rather than going back to "Reading this thread…".
+    func testAThreadStaysOnScreenWhileItsComputerReconnects() {
+        launch(Self.fixture + ["--ui-reconnecting"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        let reconnecting = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Reconnecting to Laptop")).firstMatch
+        XCTAssertTrue(reconnecting.waitForExistence(timeout: 10), "The reply box says the thread's computer is reconnecting")
+        XCTAssertTrue(threadText("Fix the tooltips first").exists, "The thread as last read stays on screen")
+        XCTAssertFalse(text("Reading this thread").exists)
+        capture("thread-reconnecting")
+    }
+
     func testFolderReadTimeoutInBothAppearances() {
         launch(Self.fixture + ["--ui-folder-timeout"])
         for appearance in ["dark", "light"] {

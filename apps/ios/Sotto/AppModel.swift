@@ -241,6 +241,8 @@ struct HeldDetail {
     private var isUIFixture = false
     /// The fixture hands a thread's messages over a moment after it opens, as a computer does over the network.
     private var fixtureSlowDetail = false
+    /// The reconnecting journey: a moment after a thread opens, its computer loses its connection and is tried again.
+    private var fixtureReconnecting = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     private func loadUIFixture() {
@@ -332,6 +334,7 @@ struct HeldDetail {
                 "messages": longMessages, "activities": longSteps])
         }
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
+        fixtureReconnecting = arguments.contains("--ui-reconnecting")
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
             let answers = asking && host == laptop
             let hostCaps = answers ? answeringCaps : caps
@@ -963,6 +966,13 @@ struct HeldDetail {
                 guard selected == ref else { return }
             }
             openDetail = detail
+            if fixtureReconnecting, let ref, detail != nil {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard selected == ref else { return }
+                // As `connect` does when a computer that was online is tried again: the thread as last read stays.
+                holdDetail()
+                update(ref.hostID) { $0.status = .connecting; $0.mayAnswer = false }
+            }
             return
         }
         #endif
