@@ -24,7 +24,7 @@ import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, ty
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
-import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
@@ -36,6 +36,9 @@ import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestRefer
 import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
+import { babysitRecordSchema, type BabysitRecord } from './babysitNews'
+import type { BabysitStore, BabysitThread } from './babysitting'
+import { BABYSITTING_PER_THREAD_MAX } from '../../shared/babysitting'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -130,6 +133,25 @@ const workspaceSchema = z.object({
   creations: z.array(z.object({ threadId: z.string(), projectId: z.string(), commandId: z.string(), phase: z.enum(['unstarted', 'starting', 'retryable', 'started']) })),
 })
 type Workspace = z.infer<typeof workspaceSchema>
+/**
+ * What each thread babysits as `workspace.json` keeps it (ADR-0061 decision 10): on the thread's record, the published
+ * fields beside what the thread was last told. Read from the file before the thread schema, which keeps only the published
+ * fields; a record that does not read is dropped rather than refusing the workspace.
+ */
+function savedBabysitting(input: unknown): Map<string, BabysitRecord[]> {
+  const records = new Map<string, BabysitRecord[]>()
+  const threads = (input as { snapshot?: { threads?: unknown } } | null)?.snapshot?.threads
+  if (!Array.isArray(threads)) return records
+  for (const thread of threads as unknown[]) {
+    const { id, babysitting } = (thread ?? {}) as { id?: unknown; babysitting?: unknown }
+    if (typeof id !== 'string' || !Array.isArray(babysitting)) continue
+    const kept = babysitting.flatMap(item => { const parsed = babysitRecordSchema.safeParse(item); return parsed.success ? [parsed.data] : [] }).slice(0, BABYSITTING_PER_THREAD_MAX)
+    if (kept.length) records.set(id, kept)
+  }
+  return records
+}
+const babysittingSummary = (records: readonly BabysitRecord[]): AgentThread['babysitting'] =>
+  records.map(record => ({ url: record.url, number: record.number, startedBy: record.startedBy, startedAt: record.startedAt }))
 
 /** How long a burst of provider snapshots is gathered into one publish. The coordinator's own
  * broadcast window is the same 16 ms, so this costs a window rather than a visible delay. */
@@ -140,11 +162,16 @@ const WRITE_WINDOW_MS = 250
 
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
-export class WorkspaceHost implements AgentHost {
+export class WorkspaceHost implements AgentHost, BabysitStore {
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
   readonly concurrentProviders: boolean
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
+  /**
+   * What each thread babysits, with what it was last told, by thread (ADR-0061 decision 10). Saved on the thread's record
+   * in `workspace.json`; the thread itself carries only the published part, `babysitting`, so no client is sent the rest.
+   */
+  private babysitRecords = new Map<string, BabysitRecord[]>()
   private readonly store: AtomicJsonStore<Workspace>
   private loading: Promise<void> | undefined
   private hostId: string | undefined
@@ -1037,7 +1064,7 @@ export class WorkspaceHost implements AgentHost {
     this.worktrees = new ThreadWorktrees(directory)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
-    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), workspaceSchema.parse, () => this.state)
+    this.store = new AtomicJsonStore(join(directory, 'workspace.json'), input => { this.babysitRecords = savedBabysitting(input); return workspaceSchema.parse(input) }, () => this.state)
     // A host that says what changed is believed: its events are this thread's history, and the array
     // comparison below is left for a host that publishes whole histories and nothing else. Such a host
     // is asked to leave the messages out of its snapshots, since none would be read (#322).
@@ -1081,6 +1108,11 @@ export class WorkspaceHost implements AgentHost {
       this.state = await this.store.peek()
       this.state.snapshot = stampHostSnapshot(this.state.snapshot, this.hostId)
       const snapshot = this.state.snapshot
+      // Babysitting is Sotto's own record, so it is restored with the thread (decision 10); the thread shows only what clients see.
+      for (const thread of snapshot.threads) {
+        const records = this.babysitRecords.get(thread.id)
+        if (records?.length) thread.babysitting = babysittingSummary(records); else delete thread.babysitting
+      }
       snapshot.connected = false
       // A Git action that was running when the host stopped did not finish here; the folder says what it did.
       for (const thread of snapshot.threads) if (thread.gitAction?.status === 'running') thread.gitAction = { ...thread.gitAction, status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: 'Sotto stopped while this action ran. Check the folder before running it again.' }
@@ -1783,6 +1815,7 @@ export class WorkspaceHost implements AgentHost {
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
+        ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
@@ -1904,7 +1937,7 @@ export class WorkspaceHost implements AgentHost {
           try { this.saveActivities() }
           catch (error) { this.dirty = true; throw error }
           const saved = structuredClone({ ...this.state,
-            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable))) } })
+            snapshot: { ...this.state.snapshot, threads: this.state.snapshot.threads.map(thread => this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } })
           if (!this.historyEnabled()) for (const thread of saved.snapshot.threads) {
             thread.requests = []
             delete thread.activities
@@ -2628,6 +2661,47 @@ export class WorkspaceHost implements AgentHost {
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
+  }
+  /** The thread as `workspace.json` keeps it: what it babysits carries what it was last told. */
+  private withBabysitting(thread: AgentThread): AgentThread {
+    const records = this.babysitRecords.get(thread.id)
+    if (records?.length) thread.babysitting = records
+    else delete thread.babysitting
+    return thread
+  }
+  private babysitView(thread: AgentThread): BabysitThread {
+    const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+    return {
+      id: thread.id,
+      closed: isThreadArchived(thread) ? 'archived' : isThreadSettled(thread) || isWorkspaceThreadSettled(thread, project) ? 'settled' : null,
+      knows: url => this.knowsPullRequest(thread, url),
+      records: this.babysitRecords.get(thread.id) ?? [],
+    }
+  }
+  /** One thread as babysitting sees it (`BabysitStore`), or null when it is not known here. */
+  babysitThread(threadId: string): BabysitThread | null {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    return thread ? this.babysitView(thread) : null
+  }
+  /** Every thread here that babysits a pull request. A thread that is gone took its records with it. */
+  babysatThreads(): BabysitThread[] {
+    return this.state.snapshot.threads.filter(thread => this.babysitRecords.get(thread.id)?.length).map(thread => this.babysitView(thread))
+  }
+  /**
+   * Changes what a thread babysits, then saves and publishes it. The change applies at once to the records as they
+   * stand, so babysitting's own writes never undo a stop or a start that landed while it read GitHub.
+   */
+  async changeBabysitting(threadId: string, change: (records: readonly BabysitRecord[]) => readonly BabysitRecord[]): Promise<void> {
+    await this.initialize()
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread) return
+    const current = this.babysitRecords.get(threadId) ?? []
+    const next = change(current)
+    if (next === current) return
+    if (next.length) { this.babysitRecords.set(threadId, [...next]); thread.babysitting = babysittingSummary(next) }
+    else { this.babysitRecords.delete(threadId); delete thread.babysitting }
+    this.dirty = true
+    try { await this.flush() } finally { this.publish() }
   }
   private settledThreadIds(): readonly string[] {
     const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
