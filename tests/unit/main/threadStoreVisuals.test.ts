@@ -45,14 +45,14 @@ const visual = (id: string, anchorMessageId: string | null, anchorUserMessageId:
 describe('visuals in the thread store', () => {
   it('migrates an older database and keeps visuals in the order they were drawn, across a reopen', async () => {
     // A database from before visuals, holding a thread: written by this store, then taken back to version 3 by undoing
-    // the one thing migration 4 does.
+    // what migrations 4 and 5 do.
     const older = await store()
     const root = older.root
     older.store.appendMany('thread', [message('u1', 'user'), message('a1', 'assistant')].map(item => ({ kind: 'message-added' as const, at, message: item })))
     older.store.close()
     const old = new DatabaseSync(join(root, 'threads.sqlite'))
     try {
-      old.exec('DROP INDEX visuals_thread; DROP TABLE visuals; DELETE FROM schema_migrations WHERE version = 4')
+      old.exec('DROP TABLE wake_ups; DROP INDEX visuals_thread; DROP TABLE visuals; DELETE FROM schema_migrations WHERE version >= 4')
       expect(old.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map(row => Number(row.version))).toEqual([1, 2, 3])
       expect(old.prepare('SELECT name FROM sqlite_master WHERE name = ?').get('visuals')).toBeUndefined()
       expect(old.prepare('SELECT message_id FROM messages WHERE thread_id = ? ORDER BY position').all('thread').map(row => row.message_id)).toEqual(['u1', 'a1'])
@@ -73,7 +73,7 @@ describe('visuals in the thread store', () => {
     expect(reopened.store.readVisuals('thread')).toEqual([visual('first', 'a1', 'u1'), visual('second', 'a1', 'u1')])
     expect(reopened.store.readVisuals('other')).toEqual([])
     const db = new DatabaseSync(join(root, 'threads.sqlite'))
-    try { expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map(row => Number(row.version))).toEqual([1, 2, 3, 4]) }
+    try { expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map(row => Number(row.version))).toEqual([1, 2, 3, 4, 5]) }
     finally { db.close() }
   })
 

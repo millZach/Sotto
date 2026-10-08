@@ -47,7 +47,7 @@ describe('a wake-up in the workspace', () => {
     expect(thread.wakeUpMessageIds).toEqual(['wake-1'])
   })
 
-  it('names only the newest wake-ups', async () => {
+  it('names only the newest wake-ups on the thread, and still marks every older one, through a history reset and a restart', async () => {
     const f = await fixture()
     const snapshot = await f.host.connect()
     const project = snapshot.projects.find(item => item.providerId === 'codex')!
@@ -61,5 +61,25 @@ describe('a wake-up in the workspace', () => {
     expect(ids).toHaveLength(WAKE_UP_MESSAGE_IDS_MAX)
     expect(ids[0]).toBe('wake-1')
     expect(ids.at(-1)).toBe(`wake-${WAKE_UP_MESSAGE_IDS_MAX}`)
+
+    f.host.observeThreads(['local'])
+    for (let load = 0; load < 3; load++) await f.host.loadEarlierMessages('local')
+    const session = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
+    const unmarked = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.filter(message => !message.wakeUp).map(message => message.id)
+    await expect.poll(() => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.length).toBe(WAKE_UP_MESSAGE_IDS_MAX + 1)
+    expect(unmarked()).toEqual([])
+    session.historyEpoch = 'rebuilt'
+    session.messages = session.messages.map(message => ({ ...message, text: `${message.text} ` }))
+    f.adapters.codex.emit()
+    await expect.poll(() => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages[0]?.text).toBe('Wake-up ')
+    expect(unmarked()).toEqual([])
+
+    await f.stop()
+    const reopened = await fixture(f.root)
+    await reopened.host.connect()
+    reopened.host.observeThreads(['local'])
+    for (let load = 0; load < 3; load++) await reopened.host.loadEarlierMessages('local')
+    await expect.poll(() => reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.length).toBe(WAKE_UP_MESSAGE_IDS_MAX + 1)
+    expect(reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages.filter(message => !message.wakeUp)).toEqual([])
   })
 })

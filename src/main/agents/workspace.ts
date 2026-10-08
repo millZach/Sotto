@@ -1078,8 +1078,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * A window's messages with the thread's visuals in their places, the messages alone when the store cannot say, and
-   * each wake-up marked as Sotto's from the thread's own record (ADR-0061 decision 8). Both are put on as the window is
-   * read, so a history read again from the provider gets them again.
+   * each wake-up marked as Sotto's from the host's own records of sending it (ADR-0061 decision 8). Both are put on as
+   * the window is read, so a history read again from the provider gets them again.
    */
   private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
     return this.withWakeUps(threadId, this.placedVisuals(threadId, messages, windowStartsThread))
@@ -1090,17 +1090,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { visuals = this.threadStore.readVisuals(threadId) } catch { return [...messages] }
     return placeVisuals(messages, visuals, windowStartsThread)
   }
+  /**
+   * The thread's record names its newest wake-ups and the thread store keeps every one, so a wake-up older than the
+   * newest fifty stays Sotto's. The record alone answers when the store cannot.
+   */
   private withWakeUps(threadId: string, messages: AgentMessage[]): AgentMessage[] {
-    const sent = this.state.snapshot.threads.find(item => item.id === threadId)?.wakeUpMessageIds
-    if (!sent?.length) return messages
-    return messages.map(message => message.role === 'user' && !message.wakeUp && sent.includes(message.id) ? { ...message, wakeUp: true } : message)
+    const newest = this.state.snapshot.threads.find(item => item.id === threadId)?.wakeUpMessageIds ?? []
+    let kept: ReadonlySet<string> = new Set()
+    if (!this.storeUnavailable) try { kept = this.threadStore.wakeUps(threadId) } catch { /* The record still answers for the newest. */ }
+    if (!newest.length && !kept.size) return messages
+    return messages.map(message => message.role === 'user' && !message.wakeUp && (kept.has(message.id) || newest.includes(message.id)) ? { ...message, wakeUp: true } : message)
   }
   /**
-   * Records a wake-up's message ID on its thread and saves it before the provider hears the prompt, so the message is
-   * Sotto's from its first echo, after a restart and after its history is read again (ADR-0061 decision 8).
+   * Records a wake-up's message ID on its thread, and in the thread store, before the provider hears the prompt, so
+   * the message is Sotto's from its first echo, after a restart and after its history is read again (ADR-0061 decision
+   * 8). A store that refuses it costs only the mark on a wake-up older than the record's newest fifty.
    */
   private async recordWakeUp(threadId: string, messageId: string): Promise<void> {
     const thread = this.thread(threadId)
+    if (!this.storeUnavailable) try { this.threadStore.addWakeUp(threadId, messageId) } catch { /* The record below still names it. */ }
     if (thread.wakeUpMessageIds?.includes(messageId)) return
     thread.wakeUpMessageIds = [...thread.wakeUpMessageIds ?? [], messageId].slice(-WAKE_UP_MESSAGE_IDS_MAX)
     this.dirty = true
