@@ -26,7 +26,7 @@ describe('a wake-up in the workspace', () => {
     await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
     f.host.observeThreads(['local'])
     await f.host.execute({ type: 'send', commandId: 'user-send', threadId: 'local', messageId: 'from-user', text: 'Open the pull request.' })
-    const session = f.adapters.codex.state.threads.at(-1)!
+    const session = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
     session.status = 'idle'
     await f.host.execute({ type: 'send', commandId: 'wake-send', threadId: 'local', messageId: 'wake-1', text: 'Sotto is babysitting a pull request for this thread, and it needs you.', wakeUp: true })
     const messages = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
@@ -55,7 +55,7 @@ describe('a wake-up in the workspace', () => {
     await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
     for (let index = 0; index <= WAKE_UP_MESSAGE_IDS_MAX; index++) {
       await f.host.execute({ type: 'send', commandId: `wake-${index}`, threadId: 'local', messageId: `wake-${index}`, text: 'Wake-up', wakeUp: true })
-      f.adapters.codex.state.threads.at(-1)!.status = 'idle'
+      f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!.status = 'idle'
     }
     const ids = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.wakeUpMessageIds!
     expect(ids).toHaveLength(WAKE_UP_MESSAGE_IDS_MAX)

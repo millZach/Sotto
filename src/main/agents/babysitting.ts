@@ -71,6 +71,11 @@ export interface BabysitStore {
    * Returns the function that stops it.
    */
   onPullRequestUnlinked?(listener: (threadId: string, url: string) => Promise<void>): () => void
+  /**
+   * Calls `listener` when a thread that babysits is settled or archived, so babysitting ends then rather than at the
+   * next pass (decision 9). Returns the function that stops it.
+   */
+  onBabysatThreadClosed?(listener: () => void): () => void
 }
 /**
  * Hands one thread its news about one pull request, resolving once it is sent or durably queued; a rejection leaves it
@@ -149,11 +154,16 @@ export class Babysitter {
   /** Whether this pass already logged a rate limit, so a paused pass logs it once. */
   private limitLogged = false
   private readonly stopListening: (() => void) | undefined
+  private readonly stopClosedListening: (() => void) | undefined
+  /** Ending what settled or archived threads babysat, and whether another thread closed while it ran. */
+  private endingClosed: Promise<void> | undefined
+  private closedAgain = false
 
   constructor(private readonly options: BabysitterOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
     this.stopListening = options.store.onPullRequestUnlinked?.((threadId, url) => this.unlinked(threadId, url))
+    this.stopClosedListening = options.store.onBabysatThreadClosed?.(() => { void this.endClosed() })
   }
 
   /** Starts the two-minute passes, the first at once, so what changed while the host was not reading is told now. */
@@ -168,6 +178,7 @@ export class Babysitter {
   async close(): Promise<void> {
     this.closed = true
     this.stopListening?.()
+    this.stopClosedListening?.()
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     await this.passing
@@ -228,6 +239,25 @@ export class Babysitter {
     const thread = this.options.store.babysitThread(threadId)
     if (!key || !thread || thread.knows(url)) return
     for (const record of thread.records) if (pullRequestKey(record.url) === key) await this.endQuietly({ threadId, record }, 'unlinked')
+  }
+
+  /**
+   * Ends, quietly and at once, what every settled or archived thread babysits (decision 9): settling or archiving a
+   * thread sends it nothing, and takes back a wake-up still waiting for it. A pass would end them too; this is sooner.
+   */
+  endClosed(): Promise<void> {
+    if (this.closed) return Promise.resolve()
+    if (this.endingClosed) { this.closedAgain = true; return this.endingClosed }
+    this.endingClosed = (async () => {
+      do {
+        this.closedAgain = false
+        for (const thread of this.options.store.babysatThreads()) {
+          if (!thread.closed) continue
+          for (const record of thread.records) await this.endQuietly({ threadId: thread.id, record }, thread.closed)
+        }
+      } while (this.closedAgain && !this.closed)
+    })().catch(() => undefined).finally(() => { this.endingClosed = undefined })
+    return this.endingClosed
   }
 
   /** The pull requests babysat, by one thread or by every thread: which, who started each and since when. */

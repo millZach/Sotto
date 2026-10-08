@@ -180,6 +180,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private babysitRecords = new Map<string, BabysitRecord[]>()
   /** Babysitting, told of each Unlink so it can end babysitting that pull request (ADR-0061 decision 9). */
   private readonly unlinkListeners = new Set<(threadId: string, url: string) => Promise<void>>()
+  /** Babysitting, told when a thread that babysits is settled or archived, so it ends then (ADR-0061 decision 9). */
+  private readonly babysatClosedListeners = new Set<() => void>()
   private readonly store: AtomicJsonStore<Workspace>
   private loading: Promise<void> | undefined
   private hostId: string | undefined
@@ -1738,6 +1740,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
   }
   private publish(): void {
+    if (this.babysatClosedListeners.size && this.babysatThreadClosed()) for (const listener of this.babysatClosedListeners) listener()
     if (this.settledThreadListeners.size) {
       const ids = this.settledThreadIds()
       for (const listener of this.settledThreadListeners) listener(ids)
@@ -2736,6 +2739,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   onPullRequestUnlinked(listener: (threadId: string, url: string) => Promise<void>): () => void {
     this.unlinkListeners.add(listener)
     return () => { this.unlinkListeners.delete(listener) }
+  }
+  /** Calls `listener` when a thread that babysits is settled or archived (`BabysitStore`). */
+  onBabysatThreadClosed(listener: () => void): () => void {
+    this.babysatClosedListeners.add(listener)
+    return () => { this.babysatClosedListeners.delete(listener) }
+  }
+  /** Whether a thread that babysits is settled or archived now: a handful of threads at most, so cheap at every publish. */
+  private babysatThreadClosed(): boolean {
+    for (const threadId of this.babysitRecords.keys()) {
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      if (thread && this.babysitView(thread).closed) return true
+    }
+    return false
   }
   /** Every thread here that babysits a pull request. A thread that is gone took its records with it. */
   babysatThreads(): BabysitThread[] {

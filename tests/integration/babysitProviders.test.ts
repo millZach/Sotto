@@ -162,6 +162,33 @@ describe('ending babysitting', () => {
     expect(s.thread().messages.filter(message => message.role === 'user')).toHaveLength(1)
   })
 
+  it('ends at once and quietly when the thread is settled, taking back a wake-up still waiting', async () => {
+    const fixture = await codexFixture(); cleanup.push(fixture.cleanup)
+    const pull: ScriptedPull = { number: 7 }
+    const s = await stack('codex', fixture, [pull])
+    await firstTurn(s, fixture)
+    const endpoint = await given('codex', await fixture.driver.requests())
+    await call(endpoint, 'babysit_pull_request', { pull_request: '#7' })
+    // A turn is running, so the news waits in the queue as Sotto's own item.
+    expect((await s.command({ type: 'manual-send', threadId: s.threadId, text: 'Keep going.' })).error).toBeNull()
+    await expect.poll(() => s.thread().status, { timeout: 20_000 }).toBe('running')
+    pull.checks = [{ name: 'build', state: 'FAILURE' }]
+    await s.runtime.babysitter!.pass()
+    expect(s.runtime.agentControl.get().followups).toEqual([expect.objectContaining({ wakeUp: true, threadId: s.threadId })])
+
+    expect((await s.command({ type: 'settle-thread', threadId: s.threadId })).error).toBeNull()
+    await expect.poll(() => s.thread().babysitting).toBeUndefined()
+    await expect.poll(() => s.runtime.agentControl.get().followups).toEqual([])
+    await fixture.driver.completeTurn(s.sessionId(), 'Done for now.')
+    await s.command({ type: 'restore-thread', threadId: s.threadId })
+    await expect.poll(() => s.thread().status, { timeout: 20_000 }).toBe('idle')
+    await s.runtime.babysitter!.pass()
+    expect(s.thread().messages.filter(message => message.role === 'user').map(message => message.wakeUp ?? false)).toEqual([false, false])
+    // Settling a thread refuses a new start until it is restored; restored, it can be babysat again.
+    expect((await s.command({ type: 'settle-thread', threadId: s.threadId })).error).toBeNull()
+    expect((await call(endpoint, 'babysit_pull_request', { pull_request: '#7' })).content[0]!.text).toBe('This thread is settled or archived. Restore it to babysit its pull request. Nothing was started.')
+  })
+
   it('turned off, ends what agents started, keeps what the user started, refuses the agent\'s call and offers new launches nothing', async () => {
     const fixture = await codexFixture(); cleanup.push(fixture.cleanup)
     const s = await stack('codex', fixture, [{ number: 7 }, { number: 8 }])
