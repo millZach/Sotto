@@ -3,7 +3,7 @@ import {
   GITHUB_PULL_REQUEST_URL, parsePullRequestReference,
   type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, repositoryKey, retryWords, type GitHubRepository } from './github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
 /** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
@@ -244,7 +244,7 @@ export class GitPullRequests {
     catch (error) {
       if (error instanceof z.ZodError || error instanceof SyntaxError) throw new GitPullRequestRefusal('GitHub answered in a form Sotto could not read. Refresh to try again.')
       const message = error instanceof Error ? error.message : ''
-      if (isRateLimitAnswer(message)) throw new GitPullRequestLimited(this.rateLimit.limited(repository.host, message), this.now())
+      if (isRateLimitAnswer(message)) throw new GitPullRequestLimited(this.rateLimit.limited(repository.host, message, refusalReading(error)), this.now())
       // GitHub can answer the pull request and refuse a part of it (a comparison it cannot make, reviews a token may not
       // read); gh then fails with what it did read on its output, and the rest is shown as unknown.
       const partial = partialAnswer(error)

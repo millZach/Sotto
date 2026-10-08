@@ -127,6 +127,15 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     await expect(empty.service.view('C:/repo', URL_74)).rejects.toThrow('Try again in about 20 minutes.')
     expect(empty.calls).toEqual([])
   })
+  it('says the time GitHub gave with its refusal, when it gave one', async () => {
+    const now = 1_000_000
+    const body = JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 0, resetAt: new Date(now + 12 * 60_000).toISOString() }, viewer: null, repository: null } })
+    const { service } = scripted(() => Object.assign(new Error('gh: API rate limit exceeded for user ID 1. (HTTP 403)'), { stdout: body }), { now: () => now })
+    const refusal = await service.view('C:/repo', URL_74).then(() => new Error('it read'), (error: unknown) => error as Error)
+    expect(refusal).toBeInstanceOf(GitPullRequestLimited)
+    expect((refusal as GitPullRequestLimited).retryAt).toBe(now + 12 * 60_000)
+    expect(refusal.message).toContain('Try again in about 12 minutes.')
+  })
   it('says what went wrong when gh cannot read it, and refuses a reference that is not a pull request', async () => {
     const { service } = scripted(() => new Error('To get started with GitHub CLI, please run:  gh auth login'))
     await expect(service.view('C:/repo', '#74')).rejects.toThrow('Could not read the pull request. To get started with GitHub CLI, please run:  gh auth login')

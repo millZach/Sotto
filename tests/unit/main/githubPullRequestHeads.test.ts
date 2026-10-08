@@ -60,3 +60,33 @@ describe('a pause and the answers around it', () => {
     expect(rateLimit.retryAt('github.com', 'background')).toBeNull()
   })
 })
+
+describe('the reset a refusal carries', () => {
+  it('pauses until the reset GitHub sent with its refusal, not for the 30 seconds it waits without one', async () => {
+    let now = 1_000_000
+    const rateLimit = new GitHubRateLimit({ now: () => now })
+    const resetAt = new Date(now + 10 * 60_000).toISOString()
+    // gh prints GitHub's answer, errors and all, before it fails with GitHub's words.
+    const body = JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 0, resetAt }, viewer: null, repository: null }, errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded for user ID 1.' }] })
+    const run: RunGitCommand = async () => { throw Object.assign(new Error('gh: API rate limit exceeded for user ID 1.'), { stdout: body }) }
+    const heads = new PullRequestHeads({ run, rateLimit, gatherMs: gather })
+    const refusal: unknown = await heads.lookup('C:/repo', repository, 'main', 'background').then(() => null, (reason: unknown) => reason)
+    expect(refusal).toBeInstanceOf(GitHubRateLimited)
+    expect((refusal as GitHubRateLimited).retryAt).toBe(now + 10 * 60_000)
+    expect(rateLimit.retryAt('github.com', 'background')).toBe(now + 10 * 60_000)
+    // Nothing left is nothing left for the user's reads too, until that reset.
+    expect(rateLimit.retryAt('github.com', 'user')).toBe(now + 10 * 60_000)
+    now += 10 * 60_000 + 1
+    expect(rateLimit.retryAt('github.com', 'background')).toBeNull()
+  })
+  it('pauses a secondary limit for its back-off when points remain, whatever the reading\'s reset', async () => {
+    const now = 1_000_000
+    const rateLimit = new GitHubRateLimit({ now: () => now })
+    const body = JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4000, resetAt: new Date(now + 50 * 60_000).toISOString() } } })
+    const run: RunGitCommand = async () => { throw Object.assign(new Error('gh: You have exceeded a secondary rate limit. (HTTP 403)'), { stdout: body }) }
+    const heads = new PullRequestHeads({ run, rateLimit, gatherMs: gather })
+    await expect(heads.lookup('C:/repo', repository, 'main', 'background')).rejects.toBeInstanceOf(GitHubRateLimited)
+    expect(rateLimit.retryAt('github.com', 'background')).toBe(now + 30_000)
+    expect(rateLimit.retryAt('github.com', 'user')).toBeNull()
+  })
+})

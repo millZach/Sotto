@@ -169,6 +169,20 @@ export const RATE_LIMIT_SELECTION = 'rateLimit { limit remaining resetAt }'
 export const rateLimitSchema = z.object({ limit: z.number().int().nonnegative(), remaining: z.number().int(), resetAt: z.string() }).nullable().optional()
 export type GitHubRateLimitReading = NonNullable<z.infer<typeof rateLimitSchema>>
 
+/**
+ * GitHub's reading of the rate limit in what gh printed before it failed, when that is GitHub's GraphQL answer: a
+ * refusal can carry `rateLimit` beside its errors, and its `resetAt` is when the refusal ends. Null for anything else.
+ */
+export function refusalReading(error: unknown): GitHubRateLimitReading | null {
+  const stdout = error instanceof Error && 'stdout' in error && typeof error.stdout === 'string' ? error.stdout : ''
+  if (!stdout.trim()) return null
+  try {
+    const parsed = refusalSchema.safeParse(JSON.parse(stdout))
+    return parsed.success ? parsed.data.data?.rateLimit ?? null : null
+  } catch { return null }
+}
+const refusalSchema = z.object({ data: z.object({ rateLimit: rateLimitSchema }).nullable().optional() })
+
 /** A GitHub question not asked, or refused, for the rate limit; `retryAt` (epoch milliseconds) is when it may be asked again. */
 export class GitHubRateLimited extends Error {
   constructor(readonly retryAt: number) { super('GitHub is limiting requests from this sign-in.') }
@@ -251,15 +265,22 @@ export class GitHubRateLimit {
     const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
     if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
   }
-  /** GitHub refused for its rate limit: background questions to `host` pause. Returns when the pause ends. */
-  limited(host: string, message: string): number {
+  /**
+   * GitHub refused for its rate limit: background questions to `host` pause. `reading` is the one the refusal itself
+   * carried (`refusalReading`), which is kept as GitHub's latest. Returns when the pause ends.
+   */
+  limited(host: string, message: string, reading?: GitHubRateLimitReading | null): number {
     const entry = this.entry(host)
     const now = this.now()
     entry.pausedAt = ++this.sequence
     entry.failures++
+    const resetAt = reading ? Date.parse(reading.resetAt) : Number.NaN
+    if (reading && Number.isFinite(resetAt)) entry.reading = { limit: reading.limit, remaining: reading.remaining, resetAt }
     let until = now + Math.min(PAUSE_BASE_MS * 2 ** (entry.failures - 1), PAUSE_CAP_MS)
-    // A primary limit lasts until the reset GitHub last gave. A read the user asks for still goes through, and says so if it is refused.
-    if (isPrimaryLimit(message) && entry.reading && entry.reading.resetAt > now) until = entry.reading.resetAt
+    // A primary limit, or a reading with no points left, lasts until the reset GitHub gave. A read the user asks for
+    // still goes through while points remain, and says so if it is refused.
+    const spent = isPrimaryLimit(message) || (entry.reading !== null && entry.reading.remaining <= 0)
+    if (spent && entry.reading && entry.reading.resetAt > now) until = entry.reading.resetAt
     entry.pauseUntil = Math.max(entry.pauseUntil, until)
     this.options.log?.('github-rate-limited')
     return entry.pauseUntil

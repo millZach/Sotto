@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { GitHubRateLimited, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, repositoryKey, type GitHubAsk, type GitHubRateLimit, type GitHubRepository } from './github'
+import { GitHubRateLimited, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, refusalReading, repositoryKey, type GitHubAsk, type GitHubRateLimit, type GitHubRepository } from './github'
 import type { GitCommandOptions, RunGitCommand } from './gitStatus'
 
 /** Heads asked about in one query: 50 took GitHub about ten seconds, its processing limit, so T3 settled on 25 (#16760). */
@@ -135,10 +135,11 @@ export class PullRequestHeads {
     let answer: z.infer<typeof answerSchema>
     try { answer = answerSchema.parse(JSON.parse(await work)) }
     catch (error) {
-      // gh's words go no further than this test: a refusal for the rate limit pauses the host, anything else is the lookup's
-      // failure. Only gh's own error is read: an answer that failed to parse names its fields, `rateLimit` among them.
+      // gh's words go no further than this test: a refusal for the rate limit pauses the host, until the reset it carried
+      // when it carried one, and anything else is the lookup's failure. Only gh's own error is read: an answer that failed
+      // to parse names its fields, `rateLimit` among them.
       const message = error instanceof Error && !(error instanceof z.ZodError) && !(error instanceof SyntaxError) ? error.message : ''
-      const failure = isRateLimitAnswer(message) ? new GitHubRateLimited(this.options.rateLimit.limited(repository.host, message)) : error
+      const failure = isRateLimitAnswer(message) ? new GitHubRateLimited(this.options.rateLimit.limited(repository.host, message, refusalReading(error))) : error
       for (const lookup of lookups) lookup.reject(failure)
       return
     }
