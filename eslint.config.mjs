@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/visuals-live/**',
+      'artifacts/babysitting-surfaces-run/**',
       'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
       'artifacts/show-thinking/**',

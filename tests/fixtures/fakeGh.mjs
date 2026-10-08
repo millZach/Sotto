@@ -1,7 +1,9 @@
 // A stand-in for the GitHub CLI that the host runs through the gh test seam (SOTTO_E2E_GH_SCRIPT). It answers the
 // reads the Git status (one batched GraphQL query), the Git action and the Pull request surface (one GraphQL query)
 // make, "creates" a pull request by writing it to FAKE_GH_STATE, a JSON file the spec owns, and acts on it the way GitHub would (merge, ready, close, auto-merge), so a
-// journey pushes to an owned bare remote and opens, reads and merges its pull request without GitHub.
+// journey pushes to an owned bare remote and opens, reads and merges its pull request without GitHub. It answers
+// babysitting's two reads too (ADR-0061): the batched fingerprint and one pull request's detail, from the same records,
+// with a pull request's `head` naming its head commit.
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 
@@ -28,7 +30,50 @@ const view = pull => ({
   statusCheckRollup: pull.checks ?? [{ __typename: 'CheckRun', name: 'Owned build', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: `${repository}/actions/runs/1` }],
 })
 
-if (args[0] === 'pr' && args[1] === 'list') {
+/** The `-f`/`-F` variables of a `gh api graphql` call, by name. */
+const variables = () => {
+  const found = {}
+  for (let index = 0; index < args.length - 1; index++) {
+    if (args[index] !== '-f' && args[index] !== '-F') continue
+    const pair = args[index + 1], split = pair.indexOf('=')
+    found[pair.slice(0, split)] = pair.slice(split + 1)
+  }
+  return found
+}
+const RATE_LIMIT = { limit: 5000, remaining: 4999, resetAt: '2099-01-01T00:00:00Z' }
+/** A check run's one state, as GitHub counts check runs by state: its conclusion once it finished, else its status. */
+const checkState = check => check.status === 'COMPLETED' ? check.conclusion : check.status
+const babysitFingerprint = pull => {
+  const counts = new Map()
+  for (const check of view(pull).statusCheckRollup) counts.set(checkState(check), (counts.get(checkState(check)) ?? 0) + 1)
+  return {
+    number: pull.number, title: pull.title, url: pull.url, state: pull.state, mergeable: pull.mergeable ?? 'MERGEABLE', headRefOid: pull.head ?? 'head-1',
+    baseRefName: pull.baseRefName, comments: { totalCount: 0, nodes: [] }, reviews: { totalCount: 0, nodes: [] }, reviewThreads: { totalCount: 0 },
+    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { checkRunCountsByState: [...counts].map(([state, count]) => ({ state, count })), statusContextCountsByState: [] } } } }] },
+  }
+}
+
+if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query BabysitFingerprint'))) {
+  const repository = {}
+  for (const [key, value] of Object.entries(variables())) if (/^p\d+$/u.test(key)) {
+    const pull = data.pulls.find(item => item.number === Number(value))
+    repository[key] = pull ? babysitFingerprint(pull) : null
+  }
+  save(data)
+  process.stdout.write(JSON.stringify({ data: { rateLimit: RATE_LIMIT, viewer: { login: 'sotto-fixture' }, repository } }) + '\n')
+} else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query BabysitDetail'))) {
+  const asked = variables()
+  const pull = data.pulls.find(item => item.number === Number(asked.number))
+  save(data)
+  const head = pull?.head ?? 'head-1'
+  const checks = pull ? view(pull).statusCheckRollup.map(({ workflowName, ...check }) => ({ ...check, isRequired: false,
+    checkSuite: workflowName ? { workflowRun: { workflow: { name: workflowName } } } : null })) : []
+  process.stdout.write(JSON.stringify({ data: { rateLimit: RATE_LIMIT, repository: { pullRequest: pull ? {
+    headRefOid: head,
+    ...asked.checks === 'true' ? { commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { nodes: checks } } } }] } } : {},
+    ...asked.remarks === 'true' ? { comments: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] } } : {},
+  } : null } } }) + '\n')
+} else if (args[0] === 'pr' && args[1] === 'list') {
   const head = flag('--head'), wanted = flag('--state') ?? 'open'
   const pulls = data.pulls.filter(pull => pull.headRefName === head && (wanted === 'all' || pull.state.toLowerCase() === wanted))
   save(data)
