@@ -62,14 +62,20 @@ export interface PullRequestHeadsOptions {
  */
 export class PullRequestHeads {
   private readonly gathering = new Map<string, Gathering>()
-  /** Lookups waiting or in flight, by repository and head, so a second caller shares the first one's answer. */
+  /** Lookups waiting or in flight, by repository, head and scope, so a second caller shares the first one's answer. */
   private readonly pending = new Map<string, Lookup>()
   private readonly gatherMs: Readonly<Record<GitHubAsk, number>>
   constructor(private readonly options: PullRequestHeadsOptions) { this.gatherMs = options.gatherMs ?? HEAD_GATHER_MS }
 
-  lookup(cwd: string, repository: GitHubRepository, head: string, ask: GitHubAsk): Promise<HeadPullRequest[]> {
+  /**
+   * The pull requests whose head has this name in `repository`. `scope` names what an answer must not predate, such as a
+   * clone and the Git actions it has seen: a lookup in flight is shared only within its scope, since one asked before an
+   * action in another clone may not stand for an answer asked after it. A lookup still gathering has not been asked yet,
+   * so it is shared whatever the scope.
+   */
+  lookup(cwd: string, repository: GitHubRepository, head: string, ask: GitHubAsk, scope = ''): Promise<HeadPullRequest[]> {
     const repo = repositoryKey(repository)
-    const key = `${repo}\0${head}`
+    const key = `${repo}\0${head}\0${scope}`
     const gathering = this.gathering.get(repo)
     const waiting = gathering?.lookups.get(head)
     if (waiting && gathering) {

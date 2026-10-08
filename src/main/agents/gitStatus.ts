@@ -539,7 +539,7 @@ export class GitStatusReader implements GitStatusSource {
       if (this.epochOf(common) <= flight.epoch && (flight.ask === 'user' || ask === 'background')) return flight.done
       return flight.done.then(() => this.pullRequest(common, cwd, branch, upstream, isDefaultBranch, tip, ask))
     }
-    const entry = { epoch: this.counter, ask, done: this.askPullRequest(key, cwd, branch, upstream, isDefaultBranch, tip, ask, this.counter) }
+    const entry = { epoch: this.counter, ask, done: this.askPullRequest(key, cwd, branch, upstream, isDefaultBranch, tip, ask, this.counter, `${common}\0${this.epochOf(common)}`) }
     this.asking.set(key, entry)
     void entry.done.finally(() => { if (this.asking.get(key) === entry) this.asking.delete(key) })
     return entry.done
@@ -555,7 +555,7 @@ export class GitStatusReader implements GitStatusSource {
    * rate limit leaves the answer due, so the user's next read asks again while the timer's waits for the host's pause
    * (`GitHubRateLimit`); any other failure is retried later, not on the next read.
    */
-  private async askPullRequest(key: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk, epoch: number): Promise<GitPullRequestSummary | null> {
+  private async askPullRequest(key: string, cwd: string, branch: string, upstream: string | null, isDefaultBranch: boolean, tip: string | null, ask: GitHubAsk, epoch: number, scope: string): Promise<GitPullRequestSummary | null> {
     const keep = (next: PullRequestRecord): GitPullRequestSummary | null => {
       const latest = this.pullRequests.get(key)
       if (latest && latest.epoch > next.epoch) return latest.value
@@ -566,7 +566,8 @@ export class GitStatusReader implements GitStatusSource {
     // Not pushed, or not on GitHub: nothing to ask, and nothing kept, so a push made in a terminal is seen as soon as the fetch brings its ref.
     if (!target) return null
     try {
-      const found = await this.heads.lookup(cwd, target.repository, target.head, ask)
+      // Shared only with lookups of this clone since its last Git action: another clone's, asked before an action there, may not stand.
+      const found = await this.heads.lookup(cwd, target.repository, target.head, ask, scope)
       // Only a pull request whose head is in the repository the branch is pushed to is the branch's own: a fork's branch of the same name is not.
       const own = found.filter(item => item.headOwner?.toLowerCase() === target.headOwner.toLowerCase() && item.crossRepository === target.crossRepository)
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))

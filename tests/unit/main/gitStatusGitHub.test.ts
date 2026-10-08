@@ -270,6 +270,27 @@ describe('an action refreshes only its own repository', () => {
   })
 })
 
+describe('an answer asked before an action in another clone', () => {
+  it('is not shared with that clone once the action has run', async () => {
+    let release: (() => void) | undefined
+    const folders: Record<string, Folder> = { 'C:/one': { common: 'C:/one/.git', branch: 'feature/shared' }, 'C:/two': { common: 'C:/two/.git', branch: 'feature/shared' } }
+    const f = harness(folders, async args => {
+      if (release === undefined) await new Promise<void>(go => { release = go })
+      return headsAnswer(args, [{ head: 'feature/shared', number: 7 }])
+    })
+    await f.reader.read('C:/one', { remote: false })
+    const first = f.reader.readRemote('C:/one')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    // A Git action in the second clone while the first clone's question is out: its own question goes after it.
+    f.reader.invalidate('C:/two')
+    await f.reader.read('C:/two', { remote: false })
+    const second = f.reader.readRemote('C:/two')
+    await vi.waitFor(() => expect(f.calls).toHaveLength(2))
+    release!()
+    await Promise.all([first, second])
+  })
+})
+
 describe('answers last as long as they safely can', () => {
   it('keeps an open answer a minute, none five minutes, and a merged one fifteen minutes or until the branch moves', async () => {
     let pulls: Pull[] = [{ head: 'feature/open', number: 1 }, { head: 'feature/merged', number: 2, state: 'MERGED' }]
