@@ -33,6 +33,8 @@ struct HostRefusal: Error, LocalizedError {
     static var instances: [HostConnection] = []
     static var failDetail = false
     static var failConnect = false
+    /// Every attempt to connect, failed ones included.
+    static var connectAttempts = 0
     static var revokeFailure: ClientError?
     static var revokeHandler: ((Pairing) async throws -> Void)?
     static var foundHealth: Health?
@@ -69,6 +71,7 @@ struct HostRefusal: Error, LocalizedError {
     var received = 0
     init() { Self.instances.append(self) }
     func connect(endpoint: HostEndpoint, pairing: Pairing) async throws -> Received<Hello> {
+        Self.connectAttempts += 1
         if Self.failConnect { throw URLError(.networkConnectionLost) }
         hostID = pairing.hostId
         let hello = try JSONValue.object(["hostId": .string(pairing.hostId), "clientId": .string(pairing.clientId),

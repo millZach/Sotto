@@ -100,4 +100,4 @@ Current evidence and limitations: [client implementation plan](../../docs/plans/
 
 The shared scheme's Test action uses the process launcher without LLDB, so automated UI verification does not depend on debugger attachment. The Run action still attaches LLDB. To debug a test interactively, enable its debugger in the scheme editor for that session.
 
-While active, the app checks socket liveness every 25 seconds and reconnects a dropped connection with capped backoff. Backgrounding cancels retries; returning opens fresh sessions and reconciles pending actions without replaying them.
+While active, the app checks socket liveness every 25 seconds. A computer that loses its connection is tried again for about a minute, with waits from 1 to 30 seconds, then gives up; one that has not been online since the app opened is tried once. A computer that gave up reads Can’t reach it and waits for Try again or Reconnect: returning to the app and pull to refresh leave it alone. The open thread stays on screen while it is read again. Backgrounding cancels retries; returning opens fresh sessions and reconciles pending actions without replaying them.
