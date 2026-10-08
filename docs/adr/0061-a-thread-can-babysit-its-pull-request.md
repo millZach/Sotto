@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 7, 2026, for issue #822, the first ticket of #821. Zach's decisions of October 7 in #821 are settled and this record does not reopen them: the agent and the user can both start and stop it, it is on by default with a Settings switch, the five things that wake a thread, a wake is news and approves nothing, and it is a thread feature rather than voice coordination. This record decides what those leave open. The parts that are a matter of look are under **Settled by the prototype pick**, for Zach to choose from #822's prototype; his pick is recorded here when he makes it. Builds on ADR-0027 (Git on the host, the pull request surface) and #820's reserve and pause, and uses ADR-0056's list of scoped thread tool servers for a fourth server.
+Accepted October 8, 2026, for issue #822, the first ticket of #821; proposed October 7. Zach's decisions of October 7 in #821 are settled and this record does not reopen them: the agent and the user can both start and stop it, it is on by default with a Settings switch, the five things that wake a thread, a wake is news and approves nothing, and it is a thread feature rather than voice coordination. This record decides what those leave open. On October 8 Zach confirmed the three things this record proposed that #821 had not settled: the word **babysit** (decision 1), the switch turning off only the agent's tool (decision 12), and a wake-up carrying links and never what anyone wrote (decision 7). He picked the look from #822's prototype, recorded under **The look**. Builds on ADR-0027 (Git on the host, the pull request surface) and #820's reserve and pause, and uses ADR-0056's list of scoped thread tool servers for a fourth server.
 
 ## Context
 
@@ -47,7 +47,7 @@ A rate limit never ends it. Ending by Stop, settling, unlinking or the switch se
 
 **11. Remote hosts and Devin get the user's control only.** The reader and the wake-up run on the thread's host, inside `createAgentRuntime`, Electron-free beside `GitStatusReader` (ADR-0027 decision 8). The tool server does not: Sotto's thread tool servers are wired by the desktop for this computer's threads alone, Devin's client ignores supplied servers, and a headless host runs none (ADR-0056). So a Devin thread and every thread on another machine are babysat only from the Pull request surface. Two remote commands carry the press, `babysit-pull-request` and `stop-babysitting`. They grant nothing, so they need no `remote-answer` policy record (ADR-0025), and the host lists them under a new host feature, `pull-request-babysit`; a desktop offers the control only where its host lists it. Phone clients get the optional field and the wake-up as a message, and no control in this work.
 
-**12. The switch governs the agent's tool, on by default.** It sits beside the other switches that let agents act on their own (ADR-0029's browser, ADR-0056's visuals) and is read live on this computer. Off: a new launch is offered no server, a running session's call is refused with a sentence saying babysitting is turned off in Settings and nothing was started, and every babysitting an agent started on this computer's threads ends at once. Babysitting the user started stays, and the user's own control stays, because a press of **Babysit pull request** is the user's request. This is how ADR-0029's switch treats `settings` and `user` browser grants. Its wording and place are part of the prototype pick.
+**12. The switch governs the agent's tool, on by default.** It sits beside the other switches that let agents act on their own (ADR-0029's browser, ADR-0056's visuals) and is read live on this computer. Off: a new launch is offered no server, a running session's call is refused with a sentence saying babysitting is turned off in Settings and nothing was started, and every babysitting an agent started on this computer's threads ends at once. Babysitting the user started stays, and the user's own control stays, because a press of **Babysit pull request** is the user's request. This is how ADR-0029's switch treats `settings` and `user` browser grants. Its wording and place are under **The look**.
 
 **13. Cost.** Every two minutes the thread's host asks one batched GraphQL query per repository through `gh api graphql`, covering up to 25 babysat pull requests at one point, whatever number of threads babysit each. It reads each pull request's status (state, mergeability, head commit, check counts by state) and remarks (comment, review and review-thread counts, the newest edit time). Detail is read only when it moved: the checks when the status moved or a check is still running, the comments and reviews when the remarks moved. Edits inside review threads do not move the remarks, so those are read again every 30 minutes, but only for a pull request that has review threads; T3 reads every pull request's activity that often, about 15 points each. Ten quiet pull requests in one repository then cost about 30 points an hour out of 5,000. Every read is a background read under #820's reserve and pause: it stops below the reserve and skips a paused pass, and a skipped pass is not a failure. Unlike the branch's pull request lookup, it runs whether or not a window is in front, because babysitting exists for when the user is away.
 
@@ -57,38 +57,15 @@ A rate limit never ends it. Ending by Stop, settling, unlinking or the switch se
 
 **16. Private.** The host and the tool log stable event names only (started, ended with its reason, a read failed, a pass rate-limited), never a pull request's title, URL, number, a login, a check name or any text. No new host is contacted: GitHub through `gh` is already named in the README's "Privacy and cost". The README gains a line all the same, because two things are new: Sotto asks GitHub in the background while the window is not in front for a thread that babysits, and a wake-up passes check names, commenters' logins and links to the thread's provider. It never passes what they wrote.
 
-## Settled by the prototype pick
+## The look: variant C, "A state of its own"
 
-The prototype for #822 shows each of these in light and dark, at 1600x1000, 1280x800 and 820x560. Zach picks one of each; the pick is recorded here and #825 builds it.
+Zach picked variant C of #822's prototype on October 8, 2026, from the review page on his phone. The prototype is kept as the tag `prototype/pull-request-wake`, with variants A ("A quiet line") and B ("On the badge"); #825 builds C:
 
-**Start and Stop on the Pull request surface.**
-
-- A. An icon button in the surface's header beside Open on GitHub and Refresh, pressed while babysitting; its name says what a press does (**Babysit pull request** or **Stop babysitting**).
-- B. A line docked under the merge checklist, above Merge: "Babysitting since 14:02" with **Stop**. Off, **Babysit pull request** sits in the ··· menu.
-- C. A switch row in the surface's foot: "Wake this thread when the pull request needs it", with who started it and since when underneath.
-
-**How a babysitting thread looks in its sidebar row.**
-
-- A. A state word of its own in place of **Done**: **Babysitting**, with the pull request's number in the row's sentence.
-- B. The row keeps **Done**, with a small pull request mark beside the state that names the number in its tooltip.
-- C. The state reads as two phrases: "Done · Babysitting #42".
-
-**How a babysitting thread looks in its pane.**
-
-- A. A quiet line above the composer, where the creature stands: "Babysitting #42 · Stop". The creature outranks it while it has something to show.
-- B. A mark on the branch toolbar's pull request badge (a ring or a dot), with Stop on the Pull request surface.
-- C. A fourth pose of the creature above the composer, ranked below monitoring, background work and a held action, since it claims the least about the provider.
-
-**How a wake-up reads in the thread.**
-
-- A. A compact row in Sotto's voice ("#42: 1 check failed, 2 new comments"), opening to the full message.
-- B. A message on the user's side, labelled Sotto, showing the whole text.
-- C. A small card in the merge checklist's style: one line per change, each with its link as a press.
-
-**The Settings switch's wording and place.**
-
-- A. "Let agents babysit pull requests" in Settings → Application, beside "Let agents use the browser without asking" and "Let agents draw visuals in threads".
-- B. "Let agents babysit their pull requests" in Settings → Git under **When a pull request is made or merged**.
+- **Start and Stop on the Pull request surface.** While babysitting, a line docked under the merge checklist and above Merge says "Babysitting since 2:02 pm", who started it and that Sotto sends the thread a wake-up when the pull request needs it, with **Stop**. When nothing is babysitting it, **Babysit pull request** is an item in the surface's ··· menu. When babysitting ends, the line says so and why.
+- **The sidebar row.** The row's state word becomes **Babysitting #42** where it would say Done. Working, Just finished and a request waiting on the user all outrank it.
+- **The pane.** A fourth pose of the creature above the composer, at rest and in the muted colour, with the pull request's number and title over "Babysitting since 2:02 pm". It ranks below every other pose: monitoring, background work and a held action all outrank it, and it steps aside while a turn runs.
+- **A wake-up in the thread.** A message on the user's side, labelled Sotto and **Wake-up**, showing the whole text the provider receives, so what the agent was told is never hidden.
+- **The Settings switch.** "Let agents babysit pull requests" in Settings → Application, beside "Let agents use the browser without asking" and "Let agents draw visuals in threads".
 
 ## Considered Options
 
@@ -103,5 +80,5 @@ The prototype for #822 shows each of these in light and dark, at 1600x1000, 1280
 
 - #823's reader is not tied to a window being in front, keeps its progress on the thread's record rather than the link, counts "someone else" against the `gh` account, and re-reads activity every 30 minutes only for pull requests with review threads. That last is what makes its acceptance line "a quiet pull request costs only its share of the fingerprint" true.
 - #824 builds `sotto_pull_requests` with the three tools, the wake-up as Sotto's own follow-up item (one per thread, folded, removable, not editable; the follow-up store learns an item that has no draft or delivery receipt), the `wake-up` turn source, the origin mark that tells clients a message is a wake-up, the two remote commands with the `pull-request-babysit` host feature, and the switch with decision 12's scope on the IPC patch allow-list.
-- #825 builds the prototype pick, offers the surface's control only where the thread's host lists the feature, and shows a wake-up as Sotto's, from the message's mark. It updates `README.md` (decision 16) and `docs/guide.md`.
+- #825 builds variant C (**The look**), offers the surface's control only where the thread's host lists the feature, and shows a wake-up as Sotto's, from the message's mark. It updates `README.md` (decision 16) and `docs/guide.md`.
 - AGENTS.md's authority rule is unchanged: a wake-up is a send within limits that approves nothing.
