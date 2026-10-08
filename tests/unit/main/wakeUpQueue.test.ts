@@ -138,6 +138,16 @@ describe('a wake-up', () => {
     expect(sends(f.host)).toHaveLength(0)
   })
 
+  it('is taken back by a quiet ending that comes while its save is still pending, and never sent', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    const queued = f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    await f.control.withdrawWakeUp('workshop', 'https://github.com/o/r/pull/1', { tool: true })
+    await queued
+    expect(f.control.get().followups).toEqual([])
+    complete(f.host); f.host.emit()
+    expect(sends(f.host)).toHaveLength(0)
+  })
+
   it('does not put the thread in the watched set or hold its working copy while only Sotto\'s item waits', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     f.host.observed.length = 0

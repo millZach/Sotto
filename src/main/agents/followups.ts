@@ -91,9 +91,11 @@ export class FollowupStore {
    * an await, because a change never edits this object; it builds the next one and swaps it in whole.
    */
   peek(): FollowupView { return this.state }
-  private change(update: (state: State) => void): Promise<void> {
+  /** Runs `update` in the mutation lane, after every change asked before it, and saves; an update that says `false` changed nothing and writes nothing. */
+  private change(update: (state: State) => void | false): Promise<void> {
     const task = this.tail.catch(() => undefined).then(async () => {
-      const next = this.get(); update(next)
+      const next = this.get()
+      if (update(next) === false) return
       await this.store.write(next); this.state = next
     })
     this.tail = task
@@ -162,12 +164,13 @@ export class FollowupStore {
    */
   withdrawWakeUp(threadId: string, url: string | undefined, word: WordWakeUp): Promise<void> {
     const key = url === undefined ? undefined : pullRequestKey(url)
-    if (!this.state.items.some(item => waitingWakeUp(item, threadId))) return Promise.resolve()
+    // Looked for inside the lane, never in the snapshot before it: a wake-up whose save is still pending is in the lane
+    // ahead of this, and is taken back once it lands rather than left to send.
     return this.change(state => {
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
-      if (!waiting) return
+      if (!waiting) return false
       const kept = key === undefined ? [] : (waiting.news ?? []).filter(item => pullRequestKey(item.pullRequest.url) !== key)
-      if (kept.length === (waiting.news ?? []).length) return
+      if (kept.length === (waiting.news ?? []).length) return false
       if (kept.length) Object.assign(waiting, { news: kept, text: word(kept), updatedAt: new Date().toISOString() })
       else state.items = state.items.filter(item => item !== waiting)
     })
