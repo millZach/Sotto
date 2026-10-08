@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import { z } from 'zod'
 import type { RunGitCommand } from './gitStatus'
 
@@ -9,26 +11,34 @@ import type { RunGitCommand } from './gitStatus'
 /** A repository on a GitHub host, as a remote URL names it. */
 export interface GitHubRepository { readonly host: string; readonly owner: string; readonly name: string }
 
-/**
- * The GitHub repository a remote URL names: HTTPS, `git@host:` or `ssh://`, on github.com or a host whose name says
- * GitHub (an Enterprise server). The host is the one gh is asked through (`gitHubApiHost`), so an SSH alias for
- * github.com is github.com. Null for any other remote, a local path among them, which gh cannot be asked about.
- */
-export function parseGitHubRemote(url: string): GitHubRepository | null {
+/** A remote URL's parts: HTTPS, `git@host:` or `ssh://`, the host lowercased. Null for anything else, a local path among them. */
+function parseRemoteUrl(url: string): { host: string; ssh: boolean; owner: string; name: string } | null {
   const match = /^(?:https:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/|(?:[^@/\s]+@)?([^/:\s]+):(?!\/)|ssh:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/iu.exec(url.trim())
   if (!match) return null
-  const host = gitHubApiHost((match[1] ?? match[2] ?? match[3] ?? '').toLowerCase(), match[1] === undefined)
-  return host ? { host, owner: match[4]!, name: match[5]! } : null
+  return { host: (match[1] ?? match[2] ?? match[3] ?? '').toLowerCase(), ssh: match[1] === undefined, owner: match[4]!, name: match[5]! }
 }
+
 /**
- * The GitHub host gh is asked through for a remote on `host`, or null for a host that is not GitHub. github.com and any
- * name under it, `ssh.github.com` (GitHub's SSH over port 443) among them, are github.com, as gh itself takes them. Over
- * SSH, a name from `~/.ssh/config` that stands for GitHub, the usual way to keep two accounts apart (`github-work`,
- * `github.com-work`), names no API host of its own and is read through github.com (T3's `gitHubApiHostForRemote`).
- * Any other host whose name says GitHub is an Enterprise server, asked as itself.
+ * The GitHub repository a remote URL names, judged by its host's name alone: github.com, or a host whose name says
+ * GitHub (an Enterprise server). The host is the one gh is asked through (`gitHubApiHost`), so an SSH alias for
+ * github.com is github.com. Null for any other remote. `GitHubHosts` also knows the hosts gh is signed in to and the
+ * SSH aliases `~/.ssh/config` names, which a name alone cannot say.
+ */
+export function parseGitHubRemote(url: string): GitHubRepository | null {
+  const remote = parseRemoteUrl(url)
+  const host = remote ? gitHubApiHost(remote.host, remote.ssh) : null
+  return remote && host ? { host, owner: remote.owner, name: remote.name } : null
+}
+const isGitHubDotCom = (host: string): boolean => host === 'github.com' || host.endsWith('.github.com')
+/**
+ * The GitHub host gh is asked through for a remote on `host`, or null for a host whose name does not say GitHub.
+ * github.com and any name under it, `ssh.github.com` (GitHub's SSH over port 443) among them, are github.com, as gh
+ * itself takes them. Over SSH, a name from `~/.ssh/config` that stands for GitHub, the usual way to keep two accounts
+ * apart (`github-work`, `github.com-work`), names no API host of its own and is read through github.com (T3's
+ * `gitHubApiHostForRemote`). Any other host whose name says GitHub is an Enterprise server, asked as itself.
  */
 function gitHubApiHost(host: string, ssh: boolean): string | null {
-  if (host === 'github.com' || host.endsWith('.github.com')) return 'github.com'
+  if (isGitHubDotCom(host)) return 'github.com'
   if (ssh && ((!host.includes('.') && host.includes('github')) || /^github\.com[-_]/u.test(host))) return 'github.com'
   return host.includes('github') ? host : null
 }
@@ -36,8 +46,85 @@ export const sameRepository = (a: GitHubRepository, b: GitHubRepository): boolea
   a.host === b.host && a.owner.toLowerCase() === b.owner.toLowerCase() && a.name.toLowerCase() === b.name.toLowerCase()
 export const repositoryKey = (repository: GitHubRepository): string => `${repository.host}/${repository.owner}/${repository.name}`.toLowerCase()
 
-/** Each remote's URL as the user wrote it (before any `insteadOf`), and gh's own mark of the one it reads pull requests from. */
-export async function readRemotes(run: RunGitCommand, cwd: string): Promise<Map<string, { url: string | null; ghResolved: string | null }>> {
+/** How long what gh and SSH said about hosts is kept: a new sign-in or an `~/.ssh/config` edit is seen within this. */
+const HOSTS_FRESH_MS = 10 * 60_000
+/** A host name SSH may be asked about: nothing it could take for an option. */
+const SSH_ALIAS = /^[a-z0-9_][a-z0-9._-]*$/iu
+
+/** The host name `ssh -G` gives for an alias, read from `~/.ssh/config` with no connection made; null when SSH cannot say. */
+export function readSshHostName(alias: string): Promise<string | null> {
+  if (!SSH_ALIAS.test(alias)) return Promise.resolve(null)
+  return new Promise(resolve => {
+    execFile('ssh', ['-G', alias], { windowsHide: true, timeout: 5_000, encoding: 'utf8', maxBuffer: 1_000_000 }, (error, stdout) => {
+      resolve(error ? null : /^hostname\s+(\S+)\s*$/imu.exec(stdout)?.[1]?.toLowerCase() ?? null)
+    })
+  })
+}
+
+/**
+ * Which hosts gh asks as GitHub, the way gh itself decides it. gh reads a remote on any host it is signed in to, GitHub
+ * Enterprise Server on its own domain and a GHE.com host among them, and reads an SSH remote's host through
+ * `~/.ssh/config`, so `git@work:me/repo` behind `Host work` with `HostName github.com` is github.com. An SSH host other
+ * than github.com is looked up with `ssh -G`, which connects to nothing. A host whose name then says GitHub is taken
+ * without asking more; any other counts only when gh is signed in to it (`gh auth status`, host names only, no token
+ * read). Both answers are kept ten minutes, so a repository on GitLab costs one `gh auth status` that often at most, and
+ * a local path costs nothing. One per process, shared by the status reader, the Pull request surface and the Git actions.
+ */
+export class GitHubHosts {
+  private signedIn: { readonly at: number; readonly hosts: Promise<ReadonlySet<string>> } | null = null
+  private readonly aliases = new Map<string, { readonly at: number; readonly hostname: Promise<string | null> }>()
+  private readonly now: () => number
+  constructor(private readonly options: { readonly run: RunGitCommand; readonly sshHostName?: (alias: string) => Promise<string | null>; readonly now?: () => number }) {
+    this.now = options.now ?? (() => Date.now())
+  }
+
+  /** The GitHub repository a remote URL names, as gh would read it; null for a remote gh would not ask about. */
+  async repository(url: string): Promise<GitHubRepository | null> {
+    const remote = parseRemoteUrl(url)
+    if (!remote) return null
+    const host = remote.ssh && !isGitHubDotCom(remote.host) ? await this.sshHostName(remote.host) ?? remote.host : remote.host
+    const named = gitHubApiHost(host, remote.ssh)
+    if (named) return { host: named, owner: remote.owner, name: remote.name }
+    return (await this.signedInHosts()).has(host) ? { host, owner: remote.owner, name: remote.name } : null
+  }
+
+  private sshHostName(alias: string): Promise<string | null> {
+    const kept = this.aliases.get(alias)
+    if (kept && this.now() - kept.at < HOSTS_FRESH_MS) return kept.hostname
+    const hostname = (this.options.sshHostName ?? readSshHostName)(alias).catch(() => null)
+    this.aliases.set(alias, { at: this.now(), hostname })
+    return hostname
+  }
+
+  private signedInHosts(): Promise<ReadonlySet<string>> {
+    if (this.signedIn && this.now() - this.signedIn.at < HOSTS_FRESH_MS) return this.signedIn.hosts
+    const hosts = this.listSignedIn()
+    this.signedIn = { at: this.now(), hosts }
+    return hosts
+  }
+
+  /**
+   * The hosts gh is signed in to. A gh with `auth status --json` lists them, filtered by gh to the names alone; an older
+   * one words its status for a person, on either stream, and only the host each "Logged in to" line names is read. gh
+   * missing, or signed in nowhere, is no hosts. Run from the home folder: the answer is the same in every folder, and
+   * a folder being removed is never held by it.
+   */
+  private async listSignedIn(): Promise<ReadonlySet<string>> {
+    const options = { timeoutMs: 15_000 }
+    try {
+      const listed = await this.options.run(homedir(), 'gh', ['auth', 'status', '--json', 'hosts', '--jq', '.hosts | keys[]'], options)
+      return new Set(listed.split(/\r?\n/u).map(line => line.trim().toLowerCase()).filter(Boolean))
+    } catch { /* An older gh, or none: its words are read below. */ }
+    const text = await this.options.run(homedir(), 'gh', ['auth', 'status'], options).catch((error: unknown) =>
+      error instanceof Error ? `${String((error as { stdout?: unknown }).stdout ?? '')}\n${error.message}` : '')
+    return new Set([...text.matchAll(/Logged in to (\S+)/gu)].map(match => match[1]!.toLowerCase()))
+  }
+}
+
+/** A remote of the folder: the GitHub repository it names, if any, and gh's own mark of the one it reads pull requests from. */
+export interface GitHubRemote { readonly repository: GitHubRepository | null; readonly ghResolved: string | null }
+/** Each remote, by name, with the GitHub repository its URL as the user wrote it (before any `insteadOf`) names, as gh would read it. */
+export async function readGitHubRemotes(run: RunGitCommand, cwd: string, hosts: GitHubHosts): Promise<Map<string, GitHubRemote>> {
   const remotes = new Map<string, { url: string | null; ghResolved: string | null }>()
   // Git answers 1 when no key matches, which is a repository with no remotes.
   const listing = await run(cwd, 'git', ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']).catch(() => '')
@@ -49,7 +136,9 @@ export async function readRemotes(run: RunGitCommand, cwd: string): Promise<Map<
     else if (match[2] === 'gh-resolved') entry.ghResolved = match[3]!
     remotes.set(match[1]!, entry)
   }
-  return remotes
+  const resolved = new Map<string, GitHubRemote>()
+  for (const [name, remote] of remotes) resolved.set(name, { repository: remote.url ? await hosts.repository(remote.url) : null, ghResolved: remote.ghResolved })
+  return resolved
 }
 /**
  * The repository gh reads pull requests from in this folder, picked the way gh picks it without a prompt (T3's
@@ -58,12 +147,10 @@ export async function readRemotes(run: RunGitCommand, cwd: string): Promise<Map<
  * and `owner/name` another repository on the remote's host. With no mark, the first remote in that order. A fork whose
  * parent is `upstream` therefore reads the parent's pull requests, as `gh pr list` there does. Only remotes on GitHub count.
  */
-export function baseRepository(remotes: ReadonlyMap<string, { url: string | null; ghResolved: string | null }>): GitHubRepository | null {
+export function baseRepository(remotes: ReadonlyMap<string, GitHubRemote>): GitHubRepository | null {
   const rank = (name: string): number => { const index = ['upstream', 'github', 'origin'].indexOf(name.toLowerCase()); return index === -1 ? 3 : index }
-  const ordered = [...remotes].flatMap(([name, remote]) => {
-    const repository = remote.url ? parseGitHubRemote(remote.url) : null
-    return repository ? [{ name, repository, mark: remote.ghResolved?.trim() || null }] : []
-  }).sort((a, b) => rank(a.name) - rank(b.name))
+  const ordered = [...remotes].flatMap(([name, remote]) => remote.repository ? [{ name, repository: remote.repository, mark: remote.ghResolved?.trim() || null }] : [])
+    .sort((a, b) => rank(a.name) - rank(b.name))
   const marked = ordered.find(remote => remote.mark !== null)
   if (marked?.mark === 'base') return marked.repository
   if (marked?.mark) {

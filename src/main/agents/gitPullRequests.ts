@@ -3,7 +3,7 @@ import {
   GITHUB_PULL_REQUEST_URL, parsePullRequestReference,
   type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
-import { baseRepository, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readRemotes, repositoryKey, retryWords, type GitHubRepository } from './github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 
 /** Said in T3's words: the thing that did not happen, then GitHub's or Git's own reason. */
@@ -202,10 +202,12 @@ export class GitPullRequests {
   private readonly mergeSettings = new Map<string, MergeSettings>()
   /** The read a press made, by `pullRequestKey`, waiting to stand for the surface's read that follows it. */
   private readonly primed = new Map<string, { readonly at: number; readonly view: GitPullRequestView }>()
-  constructor(dependencies: { readonly run?: RunGitCommand; readonly rateLimit?: GitHubRateLimit; readonly now?: () => number } = {}) {
+  private readonly hosts: GitHubHosts
+  constructor(dependencies: { readonly run?: RunGitCommand; readonly rateLimit?: GitHubRateLimit; readonly hosts?: GitHubHosts; readonly now?: () => number } = {}) {
     this.run = dependencies.run ?? runGitStatusCommand
     this.now = dependencies.now ?? (() => Date.now())
     this.rateLimit = dependencies.rateLimit ?? new GitHubRateLimit({ now: this.now })
+    this.hosts = dependencies.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
   }
   private gh(cwd: string, args: readonly string[], timeoutMs = VIEW_TIMEOUT_MS): Promise<string> { return this.run(cwd, 'gh', args, { timeoutMs }) }
   private git(cwd: string, args: readonly string[], timeoutMs = 30_000): Promise<string> { return this.run(cwd, 'git', args, { timeoutMs }) }
@@ -275,7 +277,7 @@ export class GitPullRequests {
   private async addressOf(cwd: string, selector: string): Promise<{ host: string; owner: string; name: string; number: number }> {
     const fromUrl = pullRequestAddress(selector)
     if (fromUrl) return { host: 'github.com', ...fromUrl }
-    const repository = baseRepository(await readRemotes(this.run, cwd))
+    const repository = baseRepository(await readGitHubRemotes(this.run, cwd, this.hosts))
     if (!repository) throw new GitPullRequestRefusal('This project has no GitHub remote to read the pull request from. Use its full GitHub URL.')
     return { ...repository, number: Number(selector) }
   }

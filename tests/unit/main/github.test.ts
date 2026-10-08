@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { baseRepository, GitHubRateLimit, isRateLimitAnswer, parseGitHubRemote, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
+import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 describe('the GitHub repository a remote names', () => {
   it('reads HTTPS, scp-like and ssh URLs on GitHub hosts, and nothing else', () => {
@@ -22,7 +23,7 @@ describe('the GitHub repository a remote names', () => {
 })
 
 describe('the repository gh reads pull requests from', () => {
-  const remotes = (...entries: [string, string, string?][]) => new Map(entries.map(([name, url, ghResolved]) => [name, { url, ghResolved: ghResolved ?? null }]))
+  const remotes = (...entries: [string, string, string?][]) => new Map(entries.map(([name, url, ghResolved]) => [name, { repository: parseGitHubRemote(url), ghResolved: ghResolved ?? null }]))
   it('takes the remote gh repo set-default marked over the others', () => {
     expect(baseRepository(remotes(['origin', 'https://github.com/me/fork'], ['upstream', 'https://github.com/them/repo', 'base']))).toMatchObject({ owner: 'them', name: 'repo' })
     expect(baseRepository(remotes(['upstream', 'https://github.com/them/repo'], ['origin', 'https://github.com/me/fork', 'base']))).toMatchObject({ owner: 'me', name: 'fork' })
@@ -38,6 +39,66 @@ describe('the repository gh reads pull requests from', () => {
     expect(baseRepository(remotes(['mine', 'https://github.com/me/other'], ['theirs', 'https://github.com/them/repo']))).toMatchObject({ owner: 'me', name: 'other' })
     expect(baseRepository(remotes(['upstream', 'https://gitlab.com/them/repo'], ['origin', 'https://github.com/me/fork']))).toMatchObject({ owner: 'me', name: 'fork' })
     expect(baseRepository(remotes(['origin', 'C:/remotes/owned.git']))).toBeNull()
+  })
+})
+
+describe('the hosts gh asks as GitHub', () => {
+  const setup = (options: { signedIn?: string[]; json?: boolean; aliases?: Record<string, string> } = {}) => {
+    let now = 1_000_000
+    const calls: string[][] = []
+    const aliasLookups: string[] = []
+    const run: RunGitCommand = async (_cwd, command, args) => {
+      calls.push([command, ...args])
+      if (command !== 'gh' || args[0] !== 'auth') throw new Error('unexpected')
+      const hosts = options.signedIn ?? []
+      if (args.includes('--json')) { if (options.json === false) throw new Error('unknown flag: --json'); return hosts.map(host => `${host}\n`).join('') }
+      // An older gh words it for a person, on its error output when any host has a problem.
+      throw Object.assign(new Error(hosts.map(host => `${host}\n  X Failed to log in to other.example\n  \u2713 Logged in to ${host} as me (oauth_token)\n  \u2713 Token: gho_****`).join('\n')), { stdout: '' })
+    }
+    const hosts = new GitHubHosts({ run, now: () => now, sshHostName: async alias => { aliasLookups.push(alias); return options.aliases?.[alias] ?? alias } })
+    return { hosts, calls, aliasLookups, advance: (ms: number) => { now += ms } }
+  }
+  it('takes a host gh is signed in to, an Enterprise server on its own domain or a GHE.com host, and no other', async () => {
+    const f = setup({ signedIn: ['github.com', 'git.company.com', 'octocorp.ghe.com'] })
+    expect(await f.hosts.repository('https://git.company.com/team/app.git')).toEqual({ host: 'git.company.com', owner: 'team', name: 'app' })
+    expect(await f.hosts.repository('https://octocorp.ghe.com/team/app')).toEqual({ host: 'octocorp.ghe.com', owner: 'team', name: 'app' })
+    expect(await f.hosts.repository('https://gitlab.com/team/app.git')).toBeNull()
+    // Asked once, then kept: a GitLab remote on every read costs no more gh.
+    expect(f.calls.filter(call => call[1] === 'auth')).toHaveLength(1)
+    f.advance(10 * 60_000)
+    await f.hosts.repository('https://gitlab.com/team/app.git')
+    expect(f.calls.filter(call => call[1] === 'auth')).toHaveLength(2)
+  })
+  it('asks nothing for github.com, a host named for GitHub or a local path', async () => {
+    const f = setup()
+    expect(await f.hosts.repository('https://github.com/me/repo')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(await f.hosts.repository('git@github.com:me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(await f.hosts.repository('https://github.example.com/me/repo')).toEqual({ host: 'github.example.com', owner: 'me', name: 'repo' })
+    expect(await f.hosts.repository('C:/remotes/owned.git')).toBeNull()
+    expect(f.calls).toEqual([])
+    expect(f.aliasLookups).toEqual([])
+  })
+  it('reads an SSH alias through ~/.ssh/config, as gh does', async () => {
+    const f = setup({ signedIn: ['git.company.com'], aliases: { work: 'github.com', office: 'git.company.com', 'github-ghe': 'github.company.com' } })
+    expect(await f.hosts.repository('git@work:me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(await f.hosts.repository('ssh://git@office/team/app.git')).toEqual({ host: 'git.company.com', owner: 'team', name: 'app' })
+    // An alias whose name says GitHub but that SSH sends to an Enterprise server is that server.
+    expect(await f.hosts.repository('git@github-ghe:team/app.git')).toEqual({ host: 'github.company.com', owner: 'team', name: 'app' })
+    // One SSH has no alias for keeps the name rule.
+    expect(await f.hosts.repository('git@github-personal:me/repo.git')).toEqual({ host: 'github.com', owner: 'me', name: 'repo' })
+    expect(await f.hosts.repository('git@gitlab-work:me/repo.git')).toBeNull()
+  })
+  it('reads an older gh that has no JSON for its status, host names only', async () => {
+    const f = setup({ signedIn: ['git.company.com'], json: false })
+    expect(await f.hosts.repository('https://git.company.com/team/app.git')).toEqual({ host: 'git.company.com', owner: 'team', name: 'app' })
+    expect(await f.hosts.repository('https://other.example/team/app.git')).toBeNull()
+  })
+  it('names each remote of a folder by the repository gh would read', async () => {
+    const f = setup({ signedIn: ['git.company.com'] })
+    const run: RunGitCommand = async () => 'remote.origin.url https://git.company.com/me/app.git\nremote.upstream.url https://git.company.com/team/app.git\nremote.upstream.gh-resolved base\nremote.mirror.url https://gitlab.com/team/app.git\n'
+    const remotes = await readGitHubRemotes(run, 'C:/work/app', f.hosts)
+    expect(remotes.get('mirror')).toEqual({ repository: null, ghResolved: null })
+    expect(baseRepository(remotes)).toEqual({ host: 'git.company.com', owner: 'team', name: 'app' })
   })
 })
 

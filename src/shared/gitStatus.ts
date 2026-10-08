@@ -11,7 +11,7 @@ export type GitPullRequestSummary = z.infer<typeof gitPullRequestSummarySchema>
  * What the host knows about a working copy's Git state: the branch and its distance from its upstream
  * and from the default branch, whether the tree is dirty, and the branch's pull request. It is read the
  * way T3 Code reads it (`status --porcelain=2 --branch`, `diff --numstat`, a background fetch under the
- * Git fetch interval setting, `gh pr list --head`), lives on the thread's worktree record, and reaches
+ * Git fetch interval setting, one `gh api graphql` query per repository for its branches' pull requests), lives on the thread's worktree record, and reaches
  * every client through the state stream. Counts are against the local tracking ref; `fetchedAt` says
  * how current that ref is, and is null when nothing has fetched.
  */

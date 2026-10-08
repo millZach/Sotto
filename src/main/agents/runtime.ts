@@ -19,8 +19,8 @@ import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
 import { LocalHostService } from './hostService'
 import { threadToolReads } from './threadToolReads'
-import { GitStatusReader, runWithGhStandIn, type RunGitCommand } from './gitStatus'
-import { GitHubRateLimit, type GitHubRateLimitEvent } from './github'
+import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
+import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
@@ -101,6 +101,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
+  let gitHubHosts: GitHubHosts | undefined
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
@@ -108,7 +109,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
     // One allowance for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
     gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
-    gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, ...(gitRun ? { run: gitRun } : {}) })
+    // One answer, too, to which hosts gh asks as GitHub, so `gh auth status` and `ssh -G` run once for everything that asks.
+    gitHubHosts = new GitHubHosts({ run: gitRun ?? runGitStatusCommand })
+    gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, hosts: gitHubHosts, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
     agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
   }
@@ -125,7 +128,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
     followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
-  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}) }))
+  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
   const reasoner = options.reasoner ?? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {

@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
-import { baseRepository, GitHubRateLimit, GitHubRateLimited, parseGitHubRemote, readRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
 export interface GitCommandOptions {
@@ -95,6 +95,8 @@ export interface GitStatusReaderOptions {
   readonly fetchIntervalMs: () => number
   /** The GitHub allowance of the user's sign-in, shared with the Pull request surface; one of its own when absent. */
   readonly rateLimit?: GitHubRateLimit
+  /** Which hosts gh asks as GitHub, shared with the Pull request surface and the Git actions; one of its own when absent. */
+  readonly hosts?: GitHubHosts
   /** How long pull request lookups gather before their query goes; T3's figures when absent. */
   readonly headGatherMs?: Readonly<Record<GitHubAsk, number>>
 }
@@ -209,6 +211,7 @@ export class GitStatusReader implements GitStatusSource {
   private readonly asking = new Map<string, { readonly epoch: number; readonly ask: GitHubAsk; readonly done: Promise<GitPullRequestSummary | null> }>()
   private readonly heads: PullRequestHeads
   private readonly rateLimit: GitHubRateLimit
+  private readonly hosts: GitHubHosts
   /** Every `invalidate` takes the next number; a read, fetch or answer is stamped with the number current when it began. */
   private counter = 0
   /** The number of the last `invalidate` that reached every repository. */
@@ -219,6 +222,7 @@ export class GitStatusReader implements GitStatusSource {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
     this.rateLimit = options.rateLimit ?? new GitHubRateLimit({ now: this.now })
+    this.hosts = options.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
     this.heads = new PullRequestHeads({ run: this.run, rateLimit: this.rateLimit, env: QUIET_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
       held: cwd => this.isHeld(this.folderKey(cwd)), track: (cwds, work) => { for (const cwd of cwds) this.tracked(cwd, work) } })
   }
@@ -602,12 +606,12 @@ export class GitStatusReader implements GitStatusSource {
       else if (refname.startsWith('refs/remotes/') && refname.endsWith(`/${branch}`)) published.push(refname.slice('refs/remotes/'.length, -branch.length - 1))
     }
     if (!upstream && !published.length) return null
-    const remotes = await readRemotes((folder, command, args, options) => this.tracked(folder, this.run(folder, command, args, options)), cwd)
+    const remotes = await readGitHubRemotes((folder, command, args, options) => this.tracked(folder, this.run(folder, command, args, options)), cwd, this.hosts)
     const repository = baseRepository(remotes)
     if (!repository) return null
     const remote = pushRemote || (published.includes('origin') ? 'origin' : published[0]) || 'origin'
     const head = remote && push.startsWith(`refs/remotes/${remote}/`) ? push.slice(`refs/remotes/${remote}/`.length) : branch
-    const headRepository = parseGitHubRemote(remotes.get(remote)?.url ?? '') ?? repository
+    const headRepository = remotes.get(remote)?.repository ?? repository
     return { repository, head, headOwner: headRepository.owner, crossRepository: !sameRepository(repository, headRepository) }
   }
 }

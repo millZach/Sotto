@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { GitHubHosts } from '../../../src/main/agents/github'
 import { GitStatusReader, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 /**
@@ -31,11 +32,14 @@ function headsAnswer(args: readonly string[], pulls: readonly Pull[], extra: Rec
   return JSON.stringify({ data: { ...extra, repository } })
 }
 
-function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) => GhAnswer, options: { gatherMs?: number } = {}) {
+function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) => GhAnswer, options: { gatherMs?: number; signedIn?: readonly string[]; aliases?: Readonly<Record<string, string>> } = {}) {
   let now = 1_000_000
   const calls: string[][] = []
+  /** `gh auth status`, which asks GitHub nothing about pull requests, kept apart from the questions that do. */
+  const auth: string[][] = []
   const git: string[][] = []
   const run: RunGitCommand = async (cwd, command, args) => {
+    if (command === 'gh' && args[0] === 'auth') { auth.push([...args]); return (options.signedIn ?? ['github.com']).map(host => `${host}\n`).join('') }
     if (command === 'gh') {
       calls.push([...args])
       const answer = await gh(args)
@@ -65,14 +69,15 @@ function harness(folders: Record<string, Folder>, gh: (args: readonly string[]) 
     }
   }
   const gatherMs = options.gatherMs ?? 5
-  const reader = new GitStatusReader({ run, now: () => now, fetchIntervalMs: () => 30_000, headGatherMs: { user: gatherMs, background: gatherMs } })
+  const hosts = new GitHubHosts({ run, now: () => now, sshHostName: async alias => options.aliases?.[alias] ?? alias })
+  const reader = new GitStatusReader({ run, now: () => now, hosts, fetchIntervalMs: () => 30_000, headGatherMs: { user: gatherMs, background: gatherMs } })
   /** The workspace's round for one folder: a local read, its remote half, then the read that takes what it brought. */
   const round = async (folder: string, background = false) => {
     await reader.read(folder, { remote: false })
     await reader.readRemote(folder, { background })
     return reader.read(folder, { remote: false, fresh: true })
   }
-  return { reader, calls, git, round, graphql: () => calls.filter(call => call[0] === 'api' && call[1] === 'graphql').length, advance: (ms: number) => { now += ms }, now: () => now }
+  return { reader, calls, auth, git, round, graphql: () => calls.filter(call => call[0] === 'api' && call[1] === 'graphql').length, advance: (ms: number) => { now += ms }, now: () => now }
 }
 
 const worktrees = (count: number, common = 'C:/fixture/owned/.git'): Record<string, Folder> =>
@@ -116,6 +121,18 @@ describe('one question per repository', () => {
     expect((await f.round('C:/local')).pullRequest).toBeNull()
     expect((await f.round('C:/elsewhere')).pullRequest).toBeNull()
     expect(f.calls).toHaveLength(0)
+    // Only whether gh is signed in to the host was looked up, once.
+    expect(f.auth).toHaveLength(1)
+  })
+  it('asks an Enterprise server on its own domain, or behind an SSH alias, when gh is signed in to it, as gh pr list did', async () => {
+    const f = harness({
+      'C:/company': { common: 'C:/company/.git', branch: 'feature/x', remotes: { origin: 'https://git.company.com/team/app.git' } },
+      'C:/alias': { common: 'C:/alias/.git', branch: 'feature/y', remotes: { origin: 'git@work:team/app.git' } },
+    }, args => headsAnswer(args, [{ head: 'feature/x', number: 61, owner: 'team' }, { head: 'feature/y', number: 62, owner: 'team' }]), { signedIn: ['github.com', 'git.company.com'], aliases: { work: 'git.company.com' } })
+    const [company, alias] = await Promise.all([f.round('C:/company'), f.round('C:/alias')])
+    expect([company.pullRequest?.number, alias.pullRequest?.number]).toEqual([61, 62])
+    expect(f.calls).toHaveLength(1)
+    expect(f.calls[0]).toEqual(expect.arrayContaining(['--hostname', 'git.company.com', 'owner=team', 'name=app']))
   })
 })
 
