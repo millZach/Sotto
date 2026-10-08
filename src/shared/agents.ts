@@ -8,6 +8,7 @@ import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './vi
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
+import { agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
@@ -336,6 +337,9 @@ export const agentThreadSchema = z.object({
   /** The pull requests linked to this thread: the one its Git action created, ones linked by hand, one checked out
    * from the branch picker. Newest last; the Pull request surface lists them (ADR-0027). */
   pullRequests: z.array(gitPullRequestLinkSchema).max(GIT_PULL_REQUEST_LINKS_MAX).optional(),
+  /** The pull requests this thread babysits: which, who started each and since when (ADR-0061 decision 10). The
+   * host keeps what the thread was last told; clients get only this. Absent when it babysits none, and from older hosts. */
+  babysitting: z.array(agentBabysittingSchema).max(BABYSITTING_PER_THREAD_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */

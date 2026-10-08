@@ -83,7 +83,7 @@ const rawAnswerSchema = z.object({
   errors: loose(z.array(loose(z.object({ path: loose(z.array(z.union([z.string(), z.number()]))) })))),
 })
 /** A check in the shape `gh pr view --json statusCheckRollup` gave it, which `checkOf` reads. */
-type RawCheck = Omit<z.infer<typeof rawContextSchema>, 'checkSuite'> & { readonly workflowName?: string | null | undefined }
+export type RawCheck = Omit<z.infer<typeof rawContextSchema>, 'checkSuite'> & { readonly workflowName?: string | null | undefined }
 interface MergeSettings { readonly at: number; readonly mergeMethods: GitPullRequestMergeMethod[]; readonly autoMergeAllowed: boolean }
 
 /** What each press did, said the way T3 says it once it has happened. */
@@ -135,9 +135,10 @@ function partialAnswer(error: unknown): z.infer<typeof rawAnswerSchema> | null {
 /**
  * Whether GitHub refused checks, rather than a detail of one: an error whose path stops at or above the check list
  * (the commit, its rollup, the list), or at one check whole. An error inside a check, such as its workflow's name,
- * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it.
+ * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it. Babysitting
+ * reads its checks' refusals the same way (ADR-0061).
  */
-function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
+export function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
   return errors.some(error => {
     const path = error?.path ?? []
     const commits = path.indexOf('commits')
@@ -153,7 +154,8 @@ function rawCheckOf(node: z.infer<typeof rawContextSchema>): RawCheck {
   return { __typename: node.__typename, name: node.name, context: node.context, status: node.status, conclusion: node.conclusion, state: node.state,
     detailsUrl: node.detailsUrl, targetUrl: node.targetUrl, description: node.description, workflowName: node.checkSuite?.workflowRun?.workflow?.name }
 }
-function checkOf(raw: RawCheck): GitPullRequestCheck {
+/** A check as the Pull request surface reads it; babysitting reads its checks the same way (ADR-0061). */
+export function checkOf(raw: RawCheck): GitPullRequestCheck {
   const upper = (value: string | null | undefined) => value?.trim().toUpperCase() ?? ''
   const isStatus = raw.__typename === 'StatusContext' || (raw.context != null && raw.name == null)
   let status: GitPullRequestCheck['status']

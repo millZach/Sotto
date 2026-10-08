@@ -200,6 +200,7 @@ import { registerTerminalWorkspaceIpc } from './terminals/ipc'
 import { TERMINAL_WORKTREE_HOME, ThreadWorktrees, runWorktreeGit } from './agents/threadWorktrees'
 import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
+import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import { CodexAppServerHost } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
@@ -252,6 +253,7 @@ type NativeDiagnostic =
   | 'thread-auto-settled'
   | 'thread-auto-settle-skipped'
   | GitHubRateLimitEvent
+  | BabysitEvent
   | ClaudeAdapterEvent
   | PhoneAccessEvent
   | 'host-phones-read-failed'

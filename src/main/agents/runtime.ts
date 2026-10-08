@@ -22,6 +22,7 @@ import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
+import { Babysitter, type BabysitDeliver, type BabysitEvent } from './babysitting'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
@@ -68,8 +69,9 @@ export interface AgentRuntimeOptions {
   gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
     ghStandIn?: { executable: string; args: readonly string[] }
-    /** When GitHub's rate limit holds Sotto's questions back (#820), as stable event names; never gh's words. */
-    log?: (event: GitHubRateLimitEvent) => void }
+    /** When GitHub's rate limit holds Sotto's questions back (#820), and what babysitting did (ADR-0061), as stable
+     * event names; never gh's words, a pull request or a login. */
+    log?: (event: GitHubRateLimitEvent | BabysitEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
@@ -168,11 +170,19 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
+  // Babysitting (ADR-0061): the thread's host reads each babysat pull request every two minutes, whether or not a
+  // window is in front, and hands each thread its news. #824 delivers it as a wake-up through the thread's send path;
+  // until then nothing can start babysitting, and this sends nothing and keeps nothing.
+  const deliverWakeUp: BabysitDeliver = async () => undefined
+  const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
+    ...(gitRun ? { run: gitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}) }) : undefined
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
+      // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       await worktreeCleanup.close()
+      if (babysitter) await babysitter.close()
       toolReads.dispose()
       agentControl.dispose()
       try {
@@ -191,11 +201,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     return closing
   }
   try { await agentControl.start() } catch (error) {
+    void babysitter?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
     agentHost.dispose()
     throw error
   }
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads })
-  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, close }
+  babysitter?.begin()
+  return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
 }
