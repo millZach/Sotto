@@ -124,6 +124,11 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     const partly = await whole.view('C:/repo', URL_74)
     expect(partly.checksUnknown).toBe(true)
     expect(partly.checks.map(check => [check.name, check.status])).toEqual([['CI / lint', 'failure'], ['e2e', 'pending'], ['deploy/preview', 'pending']])
+    // A refused part GitHub cannot leave empty (a check run's suite is never null) nulls the whole check, whatever the error's path says.
+    const nulled = refusing([...nodes, 0, 'checkSuite'], rollup => { contexts(rollup)[0] = null })
+    const gone = await nulled.view('C:/repo', URL_74)
+    expect(gone.checksUnknown).toBe(true)
+    expect(gone.checks).toHaveLength(3)
   })
   it('names who approved or asked for changes, with GitHub links only, and leaves out comments and reviewers GitHub no longer names', async () => {
     const reviews = [

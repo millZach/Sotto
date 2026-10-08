@@ -135,7 +135,7 @@ function partialAnswer(error: unknown): z.infer<typeof rawAnswerSchema> | null {
 /**
  * Whether GitHub refused checks, rather than a detail of one: an error whose path stops at or above the check list
  * (the commit, its rollup, the list), or at one check whole. An error inside a check, such as its workflow's name,
- * leaves the check itself, which is shown as GitHub sent it.
+ * leaves the check itself, which is shown as GitHub sent it, unless GitHub nulled the whole check for it.
  */
 function checksRefused(errors: ReadonlyArray<{ path?: ReadonlyArray<string | number> | null | undefined } | null | undefined>): boolean {
   return errors.some(error => {
@@ -288,7 +288,9 @@ export class GitPullRequests {
     const mergeable = raw.mergeable?.toUpperCase()
     const contexts = raw.commits?.nodes?.at(-1)?.commit?.statusCheckRollup?.contexts?.nodes ?? []
     // No rollup is a pull request with no checks; a refused one leaves the same gap, and an error whose path names it.
-    const checksUnknown = !raw.commits || checksRefused(answer.errors ?? [])
+    // A check GitHub sent back as null was refused whole, whatever its error's path: GraphQL nulls the check when a
+    // part of it that cannot be empty, such as a check run's suite, is refused.
+    const checksUnknown = !raw.commits || checksRefused(answer.errors ?? []) || contexts.some(node => node == null)
     return {
       number: raw.number, url: raw.url, title: cut(raw.title, 500), body: cut(raw.body ?? '', BODY_MAX), state, draft: raw.isDraft === true,
       baseBranch: raw.baseRefName ?? '', headBranch: raw.headRefName ?? '', crossRepository: raw.isCrossRepository === true,
