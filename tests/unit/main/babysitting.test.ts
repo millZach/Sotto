@@ -450,6 +450,14 @@ describe('when GitHub cannot be read', () => {
     expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [expect.objectContaining({ name: 'lint' })] }])
   })
 
+  it('backs off refused checks that are still running as it does finished ones', async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'e2e', state: 'IN_PROGRESS' }], refuseChecks: 'list' }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    for (let pass = 0; pass < 6; pass++) await h.pass()
+    expect(h.github.questions.filter(question => question.kind === 'detail' && question.variables['checks'] === 'true')).toHaveLength(3)
+  })
+
   it('skips a pass while only the reserve is left, without asking gh', async () => {
     const h = harness([{ number: 1 }], { a: { links: [url(1)] } })
     await h.babysitter.start('a', url(1), 'agent')
