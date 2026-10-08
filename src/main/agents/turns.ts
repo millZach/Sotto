@@ -14,7 +14,7 @@ export const turnRecordSchema = z.object({
   id: z.string(),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime(),
-  source: z.enum(['utterance', 'command', 'supervision']),
+  source: z.enum(['utterance', 'command', 'supervision', 'wake-up']),
   commandType: z.string(),
   threadId: z.string().nullable(),
   providerSessionId: z.string().nullable(),

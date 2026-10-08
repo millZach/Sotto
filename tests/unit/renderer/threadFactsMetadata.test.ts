@@ -32,6 +32,12 @@ describe('thread facts metadata regressions', () => {
     }
   })
 
+  it('says Sotto sent a wake-up, from the thread record rather than the message text (ADR-0061)', () => {
+    const summary = { messageCount: 2, lastAssistant: { id: 'reply', text: 'Opened the pull request.', createdAt: OLD }, lastUser: { id: 'wake-1', text: 'Sotto is babysitting a pull request for this thread, and it needs you.', createdAt: NEW } }
+    expect(describeThreads(stateFor({ summary, wakeUpMessageIds: ['wake-1'] }), NOW)[0]!.lastMessage?.who).toBe('Sotto')
+    expect(describeThreads(stateFor({ summary }), NOW)[0]!.lastMessage?.who).toBe('You')
+  })
+
   it('uses provider last activity for shell-only threads, not observation time', () => {
     const row = describeThreads(stateFor({ updatedAt: OLD }), NOW)[0]!
     expect(row.activityAt).toBe(Date.parse(OLD))

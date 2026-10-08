@@ -64,6 +64,8 @@ export type ProviderProblem = z.infer<typeof providerProblemSchema>
 const providerAccountSchema = z.string().min(1).max(80)
 
 const id = z.string().min(1).max(512)
+/** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
+export const WAKE_UP_MESSAGE_IDS_MAX = 50
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
 const text = z.string().max(100_000)
@@ -249,6 +251,12 @@ export const agentMessageSchema = z.object({
    * Either way the message is then its words alone: `isVisualMessage` says no.
    */
   visual: agentVisualSchema.optional().catch(undefined),
+  /**
+   * Set on a wake-up babysitting sent (ADR-0061 decision 8), from the host's own record of the send rather than the
+   * message's text, so it survives the history being read again from the provider. An older reader drops the field and
+   * shows the message as the user's.
+   */
+  wakeUp: z.literal(true).optional().catch(undefined),
 })
 /**
  * What the sidebar reads about a thread's history without holding that history. The shell stream
@@ -340,6 +348,9 @@ export const agentThreadSchema = z.object({
   /** The pull requests this thread babysits: which, who started each and since when (ADR-0061 decision 10). The
    * host keeps what the thread was last told; clients get only this. Absent when it babysits none, and from older hosts. */
   babysitting: z.array(agentBabysittingSchema).max(BABYSITTING_PER_THREAD_MAX).optional(),
+  /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
+   * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
+  wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */

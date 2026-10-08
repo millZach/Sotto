@@ -11,7 +11,7 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -151,6 +151,13 @@ function savedBabysitting(input: unknown): Map<string, BabysitRecord[]> {
   return records
 }
 const babysittingSummary = (records: readonly BabysitRecord[]): AgentThread['babysitting'] => records.map(publishedBabysitting)
+/** A send as its provider hears it: whether it is a wake-up is the workspace's record, not the adapter's business. */
+function withoutWakeUp<C extends Extract<AgentHostCommand, { type: 'send' }>>(command: C): C {
+  if (command.wakeUp === undefined) return command
+  const { wakeUp, ...rest } = command
+  void wakeUp
+  return rest as C
+}
 
 /** How long a burst of provider snapshots is gathered into one publish. The coordinator's own
  * broadcast window is the same 16 ms, so this costs a window rather than a visible delay. */
@@ -1053,12 +1060,35 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.storeUnavailable) return undefined
     try { return this.threadStore.readVisuals(threadId).find(stored => stored.visual.id === visualId)?.visual } catch { return undefined }
   }
-  /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
+  /**
+   * A window's messages with the thread's visuals in their places, the messages alone when the store cannot say, and
+   * each wake-up marked as Sotto's from the thread's own record (ADR-0061 decision 8). Both are put on as the window is
+   * read, so a history read again from the provider gets them again.
+   */
   private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
+    return this.withWakeUps(threadId, this.placedVisuals(threadId, messages, windowStartsThread))
+  }
+  private placedVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
     if (this.storeUnavailable) return [...messages]
     let visuals: readonly StoredVisual[]
     try { visuals = this.threadStore.readVisuals(threadId) } catch { return [...messages] }
     return placeVisuals(messages, visuals, windowStartsThread)
+  }
+  private withWakeUps(threadId: string, messages: AgentMessage[]): AgentMessage[] {
+    const sent = this.state.snapshot.threads.find(item => item.id === threadId)?.wakeUpMessageIds
+    if (!sent?.length) return messages
+    return messages.map(message => message.role === 'user' && !message.wakeUp && sent.includes(message.id) ? { ...message, wakeUp: true } : message)
+  }
+  /**
+   * Records a wake-up's message ID on its thread and saves it before the provider hears the prompt, so the message is
+   * Sotto's from its first echo, after a restart and after its history is read again (ADR-0061 decision 8).
+   */
+  private async recordWakeUp(threadId: string, messageId: string): Promise<void> {
+    const thread = this.thread(threadId)
+    if (thread.wakeUpMessageIds?.includes(messageId)) return
+    thread.wakeUpMessageIds = [...thread.wakeUpMessageIds ?? [], messageId].slice(-WAKE_UP_MESSAGE_IDS_MAX)
+    this.dirty = true
+    await this.flush()
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
@@ -1819,6 +1849,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
+        ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
         projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
@@ -2553,7 +2584,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ? await this.checkoutMutations.acquire(dispatchFolder, 'send', this.checkoutThreadHolder(thread.id, 'send')) : undefined
     try {
       if (command.type === 'send') await this.checkpointHooks?.beforeTurn(thread.id)
-      const dispatched = command.type === 'send' && preparedSkills ? { ...command, skills: preparedSkills }
+      if (command.type === 'send' && command.wakeUp) await this.recordWakeUp(thread.id, command.messageId)
+      const dispatched = command.type === 'send' ? withoutWakeUp(preparedSkills ? { ...command, skills: preparedSkills } : command)
         : command.type === 'configure-thread' ? this.hostRead(command) : command
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       const result = await this.inner.execute(dispatched)

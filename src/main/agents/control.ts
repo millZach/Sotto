@@ -3010,7 +3010,7 @@ export class AgentControl {
     const thread = this.thread(command.threadId)
     const request = thread.requests.find(r => r.id === command.requestId)
     if (request?.kind !== 'permission') return
-    if (turn?.source === 'supervision') throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
+    if (turn?.source === 'supervision' || turn?.source === 'wake-up') throw new Error('Permissions are never answered automatically. This request stays in your attention queue.')
     if (command.approved !== true) return
     // Every risky class is checked against policy. The user's explicit Allow is the confirmation an
     // always-confirm boundary requires, so no verdict rejects a user-sourced approval; boundaries stay in force.
