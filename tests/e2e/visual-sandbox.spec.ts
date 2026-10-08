@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { captureWindow, closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 // An interactive visual runs in a sealed page (ADR-0060, #794), in the running app. The page an agent sends draws, runs
 // its script and follows Sotto's step and theme messages; an ordinary fetch, an ordinary image and an ordinary link aimed
@@ -180,7 +180,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 2 of 2')
     await scrollTo(card)
     await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-    await view.screenshot({ path: join(SHOTS, 'page-step-2-1280x800-dark.png'), animations: 'disabled' })
+    await captureWindow(launched.app, join(SHOTS, 'page-step-2-1280x800-dark.png'))
     await card.getByRole('button', { name: 'Read all' }).click()
     await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Every step')
     await expect(card.getByRole('listitem')).toHaveCount(2)
@@ -259,7 +259,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await expect(viewer.locator('.interactive-visual')).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
     await expect(card.locator('.interactive-visual[data-state="expanded"]')).toHaveCount(1)
     await expect.poll(() => launched!.app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(contents => contents.getType() === 'webview' && !contents.isDestroyed()).length)).toBe(1)
-    await view.screenshot({ path: join(SHOTS, 'expanded-1280x800-dark.png'), animations: 'disabled' })
+    await captureWindow(launched.app, join(SHOTS, 'expanded-1280x800-dark.png'))
     await view.keyboard.press('Escape')
     await expect(viewer).toBeHidden()
     await expect(expand).toBeFocused()
@@ -278,7 +278,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
           overflow: element.scrollWidth <= element.clientWidth + 1 }))
         expect(fits).toEqual({ right: true, page: true, overflow: true })
         await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-        await view.screenshot({ path: join(SHOTS, `page-${width}x${height}-${mode}.png`), animations: 'disabled' })
+        await captureWindow(launched.app, join(SHOTS, `page-${width}x${height}-${mode}.png`))
       }
     }
 
@@ -289,7 +289,7 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     expect((await guestRecord(launched)).still).toBe('true')
     await scrollTo(card)
     await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-    await view.screenshot({ path: join(SHOTS, 'page-1280x800-dark-reduced-motion.png'), animations: 'disabled' })
+    await captureWindow(launched.app, join(SHOTS, 'page-1280x800-dark-reduced-motion.png'))
     await view.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
     await expect.poll(async () => (await guestRecord(launched!)).reduced, { timeout: 15_000 }).toBe('false')
 

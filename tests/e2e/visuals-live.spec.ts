@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
 
 // A real Claude Code, Codex or Grok Build thread asked to draw a visual through `visualize`, in the production app
@@ -106,7 +106,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
         return false
       }, { timeout: 240_000, intervals: [2_000] }).toBe(true)
       await expect(card.getByRole('img', { name: /A request round trip/u })).toBeVisible({ timeout: 30_000 })
-      await page.screenshot({ path: join(artifacts, 'drawn.png') })
+      await captureWindow(app!, join(artifacts, 'drawn.png'))
       await idle(page)
       const drawn = await state(page)
       expect(drawn.requests).toHaveLength(0)
@@ -118,7 +118,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       expect(before).toBeGreaterThan(-1)
       expect(after).toBeGreaterThan(visual)
       expect(before).toBeLessThan(visual)
-      await page.screenshot({ path: join(artifacts, 'settled.png') })
+      await captureWindow(app!, join(artifacts, 'settled.png'))
 
       if (provider !== 'claude') return
       // The walkthrough: step 2 lights what Claude named for it, and its capture is kept.
@@ -132,7 +132,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       })
       await expect.poll(lit).toBeGreaterThan(0)
       await card.scrollIntoViewIfNeeded()
-      await page.screenshot({ path: join(artifacts, 'walkthrough-step-2.png'), animations: 'disabled' })
+      await captureWindow(app!, join(artifacts, 'walkthrough-step-2.png'))
 
       // Off: the running session's call is refused and nothing is drawn. On again: it draws.
       await page.evaluate(async () => { await window.sotto!.updateSettings({ visualsInThreads: false }) })
@@ -144,7 +144,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       await send(page, ask('Switched on'))
       await expect(log.getByRole('region', { name: 'Visual: Switched on' })).toBeVisible({ timeout: 240_000 })
       await idle(page)
-      await page.screenshot({ path: join(artifacts, 'switched.png') })
+      await captureWindow(app!, join(artifacts, 'switched.png'))
 
       // Kept with the thread: back after a restart, with no new turn.
       await app!.close(); app = undefined
@@ -155,7 +155,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       })
       await openThreads(page)
       await expect(page.getByRole('log', { name: 'Thread transcript' }).getByRole('region', { name: 'Visual: Switched on' })).toBeVisible({ timeout: 60_000 })
-      await page.screenshot({ path: join(artifacts, 'restarted.png') })
+      await captureWindow(app!, join(artifacts, 'restarted.png'))
     } catch (error) {
       // What the thread showed when it failed: a request waiting, a refused call, or no call at all.
       if (current && !current.isClosed()) {
