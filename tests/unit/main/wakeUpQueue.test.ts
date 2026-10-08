@@ -136,7 +136,7 @@ describe('a wake-up', () => {
     expect(f.host.attempts).toHaveLength(0)
   })
 
-  it('is taken back, part by part, when babysitting ends quietly, and can be removed like any follow-up', async () => {
+  it('is taken back, part by part, when babysitting ends quietly, and can be removed as the user\'s follow-ups can', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
     await f.control.deliverWakeUp('workshop', news(2), { tool: true })

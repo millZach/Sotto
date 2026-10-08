@@ -635,10 +635,10 @@ export const agentThreadDraftSchema = z.object({
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
 /**
- * User-authored follow-ups; independent of attention and dispatched outbox intent. One item may be Sotto's own: a
- * `wakeUp` babysitting is holding until the thread is ready (ADR-0061 decision 8), after the user's items, removable
- * and never editable. Its draft ID is its own, so an older reader still reads the queue; no draft or delivery receipt
- * goes with it.
+ * The follow-up queue's items: the user's own follow-ups, independent of attention and dispatched outbox intent, and
+ * at most one of Sotto's own, a `wakeUp` babysitting is holding until the thread is ready (ADR-0061 decision 8), after
+ * the user's items, removable and never editable. Its draft ID is its own, so an older reader still reads the queue;
+ * no draft or delivery receipt goes with it.
  */
 export const agentFollowupSchema = z.object({
   id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema, skills: agentSkillReferencesSchema.optional(),

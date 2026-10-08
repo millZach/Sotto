@@ -131,7 +131,7 @@ describe('news folded into a waiting wake-up', () => {
     expect(wakeUpText(folded, { tool: true })).toContain('Sotto keeps babysitting it')
   })
 
-  it('stays within what a saved follow-up can hold however much news comes', () => {
+  it('stays within what a saved item in the follow-up queue can hold however much news comes', () => {
     const longUrl = `https://github.com/o/r/actions/runs/${'1'.repeat(1_900)}`
     let folded: readonly BabysitNews[] = []
     for (let number = 1; number <= 60; number++) {
