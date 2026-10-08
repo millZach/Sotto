@@ -538,6 +538,14 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
   })
 
+  it('lets Stop end babysitting a pull request that merged before the next pass saw it', async () => {
+    const { command } = mount({ babysit: { agent: 'Codex' }, thread: babysat('agent'), detail: detail({ state: 'merged', mergedAt: new Date().toISOString() }) })
+    await opened()
+    const line = screen.getByRole('group', { name: /^Babysitting since / })
+    fireEvent.click(within(line).getByRole('button', { name: 'Stop babysitting #74' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'stop-babysitting', threadId: 'thread-1', url: URL }]))
+  })
+
   it('says babysitting ended and why under a merged pull request, and offers nothing to start', async () => {
     const endedAt = new Date().toISOString()
     mount({ babysit: { agent: 'Claude Code' }, thread: thread({ babysitEnded: [{ url: URL, number: 74, reason: 'merged', endedAt }] }), detail: detail({ state: 'merged', mergedAt: endedAt }) })

@@ -240,8 +240,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
                 <p id={hintId} className="pr-surface__hint">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? 'This repository allows no merge method. Change that on GitHub.' : <>{linesLeft(lines)}{autoMerge
                   ? <> <button type="button" className="pr-surface__textlink tt-focusable" disabled={running} onClick={() => setConfirming('enable-auto-merge')}>Merge when ready</button></> : null}</>}</p>
               </>}
-        {/* A merged or closed pull request is babysat by nobody: what ended it goes under what happened to it. */}
-        {!open ? <BabysitDock line={line} busy={false} disabled onStop={() => undefined} /> : null}
+        {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
+            merge, that it is still babysat, which Stop can end now. */}
+        {!open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, false)} /> : null}
       </div>
       <Fold label="Description" open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
         {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet">No description.</p>}
