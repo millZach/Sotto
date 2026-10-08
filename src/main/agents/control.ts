@@ -4,7 +4,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { isImmutableActivities, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -81,9 +81,6 @@ type ComposerContext = {
   immutableRevision?: boolean
   feedback?: (error: string | null) => void
 }
-/** The send or steer a command is, or null for any other: what `dispatch` asks, once, of every command. */
-/** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8), before it has started to send. */
-const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>): boolean => item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
 /** A queued item as the window is sent it: a wake-up's words, without the news they were worded from. */
 function withoutNews(item: QueuedFollowup): AgentFollowup {
   if (item.news === undefined) return item
@@ -91,6 +88,7 @@ function withoutNews(item: QueuedFollowup): AgentFollowup {
   void news
   return rest
 }
+/** The send or steer a command is, or null for any other: what `dispatch` asks, once, of every command. */
 function promptOf(command: DispatchCommand): PromptWithHandles | null {
   return command.type === 'send' || command.type === 'steer' ? command : null
 }

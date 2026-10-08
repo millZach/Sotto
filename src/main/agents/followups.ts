@@ -32,8 +32,10 @@ type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema>
 const storedSchema = z.object({ items: z.array(queuedSchema.extend({ attachments: z.array(z.union([agentAttachmentHandleSchema, agentAttachmentSchema])) })), receipts: receiptsSchema })
 /** How a wake-up's news is worded, given all of it: the store folds news and the caller words it (`wakeUpText`). */
 export type WordWakeUp = (news: readonly BabysitNews[]) => string
-/** Sotto's wake-up waiting in a thread's queue: the one that has not started to send. */
-const waitingWakeUp = (item: QueuedFollowup, threadId: string): boolean => item.threadId === threadId && item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
+/** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8): one that has not started to send. */
+export const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>): boolean => item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
+/** Sotto's wake-up waiting in this thread's queue. */
+const waitingWakeUp = (item: QueuedFollowup, threadId: string): boolean => item.threadId === threadId && isWaitingWakeUp(item)
 const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
