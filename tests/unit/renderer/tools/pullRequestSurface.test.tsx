@@ -497,19 +497,21 @@ it('explains how to recover when copying the pull request link fails', async () 
 describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
   const startedAt = new Date(Date.now() - 60_000).toISOString()
   const babysat = (startedBy: 'agent' | 'user') => thread({ babysitting: [{ url: URL, number: 74, startedBy, startedAt }] })
-  it('offers Babysit pull request in the ··· menu, after the merge items, and says what the host answered', async () => {
-    const { command } = mount({ babysit: { agent: 'Claude Code' }, result: { notice: 'Babysitting PR #74.' } })
+  it('offers Babysit pull request in the ··· menu, after the merge items, and says it started in passing', async () => {
+    const { command, onStatus } = mount({ babysit: { agent: 'Claude Code' }, result: { notice: 'Babysitting PR #74.' } })
     await opened()
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       'Convert to draft', 'Merge when ready (auto-merge)', 'Babysit pull request', 'Copy link', 'Link pull request', 'Close pull request'])
     fireEvent.click(screen.getByRole('menuitem', { name: 'Babysit pull request' }))
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'babysit-pull-request', threadId: 'thread-1', url: URL }]))
-    expect(await screen.findByRole('status')).toHaveTextContent('Babysitting PR #74.')
+    // The docked line says it once it comes; nothing above the checklist holds it down meanwhile.
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Babysitting #74'))
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('docks the line above Merge while it babysits, and stops it with Stop', async () => {
-    const { command } = mount({ babysit: { agent: 'Claude Code' }, thread: babysat('agent'), result: { notice: 'Stopped babysitting PR #74.' } })
+    const { command, onStatus } = mount({ babysit: { agent: 'Claude Code' }, thread: babysat('agent'), result: { notice: 'Stopped babysitting PR #74.' } })
     await opened()
     const line = screen.getByRole('group', { name: /^Babysitting since / })
     expect(line).toHaveTextContent('Started by Claude Code. Sotto sends this thread a wake-up when #74 needs it.')
@@ -520,7 +522,8 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     fireEvent.click(within(line).getByRole('button', { name: 'Stop babysitting #74' }))
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'stop-babysitting', threadId: 'thread-1', url: URL }]))
-    expect(await screen.findByRole('status')).toHaveTextContent('Stopped babysitting PR #74.')
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Stopped babysitting #74'))
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('says the host’s refusal in its own words', async () => {

@@ -91,12 +91,17 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   useEffect(() => () => { generation.current++ }, [])
 
   /** One command at a time. `then` runs before the press counts as over, so its controls stay off until it has finished too. */
-  const send = async (request: AgentCommand, pending: Busy, fallback: string, then?: () => Promise<void>): Promise<boolean> => {
+  /**
+   * `briefly`: what the surface already shows once the press succeeds, said in the panel's passing status instead of a
+   * notice that would hold the checklist down. A refusal still stays in the surface, saying why.
+   */
+  const send = async (request: AgentCommand, pending: Busy, fallback: string, then?: () => Promise<void>, briefly?: string): Promise<boolean> => {
     if (!command || busy) return false
     setBusy(pending); setNotice(null)
     try {
       const result = await sendCommand(command, request, fallback)
-      setNotice(result.error ? { text: result.error, tone: 'error' } : { text: result.notice ?? 'Done.', tone: 'status' })
+      if (!result.error && briefly) onStatus(briefly)
+      else setNotice(result.error ? { text: result.error, tone: 'error' } : { text: result.notice ?? 'Done.', tone: 'status' })
       await then?.()
       return result.error === null
     } finally { setBusy(null) }
@@ -113,10 +118,14 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const unlink = async (url: string): Promise<void> => {
     if (await send({ type: 'git-unlink-pull-request', threadId: thread.id, url }, 'unlink', 'Could not unlink the pull request.') && chosen === url) setChosen(null)
   }
-  /** Babysit pull request and Stop babysitting: the host answers with what it did, or why it did nothing. */
-  const babysitting = async (url: string, start: boolean): Promise<void> => {
+  /**
+   * Babysit pull request and Stop babysitting: the host answers with what it did, or why it did nothing. The docked line
+   * coming or going says what it did, so success passes in the panel's status rather than above the checklist.
+   */
+  const babysitting = async (url: string, number: number, start: boolean): Promise<void> => {
     await send({ type: start ? 'babysit-pull-request' : 'stop-babysitting', threadId: thread.id, url }, 'babysit',
-      start ? 'Sotto could not confirm babysitting started. Check the pull request before trying again.' : 'Sotto could not confirm babysitting stopped. Check the pull request before trying again.')
+      start ? 'Sotto could not confirm babysitting started. Check the pull request before trying again.' : 'Sotto could not confirm babysitting stopped. Check the pull request before trying again.',
+      undefined, start ? `Babysitting #${number}` : `Stopped babysitting #${number}`)
     // Stop takes its own button away; Babysit pull request is in the ··· menu again, so focus waits there.
     if (!start) requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) (surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') ?? top.current)?.focus() })
   }
@@ -176,7 +185,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
     ...(open && behind && detail.canUpdateBranch ? [{ id: 'rebase', label: 'Update with rebase', disabled: running, run: () => setConfirming('update-with-rebase') }] : []),
     ...(autoMerge ? [{ id: 'auto', label: 'Merge when ready (auto-merge)', disabled: running, run: () => setConfirming('enable-auto-merge') }] : []),
     ...(detail.autoMerge ? [{ id: 'no-auto', label: 'Disable auto-merge', disabled: running, run: () => void act('disable-auto-merge') }] : []),
-    ...(offerBabysit ? [{ id: 'babysit', label: 'Babysit pull request', icon: <AlarmClock size={15} aria-hidden="true" />, disabled: running, run: () => void babysitting(detail.url, true) }] : []),
+    ...(offerBabysit ? [{ id: 'babysit', label: 'Babysit pull request', icon: <AlarmClock size={15} aria-hidden="true" />, disabled: running, run: () => void babysitting(detail.url, detail.number, true) }] : []),
     { id: 'copy', label: 'Copy link', icon: <Copy size={15} aria-hidden="true" />, run: () => void copyLink(detail.url) },
     ...(command ? [{ id: 'link', label: 'Link pull request', icon: <Link2 size={15} aria-hidden="true" />, run: () => setLinking(true) }] : []),
     ...(detail.linked ? [{ id: 'unlink', label: 'Unlink from thread', icon: <Unlink size={15} aria-hidden="true" />, disabled: running, run: () => void unlink(detail.url) }] : []),
@@ -221,7 +230,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         </li>
       })}</ol>
       <div className="pr-surface__dock">
-        {open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, false)} /> : null}
+        {open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, detail.number, false)} /> : null}
         {detail.state === 'merged' ? <div className="pr-surface__finished" data-state="merged"><CircleCheck size={20} aria-hidden="true" />
           <div><strong>Merged into <bdi>{detail.baseBranch}</bdi></strong>{when ? <span>{when}</span> : null}</div></div>
           : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
@@ -242,7 +251,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
               </>}
         {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
             merge, that it is still babysat, which Stop can end now. */}
-        {!open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, false)} /> : null}
+        {!open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, detail.number, false)} /> : null}
       </div>
       <Fold label="Description" open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
         {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet">No description.</p>}

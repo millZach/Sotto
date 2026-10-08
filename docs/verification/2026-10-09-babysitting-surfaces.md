@@ -16,8 +16,8 @@ wake-up wording and the real send path through the follow-up queue.
 1. **Start from the surface.** The thread links #74, open with its build still running. In Tools → Pull request the
    ··· menu lists Convert to draft, Merge when ready (auto-merge), **Babysit pull request**, Copy link, Link pull
    request, Unlink from thread and Close pull request, in that order. It opens from the keyboard, answers Escape with
-   focus back on ···, and Babysit pull request is reached with the arrow keys and Enter. The host answers "Babysitting
-   PR #74."
+   focus back on ···, and Babysit pull request is reached with the arrow keys and Enter. The panel says "Babysitting
+   #74" in passing, at its foot; nothing is added above the checklist, so it stays where it was.
 2. **The line, the row and the pose.** A line docked under the checklist and above Merge says "Babysitting since 4:12
    pm" and "Started by you. Sotto sends this thread a wake-up when #74 needs it.", with **Stop**, named "Stop
    babysitting #74". The sidebar row reads **Babysitting #74**. Above the composer the creature rests in the muted
@@ -43,7 +43,7 @@ wake-up wording and the real send path through the follow-up queue.
    the user's own item no longer offers to move past it. The transcript echoes it where it will go as Sotto's, word for
    word ([queued](../../artifacts/babysitting-surfaces/queued-wake-up-1280x800-dark.png)). Remove takes it away and
    babysitting goes on; no wake-up is sent for it.
-5. **Stop.** Stop answers "Stopped babysitting PR #74.", the line goes, focus waits on ···, where Babysit pull request
+5. **Stop.** The panel says "Stopped babysitting #74" in passing, the line goes, focus waits on ···, where Babysit pull request
    is again, and the row and the pose go back to rest.
 6. **Ended on its own.** Started again from ···, then merged on GitHub: the next pass sends the last wake-up ("It
    merged, so Sotto has stopped babysitting it.") and ends babysitting. After Refresh the surface shows Merged into main

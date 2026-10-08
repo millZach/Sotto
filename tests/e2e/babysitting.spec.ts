@@ -160,7 +160,10 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     for (let step = 0; step < 6 && !await menuItem.evaluate(item => item === document.activeElement); step++) await page.keyboard.press('ArrowDown')
     await expect(menuItem).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(panel.getByText('Babysitting PR #74.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    // The line coming says it started; the panel says so in passing, and nothing above the checklist holds it down.
+    const passing = panel.locator('.tools-panel__status')
+    await expect(passing).toHaveText('Babysitting #74', { timeout: 30_000 })
+    await expect(panel.locator('.pr-surface__notice')).toHaveCount(0)
 
     // The line above Merge, the sidebar's state word and the creature's pose.
     const line = panel.getByRole('group', { name: /^Babysitting since \d/u })
@@ -178,6 +181,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect(pose).toHaveAttribute('role', 'img')
     await expect(pose).toHaveAccessibleName(/^Babysitting #74 Greet the reviewer since \d/u)
     await expect(pose).not.toHaveAttribute('aria-live')
+    await expect(passing).toBeEmpty()
     await capture(page, 'c-surface-line-1280x800-dark')
     await capture(page, 'c-sidebar-1280x800-dark')
     await capture(page, 'c-pose-1280x800-dark')
@@ -271,7 +275,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
 
     // Stop: the host says so, the line goes, and Babysit pull request is back in ···, where focus waits.
     await line.getByRole('button', { name: 'Stop babysitting #74' }).click()
-    await expect(panel.getByText('Stopped babysitting PR #74.', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(passing).toHaveText('Stopped babysitting #74', { timeout: 30_000 })
     await expect(line).toHaveCount(0)
     await expect(more).toBeFocused()
     await expect(status).toHaveText(/(Done|Just finished)$/u)
@@ -292,6 +296,8 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect(ended).toContainText(/Ended when #74 merged at \d/u, { timeout: 30_000 })
     await expect(status).toHaveText(/(Done|Just finished)$/u)
     await expectReadable({ 'ended words': ended.locator('.pr-surface__babysit-text span') })
+    // The passing word from starting again has gone by the time anyone reads why it ended.
+    await expect(passing).toBeEmpty()
     await capture(page, 'c-ended-1280x800-dark')
 
     // Settings → Application: the switch beside the other agent switches, saying what each value does.
