@@ -72,8 +72,12 @@ export interface FingerprintAnswer {
   readonly pullRequests: ReadonlyMap<number, PullRequestFingerprint>
 }
 
-/** Check states a check is still on its way in: queued, running, or a status not yet reported. Waiting is a check needing action. */
-const RUNNING = new Set(['QUEUED', 'IN_PROGRESS', 'PENDING', 'REQUESTED', 'EXPECTED'])
+/**
+ * Check states a check is still on its way in: queued, running, or a status reported pending. Waiting is a check needing
+ * action. A status expected and never reported is not running: a path-filtered required workflow can leave one expected
+ * for good, and its reporting moves the counts, so the fingerprint finds it without a read every pass (decision 13).
+ */
+const RUNNING = new Set(['QUEUED', 'IN_PROGRESS', 'PENDING', 'REQUESTED'])
 // An edit only ever moves `lastEditedAt` forward, so the newest one stands for them all.
 const newestEdit = (connection: z.infer<typeof editedSchema>): string =>
   (connection.nodes ?? []).reduce((newest, node) => node?.lastEditedAt && node.lastEditedAt > newest ? node.lastEditedAt : newest, '')

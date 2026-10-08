@@ -287,6 +287,21 @@ describe('what a pass costs', () => {
     expect(h.github.questions.map(question => [question.variables['name'], Object.keys(question.variables).filter(key => /^p\d+$/u.test(key)).length])).toEqual([['r', 25], ['r', 5], ['other', 1]])
   })
 
+  it('reads a required status nothing has reported yet only once it reports, not every pass', async () => {
+    const pull: ScriptedPull = { number: 1, checks: [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'deploy', status: true, state: 'EXPECTED', required: true }] }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    h.github.reset()
+    // A path-filtered required workflow can leave it expected for good: that is quiet, not running.
+    for (let index = 0; index < 15; index++) await h.pass()
+    expect([h.github.count('fingerprint'), h.github.count('detail')]).toEqual([15, 0])
+    expect(h.delivered).toEqual([])
+    pull.checks = [{ name: 'build', state: 'SUCCESS', required: true }, { name: 'deploy', status: true, state: 'ERROR', required: true, url: 'https://ci.example.com/deploy/1' }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'checks-failed', checks: [{ name: 'deploy', status: 'failure', url: 'https://ci.example.com/deploy/1' }] }])
+  })
+
   it('reads checks while one runs, and remarks every 30 minutes only for a pull request with review threads', async () => {
     const running: ScriptedPull = { number: 1, checks: [{ name: 'test', state: 'IN_PROGRESS' }] }
     const reviewed: ScriptedPull = { number: 2, threads: [{ path: 'a.ts', comments: [{ id: 't-1', author: 'reviewer', at: at(-60) }] }] }

@@ -6,7 +6,10 @@ import type { RunGitCommand } from '../../src/main/agents/gitStatus'
  * Every question is recorded, so a test counts reads exactly.
  */
 export type CheckState = 'QUEUED' | 'IN_PROGRESS' | 'WAITING' | 'SUCCESS' | 'FAILURE' | 'CANCELLED' | 'SKIPPED' | 'NEUTRAL'
-export interface ScriptedCheck { name: string; state: CheckState; required?: boolean; url?: string }
+/** A commit status's states; `EXPECTED` is a required status nothing has reported yet. */
+export type StatusState = 'EXPECTED' | 'PENDING' | 'SUCCESS' | 'FAILURE' | 'ERROR'
+/** A check run, or with `status: true` a commit status, which GitHub counts and shapes apart. */
+export type ScriptedCheck = { name: string; required?: boolean; url?: string } & ({ status?: false; state: CheckState } | { status: true; state: StatusState })
 /**
  * A comment or review. `at` is when it was written; `publishedAt`, when it differs, is when a comment drafted in a pending
  * review went out with that review, which on GitHub keeps the comment's `createdAt` at the drafting.
@@ -56,15 +59,16 @@ export function scriptedGitHub(pulls: ScriptedPull[], options: { viewer?: string
       // A reply in a review thread is a review, so each thread comment counts as one here, as GitHub counts it.
       reviews: { totalCount: reviews.length + threads.reduce((sum, thread) => sum + thread.comments.length, 0), nodes: reviews.map(review => ({ lastEditedAt: review.editedAt ?? null })) },
       reviewThreads: { totalCount: threads.length },
-      commits: { nodes: [{ commit: { statusCheckRollup: (pull.checks ?? []).length ? { contexts: { checkRunCountsByState: countsBy(pull.checks ?? []), statusContextCountsByState: [] } } : null } }] },
+      commits: { nodes: [{ commit: { statusCheckRollup: (pull.checks ?? []).length ? { contexts: {
+        checkRunCountsByState: countsBy((pull.checks ?? []).filter(check => !check.status)), statusContextCountsByState: countsBy((pull.checks ?? []).filter(check => check.status)) } } : null } }] },
     }
   }
   const detailOf = (pull: ScriptedPull, checks: boolean, remarks: boolean) => ({
     headRefOid: pull.head ?? 'head-1',
-    ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: (pull.checks ?? []).length ? { contexts: { nodes: (pull.checks ?? []).map(check => ({
-      __typename: 'CheckRun', name: check.name, status: RUNNING.has(check.state) ? check.state : 'COMPLETED', conclusion: RUNNING.has(check.state) ? null : check.state,
-      detailsUrl: check.url ?? `https://github.com/o/r/actions/runs/${check.name}`, isRequired: check.required === true, checkSuite: null,
-    })) } } : null } }] } } : {},
+    ...checks ? { commits: { nodes: [{ commit: { oid: pull.head ?? 'head-1', statusCheckRollup: (pull.checks ?? []).length ? { contexts: { nodes: (pull.checks ?? []).map(check => check.status
+      ? { __typename: 'StatusContext', context: check.name, state: check.state, targetUrl: check.url ?? `https://ci.example.com/${check.name}`, isRequired: check.required === true }
+      : { __typename: 'CheckRun', name: check.name, status: RUNNING.has(check.state) ? check.state : 'COMPLETED', conclusion: RUNNING.has(check.state) ? null : check.state,
+        detailsUrl: check.url ?? `https://github.com/o/r/actions/runs/${check.name}`, isRequired: check.required === true, checkSuite: null }) } } : null } }] } } : {},
     ...remarks ? {
       comments: { nodes: (pull.comments ?? []).map(remarkNode) },
       reviews: { nodes: (pull.reviews ?? []).map(review => ({ ...remarkNode(review), state: review.state, submittedAt: review.publishedAt ?? review.at, comments: { totalCount: review.inline ?? 0 } })) },
