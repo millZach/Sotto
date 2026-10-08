@@ -8,7 +8,7 @@ import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopyS
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestAction, GitPullRequestDetail, GitPullRequestLink, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
 
 /**
@@ -220,7 +220,7 @@ export interface AgentHost {
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
-  readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null>
+  readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
   /** A press on the Pull request surface; answers with what happened, in T3's words. */
   runPullRequestAction?(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
   linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>

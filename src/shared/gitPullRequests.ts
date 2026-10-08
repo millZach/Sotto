@@ -112,7 +112,17 @@ export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
  */
 export const gitPullRequestRequestSchema = z.object({ threadId: id, reference: z.string().min(1).max(2_048).optional() }).strict()
 export type GitPullRequestRequest = z.infer<typeof gitPullRequestRequestSchema>
-export const gitPullRequestResultSchema = gitPullRequestDetailSchema.nullable()
+/**
+ * A read the user asked for that GitHub's rate limit held back (#820): GitHub refused it, or reported nothing left of
+ * the gh sign-in's allowance. `retryAt` is when it may be asked again, for the window to say in its own clock.
+ */
+export const gitPullRequestLimitedSchema = z.object({ limited: z.object({ retryAt: z.string().max(64) }).strict() }).strict()
+export type GitPullRequestLimited = z.infer<typeof gitPullRequestLimitedSchema>
+export const gitPullRequestResultSchema = z.union([gitPullRequestDetailSchema, gitPullRequestLimitedSchema]).nullable()
+/** What a pull request read answers: the detail, a rate-limit refusal, or null when the thread has none to show. */
+export type GitPullRequestRead = GitPullRequestDetail | GitPullRequestLimited | null
+/** Whether a read was held back by GitHub's rate limit rather than answered. */
+export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'
 
 /** The URL of the pull request on the branch a thread's folder is on, as the host last read it. */

@@ -1,6 +1,6 @@
 // A stand-in for the GitHub CLI that the host runs through the gh test seam (SOTTO_E2E_GH_SCRIPT). It answers the
-// reads the Git status, the Git action and the Pull request surface make, "creates" a pull request by writing it to
-// FAKE_GH_STATE, a JSON file the spec owns, and acts on it the way GitHub would (merge, ready, close, auto-merge), so a
+// reads the Git status (one batched GraphQL query), the Git action and the Pull request surface (one GraphQL query)
+// make, "creates" a pull request by writing it to FAKE_GH_STATE, a JSON file the spec owns, and acts on it the way GitHub would (merge, ready, close, auto-merge), so a
 // journey pushes to an owned bare remote and opens, reads and merges its pull request without GitHub.
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -33,11 +33,6 @@ if (args[0] === 'pr' && args[1] === 'list') {
   const pulls = data.pulls.filter(pull => pull.headRefName === head && (wanted === 'all' || pull.state.toLowerCase() === wanted))
   save(data)
   process.stdout.write(JSON.stringify(pulls.map(pull => ({ ...pull, isDraft: pull.isDraft ?? false, updatedAt: '2026-09-23T00:00:00Z' }))) + '\n')
-} else if (args[0] === 'pr' && args[1] === 'view') {
-  const pull = find(args[2])
-  if (!pull) fail('GraphQL: Could not resolve to a PullRequest with the number of 0. (repository.pullRequest)')
-  save(data)
-  process.stdout.write(JSON.stringify(view(pull)) + '\n')
 } else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query PullRequestsByHead'))) {
   // The status reader's batched lookup: each aliased head (`h0=feat/greeting`) gets the pull requests with that head.
   const repository = {}
@@ -48,12 +43,20 @@ if (args[0] === 'pr' && args[1] === 'list') {
   }
   save(data)
   process.stdout.write(JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4999, resetAt: '2099-01-01T00:00:00Z' }, viewer: { login: 'sotto-fixture' }, repository } }) + '\n')
-} else if (args[0] === 'api' && args[1] === 'graphql') {
+} else if (args[0] === 'api' && args[1] === 'graphql' && args.some(argument => argument.startsWith('query=query PullRequestDetail'))) {
+  // The Pull request surface's one read: the pull request with its checks, reviews and distance from its base.
   const number = Number(args.find(argument => argument.startsWith('number='))?.slice('number='.length))
   const pull = data.pulls.find(item => item.number === number)
+  if (!pull) fail(`GraphQL: Could not resolve to a PullRequest with the number of ${number}. (repository.pullRequest)`)
   save(data)
-  process.stdout.write(JSON.stringify({ data: { repository: { mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true,
-    pullRequest: pull ? { viewerCanUpdateBranch: true, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } }, latestOpinionatedReviews: { nodes: pull.reviews ?? [] } } : null } } }) + '\n')
+  const viewed = view(pull)
+  const contexts = viewed.statusCheckRollup.map(({ workflowName, ...check }) => ({ ...check, checkSuite: workflowName ? { workflowRun: { workflow: { name: workflowName } } } : null }))
+  delete viewed.statusCheckRollup
+  process.stdout.write(JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4999, resetAt: '2099-01-01T00:00:00Z' }, viewer: { login: 'sotto-fixture' }, repository: {
+    mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true,
+    pullRequest: { ...viewed, viewerCanUpdateBranch: true, baseRef: { compare: { behindBy: pull.behindBy ?? 0 } }, latestOpinionatedReviews: { nodes: pull.reviews ?? [] },
+      commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: contexts } } } }] } },
+  } } }) + '\n')
 } else if (args[0] === 'repo' && args[1] === 'view') {
   save(data)
   process.stdout.write(JSON.stringify({ defaultBranchRef: { name: 'main' } }) + '\n')

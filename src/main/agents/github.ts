@@ -137,3 +137,12 @@ export class GitHubRateLimit {
     return entry.pauseUntil
   }
 }
+
+/** When a refused question may be asked again, in words that need no clock: "in about 12 minutes". */
+export function retryWords(retryAt: number, now: number): string {
+  const minutes = Math.ceil((retryAt - now) / 60_000)
+  if (minutes <= 1) return 'in a minute'
+  if (minutes < 60) return `in about ${minutes} minutes`
+  const hours = Math.round(minutes / 60)
+  return hours <= 1 ? 'in about an hour' : `in about ${hours} hours`
+}

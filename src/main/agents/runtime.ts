@@ -125,7 +125,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
     followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
-  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests(gitRun ? { run: gitRun } : {}))
+  if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
   const reasoner = options.reasoner ?? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {

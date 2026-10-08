@@ -167,6 +167,13 @@ export function mergedWhen(iso: string | null, now = new Date()): string | null 
     : at.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+/** A read GitHub's rate limit held back (#820): what happened, that nothing was lost, and when to ask again, in this window's clock. */
+export function limitedWords(retryAt: string, now = new Date()): string {
+  const when = mergedWhen(retryAt, now)
+  return when ? `GitHub is limiting requests from your gh sign-in until ${when}. Nothing was lost. Refresh after ${when}.`
+    : 'GitHub is limiting requests from your gh sign-in. Nothing was lost. Refresh in a few minutes.'
+}
+
 /**
  * The presses that ask first, in T3's words: the merge, turning on auto-merge, closing, and Update with rebase,
  * which rewrites the branch's commits on GitHub so a local copy of it no longer matches.

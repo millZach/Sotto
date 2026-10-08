@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { parsePullRequestReference, type GitPullRequestDetail, type GitPullRequestRequest } from '../../../shared/gitPullRequests'
+import { isPullRequestLimited, parsePullRequestReference, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestRequest } from '../../../shared/gitPullRequests'
+import { limitedWords } from './pullRequestSurface.logic'
 import type { AgentCommand, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useDialogFocus } from '../components/useDialogFocus'
@@ -9,7 +10,7 @@ type Command = (command: AgentCommand) => Promise<AgentState | null>
 const RESOLVE_DELAY_MS = 450
 
 /** The bridge call a dialog resolves a reference through; absent in a window without the preload. */
-export function pullRequestBridge(): ((request: GitPullRequestRequest) => Promise<GitPullRequestDetail | null>) | undefined {
+export function pullRequestBridge(): ((request: GitPullRequestRequest) => Promise<GitPullRequestRead>) | undefined {
   return window.sotto?.agents?.gitPullRequest
 }
 
@@ -109,7 +110,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
     setResolving(true)
     const timer = window.setTimeout(() => {
       read({ threadId, reference: parsed })
-        .then(detail => { if (!live) return; if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure('No pull request answers to that reference.') },
+        .then(detail => { if (!live) return; if (detail && isPullRequestLimited(detail)) setResolveFailure(limitedWords(detail.limited.retryAt)); else if (detail) setResolved({ reference: parsed, detail }); else setResolveFailure('No pull request answers to that reference.') },
           () => { if (live) setResolveFailure('Could not read that pull request. Check the reference and your gh sign-in.') })
         .finally(() => { if (live) setResolving(false) })
     }, RESOLVE_DELAY_MS)

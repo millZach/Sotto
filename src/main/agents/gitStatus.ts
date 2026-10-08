@@ -81,7 +81,9 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   child.on('close', code => {
     if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)
     if (timedOut) finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' }))
-    else if (code !== 0) finish(Object.assign(new Error(stderr.trim() || `${command} exited with ${code ?? 'a signal'}.`), { code }))
+    // What it printed rides along, out of sight of anything that prints the error: `gh api graphql` prints GitHub's
+    // partial answer before it fails on the errors in it.
+    else if (code !== 0) finish(Object.defineProperty(Object.assign(new Error(stderr.trim() || `${command} exited with ${code ?? 'a signal'}.`), { code }), 'stdout', { value: stdout, enumerable: false }))
     else finish(null)
   })
 }) }

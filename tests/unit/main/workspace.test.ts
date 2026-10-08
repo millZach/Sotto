@@ -9,6 +9,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { runWorktreeGit as git, ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 import { GitActions } from '../../../src/main/agents/gitActions'
 import { GitStatusReader } from '../../../src/main/agents/gitStatus'
+import { GitPullRequestLimited } from '../../../src/main/agents/gitPullRequests'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -1027,6 +1028,9 @@ describe('durable project/thread organization', () => {
     expect(service.view).toHaveBeenLastCalledWith(project.path, '#74')
     // With no reference the surface reads the one linked last.
     await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toMatchObject({ number: 74, linked: 'linked', branch: false })
+    // A read GitHub's rate limit holds back answers when to ask again, for the surface to say (#820).
+    service.view.mockRejectedValueOnce(new GitPullRequestLimited(Date.parse('2026-10-07T12:00:00Z'), Date.parse('2026-10-07T11:40:00Z')))
+    await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toEqual({ limited: { retryAt: '2026-10-07T12:00:00.000Z' } })
     const done = await f.host.runPullRequestAction({ threadId: 'local', url, action: 'merge', method: 'squash' })
     expect(service.act).toHaveBeenCalledWith(project.path, url, 'merge', 'squash')
     expect(done.notice).toBe('Pull request merged.')

@@ -3,13 +3,13 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PullRequestSurface } from '../../../../src/renderer/src/tools/PullRequestSurface'
 import {
-  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
+  canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, limitedWords, linesLeft, mergedWhen, mergeEffect, mergeReady, resolveMergeMethod,
 } from '../../../../src/renderer/src/tools/pullRequestSurface.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
-import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
+import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
@@ -37,7 +37,7 @@ function thread(change: Partial<AgentThread> = {}): AgentThread {
     worktree: { mode: 'shared', status: 'ready', path: 'C:/app', branch: 'feat/greeting', git: git({ pullRequest: { number: 74, title: 'Make the greeting friendlier', url: URL, state: 'open', draft: false } }) },
     ...change } as AgentThread
 }
-function mount(options: { detail?: GitPullRequestDetail | null | ((request: { reference?: string }) => GitPullRequestDetail | null); thread?: AgentThread; result?: Partial<AgentState> } = {}) {
+function mount(options: { detail?: GitPullRequestRead | ((request: { reference?: string }) => GitPullRequestRead); thread?: AgentThread; result?: Partial<AgentState> } = {}) {
   const gitPullRequest = vi.fn(async (request: { threadId: string; reference?: string }) => typeof options.detail === 'function' ? options.detail(request) : options.detail === undefined ? detail() : options.detail)
   const openExternalLink = vi.fn(async () => ({ ok: true }))
   const writeText = vi.fn(async () => undefined)
@@ -156,6 +156,7 @@ describe('the merge checklist, read from the pull request', () => {
     expect(mergeEffect('merge', 'main')).toBe('Every commit, plus a merge commit')
     expect(confirmationFor('merge', 74, 'squash', 'main')).toEqual({ title: 'Merge pull request?', description: 'This merges #74 into main using squash and merge.', confirm: 'Squash and merge', danger: false })
     expect(confirmationFor('close', 74, 'merge')).toMatchObject({ title: 'Close pull request?', description: 'This closes #74 without merging it.', danger: true })
+    expect(limitedWords('not a date')).toBe('GitHub is limiting requests from your gh sign-in. Nothing was lost. Refresh in a few minutes.')
     expect(mergedWhen(null)).toBeNull()
     expect(mergedWhen('not a date')).toBeNull()
     expect(mergedWhen('2026-09-23T10:14:00Z', new Date('2026-09-23T12:00:00Z'))).toMatch(/\d/u)
@@ -406,6 +407,17 @@ describe('the Pull request surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not read the pull request from GitHub. Check your gh sign-in and connection, then refresh. What shows below is from the last read.')
     expect(gitPullRequest).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('list', { name: 'Merge checklist' })).toBeInTheDocument()
+  })
+  it('says when GitHub limits the sign-in and when to refresh, over the checklist it keeps (#820)', async () => {
+    const retryAt = new Date(Date.now() + 20 * 60_000).toISOString()
+    let limited = false
+    mount({ detail: () => limited ? { limited: { retryAt } } : detail() })
+    await opened()
+    limited = true
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    const when = mergedWhen(retryAt)!
+    expect(await screen.findByRole('alert')).toHaveTextContent(`GitHub is limiting requests from your gh sign-in until ${when}. Nothing was lost. Refresh after ${when}. What shows below is from the last read.`)
     expect(screen.getByRole('list', { name: 'Merge checklist' })).toBeInTheDocument()
   })
   it('puts focus back on the pull request when a press settles its line and takes its button away', async () => {

@@ -32,8 +32,8 @@ import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitAct
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRequest } from '../../shared/gitPullRequests'
-import { GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
@@ -554,15 +554,18 @@ export class WorkspaceHost implements AgentHost {
   /**
    * One pull request of the thread's, read through gh: the one named, else its branch's own, else the one
    * linked last. A draft reads through its project's folder, as it does for branches. A linked pull request's
-   * title and state on the record follow what GitHub just said.
+   * title and state on the record follow what GitHub just said. A read GitHub's rate limit held back answers when it may
+   * be asked again, for the surface to say (#820).
    */
-  async readThreadPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestDetail | null> {
+  async readThreadPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     await this.initialize()
     const service = this.pullRequestsOrRefuse()
     const thread = this.thread(request.threadId)
     const reference = request.reference ?? branchPullRequestUrl(thread) ?? thread.pullRequests?.at(-1)?.url
     if (!reference) return null
-    const view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference)
+    let view: GitPullRequestView
+    try { view = await service.view(this.threadRepositoryFolder(request.threadId, 'pull requests'), reference) }
+    catch (error) { if (error instanceof GitPullRequestLimited) return { limited: { retryAt: new Date(error.retryAt).toISOString() } }; throw error }
     const current = this.thread(request.threadId)
     const key = pullRequestKey(view.url)
     const link = current.pullRequests?.find(item => pullRequestKey(item.url) === key)
