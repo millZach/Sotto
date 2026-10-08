@@ -56,6 +56,16 @@ describe('atomic socket Send', () => {
   })
 })
 
+describe('the window\'s own refresh (#820)', () => {
+  it.each([false, true])('sends background only to a host that lists background-refresh (listed: %s)', async listed => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const state = emptyDesktopState(hostId), call = vi.fn(async () => state)
+    Object.assign(client, { features: listed ? ['background-refresh'] : [], cached: state, call })
+    await client.command({ type: 'refresh-thread-worktree', threadId: 'thread', background: true }, undefined, 'focus-refresh')
+    expect(call).toHaveBeenCalledWith({ op: 'command', command: listed ? { type: 'refresh-thread-worktree', threadId: 'thread', background: true } : { type: 'refresh-thread-worktree', threadId: 'thread' } }, 'focus-refresh')
+  })
+})
+
 describe('socket early start', () => {
   it('sends the start and reads nothing after it, so a failed read can show no error (#769)', async () => {
     const state = emptyDesktopState(hostId), onPushError = vi.fn()

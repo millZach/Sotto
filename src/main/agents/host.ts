@@ -203,7 +203,8 @@ export interface AgentHost {
   paneActivities?(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[]
   workingCopyOptions?(projectId: string): Promise<AgentWorkingCopyOptions>
   configureThreadWorkingCopy?(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot>
-  updateThreadWorktree?(threadId: string, retry: boolean): Promise<AgentHostSnapshot>
+  /** `background` is a read the window made on its own, which asks GitHub only as the timer would (#820). */
+  updateThreadWorktree?(threadId: string, retry: boolean, options?: { readonly background?: boolean }): Promise<AgentHostSnapshot>
   restoreThreadBranch?(threadId: string, withUncommittedChanges: boolean): Promise<AgentHostSnapshot>
   /** Remove the thread's own worktree folder and keep its branch (ADR-0041). */
   previewThreadWorktreeReclaim?(threadId: string): Promise<WorktreeReclaimPreview>

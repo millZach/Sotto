@@ -927,7 +927,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(), managed: z.boolean().optional() }).strict(),
-  z.object({ type: z.enum(['retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
+  z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
+  /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
+   * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
+  z.object({ type: z.literal('refresh-thread-worktree'), threadId: id, background: z.boolean().optional() }).strict(),
   /** Switch the thread's worktree back to the branch of its last send. `withUncommittedChanges` is the
    * user's answer to the confirmation; without it a worktree with uncommitted work is left alone. */
   z.object({ type: z.literal('restore-thread-branch'), threadId: id, withUncommittedChanges: z.boolean().optional() }).strict(),

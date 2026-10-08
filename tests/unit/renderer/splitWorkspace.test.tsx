@@ -377,7 +377,7 @@ describe('multi-pane workspace', () => {
     expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links', 'Weekly note'])
     expect(view.prompt('Footer links')).toHaveValue('Footer draft while zoomed')
     // Drafting in this legacy thread inspects its existing checkout; layout changes send no work.
-    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links' }]])
+    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links', background: true }]])
   })
 
   it('shows one pane with tabs when the area is too short for the grid and returns to the grid when it is tall again', async () => {
@@ -422,7 +422,7 @@ describe('multi-pane workspace', () => {
     expect(document.activeElement).toBe(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' }))
     expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes arranged in a grid')
     expect(view.prompt('Footer links')).toHaveValue('Footer draft through compact')
-    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links' }]])
+    expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links', background: true }]])
   })
 
   it('moves a pane from its handle with the arrow keys, keeping focus, drafts and the selection where they were', async () => {

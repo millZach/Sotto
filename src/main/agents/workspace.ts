@@ -2181,7 +2181,7 @@ export class WorkspaceHost implements AgentHost {
     }
     this.dirty = true; await this.flush(); this.publish()
   }
-  async updateThreadWorktree(threadId: string, retry: boolean): Promise<AgentHostSnapshot> {
+  async updateThreadWorktree(threadId: string, retry: boolean, options: { readonly background?: boolean } = {}): Promise<AgentHostSnapshot> {
     const recordRead = await this.onLane(threadId, async () => {
       await this.initialize()
       await this.discoverWorkingCopy(threadId)
@@ -2206,8 +2206,9 @@ export class WorkspaceHost implements AgentHost {
     })
     // A refresh is the user's or the window's ask, so the remote is read too, fetching when the interval allows. The
     // refresh answers once the record is read: the fetch and the GitHub lookup run outside the thread's lane, so
-    // neither the refresh nor a send waits for them (issue #766), and the status publishes when it lands.
-    if (recordRead) void this.readRemoteStatus(threadId)
+    // neither the refresh nor a send waits for them (issue #766), and the status publishes when it lands. The window's
+    // own ask (`background`) asks GitHub as the timer does, so regaining focus never spends the reserve or a pause (#820).
+    if (recordRead) void this.readRemoteStatus(threadId, options.background ? { background: true } : {})
     return this.workspaceSnapshot()
   }
   /**

@@ -2659,7 +2659,8 @@ export class AgentControl {
       case 'retry-thread-worktree':
       case 'refresh-thread-worktree': {
         if (!this.dependencies.host.updateThreadWorktree) throw new Error('Working-copy status is unavailable.')
-        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree'))
+        this.acceptSnapshot(await this.dependencies.host.updateThreadWorktree(command.threadId, command.type === 'retry-thread-worktree',
+          command.type === 'refresh-thread-worktree' && command.background === true ? { background: true } : {}))
         return
       }
       case 'configure-thread-working-copy': {

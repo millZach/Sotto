@@ -456,6 +456,8 @@ export class SocketHostService implements HostService {
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.recoveryError = undefined
     const admitted = structuredClone(command)
+    // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
+    if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
       const edit = this.retainCompose(admitted as TargetedCompose, commandId)
       if (this.supportsDraftRevisions) return this.queueCompose({ ...admitted, draftId: edit.draft.draftId, attachments: edit.draft.attachments } as TargetedCompose, edit.draft.draftId, commandId)

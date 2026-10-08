@@ -559,6 +559,9 @@ describe('durable project/thread organization', () => {
     expect(source.read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
     // A refresh is the user's read, which may pass a GitHub pause (#820).
     expect(source.readRemote).toHaveBeenLastCalledWith(project.path, {})
+    // The window's own refresh, when it regains focus or a draft begins, asks GitHub as the timer does.
+    await f.host.updateThreadWorktree('local', false, { background: true })
+    await vi.waitFor(() => expect(source.readRemote).toHaveBeenLastCalledWith(project.path, { background: true }))
     // The timer reads only the threads a window is looking at.
     current = { ...base, ahead: 2 }
     await new Promise(resolve => setTimeout(resolve, 40))
