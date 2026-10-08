@@ -74,7 +74,7 @@ export function baseRepository(remotes: ReadonlyMap<string, { url: string | null
   return ordered[0]?.repository ?? null
 }
 
-/** Asked by the timer, which may wait, or by the user (a refresh, a Git action, the Pull request surface), who should not. */
+/** Asked by the timer or the window on its own, which may wait, or by the user (Refresh, a Git action, the Pull request surface), who should not. */
 export type GitHubAsk = 'background' | 'user'
 
 /** Asked inside every GraphQL query Sotto sends: GitHub's own reading of the allowance, at no extra cost. */
