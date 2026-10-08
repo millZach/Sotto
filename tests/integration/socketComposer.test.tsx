@@ -322,8 +322,10 @@ it.each(['clear', 'replace', 'answer'] as const)('retires only the exact saved r
     else expect((await other.command({ type: 'compose', threadId: f.a.id, text: 'Independent replacement' })).error).toBeNull()
     await expect.poll(() => f.store.get(f.hostId, f.a.id)).toBeUndefined()
     expect(f.client.shell().draft).not.toBe('Exact saved revision')
-    const proof = action === 'answer' ? f.client.shell().deliveredDrafts : f.client.shell().obsoleteDrafts
-    expect(proof).toContainEqual({ threadId: f.a.id, draftId: saved.hostDraftId })
+    // The host publishes obsolete drafts once its write lands, but the new revision at once, so the
+    // client can retire the saved draft by revision before the proof reaches it.
+    await expect.poll(() => action === 'answer' ? f.client.shell().deliveredDrafts : f.client.shell().obsoleteDrafts)
+      .toContainEqual({ threadId: f.a.id, draftId: saved.hostDraftId })
   } finally { await other?.close(); await f.close() }
 })
 
