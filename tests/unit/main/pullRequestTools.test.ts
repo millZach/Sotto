@@ -18,8 +18,9 @@ function harness(options: { branch?: string; linked?: string[]; admits?: boolean
   const linked = [...options.linked ?? []]
   const calls: string[] = []
   const babysitter: NonNullable<PullRequestToolHandlers['babysitter']> = {
-    start: async (threadId, address, startedBy): Promise<BabysitStart> => {
+    start: async (threadId, address, startedBy, admission): Promise<BabysitStart> => {
       calls.push(`start ${address} ${startedBy}`)
+      if (admission?.allowed && !admission.allowed()) return { started: false, reason: 'switched-off' }
       if (![options.branch, ...linked].some(known => known && pullRequestKey(known) === pullRequestKey(address))) return { started: false, reason: 'unknown-pull-request' }
       const existing = records.find(item => pullRequestKey(item.url) === pullRequestKey(address))
       if (existing) return { started: false, reason: 'already', babysitting: existing }
@@ -101,6 +102,19 @@ describe('the pull request tools', () => {
     await expect(h.server.settingChanged()).resolves.toBe(1)
     expect(h.records.map(item => [item.number, item.startedBy])).toEqual([[4, 'user']])
     expect(h.calls.at(-1)).toBe('stop all switch agent')
+  })
+
+  it('refuses a call whose link was still being made when the switch was turned off, and starts nothing', async () => {
+    let linked!: () => void
+    const h = harness({ link: async () => { await new Promise<void>(resolve => { linked = resolve }); return { link: { url: url(6) } } } })
+    const call = h.call('babysit_pull_request', { pull_request: url(6) })
+    await expect.poll(() => linked).toBeDefined()
+    h.setEnabled(false)
+    await expect(h.server.settingChanged()).resolves.toBe(0)
+    linked()
+    expect(await call).toEqual({ error: true, text: BABYSITTING_SWITCHED_OFF })
+    expect(h.records).toEqual([])
+    expect(h.calls.filter(call => call.startsWith('start'))).toEqual([])
   })
 
   it('offers nothing to a thread that cannot babysit, and refuses its calls', async () => {

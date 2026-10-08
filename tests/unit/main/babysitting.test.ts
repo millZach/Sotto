@@ -100,6 +100,25 @@ describe('starting, stopping and listing', () => {
     expect(h.events).toEqual(['babysit-ended-stopped-by-user', 'babysit-ended-switched-off', 'babysit-ended-switched-off'])
     expect(h.delivered).toEqual([])
   })
+
+  it('lets no agent\'s start land after the switch\'s sweep, whichever is asked first', async () => {
+    const h = harness([], { a: { links: [url(1), url(2)] } })
+    // A save that takes its time, as the workspace's does: the start is under way, its record not yet saved.
+    const change = h.memory.store.changeBabysitting
+    let saving = false
+    h.memory.store.changeBabysitting = async (id, apply) => { saving = true; await new Promise(resolve => setTimeout(resolve, 5)); await change(id, apply) }
+    let enabled = true
+    const allowed = () => enabled
+    const before = h.babysitter.start('a', url(1), 'agent', { allowed })
+    await expect.poll(() => saving).toBe(true)
+    enabled = false
+    const swept = h.babysitter.stop({ startedBy: 'agent' }, 'switch')
+    const after = h.babysitter.start('a', url(2), 'agent', { allowed })
+    await expect(before).resolves.toMatchObject({ started: true })
+    await expect(swept).resolves.toBe(1)
+    await expect(after).resolves.toEqual({ started: false, reason: 'switched-off' })
+    expect(h.babysitter.list()).toEqual([])
+  })
 })
 
 describe('finding each event once', () => {

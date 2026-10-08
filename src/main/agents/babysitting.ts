@@ -87,7 +87,8 @@ export type BabysitStart =
   | { readonly started: true; readonly babysitting: AgentBabysitting }
   /** `already`: it babysits this one, unchanged. The others started nothing. */
   | { readonly started: false; readonly reason: 'already'; readonly babysitting: AgentBabysitting }
-  | { readonly started: false; readonly reason: 'not-github' | 'unknown-thread' | 'closed-thread' | 'unknown-pull-request' | 'limit' }
+  /** `switched-off`: the agent's start, refused because Let agents babysit pull requests was turned off before it landed (decision 12). */
+  | { readonly started: false; readonly reason: 'not-github' | 'unknown-thread' | 'closed-thread' | 'unknown-pull-request' | 'limit' | 'switched-off' }
 /** Why nothing was started, in the words the user's control and the agent's tool both answer with (decision 5). */
 export const BABYSIT_REFUSALS: Readonly<Record<Exclude<Extract<BabysitStart, { started: false }>['reason'], 'already'>, string>> = {
   'not-github': 'Sotto babysits pull requests on GitHub only. Nothing was started.',
@@ -95,6 +96,7 @@ export const BABYSIT_REFUSALS: Readonly<Record<Exclude<Extract<BabysitStart, { s
   'closed-thread': 'This thread is settled or archived. Restore it to babysit its pull request. Nothing was started.',
   'unknown-pull-request': 'Link this pull request to the thread first. Nothing was started.',
   limit: `This thread already babysits ${BABYSITTING_PER_THREAD_MAX} pull requests, the most one thread can. Stop one first. Nothing was started.`,
+  'switched-off': 'Let agents babysit pull requests is turned off in Sotto\'s Settings. Nothing was started.',
 }
 /** One pull request a thread babysits, as `list` gives it. */
 export interface BabysitListing extends AgentBabysitting { readonly threadId: string }
@@ -158,6 +160,8 @@ export class Babysitter {
   /** Ending what settled or archived threads babysat, and whether another thread closed while it ran. */
   private endingClosed: Promise<void> | undefined
   private closedAgain = false
+  /** Starts and stops, one at a time in the order asked, so a start never lands after a stop that should have ended it. */
+  private changes: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly options: BabysitterOptions) {
     this.run = options.run ?? runGitStatusCommand
@@ -187,9 +191,21 @@ export class Babysitter {
   /**
    * Starts babysitting a pull request the thread knows, for whoever asked. Asks nobody (decision 4) and reads nothing
    * now: the next pass takes its first look, telling what stands then (failing checks, a pass, a conflict) and the
-   * remarks written after this moment.
+   * remarks written after this moment. `allowed` is asked once it is this start's turn among starts and stops, so a
+   * start it refuses never lands after the switch's sweep (decision 12).
    */
-  async start(threadId: string, url: string, startedBy: BabysitStarter): Promise<BabysitStart> {
+  start(threadId: string, url: string, startedBy: BabysitStarter, options: { readonly allowed?: () => boolean } = {}): Promise<BabysitStart> {
+    return this.oneAtATime(() => {
+      if (options.allowed && !options.allowed()) return Promise.resolve<BabysitStart>({ started: false, reason: 'switched-off' })
+      return this.startNow(threadId, url, startedBy)
+    })
+  }
+  private oneAtATime<T>(change: () => Promise<T>): Promise<T> {
+    const task = this.changes.then(change)
+    this.changes = task.catch(() => undefined)
+    return task
+  }
+  private async startNow(threadId: string, url: string, startedBy: BabysitStarter): Promise<BabysitStart> {
     const address = pullRequestAddress(url)
     const key = pullRequestKey(url)
     if (!address || !key) return { started: false, reason: 'not-github' }
@@ -215,7 +231,10 @@ export class Babysitter {
    * Stops babysitting what the selector names: one pull request of a thread, all of a thread's, or, with no thread,
    * every thread's (the switch, with `startedBy: 'agent'`). Sends the thread nothing (decision 9). Resolves with how many stopped.
    */
-  async stop(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
+  stop(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
+    return this.oneAtATime(() => this.stopNow(selector, reason))
+  }
+  private async stopNow(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
     const key = selector.url === undefined ? undefined : pullRequestKey(selector.url)
     if (key === null) return 0
     const threads = selector.threadId === undefined ? this.options.store.babysatThreads() : [this.options.store.babysitThread(selector.threadId)].flatMap(thread => thread ? [thread] : [])

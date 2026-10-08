@@ -53,7 +53,7 @@ export interface PullRequestToolHandlers {
 }
 
 /** The sentence a call is refused with while the switch is off (decision 12). */
-export const BABYSITTING_SWITCHED_OFF = 'Let agents babysit pull requests is turned off in Sotto\'s Settings. Nothing was started.'
+export const BABYSITTING_SWITCHED_OFF = BABYSIT_REFUSALS['switched-off']
 const SWITCHED_OFF_STOP = 'Let agents babysit pull requests is turned off in Sotto\'s Settings, which ended what agents started. Nothing was started or stopped.'
 const NOT_HERE = 'This thread cannot babysit pull requests with Sotto\'s tools. Nothing was started.'
 const NAME_IT = 'Name the pull request by its GitHub URL or its number, such as #42. Nothing was started.'
@@ -130,7 +130,10 @@ export class PullRequestToolServer implements ScopedThreadTools {
     if (!input.success) return text(NAME_IT, true)
     const url = await this.resolve(threadId, input.data.pull_request)
     if ('refused' in url) return text(url.refused, true)
-    const outcome = await babysitter.start(threadId, url.url, 'agent')
+    // Asked again once linking is done, and by the reader in this start's turn among starts and stops: a switch turned
+    // off meanwhile refuses this call, and a start can never land after the switch's sweep (decision 12).
+    if (!this.handlers.enabled()) return text(BABYSITTING_SWITCHED_OFF, true)
+    const outcome = await babysitter.start(threadId, url.url, 'agent', { allowed: () => this.handlers.enabled() })
     if (outcome.started) {
       return text(`Sotto is babysitting pull request #${outcome.babysitting.number} for this thread. It reads GitHub every two minutes and sends this thread a wake-up when ${WAKES}. End your turn now; do not poll GitHub or wait. Call ${STOP_BABYSITTING_TOOL} before you hand the work back to the user.`)
     }
