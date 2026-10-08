@@ -171,13 +171,15 @@ private final class TimelineCache {
     private var key: String?
     private var cached: [ConversationRow] = []
     private var dates: [String: Date] = [:]
-    func rows(for detail: ThreadDetail?) -> [ConversationRow] {
+    /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
+    /// a computer whose Sotto restarted, so it is always drawn anew.
+    func rows(for detail: ThreadDetail?, held: Bool = false) -> [ConversationRow] {
         guard let detail else {
             key = nil
             cached = []
             return []
         }
-        let next = detail.threadId + "#" + String(detail.revision)
+        let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
@@ -209,7 +211,7 @@ private struct Tail: Equatable {
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
     @EnvironmentObject var model: AppModel
-    /// Watched so each new revision of the thread redraws the conversation; it is read through `model.detail(for:)`.
+    /// Watched so each new revision of the thread redraws the conversation; it is read through `model.shown(for:)`.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     @Binding var stuck: Bool
@@ -229,7 +231,7 @@ private struct Conversation: View {
 
     var body: some View {
         let detail = model.shown(for: ref)
-        let rows = timeline.rows(for: detail)
+        let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
         let pending = model.pending(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
                         failed: model.failedReplies[ref.id] != nil)

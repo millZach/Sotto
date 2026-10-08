@@ -216,7 +216,8 @@ private struct ComputerDetails: View {
             }
             .padding(.horizontal, Space.gutter).padding(.top, Space.s2).padding(.bottom, Space.s6)
         }
-        .refreshable { await model.connect(hostID) }
+        // A computer that gave up waits for its Reconnect; pulling leaves it alone, as it does on the lists.
+        .refreshable { if model.status(hostID) != .unreachable { await model.connect(hostID) } }
         .confirmationDialog("Remove \(computer.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove from this iPhone", role: .destructive) { Task { await model.remove(hostID) } }
         } message: {

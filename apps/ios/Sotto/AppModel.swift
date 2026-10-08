@@ -222,8 +222,12 @@ struct HeldDetail {
     /// about a minute in all; a computer that never connected is tried once. A computer that gives up reads Can't reach
     /// it and waits for the user's Try again or Reconnect: coming back to the app and pulling to refresh leave it alone.
     private var wasOnline: Set<String> = []
-    /// Quiet retries after a lost connection, at 1, 2, 4, 8, 16 and 30 seconds.
+    /// Quiet retries after a lost connection, at 1, 2, 4, 8, 16 and 30 seconds, within about a minute of the loss: a
+    /// computer that doesn't answer takes ten seconds an attempt, and six of those would double it.
     private static let quietRetries = 6
+    private static let quietRetryWindow: TimeInterval = 60
+    /// When each computer's quiet retries began.
+    private var retryingSince: [String: Date] = [:]
     private let retryJitter: @Sendable () -> Double
     private let retrySleep: @Sendable (UInt64) async throws -> Void
     private var pairGeneration = UUID()
@@ -648,7 +652,7 @@ struct HeldDetail {
             activationConnection = Task { await reconnectAll() }
         } else if phase == .background {
             cancelDetailReload()
-            retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll()
+            retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll(); retryingSince.removeAll()
             active = false; pairGeneration = UUID(); working = false; holdDetail()
             for (hostID, connection) in connections { generations[hostID] = UUID(); connection.disconnect() }
             connecting.removeAll(); watches.removeAll()
@@ -740,12 +744,15 @@ struct HeldDetail {
     /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
     /// own page, and nothing connects it until the user presses Try again or Reconnect.
     private func connectionEnded(_ hostID: String, problem: String, retrying: Bool) {
-        if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries {
+        let since = retryingSince[hostID] ?? Date()
+        if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries,
+           Date().timeIntervalSince(since) < Self.quietRetryWindow {
+            retryingSince[hostID] = since
             update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = problem }
             scheduleRetry(hostID)
             return
         }
-        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; wasOnline.remove(hostID)
+        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; retryingSince[hostID] = nil; wasOnline.remove(hostID)
         update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = problem }
     }
     /// Why a connection failed, naming the computer as this iPhone does. A computer that didn't answer reads the same
@@ -778,7 +785,7 @@ struct HeldDetail {
     private func connection(_ hostID: String) -> HostConnection {
         if let existing = connections[hostID] { return existing }
         let made = HostConnection()
-        made.onLiveness = { [weak self] in self?.retryAttempts[hostID] = nil }
+        made.onLiveness = { [weak self] in self?.retryAttempts[hostID] = nil; self?.retryingSince[hostID] = nil }
         made.onPush = { [weak self] frame, sequence in self?.push(frame, from: hostID, sequence: sequence) }
         made.onDisconnect = { [weak self] in
             guard let self else { return }
@@ -903,7 +910,7 @@ struct HeldDetail {
         let markers = pending.filter { $0.hostID != hostID }
         if let computerIndexAccount { try? keychain.write(rest.map(\.hostID), account: computerIndexAccount) }
         try? keychain.write(markers, account: ComputerStore.pendingAccount)
-        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; wasOnline.remove(hostID)
+        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; retryingSince[hostID] = nil; wasOnline.remove(hostID)
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
