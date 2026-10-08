@@ -82,3 +82,19 @@ Zach picked variant C of #822's prototype on October 8, 2026, from the review pa
 - #824 builds `sotto_pull_requests` with the three tools, the wake-up as Sotto's own follow-up item (one per thread, folded, removable, not editable; the follow-up store learns an item that has no draft or delivery receipt), the `wake-up` turn source, the follow-up queue's exception for Sotto's item (decision 14), the origin mark that tells clients a message is a wake-up, the two remote commands with the `pull-request-babysit` host feature, and the switch with decision 12's scope on the IPC patch allow-list.
 - #825 builds variant C (**The look**), offers the surface's control only where the thread's host lists the feature, and shows a wake-up as Sotto's, from the message's mark. It updates `README.md` (decision 16) and `docs/guide.md`.
 - AGENTS.md's authority rule is unchanged: a wake-up is a send within limits that approves nothing.
+
+## Amendment: what the reader decided (October 8, 2026, #823)
+
+Building the reader settled these, which the decisions above leave open:
+
+- **The first look.** A pass after babysitting starts tells what stands on the head then: a check already failed, the gate already passed, a conflict. Remarks count only from the moment it started; older ones the agent can read itself. Starting reads nothing; the next pass looks.
+- **The fingerprint ends it.** Merged, closed and conflicting are in the fingerprint itself, so they need no detail read. A closed pull request ends babysitting like a merged one; if it reopens, it can be babysat again.
+- **Remarks told** are kept as GitHub's time of the newest one reported, its edit or its writing, with the IDs reported in that second, starting at the start time. That is decision 10's "comments and reviews reported with their edit times" in a bounded form: an edit moves a remark past it, so it is news again.
+- **A review that only commented on code** is told through its review comments, each on its file, and not again as a review: a reply in a review thread is such a review on GitHub.
+- **What the detail reads.** The newest 100 comments by their last update, the last 100 reviews, the last 50 review threads with their last 20 comments each, and the head's first 100 checks. An edit further back waits; T3 has the same limit.
+- **Running** means a check queued or in progress, or a status pending or expected. A check waiting on someone is told as needing action and is not read every pass for it.
+- **A failed read** is gh failing for a reason other than a rate limit, or GitHub answering nothing for that pull request (gone, or not visible to the sign-in). One pull request GitHub cannot find does not fail the others in its fingerprint. Checks GitHub refused are not a failure; they are asked again next pass.
+- **Reads are shared host-wide.** Every pull request is read by its GitHub address from the host's home folder, not through a thread's folder, so one read serves every thread and project on the host that babysits it, and a folder being removed holds nothing up. T3 groups per project because it reads through each checkout.
+- **A stop wins.** A babysitting stopped while GitHub was being read is told nothing. News that could not be handed over is not recorded, and the next pass reads that pull request whole to find it again.
+- **Settled** in decision 9 is the provider's settled state, or Sotto's settling of the thread or its project; **closed** is archived. Either ends babysitting quietly at the next pass, as unlinking does.
+- **On the record.** The thread's record in `workspace.json` holds what it babysits with what it was last told. In memory the thread carries only the published part, so what it was told never reaches a client.
