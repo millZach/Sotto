@@ -87,7 +87,7 @@ Zach picked variant C of #822's prototype on October 8, 2026, from the review pa
 
 Building the reader settled these, which the decisions above leave open:
 
-- **The first look.** A pass after babysitting starts tells what stands on the head then: a check already failed, the gate already passed, a conflict. Remarks count only from the moment it started; older ones the agent can read itself. Starting reads nothing; the next pass looks.
+- **The first look.** A pass after babysitting starts tells what stands on the head then: a check already failed, the gate already passed, a conflict. Remarks count only from the second it started, the whole second because GitHub dates them no finer, so one made in that second is told rather than lost; older ones the agent can read itself. Starting reads nothing; the next pass looks.
 - **The fingerprint ends it.** Merged, closed and conflicting are in the fingerprint itself, so they need no detail read. A closed pull request ends babysitting like a merged one; if it reopens, it can be babysat again.
 - **Remarks told** are kept as GitHub's time of the newest one reported, its edit or when it went out, with the IDs reported in that second, starting at the start time. That is decision 10's "comments and reviews reported with their edit times" in a bounded form: an edit moves a remark past it, so it is news again. A comment drafted in a review goes out when the review is submitted, though GitHub keeps the time it was drafted, so it is timed by its `publishedAt`; an edit to a draft is part of the writing, not an edit.
 - **A review that only commented on code** is told through its review comments, each on its file, and not again as a review: a reply in a review thread is such a review on GitHub.

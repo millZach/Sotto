@@ -250,6 +250,19 @@ describe('finding each event once', () => {
   })
 })
 
+describe('the first look', () => {
+  it('tells a remark GitHub dates in the second babysitting started, since GitHub keeps no milliseconds', async () => {
+    const pull: ScriptedPull = { number: 1 }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    h.clock.advance(0.4 / 60)
+    await h.babysitter.start('a', url(1), 'agent')
+    // Posted 400 ms or more after the start, in the same whole second, which is all GitHub says of its time.
+    pull.comments = [{ id: 'c-same-second', author: 'reviewer', at: at(0) }]
+    await h.pass()
+    expect(h.changes()).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'comment', author: 'reviewer' })] }])
+  })
+})
+
 describe('what a pass costs', () => {
   it('reads a pull request three threads babysit once a pass, and tells each thread', async () => {
     const pull: ScriptedPull = { number: 1, checks: [{ name: 'test', state: 'IN_PROGRESS' }] }

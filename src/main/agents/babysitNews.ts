@@ -40,8 +40,13 @@ export type BabysitTold = z.infer<typeof babysitToldSchema>
 export const babysitRecordSchema = agentBabysittingSchema.extend({ told: babysitToldSchema }).strict()
 export type BabysitRecord = z.infer<typeof babysitRecordSchema>
 
+/**
+ * Nothing told yet. Remarks count from the start's whole second, because GitHub dates them to the second: a remark
+ * made in the second babysitting started is told rather than lost, even one made a moment before it.
+ */
 export const toldAtStart = (startedAt: string): BabysitTold =>
-  ({ head: null, failedChecks: [], passed: false, remarksThrough: startedAt, remarkIds: [], conflicting: false, commentOnly: 0, failedReads: 0 })
+  ({ head: null, failedChecks: [], passed: false, remarksThrough: wholeSecond(startedAt), remarkIds: [], conflicting: false, commentOnly: 0, failedReads: 0 })
+const wholeSecond = (time: string): string => { const at = Date.parse(time); return Number.isFinite(at) ? new Date(Math.floor(at / 1000) * 1000).toISOString() : time }
 
 /** A check that finished failed, was cancelled or needs someone: news as soon as it is, so a check that never finishes cannot hold it back. */
 export type BabysitCheckNews = Pick<BabysitCheck, 'name' | 'url'> & { readonly status: 'failure' | 'cancelled' | 'action-required' }
