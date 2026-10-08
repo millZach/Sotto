@@ -13,24 +13,31 @@
     5. what the Settings switch is called and where it sits
 
   Three variants on ?variant=a|b|c, switched from the bar at the bottom (left and right arrow keys too, unless the
-  focus is in a field). Each answers every question differently where the options allow:
-   a  On the surface.     A switch row in the Pull request surface's foot (1C). The sidebar row keeps Done with a
-                          small pull request mark (2B). A quiet line above the composer, "Babysitting #74 · Stop"
-                          (3A). A wake-up is a compact row in Sotto's voice that opens to the full message (4A).
-                          Settings → Git (5B).
-   b  In the transcript.  An icon button in the surface's header, shown pressed while babysitting (1A). The row
-                          reads "Done · Babysitting #74" (2C). A ring on the branch toolbar's pull request badge
-                          (3B). Starting puts a live card in the transcript, and each wake-up is a card in the
-                          merge checklist's style with a press per link (4C). Settings → Application (5A).
-   c  A state of its own. A line docked under the checklist above Merge, Babysit pull request in the ··· menu when
-                          off (1B). The row's state word is Babysitting (2A). A fourth creature pose above the
-                          composer, and the state in the pane header (3C). A wake-up is a message on the user's
-                          side, labelled Sotto, showing the whole text (4B). Settings → Application (5A).
+  focus is in a field). Each shows one option for every question and nothing a question does not offer:
+   a  A quiet line.       1C a switch row, "Babysit pull request", in the Pull request surface's foot.
+                          2B the row keeps its state, with a small pull request mark beside it.
+                          3A a quiet line above the composer, "Babysitting #74 · since 2:02 pm · Stop".
+                          4A a wake-up is a compact row in Sotto's voice that opens to the full message.
+                          5B "Let agents babysit their pull requests" in Settings → Git.
+   b  On the badge.       1A an icon button in the surface's header, shown pressed while babysitting.
+                          2C the row reads "Done · Babysitting #74".
+                          3B a ring and a small clock on the branch toolbar's pull request badge; Stop is on the surface.
+                          4C a wake-up is a card in the merge checklist's style, a press for each line that has one.
+                          5A "Let agents babysit pull requests" in Settings → Application.
+   c  A state of its own. 1B a line docked above Merge with Stop; when off, Babysit pull request is in the ··· menu.
+                          2A the row's state word becomes "Babysitting #74" where it would say Done.
+                          3C a fourth pose of the creature above the composer, at rest, below every other pose.
+                          4B a wake-up is a message on the user's side, labelled Sotto, showing the whole text.
+                          5A as b.
 
-  Step (the bar, or [ and ]) walks: before, started by the agent, started by you, a check failed, checks passed,
-  a review comment, conflict, merged. From "a check failed" on, the story continues from the agent's start.
-  Stop and Babysit pull request work in every state. "Open Settings" opens the variant's Settings page.
-  Query: ?variant=a&step=passed&theme=light&settings=1&open=last&bar=0 (bar=0 hides the bar for captures).
+  Step (the bar, or [ and ]) walks the story: before, started by the agent, started by you, a check failed, checks
+  passed, a wake-up waiting in the queue, a review comment, conflict, merged. Then seven states that branch off
+  "checks passed": closed without merging, ended after ten comment-only wake-ups, ended because GitHub could not be
+  read, the Settings switch turned off, two pull requests at once, the creature outranking it, and a thread on another
+  computer (no tool, so only you start it). The sidebar's other two threads babysit too, one "Just finished" and one
+  "Needs your approval", so each sidebar option shows beside both.
+  Stop and Babysit pull request work in every state; the Settings switch works and ends what agents started.
+  Query: ?variant=a&step=passed&theme=light&settings=1&open=last&menu=1&bar=0 (bar=0 hides the bar for captures).
   Open the file in a browser; nothing to run, no network.
 -->
 <html lang="en">
@@ -181,15 +188,22 @@ body[data-settings] .app { display: none; }
 .row__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
 .row__provider { color: var(--tt-provider-claude); }
 :root[data-theme='light'] .row__provider { color: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text)); }
-.row__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; white-space: nowrap; }
-.row__status > span { overflow: hidden; text-overflow: ellipsis; }
+/* The status as the real row draws it: margin-left auto, at most 70% of the line, cut short with an ellipsis. */
+.row__status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; max-width: 70%; margin-left: auto; min-width: 0; white-space: nowrap; }
+.row__status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.row__status > i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .row__status[data-state='working'] { color: var(--tt-activity); }
-.row__status[data-state='working'] > i { display: block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.row__status[data-state='needs'] { color: var(--tt-warning-text); }
+.row__status[data-state='unseen'] { color: var(--tt-text-2); }
+.row__status:is([data-state='working'], [data-state='needs'], [data-state='unseen']) > i { display: block; }
+.row__status[data-state='unseen'] > i { background: var(--tt-activity); }
 .row__status[data-state='babysitting'] { color: var(--tt-text-2); }
-/* B (sidebar): the small pull request mark beside the state, its number in the tooltip. */
-.row__pr { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--tt-accent-text); }
+/* 2B: the small pull request mark beside the state; its number is in the tooltip and the row's sentence. */
+.row__pr { display: inline-grid; flex: none; place-items: center; width: 16px; height: 16px; color: var(--tt-accent-text); }
 .ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
 .ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.ring[data-state='needs'] { border: 2px solid var(--tt-warning-text); }
+.ring[data-state='unseen'] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
 @media (prefers-reduced-motion: no-preference) { .ring[data-state='working'] { animation: spin 1.5s linear infinite; } }
 @keyframes spin { to { rotate: 360deg; } }
 .settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; text-align: left; cursor: pointer; }
@@ -209,9 +223,6 @@ body[data-settings] .app { display: none; }
 .head__crumb { flex: none; color: var(--tt-text-muted); font-size: 14px; white-space: nowrap; }
 .head__branch { display: inline-flex; flex: 0 2 auto; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--tt-text-2); font-size: 14px; white-space: nowrap; }
 .head__branch > svg { color: var(--tt-text-muted); }
-/* C (pane): the thread's state, said in its header. */
-.head__state { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 7px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
-.head__state > svg { color: var(--tt-accent-text); }
 .head__actions { display: flex; flex: none; align-items: center; gap: 4px; margin-left: 6px; }
 .git-action { display: inline-flex; align-items: stretch; height: 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; }
 .git-action > button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; background: transparent; color: var(--tt-text-2); font-size: 13.5px; cursor: pointer; border-radius: 7px 0 0 7px; }
@@ -222,9 +233,8 @@ body[data-settings] .app { display: none; }
 .pane-ibtn[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
 @container pane (max-width: 640px) { .head__crumb { display: none; } }
 @container pane (max-width: 560px) { .head__branch { display: none; } .git-action__word { display: none; } .head { padding-left: 14px; } }
-@container pane (max-width: 420px) { .head__state > span { display: none; } .head__state { padding: 0 6px; } }
 
-.transcript { flex: 1; min-height: 120px; overflow-y: auto; padding: 18px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.transcript { position: relative; flex: 1; min-height: 64px; overflow-y: auto; padding: 18px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 @container pane (max-width: 520px) { .transcript { padding-inline: 16px; } }
 .msg { position: relative; margin: 0 0 26px; }
 .msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
@@ -243,29 +253,35 @@ body[data-settings] .app { display: none; }
 .act__by { margin-left: auto; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
 .working { display: flex; align-items: center; gap: 8px; margin: -8px 0 22px; color: var(--tt-activity); font-size: 14px; }
 .working > i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* Links in a message, as MessageContent draws them. A break may fall after a slash, not inside a word. */
+.mlink { color: var(--tt-link); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.mlink:hover { color: var(--tt-text); }
 
 /* The Sotto mark, small, for what Sotto says in a thread. */
 .smark { flex: none; display: block; }
 .smark rect:first-child { fill: var(--tt-accent); }
-.smark rect + rect, .smark path { fill: none; stroke: var(--tt-on-accent); }
 .smark rect + rect { fill: var(--tt-on-accent); stroke: none; }
+.smark path { fill: none; stroke: var(--tt-on-accent); }
 
 /* ---------- 4A: the compact wake-up row ---------- */
 .wake { margin: 0 0 22px; }
-.wake__row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 5px 8px 5px 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 14px; text-align: left; cursor: pointer; }
+.wake__row { display: grid; grid-template-columns: 18px auto minmax(0, 1fr) auto 14px; align-items: start; column-gap: 8px; width: 100%; min-height: 34px; padding: 6px 8px 6px 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 14px; line-height: 1.45; text-align: left; cursor: pointer; }
+.wake__row > svg { margin-top: 1px; }
 .wake__row:hover { background: var(--tt-hover); }
-.wake__who { flex: none; color: var(--tt-text); font-weight: 500; }
-.wake__sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wake__time { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.wake__row > .i:last-child { color: var(--tt-text-muted); transition: rotate .16s; }
+.wake__who { color: var(--tt-text); font-weight: 500; }
+.wake__sum { min-width: 0; }
+.wake__time { color: var(--tt-text-muted); font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wake__row > .i:last-child { margin-top: 3px; color: var(--tt-text-muted); transition: rotate .16s; }
 .wake__row[aria-expanded='true'] > .i:last-child { rotate: 90deg; }
 .wake__body { margin: 4px 0 0 30px; padding: 10px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; }
+@container pane (max-width: 520px) { .wake__body { margin-left: 0; } }
 .raw-caption { margin: 0 0 6px; color: var(--tt-text-muted); font-size: 12px; }
 .raw { margin: 0; color: var(--tt-text-2); font: 13px/1.6 var(--tt-font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* ---------- 4C: the wake-up card, in the merge checklist's style; and the live card a start puts in the transcript ---------- */
+/* ---------- 4C: the wake-up card, in the merge checklist's style ---------- */
 .wcard { margin: 0 0 24px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); container: wcard / inline-size; }
 .wcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 9px 12px; color: var(--tt-text-muted); font-size: 12.5px; }
+.wcard__head > svg { color: var(--tt-accent-text); }
 .wcard__head strong { color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
 .wcard__head time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .wcard__lines { margin: 0; padding: 0; list-style: none; }
@@ -283,22 +299,16 @@ body[data-settings] .app { display: none; }
 .qbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
 .qbtn > .i { transition: rotate .16s; }
 .qbtn[aria-expanded='true'] > .i { rotate: 90deg; }
-.babysit-card { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; margin: 0 0 24px; padding: 11px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); container: wcard / inline-size; }
-.babysit-card[data-ended] { border-color: var(--tt-hairline); }
-.babysit-card > svg { color: var(--tt-accent-text); }
-.babysit-card[data-ended] > svg { color: var(--tt-text-muted); }
-.babysit-card strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; }
-.babysit-card small { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
 @container wcard (max-width: 420px) {
-  .wcard__line, .babysit-card { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
-  .wcard__line > .tt-button, .babysit-card > .tt-button { grid-column: 2; justify-self: start; margin-top: 6px; }
-  .wcard__line > svg, .babysit-card > svg { margin-top: 2px; }
+  .wcard__line { grid-template-columns: 18px minmax(0, 1fr); align-items: start; }
+  .wcard__line > .tt-button { grid-column: 2; justify-self: start; margin-top: 6px; }
+  .wcard__line > svg { margin-top: 2px; }
 }
 
 /* ---------- 4B: the wake-up as a message on the user's side, labelled Sotto ---------- */
 .msg[data-role='sotto'] { margin-left: max(24px, 12%); padding: 12px 16px 14px; border: 1px solid var(--tt-accent-border); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
 .msg[data-role='sotto'] .msg__who { color: var(--tt-text); }
-.msg__tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-muted); font-size: 11.5px; line-height: 18px; }
+.msg__tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
 .msg[data-role='sotto'] .raw { color: var(--tt-text); font-size: 13.5px; line-height: 1.55; }
 
 /* ---------- Composer (threads.css, composer.css, branchToolbar.css) ---------- */
@@ -322,15 +332,33 @@ body[data-settings] .app { display: none; }
 button.btb { cursor: pointer; }
 button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hover); color: var(--tt-text); }
 .btb--static { padding-left: 9px; color: var(--tt-text-muted); }
-.btb--static > svg { color: var(--tt-text-faint); }
+.btb--static > svg { color: var(--tt-text-muted); }
 .btb--branch { max-width: 220px; font-family: var(--tt-font-mono); font-size: 12px; }
 .btb--branch > span { overflow: hidden; text-overflow: ellipsis; }
 .btb--pr { gap: 4px; font-size: 12px; }
-.btb--pr > svg { color: var(--tt-success); }
-.btb--pr[data-state='merged'] > svg { color: var(--tt-accent-text); }
-/* 3B: a ring on the pull request badge while it is babysat, and a dot that says so without colour alone. */
+.btb--pr > svg:first-child { color: var(--tt-success); }
+.btb--pr[data-state='merged'] > svg:first-child { color: var(--tt-accent-text); }
+.btb--pr[data-state='closed'] > svg:first-child { color: var(--tt-text-muted); }
+/* 3B: a ring on the badge while it is babysat, and a small clock in it, so it is not said by colour alone. */
 .btb--pr[data-babysat] { border-color: var(--tt-accent); box-shadow: 0 0 0 1px var(--tt-accent); }
-.btb--pr[data-babysat]::after { content: ''; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--tt-accent); box-shadow: 0 0 0 2px var(--tt-canvas); }
+.btb--pr[data-babysat] > .btb__clock { color: var(--tt-accent-text); }
+
+/* The follow-up queue (composer.css .thread-followups): it joins the prompt's top edge. */
+.fq { --fq-surface: color-mix(in srgb, var(--tt-field) 70%, var(--tt-canvas)); margin: 0 12px -1px; padding: 0 6px 6px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--fq-surface); }
+.fq__head { display: flex; align-items: center; min-height: 38px; padding-top: 2px; }
+.fq__toggle { display: flex; flex: 1; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 14px; text-align: left; cursor: pointer; }
+.fq__toggle:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.fq__count { margin-left: 4px; color: var(--tt-text-2); }
+.fq__list { margin: 0; padding: 0; list-style: none; }
+.fq__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 27px; border-radius: 10px; }
+.fq__item + .fq__item { margin-top: 2px; }
+.fq__item:hover, .fq__item:focus-within { background: var(--tt-hover); }
+.fq__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.fq__sotto { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; color: var(--tt-text); font-weight: 500; vertical-align: -3px; }
+.fq__sotto > svg { color: var(--tt-accent-text); }
+.fq__tools { display: inline-flex; }
+.fq__tools .ibtn { width: 32px; height: 32px; }
+@container pane (max-width: 520px) { .fq { margin-inline: 8px; } .fq__item { padding-left: 10px; } }
 
 /* 3A: the quiet line above the composer, where the creature would stand. */
 .babysit-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 30px; margin: 0 6px 6px; color: var(--tt-text-muted); font-size: 13px; }
@@ -339,16 +367,22 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .linkbtn { min-height: 26px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-link); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .linkbtn:hover { background: var(--tt-hover); }
 
-/* 3C: a fourth pose for the composer's creature (threadMonitor.css): it stands by its pull request's sign. */
+/* The creature above the composer (threadMonitor.css): what it stands for on top, the state word underneath.
+   Monitoring is the real pose, in the activity colour. 3C's babysitting pose is the fourth: at rest, in the muted
+   text colour, holding its pull request's sign, so it never reads as a watch the provider confirmed. */
 .ornament { position: relative; height: 64px; margin-bottom: 4px; padding: 0 14px; display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, min(200px, 52%)); align-items: end; pointer-events: none; }
 .ornament svg { display: block; width: 80px; height: 64px; }
 .mon-color { fill: var(--tt-activity); }
+.ornament[data-pose='babysitting'] .mon-color { fill: var(--tt-text-muted); }
 .mon-ink { fill: var(--tt-canvas); }
 .mon-shine { fill: var(--tt-text); }
 .mon-handle { fill: var(--tt-border); }
+.mon-sign { fill: var(--tt-accent-text); }
 .mon-task { pointer-events: auto; min-width: 0; margin-bottom: -5px; padding: 8px 12px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--tt-surface); }
 .mon-task b { display: block; overflow: hidden; color: var(--tt-text); font-size: 13px; font-weight: 400; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
 .mon-task span { display: block; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.mon-task span .mon-since { display: inline; }
+@container pane (max-width: 420px) { .mon-task span .mon-since { display: none; } }
 @media (prefers-reduced-motion: no-preference) { .mon-eyes { animation: blink 5s steps(1) infinite; } }
 @keyframes blink { 0%, 96% { opacity: 1; } 97%, 99% { opacity: 0; } }
 
@@ -366,6 +400,7 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .chrome__lead { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
 .chrome__lead > svg[data-state='open'] { color: var(--tt-success); }
 .chrome__lead > svg[data-state='merged'] { color: var(--tt-activity); }
+.chrome__lead > svg[data-state='closed'] { color: var(--tt-text-muted); }
 .pr-name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .pr-name span { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 .tag { flex: none; padding: 1px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
@@ -373,16 +408,17 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .cbtn { position: relative; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .cbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
 .cbtn[aria-expanded='true'] { background: var(--tt-selected); color: var(--tt-text); }
-/* 1A: the header button, shown pressed while babysitting. */
+/* 1A: the header button, drawn pressed while babysitting. Its name says what a press does. */
 .cbtn[data-on] { background: var(--tt-selected); color: var(--tt-accent-text); box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
 .menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; display: grid; width: 250px; max-width: calc(100cqw - 24px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 .menu button { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font-size: 13px; text-align: left; cursor: pointer; }
 .menu button > svg { color: var(--tt-text-muted); }
+.menu button[data-tone='danger'] { color: var(--tt-error-text); }
 .menu button:hover, .menu button:focus-visible { background: var(--tt-hover); outline: none; }
 .menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .menu hr { height: 1px; margin: 4px 2px; border: 0; background: var(--tt-hairline); }
+.menu__pad { display: inline-block; width: 15px; flex: none; }
 
-.pr-notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; }
 .pr-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .pr-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin: 0 0 10px; color: var(--tt-text); font-size: 16px; font-weight: 550; }
 .pr-heading small { color: var(--tt-text-muted); font-size: 13px; font-weight: 400; }
@@ -393,7 +429,7 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .pr-line > svg { color: var(--tt-text-muted); }
 .pr-line[data-tone='done'] > svg { color: var(--tt-success); }
 .pr-line[data-tone='failed'] > svg { color: var(--tt-error-text); }
-.pr-line:is([data-tone='running'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
+.pr-line:is([data-tone='running'], [data-tone='todo'], [data-tone='open']) > svg { color: var(--tt-warning-text); }
 .pr-line strong { display: block; color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .pr-line[data-tone='done'] strong { color: var(--tt-text-2); font-weight: 400; }
 .pr-why { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
@@ -407,15 +443,24 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .pr-merge .tt-button { min-height: 44px; font-size: 15px; }
 .pr-merge__go { flex: 1; min-width: 0; }
 .pr-hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.pr-finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
+.pr-finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
 .pr-finished > svg { color: var(--tt-activity); }
+.pr-finished[data-state='closed'] > svg { color: var(--tt-text-muted); }
+.pr-finished > div { flex: 1; min-width: 0; }
 .pr-finished strong { display: block; color: var(--tt-text); font-weight: 500; }
 .pr-finished span { color: var(--tt-text-muted); font-size: 13px; }
 .pr-fold { border-top: 1px solid var(--tt-hairline); }
-.pr-dock + .pr-fold, .pr-finished + .pr-fold { margin-top: 6px; }
+.pr-dock + .pr-fold { margin-top: 6px; }
 .pr-fold__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
-.pr-fold__head > svg { color: var(--tt-text-muted); }
+.pr-fold__head > svg { color: var(--tt-text-muted); transition: rotate .16s; }
+.pr-fold__head[aria-expanded='true'] > svg { rotate: 90deg; }
 .pr-fold__head span { color: var(--tt-text-muted); font-weight: 400; }
+.pr-linked { margin: 0 0 10px; padding: 0; list-style: none; }
+.pr-linked li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 36px; padding: 4px 0 4px 24px; font-size: 13.5px; }
+.pr-linked li > svg { color: var(--tt-success); }
+.pr-linked b { min-width: 0; flex: 1 1 150px; color: var(--tt-text); font-weight: 500; }
+.pr-linked b span { color: var(--tt-text-muted); font-weight: 400; }
+.pr-linked em { color: var(--tt-text-2); font-size: 12.5px; font-style: normal; }
 /* 1B: the line docked under the checklist, above Merge. */
 .pr-babysat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; padding: 8px 8px 8px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-accent-wash); }
 .pr-babysat > svg { color: var(--tt-accent-text); }
@@ -424,13 +469,13 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 .pr-babysat__text small { display: block; color: var(--tt-text-muted); font-size: 12.5px; }
 .pr-babysat[data-ended] { border-color: var(--tt-hairline); background: transparent; }
 .pr-babysat[data-ended] > svg { color: var(--tt-text-muted); }
-.pr-babysat--after { margin: 14px 0 0; }
+.pr-babysat--after { margin: 12px 0 0; }
 /* 1C: a switch row in the surface's foot, with who started it and since when underneath. */
 .pr-foot-switch { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 2px 16px; width: 100%; flex: none; padding: 10px 16px; border: 0; border-top: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
-.pr-foot-switch:disabled { cursor: not-allowed; }
+.pr-foot-switch[aria-disabled='true'] { cursor: default; }
 .pr-foot-switch strong { display: block; font-size: 13.5px; font-weight: 500; }
 .pr-foot-switch small { display: block; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
-.pr-foot-switch:hover:not(:disabled) { background: var(--tt-hover); }
+.pr-foot-switch:hover:not([aria-disabled='true']) { background: var(--tt-hover); }
 .tools__foot { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 6px 0 14px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
 .tools__copy { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-2); }
 .tools__copy b { flex: none; font-weight: 500; }
@@ -444,58 +489,76 @@ button.btb:hover { border-color: var(--tt-text-faint); background: var(--tt-hove
 }
 @container tools-body (max-width: 439px) { .pr-body { padding-inline: 12px; } .pr-dock { margin-inline: -12px; padding-inline: 12px; } .tools__copy .muted { display: none; } }
 
-/* The switch (global.css .tt-toggle): checked is the text colour with a canvas thumb. */
+/* The switch (global.css .tt-toggle): checked is the text colour with a canvas thumb. Settings draws it in the accent. */
 .track { position: relative; display: block; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-pill); background: var(--tt-surface-sunken); }
 .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform .12s; }
 [aria-checked='true'] > .track { border-color: var(--tt-text); background: var(--tt-text); }
 [aria-checked='true'] > .track::after { background: var(--tt-canvas); transform: translateX(16px); }
-:disabled > .track { opacity: .5; }
+[aria-disabled='true'] > .track { opacity: .5; }
 
 /* The window's own controls (Windows): drawn by the system over the top right, not in the page's tab order. */
 .winctl { position: fixed; top: 0; right: 0; z-index: 30; display: flex; height: 44px; color: var(--tt-text-2); pointer-events: none; }
 .winctl span { display: grid; place-items: center; width: 46px; }
 
-/* ---------- Settings (global.css settings rows) ---------- */
-.settings { display: none; grid-template-columns: var(--side-w-settings, 300px) minmax(0, 1fr); height: 100vh; }
+/* ---------- Settings (crossing-settings.css, gitSettings.css): open rows under a page heading ---------- */
+.settings { display: none; grid-template-columns: 300px minmax(0, 1fr); height: 100vh; }
 body[data-settings] .settings { display: grid; }
-@media (max-width: 1000px) { .settings { --side-w-settings: 230px; } }
-.settings__nav { display: flex; flex-direction: column; min-height: 0; padding: 0 10px; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
-.settings__nav .side__top { padding-left: 4px; }
-.settings__nav h1 { margin: 10px 8px 14px; font-size: 22px; font-weight: 600; letter-spacing: -.4px; }
-.snav { display: grid; align-content: start; flex: 1 1 auto; gap: 2px; min-height: 0; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
-.snav hr { height: 1px; margin: 6px 10px; border: 0; background: var(--tt-hairline); }
-.snav button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 14px; text-align: left; cursor: pointer; }
-.snav button:hover { background: var(--tt-hover); }
+@media (max-width: 1000px) { .settings { grid-template-columns: 180px minmax(0, 1fr); } }
+.settings__nav { display: flex; flex-direction: column; min-height: 0; padding: 0 12px; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
+.settings__nav .side__top { padding-left: 6px; }
+.settings__nav h1 { margin: 10px 8px 18px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -.7px; }
+.snav { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-height: 0; margin: 0; padding: 0 0 12px; list-style: none; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.snav li[data-gap] { position: relative; margin-top: 32px; }
+.snav li[data-gap]::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.snav button { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 14px; line-height: 1.35; text-align: left; cursor: pointer; }
+.snav button:hover { background: var(--tt-hover); color: var(--tt-text); }
 .snav button[aria-current='page'] { background: var(--tt-selected); color: var(--tt-text); }
-.snav button > svg { color: var(--tt-text-muted); }
-.settings__nav .side__foot { margin: 0 -10px; }
-.settings__main { min-width: 0; overflow-y: auto; padding: 56px 32px 64px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-@media (max-width: 1000px) { .settings__main { padding: 52px 18px 64px; } }
-.settings__inner { max-width: 760px; margin: 0 auto; }
-.s-heading { display: flex; align-items: start; gap: 10px; margin: 0 0 10px; }
-.s-heading > svg { margin-top: 2px; color: var(--tt-accent-text); }
-.s-heading h2 { margin: 0; color: var(--tt-text); font-size: 13.5px; font-weight: 600; }
-.s-heading p { margin: 1px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
-.s-rows { margin: 0 0 26px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); box-shadow: var(--tt-shadow-sm); }
-.s-rows > * + * { border-top: 1px solid var(--tt-hairline); }
-.s-toggle { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 24px; width: 100%; min-height: 50px; padding: 10px 16px; border: 0; background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
-.s-toggle strong { display: block; font-size: 13px; font-weight: 500; }
-.s-toggle small, .s-field small { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
-.s-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1px 24px; min-height: 50px; padding: 10px 16px; }
-.s-field strong { display: block; font-size: 13px; font-weight: 500; }
-.s-field select { width: 200px; height: 34px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); }
-.s-row--new { position: relative; }
-.s-save { max-width: 760px; margin: 0 auto; color: var(--tt-text-muted); font-size: 12.5px; text-align: right; }
-@media (max-width: 760px) { .s-field { grid-template-columns: minmax(0, 1fr); } .s-field select { width: 100%; } }
+.snav button[aria-current='page'] > svg { color: var(--tt-accent); }
+.settings__nav .side__foot { margin: 0 -12px; }
+.settings__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.settings__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 42px 6vw 40px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@media (max-width: 1000px) { .settings__scroll { padding: 42px 24px 32px; } }
+.settings__inner { max-width: 790px; margin: 0 auto; }
+.s-head { margin: 0 0 10px; padding: 0 0 20px; border-bottom: 1px solid var(--tt-hairline); }
+.s-head h2 { margin: 0 0 10px; color: var(--tt-text); font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
+.s-head p { margin: 0; color: var(--tt-text-muted); font-size: 16px; line-height: 1.5; }
+.s-group { margin-top: 26px; }
+.s-group:first-of-type { margin-top: 22px; }
+.s-group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.s-group > h3 > svg { color: var(--tt-text-muted); }
+.s-group > .s-rows { border-top: 1px solid var(--tt-hairline); }
+.s-note { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.s-rows > * { min-height: 66px; padding: 17px 0; border-bottom: 1px solid var(--tt-hairline); }
+.s-rows > :last-child { border-bottom: 0; }
+.s-toggle { display: flex; align-items: center; justify-content: space-between; gap: 22px; width: 100%; border-top: 0; border-right: 0; border-left: 0; background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
+.s-rows > .s-toggle:last-child { border-bottom: 0; }
+.s-toggle > span:first-child { flex: 1; min-width: 0; }
+.s-label { display: block; color: var(--tt-text); font-size: 15px; font-weight: 500; line-height: 1.35; }
+.s-desc { display: block; max-width: 340px; margin-top: 5px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings .track { flex: none; width: 46px; height: 26px; }
+.settings .track::after { top: 4px; left: 4px; width: 16px; height: 16px; }
+.settings [aria-checked='true'] > .track { border-color: var(--tt-accent); background: var(--tt-accent); }
+.settings [aria-checked='true'] > .track::after { background: var(--tt-on-accent); transform: translateX(20px); }
+.s-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); align-items: center; gap: 5px 22px; }
+.s-field select { width: 100%; min-height: 38px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 14px; }
+.s-segs { display: inline-flex; justify-self: end; padding: 3px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); }
+.s-segs button { min-height: 30px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-pill); background: transparent; color: var(--tt-text-2); font-size: 14px; cursor: pointer; }
+.s-segs button[aria-checked='true'] { background: var(--tt-accent); color: var(--tt-on-accent); }
+.s-example { margin: 0 0 4px; padding: 16px 18px; border: 1px solid var(--tt-hairline); border-radius: 12px; }
+.s-example small { display: block; color: var(--tt-text-muted); font-size: 12.5px; }
+.s-example code { display: block; margin: 2px 0 8px; color: var(--tt-text); font: 500 14px/1.5 var(--tt-font-mono); overflow-wrap: anywhere; }
+.s-save { flex: none; margin: 0; padding: 8px 18px 12px; color: var(--tt-text-muted); font-size: 12.5px; text-align: right; }
+@media (max-width: 760px) { .s-field { grid-template-columns: minmax(0, 1fr); } .s-segs { justify-self: start; } }
 
 /* ---------- The prototype's own bar: not part of the design ---------- */
 .proto { position: fixed; left: 50%; bottom: 10px; z-index: 100; display: flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 4px; max-width: calc(100vw - 16px); padding: 5px 6px; border: 2px dashed #fff; border-radius: 18px; background: #a3134f; color: #fff; font: 600 12.5px/1.2 system-ui, 'Segoe UI', sans-serif; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); transform: translateX(-50%); }
-.proto button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 18%); color: #fff; font: inherit; cursor: pointer; white-space: nowrap; }
+.proto button { flex: none; min-height: 28px; padding: 0 9px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 18%); color: #fff; font: inherit; cursor: pointer; white-space: nowrap; }
 .proto button:hover { background: rgb(255 255 255 / 30%); }
 .proto button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-.proto output { padding: 0 6px; white-space: nowrap; text-align: center; }
-.proto__tag { padding: 2px 7px; border-radius: 6px; background: #fff; color: #a3134f; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
-.proto__sep { width: 1px; height: 18px; margin: 0 2px; background: rgb(255 255 255 / 45%); }
+.proto output { min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+#slabel { max-width: 250px; }
+.proto__tag { flex: none; padding: 2px 7px; border-radius: 6px; background: #fff; color: #a3134f; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.proto__sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: rgb(255 255 255 / 45%); }
 body[data-nobar] .proto { display: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -513,11 +576,11 @@ body[data-nobar] .proto { display: none; }
 <div class="proto" role="region" aria-label="Prototype controls, not part of the design">
   <span class="proto__tag">Prototype</span>
   <button type="button" id="pv" aria-label="Show the previous variant">&larr;</button>
-  <output id="vlabel" aria-live="polite"></output>
+  <output id="vlabel"></output>
   <button type="button" id="nv" aria-label="Show the next variant">&rarr;</button>
   <span class="proto__sep"></span>
   <button type="button" id="ps" aria-label="Go to the previous step">&lsaquo;</button>
-  <output id="slabel" aria-live="polite"></output>
+  <output id="slabel"></output>
   <button type="button" id="ns" aria-label="Go to the next step">&rsaquo;</button>
   <span class="proto__sep"></span>
   <button type="button" id="sb"></button>
@@ -579,18 +642,37 @@ const I = {
 const ico = (name, size = 16, extra = '') => `<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false"${extra}>${I[name]}</svg>`
 const claude = (size = 16) => `<svg class="pmark" viewBox="0 0 256 257" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path d="${CLAUDE}"/></svg>`
 const smark = (size = 18) => `<svg class="smark" viewBox="0 0 96 96" width="${size}" height="${size}" aria-hidden="true" focusable="false"><rect width="96" height="96" rx="22"/><rect x="26" y="20" width="9" height="56" rx="4.5"/><path d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0" stroke-width="7.5" stroke-linecap="round"/></svg>`
+Object.assign(I, {
+  todo: '<path d="M10.1 2.18a9.93 9.93 0 0 1 3.8 0"/><path d="M17.6 3.71a9.95 9.95 0 0 1 2.69 2.7"/><path d="M21.82 10.1a9.93 9.93 0 0 1 0 3.8"/><path d="M20.29 17.6a9.95 9.95 0 0 1-2.7 2.69"/><path d="M13.9 21.82a9.94 9.94 0 0 1-3.8 0"/><path d="M6.4 20.29a9.95 9.95 0 0 1-2.69-2.7"/><path d="M2.18 13.9a9.93 9.93 0 0 1 0-3.8"/><path d="M3.71 6.4a9.95 9.95 0 0 1 2.7-2.69"/>',
+  unknown: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  closed: '<circle cx="12" cy="12" r="10"/>',
+  eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  commit: '<circle cx="12" cy="12" r="3"/><path d="M3 12h6"/><path d="M15 12h6"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 12v6"/>',
+  draft: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M18 6V5"/><path d="M18 11v-1"/><path d="M6 9v12"/>'
+})
 
-const VARIANTS = [['a', 'On the surface'], ['b', 'In the transcript'], ['c', 'A state of its own']]
+const VARIANTS = [['a', 'A quiet line'], ['b', 'On the badge'], ['c', 'A state of its own']]
+/* The story, then seven states that branch off "Checks passed". The third field is the clock at that step. */
 const STEPS = [
-  ['before', 'Before', '2:03 pm'],
+  ['before', 'Before', '2:01 pm'],
   ['agent', 'Started by the agent', '2:02 pm'],
   ['user', 'Started by you', '2:04 pm'],
   ['failed', 'A check failed', '2:10 pm'],
   ['passed', 'Checks passed', '2:32 pm'],
+  ['queued', 'A wake-up waits in the queue', '3:06 pm'],
   ['review', 'A review comment', '3:11 pm'],
   ['conflict', 'Conflict', '3:43 pm'],
-  ['merged', 'Merged', '4:06 pm']
+  ['merged', 'Merged', '4:06 pm'],
+  ['closed', 'Closed without merging', '4:06 pm'],
+  ['chatty', 'Ended after ten comment-only wake-ups', '5:20 pm'],
+  ['unread', 'Ended: GitHub could not be read', '2:49 pm'],
+  ['switchoff', 'Settings switch turned off', '2:40 pm'],
+  ['two', 'Two pull requests at once', '2:40 pm'],
+  ['monitor', 'The creature outranks it', '2:40 pm'],
+  ['remote', 'On another computer', '2:32 pm']
 ]
+const STORY = ['before', 'agent', 'user', 'failed', 'passed', 'queued', 'review', 'conflict', 'merged']
 const URL_PR = 'https://github.com/example/review-app/pull/74'
 const params = new URLSearchParams(location.search)
 const state = {
@@ -599,83 +681,127 @@ const state = {
   light: params.get('theme') === 'light',
   settings: params.get('settings') === '1',
   bar: params.get('bar') !== '0',
-  manual: null,
-  menu: false,
+  manual: null, // 'off' stops #74, 'offall' stops every one, 'on' starts #74 by your press
+  menu: params.get('menu') === '1',
   open: new Set(),
-  agentsMayBabysit: true,
+  agentsSwitch: true,
+  linkedOpen: false,
   toScroll: true
 }
+state.agentsSwitch = STEPS[state.step][0] !== 'switchoff'
 if (params.get('open') === 'last') state.openLast = true
 
-/* What babysitting is doing at this step, after any Stop or Babysit press. */
-function info() {
-  const i = state.step
-  const now = STEPS[i][2]
-  let on = i >= 1 && i <= 6
-  let by = i === 2 ? 'you' : 'Claude'
-  let at = i === 2 ? '2:04 pm' : '2:02 pm'
-  let ended = i === 7 ? 'merged' : null
-  if (state.manual === 'off' && on) { on = false; ended = 'stopped' }
-  if (state.manual === 'on' && !on && i !== 7) { on = true; by = 'you'; at = now; ended = null }
-  return { on, by, at, ended, now, merged: i === 7, working: [3, 5, 6].includes(i), agentStarted: i === 1 || i >= 3 }
-}
-const started = b => b.by === 'you' ? `Started by you at ${b.at}` : `Started by Claude at ${b.at}`
-const endedText = b => b.ended === 'merged' ? 'Ended when #74 merged at 4:05 pm.' : `You stopped it at ${b.now}.`
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const switchName = () => state.variant === 'a' ? 'Let agents babysit their pull requests' : 'Let agents babysit pull requests'
+const list = prs => prs.length === 2 ? `${prs[0]} and ${prs[1]}` : prs.join(', ')
 
-/* The wake-ups, in order. `text` is what Claude receives, word for word: Sotto's words, never a commenter's. */
-const TAIL = '\n\nLook into each item and act as your task needs. Read the checks and comments yourself with gh. Sotto keeps babysitting this pull request and will wake you again when something else changes. To stop, call stop_babysitting.'
+/* What babysitting is doing at this step, after any press of Stop, Babysit pull request or the Settings switch. */
+function scene() {
+  const [key, , now] = STEPS[state.step]
+  const si = STORY.indexOf(key)
+  const reached = k => (si >= 0 ? si : STORY.indexOf('passed')) >= STORY.indexOf(k)
+  const remote = key === 'remote'
+  const s = {
+    key, now, remote, reached,
+    by: key === 'user' || remote ? 'you' : 'Claude',
+    at: key === 'user' || remote ? '2:04 pm' : '2:02 pm',
+    on: key !== 'before', ended: null,
+    working: ['failed', 'queued', 'review', 'conflict'].includes(key),
+    merged: key === 'merged', closed: key === 'closed',
+    two: key === 'two', monitor: key === 'monitor', queued: key === 'queued',
+    toolStart: !['before', 'user', 'remote'].includes(key)
+  }
+  if (['merged', 'closed', 'chatty', 'unread'].includes(key)) { s.on = false; s.ended = key }
+  if (!state.agentsSwitch && s.on && s.by === 'Claude') { s.on = false; s.ended = 'switch'; s.two = false }
+  let prs = s.on ? (s.two ? ['#74', '#76'] : ['#74']) : []
+  if (state.manual === 'offall' || (state.manual === 'off' && prs.includes('#74'))) {
+    prs = state.manual === 'offall' ? [] : prs.filter(p => p !== '#74'); s.ended = 'stopped'
+  }
+  if (state.manual === 'on' && !prs.includes('#74') && !s.merged && !s.closed) { prs = ['#74', ...prs]; s.by = 'you'; s.at = now; s.ended = null; s.pressed = true }
+  s.prs = prs
+  s.on74 = prs.includes('#74')
+  s.any = prs.length > 0
+  s.openPr = !s.merged && !s.closed
+  return s
+}
+const started = s => s.by === 'you' ? `Started by you at ${s.at}` : `Started by Claude at ${s.at}`
+function endedText(s) {
+  switch (s.ended) {
+    case 'merged': return 'Ended when #74 merged at 4:05 pm.'
+    case 'closed': return 'Ended when #74 was closed at 4:05 pm.'
+    case 'chatty': return 'Ended at 5:19 pm, after ten wake-ups in a row brought only comments.'
+    case 'unread': return 'Ended at 2:48 pm. Sotto could not read #74 from GitHub for 16 minutes.'
+    case 'switch': return `Ended at ${s.key === 'switchoff' ? '2:40 pm' : s.now}, when ${switchName()} was turned off in Settings.`
+    case 'stopped': return `You stopped it at ${s.now}. Claude was told nothing.`
+    default: return ''
+  }
+}
+
+/* ---------------- The wake-ups. `text` is what Claude receives, word for word: Sotto's words, never a commenter's. ---------------- */
+const tail = s => s.remote
+  ? '\n\nLook into each item and act as your task needs. Read the checks and comments yourself with gh; this message never carries what anyone wrote. Sotto keeps babysitting #74 and will send you another wake-up when something else changes. You cannot stop it from here; the user can, from the Pull request surface.'
+  : '\n\nLook into each item and act as your task needs. Read the checks and comments yourself with gh; this message never carries what anyone wrote. Sotto keeps babysitting #74 and will send you another wake-up when something else changes. To stop, call stop_babysitting.'
 const HEAD = 'Sotto is babysitting a pull request for this thread, and it changed.\n\n#74 Greet the reviewer\n' + URL_PR + '\n\n'
-const WAKES = [
-  { at: '2:09 pm', step: 3, sum: '#74: 1 check failed',
-    lines: [{ tone: 'failed', icon: 'fail', text: 'CI / Owned build failed', link: 'View check' }],
-    text: HEAD + '- A check failed: CI / Owned build\n  https://github.com/example/review-app/actions/runs/4182/job/9921' + TAIL },
-  { at: '2:31 pm', step: 4, sum: '#74: required checks passed',
-    lines: [{ tone: 'done', icon: 'ok', text: 'Required checks passed', sub: '3 checks on 9f3c2ab', link: 'View checks' }],
-    text: HEAD + '- The required checks passed on 9f3c2ab: CI / Owned build, CI / Unit tests, CI / Lint\n  ' + URL_PR + '/checks' + TAIL },
-  { at: '3:10 pm', step: 5, sum: '#74: mira requested changes, 1 new comment',
-    lines: [{ tone: 'failed', icon: 'fail', text: 'mira requested changes', link: 'View review' }, { tone: 'open', icon: 'msg', text: 'mira commented on src/greeting.ts', link: 'View comment' }],
-    text: HEAD + '- mira requested changes in a review\n  ' + URL_PR + '#pullrequestreview-2210\n- mira commented on src/greeting.ts\n  ' + URL_PR + '#discussion_r1873' + TAIL },
-  { at: '3:42 pm', step: 6, sum: '#74: conflicts with main',
-    lines: [{ tone: 'failed', icon: 'fail', text: 'Conflicts with main', link: 'View on GitHub' }],
-    text: HEAD + '- The branch now conflicts with main.\n  ' + URL_PR + TAIL },
-  { at: '4:05 pm', step: 7, sum: '#74: merged into main. Babysitting ended.', end: true,
-    lines: [{ tone: 'merged', icon: 'merge', text: 'Merged into main', sub: 'Babysitting ended', link: 'View pull request' }],
-    text: HEAD + '- The pull request merged into main.\n  ' + URL_PR + '\n\nBabysitting has ended. Nothing else will wake you for #74. Tidy up as your task needs.' }
-]
-/* Claude's turn after each wake-up: in progress at its own step when that step is a working one. */
-const REPLIES = [
-  { at: '2:10 pm', step: 3, working: 'Reading the failed build’s log with gh.', done: 'The build failed on an unused import in <code>src/greeting.ts</code>. Removed it and pushed <code>9f3c2ab</code>.' },
-  { at: '2:31 pm', step: 4, done: 'All three checks pass on <code>9f3c2ab</code>. Nothing to do until someone reviews.' },
-  { at: '3:11 pm', step: 5, working: 'Reading mira’s review with gh.', done: 'mira asked for the greeting to use the reviewer’s name. Changed it in <code>4be71d0</code> and replied on the comment.' },
-  { at: '3:43 pm', step: 6, working: 'Rebasing <code>feat/greeting</code> on main.', done: 'Rebased on main and pushed. The conflict was in <code>README.md</code>; I kept both lines.' },
-  { at: '4:06 pm', step: 7, done: '#74 is merged. Nothing left to do on this thread.' }
-]
+const ENDED = '\n\nBabysitting has ended. Nothing else will wake you for #74.'
+const WAKES = {
+  failed: { at: '2:09 pm', sum: '#74: 1 check failed',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'CI / Owned build failed', press: ['Open check', 'Open CI / Owned build on GitHub'] }],
+    text: s => HEAD + '- A check failed: CI / Owned build\n  https://github.com/example/review-app/actions/runs/4182/job/9921' + tail(s) },
+  passed: { at: '2:31 pm', sum: '#74: required checks passed',
+    lines: [{ tone: 'done', icon: 'ok', text: 'Required checks passed', sub: 'CI / Owned build, CI / Unit tests and CI / Lint on 9f3c2ab' }],
+    text: s => HEAD + '- The required checks passed on 9f3c2ab: CI / Owned build, CI / Unit tests, CI / Lint\n  ' + URL_PR + '/checks' + tail(s) },
+  review: { at: '3:10 pm', sum: '#74: mira requested changes, 1 new comment',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'mira requested changes', press: ['Open review', 'Open mira’s review on GitHub'] },
+      { tone: 'open', icon: 'msg', text: 'mira commented on src/greeting.ts', press: ['Open comment', 'Open mira’s comment on src/greeting.ts on GitHub'] }],
+    text: s => HEAD + '- mira requested changes in a review\n  ' + URL_PR + '#pullrequestreview-2210\n- mira commented on src/greeting.ts\n  ' + URL_PR + '#discussion_r1873' + tail(s) },
+  conflict: { at: '3:42 pm', sum: '#74: conflicts with main',
+    lines: [{ tone: 'failed', icon: 'fail', text: 'Conflicts with main', sub: 'Resolve them in the branch and push' }],
+    text: s => HEAD + '- The branch now conflicts with main.\n  ' + URL_PR + tail(s) },
+  merged: { at: '4:05 pm', sum: '#74: merged into main. Babysitting ended.',
+    lines: [{ tone: 'merged', icon: 'merge', text: 'Merged into main', sub: 'Babysitting ended' }],
+    text: () => HEAD + '- The pull request merged into main.\n  ' + URL_PR + ENDED + ' Tidy up as your task needs.' },
+  closed: { at: '4:05 pm', sum: '#74: closed without merging. Babysitting ended.',
+    lines: [{ tone: 'closed', icon: 'closed', text: 'Closed without merging', sub: 'Babysitting ended' }],
+    text: () => HEAD + '- The pull request was closed without merging.\n  ' + URL_PR + ENDED + ' Ask the user before you do anything else with the branch.' },
+  chatty: { at: '5:19 pm', sum: '#74: 1 new comment. Babysitting ended after ten comment-only wake-ups.',
+    lines: [{ tone: 'open', icon: 'msg', text: 'review-bot commented on src/greeting.ts', press: ['Open comment', 'Open review-bot’s comment on src/greeting.ts on GitHub'] },
+      { tone: 'ended', icon: 'alarmOff', text: 'Babysitting ended', sub: 'Ten wake-ups in a row brought only comments' }],
+    text: () => HEAD + '- review-bot commented on src/greeting.ts\n  ' + URL_PR + '#discussion_r1990\n\nThis is the tenth wake-up in a row that brought only comments, so Sotto stopped babysitting #74. Nothing else will wake you for it. To start again, call babysit_pull_request.' },
+  unread: { at: '2:48 pm', sum: '#74: could not be read for 16 minutes. Babysitting ended.',
+    lines: [{ tone: 'failed', icon: 'alarmOff', text: 'Babysitting ended', sub: 'Sotto could not read #74 from GitHub for 16 minutes' }],
+    text: () => 'Sotto was babysitting a pull request for this thread and can no longer read it.\n\n#74 Greet the reviewer\n' + URL_PR + '\n\n- Sotto could not read the pull request eight times in a row, for about 16 minutes. GitHub said the sign-in on this computer has expired.' + ENDED + ' Tell the user. Once GitHub can be read again, call babysit_pull_request to start again.' }
+}
+/* Claude's turn after each wake-up: `working` while it runs at its own step, `done` after. */
+const REPLIES = {
+  failed: { at: '2:10 pm', working: 'Reading the failed build’s log with gh.', done: 'The build failed on an unused import in <code>src/greeting.ts</code>. Removed it and pushed <code>9f3c2ab</code>.' },
+  passed: { at: '2:31 pm', done: 'All three checks pass on <code>9f3c2ab</code>. Nothing to do until someone reviews.' },
+  review: { at: '3:11 pm', working: 'Reading mira’s review with gh.', done: 'mira asked for the greeting to use the reviewer’s name. Changed it in <code>4be71d0</code> and replied on the comment.' },
+  conflict: { at: '3:43 pm', working: 'Rebasing <code>feat/greeting</code> on main.', done: 'Rebased on main and pushed. The conflict was in <code>README.md</code>; I kept both lines.' },
+  merged: { at: '4:06 pm', done: '#74 is merged. Nothing left to do on this thread.' },
+  closed: { at: '4:06 pm', done: '#74 was closed without merging. I left <code>feat/greeting</code> as it is. Tell me if you want it reopened.' },
+  chatty: { at: '5:20 pm', done: 'review-bot keeps posting the same style note, which I already answered. Babysitting has stopped; ask me if you want it back.' },
+  unread: { at: '2:49 pm', done: 'Sotto could no longer read #74 from GitHub, and <code>gh</code> here says the sign-in has expired. Run <code>gh auth login</code> and I’ll start babysitting again.' }
+}
 
 /* ---------------- Sidebar ---------------- */
-function sidebarStatus(b) {
+/* base: Done, Working, Just finished or Needs your approval; prs: what that thread babysits. */
+function statusFor(base, prs) {
   const v = state.variant
-  const base = b.working ? 'Working' : 'Done'
-  const st = b.working ? 'working' : 'done'
-  const dot = b.working ? '<i></i>' : ''
-  if (v === 'a') {
-    const mark = b.on ? `<span class="row__pr" title="Babysitting #74">${ico('pr', 13)}</span>` : ''
-    return { html: `<span class="row__status" data-state="${st}">${mark}${dot}<span>${base}</span></span>`, says: b.on ? `${base}, babysitting pull request #74` : base }
-  }
-  if (v === 'b') {
-    const text = b.on ? `${base} · Babysitting #74` : base
-    return { html: `<span class="row__status" data-state="${st}">${dot}<span>${text}</span></span>`, says: text }
-  }
-  if (b.working) return { html: `<span class="row__status" data-state="working"><i></i><span>Working</span></span>`, says: b.on ? 'Working, babysitting pull request #74' : 'Working' }
-  if (b.on) return { html: `<span class="row__status" data-state="babysitting"><span>Babysitting</span></span>`, says: 'Babysitting pull request #74' }
-  return { html: `<span class="row__status" data-state="done"><span>Done</span></span>`, says: 'Done' }
+  const st = base === 'Working' ? 'working' : base === 'Needs your approval' ? 'needs' : base === 'Just finished' ? 'unseen' : 'done'
+  const dot = '<i></i>'
+  const what = prs.length ? `Babysitting ${list(prs)}` : ''
+  if (!prs.length) return { html: `<span class="row__status" data-state="${st}">${dot}<span>${base}</span></span>`, says: base, ring: st }
+  if (v === 'a') return { html: `<span class="row__status" data-state="${st}" title="${base}. ${what}">${dot}<span class="row__pr">${ico('pr', 13)}</span><span>${base}</span></span>`, says: `${base}. ${what}`, ring: st }
+  if (v === 'b') return { html: `<span class="row__status" data-state="${st}" title="${base} · ${what}">${dot}<span>${base} · ${what}</span></span>`, says: `${base}. ${what}`, ring: st }
+  if (base === 'Done') return { html: `<span class="row__status" data-state="babysitting" title="${what}"><span>${what}</span></span>`, says: what, ring: 'done' }
+  return { html: `<span class="row__status" data-state="${st}" title="${base}. ${what}">${dot}<span>${base}</span></span>`, says: `${base}. ${what}`, ring: st }
 }
-function renderSide() {
-  const b = info()
-  const s = sidebarStatus(b)
-  const row = (title, time, status, says, current, ring) => `<li class="row"${current ? ' data-current' : ''}>
-    <button type="button" class="row__item"${current ? ' aria-current="page"' : ''} aria-label="${title}. Claude. ${says}.">
-      <span class="ring" data-state="${ring}" aria-hidden="true"></span><span class="row__title">${title}</span><span class="row__time">${time}</span>
-      <span class="row__meta"><span class="row__provider">${claude(14)}</span>${status}</span></button></li>`
+function renderSide(s) {
+  const mine = statusFor(s.working ? 'Working' : 'Done', s.prs)
+  const row = (title, time, st, current) => `<li class="row"${current ? ' data-current' : ''}>
+    <button type="button" class="row__item"${current ? ' aria-current="page"' : ''} aria-label="${title}. Claude. ${st.says}.">
+      <span class="ring" data-state="${st.ring}" aria-hidden="true"></span><span class="row__title">${title}</span><span class="row__time">${time}</span>
+      <span class="row__meta"><span class="row__provider">${claude(14)}</span>${st.html}</span></button></li>`
   document.getElementById('side').innerHTML = `
     <div class="side__top drag">
       <span class="brand" aria-label="Sotto application">${smark(18)}<span>Sotto</span></span>
@@ -687,11 +813,11 @@ function renderSide() {
     <label class="search">${ico('search', 15)}<span class="vh">Search threads</span><input type="search" placeholder="Search threads"></label>
     <div class="side__scroll">
       <section class="folder"><button type="button" class="folder__toggle" aria-expanded="true">${ico('folder', 15)}<span>Review app</span><span class="folder__count">1</span></button>
-        <ul class="rows">${row('Greeting for reviewers', b.now, s.html, s.says, true, b.working ? 'working' : 'idle')}</ul></section>
+        <ul class="rows">${row('Greeting for reviewers', s.now, mine, true)}</ul></section>
       <section class="folder"><button type="button" class="folder__toggle" aria-expanded="true">${ico('folder', 15)}<span>Sotto test</span><span class="folder__count">2</span></button>
         <ul class="rows">
-          ${row('Docs', '1:12 pm', '<span class="row__status" data-state="done"><span>Done</span></span>', 'Done', false, 'idle')}
-          ${row('Workshop', '11:40 am', '<span class="row__status" data-state="done"><span>Done</span></span>', 'Done', false, 'idle')}
+          ${row('Docs', '1:52 pm', statusFor('Just finished', state.agentsSwitch ? ['#75'] : []), false)}
+          ${row('Workshop', '1:40 pm', statusFor('Needs your approval', ['#71']), false)}
         </ul></section>
       <button type="button" class="settled" aria-expanded="false" aria-label="Show 4 settled threads">${ico('right', 14)}<span>Settled</span></button>
     </div>
@@ -710,35 +836,33 @@ function sideFoot() {
 }
 
 /* ---------------- Transcript ---------------- */
-function wakeHtml(w, idx) {
+/* A message's text with its links drawn as links, as MessageContent does; a line may break after a slash. */
+const linkify = text => esc(text).replace(/https:\/\/[^\s]+/g, u => `<a class="mlink" href="${u}" data-ext>${u.replace(/\//g, '/<wbr>')}</a>`)
+function wakeHtml(key, s) {
+  const w = WAKES[key]
   const v = state.variant
-  const key = 'w' + idx
   const isOpen = state.open.has(key)
+  const text = w.text(s)
   if (v === 'a') {
-    return `<div class="wake">
-      <button type="button" class="wake__row" data-toggle="${key}" data-k="${key}" aria-expanded="${isOpen}" aria-label="Wake-up from Sotto at ${w.at}: ${w.sum.replace(/\.$/, '')}. ${isOpen ? 'Hide' : 'Show'} the full message.\">
+    return `<div class="wake" data-wake>
+      <button type="button" class="wake__row" data-toggle="${key}" data-k="w-${key}" aria-expanded="${isOpen}" aria-label="Wake-up from Sotto at ${w.at}: ${w.sum.replace(/\.$/, '')}. ${isOpen ? 'Hide' : 'Show'} what Claude received.">
         ${smark(18)}<span class="wake__who">Sotto</span><span class="wake__sum">${w.sum}</span><time class="wake__time">${w.at}</time>${ico('right', 14)}</button>
-      ${isOpen ? `<div class="wake__body"><p class="raw-caption">What Claude received</p><p class="raw">${w.text}</p></div>` : ''}</div>`
+      ${isOpen ? `<div class="wake__body"><p class="raw-caption">What Claude received</p><p class="raw">${linkify(text)}</p></div>` : ''}</div>`
   }
   if (v === 'b') {
-    return `<article class="wcard" aria-label="Wake-up at ${w.at}">
+    return `<article class="wcard" data-wake aria-label="Wake-up from Sotto at ${w.at}">
       <div class="wcard__head">${ico('alarm', 15)}<strong>Wake-up</strong><span>#74 Greet the reviewer</span><time>${w.at}</time></div>
-      <ul class="wcard__lines">${w.lines.map(l => `<li class="wcard__line" data-tone="${l.tone}">${ico(l.icon, 18)}<div><strong>${l.text}</strong>${l.sub ? `<small>${l.sub}</small>` : ''}</div><button type="button" class="tt-button">${l.link}${ico('ext', 13)}</button></li>`).join('')}</ul>
-      <div class="wcard__foot"><button type="button" class="qbtn" data-toggle="${key}" data-k="${key}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Hide' : 'Show'} what Claude received at ${w.at}">${ico('right', 14)}${isOpen ? 'Hide' : 'Show'} what Claude received</button></div>
-      ${isOpen ? `<div class="wcard__raw-wrap"><p class="raw">${w.text}</p></div>` : ''}</article>`
+      <ul class="wcard__lines">${w.lines.map(l => `<li class="wcard__line" data-tone="${l.tone}">${ico(l.icon, 18)}<div><strong>${l.text}</strong>${l.sub ? `<small>${l.sub}</small>` : ''}</div>${l.press ? `<button type="button" class="tt-button" aria-label="${l.press[1]}">${ico('ext', 13)}${l.press[0]}</button>` : ''}</li>`).join('')}</ul>
+      <div class="wcard__foot"><button type="button" class="qbtn" data-toggle="${key}" data-k="w-${key}" aria-expanded="${isOpen}" aria-label="${isOpen ? 'Hide' : 'Show'} what Claude received at ${w.at}">${ico('right', 14)}${isOpen ? 'Hide' : 'Show'} what Claude received</button></div>
+      ${isOpen ? `<div class="wcard__raw-wrap"><p class="raw">${linkify(text)}</p></div>` : ''}</article>`
   }
-  return `<div class="msg" data-role="sotto"><header><span class="msg__who">${smark(16)}Sotto</span><span class="msg__tag">Wake-up</span><time>${w.at}</time></header><p class="raw">${w.text}</p></div>`
+  return `<div class="msg" data-role="sotto" data-wake><header><span class="msg__who">${smark(16)}Sotto</span><span class="msg__tag">Wake-up</span><time>${w.at}</time></header><p class="raw">${linkify(text)}</p></div>`
 }
-function babysitCard(b) {
-  if (state.variant !== 'b' || !(b.on || b.ended)) return ''
-  if (b.on) return `<article class="babysit-card" aria-label="Babysitting pull request 74">${ico('alarm', 18)}<div><strong>Babysitting #74 Greet the reviewer</strong><small>${started(b)}. Sotto wakes this thread when a check fails, the required checks pass, someone else comments or reviews, the branch conflicts, or it merges.</small></div><button type="button" class="tt-button" data-act="stop" data-k="cardstop">Stop babysitting</button></article>`
-  const to = b.ended === 'merged' ? '4:05 pm' : b.now
-  return `<article class="babysit-card" data-ended aria-label="Babysitting pull request 74 ended">${ico('alarmOff', 18)}<div><strong>Babysat #74 from ${b.at} to ${to}</strong><small>${b.ended === 'merged' ? 'Ended when it merged.' : 'You stopped it. Nothing was sent to Claude.'}</small></div>${b.ended === 'stopped' ? '<button type="button" class="tt-button" data-act="start" data-k="cardstart">Babysit pull request</button>' : ''}</article>`
-}
-function renderTranscript(b) {
-  const parts = []
-  parts.push(`<div class="msg" data-role="user"><header><span class="msg__who">You</span><time>1:48 pm</time></header><p class="msg__text">Add a greeting for reviewers, open a pull request and see it through CI.</p></div>`)
-  const tool = b.agentStarted && state.manual !== 'on'
+const claudeMsg = (at, body, extra = '') => `<div class="msg"><header><span class="msg__who">Claude</span><time>${at}</time></header>${extra}<p class="msg__text">${body}</p></div>`
+const userMsg = (at, body) => `<div class="msg" data-role="user"><header><span class="msg__who">You</span><time>${at}</time></header><p class="msg__text">${body}</p></div>`
+function renderTranscript(s) {
+  const parts = [userMsg('1:48 pm', 'Add a greeting for reviewers, open a pull request and see it through CI.')]
+  const tool = s.toolStart && state.manual !== 'on'
   parts.push(`<div class="msg"><header><span class="msg__who">Claude</span><time>2:01 pm</time></header>
     <div class="activity">
       <div class="act">${ico('term')}<code>npm test -- greeting</code></div>
@@ -746,148 +870,219 @@ function renderTranscript(b) {
       ${tool ? `<div class="act">${ico('alarm')}<span><strong>Babysit pull request</strong> #74</span><span class="act__by">Sotto tool</span></div>` : ''}
     </div>
     <p class="msg__text">Added a greeting for reviewers in <code>src/greeting.ts</code> with a test, and opened #74 Greet the reviewer. CI is running.</p>
-    ${tool ? '<p class="msg__text">I asked Sotto to babysit it, so I’ll be woken when the checks finish or someone reviews. Ending my turn here.</p>' : ''}</div>`)
-  parts.push(babysitCard(b))
-  WAKES.forEach((w, idx) => {
-    if (state.step < w.step) return
-    parts.push(wakeHtml(w, idx))
-    const r = REPLIES[idx]
-    const inProgress = r.working && state.step === r.step
-    parts.push(`<div class="msg"><header><span class="msg__who">Claude</span><time>${r.at}</time></header><p class="msg__text">${inProgress ? r.working : r.done}</p></div>`)
-    if (inProgress) parts.push(`<div class="working" role="status"><i></i>Working for 18s</div>`)
-  })
+    ${tool ? '<p class="msg__text">I asked Sotto to babysit it, so a wake-up will come when the checks finish or someone reviews. Ending my turn here.</p>' : ''}</div>`)
+  const wakeAndReply = key => {
+    parts.push(wakeHtml(key, s))
+    const r = REPLIES[key]
+    const live = r.working && s.key === key
+    parts.push(claudeMsg(r.at, live ? r.working : r.done))
+    if (live) parts.push('<div class="working"><i></i>Working for 18s</div>')
+  }
+  if (s.reached('failed')) wakeAndReply('failed')
+  if (s.reached('passed')) wakeAndReply('passed')
+  if (s.key === 'two') parts.push(claudeMsg('2:36 pm', 'Opened #76 Mention the greeting in the README, stacked on #74, and asked Sotto to babysit it too.',
+    `<div class="activity"><div class="act">${ico('term')}<code>gh pr create --base feat/greeting</code></div>${state.agentsSwitch ? `<div class="act">${ico('alarm')}<span><strong>Babysit pull request</strong> #76</span><span class="act__by">Sotto tool</span></div>` : ''}</div>`))
+  if (s.key === 'monitor') parts.push(claudeMsg('2:36 pm', 'The preview deploy for #74 is building. I’m watching it and will say when it is live.',
+    `<div class="activity"><div class="act">${ico('eye')}<span><strong>Monitor</strong> the preview deploy</span></div></div>`))
+  if (['closed', 'chatty', 'unread'].includes(s.key)) wakeAndReply(s.key)
+  if (s.reached('queued')) {
+    parts.push(userMsg('3:05 pm', 'Also mention the greeting in the README.'))
+    parts.push(claudeMsg('3:06 pm', s.key === 'queued' ? 'Adding a line to <code>README.md</code>.' : 'Added a line about the greeting to <code>README.md</code> and pushed.'))
+    if (s.key === 'queued') parts.push('<div class="working"><i></i>Working for 41s</div>')
+    else {
+      parts.push(userMsg('3:08 pm', 'Then add a changelog entry.'))
+      parts.push(claudeMsg('3:09 pm', 'Added an entry to <code>CHANGELOG.md</code>.'))
+    }
+  }
+  if (s.reached('review')) wakeAndReply('review')
+  if (s.reached('conflict')) wakeAndReply('conflict')
+  if (s.reached('merged')) wakeAndReply('merged')
   return parts.join('')
 }
 
+/* The wake-ups this step's transcript holds, in order. */
+function wakeKeys(s) {
+  const k = []
+  if (s.reached('failed')) k.push('failed')
+  if (s.reached('passed')) k.push('passed')
+  if (['closed', 'chatty', 'unread'].includes(s.key)) k.push(s.key)
+  for (const n of ['review', 'conflict', 'merged']) if (s.reached(n)) k.push(n)
+  return k
+}
+
 /* ---------------- Composer ---------------- */
-function creature() {
+function creature(pose) {
   const BODY = 'M9 8h4v8H9z M21 7h4v9h-4z M11 6h2v5h-2z M23 5h2v5h-2z M9 13h17v15H9z M7 16h21v9H7z M11 11h12v18H11z M5 23h4v4H5z'
+  const sign = pose === 'babysitting'
+    ? '<path class="mon-sign" d="M29 4h2v2h-2z M30 6h1v4h-1z M29 10h2v2h-2z M34 4h1v1h-1z M35 5h1v5h-1z M34 10h2v2h-2z M33 4h1v1h-1z"/>'
+    : '<path class="mon-shine" d="M30 4h1v1h-1z M30 6h1v3h-1z M30 9h1v1h-1z M33 4h2v1h-2z M35 5h1v3h-1z M35 9h1v1h-1z"/>'
   return `<svg viewBox="0 0 40 32" width="80" height="64" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
     <path class="mon-color" d="M11 29h5v3h-5z M21 29h5v3h-5z"/>
     <path class="mon-color" d="${BODY}"/>
     <path class="mon-shine" opacity=".24" d="M10 14h3v9h-3z"/>
     <path class="mon-ink" opacity=".24" d="M13 25h10v3H13z"/>
-    <path class="mon-ink mon-eyes" d="M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z"/>
+    <path class="mon-ink${pose === 'babysitting' ? '' : ' mon-eyes'}" d="${pose === 'babysitting' ? 'M15 18h2v1h-2z M22 18h2v1h-2z M20 22h2v1h-2z' : 'M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z'}"/>
     <path class="mon-color" d="M25 25h5v2h-5z"/>
     <path class="mon-color" d="M28 17h3v2h-3z"/>
     <path class="mon-handle" d="M31 11h2v21h-2z"/>
     <path class="mon-color" opacity=".28" d="M28 3h9v8h-9z"/>
     <path class="mon-shine" d="M28 2h9v1h-9z M28 11h9v1h-9z M27 3h1v8h-1z M37 3h1v8h-1z"/>
-    <path class="mon-shine" d="M30 4h1v1h-1z M30 6h1v3h-1z M30 9h1v1h-1z M33 4h2v1h-2z M35 5h1v3h-1z M35 9h1v1h-1z"/>
+    ${sign}
   </svg>`
 }
-function renderCompose(b) {
+function queueHtml(s) {
+  if (!s.queued) return ''
+  const v = state.variant
+  const w = WAKES.review
+  const sotto = v === 'a' ? `<span class="fq__sotto">${smark(16)}Sotto</span>${w.sum}`
+    : v === 'b' ? `<span class="fq__sotto">${ico('alarm', 15)}Wake-up</span>mira requested changes · mira commented on src/greeting.ts`
+      : `<span class="fq__sotto">${smark(16)}Sotto · Wake-up</span>Sotto is babysitting a pull request for this thread, and it changed. #74 Greet the reviewer…`
+  return `<section class="fq" aria-label="Queued messages">
+      <div class="fq__head"><button type="button" class="fq__toggle" aria-expanded="true">${ico('down', 15)}Queued<span class="fq__count">2</span></button></div>
+      <ol class="fq__list">
+        <li class="fq__item"><p class="fq__text">Then add a changelog entry.</p><span class="fq__tools"><button type="button" class="ibtn" aria-label="Edit queued message 1">${ico('pen', 15)}</button><button type="button" class="ibtn" aria-label="Remove queued message 1">${ico('x', 15)}</button></span></li>
+        <li class="fq__item"><p class="fq__text">${sotto}</p><span class="fq__tools"><button type="button" class="ibtn" aria-label="Remove the wake-up from the queue. Babysitting goes on.">${ico('x', 15)}</button></span></li>
+      </ol></section>`
+}
+function renderCompose(s) {
   const v = state.variant
   let above = ''
-  if (v === 'a' && b.on) above = `<div class="babysit-line" role="status">${ico('pr', 15)}<strong>Babysitting #74</strong><span aria-hidden="true">·</span><span>since ${b.at}</span><span aria-hidden="true">·</span><button type="button" class="linkbtn" data-act="stop" data-k="linestop" aria-label="Stop babysitting #74">Stop</button></div>`
-  if (v === 'c' && b.on) above = `<div class="ornament" role="img" aria-label="Babysitting pull request #74. ${started(b)}.">${creature()}<div class="mon-task" aria-hidden="true"><b>Babysitting #74</b><span>Since ${b.at}</span></div></div>`
-  const babysat = v === 'b' && b.on
-  return `${above}
+  // The real creature, Monitoring, outranks babysitting in A and C. B shows babysitting on the badge only.
+  if (s.monitor) above = `<div class="ornament" data-pose="monitoring" role="img" aria-label="Monitoring the preview deploy">${creature('monitoring')}<div class="mon-task" aria-hidden="true"><b>Watching the preview deploy</b><span>Monitoring</span></div></div>`
+  else if (v === 'a' && s.any) above = `<div class="babysit-line">${ico('pr', 15)}<strong>Babysitting ${list(s.prs)}</strong><span aria-hidden="true">·</span><span>since ${s.at}</span><span aria-hidden="true">·</span><button type="button" class="linkbtn" data-act="${s.prs.length > 1 ? 'stopall' : 'stop'}" data-k="linestop" aria-label="Stop babysitting ${list(s.prs)}">${s.prs.length > 1 ? 'Stop both' : 'Stop'}</button></div>`
+  else if (v === 'c' && s.any && !s.working) {
+    const label = s.prs.length > 1 ? '#74 Greet the reviewer, #76' : '#74 Greet the reviewer'
+    above = `<div class="ornament" data-pose="babysitting" role="img" aria-label="Babysitting ${list(s.prs)} since ${s.at}">${creature('babysitting')}<div class="mon-task" aria-hidden="true"><b>${label}</b><span>Babysitting<span class="mon-since"> since ${s.at}</span></span></div></div>`
+  }
+  const babysat = v === 'b' && s.on74
+  const prState = s.merged ? 'merged' : s.closed ? 'closed' : 'open'
+  const badgeName = babysat ? `Pull request #74, babysitting${s.prs.length > 1 ? ', and linked #76' : ''}. Open the Pull request surface` : 'Pull request #74. Open the Pull request surface'
+  return `${above}${queueHtml(s)}
     <form class="prompt" onsubmit="return false">
       <label class="vh" for="promptbox">Prompt</label>
-      <textarea id="promptbox" rows="2" placeholder="${b.working ? 'Claude is working. Write a follow-up to queue it.' : 'What would you like to do next?'}"></textarea>
+      <textarea id="promptbox" rows="2" placeholder="${s.working ? 'Claude is working. Write a follow-up to queue it.' : 'What would you like to do next?'}"></textarea>
       <button type="button" class="ibtn prompt__clip" aria-label="Attach screenshots">${ico('clip')}</button>
       <div class="prompt__foot"><div class="prompt__chips">
         <button type="button" class="chip">${claude(14)}Opus 5.5${ico('down', 13)}</button>
         <button type="button" class="chip">Medium${ico('down', 13)}</button>
         <button type="button" class="chip">Permissions${ico('down', 13)}</button></div>
-        <button type="submit" class="send" aria-label="${b.working ? 'Queue the follow-up' : 'Send'}">${ico('up', 16, ' style="stroke-width:2.25"')}</button></div>
+        <button type="submit" class="send" aria-label="${s.working ? 'Queue the follow-up' : 'Send'}">${ico('up', 16, ' style="stroke-width:2.25"')}</button></div>
     </form>
     <div class="branch-toolbar">
-      <span class="btb btb--static">${ico('laptop', 14)}<span>This computer</span></span>
+      <span class="btb btb--static">${ico(s.remote ? 'server' : 'laptop', 14)}<span>${s.remote ? 'Build box' : 'This computer'}</span></span>
       <button type="button" class="btb">${ico('folder', 14)}<span>Current checkout</span>${ico('down', 12)}</button>
       <span class="branch-toolbar__end">
-        <button type="button" class="btb btb--pr" data-state="${b.merged ? 'merged' : 'open'}"${babysat ? ' data-babysat' : ''} title="${babysat ? 'Babysitting #74. Stop it on the Pull request surface.' : '#74 Greet the reviewer'}" aria-label="${babysat ? 'Pull request #74, babysitting. Open the Pull request surface' : 'Pull request #74. Open the Pull request surface'}">${ico(b.merged ? 'merge' : 'pr', 14)}<span>#74</span></button>
+        <button type="button" class="btb btb--pr" data-state="${prState}"${babysat ? ' data-babysat' : ''} title="${babysat ? `Babysitting #74${s.prs.length > 1 ? ' and linked #76' : ''}. Stop it on the Pull request surface.` : '#74 Greet the reviewer'}" aria-label="${badgeName}">${ico(s.merged ? 'merge' : 'pr', 14)}<span>#74</span>${babysat ? `<svg class="i btb__clock" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false">${I.alarm}</svg>` : ''}</button>
         <button type="button" class="btb btb--branch" aria-label="Branch feat/greeting. Change branch">${ico('branch', 14)}<span>feat/greeting</span>${ico('down', 12)}</button>
       </span>
     </div>`
 }
 
-function renderPane() {
-  const b = info()
-  const headState = state.variant === 'c' && b.on ? `<span class="head__state" title="Babysitting #74">${ico('pr', 13)}<span>Babysitting #74</span></span>` : ''
+function renderPane(s) {
   const pane = document.getElementById('pane')
   const old = pane.querySelector('.transcript')
   const keep = old && !state.toScroll ? old.scrollTop : null
   pane.innerHTML = `
     <header class="head drag">
-      <div class="head__title"><span class="head__mark">${claude(18)}</span><h2>Greeting for reviewers</h2><span class="head__crumb">/ Review app</span><span class="head__branch">${ico('branch', 15)}feat/greeting</span>${headState}</div>
+      <div class="head__title"><span class="head__mark">${claude(18)}</span><h2>Greeting for reviewers</h2><span class="head__crumb">/ Review app</span><span class="head__branch">${ico('branch', 15)}feat/greeting</span></div>
       <div class="head__actions">
-        <span class="git-action"><button type="button" aria-label="View pull request #74 on GitHub">${ico(b.merged ? 'merge' : 'pr', 15)}<span class="git-action__word">View PR</span></button><button type="button" aria-label="More Git actions">${ico('down', 14)}</button></span>
+        <span class="git-action"><button type="button" aria-label="View pull request #74 on GitHub">${ico(s.merged ? 'merge' : 'pr', 15)}<span class="git-action__word">View PR</span></button><button type="button" aria-label="More Git actions">${ico('down', 14)}</button></span>
         <button type="button" class="pane-ibtn" aria-pressed="true" aria-label="Close Tools">${ico('panelRight')}</button>
         <button type="button" class="pane-ibtn" aria-label="More thread actions">${ico('more')}</button>
       </div>
     </header>
-    <div class="transcript" tabindex="0" aria-label="Conversation">${renderTranscript(b)}</div>
-    <div class="compose">${renderCompose(b)}</div>`
+    <div class="transcript" tabindex="0" aria-label="Conversation">${renderTranscript(s)}</div>
+    <div class="compose">${renderCompose(s)}</div>`
   const t = pane.querySelector('.transcript')
-  if (keep === null) t.scrollTop = t.scrollHeight
-  else t.scrollTop = keep
+  if (keep !== null) { t.scrollTop = keep; return }
+  // On arriving at a step: the newest wake-up's top in view when what follows it is taller than the transcript, else the end.
+  const bottom = t.scrollHeight - t.clientHeight
+  const wakes = t.querySelectorAll('[data-wake]')
+  const last = wakes[wakes.length - 1]
+  let after = 0
+  for (let n = last?.nextElementSibling; n; n = n.nextElementSibling) after++
+  t.scrollTop = last && after <= 2 ? Math.min(bottom, last.offsetTop - 14) : bottom
 }
 
-/* ---------------- Tools: the Pull request surface ---------------- */
-function prLines() {
-  const i = state.step
+/* ---------------- Tools: the Pull request surface (pullRequestSurface.logic.ts's lines and words) ---------------- */
+function prLines(s) {
+  const k = s.key
   const L = []
-  if (i <= 2) L.push(['running', 'run', 'Checks running', '2 of 3 checks finished'])
-  else if (i === 3) L.push(['failed', 'fail', 'Checks failing', 'CI / Owned build failed', 'View check'])
-  else L.push(['done', 'ok', 'Checks passing', '3 checks passed'])
-  if (i === 5) L.push(['failed', 'fail', 'Changes requested', 'mira asked for changes', 'View review'])
-  else if (i === 7) L.push(['done', 'ok', 'Review approved', 'Approved by mira'])
-  else if (i === 6) L.push(['open', 'open', 'Review required', 'Asked mira to look again'])
-  else L.push(['open', 'open', 'Review required', 'No review yet'])
-  if (i === 6) L.push(['open', 'open', 'Behind main', '2 commits behind main', 'Update branch'])
-  else L.push(['done', 'ok', 'Up to date with main', i === 7 ? 'Merged into main' : 'Has every commit on main'])
-  if (i === 6) L.push(['failed', 'fail', 'Conflicts with main', 'README.md conflicts'])
-  else L.push(['done', 'ok', 'No conflicts', i === 7 ? 'Merged without conflicts' : 'Merges cleanly into main'])
+  if (['before', 'agent', 'user'].includes(k)) L.push(['running', 'run', 'Checks passing', 'CI / Owned build and 1 more are still running'])
+  else if (k === 'failed') L.push(['failed', 'fail', 'Checks passing', 'CI / Owned build failed', ['Open check', 'Open CI / Owned build on GitHub']])
+  else L.push(['done', 'ok', 'Checks passing', 'All 3 passed'])
+  if (k === 'queued' || k === 'review') L.push(['failed', 'fail', 'Review approved', 'mira asked for changes', ['Open review', 'Open mira’s review on GitHub']])
+  else if (k === 'conflict') L.push(['todo', 'todo', 'Review approved', 'It still needs an approving review'])
+  else if (k === 'merged') L.push(['done', 'ok', 'Review approved', 'Approved by mira'])
+  else L.push(['todo', 'todo', 'Review approved', 'Nobody has reviewed it yet'])
+  if (k === 'conflict') L.push(['todo', 'todo', 'Up to date with main', '2 commits behind main', ['Update branch']])
+  else L.push(['done', 'ok', 'Up to date with main', k === 'merged' ? 'Merged into main' : 'Has every commit on main'])
+  if (k === 'conflict') L.push(['failed', 'fail', 'No conflicts', 'Conflicts with main. Resolve them in the branch and push'])
+  else if (k === 'closed') L.push(['unknown', 'unknown', 'No conflicts', 'GitHub checks again if it is reopened'])
+  else L.push(['done', 'ok', 'No conflicts', k === 'merged' ? 'Merged without conflicts' : 'Merges cleanly into main'])
   L.push(['done', 'ok', 'Ready for review', 'Not a draft'])
   return L
 }
-function renderTools() {
-  const b = info()
+function renderTools(s) {
   const v = state.variant
-  const lines = prLines()
+  const lines = prLines(s)
   const done = lines.filter(l => l[0] === 'done').length
-  const all = done === lines.length
-  const lineHtml = lines.map(([tone, icon, title, why, fix]) => `<li class="pr-line" data-tone="${tone}">${ico(icon, 18)}<div><strong>${title}</strong><span class="pr-why">${why}</span></div>${fix ? `<button type="button" class="tt-button">${fix}</button>` : ''}</li>`).join('')
-  const headerBtn = v === 'b' && !b.merged
-    ? `<button type="button" class="cbtn" data-k="hbtn" data-act="${b.on ? 'stop' : 'start'}"${b.on ? ' data-on' : ''} aria-label="${b.on ? 'Stop babysitting' : 'Babysit pull request'}" title="${b.on ? `Stop babysitting. ${started(b)}.` : 'Babysit pull request'}">${ico('alarm')}</button>` : ''
-  const menuItems = `<button type="button" role="menuitem">${ico('copy')}Copy link</button>
-      ${v === 'c' && !b.on && !b.merged ? `<button type="button" role="menuitem" data-act="start" data-k="menustart">${ico('alarm')}Babysit pull request</button>` : ''}
-      ${v === 'c' && b.on ? `<button type="button" role="menuitem" data-act="stop" data-k="menustop">${ico('alarmOff')}Stop babysitting</button>` : ''}
-      <hr><button type="button" role="menuitem">${ico('unlink')}Unlink from this thread</button>`
-  const docked = v === 'c' ? (b.on
-    ? `<div class="pr-babysat" role="status">${ico('alarm', 18)}<div class="pr-babysat__text"><strong>Babysitting since ${b.at}</strong><small>${b.by === 'you' ? 'Started by you' : 'Started by Claude'}. Sotto wakes this thread when #74 needs it.</small></div><button type="button" class="tt-button" data-act="stop" data-k="dockstop" aria-label="Stop babysitting #74">Stop</button></div>`
-    : b.ended === 'stopped' ? `<div class="pr-babysat" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Not babysitting</strong><small>${endedText(b)} Babysit pull request is in the ··· menu.</small></div></div>` : '') : ''
-  const body = b.merged
-    ? `<h3 class="pr-heading">Merge checklist <small data-tone="done">5 of 5 done</small></h3><ul class="pr-lines">${lineHtml}</ul>
-       <div class="pr-finished">${ico('merge', 20)}<div><strong>Merged into main</strong><span>Oct 7, 4:05 PM</span></div></div>
-       ${v === 'c' ? `<div class="pr-babysat pr-babysat--after" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Babysitting ended</strong><small>${endedText(b)}</small></div></div>` : ''}`
-    : `<h3 class="pr-heading">${all ? 'Ready to merge' : 'Merge checklist'} <small${all ? ' data-tone="done"' : ''}>${done} of ${lines.length} done</small></h3><ul class="pr-lines">${lineHtml}</ul>
-       <div class="pr-dock">${docked}<div class="pr-merge"><button type="button" class="tt-button tt-button--primary pr-merge__go"${all ? '' : ' aria-disabled="true"'}>${ico('merge', 17)}Merge #74</button><button type="button" class="tt-button">Squash${ico('down', 13)}</button></div>
-       <p class="pr-hint">${all ? 'One commit on main.' : `Merge is ready when all five lines are done.`}</p></div>`
+  const aside = lines.filter(l => l[0] === 'unknown').length
+  const left = lines.length - done - aside
+  const clear = left === 0
+  const heading = !s.openPr ? 'Merge checklist' : clear ? 'Ready to merge' : 'Before merging'
+  const count = `${done} of ${lines.length} done${aside ? `, ${aside} does not block` : ''}`
+  const lineHtml = lines.map(([tone, icon, title, why, fix]) => `<li class="pr-line" data-tone="${tone}">${ico(icon, 18)}<div><strong>${title}</strong><span class="pr-why">${why}</span></div>${fix ? `<button type="button" class="tt-button"${fix[1] ? ` aria-label="${fix[1]}"` : ''}>${fix[1] ? ico('ext', 14) : ''}${fix[0]}</button>` : ''}</li>`).join('')
+  const ended = endedText(s)
+  // 1A: the header button. It goes when the pull request is merged or closed; nothing is left to babysit.
+  const headerBtn = v === 'b' && s.openPr
+    ? `<button type="button" class="cbtn" data-k="hbtn" data-act="${s.on74 ? 'stop' : 'start'}"${s.on74 ? ' data-on' : ''} aria-label="${s.on74 ? 'Stop babysitting' : 'Babysit pull request'}" title="${s.on74 ? `Stop babysitting. ${started(s)}.` : `Babysit pull request${ended ? `. ${ended}` : ''}`}">${ico('alarm')}</button>` : ''
+  // The real menu, in its real order. C (1B) adds Babysit pull request beside Merge when ready, the other "later" press.
+  const item = (label, icon, extra = '') => `<button type="button" role="menuitem"${extra}>${icon ? ico(icon, 15) : '<span class="menu__pad"></span>'}${label}</button>`
+  const menuItems = s.openPr
+    ? `${item('Convert to draft', 'draft')}${clear ? '' : item('Merge when ready (auto-merge)', 'merge')}${v === 'c' && !s.on74 ? item('Babysit pull request', 'alarm', ' data-act="start" data-k="menustart"') : ''}${item('Copy link', 'copy')}${item('Link pull request', 'link')}
+       <hr>${item('Close pull request', '', ' data-tone="danger"')}`
+    : `${item('Copy link', 'copy')}${item('Link pull request', 'link')}${s.closed ? `<hr>${item('Reopen pull request', '')}` : ''}`
+  const docked = v !== 'c' || !s.openPr ? '' : s.on74
+    ? `<div class="pr-babysat">${ico('alarm', 18)}<div class="pr-babysat__text"><strong>Babysitting since ${s.at}</strong><small>${s.by === 'you' ? 'Started by you' : 'Started by Claude'}. Sotto sends this thread a wake-up when #74 needs it.</small></div><button type="button" class="tt-button" data-act="stop" data-k="dockstop" aria-label="Stop babysitting #74">Stop</button></div>`
+    : ended ? `<div class="pr-babysat" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Not babysitting</strong><small>${ended} Babysit pull request is in the ··· menu.</small></div></div>` : ''
+  const finished = s.merged
+    ? `<div class="pr-finished">${ico('merge', 20)}<div><strong>Merged into main</strong><span>Oct 7, 4:05 PM</span></div></div>`
+    : `<div class="pr-finished" data-state="closed">${ico('closed', 20)}<div><strong>Closed without merging</strong></div><button type="button" class="tt-button">Reopen</button></div>`
+  const afterFinish = v === 'c' && !s.openPr ? `<div class="pr-babysat pr-babysat--after" data-ended>${ico('alarmOff', 18)}<div class="pr-babysat__text"><strong>Babysitting ended</strong><small>${ended}</small></div></div>` : ''
+  const dock = s.openPr
+    ? `<div class="pr-dock">${docked}<div class="pr-merge"><button type="button" class="tt-button tt-button--primary pr-merge__go"${clear ? '' : ' aria-disabled="true"'}>${ico('merge', 17)}Merge #74</button><button type="button" class="tt-button" aria-label="Merge method: Squash and merge">Squash${ico('down', 13)}</button></div>
+       <p class="pr-hint">${clear ? 'One commit on main.' : `${left} ${left === 1 ? 'line' : 'lines'} left before this can merge.`}</p></div>`
+    : `<div class="pr-dock">${finished}${afterFinish}</div>`
+  const linkedOpen = state.linkedOpen || s.two
+  const linked76 = s.prs.includes('#76') ? '<em>Babysitting</em>' : ''
+  const linkedFold = `<div class="pr-fold"><button type="button" class="pr-fold__head" data-act="linked" data-k="linked" aria-expanded="${linkedOpen}">${ico('right', 15)}Linked pull requests <span>1</span></button>
+      ${linkedOpen ? `<ul class="pr-linked"><li>${ico('pr', 15)}<b><span>#76</span> Mention the greeting in the README</b>${linked76}<button type="button" class="tt-button" aria-label="Show #76 here">Show</button></li></ul>` : ''}</div>`
   const footSwitch = v === 'a'
-    ? `<button type="button" class="pr-foot-switch" role="switch" data-k="footswitch" data-act="${b.on ? 'stop' : 'start'}" aria-checked="${b.on}"${b.merged ? ' disabled' : ''}>
-        <span><strong>Wake this thread when the pull request needs it</strong><small>${b.on ? started(b) + '.' : b.ended ? endedText(b) : 'Off. Claude can also start it.'}</small></span><span class="track" aria-hidden="true"></span></button>` : ''
+    ? `<button type="button" class="pr-foot-switch" role="switch" data-k="footswitch" data-act="${s.openPr ? (s.on74 ? 'stop' : 'start') : 'none'}" aria-checked="${s.on74}"${s.openPr ? '' : ' aria-disabled="true"'}>
+        <span><strong>Babysit pull request</strong><small>${s.on74 ? `${started(s)}. Sotto sends this thread a wake-up when #74 needs it.` : ended || (s.remote ? 'Off.' : 'Off. Claude can also start it with its Sotto tool.')}</small></span><span class="track" aria-hidden="true"></span></button>` : ''
+  const stateWord = s.merged ? 'Merged' : s.closed ? 'Closed' : 'Open'
   document.getElementById('tools').innerHTML = `
     <div class="tools__main">
       <div class="chrome drag">
-        <div class="chrome__lead">${ico(b.merged ? 'merge' : 'pr', 17, ` data-state="${b.merged ? 'merged' : 'open'}"`)}<h3 class="pr-name"><span>#74</span> Greet the reviewer</h3><span class="tag">${b.merged ? 'Merged' : 'Open'}</span></div>
+        <div class="chrome__lead">${ico(s.merged ? 'merge' : s.closed ? 'closed' : 'pr', 17, ` data-state="${stateWord.toLowerCase()}"`)}<h3 class="pr-name"><span>#74</span> Greet the reviewer</h3><span class="tag">${stateWord}</span></div>
         <div class="chrome__actions">
           ${headerBtn}
-          <button type="button" class="cbtn" aria-label="Open #74 on GitHub">${ico('ext')}</button>
-          <button type="button" class="cbtn" aria-label="Refresh the pull request">${ico('refresh')}</button>
+          <button type="button" class="cbtn" aria-label="Open on GitHub" title="Open on GitHub">${ico('ext')}</button>
+          <button type="button" class="cbtn" aria-label="Refresh pull request" title="Refresh pull request">${ico('refresh')}</button>
           <button type="button" class="cbtn" data-act="menu" data-k="menu" aria-haspopup="menu" aria-expanded="${state.menu}" aria-label="More pull request actions">${ico('more')}</button>
           ${state.menu ? `<div class="menu" role="menu" aria-label="Pull request actions">${menuItems}</div>` : ''}
         </div>
       </div>
-      ${b.merged ? '<p class="pr-notice">Pull request merged.</p>' : ''}
-      <div class="pr-body">${body}
+      <div class="pr-body">
+        <h3 class="pr-heading">${heading} <small${clear ? ' data-tone="done"' : ''}>${count}</small></h3>
+        <ol class="pr-lines" aria-label="Merge checklist">${lineHtml}</ol>
+        ${dock}
         <div class="pr-fold"><button type="button" class="pr-fold__head" aria-expanded="false">${ico('right', 15)}Description</button></div>
-        <div class="pr-fold"><button type="button" class="pr-fold__head" aria-expanded="false">${ico('right', 15)}Linked pull requests <span>1</span></button></div>
+        ${linkedFold}
       </div>
       ${footSwitch}
-      <div class="tools__foot"><span class="tools__copy">${ico('folder', 14)}<b>Review app</b><span aria-hidden="true">·</span><code>feat/greeting</code><span class="muted">· Project folder</span></span>
+      <div class="tools__foot"><span class="tools__copy">${ico(s.remote ? 'server' : 'folder', 14)}<b>${s.remote ? 'Build box' : 'Review app'}</b><span aria-hidden="true">·</span><code>feat/greeting</code><span class="muted">· Project folder</span></span>
         <span class="tools__foot-actions"><button type="button" class="ibtn" aria-label="Copy the folder path">${ico('copy', 15)}</button><button type="button" class="ibtn" aria-label="Open the folder">${ico('folderOpen', 15)}</button></span></div>
     </div>
     <nav class="rail" aria-label="Tools surfaces">
@@ -907,64 +1102,86 @@ function renderTools() {
     </nav>`
 }
 
-/* ---------------- Settings ---------------- */
+/* ---------------- Settings: the real pages, rows and copy, with the new switch in its place ---------------- */
 function renderSettings() {
   const v = state.variant
-  const on = state.agentsMayBabysit
-  const desc = `An agent can ask Sotto to babysit its pull request instead of checking GitHub itself. Sotto then wakes the thread when a check fails, the required checks pass, someone else comments or reviews, the branch starts to conflict, or the pull request merges or closes. It asks GitHub through gh, on your own sign-in, every two minutes. ${on ? 'When off, agents cannot start it and what they started stops.' : 'Off: agents cannot start it, and what they started has stopped.'} Babysitting you start on the Pull request surface stays.`
-  const toggle = (label, checked, small, extra = '') => `<button type="button" class="s-toggle${extra}" role="switch" aria-checked="${checked}"${extra ? ' data-act="agentswitch" data-k="agentswitch"' : ''}><span><strong>${label}</strong><small>${small}</small></span><span class="track" aria-hidden="true"></span></button>`
-  const row = v === 'a'
-    ? toggle('Let agents babysit their pull requests', on, desc, ' s-row--new')
-    : toggle('Let agents babysit pull requests', on, desc, ' s-row--new')
-  const section = v === 'a'
-    ? `<div class="s-heading">${ico('pr')}<div><h2>When a pull request is made or merged</h2></div></div>
+  const on = state.agentsSwitch
+  // What Sotto does with the value shown, as every Settings description says.
+  const desc = on
+    ? 'An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.'
+    : 'Agents are not offered babysitting, and none an agent started goes on. You can still babysit a pull request from the Pull request surface.'
+  const toggle = (label, checked, small, extra = '') => `<button type="button" class="s-toggle" role="switch" aria-checked="${checked}"${extra}><span><span class="s-label">${label}</span>${small ? `<span class="s-desc">${small}</span>` : ''}</span><span class="track" aria-hidden="true"></span></button>`
+  const field = (label, small, control) => `<div class="s-field"><div><span class="s-label">${label}</span><span class="s-desc">${small}</span></div>${control}</div>`
+  const select = (label, options) => `<select aria-label="${label}">${options.map(o => `<option>${o}</option>`).join('')}</select>`
+  const segs = (label, options, chosen) => `<span class="s-segs" role="radiogroup" aria-label="${label}">${options.map(o => `<button type="button" role="radio" aria-checked="${o === chosen}">${o}</button>`).join('')}</span>`
+  const row = toggle(switchName(), on, desc, ' data-act="agentswitch" data-k="agentswitch" id="newrow"')
+  const group = (icon, title, rows, note = '') => `<section class="s-group"><h3>${ico(icon)}${title}</h3>${note ? `<p class="s-note">${note}</p>` : ''}<div class="s-rows">${rows}</div></section>`
+  const page = v === 'a'
+    ? `<div class="s-head"><h2>Git</h2><p>Commits, pull requests, Changes &amp; fetching</p></div>
+       ${group('commit', 'When a thread commits', `<div>${field('Commit and pull request style', 'The thread’s own model writes commit messages and pull request text the way each repository’s recent commits and AGENTS.md do.', select('Commit and pull request style', ['Repository conventions', 'Conventional Commits', 'Custom instructions']))}
+           <div class="s-example" role="group" aria-label="Example" style="margin-top:18px"><small>Commit subject</small><code>Let a thread name itself from its first exchange</code><small>Pull request title</small><code>Let a thread name itself from its first exchange</code><small>An example. Each repository’s recent commits and AGENTS.md set the real style.</small></div></div>`)}
+       ${group('pr', 'When a pull request is made or merged', `
+           ${toggle('Follow pull request templates', true, 'When a Git action drafts a pull request, the thread’s own model follows the repository’s pull request template, if Sotto finds one.')}
+           ${field('Default merge method', 'The merge in the pull request checklist starts on the method you used last, Merge the first time.', select('Default merge method', ['Last selected', 'Merge', 'Squash and merge', 'Rebase and merge']))}
+           ${toggle('Auto-settle merged threads', false, 'A thread stays where it is after its pull request merges, until you settle it.')}
+           ${row}`)}
+       ${group('file', 'When you read Changes', `
+           ${field('Diff layout', 'Changes starts with each diff stacked, removed lines above added ones.', segs('Diff layout', ['Stacked', 'Split'], 'Stacked'))}
+           ${toggle('Hide whitespace changes', true, 'Changes starts with edits that only change spacing hidden.')}
+           ${field('Default diff file state', 'Files in Changes start collapsed to their headers. Press one to read it.', segs('Default diff file state', ['Expanded', 'Collapsed'], 'Collapsed'))}
+           ${toggle('Proactive panels', false, 'Changes opens only when you open it.')}`, 'These set where Changes starts. A choice made in Changes holds until one of these settings changes or Sotto restarts.')}
+       ${group('refresh', 'In the background', `
+           ${field('Git fetch interval', 'Sotto asks origin every 30 seconds whether a thread’s branch is ahead or behind, while this window is in front.', select('Git fetch interval', ['30 seconds', '1 minute', '5 minutes', 'Off']))}
+           ${toggle('Automatically pull', false, 'Sotto shows when the default branch is behind and leaves the pull to you.')}`)}`
+    : `<div class="s-head"><h2>Application</h2><p>Startup, privacy &amp; updates</p></div>
        <div class="s-rows">
-         ${toggle('Follow pull request templates', true, 'A pull request Sotto drafts follows the repository’s template when it has one.')}
-         <div class="s-field"><div><strong>Default merge method</strong><small>Merge on the Pull request surface starts on Squash.</small></div><select aria-label="Default merge method"><option>Squash</option><option>Merge commit</option><option>Rebase</option></select></div>
-         ${toggle('Auto-settle merged threads', false, 'A thread stays open after its pull request merges until you settle it.')}
+         ${field('Reduced motion', 'Follow the system setting for animation.', select('Reduced motion', ['Follow system', 'Reduce motion']))}
+         ${field('Web links in threads', 'Where a link in a thread opens when you click it. Right-click a link, or press Shift+F10, to choose for that link.', segs('Web links in threads', ['System browser', 'Sotto browser'], 'System browser'))}
+         ${toggle('Show the browser when an agent opens a page', true, 'When an agent opens a page, its thread’s browser player opens over the thread, and the test iPhone does the same when an agent uses it. When off, both stay closed and Tools still shows the work.')}
+         ${toggle('Let agents use the browser without asking', true, 'Agents can open pages, click and type in Sotto’s browser without asking first. They can see every page in their thread’s browser, including pages you open and sites you are signed in to there. Stop sharing one page, or stop it for one thread, in Tools &gt; Browser.')}
+         ${toggle('Let agents draw visuals in threads', true, 'An agent can draw a diagram, or a small interactive page sealed from the network, in its thread to show how something works. Visuals are made on this computer and contact no one. When off, agents explain in text instead, and visuals already in threads stay.')}
          ${row}
-       </div>
-       <div class="s-heading">${ico('refresh')}<div><h2>In the background</h2></div></div>
-       <div class="s-rows">
-         <div class="s-field"><div><strong>Git fetch interval</strong><small>Sotto asks origin every 30 seconds whether a thread’s branch is ahead or behind, while this window is in front.</small></div><select aria-label="Git fetch interval"><option>30 seconds</option></select></div>
+         ${field('Replies in threads', 'Stream a reply word by word as the agent writes it, or show it once it is finished. Commands and tool calls always appear as they run.', segs('Replies in threads', ['As written', 'When finished'], 'As written'))}
+         ${field('New threads work in', 'Project defaults can override this. Existing threads keep their working folder.', select('New threads work in', ['Project folder', 'New worktree']))}
+         ${toggle('Remove a worktree when its thread is settled', true, 'Settle removes a clean worktree folder without asking. A folder with uncommitted changes still asks.')}
        </div>`
-    : `<div class="s-heading">${ico('sliders')}<div><h2>Application</h2><p>Startup, privacy &amp; updates</p></div></div>
-       <div class="s-rows">
-         ${toggle('Show the browser when an agent opens a page', true, 'When an agent opens a page, its thread’s browser player opens over the thread. When off, it stays closed and Tools still shows the work.')}
-         ${toggle('Let agents use the browser without asking', true, 'Agents can open pages, click and type in Sotto’s browser without asking first. Stop sharing one page, or stop it for one thread, in Tools &gt; Browser.')}
-         ${toggle('Let agents draw visuals in threads', true, 'An agent can draw a diagram, or a small interactive page sealed from the network, in its thread. When off, agents explain in text instead.')}
-         ${row}
-         <div class="s-field"><div><strong>Replies in threads</strong><small>Stream a reply word by word as the agent writes it, or show it once it is finished.</small></div><select aria-label="Replies in threads"><option>As written</option><option>When finished</option></select></div>
-       </div>`
-  const nav = (icon, label, current) => `<li><button type="button"${current ? ' aria-current="page"' : ''}>${ico(icon)}${label}</button></li>`
+  const nav = (icon, label, current, gap) => `<li${gap ? ' data-gap' : ''}><button type="button"${current ? ' aria-current="page"' : ''}>${ico(icon)}${label}</button></li>`
   document.getElementById('settings').innerHTML = `
     <nav class="settings__nav" aria-label="Settings sections">
       <div class="side__top drag"><span class="brand" aria-label="Sotto application">${smark(18)}<span>Sotto</span></span></div>
       <h1>Settings</h1>
       <ul class="snav">
-        ${nav('mic', 'Dictation')}${nav('wave', 'Transcription')}${nav('spark', 'Cleanup')}<hr>
-        ${nav('cmd', 'Providers')}${nav('server', 'Hosts')}${nav('users', 'Agents')}${nav('arrow', 'Output')}<hr>
-        ${nav('palette', 'Appearance')}${nav('sliders', 'Application', v !== 'a')}${nav('branch', 'Git', v === 'a')}
+        ${nav('mic', 'Dictation')}${nav('wave', 'Transcription')}${nav('spark', 'Cleanup')}
+        ${nav('cmd', 'Providers', false, true)}${nav('server', 'Hosts')}${nav('users', 'Agents')}${nav('arrow', 'Output')}
+        ${nav('palette', 'Appearance', false, true)}${nav('sliders', 'Application', v !== 'a')}${nav('branch', 'Git', v === 'a')}
       </ul>
       ${sideFoot()}
     </nav>
-    <main class="settings__main"><div class="settings__inner">${section}</div><p class="s-save">Changes save as you make them.</p></main>`
+    <main class="settings__main"><div class="settings__scroll" id="smain"><div class="settings__inner">${page}</div></div><p class="s-save">Changes save as you make them.</p></main>`
 }
 
 /* ---------------- Glue ---------------- */
 function render() {
   const keyed = document.activeElement?.dataset?.k
-  document.documentElement.toggleAttribute('data-theme', state.light)
+  const s = scene()
   if (state.light) document.documentElement.setAttribute('data-theme', 'light')
+  else document.documentElement.removeAttribute('data-theme')
   document.body.toggleAttribute('data-settings', state.settings)
   document.body.toggleAttribute('data-nobar', !state.bar)
-  if (state.openLast) { const last = WAKES.filter(w => state.step >= w.step).length - 1; if (last >= 0) state.open.add('w' + last); state.openLast = false }
-  if (state.settings) renderSettings()
-  else { renderSide(); renderPane(); renderTools() }
+  if (state.openLast) { const ks = wakeKeys(s); if (ks.length) state.open.add(ks[ks.length - 1]); state.openLast = false }
+  if (state.settings) {
+    const scrolled = document.getElementById('smain')?.scrollTop
+    renderSettings()
+    const main = document.getElementById('smain')
+    // Arriving: the least scroll that shows the new row whole, so as much of the page above it as fits stays in view.
+    if (state.toScroll) { const r = document.getElementById('newrow'); main.scrollTop = Math.max(0, r.getBoundingClientRect().bottom - main.getBoundingClientRect().top - main.clientHeight + 48) }
+    else if (scrolled !== undefined) main.scrollTop = scrolled
+  } else { renderSide(s); renderPane(s); renderTools(s) }
   state.toScroll = false
   const vi = VARIANTS.findIndex(([k]) => k === state.variant)
   document.getElementById('vlabel').textContent = `${state.variant.toUpperCase()} — ${VARIANTS[vi][1]}`
-  document.getElementById('slabel').textContent = `${state.step + 1}/8 ${STEPS[state.step][1]}`
+  document.getElementById('slabel').textContent = `${state.step + 1}/${STEPS.length} ${STEPS[state.step][1]}`
+  document.getElementById('slabel').title = STEPS[state.step][1]
   document.getElementById('sb').textContent = state.settings ? 'Close Settings' : 'Open Settings'
   document.getElementById('tb').textContent = state.light ? 'Dark theme' : 'Light theme'
   const q = new URLSearchParams({ variant: state.variant, step: STEPS[state.step][0] })
@@ -975,7 +1192,7 @@ function render() {
   if (keyed) (document.querySelector(`[data-k="${keyed}"]`) ?? document.querySelector('[data-k="footswitch"], [data-k="hbtn"], [data-k="dockstop"], [data-k="menu"]'))?.focus()
 }
 function goVariant(d) { const i = VARIANTS.findIndex(([k]) => k === state.variant); state.variant = VARIANTS[(i + d + 3) % 3][0]; state.manual = null; state.menu = false; state.open.clear(); state.toScroll = true; render() }
-function goStep(d) { state.step = (state.step + d + STEPS.length) % STEPS.length; state.manual = null; state.menu = false; state.toScroll = true; render() }
+function goStep(d) { state.step = (state.step + d + STEPS.length) % STEPS.length; state.manual = null; state.menu = false; state.agentsSwitch = STEPS[state.step][0] !== 'switchoff'; state.toScroll = true; render() }
 document.getElementById('pv').onclick = () => goVariant(-1)
 document.getElementById('nv').onclick = () => goVariant(1)
 document.getElementById('ps').onclick = () => goStep(-1)
@@ -983,16 +1200,19 @@ document.getElementById('ns').onclick = () => goStep(1)
 document.getElementById('sb').onclick = () => { state.settings = !state.settings; state.toScroll = true; render() }
 document.getElementById('tb').onclick = () => { state.light = !state.light; render() }
 document.addEventListener('click', e => {
+  if (e.target.closest('a[data-ext]')) { e.preventDefault(); return }
   const t = e.target.closest('[data-act], [data-toggle]')
   if (!t) { if (state.menu && !e.target.closest('.menu')) { state.menu = false; render() } return }
   const act = t.dataset.act
   if (t.dataset.toggle) { const k = t.dataset.toggle; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); return }
   if (act === 'stop') { state.manual = 'off'; state.menu = false; render() }
-  else if (act === 'start') { state.manual = 'on'; state.menu = false; render() }
+  else if (act === 'stopall') { state.manual = 'offall'; state.menu = false; render() }
+  else if (act === 'start') { state.manual = 'on'; state.menu = false; render(); if (t.dataset.k === 'menustart') document.querySelector('[data-k="dockstop"]')?.focus() }
   else if (act === 'menu') { state.menu = !state.menu; render(); if (state.menu) document.querySelector('.menu [role="menuitem"]')?.focus() }
-  else if (act === 'settings') { state.settings = true; render(); document.querySelector('[data-k="agentswitch"]')?.focus() }
+  else if (act === 'linked') { state.linkedOpen = !state.linkedOpen; render() }
+  else if (act === 'settings') { state.settings = true; state.toScroll = true; render(); document.querySelector('[data-k="agentswitch"]')?.focus() }
   else if (act === 'threads') { state.settings = false; state.toScroll = true; render() }
-  else if (act === 'agentswitch') { state.agentsMayBabysit = !state.agentsMayBabysit; render() }
+  else if (act === 'agentswitch') { state.agentsSwitch = !state.agentsSwitch; render() }
 })
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && state.menu) { state.menu = false; render(); document.querySelector('[data-k="menu"]')?.focus(); return }
