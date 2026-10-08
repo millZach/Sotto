@@ -66,3 +66,27 @@ and accepted `refs/pull/<number>/head` as the head of the comparison, giving the
 name. No answer was saved. The rate-limit paths (a refused answer, a low reading, the pause) were not provoked against
 GitHub; the tests in `tests/unit/main/gitStatusGitHub.test.ts` and `tests/unit/main/github.test.ts` cover them over a
 scripted gh.
+
+## Which hosts count as GitHub
+
+The lookup first took a remote as GitHub only when its host's name said so, which lost the badge for an Enterprise
+server on its own domain, a GHE.com host and an SSH alias such as `git@work:...`. It now decides as gh does. On this
+machine `gh auth status --json hosts --jq '.hosts | keys[]'` printed `github.com` and nothing else, no token among it,
+and `ssh -G work` printed `hostname work` for a name `~/.ssh/config` does not define, connecting to nothing. The
+decisions over scripted answers are in `tests/unit/main/github.test.ts` ("the hosts gh asks as GitHub") and
+`tests/unit/main/gitStatusGitHub.test.ts` ("asks an Enterprise server on its own domain, or behind an SSH alias").
+
+## In the running app
+
+October 8, 2026, after `npm run build`, with the fake gh the journeys drive (`tests/fixtures/fakeGh.mjs`), which now
+answers only the two GraphQL documents for reads and names the head's owner in `gh pr list`:
+
+- `npx playwright test tests/e2e/git-actions.spec.ts`: both journeys pass, including the commit, push and pull request
+  through gh and the branch's pull request badge.
+- `npx playwright test tests/e2e/pull-request-surface.spec.ts`: passes; the pull request is checked out, opened from its
+  badge and merged after its confirmation.
+- `npx playwright test tests/e2e/daily-workspace.spec.ts`: both journeys pass. On the first of three runs "mixed pane
+  drafts, queued work, settlement and preferences recover" failed once on a restored draft, a part with no GitHub in it,
+  and passed alone and in the next full run.
+- `tests/e2e/tools-sidecar.spec.ts`: the Tools rail journey passes. "Changes reads every scope" fails waiting for its
+  thread's sidebar button, and fails the same way at this branch's base `d8f477a94`, so it is not this change's.
