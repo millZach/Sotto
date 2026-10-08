@@ -48,8 +48,15 @@ branches are two queries, which the same file asserts), and each further reposit
 | Opening it, or Refresh | 2 (`gh pr view`, then `gh api graphql`) | 1 (`gh api graphql`) |
 | A press such as Merge, with the read that settles it and the window's read after it | 5 (the press, then two reads of two each) | 2 (the press, then one read; the window's read is answered by it) |
 | The same, the repository's merge methods asked again | every read | at most every 15 minutes per repository |
+| A press whose settling read the rate limit refuses | 5 | 2 (the press, then the refused read; the window shows that refusal without asking) |
 
 The branch toolbar's own lookup after a press is asked again as before, now in the batched query.
+
+## Not covered here
+
+A press of Refresh, or the lookup after a Git action, that the rate limit holds back keeps the branch toolbar's last
+answer and says nothing on the toolbar. Saying it there is a change to the toolbar's look, filed as #826 and named in
+ADR-0027's amendment; the Pull request surface, one press from the badge, says why and when.
 
 ## Settings saves
 
@@ -64,8 +71,9 @@ code used them, to check that GitHub accepts them as written: the batched head l
 variables, and the Pull request surface's read of an open pull request. GitHub answered both, charged one point each,
 and accepted `refs/pull/<number>/head` as the head of the comparison, giving the same distance as the branch's own
 name. No answer was saved. The rate-limit paths (a refused answer, a low reading, the pause) were not provoked against
-GitHub; the tests in `tests/unit/main/gitStatusGitHub.test.ts` and `tests/unit/main/github.test.ts` cover them over a
-scripted gh.
+GitHub; the tests in `tests/unit/main/gitStatusGitHub.test.ts`, `tests/unit/main/githubPullRequestHeads.test.ts` and
+`tests/unit/main/github.test.ts` cover them over a scripted gh, among them a refusal that carries GitHub's reset and a
+late answer to a query sent before a refusal, which leaves the pause in place.
 
 ## Which hosts count as GitHub
 
