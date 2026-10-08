@@ -23,7 +23,10 @@ export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'>
 
 /** The repository's merge settings are read with a pull request at most this often (#820); they change rarely. */
 const MERGE_SETTINGS_FRESH_MS = 15 * 60_000
-/** A read made just after a press stands for the surface's own read that follows it, so a press costs one read, not two. */
+/**
+ * A read made just after a press stands for the surface's own read that follows it, so a press costs one read, not two.
+ * A read the rate limit refused stands for it too, so the window shows the refusal rather than asking again.
+ */
 const PRIMED_FRESH_MS = 15_000
 const MERGE_SETTINGS = 'mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed'
 /**
@@ -200,8 +203,8 @@ export class GitPullRequests {
   private readonly now: () => number
   /** Each repository's merge methods, kept fifteen minutes, by `repositoryKey`. */
   private readonly mergeSettings = new Map<string, MergeSettings>()
-  /** The read a press made, by `pullRequestKey`, waiting to stand for the surface's read that follows it. */
-  private readonly primed = new Map<string, { readonly at: number; readonly view: GitPullRequestView }>()
+  /** The read a press made, by `pullRequestKey`, or when the rate limit refused it, waiting to stand for the surface's read that follows it. */
+  private readonly primed = new Map<string, { readonly at: number; readonly view: GitPullRequestView } | { readonly at: number; readonly retryAt: number }>()
   private readonly hosts: GitHubHosts
   constructor(dependencies: { readonly run?: RunGitCommand; readonly rateLimit?: GitHubRateLimit; readonly hosts?: GitHubHosts; readonly now?: () => number } = {}) {
     this.run = dependencies.run ?? runGitStatusCommand
@@ -214,14 +217,18 @@ export class GitPullRequests {
 
   /**
    * One pull request, by URL or number, with what the Pull request surface shows. The read a press just made stands for
-   * this one once, so the surface's read after a press asks GitHub nothing.
+   * this one once, so the surface's read after a press asks GitHub nothing; when the rate limit refused that read, this
+   * one is refused the same way, until the time it gave.
    */
   async view(cwd: string, reference: string): Promise<GitPullRequestView> {
     const key = pullRequestKey(reference)
     const primed = key ? this.primed.get(key) : undefined
     if (key && primed) {
       this.primed.delete(key)
-      if (this.now() - primed.at < PRIMED_FRESH_MS) return primed.view
+      if (this.now() - primed.at < PRIMED_FRESH_MS) {
+        if ('view' in primed) return primed.view
+        if (this.now() < primed.retryAt) throw new GitPullRequestLimited(primed.retryAt, this.now())
+      }
     }
     return this.read(cwd, reference)
   }
@@ -319,10 +326,13 @@ export class GitPullRequests {
     }
     let failed = false, failure: unknown
     try { await this.gh(cwd, args, ACTION_TIMEOUT_MS) } catch (error) { failed = true; failure = error }
-    const after = await this.read(cwd, url).catch(() => null)
-    // The surface reads again once the press is over; this read answers it, so the press costs one read (#820).
+    let after: GitPullRequestView | null = null, retryAt: number | null = null
+    try { after = await this.read(cwd, url) } catch (error) { if (error instanceof GitPullRequestLimited) retryAt = error.retryAt }
+    // The surface reads again once the press is over; this read answers it, so the press costs one read (#820). A read
+    // the rate limit refused answers it as well, with the same refusal, rather than letting the window ask again.
     const key = pullRequestKey(url)
-    if (after && key) this.primed.set(key, { at: this.now(), view: after })
+    if (key && after) this.primed.set(key, { at: this.now(), view: after })
+    else if (key && retryAt !== null) this.primed.set(key, { at: this.now(), retryAt })
     if (!failed) return after
     if (after && settled(action, after)) return after
     const hint = action === 'update-branch' && method === 'rebase' ? UPDATE_WITH_REBASE_HINT : ACTION_HINT[action]

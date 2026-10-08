@@ -209,6 +209,19 @@ describe('acting on a pull request, one press at a time', () => {
     await service.view('C:/repo', URL_74)
     expect(calls.map(call => call[0])).toEqual(['pr', 'api', 'api', 'pr', 'api', 'api'])
   })
+  it('reads GitHub once after a press the rate limit refused to settle: the surface\'s read that follows shows that refusal', async () => {
+    let now = 1_000_000
+    const { service, calls } = scripted(args => args[0] === 'pr' ? '' : new Error('gh: You have exceeded a secondary rate limit. (HTTP 403)'), { now: () => now })
+    await expect(service.act('C:/repo', URL_74, 'merge', 'squash')).resolves.toBeNull()
+    const refusal = await service.view('C:/repo', URL_74).then(() => new Error('it read'), (error: unknown) => error as Error)
+    expect(refusal).toBeInstanceOf(GitPullRequestLimited)
+    expect((refusal as GitPullRequestLimited).retryAt).toBe(now + 30_000)
+    expect(calls.map(call => call[0])).toEqual(['pr', 'api'])
+    // It stands once: a Refresh after it asks GitHub again.
+    now += 1_000
+    await expect(service.view('C:/repo', URL_74)).rejects.toBeInstanceOf(GitPullRequestLimited)
+    expect(calls.map(call => call[0])).toEqual(['pr', 'api', 'api'])
+  })
   it('settles a lost reply by reading the pull request again: merged is merged, whatever gh said', async () => {
     let merged = false
     const { service, calls } = scripted(args => {
