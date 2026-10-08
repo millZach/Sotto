@@ -17,7 +17,17 @@ mkdirSync(out, { recursive: true })
 
 const NAMES = { a: 'A, A quiet line', b: 'B, On the badge', c: 'C, A state of its own' }
 const shots = []
-const add = (v, name, query, w, h, caption) => shots.push([`${v}-${name}`, `variant=${v}&${query}`, w, h, `${NAMES[v]}: ${caption}`])
+// Text the audit finds cut short on purpose, said in the caption so the reviewer can tell it from a fault.
+function cuts(v, name, query, w) {
+  const said = []
+  const threads = !query.includes('settings=1')
+  if (threads && w === 820) said.push('the pull request title shortens to fit, as it does today')
+  if (threads && v === 'b' && w === 1280 && !/merged/.test(name)) said.push('the pull request title shortens beside the fourth header button')
+  if (threads && v === 'b' && w > 1000) said.push('the Workshop row’s two-phrase state is cut short')
+  if (v === 'c' && w === 820 && /passed/.test(name)) said.push('the creature’s readout label shortens, as the real readout’s does')
+  return said.length ? ` (cut short on purpose: ${said.join('; ')})` : ''
+}
+const add = (v, name, query, w, h, caption) => shots.push([`${v}-${name}`, `variant=${v}&${query}`, w, h, `${NAMES[v]}: ${caption}${cuts(v, name, query, w)}`])
 for (const v of ['a', 'b', 'c']) {
   add(v, 'before-1280x800-dark', `step=before${v === 'c' ? '&menu=1' : ''}`, 1280, 800, v === 'c'
     ? 'before, with the ··· menu open to show where Babysit pull request starts it, 1280x800, dark'

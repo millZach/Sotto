@@ -4,12 +4,12 @@ a-agent-1600x1000-light.png	A, A quiet line: started by the agent, 1600x1000, li
 a-passed-1280x800-dark.png	A, A quiet line: checks passed (two wake-ups in the thread), 1280x800, dark
 a-passed-1280x800-light.png	A, A quiet line: checks passed, 1280x800, light
 a-passed-1600x1000-dark.png	A, A quiet line: checks passed, 1600x1000, dark
-a-passed-820x560-dark.png	A, A quiet line: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
-a-passed-820x560-light.png	A, A quiet line: checks passed at the 820x560 minimum, light
+a-passed-820x560-dark.png	A, A quiet line: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open) (cut short on purpose: the pull request title shortens to fit, as it does today)
+a-passed-820x560-light.png	A, A quiet line: checks passed at the 820x560 minimum, light (cut short on purpose: the pull request title shortens to fit, as it does today)
 a-received-1280x800-dark.png	A, A quiet line: checks passed with what Claude received shown, 1280x800, dark
 a-failed-1280x800-dark.png	A, A quiet line: a check failed and Claude is working on it, 1280x800, dark
 a-queued-1280x800-dark.png	A, A quiet line: a wake-up waiting in the follow-up queue behind your own follow-up, 1280x800, dark
-a-queued-820x560-dark.png	A, A quiet line: a wake-up waiting in the queue at the 820x560 minimum, dark
+a-queued-820x560-dark.png	A, A quiet line: a wake-up waiting in the queue at the 820x560 minimum, dark (cut short on purpose: the pull request title shortens to fit, as it does today)
 a-merged-1280x800-dark.png	A, A quiet line: merged, babysitting ended, 1280x800, dark
 a-unread-1280x800-dark.png	A, A quiet line: ended because GitHub could not be read for 16 minutes, 1280x800, dark
 a-switchoff-1280x800-dark.png	A, A quiet line: the Settings switch turned off, so what Claude started has ended (Workshop, started by you, goes on), 1280x800, dark
@@ -19,24 +19,24 @@ a-remote-1280x800-dark.png	A, A quiet line: a thread on another computer: no too
 a-settings-1280x800-dark.png	A, A quiet line: the Settings switch’s row in Settings → Git, 1280x800, dark
 a-settings-1280x800-light.png	A, A quiet line: the Settings switch’s row in Settings → Git, 1280x800, light
 a-settings-820x560-dark.png	A, A quiet line: the Settings switch’s row at the 820x560 minimum, dark
-b-before-1280x800-dark.png	B, On the badge: before, with the off button in the surface’s header that starts it, 1280x800, dark
-b-agent-1280x800-dark.png	B, On the badge: started by the agent, 1280x800, dark
-b-agent-1600x1000-light.png	B, On the badge: started by the agent, 1600x1000, light
-b-passed-1280x800-dark.png	B, On the badge: checks passed (two wake-ups in the thread), 1280x800, dark
-b-passed-1280x800-light.png	B, On the badge: checks passed, 1280x800, light
-b-passed-1600x1000-dark.png	B, On the badge: checks passed, 1600x1000, dark
-b-passed-820x560-dark.png	B, On the badge: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
-b-passed-820x560-light.png	B, On the badge: checks passed at the 820x560 minimum, light
-b-received-1280x800-dark.png	B, On the badge: checks passed with what Claude received shown, 1280x800, dark
-b-failed-1280x800-dark.png	B, On the badge: a check failed and Claude is working on it, 1280x800, dark
-b-queued-1280x800-dark.png	B, On the badge: a wake-up waiting in the follow-up queue behind your own follow-up, 1280x800, dark
-b-queued-820x560-dark.png	B, On the badge: a wake-up waiting in the queue at the 820x560 minimum, dark
-b-merged-1280x800-dark.png	B, On the badge: merged, babysitting ended, 1280x800, dark
-b-unread-1280x800-dark.png	B, On the badge: ended because GitHub could not be read for 16 minutes, 1280x800, dark
-b-switchoff-1280x800-dark.png	B, On the badge: the Settings switch turned off, so what Claude started has ended (Workshop, started by you, goes on), 1280x800, dark
-b-two-1280x800-dark.png	B, On the badge: two pull requests babysat at once, 1280x800, dark
-b-monitor-1280x800-dark.png	B, On the badge: Claude also monitors a deploy, and the Monitoring creature outranks babysitting, 1280x800, dark
-b-remote-1280x800-dark.png	B, On the badge: a thread on another computer: no tool, so you started it, and the wake-up says only you can stop it, 1280x800, dark
+b-before-1280x800-dark.png	B, On the badge: before, with the off button in the surface’s header that starts it, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-agent-1280x800-dark.png	B, On the badge: started by the agent, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-agent-1600x1000-light.png	B, On the badge: started by the agent, 1600x1000, light (cut short on purpose: the Workshop row’s two-phrase state is cut short)
+b-passed-1280x800-dark.png	B, On the badge: checks passed (two wake-ups in the thread), 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-passed-1280x800-light.png	B, On the badge: checks passed, 1280x800, light (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-passed-1600x1000-dark.png	B, On the badge: checks passed, 1600x1000, dark (cut short on purpose: the Workshop row’s two-phrase state is cut short)
+b-passed-820x560-dark.png	B, On the badge: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open) (cut short on purpose: the pull request title shortens to fit, as it does today)
+b-passed-820x560-light.png	B, On the badge: checks passed at the 820x560 minimum, light (cut short on purpose: the pull request title shortens to fit, as it does today)
+b-received-1280x800-dark.png	B, On the badge: checks passed with what Claude received shown, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-failed-1280x800-dark.png	B, On the badge: a check failed and Claude is working on it, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-queued-1280x800-dark.png	B, On the badge: a wake-up waiting in the follow-up queue behind your own follow-up, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-queued-820x560-dark.png	B, On the badge: a wake-up waiting in the queue at the 820x560 minimum, dark (cut short on purpose: the pull request title shortens to fit, as it does today)
+b-merged-1280x800-dark.png	B, On the badge: merged, babysitting ended, 1280x800, dark (cut short on purpose: the Workshop row’s two-phrase state is cut short)
+b-unread-1280x800-dark.png	B, On the badge: ended because GitHub could not be read for 16 minutes, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-switchoff-1280x800-dark.png	B, On the badge: the Settings switch turned off, so what Claude started has ended (Workshop, started by you, goes on), 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-two-1280x800-dark.png	B, On the badge: two pull requests babysat at once, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-monitor-1280x800-dark.png	B, On the badge: Claude also monitors a deploy, and the Monitoring creature outranks babysitting, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
+b-remote-1280x800-dark.png	B, On the badge: a thread on another computer: no tool, so you started it, and the wake-up says only you can stop it, 1280x800, dark (cut short on purpose: the pull request title shortens beside the fourth header button; the Workshop row’s two-phrase state is cut short)
 b-settings-1280x800-dark.png	B, On the badge: the Settings switch’s row in Settings → Application, 1280x800, dark
 b-settings-1280x800-light.png	B, On the badge: the Settings switch’s row in Settings → Application, 1280x800, light
 b-settings-820x560-dark.png	B, On the badge: the Settings switch’s row at the 820x560 minimum, dark
@@ -46,11 +46,11 @@ c-agent-1600x1000-light.png	C, A state of its own: started by the agent, 1600x10
 c-passed-1280x800-dark.png	C, A state of its own: checks passed (two wake-ups in the thread), 1280x800, dark
 c-passed-1280x800-light.png	C, A state of its own: checks passed, 1280x800, light
 c-passed-1600x1000-dark.png	C, A state of its own: checks passed, 1600x1000, dark
-c-passed-820x560-dark.png	C, A state of its own: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open)
-c-passed-820x560-light.png	C, A state of its own: checks passed at the 820x560 minimum, light
+c-passed-820x560-dark.png	C, A state of its own: checks passed at the 820x560 minimum, dark (the project sidebar steps aside while Tools is open) (cut short on purpose: the pull request title shortens to fit, as it does today; the creature’s readout label shortens, as the real readout’s does)
+c-passed-820x560-light.png	C, A state of its own: checks passed at the 820x560 minimum, light (cut short on purpose: the pull request title shortens to fit, as it does today; the creature’s readout label shortens, as the real readout’s does)
 c-failed-1280x800-dark.png	C, A state of its own: a check failed and Claude is working on it, 1280x800, dark
 c-queued-1280x800-dark.png	C, A state of its own: a wake-up waiting in the follow-up queue behind your own follow-up, 1280x800, dark
-c-queued-820x560-dark.png	C, A state of its own: a wake-up waiting in the queue at the 820x560 minimum, dark
+c-queued-820x560-dark.png	C, A state of its own: a wake-up waiting in the queue at the 820x560 minimum, dark (cut short on purpose: the pull request title shortens to fit, as it does today)
 c-merged-1280x800-dark.png	C, A state of its own: merged, babysitting ended, 1280x800, dark
 c-unread-1280x800-dark.png	C, A state of its own: ended because GitHub could not be read for 16 minutes, 1280x800, dark
 c-switchoff-1280x800-dark.png	C, A state of its own: the Settings switch turned off, so what Claude started has ended (Workshop, started by you, goes on), 1280x800, dark
