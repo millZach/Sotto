@@ -2037,7 +2037,8 @@ export class AgentControl {
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId ?? '' : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
     const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
-    if (command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.get().items.some(item => item.threadId === actionThreadId))) {
+    // A Send joins the follow-ups the user already queued; a waiting wake-up is not one of them, so it changes nothing here.
+    if (command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))) {
       return this.followupCommand({ ...command, type: 'queue-followup', draftId: command.draftId ?? randomUUID() })
     }
     if (command.type === 'interrupt') return this.interruptThread(command)

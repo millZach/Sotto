@@ -109,6 +109,18 @@ describe('a wake-up', () => {
     expect(f.host.attempts.map(command => command.type)).toEqual(['send'])
   })
 
+  it('leaves the user\'s own Send as it would be without it, while it waits behind a request', async () => {
+    const f = await fixture()
+    for (const threadId of ['workshop', 'docs']) f.host.update(threadId, { requests: [{ id: `permit-${threadId}`, kind: 'permission', text: 'Allow?', options: [] }] })
+    const without = await f.control.command({ type: 'manual-send', threadId: 'docs', draftId: randomUUID(), text: 'Do this instead.' })
+    expect(without.error).toContain('Answer the pending question or permission')
+    await f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    const sent = await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Do this instead.' })
+    expect(sent.error).toBe(without.error)
+    expect(f.control.get().followups!.map(item => item.wakeUp ? 'wake-up' : item.text)).toEqual(['wake-up'])
+    expect(f.host.attempts).toHaveLength(0)
+  })
+
   it('is taken back, part by part, when babysitting ends quietly, and can be removed like any follow-up', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
