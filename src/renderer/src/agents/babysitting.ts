@@ -112,3 +112,24 @@ export function babysitLine(options: {
     ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is in the ··· menu.` : words }
     : { kind: 'ended', title: 'Babysitting ended', detail: words }
 }
+
+/**
+ * The pose's readout: the pull request's number and title over "Babysitting since 2:02 pm" (`since` is the time, empty
+ * when it cannot be read), and every one by name on hover.
+ */
+export interface BabysitReadout { readonly label: string; readonly since: string; readonly title: string }
+export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>, now = new Date()): BabysitReadout | undefined {
+  const babysat = thread.babysitting ?? []
+  const first = babysat[0]
+  if (!first) return undefined
+  const known = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
+  const named = (item: AgentBabysitting): string => {
+    const title = known.find(link => samePullRequest(link.url, item.url))?.title
+    return title ? `#${item.number} ${title}` : `#${item.number}`
+  }
+  return {
+    label: [named(first), ...babysat.slice(1).map(item => `#${item.number}`)].join(', '),
+    since: babysitClock(first.startedAt, now),
+    title: babysat.map(named).join('\n'),
+  }
+}

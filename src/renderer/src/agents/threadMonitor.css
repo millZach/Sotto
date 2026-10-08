@@ -17,3 +17,7 @@
 .thread-monitor__status { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
 /* A readout that counts commands beside agents needs more than the usual column; one line keeps the track 64px tall. */
 .thread-monitor[data-readout="wide"] { grid-template-columns: minmax(80px, 1fr) minmax(0, min(240px, 50%)); }
+/* Babysitting (ADR-0061): the creature at rest in the muted colour, so it never reads as work or a watch; only its sign is the accent. */
+.thread-monitor[data-ornament="babysitting"] .thread-monitor__color { fill: var(--tt-text-muted); }
+.thread-monitor__sign { fill: var(--tt-accent-text); }
+@container thread-pane (max-width: 380px) { .thread-monitor__since { display: none; } }
