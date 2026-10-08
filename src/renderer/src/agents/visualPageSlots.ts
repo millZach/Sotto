@@ -12,6 +12,8 @@ const NEAR_MARGIN = '400px 0px'
 
 let cardsInView: readonly symbol[] = []
 let expandedPages: readonly symbol[] = []
+// Cards holding no page: refused, lost or gone. They stay in view but take none of the running pages.
+let idleCards: readonly symbol[] = []
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void): (() => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
 const changed = (): void => { for (const listener of listeners) listener() }
@@ -25,6 +27,12 @@ function setInView(slot: symbol, inView: boolean): void {
   const next = withSlot(cardsInView, slot, inView)
   if (next !== cardsInView) { cardsInView = next; changed() }
 }
+function setIdle(slot: symbol, idle: boolean): void {
+  const next = withSlot(idleCards, slot, idle)
+  if (next !== idleCards) { idleCards = next; changed() }
+}
+/** The cards in view that hold, or are waiting for, a page: the ones that share the running pages. */
+const liveInView = (): readonly symbol[] => cardsInView.filter(slot => !idleCards.includes(slot))
 function setExpanded(slot: symbol, expanded: boolean): void {
   const next = withSlot(expandedPages, slot, expanded)
   if (next !== expandedPages) { expandedPages = next; changed() }
@@ -38,18 +46,21 @@ const room = (): number => Math.max(0, LIVE_PAGES_MAX - expandedPages.length)
 export type PageSlotState = 'running' | 'crowded' | 'away'
 export function pageSlotState(slot: symbol): PageSlotState {
   if (expandedPages.includes(slot)) return 'running'
-  const index = cardsInView.indexOf(slot)
-  if (index < 0) return 'away'
-  return index < room() ? 'running' : 'crowded'
+  if (!cardsInView.includes(slot)) return 'away'
+  // An idle card in view keeps its words and its Try again; it counts against nothing.
+  if (idleCards.includes(slot)) return 'running'
+  return liveInView().indexOf(slot) < room() ? 'running' : 'crowded'
 }
 export const mayRunPage = (slot: symbol): boolean => pageSlotState(slot) === 'running'
 
 /** Runs a crowded page now, stopping the running page that came into view first. */
 function runCrowded(slot: symbol): void {
   if (pageSlotState(slot) !== 'crowded' || room() === 0) return
-  const others = cardsInView.filter(item => item !== slot)
-  const running = others.slice(0, room())
-  cardsInView = [...running.slice(1), slot, running[0]!, ...others.slice(room())]
+  const live = liveInView().filter(item => item !== slot)
+  const first = live[0]!
+  const order = cardsInView.filter(item => item !== slot && item !== first)
+  const at = order.indexOf(live[room() - 1] ?? first) + 1
+  cardsInView = [...order.slice(0, at), slot, first, ...order.slice(at)]
   changed()
 }
 
@@ -58,7 +69,7 @@ function runCrowded(slot: symbol): void {
  * transcript's scroller (the nearest scrolling ancestor), which is what clips it; an expanded page runs for as long as
  * it is open.
  */
-export function useVisualPageSlot(frame: RefObject<HTMLElement | null>, expanded: boolean): { readonly state: PageSlotState; readonly runNow: () => void } {
+export function useVisualPageSlot(frame: RefObject<HTMLElement | null>, expanded: boolean, idle: boolean): { readonly state: PageSlotState; readonly runNow: () => void } {
   const [slot] = useState(() => Symbol('visual-page-slot'))
   useEffect(() => {
     if (expanded) { setExpanded(slot, true); return () => setExpanded(slot, false) }
@@ -69,6 +80,7 @@ export function useVisualPageSlot(frame: RefObject<HTMLElement | null>, expanded
     observer.observe(element)
     return () => { observer.disconnect(); setInView(slot, false) }
   }, [frame, expanded, slot])
+  useEffect(() => { setIdle(slot, idle); return () => setIdle(slot, false) }, [slot, idle])
   const state = useSyncExternalStore(subscribe, () => pageSlotState(slot))
   return { state, runNow: () => runCrowded(slot) }
 }

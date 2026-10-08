@@ -13,6 +13,8 @@ import { VisualCard } from '../../../src/renderer/src/agents/VisualCard'
 import { visualThemeFrom } from '../../../src/renderer/src/agents/InteractiveVisual'
 import { pageFallbackHint } from '../../../src/renderer/src/agents/InteractiveVisualCard'
 import { LIVE_PAGES_MAX } from '../../../src/renderer/src/agents/visualPageSlots'
+import { hostClientBridge } from '../../../src/preload/hostClientBridge'
+import { EMPTY_AGENT_HOST, defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 
 const page = (id: string, title = `Page ${id}`): AgentVisual => ({ id, title, kind: 'interactive', source: '<h1>Mine</h1><script>1</script>',
   intro: 'It fills.', steps: [{ text: 'One.' }, { text: 'Two.' }] })
@@ -182,6 +184,68 @@ describe('the walkthrough on an interactive page (#793)', () => {
     first.unmount()
     render(<VisualCard visual={stepped('w3')} threadId="thread-1" />)
     expect(within(screen.getByRole('region', { name: 'Visual: Walk w3' })).getByText('Step 2 of 2')).toBeInTheDocument()
+  })
+})
+
+describe('a card whose page cannot run', () => {
+  const HERE = '11111111-1111-4111-8111-111111111111'
+  const THERE = '22222222-2222-4222-8222-222222222222'
+  const ON_ANOTHER_COMPUTER = 'This page belongs to a thread on another computer, so it is not shown here.'
+  const routedState = (): AgentState => ({ configuration: defaultAgentConfiguration(), connection: 'connected', host: { ...EMPTY_AGENT_HOST, hostId: HERE },
+    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '',
+    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
+    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [], hostId: HERE, clientScoped: true,
+    connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] })
+
+  it('keeps the transcript, and says a paired host\'s page is on another computer, through the window\'s real bridge', async () => {
+    const state = routedState()
+    const raw = { agents: { get: vi.fn(async () => state) },
+      // Main's own answer for a paired host's thread.
+      visuals: { open: vi.fn(async (request: VisualPageRequest) => request.threadId.startsWith(`host:${THERE}:`) ? { ok: false as const, reason: ON_ANOTHER_COMPUTER } : answer(request)) } }
+    const bridge = hostClientBridge(raw)
+    await bridge.agents.get()
+    Object.assign(window, { sotto: bridge })
+    render(<div><p>Earlier words in the thread.</p><VisualCard visual={page('v1', 'On Forge')} threadId={`host:${THERE}:t1`} /></div>)
+    const card = screen.getByRole('region', { name: 'Visual: On Forge' })
+    expect(await within(card).findByText(`${ON_ANOTHER_COMPUTER} Its steps are below.`)).toBeInTheDocument()
+    expect(raw.visuals.open).toHaveBeenCalledWith(expect.objectContaining({ threadId: `host:${THERE}:t1` }))
+    expect(screen.getByText('Earlier words in the thread.')).toBeInTheDocument()
+  })
+
+  it('keeps the window when the bridge refuses by throwing at once', async () => {
+    Object.assign(window, { sotto: { visuals: { open: () => { throw new Error('This action belongs to another host.') } } } })
+    render(<div><p>Earlier words in the thread.</p><VisualCard visual={page('v1', 'Thrown')} threadId="thread-1" /></div>)
+    const card = screen.getByRole('region', { name: 'Visual: Thrown' })
+    expect(await within(card).findByText('Sotto could not open the page. Try again to start it from the top. Its steps are below.')).toBeInTheDocument()
+    expect(screen.getByText('Earlier words in the thread.')).toBeInTheDocument()
+  })
+
+  it('offers Try again for a refusal that may pass', async () => {
+    answer = () => ({ ok: false, reason: 'Sotto could not seal this page from the network, so it is not shown.', retry: true })
+    render(<VisualCard visual={page('v1', 'Unsealed')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: Unsealed' })
+    expect(await within(card).findByText(/^Sotto could not seal this page from the network, so it is not shown\. Try again/u)).toBeInTheDocument()
+    answer = request => ({ ok: true, url: `sotto-visual://page/${request.visualId.padEnd(43, 'x')}` })
+    act(() => { within(card).getByRole('button', { name: 'Try again' }).click() })
+    await vi.waitFor(() => expect(card.querySelector('webview')).not.toBeNull())
+  })
+
+  it('offers Try again, and frees its running page, when main refuses to attach the guest', async () => {
+    const { container } = render(<>{['a', 'b', 'c', 'd'].map(id => <VisualCard key={id} visual={page(id)} threadId="thread-1" />)}</>)
+    await vi.waitFor(() => expect(container.querySelectorAll('webview')).toHaveLength(LIVE_PAGES_MAX))
+    const first = screen.getByRole('region', { name: 'Visual: Page a' })
+    act(() => { first.querySelector('webview')!.dispatchEvent(new Event('destroyed')) })
+    expect(await within(first).findByText('The page could not be started. Try again to start it from the top. Its steps are below.')).toBeInTheDocument()
+    // The fourth card takes the running page the first gave up.
+    await vi.waitFor(() => expect(screen.getByRole('region', { name: 'Visual: Page d' }).querySelector('webview')).not.toBeNull())
+  })
+
+  it('does not count cards that hold no page among the running pages', async () => {
+    answer = () => ({ ok: false, reason: 'Sotto no longer has this page, so it is not shown.' })
+    render(<>{['a', 'b', 'c', 'd'].map(id => <VisualCard key={id} visual={page(id)} threadId="thread-1" />)}</>)
+    await vi.waitFor(() => expect(screen.getAllByText('Sotto no longer has this page, so it is not shown. Its steps are below.')).toHaveLength(4))
+    expect(screen.queryByText(/Three other pages are running/u)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Run this page' })).toBeNull()
   })
 })
 

@@ -77,7 +77,8 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
   const theme = visualThemeFrom(palette, reducedMotion)
   const themeKey = JSON.stringify(theme)
   const stepKey = JSON.stringify(step)
-  const slot = useVisualPageSlot(frame, expanded)
+  const idle = page.phase === 'refused' || page.phase === 'lost'
+  const slot = useVisualPageSlot(frame, expanded, idle)
   const running = slot.state === 'running'
   const latest = useRef({ theme, step, onEscape })
   latest.current = { theme, step, onEscape }
@@ -89,8 +90,12 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
     if (!bridge || threadId === undefined) { setPage({ phase: 'refused', reason: 'This window cannot show the page.' }); return }
     let current = true
     setPage({ phase: 'waiting' })
-    bridge.open({ threadId, visualId, theme: latest.current.theme }).then(result => {
-      if (current) setPage(result.ok ? { phase: 'open', url: result.url } : { phase: 'refused', reason: result.reason })
+    // Asked inside a promise, so a bridge that refuses by throwing at once lands here as a refusal, not in React.
+    Promise.resolve().then(() => bridge.open({ threadId, visualId, theme: latest.current.theme })).then(result => {
+      if (!current) return
+      if (result.ok) setPage({ phase: 'open', url: result.url })
+      // A refusal that may pass, such as a seal that could not be set up just now, can be tried again.
+      else setPage(result.retry ? { phase: 'lost', reason: result.reason } : { phase: 'refused', reason: result.reason })
     }, () => { if (current) setPage({ phase: 'lost', reason: 'Sotto could not open the page.' }) })
     return () => { current = false }
   }, [running, threadId, visualId, attempt])
@@ -123,8 +128,10 @@ export function InteractiveVisualPage({ threadId, visualId, title, step, expande
       else if (channel === VISUAL_IPC_ESCAPE) latest.current.onEscape()
     }
     const onGone = (): void => { setReady(false); setPage({ phase: 'lost', reason: 'The page stopped.' }) }
+    // A guest main refused to attach (its address lapsed, or the seal was being set up again) only goes away.
+    const onDestroyed = (): void => { setReady(false); setPage({ phase: 'lost', reason: 'The page could not be started.' }) }
     const events: [string, (event: Event) => void][] = [['dom-ready', onReady], ['did-finish-load', onLoaded], ['did-fail-load', onFailed], ['did-navigate', onCommitted],
-      ['ipc-message', onMessage], ['render-process-gone', onGone]]
+      ['ipc-message', onMessage], ['render-process-gone', onGone], ['destroyed', onDestroyed]]
     for (const [name, listener] of events) element.addEventListener(name, listener)
     return () => { for (const [name, listener] of events) element.removeEventListener(name, listener) }
   }, [page])
