@@ -37,6 +37,7 @@ const customSettings = {
   showBrowserPreviews: false,
   browserWithoutAsking: false,
   visualsInThreads: false,
+  babysitPullRequests: false,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -113,6 +114,11 @@ describe('settings', () => {
     expect(parseSettings({}).visualsInThreads).toBe(true)
     expect(parseSettings({ visualsInThreads: false }).visualsInThreads).toBe(false)
     expect(parseSettings({ visualsInThreads: 'no' }).visualsInThreads).toBe(true)
+  })
+  it('lets agents babysit pull requests for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0061)', () => {
+    expect(parseSettings({}).babysitPullRequests).toBe(true)
+    expect(parseSettings({ babysitPullRequests: false }).babysitPullRequests).toBe(false)
+    expect(parseSettings({ babysitPullRequests: 'no' }).babysitPullRequests).toBe(true)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -267,6 +273,7 @@ describe('settings', () => {
       showBrowserPreviews: true,
       browserWithoutAsking: true,
       visualsInThreads: true,
+      babysitPullRequests: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',
