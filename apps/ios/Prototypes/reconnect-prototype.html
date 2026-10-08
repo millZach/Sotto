@@ -1,0 +1,502 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Answers one question about the iPhone app's reconnect rules. Not shipped. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: how the iPhone app reconnects</title>
+<style>
+  :root {
+    --page: #f6f5f2; --pageInk: #1d1b17; --pageMuted: #67625a; --pageLine: #dcd8cf; --pick: #007d74;
+    --canvas: #040507; --surface: #090a0e; --raised: #111316; --ink: #f9f9fd; --muted: #a0a5ae;
+    --border: #2a2f39; --hairline: #181b20; --accent: #47b8a9; --warning: #ffb900; --warningSurface: #3a301f;
+    --bubble: #0c3b36;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif; background: var(--page); color: var(--pageInk); }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  p.lede { margin: 0 0 6px; color: var(--pageMuted); max-width: 820px; }
+  .rules { margin: 14px 0 24px; padding: 14px 18px; border: 1px solid var(--pageLine); border-radius: 12px; background: #fff; max-width: 820px; }
+  .rules ul { margin: 6px 0 0; padding-left: 20px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
+  @media (max-width: 1020px) { .layout { grid-template-columns: 1fr; } }
+  .screenPick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { border: 1px solid var(--pageLine); background: #fff; color: var(--pageInk); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--pick); border-color: var(--pick); color: #fff; }
+  .phones { display: flex; gap: 22px; flex-wrap: wrap; }
+  .phoneCol { flex: 1 1 300px; max-width: 360px; }
+  .phoneCol h2 { display: flex; align-items: baseline; gap: 8px; }
+  .phoneCol h2 small { font-weight: 400; color: var(--pageMuted); font-size: 13px; }
+  .phone { background: var(--canvas); color: var(--ink); border-radius: 38px; border: 10px solid #1b1c1f; height: 600px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .statusBar { height: 30px; flex: none; display: flex; justify-content: space-between; padding: 8px 22px 0; font-size: 12px; font-weight: 600; }
+  .navTitle { padding: 6px 16px 8px; font-size: 22px; font-weight: 700; flex: none; }
+  .navTitle.small { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .navTitle .back { color: var(--accent); font-weight: 400; }
+  .scroll { flex: 1; overflow: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .strip { display: flex; gap: 6px; flex: none; padding: 0 14px 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.online { background: var(--accent); } .dot.unreachable { background: var(--warning); } .dot.connecting, .dot.asleep { background: var(--muted); }
+  .banner { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 14px; }
+  .banner.warn { background: var(--warningSurface); }
+  .banner.quiet { background: var(--raised); color: var(--muted); font-size: 14px; }
+  .banner b { display: block; }
+  .banner .sub { color: var(--muted); font-size: 13px; }
+  .tri { color: var(--warning); }
+  .btn { border: 1px solid var(--border); background: var(--raised); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); }
+  .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--muted); flex: none; }
+  .msg { padding: 10px 12px; border-radius: 16px; max-width: 88%; font-size: 14px; }
+  .msg.me { background: var(--bubble); align-self: flex-end; }
+  .msg.agent { background: var(--surface); border: 1px solid var(--hairline); }
+  .msg .who { font-size: 11px; color: var(--muted); display: block; margin-bottom: 2px; }
+  .msg.fresh { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .placeholder { color: var(--muted); padding: 24px 0; }
+  .composer { flex: none; margin: 0 12px 12px; border: 1px solid var(--border); border-radius: 20px; padding: 10px 14px; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; }
+  .composer.off { opacity: .45; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+  .row.muted { color: var(--muted); }
+  .row .meta { color: var(--muted); font-size: 12px; display: block; }
+  .card { border: 1px solid var(--border); border-radius: 16px; padding: 12px; background: var(--surface); font-size: 14px; }
+  .card .head { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 4px; }
+  .card .problem { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
+  .card .tries { color: var(--muted); font-size: 12px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .note b { color: var(--ink); }
+  .checking { display: flex; gap: 8px; align-items: center; color: var(--muted); justify-content: center; padding: 18px 0; }
+  .asleep { position: absolute; inset: 0; background: rgba(4,5,7,.92); display: flex; align-items: center; justify-content: center; text-align: center; padding: 30px; color: var(--muted); }
+  .side { display: flex; flex-direction: column; gap: 18px; }
+  .panel { background: #fff; border: 1px solid var(--pageLine); border-radius: 14px; padding: 14px 16px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .act { border: 1px solid var(--pageLine); background: var(--page); color: var(--pageInk); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .act:hover:not(:disabled) { border-color: var(--pick); }
+  .act:disabled { opacity: .45; cursor: default; }
+  .act.next { border-color: var(--pick); background: #e3f1ef; font-weight: 600; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .tab { border: 1px solid var(--pageLine); background: var(--page); border-radius: 8px; padding: 5px 9px; font: inherit; font-size: 13px; cursor: pointer; }
+  .tab[aria-selected="true"] { background: var(--pick); color: #fff; border-color: var(--pick); }
+  .scenarioText { font-size: 14px; color: var(--pageMuted); margin: 0 0 10px; }
+  .steps { display: flex; flex-direction: column; gap: 6px; }
+  .steps .act { display: flex; gap: 8px; }
+  .steps .act .n { color: var(--pageMuted); min-width: 16px; }
+  .steps .act.done { opacity: .55; }
+  table.state { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.state th, table.state td { text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--pageLine); vertical-align: top; }
+  table.state th { color: var(--pageMuted); font-weight: 500; }
+  td.changed { background: #fff3cd; }
+  .lastAction { font-size: 13px; color: var(--pageMuted); margin-top: 8px; }
+  .world { font-size: 13px; color: var(--pageMuted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+  .world label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .stepBar { display: none; }
+  @media (max-width: 700px) {
+    main { padding: 18px 12px 120px; }
+    h1 { font-size: 20px; }
+    .rules { font-size: 14px; padding: 10px 14px; }
+    .phones { gap: 8px; flex-wrap: nowrap; }
+    .phoneCol { flex: 1 1 0; min-width: 0; }
+    .phoneCol h2 { font-size: 14px; margin-bottom: 6px; }
+    .phoneCol h2 small { display: none; }
+    .phone { border-width: 5px; border-radius: 22px; height: 470px; font-size: 12px; }
+    .statusBar { display: none; }
+    .navTitle { font-size: 16px; padding: 10px 10px 6px; }
+    .navTitle.small { font-size: 12px; flex-wrap: wrap; gap: 2px 6px; }
+    .scroll { padding: 0 8px 8px; gap: 7px; }
+    .strip { padding: 0 8px 6px; gap: 4px; flex-wrap: wrap; }
+    .pill { padding: 2px 7px; font-size: 11px; }
+    .msg { font-size: 12px; padding: 7px 9px; max-width: 94%; }
+    .banner { padding: 8px; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+    .banner.quiet { font-size: 12px; }
+    .btn { padding: 4px 9px; font-size: 12px; }
+    .row { font-size: 12px; flex-wrap: wrap; }
+    .card { padding: 9px; font-size: 12px; }
+    .composer { margin: 0 6px 6px; padding: 7px 10px; font-size: 11px; }
+    .stepBar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; gap: 8px; align-items: center; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--pageLine); z-index: 10; }
+    .stepBar .label { flex: 1; font-size: 13px; color: var(--pageMuted); min-width: 0; }
+    .stepBar .label b { color: var(--pageInk); display: block; }
+    .stepBar button { border: 0; background: var(--pick); color: #fff; border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 14px; font-weight: 600; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>How the iPhone app reconnects</h1>
+  <p class="lede"><b>The question:</b> if the app keeps the open thread on screen while it reconnects, and leaves a computer it couldn't reach alone until you press Try again, does it behave the way you expect with Forge reachable and the laptop in your backpack?</p>
+  <p class="lede">The left phone behaves the way the app does today, the right one the way it would after the change. Every button drives both, so you can compare them.</p>
+  <div class="rules">
+    <b>The proposed rules</b>
+    <ul>
+      <li>A thread you're reading stays on screen while its computer reconnects. A quiet line says "Reconnecting to Forge…", and the fresh copy replaces it when it arrives. "Reading this thread…" shows only the first time you open a thread.</li>
+      <li>Once a computer fails to connect, or drops, nothing retries it on its own. Coming back to the app and pulling to refresh both skip it. Only its <b>Try again</b> or <b>Reconnect</b> button tries again. Quitting and reopening the app tries every computer once.</li>
+      <li>A connect gives up after 10 seconds (30 today) and says in plain words that the computer couldn't be reached.</li>
+    </ul>
+  </div>
+
+  <div class="layout">
+    <section>
+      <div class="screenPick" role="group" aria-label="Which screen both phones show" id="screenPick"></div>
+      <div class="phones" id="phones"></div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <h2>Walkthroughs</h2>
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <p class="scenarioText" id="scenarioText"></p>
+        <div class="steps" id="steps"></div>
+      </div>
+      <div class="panel">
+        <h2>What each phone knows</h2>
+        <div id="state"></div>
+        <div class="lastAction" id="lastAction"></div>
+      </div>
+      <div class="panel">
+        <h2>Do anything</h2>
+        <div class="actions" id="actions"></div>
+        <div class="world" id="world"></div>
+      </div>
+    </aside>
+  </div>
+</main>
+<div class="stepBar" id="stepBar"></div>
+
+<script>
+// ---- The logic under test. Pure: no DOM. `policy` is "today" or "proposed". ----
+const Reconnect = (() => {
+  const HOSTS = ["forge", "laptop"];
+  const NAMES = { forge: "Forge", laptop: "Laptop" };
+
+  function launch(policy, reachable) {
+    const s = {
+      policy, active: true, reachable: { ...reachable }, version: 1,
+      hosts: {}, thread: { hostID: "forge", shown: null, stale: false },
+    };
+    for (const h of HOSTS) s.hosts[h] = { status: "idle", problem: null, tries: 0, readPending: false, gaveUpAfter: null };
+    for (const h of HOSTS) connect(s, h);
+    return s;
+  }
+
+  // Start one connection attempt. Today it empties the open thread; proposed keeps it and marks it stale.
+  function connect(s, h) {
+    if (!s.active) return;
+    const host = s.hosts[h];
+    if (host.status === "connecting") return;
+    host.status = "connecting"; host.problem = null; host.tries += 1; host.readPending = false; host.gaveUpAfter = null;
+    if (s.thread.hostID === h) {
+      if (s.policy === "today") s.thread.shown = null;
+      else s.thread.stale = s.thread.shown !== null;
+    }
+  }
+
+  function couldntReach(s, h) {
+    return s.policy === "today"
+      ? "The request timed out."
+      : `Couldn’t reach ${NAMES[h]}. Check that it’s on and that Tailscale is connected on this iPhone.`;
+  }
+
+  function reduce(state, action) {
+    const s = structuredClone(state);
+    switch (action.type) {
+      case "wait": {
+        // Reads asked for earlier arrive first, then attempts in progress finish.
+        for (const h of HOSTS) {
+          const host = s.hosts[h];
+          if (host.readPending && host.status === "online") {
+            host.readPending = false;
+            if (s.thread.hostID === h) { s.thread.shown = s.version; s.thread.stale = false; }
+          }
+        }
+        for (const h of HOSTS) {
+          const host = s.hosts[h];
+          if (host.status !== "connecting") continue;
+          if (s.reachable[h]) { host.status = "online"; host.readPending = true; }
+          else { host.status = "unreachable"; host.problem = couldntReach(s, h); host.gaveUpAfter = s.policy === "today" ? 30 : 10; }
+        }
+        break;
+      }
+      case "background":
+        if (!s.active) break;
+        s.active = false;
+        for (const h of HOSTS) {
+          const host = s.hosts[h];
+          host.readPending = false;
+          // Today every computer is reset and tried again on return. Proposed: one that failed stays failed.
+          if (s.policy === "today" || host.status !== "unreachable") { host.status = "asleep"; host.problem = null; }
+        }
+        if (s.policy === "today") s.thread.shown = null;
+        break;
+      case "foreground":
+        if (s.active) break;
+        s.active = true;
+        for (const h of HOSTS) if (s.hosts[h].status === "asleep") connect(s, h);
+        break;
+      case "pull":
+        for (const h of HOSTS) {
+          if (s.policy === "today" || s.hosts[h].status === "online") connect(s, h);
+        }
+        break;
+      case "retry":
+        if (s.hosts[action.host].status === "unreachable") connect(s, action.host);
+        break;
+      case "drop": {
+        const host = s.hosts[action.host];
+        if (s.active && (host.status === "online" || host.status === "connecting")) {
+          host.status = "unreachable"; host.readPending = false;
+          host.problem = "Connection lost. Work carries on on the computer. Reconnect to check the thread.";
+        }
+        break;
+      }
+      case "change":
+        // Work happens on Forge. An online phone gets it pushed straight away.
+        s.version += 1;
+        if (s.active && s.hosts.forge.status === "online" && !s.hosts.forge.readPending && s.thread.shown !== null) s.thread.shown = s.version;
+        break;
+      case "revisit":
+        // Leave the thread (switch tab) and come back to it.
+        if (!s.active) break;
+        if (s.policy === "today") s.thread.shown = null;
+        if (s.hosts.forge.status === "online") s.hosts.forge.readPending = true;
+        break;
+      case "reachable":
+        s.reachable[action.host] = !s.reachable[action.host];
+        break;
+    }
+    return s;
+  }
+
+  return { HOSTS, NAMES, launch, reduce };
+})();
+
+// ---- The page. Throwaway. ----
+const { HOSTS, NAMES } = Reconnect;
+const POLICIES = [["today", "Today"], ["proposed", "Proposed"]];
+const SCREENS = [["thread", "Thread on Forge"], ["needs", "Needs you"], ["threads", "Threads"], ["computers", "Computers"]];
+const STATUS_WORDS = { online: "Online", unreachable: "Can’t reach it", connecting: "Connecting…", asleep: "Connecting…", idle: "Connecting…" };
+
+const MESSAGES = [
+  ["me", "You", "Tighten the reconnect copy on the phone."],
+  ["agent", "Claude Code", "Done. The banner now says what happened and what to press."],
+  ["agent", "Claude Code", "Ran the iOS tests: 42 passed."],
+  ["me", "You", "Ship it to TestFlight once CI is green."],
+  ["agent", "Claude Code", "CI is green. Build 214 is uploading."],
+  ["agent", "Claude Code", "Build 214 is on TestFlight."],
+];
+
+let screen = "thread";
+let reachable = { forge: true, laptop: false };
+let phones = {}, previous = {}, lastAction = "The app has just opened.";
+let scenarioIndex = 0, stepIndex = 0;
+
+function resetAll(reach, setup = []) {
+  reachable = { ...reach };
+  for (const [p] of POLICIES) phones[p] = Reconnect.launch(p, reachable);
+  for (const a of setup) for (const [p] of POLICIES) phones[p] = Reconnect.reduce(phones[p], a);
+  previous = structuredClone(phones);
+}
+function dispatch(action, label) {
+  previous = structuredClone(phones);
+  if (action.type === "reachable") reachable[action.host] = !reachable[action.host];
+  for (const [p] of POLICIES) phones[p] = Reconnect.reduce(phones[p], action);
+  lastAction = "Last: " + label;
+  render();
+}
+
+const ACTIONS = [
+  [{ type: "wait" }, "Wait a moment"],
+  [{ type: "pull" }, "Pull to refresh"],
+  [{ type: "background" }, "Put the app away"],
+  [{ type: "foreground" }, "Come back to the app"],
+  [{ type: "drop", host: "forge" }, "Forge’s connection drops"],
+  [{ type: "change" }, "Something happens in the thread"],
+  [{ type: "retry", host: "laptop" }, "Press Try again on Laptop"],
+  [{ type: "retry", host: "forge" }, "Press Reconnect on Forge"],
+  [{ type: "revisit" }, "Switch tab and come back"],
+];
+
+const SCENARIOS = [
+  {
+    name: "Forge refreshes",
+    text: "You're reading a thread on Forge and nothing in it is changing. You pull to refresh. Watch the thread: today it empties to “Reconnect to read this thread.”, then “Reading this thread…”. Proposed, the messages stay put.",
+    reach: { forge: true, laptop: false }, setup: [{ type: "wait" }, { type: "wait" }],
+    steps: [[{ type: "pull" }, "Pull to refresh"], [{ type: "wait" }, "Wait a moment"], [{ type: "wait" }, "Wait a moment"]],
+  },
+  {
+    name: "Laptop in the backpack",
+    text: "The laptop can't be reached. Watch “Tries” for Laptop under What each phone knows, and the Needs you screen. Today every return to the app and every pull to refresh tries the laptop again and shows “Checking Laptop…”. Proposed, it stays “Can’t reach Laptop” until you press Try again.",
+    reach: { forge: true, laptop: false }, setup: [],
+    steps: [[{ type: "wait" }, "Wait a moment (laptop gives up)"], [{ type: "background" }, "Put the app away"], [{ type: "foreground" }, "Come back to the app"],
+      [{ type: "wait" }, "Wait a moment"], [{ type: "pull" }, "Pull to refresh"], [{ type: "wait" }, "Wait a moment"]],
+  },
+  {
+    name: "Forge drops",
+    text: "Forge drops while you're reading. Both phones keep the messages under “Can’t reach Forge”. Today coming back to the app tries again by itself and empties the thread. Proposed, nothing happens until you press Reconnect, and then the thread stays on screen while it reconnects.",
+    reach: { forge: true, laptop: false }, setup: [{ type: "wait" }, { type: "wait" }],
+    steps: [[{ type: "drop", host: "forge" }, "Forge’s connection drops"], [{ type: "background" }, "Put the app away"], [{ type: "foreground" }, "Come back to the app"],
+      [{ type: "wait" }, "Wait a moment"], [{ type: "retry", host: "forge" }, "Press Reconnect on Forge"], [{ type: "wait" }, "Wait a moment"], [{ type: "wait" }, "Wait a moment"]],
+  },
+  {
+    name: "Laptop comes back",
+    text: "The laptop failed, then you take it out of the backpack. Proposed, the phone doesn't notice by itself. Pressing Try again brings it back. Is that the right trade?",
+    reach: { forge: true, laptop: false }, setup: [{ type: "wait" }, { type: "wait" }],
+    steps: [[{ type: "reachable", host: "laptop" }, "Take the laptop out (it can be reached)"], [{ type: "pull" }, "Pull to refresh"], [{ type: "wait" }, "Wait a moment"],
+      [{ type: "retry", host: "laptop" }, "Press Try again on Laptop"], [{ type: "wait" }, "Wait a moment"]],
+  },
+  {
+    name: "Switch tabs",
+    text: "Probably the most common flash: you leave the thread for another tab and come back, with no disconnect at all. Today it rereads the thread from empty. Proposed, it rereads it quietly behind the messages.",
+    reach: { forge: true, laptop: false }, setup: [{ type: "wait" }, { type: "wait" }],
+    steps: [[{ type: "revisit" }, "Switch tab and come back"], [{ type: "wait" }, "Wait a moment"]],
+  },
+];
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+const dot = status => el("span", { class: "dot " + status, "aria-hidden": "true" });
+
+function threadScreen(s, p) {
+  const host = s.hosts.forge;
+  const online = host.status === "online";
+  const parts = [];
+  if (host.status === "unreachable") {
+    parts.push(el("div", { class: "banner warn" }, el("span", { class: "tri" }, "⚠"),
+      el("div", { style: "flex:1" }, el("b", {}, "Can’t reach Forge"), el("span", { class: "sub" }, "Work carries on there. Your drafts are kept.")),
+      el("button", { class: "btn", onclick: () => dispatch({ type: "retry", host: "forge" }, "Pressed Reconnect on Forge") }, "Reconnect")));
+  } else if (p === "proposed" && host.status === "connecting" && s.thread.stale) {
+    parts.push(el("div", { class: "banner quiet" }, el("span", { class: "spin" }), "Reconnecting to Forge…"));
+  }
+  if (s.thread.shown !== null) {
+    const before = previous[p]?.thread?.shown ?? null;
+    MESSAGES.slice(0, s.thread.shown + 1).forEach(([kind, who, text], i) => {
+      const fresh = before !== null && i > before;
+      parts.push(el("div", { class: `msg ${kind}${fresh ? " fresh" : ""}` }, el("span", { class: "who" }, who), text));
+    });
+  } else {
+    parts.push(el("div", { class: "placeholder" }, online ? "Reading this thread…" : "Reconnect to read this thread."));
+  }
+  return [
+    el("div", { class: "navTitle small" }, el("span", { class: "back" }, "‹ Threads"), "Phone reconnect copy"),
+    el("div", { class: "scroll" }, parts),
+    el("div", { class: "composer" + (online ? "" : " off") }, online ? "Reply to Claude Code" : "Reply when Forge is back", el("span", {}, "↑")),
+  ];
+}
+
+function strip(s) {
+  return el("div", { class: "strip" }, el("span", { class: "pill" }, "All"),
+    HOSTS.map(h => el("span", { class: "pill" }, dot(s.hosts[h].status), NAMES[h])));
+}
+
+function needsScreen(s, p) {
+  const parts = [];
+  const checking = HOSTS.filter(h => ["connecting", "asleep", "idle"].includes(s.hosts[h].status));
+  if (checking.length) parts.push(el("div", { class: "checking" }, el("span", { class: "spin" }), `Checking ${checking.length === 1 ? NAMES[checking[0]] : "your computers"}…`));
+  else parts.push(el("div", { class: "card", style: "text-align:center;border-style:dashed" }, el("b", {}, "Nothing needs you"),
+    el("div", { class: "note" }, "Questions and permissions from threads on your computers appear here.")));
+  for (const h of HOSTS) if (s.hosts[h].status === "unreachable") {
+    parts.push(el("div", { class: "row" }, el("span", { class: "note", style: "flex:1" }, el("b", {}, `Can’t reach ${NAMES[h]}.`), " Anything waiting there shows here once it’s back."),
+      el("button", { class: "btn", onclick: () => dispatch({ type: "retry", host: h }, `Pressed Try again on ${NAMES[h]}`) }, "Try again")));
+  }
+  return [el("div", { class: "navTitle" }, "Needs you"), strip(s), el("div", { class: "scroll" }, parts)];
+}
+
+function threadsScreen(s) {
+  const rows = [["forge", "Phone reconnect copy", "Claude Code"], ["forge", "Release notes", "Codex"], ["laptop", "Widget polish", "Claude Code"]];
+  return [el("div", { class: "navTitle" }, "Threads"), strip(s), el("div", { class: "scroll" }, rows.map(([h, title, provider]) => {
+    const down = s.hosts[h].status === "unreachable";
+    return el("div", { class: "row" + (down ? " muted" : "") }, dot(s.hosts[h].status),
+      el("div", { style: "flex:1" }, title, el("span", { class: "meta" }, `${NAMES[h]} · ${provider}${down ? " · Can’t reach it" : ""}`)));
+  }))];
+}
+
+function computersScreen(s, p) {
+  return [el("div", { class: "navTitle" }, "Computers"), el("div", { class: "scroll" }, HOSTS.map(h => {
+    const host = s.hosts[h];
+    return el("div", { class: "card" },
+      el("div", { class: "head" }, dot(host.status), NAMES[h], el("span", { class: "note", style: "margin-left:auto;font-weight:400" }, STATUS_WORDS[host.status])),
+      host.status === "unreachable" ? [
+        el("div", { class: "problem" }, host.problem, host.gaveUpAfter ? ` (gave up after ${host.gaveUpAfter} s)` : ""),
+        el("button", { class: "btn", onclick: () => dispatch({ type: "retry", host: h }, `Pressed Reconnect on ${NAMES[h]}`) }, "Reconnect"),
+      ] : null);
+  }))];
+}
+
+function renderPhones() {
+  const wrap = document.getElementById("phones"); wrap.replaceChildren();
+  for (const [p, label] of POLICIES) {
+    const s = phones[p];
+    const body = { thread: threadScreen, needs: needsScreen, threads: threadsScreen, computers: computersScreen }[screen](s, p);
+    const phone = el("div", { class: "phone", "aria-label": `${label} phone` }, el("div", { class: "statusBar" }, el("span", {}, "9:41"), el("span", {}, "●●●")), body,
+      s.active ? null : el("div", { class: "asleep" }, "The app is in the background. Press “Come back to the app”."));
+    wrap.append(el("div", { class: "phoneCol" }, el("h2", {}, label, el("small", {}, p === "today" ? "how it behaves now" : "after the change")), phone));
+  }
+}
+
+function threadWords(s) {
+  if (s.thread.shown === null) return s.hosts.forge.status === "online" ? "“Reading this thread…”" : "“Reconnect to read this thread.”";
+  return `${s.thread.shown + 1} messages${s.thread.stale ? ", being refreshed" : ""}`;
+}
+function renderState() {
+  const rows = [
+    ["Forge", s => STATUS_WORDS[s.hosts.forge.status] + (s.active ? "" : " (app away)")],
+    ["Forge tries", s => String(s.hosts.forge.tries)],
+    ["Laptop", s => STATUS_WORDS[s.hosts.laptop.status] + (s.active ? "" : " (app away)")],
+    ["Laptop tries", s => String(s.hosts.laptop.tries)],
+    ["Thread shows", threadWords],
+  ];
+  const table = el("table", { class: "state" }, el("tr", {}, el("th", {}, ""), POLICIES.map(([, l]) => el("th", {}, l))),
+    rows.map(([name, f]) => el("tr", {}, el("th", {}, name), POLICIES.map(([p]) => {
+      const now = f(phones[p]), before = previous[p] ? f(previous[p]) : now;
+      return el("td", { class: now !== before ? "changed" : "" }, now);
+    }))));
+  document.getElementById("state").replaceChildren(table);
+  document.getElementById("lastAction").textContent = lastAction + " Highlighted cells just changed.";
+  document.getElementById("world").replaceChildren(el("span", {}, "Can the phone reach:"),
+    ...HOSTS.map(h => el("label", {}, el("input", { type: "checkbox", ...(reachable[h] ? { checked: "" } : {}),
+      onchange: () => dispatch({ type: "reachable", host: h }, `${NAMES[h]} can ${reachable[h] ? "no longer" : "now"} be reached`) }), NAMES[h])));
+}
+
+function renderControls() {
+  document.getElementById("screenPick").replaceChildren(...SCREENS.map(([id, label]) =>
+    el("button", { class: "chip", "aria-pressed": String(screen === id), onclick: () => { screen = id; render(); } }, label)));
+  document.getElementById("actions").replaceChildren(...ACTIONS.map(([a, label]) =>
+    el("button", { class: "act", onclick: () => dispatch(a, label) }, label)));
+  document.getElementById("tabs").replaceChildren(...SCENARIOS.map((sc, i) =>
+    el("button", { class: "tab", role: "tab", "aria-selected": String(i === scenarioIndex), onclick: () => startScenario(i) }, sc.name)));
+  const sc = SCENARIOS[scenarioIndex];
+  document.getElementById("scenarioText").textContent = sc.text;
+  document.getElementById("steps").replaceChildren(...sc.steps.map(([a, label], i) =>
+    el("button", { class: "act" + (i === stepIndex ? " next" : "") + (i < stepIndex ? " done" : ""), ...(i === stepIndex ? {} : { disabled: "" }),
+      onclick: () => { stepIndex += 1; dispatch(a, label); } }, el("span", { class: "n" }, `${i + 1}.`), label)),
+    el("button", { class: "act", onclick: () => startScenario(scenarioIndex) }, stepIndex >= sc.steps.length ? "Done. Run it again" : "Start over"));
+}
+
+function renderStepBar() {
+  const sc = SCENARIOS[scenarioIndex];
+  const bar = document.getElementById("stepBar");
+  if (stepIndex >= sc.steps.length) {
+    bar.replaceChildren(el("div", { class: "label" }, el("b", {}, sc.name), "Walkthrough done."),
+      el("button", { onclick: () => startScenario(scenarioIndex) }, "Run again"));
+    return;
+  }
+  const [a, label] = sc.steps[stepIndex];
+  bar.replaceChildren(el("div", { class: "label" }, el("b", {}, `${sc.name}: step ${stepIndex + 1} of ${sc.steps.length}`), lastAction),
+    el("button", { onclick: () => { stepIndex += 1; dispatch(a, label); } }, label));
+}
+function startScenario(i) {
+  scenarioIndex = i; stepIndex = 0;
+  resetAll(SCENARIOS[i].reach, SCENARIOS[i].setup);
+  screen = SCENARIOS[i].name === "Laptop in the backpack" || SCENARIOS[i].name === "Laptop comes back" ? "needs" : "thread";
+  lastAction = "Walkthrough started.";
+  render();
+}
+function render() { renderPhones(); renderState(); renderControls(); renderStepBar(); }
+startScenario(0);
+</script>
+</body>
+</html>
