@@ -134,8 +134,9 @@ export interface GitStatusSource {
   /**
    * A Git action ran in `folder` (a working folder or its repository's common Git directory): the next remote read of
    * that repository fetches again and asks GitHub again instead of trusting its caches, and no read of it begun before
-   * now is shared with a caller after it. Other repositories keep their answers (#820). Without a folder, or for one
-   * not read yet, every repository is treated so.
+   * now is shared with a caller after it. Other repositories keep their answers (#820). A folder last read as no
+   * repository, as Initialize Git finds it, has nothing cached anywhere, so only its own reads go stale. Without a
+   * folder, or for one not read yet, every repository is treated so.
    */
   invalidate(folder?: string): void
   /** The working copy's branches, the way T3's `listRefs` answers them; absent on a source that has none to give. */
@@ -218,6 +219,8 @@ export class GitStatusReader implements GitStatusSource {
   private everywhere = 0
   /** The number of the last `invalidate` of each repository, by common Git directory. */
   private readonly invalidated = new Map<string, number>()
+  /** The number of the last `invalidate` of each folder last read as no repository, by `folderKey`. */
+  private readonly invalidatedFolders = new Map<string, number>()
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
@@ -263,6 +266,11 @@ export class GitStatusReader implements GitStatusSource {
   invalidate(folder?: string): void {
     const epoch = ++this.counter
     const common = folder === undefined ? undefined : this.repositoryOf(folder)
+    if (folder !== undefined && common === undefined && this.readAsNoRepository(folder)) {
+      // Initialize Git: the folder was no repository, so no fetch, branch list or answer anywhere belongs to it.
+      this.invalidatedFolders.set(this.folderKey(folder), epoch)
+      return
+    }
     if (common === undefined) {
       this.everywhere = epoch
       for (const record of this.fetches.values()) record.nextAt = 0
@@ -284,13 +292,20 @@ export class GitStatusReader implements GitStatusSource {
     for (const [cwd, known] of this.known) if (known.common && (this.folderKey(cwd) === key || this.folderKey(known.common) === key)) return known.common
     return undefined
   }
+  /** Whether the last read of `folder` found no repository there. */
+  private readAsNoRepository(folder: string): boolean {
+    const key = this.folderKey(folder)
+    for (const [cwd, known] of this.known) if (known.common === null && this.folderKey(cwd) === key) return true
+    return false
+  }
   /**
-   * The number of the last `invalidate` that reached a repository: its own or every repository's. For a folder whose
-   * repository is not known yet, any `invalidate` at all.
+   * The number of the last `invalidate` that reached a repository: its own or every repository's, and for a folder
+   * `cwd` read as no repository, its own. For a folder whose repository is not known yet, any `invalidate` at all.
    */
-  private epochOf(common: string | null | undefined): number {
+  private epochOf(common: string | null | undefined, cwd?: string): number {
     if (common === undefined) return this.counter
-    return Math.max(this.everywhere, common === null ? 0 : this.invalidated.get(common) ?? 0)
+    const folder = common === null && cwd !== undefined ? this.invalidatedFolders.get(this.folderKey(cwd)) ?? 0 : 0
+    return Math.max(this.everywhere, folder, common === null ? 0 : this.invalidated.get(common) ?? 0)
   }
 
   /**
@@ -391,7 +406,7 @@ export class GitStatusReader implements GitStatusSource {
     if (options.fresh) return this.readNow(cwd, options)
     const key = `${cwd}\0${options.remote}`
     const pending = this.reads.get(key)
-    if (pending && this.epochOf(pending.place.common) <= pending.start) return pending.task
+    if (pending && this.epochOf(pending.place.common, cwd) <= pending.start) return pending.task
     const place: { common?: string | null } = {}
     const task = this.readNow(cwd, options, place).finally(() => { if (this.reads.get(key)?.task === task) this.reads.delete(key) })
     this.reads.set(key, { start: this.counter, place, task })
@@ -405,7 +420,7 @@ export class GitStatusReader implements GitStatusSource {
   readRemote(cwd: string, options: { readonly background?: boolean } = {}): Promise<boolean> {
     if (this.isHeld(this.folderKey(cwd))) return Promise.resolve(true)
     const known = this.known.get(cwd)
-    if (!known || this.epochOf(known.common) > known.epoch) return Promise.resolve(false)
+    if (!known || this.epochOf(known.common, cwd) > known.epoch) return Promise.resolve(false)
     const ask: GitHubAsk = options.background ? 'background' : 'user'
     const key = `${known.epoch}\0${cwd}\0${ask}`
     const pending = this.remoteReads.get(key)
@@ -424,7 +439,7 @@ export class GitStatusReader implements GitStatusSource {
     const epoch = this.counter
     const readAt = new Date(this.now()).toISOString()
     // What `readRemote` asks about for this folder, unless a Git action in its repository has run since this read began.
-    const remember = (known: Omit<KnownFolder, 'epoch'>): void => { if (this.epochOf(known.common) <= epoch) this.known.set(cwd, { epoch, ...known }) }
+    const remember = (known: Omit<KnownFolder, 'epoch'>): void => { if (this.epochOf(known.common, cwd) <= epoch) this.known.set(cwd, { epoch, ...known }) }
     let common: string
     try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim(); place.common = common }
     catch (error) {

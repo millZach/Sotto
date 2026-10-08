@@ -256,6 +256,22 @@ describe('an action refreshes only its own repository', () => {
     await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
     expect(asked()).toEqual(['h0=feature/a', 'h0=feature/b', 'h0=feature/a', 'h0=feature/b'])
   })
+  it('stales only the folder Initialize Git ran in, since a new repository has nothing cached anywhere else', async () => {
+    const folders = two()
+    const f = harness(folders, args => headsAnswer(args, [{ head: 'feature/a', number: 1 }, { head: 'feature/b', number: 2 }]))
+    await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
+    expect((await f.reader.read('C:/new', { remote: false })).isRepository).toBe(false)
+    f.advance(1_000)
+    // `git init` in C:/new, then the invalidate every Git action ends with.
+    Object.assign(folders, { 'C:/new': { common: 'C:/new/.git', branch: 'main', upstream: null, remotes: {} } })
+    f.reader.invalidate('C:/new')
+    // The new repository is read again before its remote half asks anything; the others keep their fetch and answers.
+    expect(await f.reader.readRemote('C:/new')).toBe(false)
+    expect((await f.reader.read('C:/new', { remote: false })).isRepository).toBe(true)
+    await Promise.all([f.round('C:/a', true), f.round('C:/b', true)])
+    expect(f.git.filter(call => call[1] === 'fetch').map(call => call[0])).toEqual(['C:/a', 'C:/b'])
+    expect(f.graphql()).toBe(2)
+  })
   it('lets an answer asked before an action in its own repository not stand, and one asked before an action elsewhere stand', async () => {
     let release: (() => void) | undefined
     const f = harness(two(), async args => {
