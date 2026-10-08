@@ -36,7 +36,9 @@ function contents(type: string, session: unknown) {
   const fake = {
     getType: () => type, session, close: vi.fn(), setWebRTCIPHandlingPolicy: vi.fn(), setWindowOpenHandler: vi.fn(),
     on: vi.fn((event: string, listener: Attach) => { if (!listeners.has(event)) listeners.set(event, listener) }),
+    once: vi.fn((event: string, listener: () => void) => { onceListeners.set(event, listener) }),
   }
+  const onceListeners = new Map<string, () => void>()
   const attach = (src: string): boolean => {
     const event = { preventDefault: vi.fn() }
     listeners.get('will-attach-webview')!(event, {}, { src })
@@ -99,7 +101,7 @@ describe('the window\'s request for a page', () => {
   it('shows no page when the proxy cannot hold a port, and tries again on the next request', async () => {
     let fail = true
     const box = sandbox({ startProxy: async () => { if (fail) throw new Error('no port'); return { port: 41_235, close: vi.fn() } } })
-    expect(await box.ask(box.main)).toEqual({ ok: false, reason: 'Sotto could not seal this page from the network, so it is not shown.' })
+    expect(await box.ask(box.main)).toEqual({ ok: false, reason: 'Sotto could not seal this page from the network, so it is not shown.', retry: true })
     fail = false
     expect((await box.ask(box.main)).ok).toBe(true)
   })
@@ -162,6 +164,35 @@ describe('a guest', () => {
     expect(box.visualSession.setProxy).toHaveBeenLastCalledWith({ mode: 'fixed_servers', proxyRules: 'socks5://127.0.0.1:41999', proxyBypassRules: '<-loopback>' })
     expect(box.visualSession.protocol.handle).toHaveBeenCalledOnce()
     expect(mainWindow.attach(after)).toBe(true)
+  })
+
+  it('fails a seal whose proxy is lost while it is set up, offers Try again, and seals on the next request', async () => {
+    const box = sandbox()
+    let release: (() => void) | undefined
+    vi.mocked(box.visualSession.setProxy).mockImplementationOnce(() => new Promise<void>(done => { release = done }))
+    const first = box.ask(box.main)
+    await vi.waitFor(() => expect(release).toBeDefined())
+    box.lostHandlers[0]!()
+    release!()
+    expect(await first).toEqual({ ok: false, reason: 'Sotto could not seal this page from the network, so it is not shown.', retry: true })
+    expect(box.proxy.close).toHaveBeenCalledOnce()
+    // Nothing attaches on a seal that failed.
+    const mainWindow = box.make('window', {})
+    box.setMain(mainWindow.fake)
+    expect(box.make('webview', box.visualSession).fake.close).toHaveBeenCalledOnce()
+    expect((await box.ask(box.main)).ok).toBe(true)
+    expect(box.adapters.startProxy).toHaveBeenCalledTimes(2)
+  })
+
+  it('closes the pages already running when the proxy is lost', async () => {
+    const box = sandbox()
+    await waitingAddress(box)
+    const running = box.make('webview', box.visualSession)
+    const finished = box.make('webview', box.visualSession)
+    finished.fake.once.mock.calls.find(call => call[0] === 'destroyed')![1]()
+    box.lostHandlers[0]!()
+    expect(running.fake.close).toHaveBeenCalledOnce()
+    expect(finished.fake.close).not.toHaveBeenCalled()
   })
 
   it('stops answering, and closes the proxy, when disposed', async () => {

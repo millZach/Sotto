@@ -30,7 +30,8 @@ export type VisualPageRequest = z.infer<typeof visualPageRequestSchema>
 
 export const visualPageResultSchema = z.union([
   z.object({ ok: z.literal(true), url: z.string().startsWith(`${VISUAL_SCHEME}://page/`).max(256) }).strict(),
-  z.object({ ok: z.literal(false), reason: z.string().max(500) }).strict(),
+  // `retry`: the refusal may pass, such as a seal that could not be set up just now, so the window offers Try again.
+  z.object({ ok: z.literal(false), reason: z.string().max(500), retry: z.literal(true).optional() }).strict(),
 ])
 export type VisualPageResult = z.infer<typeof visualPageResultSchema>
 

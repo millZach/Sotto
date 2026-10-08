@@ -55,20 +55,22 @@ export interface DeadProxy { readonly port: number; close(): void }
 
 /**
  * The proxy a sealed session points at: a loopback port Sotto holds, so no other program can take it, that closes
- * every connection without a byte. The server keeps an error handler for its whole life: an error before it listens
- * fails the start, and one after closes it and calls `onLost`, so the session is pointed at a new one before another
- * page is shown.
+ * every connection without a byte. The server keeps an error handler for its whole life. An error before it listens
+ * fails the start. An error after it listens, such as a failed accept when the process is out of file handles, is not
+ * fatal: the server keeps its port. If the server closes when Sotto did not close it, `onLost` is called, so the
+ * session is pointed at a new one before another page is shown.
  */
 export function startDeadProxy(onLost: () => void, create: (onSocket: (socket: { destroy(): void }) => void) => DeadProxyServer = createServer): Promise<DeadProxy> {
   return new Promise((resolve, reject) => {
     const server = create(socket => socket.destroy())
     let listening = false
-    let lost = false
+    let closing = false
     server.on('error', () => {
-      if (!listening) { reject(new Error('The dead proxy could not start.')); return }
-      if (lost) return
-      lost = true
-      server.close()
+      if (!listening) reject(new Error('The dead proxy could not start.'))
+    })
+    server.on('close', () => {
+      if (!listening || closing) return
+      closing = true
       onLost()
     })
     server.listen(0, '127.0.0.1', () => {
@@ -76,7 +78,7 @@ export function startDeadProxy(onLost: () => void, create: (onSocket: (socket: {
       if (!address || typeof address === 'string') { server.close(); reject(new Error('The dead proxy has no port.')); return }
       listening = true
       server.unref()
-      resolve({ port: address.port, close: () => { lost = true; server.close() } })
+      resolve({ port: address.port, close: () => { closing = true; server.close() } })
     })
   })
 }

@@ -15,6 +15,7 @@ export interface VisualContentsLike extends VisualGuestLike {
   close(): void
   on(event: GuestNavigationEvent, listener: (event: PreventableEvent) => void): unknown
   on(event: 'will-attach-webview', listener: AttachListener): unknown
+  once(event: 'destroyed', listener: () => void): unknown
 }
 type ContentsListener = (event: unknown, contents: VisualContentsLike) => void
 
@@ -60,24 +61,31 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
   let proxy: DeadProxy | undefined
   let sealing: Promise<void> | undefined
   let disposed = false
+  // The guests sealed on the session, closed if its proxy is ever lost.
+  const guests = new Set<VisualContentsLike>()
   const sealed = (): boolean => session !== undefined && proxy !== undefined
 
   const seal = (): Promise<void> => sealing ??= (async () => {
-    const next = await adapters.startProxy(() => lose(next))
+    // A proxy lost while this seal is still being set up fails the attempt; the next request sets it up again.
+    let lostEarly = false
+    const next = await adapters.startProxy(() => { if (proxy === next) lose(next); else lostEarly = true })
     try {
       if (!session) { const made = adapters.session(); sealVisualSession(made, store); session = made }
       await pointVisualSessionAtProxy(session, next.port)
       if (disposed) throw new Error('The sandbox was closed.')
+      if (lostEarly) throw new Error('The dead proxy was lost while the session was sealed.')
       proxy = next
     } catch (error) { next.close(); throw error }
   })().catch((error: unknown) => { sealing = undefined; throw error })
 
-  // A lost proxy leaves its port free for another program, so nothing more is shown until the session points at a new
-  // one, which starts at once, or on the next request if that fails.
+  // A lost proxy leaves its port free for another program, so nothing more is shown, the pages already running are
+  // closed, and the session is pointed at a new proxy at once, or on the next request if that fails.
   const lose = (lost: DeadProxy): void => {
     if (proxy !== lost) return
     proxy = undefined
     sealing = undefined
+    for (const guest of guests) guest.close()
+    guests.clear()
     if (!disposed) void seal().catch(() => undefined)
   }
 
@@ -90,6 +98,8 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
     // Every guest is a visual's: one on any other session, or before the session is sealed, is closed before it loads.
     if (!sealed() || contents.session !== session) { contents.close(); return }
     sealVisualGuest(contents)
+    guests.add(contents)
+    contents.once('destroyed', () => { guests.delete(contents) })
   }
   const stopWatching = adapters.contentsCreated(onContents)
 
@@ -99,7 +109,7 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
     // A key for another host names a paired host's thread: its visuals are there, never in this computer's store.
     const threadId = localVisualThreadId(request.threadId, options.localHostId())
     if (threadId === undefined) return { ok: false, reason: ON_ANOTHER_COMPUTER }
-    try { await seal() } catch { return { ok: false, reason: NOT_SEALED } }
+    try { await seal() } catch { return { ok: false, reason: NOT_SEALED, retry: true } }
     return store.open({ ...request, threadId })
   })
 

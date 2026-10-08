@@ -220,7 +220,7 @@ describe('the sealed session', () => {
     } finally { proxy.close() }
   })
 
-  it('keeps handling the proxy server\'s errors for its life: a later one closes it and says the proxy was lost', async () => {
+  it('keeps its port through errors after it listens, and says the proxy was lost only if the server closes', async () => {
     const server = Object.assign(new EventEmitter(), {
       listen: vi.fn((_port: number, _host: string, ready: () => void) => { ready(); return server }),
       address: () => ({ address: '127.0.0.1', family: 'IPv4', port: 40_555 }),
@@ -229,10 +229,25 @@ describe('the sealed session', () => {
     const lost = vi.fn()
     const proxy = await startDeadProxy(lost, () => server as unknown as DeadProxyServer)
     expect(proxy.port).toBe(40_555)
-    // An unhandled 'error' on an emitter throws; this one is handled, once, however many come.
-    expect(() => { server.emit('error', new Error('gone')); server.emit('error', new Error('gone again')) }).not.toThrow()
+    // An unhandled 'error' on an emitter throws. A failed accept after listening is handled and keeps the port.
+    expect(() => { server.emit('error', new Error('EMFILE')); server.emit('error', new Error('EMFILE')) }).not.toThrow()
+    expect(lost).not.toHaveBeenCalled()
+    expect(server.close).not.toHaveBeenCalled()
+    // A server that closes when Sotto did not close it is lost, once.
+    server.emit('close'); server.emit('close')
     expect(lost).toHaveBeenCalledOnce()
-    expect(server.close).toHaveBeenCalledOnce()
+  })
+
+  it('does not report a loss when Sotto closes the proxy itself', async () => {
+    const server = Object.assign(new EventEmitter(), {
+      listen: vi.fn((_port: number, _host: string, ready: () => void) => { ready(); return server }),
+      address: () => ({ address: '127.0.0.1', family: 'IPv4', port: 40_556 }),
+      close: vi.fn(() => { server.emit('close'); return server }), unref: vi.fn(() => server),
+    })
+    const lost = vi.fn()
+    const proxy = await startDeadProxy(lost, () => server as unknown as DeadProxyServer)
+    proxy.close()
+    expect(lost).not.toHaveBeenCalled()
   })
 
   it('fails to start when the server errors before it listens', async () => {
