@@ -13,6 +13,14 @@ ordinary `<img>` and two ordinary links aimed at the listener. The spec reads th
 in main, and records in main what the `sotto-visual` session and its guests do. Every capture below is from that
 run, at a display scale of 150 percent.
 
+The captures are Electron's own capture of the window's composited frame (`captureWindow` in
+tests/e2e/support/sottoLaunch.ts), not Playwright's page screenshot. On October 7 a live Claude Code page looked about
+1.5 times too large and cut off on the right in the live spec's captures. The page was laid out right: its
+`innerWidth` equalled the `<webview>`'s CSS width (701 of 701 at 150%, device pixel ratio 1.5), the guest's own
+capture showed all of it, and both Electron's window capture and a capture of the screen itself showed it fitting
+its card. Playwright's page screenshot, at the same moment, drew the guest 1.5 times too large. Nothing in Sotto
+changed for it; the captures did.
+
 ## What it showed
 
 - The page drew and ran its script. `window.sotto`, `require` and `process` were undefined in it.
@@ -24,6 +32,8 @@ run, at a display scale of 150 percent.
   it was and opened no window. A fetch made by the session itself failed with `ERR_BLOCKED_BY_CLIENT`. The guest loading its page's
   address a second time was refused, and it still showed the first load's page.
 - The session's own fetch failed with `ERR_BLOCKED_BY_CLIENT`. The session resolved a loopback address to its SOCKS5 proxy, not DIRECT, and the guest's WebRTC IP policy was `disable_non_proxied_udp`.
+- A full-width page's `innerWidth` was the `<webview>`'s CSS width, in the card and in Expand, and its last bar ended
+  inside the card.
 - With Let agents draw visuals in threads off, a new call was refused and drew nothing, and the page already in the thread opened again. The page showed in Figtree, loaded from the faces Sotto carried.
 - With Reduce motion on, the page was told and its style stopped movement. A page whose body fills the frame grew to its 300 pixels of content.
 - The listener saw no connection. No request completed but the pages, no frame committed a navigation but each
@@ -38,5 +48,7 @@ run, at a display scale of 150 percent.
 - `page-1280x800-dark-reduced-motion.png`: the card with Reduce motion on.
 - `page-820x560-dark.png` and `page-820x560-light.png`: the minimum window. The card fits, and the page is clipped
   by the transcript above the composer like the rest of the thread.
+- `page-full-width-1280x800-dark.png` and `page-full-width-expanded-1280x800-dark.png`: a page laid out across the
+  whole frame (a full-width range input and ten bars that share the width) ends inside its card and inside Expand.
 - `page-step-2-1280x800-dark.png`: the walkthrough on step 2, and the page showing the step it was sent.
 - `expanded-1280x800-dark.png`: Expand, with focus on Close.

@@ -63,6 +63,11 @@ function page(port: number): string {
   </script>
 </body></html>`
 }
+// A page laid out across the whole frame: a range input across its row and ten flex: 1 bars.
+const WIDE = '<!doctype html><title>Full width</title><style>body{margin:0;padding:12px 14px;box-sizing:border-box}.controls{display:flex;align-items:center;gap:12px;margin-bottom:12px}.controls input{flex:1}'
+  + '.chart{display:flex;gap:8px;height:120px;align-items:flex-end}.col{flex:1;min-width:0;background:var(--sotto-accent);border-radius:4px 4px 0 0}</style>'
+  + '<div class="controls"><label for="load">Load</label><input id="load" type="range"></div><div class="chart" id="chart"></div>'
+  + '<script>for(let i=0;i<10;i++){const c=document.createElement("div");c.className="col";c.id="bar"+i;c.style.height=(20+i*8)+"%";document.getElementById("chart").append(c)}</script>'
 const TALL = '<!doctype html><body style="margin:0"><div style="height:2000px">A tall page.</div><script>document.body.dataset.script = "ran"</script></body>'
 // A page whose body fills the frame, with 300 pixels of content: Sotto measures the content, not the frame.
 const FULL = '<!doctype html><style>html, body { height: 100%; margin: 0 }</style><div style="height:300px">A full-height page.</div>'
@@ -316,6 +321,37 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await expect(frame).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
     await expect.poll(async () => (await guestRecord(launched!)).script).toBe('ran')
     await view.evaluate(async () => window.sotto!.updateSettings({ visualsInThreads: true }))
+
+    // A full-width page: a range input across the row and ten flex: 1 bars. Its viewport is the frame's own width, so
+    // the last bar ends inside the card, at 150% display scaling as at 100%.
+    expect((await visualize(view, { title: 'A full-width page', kind: 'interactive', source: WIDE })).isError).not.toBe(true)
+    const wide = log.getByRole('region', { name: 'Visual: A full-width page' })
+    await scrollTo(wide)
+    await expect(wide.locator('.interactive-visual')).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
+    const fitsCard = async (scope: Locator, card: Locator): Promise<void> => {
+      const host = await scope.locator('.interactive-visual__page').evaluate(element => ({ width: element.clientWidth, left: element.getBoundingClientRect().left }))
+      const right = await card.evaluate(element => element.getBoundingClientRect().right)
+      const page = await launched!.app.evaluate(async ({ webContents }) => {
+        const guest = webContents.getAllWebContents().find(contents => contents.getType() === 'webview' && !contents.isDestroyed() && contents.getTitle() === 'Full width')!
+        return guest.executeJavaScript('({ inner: innerWidth, client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, last: document.getElementById("bar9").getBoundingClientRect().right, input: document.getElementById("load").getBoundingClientRect().right })') as Promise<{ inner: number; client: number; scroll: number; last: number; input: number }>
+      })
+      expect(Math.abs(page.inner - host.width)).toBeLessThanOrEqual(1)
+      expect(page.scroll).toBeLessThanOrEqual(page.inner)
+      expect(page.last).toBeLessThanOrEqual(page.inner)
+      expect(page.input).toBeLessThanOrEqual(page.inner)
+      expect(host.left + page.last).toBeLessThanOrEqual(right + 0.5)
+    }
+    await fitsCard(wide, wide)
+    await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await captureWindow(launched.app, join(SHOTS, 'page-full-width-1280x800-dark.png'))
+    // The same in Expand, where the page fills the dialog.
+    await wide.getByRole('button', { name: 'Expand A full-width page' }).click()
+    const wideViewer = view.getByRole('dialog', { name: 'Interactive page: A full-width page' })
+    await expect(wideViewer.locator('.interactive-visual')).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
+    await fitsCard(wideViewer, wideViewer)
+    await captureWindow(launched.app, join(SHOTS, 'page-full-width-expanded-1280x800-dark.png'))
+    await view.keyboard.press('Escape')
+    await expect(wideViewer).toBeHidden()
 
     // A page taller than 640 pixels is held to 640 and scrolls inside.
     expect((await visualize(view, { title: 'A tall page', kind: 'interactive', source: TALL })).isError).not.toBe(true)
