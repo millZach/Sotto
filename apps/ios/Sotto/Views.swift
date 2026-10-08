@@ -97,12 +97,26 @@ struct FeedbackBanner: View {
     }
 }
 
-/// In a thread: says when its computer can't be reached, else what just went wrong.
+/// In a thread: says when its computer can't be reached, that it is reconnecting under the thread as last read, or
+/// else what just went wrong.
 struct ComputerBanner: View {
     @EnvironmentObject var model: AppModel
-    let hostID: String
+    /// Watched so the reconnecting line follows the thread's held copy.
+    @EnvironmentObject var detailStore: DetailStore
+    let ref: ThreadRef
+    private var hostID: String { ref.hostID }
     var body: some View {
-        if model.status(hostID) == .unreachable {
+        if model.status(hostID) == .connecting && model.shown(for: ref) != nil {
+            HStack(spacing: Space.s3) {
+                ProgressView().controlSize(.small)
+                Text("Reconnecting to \(model.name(hostID))…").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .accessibilityElement(children: .combine)
+        } else if model.status(hostID) == .unreachable {
             HStack(spacing: Space.s3) {
                 Light(tone: .danger)
                 VStack(alignment: .leading, spacing: 2) {

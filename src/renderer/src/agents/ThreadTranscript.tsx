@@ -165,7 +165,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   readonly threadId: string | undefined
 }): ReactNode {
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
-  const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} />
+  const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}

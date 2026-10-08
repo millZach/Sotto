@@ -39,6 +39,22 @@ describe('the visualize tool', () => {
     expect(add).toHaveBeenCalledWith('thread', FLOW)
   })
 
+  it('takes an interactive page and tells the agent how the page hears steps and the theme (ADR-0060)', async () => {
+    for (const phrase of ['kind "interactive"', '60,000 characters', 'cannot load anything', 'sotto-visual-step', 'sotto-visual-theme', '--sotto-accent', '--sotto-font', 'between 160 and 640 pixels', 'Size the page by its content', "at the top of the page's script", 'once the page has loaded'])
+      expect(visualizeDefinition.description).toContain(phrase)
+    const { tools, add } = server()
+    const page = { title: 'A queue', kind: 'interactive', source: '<svg width="10" height="10"></svg>', steps: [{ text: 'It fills.', highlight: ['queue'] }] }
+    expect(await said(tools, page)).toEqual({ isError: false, text: 'Shown in the thread as "A queue": an interactive page with 1 step, under your last message. Do not repeat the steps in your reply.' })
+    expect(add).toHaveBeenCalledWith('thread', page)
+  })
+
+  // A live page took the note colour, then named like a text colour, for its footnote and could hardly be read.
+  it('tells the agent what each colour is for, and that words go only in the text colours (ADR-0060)', () => {
+    for (const phrase of ['--sotto-text for text', '--sotto-muted for secondary text', '--sotto-note-fill for the fill behind a note', '--sotto-group-fill for the fill behind a group', 'Put words only in --sotto-text or --sotto-muted'])
+      expect(visualizeDefinition.description).toContain(phrase)
+    expect(visualizeDefinition.description).not.toMatch(/--sotto-(note|group)[,; ]/u)
+  })
+
   it('names the kind with its article and leaves out the steps line when there are none', () => {
     expect(visualShownText('Tables', 'Entity relationship diagram', 0, 'user')).toBe('Shown in the thread as "Tables": an entity relationship diagram, under the user\'s message.')
     expect(visualShownText('Calls', 'Sequence diagram', 1, 'none')).toBe('Shown in the thread as "Calls": a sequence diagram with 1 step, at the start of the thread. Do not repeat the steps in your reply.')

@@ -1018,6 +1018,11 @@ export class WorkspaceHost implements AgentHost {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     return thread !== undefined && thread.providerId !== 'devin'
   }
+  /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
+  visual(threadId: string, visualId: string): AgentVisual | undefined {
+    if (this.storeUnavailable) return undefined
+    try { return this.threadStore.readVisuals(threadId).find(stored => stored.visual.id === visualId)?.visual } catch { return undefined }
+  }
   /** A window's messages with the thread's visuals in their places; the messages alone when the store cannot say. */
   private withVisuals(threadId: string, messages: readonly AgentMessage[], windowStartsThread: boolean): AgentMessage[] {
     if (this.storeUnavailable) return [...messages]

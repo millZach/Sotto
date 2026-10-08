@@ -31,8 +31,8 @@ describe('checking a visualize call', () => {
     [{ ...valid, title: '' }, 'The title is empty.'],
     [{ ...valid, title: '   ' }, 'The title is empty.'],
     [{ ...valid, title: 'x'.repeat(121) }, 'The title is too long. It takes up to 120 characters.'],
-    [{ ...valid, kind: 'interactive' }, 'The kind must be one of: diagram.'],
-    [{ ...valid, source: 'x'.repeat(12_001) }, 'The source is too long. It takes up to 12,000 characters.'],
+    [{ ...valid, kind: 'chart' }, 'The kind must be one of: diagram, interactive.'],
+    [{ ...valid, kind: 'interactive', source: ' \n ' }, 'The source is empty.'],
     [{ ...valid, intro: 'x'.repeat(2_001) }, 'The intro is too long. It takes up to 2,000 characters.'],
     [{ ...valid, steps: Array.from({ length: 13 }, () => ({ text: 'Step' })) }, 'There are too many steps. Send up to 12.'],
     [{ ...valid, steps: [{ text: '' }] }, 'Step 1 needs text of 1 to 1,000 characters, as a sentence or as { "text": "..." }.'],
@@ -83,6 +83,29 @@ describe('a visual as Sotto keeps it', () => {
     const kept = visualFromInput('v1', { title: '  Flow  ', kind: 'diagram', source, intro: '   ', steps: [{ text: ' One \n', highlight: [] }, { text: 'Two', highlight: ['A'] }] })
     expect(kept).toEqual({ id: 'v1', title: 'Flow', kind: 'diagram', source, steps: [{ text: 'One' }, { text: 'Two', highlight: ['A'] }] })
     expect(visualFallbackText(kept)).toBe(`**Flow**\n\n1. One\n2. Two\n\n${VISUAL_FALLBACK_NOTE}`)
+  })
+})
+
+describe('checking an interactive visual (ADR-0060)', () => {
+  const page = '<!doctype html><svg width="40" height="40"><circle cx="20" cy="20" r="18"/></svg><script>addEventListener("message", () => {})</script>'
+
+  it('takes a page of up to 60,000 characters and names it for the reply', () => {
+    const call = { title: 'A queue', kind: 'interactive', source: page, steps: [{ text: 'It fills.', highlight: ['queue'] }] }
+    expect(checkVisualInput(call)).toEqual({ ok: true, input: call, label: 'Interactive page' })
+    expect(checkVisualInput({ ...call, source: page.padEnd(60_000, ' ') }).ok).toBe(true)
+  })
+
+  it('does not run the diagram checks on a page, and still holds a diagram to 12,000 characters', () => {
+    expect(checkVisualInput({ title: 'Pie words', kind: 'interactive', source: 'pie title Pets' }).ok).toBe(true)
+    const long = checkVisualInput({ ...valid, source: `flowchart LR\n${'  A --> B\n'.repeat(1_300)}` })
+    expect(long).toMatchObject({ ok: false, reason: 'This diagram is too long for Sotto to draw: it takes up to 12,000 characters.' })
+  })
+
+  it('names the limit of the kind that was sent when a source is too long', () => {
+    expect(checkVisualInput({ ...valid, source: 'x'.repeat(60_001) })).toEqual({ ok: false,
+      reason: 'This diagram is too long for Sotto to draw: it takes up to 12,000 characters.', next: 'Split it into smaller diagrams, or explain in text.' })
+    expect(checkVisualInput({ title: 'A page', kind: 'interactive', source: 'x'.repeat(60_001) })).toEqual({ ok: false,
+      reason: 'The page is too long. An interactive page takes up to 60,000 characters.', next: 'Fix it and call visualize again, or explain in text.' })
   })
 })
 

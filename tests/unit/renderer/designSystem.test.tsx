@@ -196,8 +196,8 @@ describe('Sotto design-system primitives', () => {
     const fontsCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/fonts.css'), 'utf8')
     const faces = [...fontsCss.matchAll(/font-family:\s*'Figtree'/gu)]
     expect(faces).toHaveLength(2)
-    expect(fontsCss).toContain("url('../assets/fonts/figtree-latin.woff2')")
-    expect(fontsCss).toContain("url('../assets/fonts/figtree-latin-ext.woff2')")
+    expect(fontsCss).toContain("url('../../../shared/fonts/figtree-latin.woff2')")
+    expect(fontsCss).toContain("url('../../../shared/fonts/figtree-latin-ext.woff2')")
     expect(fontsCss).toMatch(/font-weight:\s*200 800/u)
     const widgetCss = readFileSync(join(process.cwd(), 'src/renderer/src/widget/widget.css'), 'utf8')
     expect(widgetCss).not.toContain('Figtree')

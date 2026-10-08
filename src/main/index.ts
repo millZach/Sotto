@@ -8,6 +8,10 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
+import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
+import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
+import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
+import { VISUAL_PARTITION } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
 import type { BusyHostThreads } from './hosts/busyHost'
@@ -57,6 +61,7 @@ import {
   Tray,
   type Event as ElectronEvent,
   type MenuItemConstructorOptions,
+  type WebContents,
   type WebContentsWillFrameNavigateEventParams,
   type WebContentsWillNavigateEventParams,
   type WebContentsWillRedirectEventParams,
@@ -145,7 +150,7 @@ import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
 import { defaultSettings, type AppSettings } from '../shared/settings'
-import { blockSpellcheckDictionaryDownloads, enableWasmThreadSupport } from './security'
+import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   beginRuntimeVerification,
   registerLocalAssetProtocols,
@@ -759,6 +764,24 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
   agentHost.useThreadTools([hostSetupTools, visualTools])
+  // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
+  // and its proxy are set up the first time a page is asked for.
+  const disposeVisualSandbox = installVisualSandbox({
+    ipc: ipcMain,
+    contentsCreated: listener => {
+      const created = (event: ElectronEvent, contents: WebContents): void => listener(event, contents as unknown as VisualContentsLike)
+      app.on('web-contents-created', created)
+      return () => { app.removeListener('web-contents-created', created) }
+    },
+    session: () => session.fromPartition(VISUAL_PARTITION),
+    startProxy: startDeadProxy,
+  }, {
+    read: (threadId, visualId) => agentHost.visual(threadId, visualId),
+    localHostId: () => agentControl.get().hostId,
+    mainWebContents: () => windows.getMainWebContents(), senders: () => windows.getTrustedRenderers(),
+    preloadDirectory: join(__dirname, '../preload'), fontCss: FIGTREE_FONT_FACES,
+  })
+  app.on('will-quit', disposeVisualSandbox)
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
@@ -1435,8 +1458,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 }
 
-registerModelSchemesAsPrivileged(protocol)
+// Electron takes one list of privileged schemes: the model schemes and an interactive visual's page (ADR-0060).
+registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
+disableDnsPrefetching(app.commandLine)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
 if (process.platform === 'win32') {

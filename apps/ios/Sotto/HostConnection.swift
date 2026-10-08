@@ -9,6 +9,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
 
 @MainActor final class HostConnection {
     private static let httpTimeout: TimeInterval = 30
+    /// A saved computer that doesn't answer is given up after about ten seconds: five on its saved port and five on
+    /// phone access's other port.
+    static let reconnectTimeout: TimeInterval = 5
     var onPush: ((IncomingFrame, Int) -> Void)?
     var onDisconnect: (() -> Void)?
     var onLiveness: (() -> Void)?
@@ -45,7 +48,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     /// Confirms Sotto is listening before pairing, reconnecting or removing a computer.
     func health(endpoint: HostEndpoint, reconnecting: Bool = false) async throws -> Health {
         let name = endpoint.machine
-        var request = URLRequest(url: endpoint.route("/v1/health")); request.httpMethod = "GET"; request.timeoutInterval = Self.httpTimeout
+        var request = URLRequest(url: endpoint.route("/v1/health")); request.httpMethod = "GET"
+        request.timeoutInterval = reconnecting ? Self.reconnectTimeout : Self.httpTimeout
         let fetched: (Data, URLResponse)
         do { fetched = try await network.data(for: request) } catch { throw ClientError.hostUnreachable(name) }
         let (data, response) = fetched
@@ -254,7 +258,7 @@ extension HostConnection {
     /// What a refused request means. Only 401 and 403 say the pairing is gone; anything else from a
     /// computer that answered means Sotto isn't running, apart from a rate limit's explicit wait. A 403
     /// whose body is `forbidden` with a sentence is the computer keeping the pairing but not letting this
-    /// iPhone in now, such as a host with phone access off: the iPhone shows the sentence and keeps trying.
+    /// iPhone in now, such as a host with phone access off: the iPhone shows the sentence and keeps the pairing.
     nonisolated static func refusal(route: String, status: Int, name: String, failure: WireFailure? = nil) -> ClientError {
         if status == 429 { return .rateLimited }
         if status == 403, let failure, failure.code == "forbidden", !failure.message.isEmpty, failure.message.count <= 500 {

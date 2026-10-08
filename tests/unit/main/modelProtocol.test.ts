@@ -32,6 +32,14 @@ describe('model protocols', () => {
     ])
   })
 
+  it('registers another scheme in the same single call, since Electron takes one list', () => {
+    const registerSchemesAsPrivileged = vi.fn()
+    registerModelSchemesAsPrivileged({ registerSchemesAsPrivileged }, [{ scheme: 'sotto-visual', privileges: { standard: true } }])
+    expect(registerSchemesAsPrivileged).toHaveBeenCalledOnce()
+    expect(registerSchemesAsPrivileged.mock.calls[0]?.[0]).toHaveLength(3)
+    expect(registerSchemesAsPrivileged.mock.calls[0]?.[0][2]).toEqual({ scheme: 'sotto-visual', privileges: { standard: true } })
+  })
+
   it('resolves only exact manifest-listed canonical model paths under the selected root', async () => {
     const boundaryRoot = await mkdtemp(join(tmpdir(), 'sotto-protocol-')); roots.push(boundaryRoot)
     const root = join(boundaryRoot, 'Xenova', 'whisper-base')
