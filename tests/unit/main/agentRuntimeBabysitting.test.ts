@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { Babysitter } from '../../../src/main/agents/babysitting'
+import { toldAtStart, type BabysitNews } from '../../../src/main/agents/babysitNews'
+import { FollowupStore } from '../../../src/main/agents/followups'
+import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -22,13 +25,13 @@ afterEach(async () => {
   }
 })
 
-async function runtime(agentTool: boolean) {
-  const root = await mkdtemp(join(tmpdir(), 'sotto-runtime-babysitting-')); roots.push(root)
+async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHost()) {
+  if (!root) { root = await mkdtemp(join(tmpdir(), 'sotto-runtime-babysitting-')); roots.push(root) }
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' })
   await credentials.load()
   return createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, host: new E2EAgentHost(), reasoner: e2eAgentReasoner,
+    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, host, reasoner: e2eAgentReasoner,
     gitStatus: { fetchIntervalMs: () => 3_600_000, foreground: () => false },
     babysitting: { agentTool: () => agentTool, run: async () => { throw new Error('No gh in this test') } },
   })
@@ -41,6 +44,31 @@ describe('babysitting when the host starts', () => {
     vi.spyOn(Babysitter.prototype, 'begin').mockImplementation(() => { order.push('begin') })
     const host = await runtime(false)
     try { expect(order).toEqual(['stop agent switch', 'begin']) } finally { await host.close() }
+  })
+
+  it('takes back what an agent\'s babysitting left waiting before the queue can send it', async () => {
+    const url = 'https://github.com/o/r/pull/1'
+    const first = await runtime(true)
+    const root = roots.at(-1)!
+    await first.agentControl.command({ type: 'connect' })
+    const startedAt = new Date().toISOString()
+    await first.agentHost.changeBabysitting('workshop', () => [{ url, number: 1, startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
+    await first.close()
+    // The wake-up was saved for a thread at rest just before Sotto closed, so the queue would send it at the first chance.
+    const queue = new FollowupStore(root); await queue.load()
+    const news: BabysitNews = { pullRequest: { url, number: 1, title: 'Pull 1' }, startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: 'build', status: 'failure', url: null }] }], ended: null }
+    await queue.queueWakeUp('workshop', news, () => 'Sotto is babysitting a pull request for this thread, and it needs you.', 'unknown')
+
+    const host = new E2EAgentHost(); const sent: AgentHostCommand[] = []
+    const execute = host.execute.bind(host)
+    host.execute = async command => { sent.push(command); return execute(command) }
+    const second = await runtime(false, root, host)
+    try {
+      await expect.poll(() => second.agentControl.get().followups ?? []).toEqual([])
+      expect(second.agentControl.get().host.connected).toBe(true)
+      expect(second.babysitter!.list('workshop')).toEqual([])
+      expect(sent.filter(command => command.type === 'send')).toEqual([])
+    } finally { await second.close() }
   })
 
   it('ends nothing while the switch is on', async () => {

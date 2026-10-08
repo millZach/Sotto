@@ -405,7 +405,12 @@ export class AgentControl {
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false)
   }
-  async start(): Promise<void> {
+  /**
+   * Reads what was saved and connects. `beforeConnect` runs once the follow-up queue and the host's own records are read
+   * and before this coordinator hears the host or connects, so nothing it takes out of the queue can be sent first: the
+   * runtime ends there what agents started babysitting while the switch was off (ADR-0061 decision 12).
+   */
+  async start(options: { readonly beforeConnect?: () => Promise<void> } = {}): Promise<void> {
     await this.dependencies.turns?.initialize()
     // Remove retired ciphertext without decrypting it, including while the vault is locked.
     for (const slot of ['membership', 'membership-cache']) {
@@ -523,6 +528,7 @@ export class AgentControl {
       // Native login/model discovery must not hold up dictation or the desktop window.
       void this.checkReasoning(this.state.configuration.reasoning).then(() => this.publish())
     }
+    await options.beforeConnect?.()
     // Subscribe before the first observe: telling the workspace which threads are open now makes it
     // load their history, and that publish has to reach this coordinator (issue #119).
     this.unsubscribe = subscribeActivitySnapshots(this.dependencies.host, snapshot => this.acceptSnapshot(snapshot))

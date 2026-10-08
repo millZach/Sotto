@@ -186,7 +186,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
-    ended: (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) void agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
+    ended: async (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
@@ -211,7 +211,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     })()
     return closing
   }
-  try { await agentControl.start() } catch (error) {
+  // The switch turned off while Sotto was closed ends what agents started, and takes back the wake-ups they left
+  // waiting, before the queue can send anything and before the first pass reads anything (ADR-0061 decision 12); the
+  // desktop ends it again whenever the switch is saved off.
+  const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
+  try {
+    await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
+  } catch (error) {
     void babysitter?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
@@ -220,9 +226,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   if (babysitter) agentControl.useBabysitting(babysitter)
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
-  // The switch turned off while Sotto was closed ends what agents started before the first pass reads anything
-  // (ADR-0061 decision 12); the desktop ends it again whenever the switch is saved off.
-  if (babysitter && options.babysitting?.agentTool?.() === false) await babysitter.stop({ startedBy: 'agent' }, 'switch').catch(() => 0)
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
 }
