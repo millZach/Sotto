@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentBabysittingSchema, type BabysitStarter } from '../../shared/babysitting'
-import type { BabysitCheck, BabysitRemark, PullRequestFingerprint } from './githubBabysitReads'
+import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './githubBabysitReads'
 
 /**
  * What babysitting finds (ADR-0061 decision 6): the news in a read of a pull request, against what one thread was last
@@ -17,7 +17,9 @@ const LIST_MAX = 200
  * What a thread was last told about one pull request (decision 10), kept on the thread's record in the host's
  * `workspace.json`. Remarks are told up to `remarksThrough`, GitHub's time of the newest one reported (its edit, or
  * when it went out), with the IDs reported at that very second, since GitHub's times are whole seconds; an edit moves a
- * remark past it, so an edited one is news again. It starts at the time babysitting started.
+ * remark past it, so an edited one is news again. It starts at the time babysitting started. The IDs are kept up to as
+ * many as one detail read can return, since a review's comments on code all go out in the second it is submitted: keep
+ * fewer and a read that sees them all again tells the ones dropped a second time.
  */
 export const babysitToldSchema = z.object({
   /** The head commit the checks below are about; null before the first read. */
@@ -27,7 +29,7 @@ export const babysitToldSchema = z.object({
   /** Whether the required checks passing was reported on that head. */
   passed: z.boolean(),
   remarksThrough: z.string().max(64),
-  remarkIds: z.array(z.string().max(200)).max(LIST_MAX),
+  remarkIds: z.array(z.string().max(200)).max(REMARKS_READ_MAX),
   /** Whether the branch conflicting was reported, and it has not stopped conflicting since. */
   conflicting: z.boolean(),
   /** Wake-ups in a row that brought only comments. */
@@ -149,7 +151,7 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
       const latest = at(fresh.at(-1)!)
       const atLatest = fresh.filter(remark => at(remark) === latest).map(remark => remark.id)
       remarksThrough = new Date(latest).toISOString()
-      remarkIds = latest === through ? [...told.remarkIds, ...atLatest].slice(-LIST_MAX) : atLatest.slice(-LIST_MAX)
+      remarkIds = (latest === through ? [...told.remarkIds, ...atLatest] : atLatest).slice(-REMARKS_READ_MAX)
     }
   }
 

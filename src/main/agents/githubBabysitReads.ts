@@ -111,9 +111,16 @@ export function readFingerprint(text: string, numbers: readonly number[]): Finge
   return { rateLimit: answer.data.rateLimit, viewer: answer.data.viewer?.login ?? null, pullRequests }
 }
 
-/** Review threads read with the remarks, newest last, and the comments read from each. Edits further back wait (T3's limit too). */
+/**
+ * Comments and reviews read with the remarks, and review threads, newest last, with the comments read from each. Edits
+ * further back wait (T3's limit too).
+ */
+const COMMENTS_READ = 100
+const REVIEWS_READ = 100
 const REVIEW_THREADS_READ = 50
 const THREAD_COMMENTS_READ = 20
+/** The most remarks one detail read can return, so the most that can share the newest second a thread was told of. */
+export const REMARKS_READ_MAX = COMMENTS_READ + REVIEWS_READ + REVIEW_THREADS_READ * THREAD_COMMENTS_READ
 /**
  * The detail of one pull request: its head's checks, each with whether the base branch requires it, and its remarks,
  * each switched on only when the fingerprint says it moved. `isRequired` is asked on github.com, which is the only host
@@ -129,8 +136,8 @@ export const DETAIL_QUERY = `query BabysitDetail($owner: String!, $name: String!
         ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) checkSuite { workflowRun { workflow { name } } } }
         ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }
       } } } } } }
-      comments(first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks) { nodes { id url createdAt lastEditedAt author { login } } }
-      reviews(last: 100) @include(if: $remarks) { nodes { id url state createdAt submittedAt lastEditedAt author { login } comments { totalCount } } }
+      comments(first: ${COMMENTS_READ}, orderBy: { field: UPDATED_AT, direction: DESC }) @include(if: $remarks) { nodes { id url createdAt lastEditedAt author { login } } }
+      reviews(last: ${REVIEWS_READ}) @include(if: $remarks) { nodes { id url state createdAt submittedAt lastEditedAt author { login } comments { totalCount } } }
       reviewThreads(last: ${REVIEW_THREADS_READ}) @include(if: $remarks) { nodes { path comments(last: ${THREAD_COMMENTS_READ}) { nodes { id url createdAt publishedAt lastEditedAt author { login } } } } }
     }
   }

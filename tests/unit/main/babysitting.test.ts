@@ -207,6 +207,30 @@ describe('finding each event once', () => {
     expect(h.delivered.at(-1)!.news.changes).toEqual([{ kind: 'remarks', remarks: [expect.objectContaining({ kind: 'review-comment', edited: true })] }])
   })
 
+  it('tells each of a review\'s many comments on code once, however many went out in the same second', async () => {
+    const pull: ScriptedPull = { number: 1 }
+    const h = harness([pull], { a: { links: [url(1)] } })
+    await h.babysitter.start('a', url(1), 'agent')
+    await h.pass()
+    // 220 comments on code published together: eleven review threads of twenty, all dated the second the review went out.
+    pull.threads = Array.from({ length: 11 }, (_, thread) => ({ path: `src/f${thread}.ts`,
+      comments: Array.from({ length: 20 }, (_, index) => ({ id: `t-${thread}-${index}`, author: 'reviewer', at: at(1), publishedAt: at(3) })) }))
+    pull.reviews = [{ id: 'r-1', author: 'reviewer', at: at(1), publishedAt: at(3), state: 'COMMENTED', inline: 220 }]
+    await h.pass()
+    const told = (): number => h.changes().flatMap(change => change.kind === 'remarks' ? change.remarks : []).length
+    expect(told()).toBe(220)
+    // The half-hourly read of a pull request with review threads reads them all again, and none is news.
+    for (let index = 0; index < 16; index++) await h.pass()
+    expect(h.github.questions.filter(question => question.kind === 'detail' && question.variables['remarks'] === 'true').length).toBeGreaterThan(2)
+    // So does the whole read after a restart.
+    const restarted = new Babysitter({ store: h.memory.store, rateLimit: h.rateLimit, run: h.github.run, now: h.clock.now,
+      deliver: async (threadId, news) => { h.delivered.push({ threadId, news }) } })
+    h.clock.advance(2); await restarted.pass()
+    expect(h.delivered).toHaveLength(1)
+    expect(told()).toBe(220)
+    expect(h.told('a')?.commentOnly).toBe(1)
+  })
+
   it('tells a conflict once per move into it, keeping it through GitHub\'s unknown', async () => {
     const pull: ScriptedPull = { number: 1, base: 'main', mergeable: 'CONFLICTING' }
     const h = harness([pull], { a: { links: [url(1)] } })
