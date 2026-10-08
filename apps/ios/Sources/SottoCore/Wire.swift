@@ -34,13 +34,13 @@ public enum ClientError: Error, LocalizedError, Equatable {
     case invalidHost, invalidProtocol, invalidIdentity, invalidRequest, disconnected, uncertain, connectionTimedOut, readTimedOut, rateLimited, rejected(String)
     case hostNotFound(String), hostUnreachable(String), notASottoHost(String), sottoNotRunning(String), invalidCode
     /// A computer that keeps this iPhone's pairing refused it for now, in its own words, such as a host with phone
-    /// access off. Unlike `rejected`, the pairing stays and the iPhone keeps trying.
+    /// access off. Unlike `rejected`, the pairing stays, and Try again or Reconnect reaches it once access is back.
     case hostRefused(String)
     public var errorDescription: String? {
         switch self {
         case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
         case .hostNotFound(let name): return "Couldn't find \(name) on your tailnet. Check that Tailscale is connected on this iPhone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net."
-        case .hostUnreachable(let name): return "Couldn't reach \(name). Check that it's online and that Tailscale is connected on this iPhone."
+        case .hostUnreachable(let name): return "Couldn't reach \(name). Check that it's on and that Tailscale is connected on this iPhone."
         case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Phones."
         case .sottoNotRunning(let name): return "\(name) answered, but Sotto isn't running there. Nothing was lost. Open Sotto on \(name) and try again."
         case .invalidCode: return "A pairing code is eight letters and numbers. Check the code on that computer."

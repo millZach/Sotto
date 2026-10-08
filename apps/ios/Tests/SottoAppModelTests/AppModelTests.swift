@@ -3,8 +3,14 @@ import Combine
 import SottoCore
 
 final class AppModelTests: XCTestCase {
+    /// Lets the model's own tasks run until `condition` holds, or ten seconds pass.
+    @MainActor private func until(_ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(10)
+        while !condition() && Date() < deadline { await Task.yield() }
+    }
     @MainActor private func fixture() throws -> (AppModel, ThreadRef) {
         HostConnection.instances = []; HostConnection.failDetail = false; HostConnection.failConnect = false; HostConnection.holdDetail = false; TestKeychain.items = [:]
+        HostConnection.connectAttempts = 0
         HostConnection.afterGreeting = nil
         HostConnection.revokeFailure = nil; HostConnection.revokeHandler = nil
         HostConnection.foundHealth = nil; HostConnection.freshPairing = nil; HostConnection.pairCalls = 0; HostConnection.revoked = []
@@ -138,20 +144,86 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.pending, [marker])
         model.phase(.background)
     }
-    @MainActor func testFailedConnectionsBackOffToThirtySeconds() async throws {
-        _ = try fixture()
+    @MainActor func testALostConnectionRetriesQuietlyForAboutAMinuteThenWaitsForTheUser() async throws {
+        let (_, ref) = try fixture()
+        let clock = RetryClock()
+        let model = AppModel(keychain: TestKeychain.store, retryJitter: { 1 }, retrySleep: { delay in _ = await clock.record(delay) })
+        let initial = expectation(description: "Initial connection")
+        HostConnection.afterGreeting = { _ in initial.fulfill() }
+        model.phase(.active)
+        await fulfillment(of: [initial], timeout: 10); await model.waitForActivation()
+        HostConnection.afterGreeting = nil
+        HostConnection.failConnect = true
+        defer { HostConnection.failConnect = false }
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        connection.onDisconnect?()
+        XCTAssertEqual(model.status(ref.hostID), .connecting, "A lost connection reads as reconnecting while it is tried again")
+        await until { model.status(ref.hostID) == .unreachable }
+        let delays = await clock.delays
+        XCTAssertEqual(delays, [1, 2, 4, 8, 16, 30].map { UInt64($0) * 1_000_000_000 })
+        XCTAssertEqual(HostConnection.connectAttempts, 7)
+        XCTAssertEqual(model.problem(ref.hostID), "Couldn't reach Laptop. Check that it's on and that Tailscale is connected on this iPhone.")
+        // Given up, it waits for the user: coming back to the app and pulling to refresh leave it alone.
+        model.phase(.background)
+        model.phase(.active); await model.waitForActivation()
+        await model.refresh()
+        XCTAssertEqual(HostConnection.connectAttempts, 7)
+        XCTAssertEqual(model.status(ref.hostID), .unreachable)
+        // Its Reconnect tries it, and once it is back a lost connection gets its quiet retries again.
+        HostConnection.failConnect = false
+        await model.connect(ref.hostID)
+        XCTAssertTrue(model.online(ref.hostID))
+        connection.onDisconnect?()
+        await until { model.online(ref.hostID) }
+        XCTAssertTrue(model.online(ref.hostID))
+        let again = await clock.delays
+        XCTAssertEqual(again.last, 1_000_000_000)
+        model.phase(.background)
+    }
+    @MainActor func testAComputerThatNeverConnectedIsTriedOnceAndWaitsForTheUser() async throws {
+        let (_, ref) = try fixture()
         HostConnection.failConnect = true
         defer { HostConnection.failConnect = false }
         let clock = RetryClock()
-        let capped = expectation(description: "Retry delay reaches its cap")
-        let model = AppModel(keychain: TestKeychain.store, retryJitter: { 1 }, retrySleep: { delay in
-            let count = await clock.record(delay)
-            if count == 6 { capped.fulfill(); throw CancellationError() }
-        })
-        model.phase(.active)
-        await fulfillment(of: [capped], timeout: 10)
+        let model = AppModel(keychain: TestKeychain.store, retryJitter: { 1 }, retrySleep: { delay in _ = await clock.record(delay) })
+        model.phase(.active); await model.waitForActivation()
+        XCTAssertEqual(model.status(ref.hostID), .unreachable)
+        XCTAssertEqual(HostConnection.connectAttempts, 1)
         let delays = await clock.delays
-        XCTAssertEqual(delays, [1, 2, 4, 8, 16, 30].map { UInt64($0) * 1_000_000_000 })
+        XCTAssertTrue(delays.isEmpty, "A computer that never connected is not retried")
+        XCTAssertEqual(model.problem(ref.hostID), "Couldn't reach Laptop. Check that it's on and that Tailscale is connected on this iPhone.")
+        model.phase(.background)
+        model.phase(.active); await model.waitForActivation()
+        await model.refresh()
+        XCTAssertEqual(HostConnection.connectAttempts, 1, "Coming back and pulling to refresh leave it alone")
+        // Its Try again tries it.
+        HostConnection.failConnect = false
+        await model.connect(ref.hostID)
+        XCTAssertTrue(model.online(ref.hostID))
+        XCTAssertEqual(HostConnection.connectAttempts, 2)
+        model.phase(.background)
+    }
+    @MainActor func testTheOpenThreadStaysOnScreenWhileItIsReadAgain() async throws {
+        let (model, ref) = try fixture()
+        model.phase(.active); await model.waitForActivation()
+        await model.select(ref)
+        XCTAssertEqual(model.detail(for: ref)?.messages.first?.text, "Ready")
+        var shownWhileReconnecting: String?
+        HostConnection.afterGreeting = { _ in shownWhileReconnecting = model.shown(for: ref)?.messages.first?.text }
+        HostConnection.detail = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"threadId":"t","revision":2,"messages":[{"id":"m","role":"assistant","text":"Ready now"}]}"#.utf8))
+        await model.connect(ref.hostID)
+        HostConnection.afterGreeting = nil
+        XCTAssertEqual(shownWhileReconnecting, "Ready", "The thread as last read stays on screen while its computer reconnects")
+        XCTAssertEqual(model.shown(for: ref)?.messages.first?.text, "Ready now", "A fresh copy replaces it")
+        XCTAssertNil(model.detailStore.held)
+        // Leaving the thread and coming back to it keeps it on screen too, even when it can't be read again.
+        await model.select(nil)
+        XCTAssertNil(model.shown(for: ref))
+        HostConnection.failDetail = true
+        await model.select(ref)
+        XCTAssertNil(model.detail(for: ref))
+        XCTAssertEqual(model.shown(for: ref)?.messages.first?.text, "Ready now")
+        XCTAssertNotNil(model.detailProblem)
         model.phase(.background)
     }
     @MainActor func testShortConnectionsKeepBackoffUntilLivenessSucceeds() async throws {
@@ -186,14 +258,19 @@ final class AppModelTests: XCTestCase {
     }
     @MainActor func testReconnectDelayIncludesJitterAndKeepsThirtySecondCap() async throws {
         _ = try fixture()
-        HostConnection.failConnect = true
-        defer { HostConnection.failConnect = false }
         let clock = RetryClock()
         let capped = expectation(description: "Jittered retry reaches cap")
         let model = AppModel(keychain: TestKeychain.store, retryJitter: { 1.2 }, retrySleep: { delay in
             if await clock.record(delay) == 6 { capped.fulfill(); throw CancellationError() }
         })
+        let initial = expectation(description: "Initial connection")
+        HostConnection.afterGreeting = { _ in initial.fulfill() }
         model.phase(.active)
+        await fulfillment(of: [initial], timeout: 10); await model.waitForActivation()
+        HostConnection.afterGreeting = nil
+        HostConnection.failConnect = true
+        defer { HostConnection.failConnect = false }
+        try XCTUnwrap(HostConnection.instances.last).onDisconnect?()
         await fulfillment(of: [capped], timeout: 10)
         let delays = await clock.delays
         XCTAssertEqual(delays, [1.2, 2.4, 4.8, 9.6, 19.2, 30].map { UInt64($0 * 1_000_000_000) })

@@ -79,6 +79,15 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// a time, up to twenty times a second, and only the conversation and the Working now cards watch it.
 @MainActor final class DetailStore: ObservableObject {
     @Published var detail: ThreadDetail?
+    /// The open thread as it was last read, kept on screen while it is read again: after its computer reconnects, the
+    /// app comes back, or the user returns to the thread. A fresh copy replaces it.
+    @Published var held: HeldDetail?
+}
+
+/// A thread's history as it was last read, and the thread it belongs to.
+struct HeldDetail {
+    let ref: ThreadRef
+    let detail: ThreadDetail
 }
 
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
@@ -209,6 +218,12 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     private var activationConnection: Task<Void, Never>?
     private var retries: [String: Task<Void, Never>] = [:]
     private var retryAttempts: [String: Int] = [:]
+    /// Computers that have been online since they last gave up. A lost connection to one of them is tried again quietly,
+    /// about a minute in all; a computer that never connected is tried once. A computer that gives up reads Can't reach
+    /// it and waits for the user's Try again or Reconnect: coming back to the app and pulling to refresh leave it alone.
+    private var wasOnline: Set<String> = []
+    /// Quiet retries after a lost connection, at 1, 2, 4, 8, 16 and 30 seconds.
+    private static let quietRetries = 6
     private let retryJitter: @Sendable () -> Double
     private let retrySleep: @Sendable (UInt64) async throws -> Void
     private var pairGeneration = UUID()
@@ -458,6 +473,20 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     }
     func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } }
     func detail(for ref: ThreadRef) -> ThreadDetail? { selected == ref && openDetail?.threadId == ref.threadID ? openDetail : nil }
+    /// The open thread as its page shows it: the latest copy, or while that is being read again, the copy read before,
+    /// so a reconnect or a return to the thread never empties the page.
+    func shown(for ref: ThreadRef) -> ThreadDetail? {
+        if let detail = detail(for: ref) { return detail }
+        guard selected == ref, let held = detailStore.held, held.ref == ref else { return nil }
+        return held.detail
+    }
+    /// Lets go of the open thread's copy, holding it on screen until a fresh one is read.
+    private func holdDetail() {
+        if let selected, let openDetail, openDetail.threadId == selected.threadID {
+            detailStore.held = HeldDetail(ref: selected, detail: openDetail)
+        }
+        openDetail = nil
+    }
     private func scoped(_ hostID: String) -> [PendingOperation] {
         guard let computer = self.computer(hostID) else { return [] }
         return pending.filter { $0.matches(hostID: hostID, clientID: computer.pairing.clientId) }
@@ -620,10 +649,15 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         } else if phase == .background {
             cancelDetailReload()
             retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll()
-            active = false; pairGeneration = UUID(); working = false; openDetail = nil
+            active = false; pairGeneration = UUID(); working = false; holdDetail()
             for (hostID, connection) in connections { generations[hostID] = UUID(); connection.disconnect() }
             connecting.removeAll(); watches.removeAll()
-            live = live.mapValues { (state: Live) -> Live in var next = state; next.status = .connecting; next.mayAnswer = false; return next }
+            // A computer that gave up stays given up: coming back connects only the others.
+            live = live.mapValues { (state: Live) -> Live in
+                var next = state; next.mayAnswer = false
+                if next.status != .unreachable { next.status = .connecting }
+                return next
+            }
         }
     }
     /// Wait for the connection work scheduled by activation, including delivery checks.
@@ -633,19 +667,20 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         await photoWork?.value
         for task in Array(stagingTasks.values) { _ = await task.value }
     }
+    /// Connects every computer that hasn't given up. One that gave up waits for its Try again or Reconnect.
     func reconnectAll() async {
-        let ids = computers.map(\.hostID)
+        let ids = computers.map(\.hostID).filter { status($0) != .unreachable }
         await withTaskGroup(of: Void.self) { group in
             for hostID in ids { group.addTask { await self.connect(hostID) } }
         }
     }
-    /// Pull to refresh: reconnects every computer, but returns once the ones that were reachable are
-    /// back, rather than waiting out one that can't be reached. With none reachable, it waits for all.
+    /// Pull to refresh: reconnects every computer that hasn't given up, but returns once the ones that were
+    /// reachable are back, rather than waiting out one still connecting. With none reachable, it waits for all.
     func refresh() async {
         #if DEBUG && os(iOS)
         if isUIFixture { return }
         #endif
-        let started = computers.map { computer in
+        let started = computers.filter { status($0.hostID) != .unreachable }.map { computer in
             (reachable: online(computer.hostID), task: Task { await connect(computer.hostID) })
         }
         let awaited = started.contains { $0.reachable } ? started.filter { $0.reachable } : started
@@ -668,7 +703,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         shellSequences[hostID] = 0; watches[hostID] = nil
         defer { if generations[hostID] == current { connecting.remove(hostID) } }
         update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = nil }
-        if selected?.hostID == hostID { cancelDetailReload(); openDetail = nil; detailProblem = nil }
+        if selected?.hostID == hostID { cancelDetailReload(); holdDetail(); detailProblem = nil }
         do {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
@@ -680,18 +715,19 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                 if $0.shell?.clientCapabilities == nil { $0.mayAnswer = greeting.value.capabilities.mayAnswer }
                 $0.features = greeting.value.features ?? []
             }
+            wasOnline.insert(hostID)
             if let selected, selected.hostID == hostID, thread(selected) == nil { self.selected = nil }
         } catch {
             guard generations[hostID] == current else { return }
-            update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = error.localizedDescription }
             connections[hostID]?.disconnect()
+            var retrying = true
             if let error = error as? ClientError {
                 switch error {
-                case .invalidIdentity, .invalidProtocol, .invalidHost, .rejected: return
+                case .invalidIdentity, .invalidProtocol, .invalidHost, .rejected: retrying = false
                 default: break
                 }
             }
-            scheduleRetry(hostID)
+            connectionEnded(hostID, problem: problemWords(error, hostID: hostID), retrying: retrying)
             return
         }
         retries.removeValue(forKey: hostID)?.cancel()
@@ -700,10 +736,29 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
         await checkDelivery(hostID)
     }
+    /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
+    /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
+    /// own page, and nothing connects it until the user presses Try again or Reconnect.
+    private func connectionEnded(_ hostID: String, problem: String, retrying: Bool) {
+        if retrying, active, wasOnline.contains(hostID), (retryAttempts[hostID] ?? 0) < Self.quietRetries {
+            update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = problem }
+            scheduleRetry(hostID)
+            return
+        }
+        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; wasOnline.remove(hostID)
+        update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = problem }
+    }
+    /// Why a connection failed, naming the computer as this iPhone does. A computer that didn't answer reads the same
+    /// on either of phone access's ports.
+    private func problemWords(_ error: Error, hostID: String) -> String {
+        if error is URLError { return ClientError.hostUnreachable(name(hostID)).localizedDescription }
+        if let error = error as? ClientError, case .hostUnreachable = error { return ClientError.hostUnreachable(name(hostID)).localizedDescription }
+        return error.localizedDescription
+    }
     private func scheduleRetry(_ hostID: String) {
         guard active, computer(hostID) != nil, retries[hostID] == nil else { return }
         let attempt = retryAttempts[hostID] ?? 0
-        retryAttempts[hostID] = min(attempt + 1, 5)
+        retryAttempts[hostID] = attempt + 1
         let delay = UInt64(min(30, Double(1 << min(attempt, 5)) * retryJitter()) * 1_000_000_000)
         let sleep = retrySleep
         retries[hostID] = Task { [weak self] in
@@ -726,10 +781,10 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         made.onLiveness = { [weak self] in self?.retryAttempts[hostID] = nil }
         made.onPush = { [weak self] frame, sequence in self?.push(frame, from: hostID, sequence: sequence) }
         made.onDisconnect = { [weak self] in
-            self?.generations[hostID] = UUID(); self?.connecting.remove(hostID); self?.watches[hostID] = nil
-            if self?.selected?.hostID == hostID { self?.cancelDetailReload() }
-            self?.update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = ClientError.disconnected.localizedDescription }
-            self?.scheduleRetry(hostID)
+            guard let self else { return }
+            generations[hostID] = UUID(); connecting.remove(hostID); watches[hostID] = nil
+            if selected?.hostID == hostID { cancelDetailReload() }
+            connectionEnded(hostID, problem: ClientError.disconnected.localizedDescription, retrying: true)
         }
         connections[hostID] = made
         return made
@@ -848,12 +903,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
         let markers = pending.filter { $0.hostID != hostID }
         if let computerIndexAccount { try? keychain.write(rest.map(\.hostID), account: computerIndexAccount) }
         try? keychain.write(markers, account: ComputerStore.pendingAccount)
-        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil
+        retries.removeValue(forKey: hostID)?.cancel(); retryAttempts[hostID] = nil; wasOnline.remove(hostID)
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
         computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
+        if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
         if show == .only(hostID) { show = .all }
         let prefix = hostID + "/"
         drafts = drafts.filter { !$0.key.hasPrefix(prefix) }
@@ -887,7 +943,11 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     func select(_ ref: ThreadRef?) async {
         cancelDetailReload()
         let previous = selected
-        selected = ref; openDetail = nil; detailProblem = nil; detailVersion += 1
+        // The thread let go of stays on screen if it is opened again, until a fresh copy is read; another thread
+        // starts empty.
+        holdDetail()
+        if let ref, detailStore.held?.ref != ref { detailStore.held = nil }
+        selected = ref; detailProblem = nil; detailVersion += 1
         #if DEBUG && os(iOS)
         if isUIFixture {
             let detail = ref.flatMap { fixtureDetails[$0.id] }
@@ -961,6 +1021,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
                                     changedSinceRead: versionAtRead.map { $0 != detailVersion } ?? false) else { return }
         if let next, next.revision == openDetail?.revision { return }
         openDetail = next; detailVersion += 1
+        if detailStore.held != nil { detailStore.held = nil }
         if detailProblem != nil { detailProblem = nil }
     }
     func earlier(_ ref: ThreadRef) async {
@@ -1549,7 +1610,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
             catch { feedback = error.localizedDescription }
         }
         if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }) {
-            cancelDetailReload(); self.selected = nil; openDetail = nil; detailProblem = nil
+            cancelDetailReload(); self.selected = nil; openDetail = nil; detailStore.held = nil; detailProblem = nil
         }
     }
     private func push(_ frame: IncomingFrame, from hostID: String, sequence: Int) {
@@ -1573,7 +1634,7 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
             }
         } catch {
             let words = "The update from \(name(hostID)) could not be read. Reconnect to refresh it."
-            update(hostID) { $0.status = .unreachable; $0.mayAnswer = false; $0.problem = words }
+            connectionEnded(hostID, problem: words, retrying: false)
             watches[hostID] = nil
             connections[hostID]?.disconnect(); feedback = words
         }

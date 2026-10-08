@@ -228,7 +228,7 @@ private struct Conversation: View {
     private static let end = "thread-end"
 
     var body: some View {
-        let detail = model.detail(for: ref)
+        let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail)
         let pending = model.pending(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
@@ -1235,7 +1235,7 @@ private struct ReplyDock: View, Equatable {
 
     var body: some View {
         VStack(spacing: Space.s2) {
-            ComputerBanner(hostID: ref.hostID)
+            ComputerBanner(ref: ref)
             if let problem = model.detailProblem, model.online(ref.hostID) {
                 problemNote(problem)
             }
