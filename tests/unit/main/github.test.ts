@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, isOwnHead, isRateLimitAnswer, parseGitHubRemote, readGitHubRemotes, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
 import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
 
 describe('the GitHub repository a remote names', () => {
@@ -114,6 +114,20 @@ describe('what counts as a rate-limited answer', () => {
     // A repository or branch with the words in its name, named in another error, is not a refusal.
     expect(isRateLimitAnswer("GraphQL: Could not resolve to a Repository with the name 'me/rate-limit'. (repository)")).toBe(false)
     expect(isRateLimitAnswer('fatal: could not find remote ref feature/rate-limit-banner')).toBe(false)
+  })
+})
+
+describe('whose head a pull request has', () => {
+  it('is the branch\'s own only in the repository the branch is pushed to, whatever the case of the owner', () => {
+    const pushedToBase = { owner: 'Sotto-Fixture', crossRepository: false }
+    expect(isOwnHead({ owner: 'sotto-fixture', crossRepository: false }, pushedToBase)).toBe(true)
+    // A fork's branch of the same name: another owner, and another repository than the base.
+    expect(isOwnHead({ owner: 'someone', crossRepository: true }, pushedToBase)).toBe(false)
+    // The owner's own fork of a repository it also owns is still another repository.
+    expect(isOwnHead({ owner: 'sotto-fixture', crossRepository: true }, pushedToBase)).toBe(false)
+    expect(isOwnHead({ owner: null, crossRepository: false }, pushedToBase)).toBe(false)
+    // A triangular branch pushed to the user's fork finds the pull request it opened against the base.
+    expect(isOwnHead({ owner: 'me', crossRepository: true }, { owner: 'me', crossRepository: true })).toBe(true)
   })
 })
 

@@ -7,7 +7,7 @@ import type { GitStatus } from '../../shared/gitStatus'
 import { diffExcerpt } from '../llm/diffExcerpt'
 import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, type CommitMaterial } from '../llm/commitMessage'
 import type { PullRequestMaterial, PullRequestText } from '../llm/pullRequestText'
-import { baseRepository, GitHubHosts, readGitHubRemotes, sameRepository } from './github'
+import { baseRepository, GitHubHosts, isOwnHead, readGitHubRemotes, sameRepository } from './github'
 import { parseChangedRecords, runGitStatusCommand, type GitStatusSource, type RunGitCommand } from './gitStatus'
 
 /** What the host tells the client as a stacked action runs, in T3's shape. */
@@ -324,7 +324,7 @@ export class GitActions {
     const raw = await this.gh(cwd, ['pr', 'list', '--head', branch, '--state', 'open', '--limit', '20', '--json', 'number,title,url,baseRefName,headRefName,state,headRepositoryOwner,isCrossRepository'])
     const head = await this.headRepository(cwd, branch).catch(() => null)
     const found = openPullRequestSchema.parse(JSON.parse(raw)).find(item => item.headRefName === branch
-      && (!head || (item.headRepositoryOwner?.login?.toLowerCase() === head.owner.toLowerCase() && (item.isCrossRepository === true) === head.crossRepository)))
+      && (!head || isOwnHead({ owner: item.headRepositoryOwner?.login ?? null, crossRepository: item.isCrossRepository === true }, head)))
     return found ? { number: found.number, title: found.title, url: found.url, base: found.baseRefName } : null
   }
   /** Whose repository the branch is pushed to, and whether it is another than the one gh reads pull requests from. */

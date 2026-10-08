@@ -44,6 +44,14 @@ function gitHubApiHost(host: string, ssh: boolean): string | null {
 }
 export const sameRepository = (a: GitHubRepository, b: GitHubRepository): boolean =>
   a.host === b.host && a.owner.toLowerCase() === b.owner.toLowerCase() && a.name.toLowerCase() === b.name.toLowerCase()
+/**
+ * Whether a pull request's head is in the repository a branch is pushed to, so the pull request is the branch's own
+ * (#820): the same owner, and in another repository than the base exactly when the branch is pushed to one. A fork's
+ * branch of the same name is someone else's. `head` is as GitHub names it (`headRepositoryOwner`, `isCrossRepository`).
+ */
+export function isOwnHead(head: { readonly owner: string | null; readonly crossRepository: boolean }, pushed: { readonly owner: string; readonly crossRepository: boolean }): boolean {
+  return head.owner?.toLowerCase() === pushed.owner.toLowerCase() && head.crossRepository === pushed.crossRepository
+}
 export const repositoryKey = (repository: GitHubRepository): string => `${repository.host}/${repository.owner}/${repository.name}`.toLowerCase()
 
 /** How long what gh and SSH said about hosts is kept: a new sign-in or an `~/.ssh/config` edit is seen within this. */

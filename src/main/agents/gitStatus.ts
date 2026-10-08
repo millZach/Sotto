@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
-import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
+import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, isOwnHead, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
 export interface GitCommandOptions {
@@ -588,7 +588,7 @@ export class GitStatusReader implements GitStatusSource {
       // Shared only with lookups of this clone since its last Git action: another clone's, asked before an action there, may not stand.
       const found = await this.heads.lookup(cwd, target.repository, target.head, ask, scope)
       // Only a pull request whose head is in the repository the branch is pushed to is the branch's own: a fork's branch of the same name is not.
-      const own = found.filter(item => item.headOwner?.toLowerCase() === target.headOwner.toLowerCase() && item.crossRepository === target.crossRepository)
+      const own = found.filter(item => isOwnHead({ owner: item.headOwner, crossRepository: item.crossRepository }, { owner: target.headOwner, crossRepository: target.crossRepository }))
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
       const chosen = own.find(item => item.state === 'open') ?? (isDefaultBranch ? undefined : own[0])
       const value = chosen ? { number: chosen.number, title: chosen.title, url: chosen.url, state: chosen.state, draft: chosen.draft } : null
