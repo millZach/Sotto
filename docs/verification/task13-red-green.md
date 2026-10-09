@@ -1,5 +1,7 @@
 # Task 13 release verification record
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 This is a durable retrospective checkpoint record, not a claim that raw terminal logs were preserved. Counts and failure descriptions below come from the observed command results during Task 13; final release sizes and hashes are added only after rebuilt artifacts pass their packaged checks.
 
 ## Original workflow seam
@@ -9,7 +11,7 @@ This is a durable retrospective checkpoint record, not a claim that raw terminal
 
 ## Reviewer-fix tracer bullets
 
-- Packaged worklet URL RED: `tests/unit/renderer/audioRecorder.test.ts` reported **1 failed, 29 passed** because `addModule` received `/audio-capture-worklet.js` instead of a packaged renderer-relative `file:///.../out/renderer/audio-capture-worklet.js` URL. GREEN: **30 passed** after the recorder accepted the resolved renderer URL.
+- Packaged worklet URL RED: `tests/unit/renderer/audio/audioRecorder.test.ts` contains the URL regression; the original combined suite reported **1 failed, 29 passed** because `addModule` received `/audio-capture-worklet.js` instead of a packaged renderer-relative `file:///.../out/renderer/audio-capture-worklet.js` URL. GREEN: **30 passed** after the recorder accepted the resolved renderer URL.
 - Release contract RED: `tests/unit/release/packaging.test.ts` reported **3 failed** for missing pre/post packaging verification, no explicit installer page, and stale disk/shortcut documentation. GREEN: **3 passed** after the packaging and assisted-installer contract was implemented.
 - Notice inventory RED: `tests/unit/release/notices.test.ts` failed at import with **0 tests** because the verifier did not exist. GREEN: **1 passed**, and the standalone verifier covers **27 components** plus complete MIT/ISC/BSD-3-Clause/Apache-2.0 text and Electron/Chromium notice artifacts.
 - Launch cleanup RED: `tests/unit/release/e2eLaunchCleanup.test.ts` failed at import with **0 tests** because failure-safe launch support did not exist. GREEN: **3 passed** for first-window failure, launch failure, and caller-owned profile preservation. The path-validated cleanup removed **1** stale `talktype-e2e-*` directory and no other temp entries.

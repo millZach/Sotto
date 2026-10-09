@@ -1,5 +1,7 @@
 # Add host's device list and Connect to Tailscale in the built app
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 September 27, 2026, on the Windows 11 development machine, branch `feat/host-device-list`, for #430. The design is round 3 of `prototype/host-setup-checklist` (commit 14fd23a6), rewritten in the app's React and CSS; see [ADR-0034](../adr/0034-add-host-lists-this-computers-tailnet.md).
 
 ## The running app
@@ -35,6 +37,6 @@ Result: **1 passed**. `tests/e2e/phones.spec.ts`, which shares the Tailscale CLI
 ## Tests
 
 - `tests/unit/main/hostTailscale.test.ts`: the recorded samples (running, no other devices, stopped, signed out, service not answering), names that could carry anything but a DNS name, the merge rule (by `HostName`, by the alias alone, by address, in any case or with the root dot, and a second alias for the same device folded into the first), the order of the groups, the SSH setup alone when Tailscale is off, and `tailscale up`: the sign-in page opened only once its whole URL is printed, another control server's page not opened, connected, failed, missing, a browser that does not open, and one run at a time: a second press while the sign-in goes on opens the same page again without a second `tailscale up`, and closing Sotto stops a waiting one. Get Tailscale opens only `https://tailscale.com/download`.
-- `tests/unit/renderer/hostsSettings.test.tsx`: the groups and greyed reasons, a list or a Tailscale status that cannot be read, a click with no key before it (how a screen reader activates the list), arrow keys reaching greyed entries without Enter picking them, typeahead, Enter and Escape, adding by alias or tailnet name with the list's name, Another SSH host and back, the Tailscale row running, off, connecting, waiting for a sign-in (with **Open sign-in page**) and missing, the dialog's prompt with Connect to Tailscale as its primary action, the list filling in once Tailscale connects, and the list read again when Tailscale stops while the dialog is open.
+- `tests/unit/renderer/features/settings/hostDevicePicker.test.tsx`: the groups and greyed reasons, a list or a Tailscale status that cannot be read, a click with no key before it (how a screen reader activates the list), arrow keys reaching greyed entries without Enter picking them, typeahead, Enter and Escape, adding by alias or tailnet name with the list's name, Another SSH host and back, the Tailscale row running, off, connecting, waiting for a sign-in (with **Open sign-in page**) and missing, the dialog's prompt with Connect to Tailscale as its primary action, the list filling in once Tailscale connects, and the list read again when Tailscale stops while the dialog is open.
 - `tests/unit/renderer/devicePicker.test.tsx`: "last seen" wording, the reasons in their order, and the tag line.
 - `tests/unit/main/sshSuggestions.test.ts` now also carries each alias's `HostName`; `tests/unit/renderer/themeTokens.test.ts` checks the new `hostDevices.css` for colour literals.

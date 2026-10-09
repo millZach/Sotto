@@ -2,13 +2,13 @@ import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
-import { desktopWindowClient } from '../../src/main/agents/hostService'
 import type { AgentHost } from '../../src/main/agents/host'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { publicProviderEntityId, type AgentCommand, type AgentRuntimeMode, type ProviderId } from '../../src/shared/agents'
-import type { AdapterFixture } from '../integration/adapterContract'
+import type { AdapterFixture } from './adapterFixture'
 
 /**
  * One provider's real adapter under the whole host stack: the coordinator, the workspace, provider selection and

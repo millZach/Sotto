@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * The rules for a thread that finished while no client showed it (ADR-0046), on snapshots built by hand. The
- * coordinator around them, its persistence and the socket are in finishedUnreadControl.test.ts and socketHost.test.ts.
+ * coordinator around them, its persistence and the socket are in finishedUnreadControl.test.ts and tests/integration/socketClientIsolation.test.ts.
  */
 import { describe, expect, it } from 'vitest'
 import { FINISHED_UNREAD_MAX, FinishedUnread } from '../../../src/main/agents/finishedUnread'

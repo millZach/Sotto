@@ -3,8 +3,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ClaudeStreamJsonHost, type ClaudeStreamJsonHostOptions } from '../../src/main/agents/claude'
-import type { RecordedRpc } from './codexFixture'
-import type { AdapterFixture, AdapterSessionOptions } from '../integration/adapterContract'
+import type { AdapterFixture, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export { storedClaudeOrigins } from './claudeOrigins'
 

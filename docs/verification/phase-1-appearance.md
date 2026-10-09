@@ -1,5 +1,7 @@
 # Phase 1 appearance (#73): verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Lane `appearance`, branch `work/phase1-appearance`, based on 0598d48. The work was implemented by the authorized Opus 5 fallback for Fable. The ticket is `docs/plans/threads-workspace/tickets/30.md`. The decision is recorded in [ADR-0009](../adr/0009-main-window-appearance-apart-from-widget-theme.md).
 
 ## What shipped
@@ -35,7 +37,7 @@ Lane `appearance`, branch `work/phase1-appearance`, based on 0598d48. The work w
 
 ## Overlapping saves (parent review item)
 
-`tests/unit/renderer/app.test.tsx` renders the real App against a bridge whose saves resolve only when the test says so.
+`tests/unit/renderer/appAppearance.test.tsx` renders the real App against a bridge whose saves resolve only when the test says so.
 
 - **Light, then Violet, with the Light save still pending.** The root is light and violet immediately, and both controls show those choices.
 - **Resolving the saves.** The settings queue sends `{ appearance: 'light' }` and then `{ accent: 'violet' }`. Resolving each in turn never repaints Dark or Teal.

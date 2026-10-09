@@ -96,8 +96,14 @@ try { npx playwright test tests/e2e/theme-library-evidence.spec.ts }
 finally { Remove-Item Env:SOTTO_E2E_EVIDENCE, Env:SOTTO_THEMES_E2E }
 ```
 
-`design-capture.spec.ts` and `visual-previews.spec.ts` keep their own explicit
-baseline-update flags. Evidence publication does not update those baselines.
+The five design-capture surface specs under `tests/e2e/` are
+`design-capture-pages.spec.ts`, `design-capture-threads.spec.ts`,
+`design-capture-appearance.spec.ts`, `design-capture-voice-widget.spec.ts` and
+`design-capture-scaling.spec.ts`. They share their explicit baseline-update flag
+through `tests/e2e/support/designCapture.ts`; `tests/e2e/support/designCaptureManifest.mjs`
+validates the complete matrix once all five finish. `visual-previews.spec.ts` also
+keeps its own explicit baseline-update flag. Evidence publication does not update
+those baselines.
 
 ## Opt-in appearance and theme captures
 

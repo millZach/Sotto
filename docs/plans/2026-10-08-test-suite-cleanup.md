@@ -26,7 +26,7 @@ The issue was filed against roughly 290 files and 3,650 cases. Its three "Also s
   - About fifteen unit files start real Git repositories, child processes or listeners, which `AGENTS.md` puts under `tests/integration/`.
   - Four support modules sit among the renderer tests.
   - Three files sit loose in `tests/unit/`.
-  - `ipc.test.ts` holds unit tests for the permission policy, startup, tray, bootstrap and native runtime.
+  - `ipc.test.ts` held unit tests for the permission policy, startup, tray, bootstrap and native runtime; those cases now live in `tests/unit/main/app/permissionPolicy.test.ts`, `tests/unit/main/startupServiceIdempotence.test.ts`, `tests/unit/main/tray/trayController.test.ts`, `tests/unit/main/app/bootstrap.test.ts`, `tests/unit/main/app/nativeRuntime.test.ts`.
 - **Duplicated setup.** The biggest copies:
   - coordinator construction: about 30 files
   - `AgentState` builders: about 20, plus nine partial casts
@@ -37,7 +37,7 @@ The issue was filed against roughly 290 files and 3,650 cases. Its three "Also s
   - the preload Electron mock
   - host, tools and cloud iPhone bridges
   - e2e window, profile and capture helpers
-- **Skips.** There is no abandoned `it.skip` or `todo` anywhere. Every gate waits on a platform, a capability, a live provider or a benchmark switch. A few hide their reason, and `adapterContract.ts` starts a fixture before it knows it will skip.
+- **Skips.** There is no abandoned `it.skip` or `todo` anywhere. Every gate waits on a platform, a capability, a live provider or a benchmark switch. A few hide their reason, and `adapterContract.ts` starts a fixture before it knows it will skip; its host-service cases now live in `tests/integration/hostServiceContract.ts`.
 - **Evidence writes.** About 90 e2e specs write into `artifacts/`. Only six route through `tests/fixtures/evidence.ts`, and that helper defaults to the committed folder. Four native integration probes also write committed evidence directly.
 
 The audit also found problems outside #123's rule that cases and assertions stay as they are. These are filed separately: #860 to #865.
@@ -67,7 +67,7 @@ Split each of the twenty files by surface, so a reader can find the case that co
 - Move whole describe blocks or contiguous case groups. Keep every case, parameter row and deadline.
 - Extract the shared harness a split needs, such as the window manager harness or the `agentControlRecovery` fixture, into `tests/fixtures/`, rather than copying it into each new file.
 - Move the partial process and Git cases out of mixed unit files into integration.
-- Move the `ipc.test.ts` unit describes into mirrored unit paths.
+- The IPC unit describes move into mirrored paths: `tests/unit/main/app/permissionPolicy.test.ts`, `tests/unit/main/startupServiceIdempotence.test.ts`, `tests/unit/main/tray/trayController.test.ts`, `tests/unit/main/app/bootstrap.test.ts`, `tests/unit/main/app/nativeRuntime.test.ts`.
 - The `design-capture` split keeps full-matrix validation in one place.
 - `package.json`'s `test:recovery`, `test:host` and `test:socket` lists name every new file their old file's cases moved into.
 
@@ -90,7 +90,7 @@ Each case still gets fresh state; no mutable coordinator, repository or app is s
 ### 4. Skips, environments and the record
 
 - Every skip shows its reason.
-- `adapterContract.ts` decides a capability skip before starting the fixture.
+- `tests/integration/adapterContract.ts` and `tests/integration/hostServiceContract.ts` decide a capability skip before starting the fixture.
 - Pure tests that inherit jsdom get the node environment header.
 - The eight e2e specs that leave their profile behind remove it after the whole journey.
 - The rich-message launch helper cleans up when the launch fails.

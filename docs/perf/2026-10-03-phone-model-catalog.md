@@ -51,7 +51,7 @@ that asks for the feature.
 
 ## Tests
 
-- `tests/integration/socketHost.test.ts`, `model catalog revisions (#699)`: an accepting client is sent the
+- `tests/integration/socketHostFeatures.test.ts`, `model catalog revisions (#699)`: an accepting client is sent the
   catalog once and then only its revision in pushes, a `shell` read and a command's answer; a changed catalog
   goes whole once under a new revision; a fresh connection's hello carries it whole; a client that did not accept
   the feature is sent it whole every time; a revision whose frame was replaced by `too_large` is not recorded as
