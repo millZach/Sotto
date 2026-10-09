@@ -68,6 +68,7 @@ interface SessionRecord {
   loadError: string | null
   inputTail: Promise<void>
   inputVersion: number
+  inputSequence: number
   closing: boolean
 }
 
@@ -180,6 +181,7 @@ export class TerminalStore {
     const session = this.threads.get(threadId)?.sessions.find(item => item.id === sessionId)
     if (!bridge || !target || !record || record.replaying || record.closing || session?.status !== 'running') return
     const version = record.inputVersion
+    record.inputSequence++
     // One tail covers every input event, not just the chunks of one paste.
     const chunks = data.match(/[\s\S]{1,16384}/gu) ?? []
     record.inputTail = record.inputTail.then(async () => {
@@ -227,6 +229,7 @@ export class TerminalStore {
           const target = this.target(threadId)
           if (!bridge || !target || record.replaying || record.closing || !this.running(threadId, sessionId)) return
           const version = record.inputVersion
+          const sequence = ++record.inputSequence
           record.inputTail = record.inputTail.then(async () => {
             const image = await Promise.resolve(dataUrl).catch(() => null)
             if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
@@ -235,7 +238,8 @@ export class TerminalStore {
             if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
             if (!result.ok) {
               record.inputVersion++
-              this.fail(bridge, threadId, result.error, 'The image could not be pasted. Check the command before trying again.')
+              const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
+              this.fail(bridge, threadId, result.error, `The image could not be pasted.${discarded} Check the command before trying again.`)
             }
           })
         },
@@ -397,7 +401,7 @@ export class TerminalStore {
   private ensureRecord(threadId: string, sessionId: string): SessionRecord {
     let record = this.records.get(sessionId)
     if (!record) {
-      record = { threadId, view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, inputTail: Promise.resolve(), inputVersion: 0, closing: false }
+      record = { threadId, view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, inputTail: Promise.resolve(), inputVersion: 0, inputSequence: 0, closing: false }
       this.records.set(sessionId, record)
     }
     return record

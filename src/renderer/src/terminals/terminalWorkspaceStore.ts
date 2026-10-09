@@ -39,6 +39,7 @@ interface TerminalRecord {
   pasted: { readonly path: string; readonly at: number } | null
   inputTail: Promise<void>
   inputVersion: number
+  inputSequence: number
   inputBlocked: boolean
 }
 
@@ -151,6 +152,7 @@ export class TerminalWorkspaceStore {
     const record = this.records.get(id)
     if (!bridge || !record || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
     const version = record.inputVersion
+    record.inputSequence++
     // Keep separate key events behind every chunk of an earlier paste.
     const chunks = data.match(/[\s\S]{1,16384}/gu) ?? []
     record.inputTail = record.inputTail.then(async () => {
@@ -176,6 +178,7 @@ export class TerminalWorkspaceStore {
     const record = this.records.get(id)
     if (!bridge || !record || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
     const version = record.inputVersion
+    const sequence = ++record.inputSequence
     record.inputTail = record.inputTail.then(async () => {
       const image = await Promise.resolve(dataUrl).catch(() => null)
       if (this.records.get(id) !== record || record.inputVersion !== version || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
@@ -184,7 +187,8 @@ export class TerminalWorkspaceStore {
       if (this.records.get(id) !== record || record.inputVersion !== version) return
       if (!result.ok) {
         record.inputVersion++
-        this.set({ ...this.state, notice: this.words(result.error, 'Could not paste the image. Check the command before trying again.') })
+        const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
+        this.set({ ...this.state, notice: this.words(result.error, `Could not paste the image.${discarded} Check the command before trying again.`) })
         return
       }
       record.pasted = { path: result.value.path, at: Date.now() }
@@ -356,7 +360,7 @@ export class TerminalWorkspaceStore {
   private ensureRecord(id: string): TerminalRecord {
     let record = this.records.get(id)
     if (!record) {
-      record = { view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, lastOutputAt: Number.NEGATIVE_INFINITY, tail: '', pasted: null, inputTail: Promise.resolve(), inputVersion: 0, inputBlocked: false }
+      record = { view: null, sequence: 0, replaying: false, buffer: [], loaded: false, pending: null, size: null, loadError: null, lastOutputAt: Number.NEGATIVE_INFINITY, tail: '', pasted: null, inputTail: Promise.resolve(), inputVersion: 0, inputSequence: 0, inputBlocked: false }
       this.records.set(id, record)
     }
     return record

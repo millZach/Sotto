@@ -57,6 +57,7 @@ describe('a terminal store filters by place', () => {
     handlers.onPasteImage!(failed.promise); handlers.onInput('\r')
     failed.resolve(null)
     await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('clipboard image could not be read'))
+    expect(store.thread('thread-a')!.notice).toContain('Later queued input was discarded.')
     expect(calls).toEqual(['first image', 'second image', '\r'])
     handlers.onInput('fresh')
     await vi.waitFor(() => expect(calls.at(-1)).toBe('fresh'))
