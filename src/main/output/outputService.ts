@@ -132,7 +132,10 @@ export class OutputService {
       throw new OutputClipboardError()
     }
 
-    if (!options.autoPaste || this.dependencies.clipboard.canPaste?.() === false) {
+    if (this.dependencies.clipboard.canPaste?.() === false) {
+      return 'clipboard-unavailable'
+    }
+    if (!options.autoPaste) {
       return 'copied'
     }
 

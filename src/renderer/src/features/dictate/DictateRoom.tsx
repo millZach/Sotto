@@ -77,6 +77,7 @@ function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = f
     case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return 'Your completed text is below. Copy it again, or select and copy it yourself.'
+    case 'DESKTOP_CLIPBOARD_UNAVAILABLE': return 'The desktop clipboard could not be updated. Your text is kept below. Use Copy text to try again, or select and copy it yourself.'
     default: return isTranscriptionErrorCode(code)
       ? TRANSCRIPTION_ERROR_DETAIL[code]
       : TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED
@@ -258,7 +259,7 @@ export function DictateRoom({
           {/* The shortcut starts a new dictation, which lets a kept recording go,
               so it is not offered as another way to press Try again. A kept
               recording that failed on the key still points at Settings. */}
-          {kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
+          {dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE' ? null : kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               {platform === 'linux'
                 ? listening

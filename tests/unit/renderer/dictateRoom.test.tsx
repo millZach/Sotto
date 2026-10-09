@@ -53,6 +53,17 @@ function barHeights(container: HTMLElement): number[] {
 }
 
 describe('DictateRoom', () => {
+  it('points at retained text without offering manual paste when the desktop clipboard is unavailable', () => {
+    const { container } = render(<DictateRoom {...baseProps} platform="linux"
+      dictation={{ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE', message: 'unused' }}
+      recovery={[entries[0]!]} />)
+    expect(screen.getByText(/The desktop clipboard could not be updated. Your text is kept below/)).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue(entries[0]!.text)
+    expect(screen.getByRole('button', { name: 'Copy text' })).toBeVisible()
+    expect(container).not.toHaveTextContent('Super+V')
+    expect(container).not.toHaveTextContent('Copied — paste manually')
+  })
+
   it('uses local calendar days for Yesterday across both daylight-saving changes', context => {
     const previousTimezone = process.env.TZ
     process.env.TZ = 'America/Los_Angeles'

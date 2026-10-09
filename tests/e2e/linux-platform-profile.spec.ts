@@ -1,6 +1,39 @@
 import { expect, test } from '@playwright/test'
-import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
+import { E2E_TRANSCRIPT, E2E_PRESERVED_CLIPBOARD } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
+
+test('Linux clipboard failure keeps text in Dictate while the main window is hidden', async () => {
+  test.skip(process.platform !== 'linux', 'Linux desktop clipboard')
+  const launched = await launchSotto('desktop-clipboard-unavailable')
+  const { page, app } = launched
+  try {
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Skip for now' }).click()
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-clipboard-e2e')
+    await page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
+    await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('button', { name: 'Finish setup' }).click()
+    await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false, autoPaste: true, historyEnabled: false }))
+    await openPage(page, 'Dictate')
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!.hide())
+    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ mainVisible: false, clipboardText: E2E_PRESERVED_CLIPBOARD })
+    // The fixture toggles Sotto through IPC; no OS key event is sent.
+    await page.evaluate(() => window.sottoE2E!.triggerShortcut())
+    await expect(page.getByRole('region', { name: 'Dictation', exact: true })).toHaveAttribute('data-status', 'listening')
+    await page.evaluate(() => window.sottoE2E!.triggerShortcut())
+    const widget = app.windows().find(w => w.url().includes('/widget.html'))!
+    await expect(widget.getByRole('alert')).toContainText('Text kept in Sotto')
+    await expect(widget.getByRole('alert')).toContainText('Open Sotto, then Dictate. Use Copy text or select the text there.')
+    await expect(widget.getByText(/Copied — paste manually|Super\+V/)).toHaveCount(0)
+    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ mainVisible: false, clipboardText: E2E_PRESERVED_CLIPBOARD, pasteAttempts: 0 })
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!.show())
+    await expect(page.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue(E2E_TRANSCRIPT)
+    await expect(page.getByRole('button', { name: 'Copy text' })).toBeVisible()
+    await expect(page.getByText(/Super\+V/)).toHaveCount(0)
+  } finally { await closeSotto(launched) }
+})
 
 test('Linux saves a key during onboarding and explains Hyprland paste', async () => {
   test.skip(process.platform !== 'linux', 'Linux desktop profile')

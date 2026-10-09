@@ -131,6 +131,10 @@ function errorCopyFor(
       title: 'Couldn’t copy text',
       detail: 'Try again from the Sotto app.',
     },
+    DESKTOP_CLIPBOARD_UNAVAILABLE: {
+      title: 'Text kept in Sotto',
+      detail: 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.',
+    },
     HISTORY_FAILED: {
       title: 'Saved to clipboard',
       detail: 'Local history was not updated.',

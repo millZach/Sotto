@@ -101,17 +101,17 @@ describe('Wayland clipboard', () => {
     expect(h.spawn).toHaveBeenCalledOnce() // Windows does not restore; Linux also leaves the text copied.
   })
 
-  it('never pastes the stale desktop selection after an Electron fallback', async () => {
+  it.each([false, true])('reports an unavailable desktop selection after Electron fallback with autoPaste=%s', async autoPaste => {
     const h = harness()
     const run = vi.fn()
     const service = new OutputService({
       clipboard: h.clipboard, widget: { hideWidget: vi.fn(), showWidget: vi.fn() },
       delay: vi.fn(), process: { run }, buildPasteInvocation: createPasteCommands('linux').oneShot,
     })
-    const delivery = service.deliver('dictation', { autoPaste: true, pasteDelayMs: 80 })
+    const delivery = service.deliver('dictation', { autoPaste, pasteDelayMs: 80 })
     await vi.waitFor(() => expect(h.spawn).toHaveBeenCalledOnce())
     h.child.emit('error', new Error('missing'))
-    await expect(delivery).resolves.toBe('copied')
+    await expect(delivery).resolves.toBe('clipboard-unavailable')
     expect(run).not.toHaveBeenCalled()
   })
 
