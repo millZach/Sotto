@@ -4,7 +4,59 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
-import { TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
+import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
+
+for (const place of ['tools', 'drawer'] as const) {
+  test(`${place} startup names a checkout operation and keeps retry available`, async () => {
+    const launched = await launchSotto()
+    const { page } = launched
+    try {
+      await page.evaluate(async () => {
+        await window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' })
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'connect' })
+      })
+      // Script the reservation response at IPC; service regressions exercise the actual checkout guard.
+      await launched.app.evaluate(({ ipcMain }, channel) => {
+        ipcMain.removeHandler(channel)
+        ipcMain.handle(channel, () => ({ ok: false, error: { code: 'busy', message: 'Sotto is removing this folder. The terminal did not start. Try again when it finishes.' } }))
+      }, TERMINAL_CHANNEL + 'create')
+      await page.reload(); await openThreads(page)
+      await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+      if (place === 'tools') {
+        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
+        await page.getByRole('button', { name: 'Start terminal', exact: true }).press('Enter')
+      } else await page.getByRole('button', { name: 'Terminal drawer', exact: true }).click()
+      const notice = page.getByRole('alert').filter({ hasText: 'Sotto is removing this folder.' })
+      await expect(notice).toContainText('The terminal did not start. Try again when it finishes.')
+      await expect(notice).not.toContainText('storage')
+      const retry = page.getByRole('button', { name: 'Start terminal', exact: true })
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+        await resizeWindow(launched, width, height)
+        for (const appearance of ['dark', 'light'] as const) {
+          await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+          await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+          await expect(notice).toBeInViewport()
+          await retry.focus()
+          await expect(retry).toBeFocused()
+          await expect(retry).toBeInViewport()
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+          await mkdir('artifacts/terminal-truths', { recursive: true })
+          await page.screenshot({ path: `artifacts/terminal-truths/busy-${place}-${width}-${appearance}.png`, animations: 'disabled' })
+        }
+      }
+      await launched.app.evaluate(({ ipcMain }, channel) => {
+        ipcMain.removeHandler(channel)
+        ipcMain.handle(channel, () => ({ ok: false, error: { code: 'busy', message: 'A Git action is running in this folder. The terminal did not start. Try again when it finishes.' } }))
+      }, TERMINAL_CHANNEL + 'create')
+      await retry.press('Enter')
+      await expect(page.getByRole('alert').filter({ hasText: 'A Git action is running in this folder.' })).toBeVisible()
+      await expect(notice).toHaveCount(0)
+      await expect(retry).toBeEnabled()
+    } finally { await closeSotto(launched) }
+  })
+}
 
 test('each provider exits to an interactive shell and Close reclaims a native worktree', async () => {
   test.skip(process.platform !== 'win32', 'Native Windows ConPTY acceptance')

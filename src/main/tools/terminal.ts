@@ -10,6 +10,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { TerminalShell } from '../terminals/shell'
 import { checkoutIdentity } from '../agents/threadWorktrees'
+import { CheckoutSendRefusal } from '../agents/checkoutMutations'
 
 export interface TerminalDependencies {
   files: FilesService
@@ -143,11 +144,12 @@ export class TerminalService extends ToolOperations {
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
       this.publish(record)
       return record
-    } catch {
+    } catch (error) {
       this.stop(record)
       this.sessions.delete(record.session.id)
       if (replacing) this.sessions.set(replacing.session.id, replacing)
       this.publishCapacity()
+      if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
       return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     } finally { release?.() }
   }

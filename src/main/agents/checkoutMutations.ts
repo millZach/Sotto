@@ -57,6 +57,7 @@ export class CheckoutSendRefusal extends Error {
   }
   draftMessage(): string { return `${holdingMessage(this.holder)} Your message was not sent. Your text is kept. Send it again when the action finishes.` }
   queuedMessage(): string { return `${holdingMessage(this.holder)} Your follow-up was not sent. It is kept in the queue. Resume the queue when the action finishes.` }
+  terminalMessage(): string { return `${holdingMessage(this.holder)} The terminal did not start. Try again when it finishes.` }
 }
 
 /** Sends may share a checkout, but a mutation excludes sends and other mutations from its first check to completion. */

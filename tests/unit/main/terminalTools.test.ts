@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
+import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
 import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -37,6 +38,22 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 
   return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it.each([
+    ['remove-folder', 'Sotto is removing this folder.'],
+    ['git-action', 'A Git action is running in this folder.'],
+    ['automatic-pull', 'Sotto is pulling this folder.'],
+    ['checkpoint-revert', 'Sotto is reverting a checkpoint in this folder.'],
+  ] as const)('reports terminal-specific recovery when %s holds the checkout', async (kind, operation) => {
+    const checkouts = new CheckoutMutations()
+    const f = await fixture({ acquireStart: owner => checkouts.acquire(owner.workingDirectory, 'send', { kind: 'terminal-start' }) })
+    const release = await checkouts.acquire(f.directory, 'mutation', { kind })
+    try {
+      expect(await f.service.create(f.target)).toEqual({ ok: false, error: { code: 'busy', message: `${operation} The terminal did not start. Try again when it finishes.` } })
+      expect(f.spawn).not.toHaveBeenCalled()
+      expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+    } finally { release() }
+    expect(unwrap(await f.service.create(f.target)).session.status).toBe('running')
+  })
   it('does not spawn a new Tools shell while its checkout is reserved for removal', async () => {
     const f = await fixture({ acquireStart: async () => { throw new Error('Sotto is removing this folder') } })
     expect(await f.service.create(f.target)).toMatchObject({ ok: false })
