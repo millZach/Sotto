@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = 'artifacts/new-thread-setup'
+const SHOTS = evidenceDirectory('artifacts/new-thread-setup')
 /** The host reads these folders on its own timer, and Git's index lock is held for a moment each time; a test command that meets it tries again. */
 const git = (cwd: string, ...args: string[]): string => {
   for (let attempt = 0; ; attempt += 1) {
@@ -422,7 +423,7 @@ test('failed first-send setup preserves the draft and retries without dispatchin
   }
 })
 
-const RECLAIM_SHOTS = 'artifacts/reclaim-worktrees'
+const RECLAIM_SHOTS = evidenceDirectory('artifacts/reclaim-worktrees')
 test('a worktree can be reclaimed from the pane or on settle, keeps its branch, and comes back on the next send', async () => {
   test.setTimeout(180_000)
   const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-reclaim-')), repo = join(root, 'repo-app')
@@ -726,7 +727,7 @@ test('clean submodule branch and tag history is listed and requires the tick in 
 })
 
 /** Every run writes here (ignored); the images the verification note names are copied to artifacts/worktree-origin-fallback/. */
-const ORIGIN_SHOTS = 'artifacts/worktree-origin-fallback-run'
+const ORIGIN_SHOTS = evidenceDirectory('artifacts/worktree-origin-fallback-run')
 test('a new worktree with Start from origin on starts from the local branch when origin does not have it, and says so', async () => {
   test.setTimeout(120_000)
   // A repository with a real origin that has main, and a local-only branch the shared folder is left on: the case

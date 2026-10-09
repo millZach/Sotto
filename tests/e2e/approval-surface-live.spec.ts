@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The approval surface, end to end through the installed Claude Code client (ADR-0043). Sotto used to
@@ -19,7 +20,7 @@ test('claude: a real approval and a real question both reach the user', async ()
   const profile = join(root, 'profile'); const project = join(root, 'project')
   await mkdir(profile); await mkdir(project)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
-  const artifacts = resolve('artifacts/approval-surface')
+  const artifacts = evidenceDirectory('artifacts/approval-surface')
   await mkdir(artifacts, { recursive: true })
   let app: ElectronApplication | undefined
   let page: Page | undefined

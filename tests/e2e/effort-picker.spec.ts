@@ -3,8 +3,9 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const ARTIFACTS = 'artifacts/effort-slider'
+const ARTIFACTS = evidenceDirectory('artifacts/effort-slider')
 
 async function savedEffort(page: Page): Promise<string | undefined> {
   const workshop = (await hostKeys(page))('workshop')

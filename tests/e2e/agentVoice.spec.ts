@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Page } from '@playwright/test'
 import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge, SottoWidgetBridge } from '../../src/shared/contracts'
@@ -51,7 +53,7 @@ test('routes activated voice through the real controller, retains paused prompts
     await expect(page.getByLabel('Prompt')).toHaveValue('Build a small engineering tool.')
     await speak(page, 'Keep the existing controls.')
     await expect(page.getByLabel('Prompt')).toHaveValue('Build a small engineering tool. Keep the existing controls.')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/voice-journey/paused-prompt.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/voice-journey'), 'paused-prompt.png') })
     await speak(page, 'stop listening')
     await expect.poll(async () => (await state(page)).voice.status).toBe('wake')
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(0)

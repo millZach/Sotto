@@ -14,7 +14,7 @@ The preload test exercises simultaneous AppContext-like and VoiceSettings-like s
 
 ## Electron and visual checks
 
-`npm run build` passed. With `SOTTO_THEMES_E2E=1`, the final selected run passed six journeys from `host-question-dismissal.spec.ts`, `hosts.spec.ts`, `agent-browser.spec.ts` and `phase-three-themes.spec.ts`. The selection was `Escape dismisses|client-only desktop|agents and users|without asking by default|imports JSON|halves, system`.
+`npm run build` passed. With `SOTTO_THEMES_E2E=1`, the final selected run passed six journeys from `host-question-dismissal.spec.ts`, `hosts.spec.ts`, `agent-browser.spec.ts` and `theme-library-evidence.spec.ts`. The selection was `Escape dismisses|client-only desktop|agents and users|without asking by default|imports JSON|halves, system`.
 
 - The app-shell host dialog receives scripted host transport events through the real preload bridge. Escape sends no host command, the same question stays dismissed, a new question appears, and the explicit Switch it off button sends only the disable command. Both passphrase and host-key dialogs fit at 1600x1000, 1280x800 and 820x560 in light and dark with reduced motion on. The captured minimum-size views were inspected: [passphrase in dark](../../artifacts/renderer-other-bundle/host-passphrase-820-dark.png), [host key in light](../../artifacts/renderer-other-bundle/host-host-key-820-light.png).
 - File and pasted VS Code JSON containing line comments, block comments and trailing commas both save to the real theme library. [Imported themes](../../artifacts/renderer-other-bundle/jsonc-imports.png) shows both entries.
@@ -27,8 +27,8 @@ No live SSH passphrase, provider prompt or key was used in these checks. The thr
 The broad nine-test run had five passes, three failures and one serially blocked test. The browser viewport test passed when rerun and in the final selection. Three other failures reproduce on the original base commit `cfc4f62d2cdcb762821b1db3d5ea4b0231030405`, built from an archive entirely inside this worktree:
 
 - `agent-browser-player-controls.spec.ts`: the player x coordinate remains 920 after the pointer drag (line 78).
-- `phase-three-themes.spec.ts`, spotlight: the idle assertion sees 18 root style updates and 3 spotlights instead of zero (line 444 in this branch).
-- `phase-three-themes.spec.ts`, minimized editor, run separately after the serial skip: the bar overlaps Send at 820x560 (line 497 in this branch).
+- `theme-library-evidence.spec.ts`, spotlight: the idle assertion sees 18 root style updates and 3 spotlights instead of zero (line 444 in this branch).
+- `theme-library-evidence.spec.ts`, minimized editor, run separately after the serial skip: the bar overlaps Send at 820x560 (line 497 in this branch).
 
 Those tests and assertions were not weakened. They remain outside these four issues.
 
@@ -101,7 +101,7 @@ All eight selected Electron journeys passed in 1.6 minutes after rebuilding: the
 
 The required final fetch found main advanced to `51d367db`. It was merged without conflicts as `c93a5504`. Typecheck, lint, notices (174 components) and build passed again. The affected-file run covered 16 incoming main test files and four package regressions: 648 passed and one skipped across 20 passing files in 100.28 seconds.
 
-Five of the same six package Electron journeys passed together. The browser journey failed its immediate viewport-size assertion after choosing 390x844: the native page still reported 400x606. That same unchanged case passed alone in 17.5 seconds after rerunning without altering the test or production code. Its browser-player and test sources did not change in this main integration; the transient cause remains unverified. The extra `dictation-recovery.spec.ts` and `phase-four-checkpoints.spec.ts` journeys both passed in 14.3 seconds. All six retained host question and waiting-row captures again match the generated captures by SHA-256. Unrelated generated captures were restored, and no design baselines changed. The integrated revision requires a new pushed Windows gate before final reporting. PR #643 remains open and unmerged.
+Five of the same six package Electron journeys passed together. The browser journey failed its immediate viewport-size assertion after choosing 390x844: the native page still reported 400x606. That same unchanged case passed alone in 17.5 seconds after rerunning without altering the test or production code. Its browser-player and test sources did not change in this main integration; the transient cause remains unverified. The extra `dictation-recovery.spec.ts` and `checkpoint-rewind.spec.ts` journeys both passed in 14.3 seconds. All six retained host question and waiting-row captures again match the generated captures by SHA-256. Unrelated generated captures were restored, and no design baselines changed. The integrated revision requires a new pushed Windows gate before final reporting. PR #643 remains open and unmerged.
 
 [CI run 36812551627](https://github.com/millZach/Sotto/actions/runs/36812551627) then passed on `c6d25662`: Windows passed 6,720 tests and skipped 151, with no failures across 501 passing and 39 skipped files (540 total; 966.90 seconds), and verified 174 notice components. Linux also passed. All three feedback endpoints were read again; only the automated usage-limit and credit-limit notices remained.
 

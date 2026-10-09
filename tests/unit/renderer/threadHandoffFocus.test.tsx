@@ -8,8 +8,8 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu, paneMenuItem } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 // Management is the voice coordinator's own work, which the beta hides; this file is about the handoff, so it is on.

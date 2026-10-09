@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { E2E_PRESERVED_CLIPBOARD, E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openPage, resizeWindow } from './support/sottoLaunch'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 test('completed dictation survives clipboard failure, navigation and later dictation with history off', async () => {
   const launched = await launchSotto('clipboard-recovery')

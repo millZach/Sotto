@@ -7,6 +7,7 @@ import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * A native client may close pending questions when it shuts down. After a full process restart the provider does NOT
@@ -21,7 +22,7 @@ const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native
 const redefined: AgentRequest = { ...form, questions: [{ id: 'place', question: 'Which harbour instead?', multiSelect: false, allowFreeText: false,
   options: [{ id: 'north', label: 'North harbour' }, { id: 'south', label: 'South harbour' }] }] }
 declare global { var recoveryAnswerCalls: number; var holdRecoveryAnswer: boolean }
-const shots = 'artifacts/phase-three-draft-recovery'
+const shots = evidenceDirectory('artifacts/phase-three-draft-recovery')
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 const liveCard = (page: Page) => page.locator('.agent-request').filter({ has: page.getByRole('group', { name: 'Where should we go?' }) })
 const savedCard = (page: Page, name = 'Saved answer') => page.getByRole('region', { name, exact: true })

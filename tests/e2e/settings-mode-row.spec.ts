@@ -2,13 +2,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 for (const voiceCoordinatorEnabled of [false, true]) {
   test(`Settings mode row fits and keeps keyboard navigation with voice ${voiceCoordinatorEnabled}`, async () => {
     test.setTimeout(120_000)
     const launched = await launchSotto()
     const { page } = launched
-    const evidence = resolve('artifacts/review-388')
+    const evidence = evidenceDirectory('artifacts/review-388')
     const geometry: unknown[] = []
     await mkdir(evidence, { recursive: true })
     try {

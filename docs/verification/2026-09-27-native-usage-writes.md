@@ -63,7 +63,7 @@ The earlier gates, reviews and native screenshots remain historical evidence for
 Focused post-integration checks passed: nine Vitest files, 124 tests, with one worker, including #400's query/report/held-prompt cases, native transcript catch-up, usage persistence and #398's inherited permissions. Focused ESLint passed for the resolved configuration, shared Claude fixture and native usage Electron seam.
 
 ```powershell
-npx vitest run tests/unit/main/nativeUsage.test.ts tests/unit/main/nativeUsagePersistence.test.ts tests/unit/main/nativeUsageBenchTotals.test.ts tests/unit/main/nativeUsageBoundary.test.ts tests/integration/claudeAdapterSafety.test.ts tests/integration/claudeMonitoring.test.ts tests/integration/claudeTranscriptCatchUp.test.ts tests/integration/nativeCompaction.test.ts tests/integration/remoteThreadPermissions.test.ts --maxWorkers=1
+npx vitest run tests/unit/main/nativeUsage.test.ts tests/unit/main/nativeUsagePersistence.test.ts tests/unit/main/nativeUsageBenchTotals.test.ts tests/unit/fixtures/nativeUsageBoundary.test.ts tests/integration/claudeAdapterSafety.test.ts tests/integration/claudeMonitoring.test.ts tests/integration/claudeTranscriptCatchUp.test.ts tests/integration/nativeCompaction.test.ts tests/integration/remoteThreadPermissions.test.ts --maxWorkers=1
 npx eslint eslint.config.mjs tests/fixtures/fakeClaudeThread.mjs tests/fixtures/claudeFixture.ts tests/e2e/native-usage-persistence.spec.ts tests/fixtures/nativeUsageElectronMain.cjs
 ```
 

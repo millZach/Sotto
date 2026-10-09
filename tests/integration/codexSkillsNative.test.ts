@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,7 +21,7 @@ it.skipIf(process.env.SOTTO_VERIFY_CODEX_SKILLS !== '1')('reads the installed na
     expect(refreshed.status).toBe('ready')
     expect(initial.cwd).toBe(cwd)
     expect((await host.snapshot()).threads).toEqual([])
-    const artifact = resolve('artifacts/skills-native/catalog-probe.json')
+    const artifact = join(evidenceDirectory('artifacts/skills-native'), 'catalog-probe.json')
     await mkdir(dirname(artifact), { recursive: true })
     await writeFile(artifact, JSON.stringify({ checkedAt: new Date().toISOString(), version: snapshot.version, cwd,
       initialCount: initial.skills.length, refreshedCount: refreshed.skills.length,

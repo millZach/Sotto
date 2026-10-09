@@ -29,7 +29,7 @@ After the review of the merged work, the chip shows both sizes itself, "Resized 
 
 ## Not checked
 
-The note was checked in a thread's composer (`ThreadComposer`). The coordinator's composer (`AgentView`) renders the same `ScreenshotInput` but was not captured, and it still drops a screenshot that finishes reading after its thread changes, because its draft follows the coordinator's current target rather than the thread the screenshot was pasted into (#361). No animated PNG or WebP, and no Display P3 capture, went through the built app. No live provider received a resized image in this pass: the adapters send the data URL as before, only smaller, and `tests/unit/main/claudeImages.test.ts` and `codexImages.test.ts` cover the send path unchanged.
+The note was checked in a thread's composer (`ThreadComposer`). The coordinator's composer (`AgentView`) renders the same `ScreenshotInput` but was not captured, and it still drops a screenshot that finishes reading after its thread changes, because its draft follows the coordinator's current target rather than the thread the screenshot was pasted into (#361). No animated PNG or WebP, and no Display P3 capture, went through the built app. No live provider received a resized image in this pass: the adapters send the data URL as before, only smaller, and `tests/integration/claudeImages.test.ts` and `codexImages.test.ts` cover the send path unchanged.
 
 ## Re-run
 

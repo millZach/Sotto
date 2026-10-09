@@ -15,15 +15,15 @@ Worker: phase3-requests (Claude Opus 5), branch `work/phase3-requests` from `e34
 |---|---|
 | `npx vitest run tests/unit/renderer/requests tests/unit/main/codexForms.test.ts tests/integration/nativeProviderRequests.test.ts tests/integration/personalChats.test.ts` | 4 files, 41 tests passed (request card 20, 11 of them new) |
 | `npm run typecheck` (node + web) | passed |
-| `npx eslint src/renderer/src/agents/requests tests/unit/renderer/requests tests/e2e/phase-three-requests.spec.ts` | passed |
-| `npm run build` then `npx playwright test tests/e2e/phase-three-requests.spec.ts --workers=1` | 2 passed, and passed again on three more consecutive runs |
+| `npx eslint src/renderer/src/agents/requests tests/unit/renderer/requests tests/e2e/native-request-forms.spec.ts` | passed |
+| `npm run build` then `npx playwright test tests/e2e/native-request-forms.spec.ts --workers=1` | 2 passed, and passed again on three more consecutive runs |
 | Tests that render ThreadsView and the thread pane (8 files) | 119 passed, 3 failed. The 2 `threadsView.test.tsx` failures also fail on the baseline `e34936f` request card. The `threadQueueSkills` failure was a timing flake and passed 3 of 3 reruns. See Gaps. |
 
 The new unit tests were written first and failed against the old code: 7 failures (no `answerProgress` or `isRequired`, optional fields blocked sending, Allow shown for `[]`, the voice hint shown). The simultaneous-request tests passed on the baseline store and now guard against regressions.
 
 ## Complete-app Electron journeys
 
-`tests/e2e/phase-three-requests.spec.ts` launches the real app through `launchSotto()` with a synthetic owned profile. The app shell, Threads page, preload, IPC and the main `AgentControl` are all real. Requests enter through `window.sottoE2E.agentEvent({ type, threadId, text, request })` and target the default connected `workshop` and `docs` threads. `window.sotto` is untouched. To record the exact answer payload, the test wraps the registered `sotto:agents:command` invoke handler in the main process through `ipcMain._invokeHandlers`. That is Electron-private and test-only. The wrapper records `answer` commands, can hold them to simulate a slow bridge, and always calls the real handler.
+`tests/e2e/native-request-forms.spec.ts` launches the real app through `launchSotto()` with a synthetic owned profile. The app shell, Threads page, preload, IPC and the main `AgentControl` are all real. Requests enter through `window.sottoE2E.agentEvent({ type, threadId, text, request })` and target the default connected `workshop` and `docs` threads. `window.sotto` is untouched. To record the exact answer payload, the test wraps the registered `sotto:agents:command` invoke handler in the main process through `ipcMain._invokeHandlers`. That is Electron-private and test-only. The wrapper records `answer` commands, can hold them to simulate a slow bridge, and always calls the real handler.
 
 1. **Questions.** Workshop gets five questions: a radio with Other, a multiselect, free text, an optional radio, and an optional unavailable field. Docs gets a radio plus a required unavailable field.
    - Every question renders. Optional appears twice, and the unavailable field has no input.

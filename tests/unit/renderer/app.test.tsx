@@ -13,7 +13,7 @@ import {
   type AppControllerFactory,
   type AppNavigation,
 } from '../../../src/renderer/src/state/AppContext'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import {
   type SottoBridge,
   type UpdateStatus,

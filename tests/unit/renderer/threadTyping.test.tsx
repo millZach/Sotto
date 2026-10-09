@@ -6,7 +6,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const renders = vi.hoisted(() => ({ transcript: 0, options: 0 }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))

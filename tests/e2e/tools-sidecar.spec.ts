@@ -2,19 +2,20 @@ import { execFile, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Electron shell, native browser, PTY, files and Git. Only coding providers use E2E fixtures.
 // Every file and shell command below belongs to the launch helper's disposable profile. Captures go to a
 // generated folder; the verification note's images are copied from it into artifacts/tools-rail.
 const run = promisify(execFile)
-const SHOTS = resolve(process.cwd(), 'artifacts/tools-rail-run')
+const SHOTS = evidenceDirectory('artifacts/tools-rail-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const MODES = ['dark', 'light'] as const
 const TOOLS = ['Browser', 'iPhone', 'Terminal', 'Files', 'Changes', 'Pull request', 'Agents'] as const

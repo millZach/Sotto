@@ -37,7 +37,7 @@ Main is authoritative for widget presentation. It stamps `theme`, `palette` and 
 
 ## Evidence
 
-`tests/e2e/phase-three-theme-branding.spec.ts` (opt-in `SOTTO_THEME_BRANDING_EVIDENCE=1` after `npm run build`) passes in the real Windows Electron app. The captures and sampled colours (`samples.json`) are in `artifacts/phase-three-theme-branding/`.
+`tests/e2e/theme-branding-evidence.spec.ts` (opt-in `SOTTO_THEME_BRANDING_EVIDENCE=1` after `npm run build`) passes in the real Windows Electron app. The captures and sampled colours (`samples.json`) are in `artifacts/phase-three-theme-branding/`.
 
 1. **Ocean dark.** Covers the app mark, the Agents room orb, the widget idle hover and the widget listening capsule.
 2. **Iris selected mid-session.** The main room repaints and the same listening session's widget repaints, with no new session.

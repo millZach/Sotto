@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
 

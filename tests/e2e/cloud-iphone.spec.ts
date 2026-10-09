@@ -1,10 +1,11 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { start as startFakeRunCloud } from '../fixtures/fakeRunCloud.mjs'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/cloud-iphone')
+const SHOTS = evidenceDirectory('artifacts/cloud-iphone')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, size) => {

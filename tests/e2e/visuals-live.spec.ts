@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // A real Claude Code, Codex or Grok Build thread asked to draw a visual through `visualize`, in the production app
 // over an isolated profile (tests/fixtures/nativeThreadsMain.cjs). Each run sends real subscription turns, so it is
@@ -34,7 +35,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
     await mkdir(profile); await mkdir(project)
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     // Outside test-results, which Playwright clears at every run, so each provider's run keeps its captures.
-    const artifacts = resolve('artifacts/visuals-live', provider)
+    const artifacts = resolve(evidenceDirectory('artifacts/visuals-live'), provider)
     await mkdir(artifacts, { recursive: true })
     let app: ElectronApplication | undefined
     let current: Page | undefined

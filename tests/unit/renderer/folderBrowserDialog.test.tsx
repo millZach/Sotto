@@ -8,7 +8,7 @@ import type { HostFoldersClientRequest, HostFoldersResult } from '../../../src/s
 import { browsableHosts, FolderBrowserDialog } from '../../../src/renderer/src/agents/FolderBrowserDialog'
 import { useAddProject } from '../../../src/renderer/src/agents/addProject'
 import { projectForFolder, useProjectChooser, type ProjectChoice } from '../../../src/renderer/src/agents/ProjectChooser'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const FORGE = '22222222-2222-4222-8222-222222222222'
@@ -45,7 +45,7 @@ const localHome: HostFoldersResult = { status: 'listed', path: 'C:\\Users\\zache
 function stubBridge(extra: Record<string, unknown> = {}) {
   const hostFolders = vi.fn(async (request: HostFoldersClientRequest): Promise<HostFoldersResult> =>
     request.hostId === FORGE ? forgeFolders[request.path ?? 'home'] ?? emptyForgeFolder(request.path!) : localHome)
-  const chooseProjectDirectory = vi.fn(async () => 'D:\\Talk to Text Application')
+  const chooseProjectDirectory = vi.fn(async () => 'D:\\Sotto Workspace Projects')
   const select = vi.fn(async () => ({ hosts: [], localHostEnabled: true, localHostRunning: true }))
   vi.stubGlobal('sotto', { agents: { hostFolders, chooseProjectDirectory }, hosts: { command: select }, ...extra })
   return { hostFolders, chooseProjectDirectory, select }
@@ -160,7 +160,7 @@ describe('FolderBrowserDialog', () => {
     expect(await screen.findByRole('button', { name: 'source' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Browse with File Explorer' }))
     expect(chooseProjectDirectory).toHaveBeenCalledOnce()
-    await waitFor(() => expect(onUse).toHaveBeenCalledWith({ hostId: LOCAL, path: 'D:\\Talk to Text Application', name: 'Talk to Text Application' }))
+    await waitFor(() => expect(onUse).toHaveBeenCalledWith({ hostId: LOCAL, path: 'D:\\Sotto Workspace Projects', name: 'Sotto Workspace Projects' }))
   })
 
   it('skips the computer step when this computer is the only one', async () => {

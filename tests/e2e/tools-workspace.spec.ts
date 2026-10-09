@@ -1,0 +1,259 @@
+import { execFile } from 'node:child_process'
+import { createServer } from 'node:http'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { parseHostEntityKey } from '../../src/shared/clientIdentity'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { forceDomTerminalRenderer } from './support/terminal'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+// Tools workspace in the complete app: AppShell, renderer, preload, IPC and production tools are real.
+// Coding providers use the unpackaged E2E fixtures; profiles, working copies and the local page are owned temporaries.
+
+const run = promisify(execFile)
+const SHOTS = evidenceDirectory('artifacts/phase-three-ui')
+type Mode = 'dark' | 'light'
+
+async function ownedProfile(prefix: string): Promise<string> {
+  const profile = await mkdtemp(join(tmpdir(), prefix))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'blue' }))
+  return profile
+}
+
+async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
+  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
+    BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
+  }, [width, height] as const)
+  await expect.poll(() => launched.page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
+}
+
+async function theme(page: Page, mode: Mode): Promise<void> {
+  await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), mode)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
+}
+
+/** Nothing on the page scrolls sideways, and the named elements sit wholly inside the window. */
+async function expectContained(page: Page, selectors: readonly string[]): Promise<void> {
+  // Native resize arrives before ResizeObserver has placed the sidecar in the new workspace.
+  await expect.poll(() => page.evaluate(selectors => ({
+    overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+    outside: selectors.flatMap(selector => [...document.querySelectorAll(selector)].map(element => {
+      const box = element.getBoundingClientRect()
+      return box.left < -1 || box.top < -1 || box.right > window.innerWidth + 1 || box.bottom > window.innerHeight + 1 ? `${selector} ${JSON.stringify(box)}` : null
+    }).filter(Boolean)),
+  }), selectors)).toEqual({ overflow: 0, outside: [] })
+}
+
+/** The smallest rendered text in the tools surfaces on screen, with where it is, so no new label drops below 12px. */
+async function smallestText(page: Page): Promise<{ size: number; where: string }> {
+  return page.evaluate(() => {
+    let smallest = { size: Infinity, where: '' }
+    for (const element of document.querySelectorAll<HTMLElement>('.tools-panel *, [role="menu"] *')) {
+      const text = [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent ?? '').join('').trim()
+      const box = element.getBoundingClientRect()
+      if (!text || box.width === 0 || box.height === 0 || getComputedStyle(element).visibility === 'hidden' || element.closest('[aria-hidden="true"], .xterm-accessibility, .xterm-helpers')) continue
+      const size = Number.parseFloat(getComputedStyle(element).fontSize)
+      if (size < smallest.size) smallest = { size, where: `${element.className || element.tagName}: ${text.slice(0, 30)}` }
+    }
+    return smallest
+  })
+}
+
+async function shoot(page: Page, name: string, modes: readonly Mode[] = ['dark', 'light']): Promise<void> {
+  const text = await smallestText(page)
+  expect(text.size, `${name}: ${text.where}`).toBeGreaterThanOrEqual(12)
+  for (const mode of modes) {
+    await theme(page, mode)
+    await page.screenshot({ path: join(SHOTS, `${name}-${mode}.png`), animations: 'disabled' })
+  }
+  await theme(page, 'dark')
+}
+
+async function hostViews(app: ElectronApplication): Promise<{ url: string; bounds: Electron.Rectangle }[]> {
+  return app.evaluate(({ BrowserWindow, WebContentsView }) => {
+    const host = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+    return host.contentView.children.filter(view => view instanceof WebContentsView).map(view => ({ url: (view as Electron.WebContentsView).webContents.getURL(), bounds: view.getBounds() }))
+  })
+}
+
+test('reviews changes, runs a terminal with the DOM fallback and browses a local page for a real working copy, by pointer and keyboard', async () => {
+  test.setTimeout(240_000)
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' })
+    response.end('<!doctype html><title>Atlas preview</title><body style="margin:0;font:600 28px system-ui;background:#1f6feb;color:white;display:grid;place-items:center;height:100vh">Atlas local app</body>')
+  })
+  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('The local page has no port.')
+  const url = `http://127.0.0.1:${address.port}/`
+
+  const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-tools-'))
+  const { app, page } = launched
+  try {
+    await forceDomTerminalRenderer(page)
+    // The fixture's Workshop thread works in a real folder inside the owned profile; it becomes a Git working copy here.
+    const folder = await page.evaluate(async () => {
+      const agents = window.sotto!.agents!
+      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      const state = await agents.command({ type: 'connect' })
+      return { threads: state.host.threads.map(({ id, projectId }) => ({ id, projectId })), projects: state.host.projects.map(({ id, path }) => ({ id, path })) }
+    }).then(({ threads, projects }) => {
+      // The window names threads by their host's key (`host:<host>:<id>`); the fixture's own ID is the last part.
+      const thread = threads.find(item => parseHostEntityKey(item.id)?.id === 'workshop')!
+      return projects.find(project => project.id === thread.projectId)!.path
+    })
+    expect(folder.startsWith(launched.userData)).toBe(true)
+    await mkdir(join(folder, 'src'), { recursive: true })
+    const git = (args: string[]) => run('git', args, { cwd: folder, windowsHide: true, timeout: 15_000 })
+    await git(['init', '--quiet'])
+    await writeFile(join(folder, 'src/app.ts'), "export function greet(name: string): string {\n  return 'Hello ' + name\n}\n")
+    await writeFile(join(folder, 'old.txt'), 'Retired notes.\n')
+    await writeFile(join(folder, 'README.md'), '# Atlas\n')
+    await git(['add', '.'])
+    await git(['-c', 'user.name=Sotto verification', '-c', 'user.email=verification@example.invalid', '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Owned fixture'])
+    await writeFile(join(folder, 'src/app.ts'), 'export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n\nexport const version = 2\n')
+    await rm(join(folder, 'old.txt'))
+    await writeFile(join(folder, 'CHANGELOG.md'), '## 2\n\n- Friendlier greeting\n')
+    await page.evaluate(async url => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', status: 'idle',
+      text: `The greeting is friendlier now. The dev server is at [the Atlas preview](${url}), and the change is ready to review.` }), url)
+    await resize(launched, 1280, 860)
+    await openThreads(page)
+    await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+    await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
+
+    // Keyboard: the header toggle opens Tools with focus on its tabs; arrows move between surfaces.
+    const toggle = page.getByRole('button', { name: 'Tools', exact: true })
+    await toggle.focus()
+    await page.keyboard.press('Enter')
+    const panel = page.getByRole('complementary', { name: 'Tools' })
+    await expect(panel.getByRole('tab')).toHaveText(['Browser', 'iPhone', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
+    await expect(panel.getByRole('tab', { name: 'Files' })).toBeFocused()
+    await page.keyboard.press('ArrowRight')
+    await expect(panel.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true')
+
+    // Changes is T3's diff: every changed file is a block of the working tree against HEAD.
+    const files = panel.locator('.changes-file')
+    await expect(files).toHaveCount(3)
+    await expect(panel.locator('.changes-files')).toContainText('app.ts')
+    await expect(panel.locator('.changes-files')).toContainText('CHANGELOG.md')
+    await expect(panel.locator('.changes-files')).toContainText('old.txt')
+    const diff = panel.getByRole('group', { name: 'src/app.ts' })
+    // New comparisons start folded; expand the comparison before reviewing and scrolling its files.
+    await panel.getByRole('button', { name: 'Expand all files', exact: true }).click()
+    await expect(diff).toContainText('return `Hello, ${name}!`')
+    await expect(diff).toContainText("return 'Hello ' + name")
+    await expectContained(page, ['.tools-panel', '.thread-workspace__compose'])
+    await shoot(page, 'changes-diff-1280')
+    await resize(launched, 1600, 1000)
+    await shoot(page, 'changes-diff-1600', ['dark'])
+    await resize(launched, 820, 560)
+    await expect(diff).toBeVisible()
+    // In the short window the files, not the chrome above them, take the panel.
+    const heights = await panel.evaluate(element => ({ bar: element.querySelector('.changes-bar')!.getBoundingClientRect().height, diff: element.querySelector('.changes-files')!.getBoundingClientRect().height }))
+    expect(heights.diff).toBeGreaterThan(heights.bar * 2)
+    // The file tree walks the files from the keyboard, and picking one brings its block to the top of the list.
+    await panel.getByRole('button', { name: 'Show file tree' }).click()
+    const tree = panel.getByRole('listbox', { name: 'Files in this comparison' })
+    await expect(tree.getByRole('option')).toHaveCount(3)
+    const blockAtTop = (path: string) => panel.evaluate((element, path) => {
+      const box = element.querySelector('.changes-files')!.getBoundingClientRect()
+      const block = element.querySelector(`.changes-file[data-file-path="${path}"]`)!.getBoundingClientRect()
+      return Math.abs(block.top - box.top) <= 2 || box.bottom - block.bottom < 2
+    }, path)
+    await tree.getByRole('option').first().focus()
+    await page.keyboard.press('End')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => blockAtTop('src/app.ts')).toBe(true)
+    await expect(diff.getByRole('button', { name: 'Collapse src/app.ts' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(diff.getByRole('button', { name: 'Expand src/app.ts' })).toBeFocused()
+    await expect(diff).not.toContainText('return `Hello, ${name}!`')
+    await page.keyboard.press('Enter')
+    await expect(diff).toContainText('return `Hello, ${name}!`')
+    await expectContained(page, ['.tools-panel'])
+    await shoot(page, 'changes-diff-820x560')
+    await panel.getByRole('button', { name: 'Hide file tree' }).click()
+    await resize(launched, 1280, 860)
+
+    // Terminal: a real shell in the working copy, typed into by keyboard.
+    await panel.getByRole('tab', { name: 'Terminal' }).click()
+    await panel.getByRole('button', { name: 'Start terminal' }).click()
+    const screen = panel.locator('.xterm-rows')
+    await expect(screen).toBeVisible()
+    await panel.locator('.xterm').click()
+    await page.keyboard.type('echo SOTTO_UI_TERMINAL_OK')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => ((await screen.innerText()).replace(/\n/gu, '').match(/SOTTO_UI_TERMINAL_OK/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
+    // The shell starts in the thread's working copy: a relative redirect lands in that folder.
+    await page.keyboard.type('echo started here > terminal-proof.txt')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => stat(join(folder, 'terminal-proof.txt')).then(() => true, () => false), { timeout: 20_000 }).toBe(true)
+    // No part of the terminal paints outside the theme: xterm's own #000 viewport must not show under the last row.
+    expect(await panel.locator('.xterm-viewport').evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
+    // The keyboard way out of the terminal is read in full, never cut off.
+    expect(await panel.locator('.terminal-hint').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await shoot(page, 'terminal-1280')
+    await resize(launched, 820, 560)
+    await expectContained(page, ['.tools-panel', '.terminal-view'])
+    await shoot(page, 'terminal-820x560')
+    await resize(launched, 1280, 860)
+
+    // Browser: an address typed and opened by keyboard mounts the native page exactly over the viewport.
+    await panel.getByRole('tab', { name: 'Browser' }).click()
+    const addressBar = panel.getByRole('textbox', { name: /^Address/u })
+    await addressBar.fill(`127.0.0.1:${address.port}`)
+    await addressBar.press('Enter')
+    await expect(panel.getByRole('tab', { name: /Atlas preview/u })).toBeVisible()
+    await expect.poll(async () => (await hostViews(app)).filter(view => view.url === url).length).toBe(1)
+    const viewport = await panel.locator('.browser-viewport').evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return { x: Math.round(box.left), y: Math.round(box.top), width: Math.round(box.width), height: Math.round(box.height) }
+    })
+    await expect.poll(async () => (await hostViews(app)).find(view => view.url === url)?.bounds).toEqual(viewport)
+    expect(await app.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(contents => contents.getURL() === url)?.getTitle(), url)).toBe('Atlas preview')
+    await page.screenshot({ path: join(SHOTS, 'browser-dom-without-native-view-1280-dark.png') })
+    // Playwright's page capture cannot include the native view; its own capture is saved beside it.
+    const pixels = await app.evaluate(async ({ webContents }, url) => {
+      const image = await webContents.getAllWebContents().find(contents => contents.getURL() === url)!.capturePage()
+      return image.toPNG().toString('base64')
+    }, url)
+    await writeFile(join(SHOTS, 'browser-native-page-1280.png'), Buffer.from(pixels, 'base64'))
+
+    // A menu over the transcript sends the page aside; the per-link menu opens the link in this thread's browser.
+    const link = page.getByLabel('Thread transcript', { exact: true }).getByRole('link', { name: 'the Atlas preview' })
+    await link.focus()
+    await page.keyboard.press('Shift+F10')
+    const menu = page.getByRole('menu')
+    await expect(menu.getByRole('menuitem')).toHaveText(['Open in Sotto browser', 'Open in system browser', 'Copy link'])
+    await expect(menu.getByRole('menuitem', { name: 'Open in Sotto browser' })).toBeFocused()
+    await expect.poll(async () => (await hostViews(app)).length).toBe(0)
+    await expect(panel.getByText('The page steps aside while a menu or dialog is open.')).toBeVisible()
+    await page.screenshot({ path: join(SHOTS, 'link-menu-1280-dark.png') })
+    await page.keyboard.press('Escape')
+    await expect(link).toBeFocused()
+    await expect.poll(async () => (await hostViews(app)).filter(view => view.url === url).length).toBe(1)
+    await page.keyboard.press('Shift+F10')
+    await page.keyboard.press('Enter')
+    await expect(panel.getByRole('tab', { name: /Atlas preview/u })).toHaveCount(2)
+    await expect.poll(async () => (await hostViews(app)).filter(view => view.url === url).length).toBe(1)
+
+    // Reduced motion reaches the new surfaces: the link menu and the page loading bar do not animate.
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    await link.focus()
+    await page.keyboard.press('Shift+F10')
+    expect(await menu.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+    await page.keyboard.press('Escape')
+    await resize(launched, 820, 560)
+    await expectContained(page, ['.tools-panel', '.browser-toolbar'])
+    await shoot(page, 'browser-dom-820x560')
+  } finally {
+    await closeSotto(launched)
+    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await new Promise<void>(done => server.close(() => done()))
+  }
+})

@@ -2,13 +2,14 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 for (const skip of [false, true]) {
   test(`onboarding resolves the microphone step before continuing (${skip ? 'explicit skip' : 'successful test'})`, async () => {
     test.setTimeout(120_000)
     const launched = await launchSotto(skip ? 'microphone-denied-once' : 'success')
     const { page } = launched
-    const evidence = resolve('artifacts/review-386')
+    const evidence = evidenceDirectory('artifacts/review-386')
     await mkdir(evidence, { recursive: true })
     try {
       await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
@@ -62,7 +63,7 @@ for (const skip of [false, true]) {
 test('onboarding notices an ended microphone and allows retry', async () => {
   const launched = await launchSotto('microphone-browser')
   const { page } = launched
-  const evidence = resolve('artifacts/pkg-18-e2e/onboarding')
+  const evidence = evidenceDirectory('artifacts/pkg-18-e2e/onboarding')
   await mkdir(evidence, { recursive: true })
   try {
     await page.evaluate(async () => {

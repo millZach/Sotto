@@ -1,6 +1,7 @@
 // @vitest-environment node
 // Zero-model native rollback of an explicitly supplied, previously owned
 // synthetic Sotto verification session. Original native history remains intact.
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
@@ -31,7 +32,7 @@ it.runIf(process.env.SOTTO_PHASE4_CLAUDE_ROLLBACK_NATIVE === '1')('installed Cla
     evidence.messages = after.messages; evidence.historyEpoch = after.historyEpoch; evidence.sameAfterRestart = true
   } catch (error) { evidence.failure = error instanceof Error ? error.message : String(error); throw error }
   finally {
-    host.disconnect(); await host.closed(); await mkdir('artifacts/phase-four-native-chats', { recursive: true })
-    await writeFile('artifacts/phase-four-native-chats/claude-rollback.json', JSON.stringify(evidence, null, 2))
+    host.disconnect(); await host.closed(); await mkdir(evidenceDirectory('artifacts/phase-four-native-chats'), { recursive: true })
+    await writeFile(join(evidenceDirectory('artifacts/phase-four-native-chats'), 'claude-rollback.json'), JSON.stringify(evidence, null, 2))
   }
 }, 45000)

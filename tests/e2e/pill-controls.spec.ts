@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
@@ -15,7 +17,7 @@ test('one pill keeps dictation, mute controls, and explicit thread expansion tog
     await expect(widget.getByTestId('widget-sliver')).toBeVisible()
     await expect(widget.locator('.agent-widget')).toHaveCount(0)
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toHaveCount(0)
-    await widget.screenshot({ animations: 'disabled', path: 'artifacts/crossing/pill-resting.png' })
+    await widget.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'pill-resting.png') })
     await widget.getByTestId('widget-sliver').hover()
     await expect(widget.getByRole('button', { name: 'Mute microphone', exact: true })).toBeVisible()
     await widget.getByRole('button', { name: 'Mute microphone', exact: true }).click()
@@ -27,7 +29,7 @@ test('one pill keeps dictation, mute controls, and explicit thread expansion tog
     await expect(widget.getByTestId('widget-sliver')).toBeVisible()
     await widget.getByTestId('widget-sliver').hover()
     await expect(widget.locator('.widget-sliver__prompt')).toHaveCSS('opacity', '1')
-    await widget.screenshot({ animations: 'disabled', path: 'artifacts/crossing/pill-controls.png' })
+    await widget.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'pill-controls.png') })
 
     await widget.getByRole('button', { name: 'Expand threads' }).click()
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toBeVisible()
@@ -38,7 +40,7 @@ test('one pill keeps dictation, mute controls, and explicit thread expansion tog
     await widget.getByRole('button', { name: /Release notes/ }).click()
     await expect(widget.locator('.widget-threads__detail > h2')).toHaveText('Release notes 1.4')
     expect(await widget.locator('.widget-threads').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
-    await widget.screenshot({ animations: 'disabled', path: 'artifacts/crossing/pill-threads.png' })
+    await widget.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'pill-threads.png') })
     await widget.getByRole('button', { name: 'Collapse threads' }).click()
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toHaveCount(0)
     await widget.getByTestId('widget-sliver').hover()
@@ -46,7 +48,7 @@ test('one pill keeps dictation, mute controls, and explicit thread expansion tog
     await expect(widget.getByTestId('listening-bars')).toBeVisible()
     await expect(widget.getByRole('button', { name: 'Mute microphone', exact: true })).toBeVisible()
     await expect(widget.getByRole('button', { name: 'Stop dictation' })).toBeVisible()
-    await widget.screenshot({ animations: 'disabled', path: 'artifacts/crossing/pill-listening-controls.png' })
+    await widget.screenshot({ animations: 'disabled', path: join(evidenceDirectory('artifacts/crossing'), 'pill-listening-controls.png') })
     expect(await widget.locator('.widget-capsule').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
     await widget.getByRole('button', { name: 'Mute microphone', exact: true }).click()
     await expect(widget.getByTestId('listening-bars')).toHaveCount(0)

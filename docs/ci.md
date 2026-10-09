@@ -69,6 +69,36 @@ folder keeping its draft. Every separate
 Playwright config under `tests/` must have an npm runner;
 `tests/unit/release/testDiscovery.test.ts` checks that boundary.
 
+## E2e evidence
+
+E2e specs and the four opt-in native evidence probes use `tests/fixtures/evidence.ts`.
+Ordinary runs write to ignored `test-results/e2e-evidence/<basename(defaultDirectory)>/`.
+For example, appearance captures go to `test-results/e2e-evidence/phase-1-appearance/`.
+Both Git and ESLint ignore `test-results/`.
+
+`SOTTO_E2E_ARTIFACT_ROOT` takes precedence and puts each named evidence folder
+under that root, including when publication is requested. Without that override,
+`SOTTO_E2E_EVIDENCE=publish` writes to the historical `artifacts/` folder instead.
+Set it only to refresh committed evidence on purpose, then inspect the working
+tree and keep only the captures the verification note cites. Existing artifact
+folder names stay as they are so those citations keep working.
+
+For example, publish theme-library evidence after building the app:
+
+```sh
+SOTTO_E2E_EVIDENCE=publish SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
+```
+
+```powershell
+$env:SOTTO_E2E_EVIDENCE = 'publish'
+$env:SOTTO_THEMES_E2E = '1'
+try { npx playwright test tests/e2e/theme-library-evidence.spec.ts }
+finally { Remove-Item Env:SOTTO_E2E_EVIDENCE, Env:SOTTO_THEMES_E2E }
+```
+
+`design-capture.spec.ts` and `visual-previews.spec.ts` keep their own explicit
+baseline-update flags. Evidence publication does not update those baselines.
+
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
@@ -79,10 +109,10 @@ suite and only skip the captures. These captures are developer evidence, not par
 Build first with `npm run build`, then enable the spec you want to capture:
 
 ```sh
-SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts
+SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
 SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts
 SOTTO_THEME_EVIDENCE=1 npx playwright test tests/e2e/theme-palettes-evidence.spec.ts
-SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/phase-three-theme-branding.spec.ts
+SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/theme-branding-evidence.spec.ts
 SOTTO_FROST_EVIDENCE=1 npx playwright test tests/e2e/frosted-window.spec.ts
 SOTTO_PANE_TERMINAL_EVIDENCE=1 npx playwright test tests/e2e/pane-terminal.spec.ts
 ```
@@ -91,16 +121,16 @@ In PowerShell, set the matching variable before the command and remove it after:
 
 ```powershell
 $env:SOTTO_THEMES_E2E = '1'
-try { npx playwright test tests/e2e/phase-three-themes.spec.ts }
+try { npx playwright test tests/e2e/theme-library-evidence.spec.ts }
 finally { Remove-Item Env:SOTTO_THEMES_E2E }
 ```
 
-| Spec | Capture folder |
+| Spec | Publication folder (`SOTTO_E2E_EVIDENCE=publish`) |
 | --- | --- |
-| `phase-three-themes.spec.ts` | `artifacts/phase-three-themes/` |
+| `theme-library-evidence.spec.ts` | `artifacts/phase-three-themes/` |
 | `appearance-evidence.spec.ts` | `artifacts/verification/phase-1-appearance/` |
 | `theme-palettes-evidence.spec.ts` | `artifacts/verification/sotto-palettes/` |
-| `phase-three-theme-branding.spec.ts` | `artifacts/phase-three-theme-branding/` |
+| `theme-branding-evidence.spec.ts` | `artifacts/phase-three-theme-branding/` |
 | `frosted-window.spec.ts` | `artifacts/frosted-window/` (git-ignored: screen captures show the desktop behind the window) |
 | `pane-terminal.spec.ts` | `artifacts/pane-terminal/` |
 
@@ -108,8 +138,9 @@ The appearance spec's optional whole-screen capture additionally needs
 `SOTTO_APPEARANCE_SCREEN_CAPTURE=1` and an otherwise clear desktop. Leave it unset
 for app-window captures. Run Electron captures serially on an interactive desktop;
 inspect their images before claiming visual verification. These commands write
-evidence files, so inspect the working tree afterward and keep only intended
-captures. They do not regenerate the design comparison baselines.
+disposable evidence by default. Publication needs the separate setting above;
+keep only intended captures when publishing. They do not regenerate the design
+comparison baselines.
 
 ## Devin native verification
 
@@ -359,7 +390,7 @@ $env:SOTTO_CODEX_COMPUTER_USE_LIVE = '1'
 npx vitest run tests/integration/codexComputerUseLive.test.ts --maxWorkers=1
 ```
 
-Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/phase-three-tools-bridge.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/agent-browser/`. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
+Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/native-tool-ownership.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `test-results/e2e-evidence/agent-browser/` by default. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
 
 ## Manual Windows desktop check
 
@@ -367,7 +398,7 @@ After `npm ci`, run `npm run test:desktop-smoke` from the release checkout on an
 
 The command runs `test:recovery`, which checks focused real application boundaries, builds once and drives receipt, queued-steering and completed-dictation recovery. It then uses that same build for both daily-workspace cases and the Settings index journey. The daily check drives actual keyboard input through a Windows shell, verifies the changed file, reads its diff, commits and pushes only to an owned temporary bare repository; its GitHub client is scripted. The restart case checks drafts and queues, while Settings checks real saves, failure feedback, keyboard navigation, themes and persistence.
 
-Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory; the runner does not modify or restore committed captures. Standalone spec runs keep their usual evidence paths unless that option is supplied. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
+Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory; the runner does not modify or restore committed captures. Standalone spec runs use ignored `test-results/e2e-evidence/` by default; `SOTTO_E2E_EVIDENCE=publish` deliberately refreshes their historical evidence folders. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
 
 ## Recovery through application boundaries
 
@@ -389,7 +420,7 @@ This command complements the full suite. Its fake provider boundary proves Sotto
 
 ## Stale host-lock test processes
 
-`hostLock.test.ts` waits for its synthetic holder process to exit, then fixes only that PID's zero-signal liveness probe to `ESRCH` for the test. Windows may reuse a PID during repeated acquisition rounds; a newly live PID would correctly make every contender refuse the supposedly crashed lease. Other PID/signal probes still use the real process API. Filesystem contention, exact single-owner and winner-lock checks, cleanup, live-owner refusals and the separate `ESRCH`/`EPERM` policy tests remain real and unchanged (#406). No production lock rule or deadline is relaxed.
+`lock.test.ts` waits for its synthetic holder process to exit, then fixes only that PID's zero-signal liveness probe to `ESRCH` for the test. Windows may reuse a PID during repeated acquisition rounds; a newly live PID would correctly make every contender refuse the supposedly crashed lease. Other PID/signal probes still use the real process API. Filesystem contention, exact single-owner and winner-lock checks, cleanup, live-owner refusals and the separate `ESRCH`/`EPERM` policy tests remain real and unchanged (#406). No production lock rule or deadline is relaxed.
 
 ## Fake Claude event timestamps
 

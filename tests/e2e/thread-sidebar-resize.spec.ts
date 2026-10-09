@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -156,12 +158,12 @@ test('expanded and collapsed sidebars fit desktop sizes in both appearances and 
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expectNoOverflow(page)
         await expect(sidebar(page).getByRole('link', { name: 'Settings', exact: true }).locator('svg.lucide-settings')).toBeVisible()
-        await page.screenshot({ path: `artifacts/thread-sidebar/expanded-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidenceDirectory('artifacts/thread-sidebar'), `expanded-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
         await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
         await expectNoOverflow(page)
         await expectCollapsedNavigation(page)
-        await page.screenshot({ path: `artifacts/thread-sidebar/collapsed-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidenceDirectory('artifacts/thread-sidebar'), `collapsed-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
         await expectWidth(page, Math.min(480, width - 470))
       }

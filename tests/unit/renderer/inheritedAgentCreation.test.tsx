@@ -6,7 +6,7 @@ import type { TerminalWorkspaceBridge } from '../../../src/shared/terminalWorksp
 import { useAddProject } from '../../../src/renderer/src/agents/addProject'
 import { NewTerminalDialog } from '../../../src/renderer/src/terminals/NewTerminalDialog'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok Build', providerId: 'grok' as const, ready: true }
 const opus = { id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude Code', providerId: 'claude' as const, ready: true }

@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 test('legacy activity remains readable after migration and a full app restart', async () => {
   test.setTimeout(120_000)
@@ -22,7 +23,7 @@ test('legacy activity remains readable after migration and a full app restart', 
   await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
     activeProjectId: 'project', activeThreadId: 'workshop' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
-  await mkdir(resolve('artifacts/activity-performance'), { recursive: true })
+  await mkdir(evidenceDirectory('artifacts/activity-performance'), { recursive: true })
   try {
     for (const phase of ['migrated', 'restarted']) {
       const launched = await launchSotto('success', profile)
@@ -39,7 +40,7 @@ test('legacy activity remains readable after migration and a full app restart', 
         if (!await command.isVisible()) await log.getByRole('button', { name: /Ran 1 command/ }).click()
         await command.click()
         await expect(log.getByLabel('output code block')).toContainText(output)
-        await page.screenshot({ animations: 'disabled', path: resolve('artifacts/activity-performance', `${phase}.png`) })
+        await page.screenshot({ animations: 'disabled', path: resolve(evidenceDirectory('artifacts/activity-performance'), `${phase}.png`) })
       } finally { await closeSotto(launched) }
     }
   } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }

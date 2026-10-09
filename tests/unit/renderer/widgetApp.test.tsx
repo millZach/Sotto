@@ -14,7 +14,7 @@ import { MICROPHONE_NOT_SET_UP_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type WidgetErr
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { APP_ICON_BRAND, APP_ICON_BRAND_ATTRIBUTE, DEFAULT_WIDGET_PALETTE, themeBrand, widgetPaletteFor } from '../../../src/shared/themeBranding'
 import { DEFAULT_THEME_ID } from '../../../src/shared/themes/library'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { agentWireBridge } from '../../fixtures/agentBridge'
 import {
   WidgetApp,

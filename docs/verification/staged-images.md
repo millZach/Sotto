@@ -21,7 +21,7 @@ The chip looks as it did. What changed is where its picture comes from and what 
 - After the review fixes (turning history off keeps an image staged for an unsaved draft; an oversize image read over the socket is named as a preview), the spec passed again alone. Run beside `screenshot-paste.spec.ts`, with two Electron apps starting at once, it failed once at a viewport check right after a resize, and passed on its own.
 - `tests/e2e/screenshot-paste.spec.ts` and `tests/e2e/composer-short-window.spec.ts` (the one-image layout at 820x560 and in a short split) passed. The keyboard-focus case in the short-window spec failed once while another spec's app was starting and passed on its own.
 - `tests/e2e/provider-recovery.spec.ts`: the case that clears a recovered draft passed; it starts from an `agents.json` an older version wrote with the image inline, so the image is staged at start. Its two bind cases time out filling **Thread name** in the New thread dialog, before any image step. They fail the same way on `origin/main` at `bc4110a3` (run in a separate checkout with its own `npm ci` and build), so they are not this change's.
-- `tests/e2e/phase-one-integrated.spec.ts`: four of its five cases fail, none at an image step. The same four fail on `origin/main` at `bc4110a3`: the image-draft restart case, settlement, the light provider controls and the keyboard case. These are tracked in #340.
+- `tests/e2e/workspace-draft-and-delivery-journeys.spec.ts`: four of its five cases fail, none at an image step. The same four fail on `origin/main` at `bc4110a3`: the image-draft restart case, settlement, the light provider controls and the keyboard case. These are tracked in #340.
 
 ## After the second review
 

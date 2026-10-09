@@ -62,7 +62,7 @@ ADR-0027's amendment; the Pull request surface, one press from the badge, says w
 
 With the worktree cleanup's merged rule or Auto-settle merged threads on, every settings save swept worktrees and asked
 GitHub about each candidate branch. A save that changes neither the cleanup rules nor Auto-settle merged threads now
-asks nothing; `tests/unit/main/worktreeCleanup.test.ts` asserts it.
+asks nothing; `tests/integration/worktreeCleanup.test.ts` asserts it.
 
 ## The two queries against GitHub
 

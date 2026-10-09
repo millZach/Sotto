@@ -29,7 +29,7 @@ UI commits, in order: `1eb91e4`, `820957a`, `0e04d4d`, `2bda6e5` (source and uni
 - `npx vitest run tests/unit/renderer/requests tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/threadsView.test.tsx tests/unit/main/requestDrafts.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/preload/requestDrafts.test.ts --maxWorkers=1`: 113 passed in 11 files ([log](../../artifacts/phase-three-draft-recovery/vitest.log)). Removing the acknowledgement phase from the re-list trigger fails the absence-before-acknowledgement test.
 - `npm run build` in this worktree's own `out/` ([log](../../artifacts/phase-three-draft-recovery/build.log)).
 - `npx playwright test tests/e2e/request-draft-recovery.spec.ts tests/e2e/request-draft-restart.spec.ts --workers=1`: 9 passed ([log](../../artifacts/phase-three-draft-recovery/e2e-recovery.log)).
-- `npx playwright test tests/e2e/phase-three-requests.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1`: 3 passed, so live request cards are unchanged ([log](../../artifacts/phase-three-draft-recovery/e2e-neighbours.log)).
+- `npx playwright test tests/e2e/native-request-forms.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1`: 3 passed, so live request cards are unchanged ([log](../../artifacts/phase-three-draft-recovery/e2e-neighbours.log)).
 
 ## Electron journey
 

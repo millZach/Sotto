@@ -9,7 +9,7 @@ import { ThreadsView, type ThreadToolsProps, type ThreadsViewProps } from '../..
 import {
   LAYOUT_STORAGE_KEY, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE, threadPromptId,
 } from '../../../src/renderer/src/agents/splitLayout'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 

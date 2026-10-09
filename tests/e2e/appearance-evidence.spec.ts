@@ -8,18 +8,19 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, enableVoiceCoordinator, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * Rendered evidence for ticket #73 that the pixel gate does not hold: the
  * native select popup, the widget staying on its own scheme, overlays and the
  * Threads page in the light room, and how quickly a choice repaints. Run with
- * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images land in
+ * SOTTO_APPEARANCE_EVIDENCE=1 after `npm run build`; images use disposable run evidence by default; publication uses
  * artifacts/verification/phase-1-appearance.
  */
 const enabled = process.env.SOTTO_APPEARANCE_EVIDENCE === '1'
 /** Screen captures include whatever covers Sotto's window, so they need their own opt-in. */
 const screenCaptureEnabled = process.env.SOTTO_APPEARANCE_SCREEN_CAPTURE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/phase-1-appearance')
+const evidenceRoot = evidenceDirectory('artifacts/verification/phase-1-appearance')
 
 async function withProfile(
   settings: Partial<AppSettings>,

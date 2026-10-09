@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentCommand } from '../../../src/shared/agents'
 import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
-import { openSidebarFolders, threadsStateFixture } from './liveAgentState'
+import { openSidebarFolders, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 

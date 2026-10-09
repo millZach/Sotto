@@ -25,7 +25,7 @@ Final source checks: **312 tests passed in 15 scoped files**, no skips; both Typ
 npx vitest run tests/unit/main/requestDrafts.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/main/threadDrafts.test.ts tests/unit/main/agentControlRecovery.test.ts tests/unit/preload/requestDrafts.test.ts tests/unit/preload/personalChats.test.ts tests/unit/renderer/requests tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/threadsView.test.tsx tests/integration/requestDraftDelivery.test.ts tests/integration/draftManagementHandoff.test.ts tests/integration/ipc.test.ts --maxWorkers=1
 npm run typecheck
 npm run build
-npx playwright test tests/e2e/request-draft-restart.spec.ts tests/e2e/phase-three-requests.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1
+npx playwright test tests/e2e/request-draft-restart.spec.ts tests/e2e/native-request-forms.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1
 ```
 
 The final **nine complete-app Electron journeys passed in 31.1 seconds**:

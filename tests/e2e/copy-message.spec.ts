@@ -2,11 +2,12 @@ import { execFileSync } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Windows Electron renders of the per-message copy control (#128), variant C: a floating mark
 // on each finished message's top-right corner. Same fixture as thread-activity.spec.ts; copies are
 // recorded in main at globalThis.activityFixture.copied.
-const shots = resolve(process.cwd(), 'artifacts/copy-message')
+const shots = evidenceDirectory('artifacts/copy-message')
 declare global { interface Window { activityFixture?: { show: (scenario: 'settled' | 'live' | 'disconnected' | 'restored') => void } } }
 
 test.describe.configure({ mode: 'serial' })

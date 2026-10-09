@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,7 +32,7 @@ for (const provider of ['codex', 'claude'] as const) it.runIf(process.env.SOTTO_
   } catch (error) { evidence.failure = error instanceof Error ? error.message : String(error); evidence.after = (await host.snapshot().catch(() => undefined))?.threads[0]; throw error }
   finally {
     host.disconnect(); await host.closed()
-    await mkdir('artifacts/phase-five-compaction', { recursive: true })
-    await writeFile(`artifacts/phase-five-compaction/${provider}-native.json`, JSON.stringify(evidence, null, 2))
+    await mkdir(evidenceDirectory('artifacts/phase-five-compaction'), { recursive: true })
+    await writeFile(join(evidenceDirectory('artifacts/phase-five-compaction'), `${provider}-native.json`), JSON.stringify(evidence, null, 2))
   }
 }, 160000)

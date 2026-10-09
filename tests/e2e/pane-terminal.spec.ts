@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The terminal drawer in a thread pane: its own shells in the thread's working copy, apart from the Tools
@@ -10,7 +11,7 @@ import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/so
  * to artifacts/pane-terminal.
  */
 const evidence = process.env.SOTTO_PANE_TERMINAL_EVIDENCE === '1'
-const SHOTS = resolve('artifacts/pane-terminal')
+const SHOTS = evidenceDirectory('artifacts/pane-terminal')
 
 async function drawerSessions(page: Page, threadId: string, place: 'drawer' | 'tools'): Promise<Array<{ id: string; status: string }>> {
   return page.evaluate(async ({ thread, where }) => {

@@ -38,7 +38,7 @@ The pane tab strip correctly replaces the side-by-side layout when Tools reduces
 
 ## Complementary coverage and release limits
 
-- Personal chat/provider ownership: `phase-four-personal-providers.spec.ts`; editable prompt generation: `phase-four-prompts.spec.ts`; native skill references: `phase-three-skills-bridge.spec.ts`.
+- Personal chat/provider ownership: `phase-four-personal-providers.spec.ts`; editable prompt generation: `phase-four-prompts.spec.ts`; native skill references: `provider-native-skills.spec.ts`.
 - Voice routing uses the deterministic microphone/transcription fixtures in `phase-five-personal-voice.spec.ts`; physical microphone, transcription latency and actual voice playback remain deferred for issue 74.
 - Real native provider/account checks and long-history local-feedback/stream/pane measurements are separate issue-74 lanes; their reports must distinguish network latency from local renderer timing.
 - This harness runs on Windows. Important journeys have not been repeated on supported Apple-silicon macOS in this session and must not be called cross-platform verified.

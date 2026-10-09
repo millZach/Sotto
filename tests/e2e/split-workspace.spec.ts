@@ -7,6 +7,7 @@ import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 async function size(launched: LaunchedSotto, width: number, height = 1000): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
@@ -22,7 +23,7 @@ async function capture(page: Page, name: string): Promise<void> {
   for (const appearance of ['dark', 'light'] as const) {
     await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode, accent: 'teal' }), appearance)
     await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-    await page.screenshot({ path: `artifacts/crossing/split-${name}-${appearance}.png`, animations: 'disabled' })
+    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), `split-${name}-${appearance}.png`), animations: 'disabled' })
   }
   await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark', accent: 'teal' }))
 }
@@ -60,7 +61,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 4 })
     await page.mouse.move(box.x + box.width * 0.78, box.y + box.height * 0.5, { steps: 8 })
     await expect(page.getByText('Open on the right', { exact: true })).toBeVisible()
-    await page.screenshot({ path: 'artifacts/crossing/split-drop-target-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'split-drop-target-dark.png'), animations: 'disabled' })
     await page.mouse.up()
 
     const footer = panes.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
@@ -102,7 +103,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowRight')
     await expect(divider).toHaveAttribute('aria-valuenow', '60')
-    await page.screenshot({ path: 'artifacts/crossing/split-divider-focus-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'split-divider-focus-dark.png'), animations: 'disabled' })
     await footerPrompt.focus()
     await page.keyboard.press('F6')
     await expect(previewsPrompt).toBeFocused()
@@ -122,7 +123,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(footerPrompt).toHaveValue('Next: compare the mobile footer.')
     await expect(previewsPrompt).toBeHidden()
     await size(launched, 760, 760)
-    await page.screenshot({ path: 'artifacts/crossing/split-narrow-760-dark.png', animations: 'disabled' })
+    await page.screenshot({ path: join(evidenceDirectory('artifacts/crossing'), 'split-narrow-760-dark.png'), animations: 'disabled' })
     await size(launched, 1600)
     await expect(divider).toHaveAttribute('aria-valuenow', '60')
     await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
@@ -148,7 +149,7 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(footer.getByRole('button', { name: 'Close Footer links pane' })).toBeInViewport()
     // Playwright's capture does not follow Electron's zoom factor, so the window captures itself.
     const zoomed = await launched.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.capturePage()).toPNG().toString('base64'))
-    await writeFile('artifacts/crossing/split-scale-125-dark.png', Buffer.from(zoomed, 'base64'))
+    await writeFile(join(evidenceDirectory('artifacts/crossing'), 'split-scale-125-dark.png'), Buffer.from(zoomed, 'base64'))
     await launched.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.setZoomFactor(1))
   } finally {
     await closeSotto(launched)

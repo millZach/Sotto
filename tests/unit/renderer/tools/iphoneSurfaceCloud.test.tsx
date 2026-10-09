@@ -10,7 +10,7 @@ import { IPhoneSurface } from '../../../../src/renderer/src/tools/IPhoneSurface'
 import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 import { agentContextFixture } from '../../../fixtures/agentContext'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn(),
