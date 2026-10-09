@@ -1,17 +1,19 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { HOSTS_CHANGED, HOSTS_COMMAND, type HostsCommand, type HostsState } from '../../src/shared/hosts'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const shots = evidenceDirectory('artifacts/renderer-other-bundle-run')
 
 test('Escape dismisses saved host questions and only Switch it off disables the host', async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-question-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const launched = await launchSotto('success', profile)
-  const shots = resolve('artifacts/renderer-other-bundle-run')
   await mkdir(shots, { recursive: true })
   try {
     const { page } = launched

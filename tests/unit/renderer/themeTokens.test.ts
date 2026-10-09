@@ -16,7 +16,7 @@ import {
   type Mode,
   type PaintOptions,
   type Rgba,
-} from './themeTokenResolver'
+} from '../../fixtures/renderer/themeTokenResolver'
 
 const combinations = MODES.flatMap(mode => THEME_IDS.map(id => [mode, id] as const))
 
@@ -157,6 +157,8 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/features/onboarding/onboarding.css',
+      'src/renderer/src/features/onboarding/threadsTour.css',
       'src/renderer/src/agents/threadsChrome.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',

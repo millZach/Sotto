@@ -34,6 +34,18 @@ export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignIn
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
 
 /**
+ * Each provider's install page as its maker publishes it, the same pages the host's install brief cites
+ * (`src/main/hosts/hostProviderBrief.ts`). First-run setup opens one in the browser on a press, for a provider this
+ * computer does not have or has too old.
+ */
+export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
+  codex: 'https://github.com/openai/codex',
+  claude: 'https://code.claude.com/docs/en/setup',
+  grok: 'https://docs.x.ai/build/overview',
+  devin: 'https://docs.devin.ai/cli',
+}
+
+/**
  * The only pages a host's sign-in may open, by provider: https, one of these names exactly, no port, no user. They are
  * the pages each client printed when its sign-in was run: Codex's `https://auth.openai.com/codex/device`, Grok Build's
  * `https://accounts.x.ai/oauth2/device`, and Claude Code's `https://claude.com/cai/oauth/authorize`, which older

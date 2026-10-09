@@ -391,6 +391,8 @@ Answering a question or permission request and creating a project are also part 
 
 **Compositor binding.** A key the desktop’s compositor, rather than Sotto, listens for and that runs Sotto’s dictation command. On Linux, Hyprland runs `sotto dictation start|stop|toggle|cancel`. Omarchy’s defaults are F9 to hold and talk (start on key-down, stop on key-up) and Super+Ctrl+X to toggle. They replace Voxtype’s bindings when the user installs Sotto’s snippet. Windows and macOS keep the global toggle shortcut. On Linux, Escape cancels inside Sotto’s window; a compositor binding may also run `cancel` from another app.
 
+**Shell pill.** The dictation widget drawn by Omarchy’s `sotto.dictation` shell plugin: a bar indicator between dictations and a pill while dictating, with Stop, Cancel, Try again and Discard. On Linux it replaces the Electron widget while its installed folder exists and Sotto has started the dictation socket and published a live state file. Main publishes status, fixed copy, whether a failed recording is kept and the saved edge in a private runtime file; never the transcript or audio. The pill starts centred under the bar, snaps to a centred screen edge on release and remembers that edge through `sotto dictation place`. It appears on the focused display when dictation starts and stays there until it ends (#850).
+
 Pressing Stop, releasing F9 or pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as the microphone is ready. No audio is kept or transcribed.
 
 ## Memory
@@ -443,6 +445,8 @@ Pressing Stop, releasing F9 or pressing the dictation shortcut again while the m
 
 **Ink.** Sotto's own dark half: an almost-black room for the thread beside a lighter graphite sidebar, with the app icon's teal as the accent. Not a separate theme; it is the dark variant of the Sotto theme.
 
+**Sotto mark.** The owl: a black owl's head on a rounded teal tile, its eyes and beak cut through to the tile (ADR-0064). `build/icon.svg` is its one master, and every icon Sotto ships is rendered from it; inside the app `SottoMark` draws the same owl in the theme's colours, and the macOS menu bar shows it simplified for 16 pixels. The wordmark beside it is "Sotto". Avoid: "logo" for the in-app mark, "glyph" for the whole mark (the glyph is the owl, the tile is the tile).
+
 **App icon brand.** How the Sotto mark looks on the default theme: the icon's own teal tile (`#47b8a9`) and black glyph in both halves, whatever the half's accent. Both windows mark the root `data-brand="app-icon"` when the default theme paints it; on any other theme the mark takes that theme's accent (ADR-0024).
 
 **Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
@@ -455,13 +459,17 @@ Pressing Stop, releasing F9 or pressing the dictation shortcut again while the m
 
 **Theme editor.** The floating panel that creates or edits a custom theme and paints it live over the saved look until Save or Cancel. Pick app color (the inspector) chooses a colour role by pointing at the page; a role's label spotlights everywhere it is used.
 
-**Strip.** The top bar of the main window on the pages that still wear one, Agents and Memory (both behind their beta gates) and onboarding: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region. Every other page has the sidebar top row instead. The Threads page owns the whole window, with the sidebar's top row and the pane header as its drag regions and the window controls once at the top right. Dictate, History and Help seat the Threads sidebar beside the room, with a thin drag strip above the room carrying the window controls. Settings gives its own left column the sidebar top row and the sidebar foot, and carries the window controls at the top right the way Threads does.
+**Strip.** The top bar of the main window on the pages that still wear one, Agents and Memory (both behind their beta gates) and first-run setup: the Sotto mark on the left, the switch in the centre, the window controls on the right. It is the window's drag region. Every other page has the sidebar top row instead. The Threads page owns the whole window, with the sidebar's top row and the pane header as its drag regions and the window controls once at the top right. Dictate, History and Help seat the Threads sidebar beside the room, with a thin drag strip above the room carrying the window controls. Settings gives its own left column the sidebar top row and the sidebar foot, and carries the window controls at the top right the way Threads does.
 
 On Linux the title areas stay, with no minimise, maximise or close buttons and no space reserved for them. On Omarchy, Super+W asks Sotto to close; it hides to the tray and keeps running. Windows keeps its buttons, and macOS keeps its native traffic lights.
 
 **Sidebar width.** The remembered space the user gives the Threads sidebar, shared with Terminal mode and with the same sidebar beside Dictate, History and Help. Collapsing it leaves a narrow rail for threads and page links; expanding it restores the chosen width, while Settings keeps its own column.
 
 **Sidebar top row.** The first row of the Threads sidebar, and of the Settings column: the Sotto mark with the wordmark "Sotto" beside it, then, in the Threads sidebar only, the Threads | Terminal control, Add project and New thread. The Threads sidebar ends it with Collapse sidebar. It is a drag region. On macOS it is inset and drops the wordmark, to leave the traffic lights their place.
+
+**First-run setup.** What a new install opens on until it is finished: nine steps in four groups (Start, Dictation, Agents, Elsewhere) on a card under the strip, from the welcome through the look, the microphone, the OpenRouter key and the shortcut to the coding agents, a first project, other computers and the iPhone beta (ADR-0063). Each step uses the surface that owns it, and every step after the welcome can be skipped: its button reads Continue once the step's task is done and Skip for now until then. Finishing sets `onboardingComplete` and opens Threads with the **Threads tour**; Reset settings opens it again. `src/renderer/src/features/onboarding/`. Avoid: "wizard", and "host setup", which is a different thing.
+
+**Threads tour.** Four notes on the real Threads page right after first-run setup finishes: the sidebar, New thread, the thread area and Settings, each lit in turn with the rest of the window dimmed. It runs once, in that session, and Escape or Skip tour ends it. `ThreadsTour.tsx`. Avoid: "onboarding tour", "walkthrough".
 
 **Sidebar foot.** The bottom of the Threads sidebar, and of the Settings column: the switch, the page links as icons (History, Settings, Help, and Memory while memory is switched on) and the update control. Every page without a strip has one, so the way to any page is the same from any page.
 

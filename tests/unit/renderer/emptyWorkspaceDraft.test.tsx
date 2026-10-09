@@ -9,7 +9,7 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { draftThreads } from '../../../src/renderer/src/agents/draftThreads'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
-import { openSidebarFolders } from './liveAgentState'
+import { openSidebarFolders } from '../../fixtures/renderer/liveAgentState'
 import { agentContextFixture } from '../../fixtures/agentContext'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))

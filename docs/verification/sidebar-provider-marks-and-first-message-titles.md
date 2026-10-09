@@ -1,5 +1,7 @@
 # Provider marks on sidebar rows, and first-message titles — 2026-10-05
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Two complaints about the Threads sidebar. Each row's second line named its provider in words ("Codex", "Claude Code"), and the user wanted the company's logo there instead. A new thread also stayed "New thread" for a long time, and Codex threads seemed almost never to be named.
 
 ## The sidebar row
@@ -25,7 +27,7 @@ One real gap turned up. Automatic naming refused any thread with more than one u
 ## Automated checks
 
 - `tests/unit/main/threadTitles.test.ts`: the cut (whitespace, a last word that fits, a long unbroken run, an emoji at the cut); a first-message title while the turn runs, kept against the provider's own name, then replaced by the generated one; a steered first turn still named across a restart; an older thread left alone; generation off; history off.
-- `tests/integration/socketHost.test.ts`: the finished-unread test found its thread by the title "Workshop", which its first message now changes. It finds the thread by ID after the first lookup.
+- `tests/integration/socketClientIsolation.test.ts`: the finished-unread test found its thread by the title "Workshop", which its first message now changes. It finds the thread by ID after the first lookup.
 - `tests/e2e/thread-sidebar-resize.spec.ts` checks the row's mark and its hover name in place of the provider's text, and passes against the built app.
 
 The thread-creating specs that touch this area pass, except eight tests in `crossing`, `devin-provider`, `phase-one-integrated` and `provider-recovery` that fail the same way when built from `origin/main` (1594b4a5).

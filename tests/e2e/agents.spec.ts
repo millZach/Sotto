@@ -4,15 +4,15 @@ import { join } from 'node:path'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+import { closeSotto, completeFirstRunSetup, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/agent-control-smoke')
 
 async function setup(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
+  // First-run setup's own Coding agents step already connects every provider this computer has, the way Connect
+  // providers does, so the real Agents room opens already connected.
+  await completeFirstRunSetup(page, { microphone: 'test' })
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Not now', exact: true }).click()
 }
@@ -55,7 +55,7 @@ test('selects each native subscription with its available model and reasoning ef
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.locator('#settings-agents').getByLabel('Reasoning account')).toHaveValue('codex')
     await page.getByLabel('Reasoning account').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/subscription-settings-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'subscription-settings-e2e.png') })
   } finally { await closeSotto(launched) }
 })
 
@@ -73,7 +73,7 @@ test('chooses and previews a natural voice without changing subscription reasoni
       provider: state.configuration.speechProvider, voice: state.configuration.speechVoice, reasoning: state.configuration.reasoning, preview: state.speech.preview,
     })))).toEqual({ provider: 'natural', voice: 'M3', reasoning: 'none', preview: true })
     await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/natural-voice-settings-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'natural-voice-settings-e2e.png') })
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('M3')
@@ -85,6 +85,9 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
   const { page } = launched
   try {
     await setup(page)
+    // The Coding agents step in first-run setup already connected this computer's one provider, which auto-enables
+    // agent control for a single-provider host; this test's own precondition is agents off.
+    await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.command({ type: 'configure', patch: { enabled: false } }))
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await page.getByLabel('Speech voice', { exact: true }).selectOption('grok')
     await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
@@ -109,7 +112,7 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
     await expect(page.getByRole('button', { name: 'Stop speech', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Stop speech', exact: true }).click()
     await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/grok-tts-settings-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'grok-tts-settings-e2e.png') })
     expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
     expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-grok-key')
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
@@ -146,7 +149,7 @@ test('defaults to Grok Altair and previews Kokoro Heart with the shared OpenRout
     })))).toEqual({ provider: 'kokoro', grokVoice: 'altair', reasoning: 'none', error: null })
     await page.getByRole('button', { name: 'Stop speech', exact: true }).click()
     await page.getByLabel('Speech voice', { exact: true }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/kokoro-voice-settings-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'kokoro-voice-settings-e2e.png') })
     expect(await readFile(join(launched.userData, 'credentials.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
     expect(await readFile(join(launched.userData, 'agents.json'), 'utf8')).not.toContain('fixture-valid-openrouter-key')
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
@@ -164,8 +167,6 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connect providers' }).click()
-    await expect(page.getByRole('status')).toHaveText('Codex connected')
     const key = await hostKeys(page)
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
@@ -190,19 +191,19 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
     await expect(page.getByRole('menuitem', { name: 'Resume managing', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
     await expect.poll(() => page.evaluate(workshop => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.assignments.find(assignment => assignment.threadId === workshop)?.mode), key('workshop'))).toBe('manual')
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-manual-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'agents-manual-e2e.png') })
     const widget = launched.app.windows().find((window) => window.url().endsWith('/widget.html'))
     expect(widget).toBeDefined()
     await widget!.getByTestId('widget-sliver').hover()
     await widget!.getByRole('button', { name: 'Expand threads', exact: true }).click()
     await expect(widget!.getByRole('button', { name: 'Collapse threads', exact: true })).toBeVisible()
-    await widget!.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-e2e.png' })
+    await widget!.screenshot({ path: join(evidence, 'agents-widget-e2e.png') })
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('Inspect the result before proceeding.')
     await expect.poll(() => page.evaluate(docs => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.assignments.find(a => a.threadId === docs)?.mode), key('docs'))).toBe('managed')
     await paneMenuAction(page, 'Resume managing')
     await expect.poll(() => page.evaluate(workshop => (globalThis as unknown as { sotto: SottoBridge }).sotto?.agents?.get().then(s => s.assignments.find(a => a.threadId === workshop)?.mode), key('workshop'))).toBe('managed')
     await page.getByRole('main').evaluate((element) => { element.scrollTop = 0 })
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-e2e.png' })
+    await page.screenshot({ path: join(evidence, 'agents-e2e.png') })
   } finally {
     await closeSotto(launched)
   }
@@ -222,7 +223,6 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
       const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       main.setBounds({ ...main.getBounds(), width: 820, height: 560 })
     })
-    await page.getByRole('button', { name: 'Connect providers' }).click()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
@@ -235,7 +235,7 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
     await expect.poll(() => page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.get().then(state => state.configuration.projectsDirectory))).toBe('D:\\Builder projects')
     expect(await page.getByRole('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     await page.getByLabel('Default projects directory').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/agent-control-smoke/agents-settings-dark-minimum.png' })
+    await page.screenshot({ path: join(evidence, 'agents-settings-dark-minimum.png') })
     await page.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     await openThreads(page)
     await page.getByLabel('Prompt', { exact: true }).fill('Review this small-screen prompt.')
@@ -245,7 +245,7 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
     await widget.getByRole('button', { name: 'Expand threads' }).click()
     await expect(widget.getByLabel('Prompt', { exact: true })).toHaveValue('Review this small-screen prompt.')
     await widget.getByRole('button', { name: 'Send it', exact: true }).scrollIntoViewIfNeeded()
-    await widget.screenshot({ path: 'artifacts/agent-control-smoke/agents-widget-dark-prompt.png' })
+    await widget.screenshot({ path: join(evidence, 'agents-widget-dark-prompt.png') })
     await widget.getByRole('button', { name: 'Send it', exact: true }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
     expect(await widget.locator('.widget-threads').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)

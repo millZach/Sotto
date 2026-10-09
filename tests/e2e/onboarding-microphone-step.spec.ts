@@ -1,25 +1,26 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+import { closeSotto, finishFirstRunSetupFrom, firstRunForwardButton, launchSotto, reachFirstRunStep, resizeWindow } from './support/sottoLaunch'
 
 for (const skip of [false, true]) {
   test(`onboarding resolves the microphone step before continuing (${skip ? 'explicit skip' : 'successful test'})`, async () => {
     test.setTimeout(120_000)
     const launched = await launchSotto(skip ? 'microphone-denied-once' : 'success')
     const { page } = launched
-    const evidence = resolve('artifacts/review-386')
+    const evidence = evidenceDirectory('artifacts/review-386')
     await mkdir(evidence, { recursive: true })
     try {
       await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
-      await page.getByRole('button', { name: 'Continue', exact: true }).click()
-      const next = page.getByRole('button', { name: 'Continue', exact: true })
-      await expect(next).toBeDisabled()
+      await reachFirstRunStep(page, 'microphone')
+      const next = firstRunForwardButton(page)
+      await expect(next).toHaveText('Skip for now')
       await expect(page.getByText(/Test your microphone or choose Skip for now to continue/)).toBeVisible()
       if (skip) {
         await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
         await expect(page.getByText('Microphone access is blocked.', { exact: true })).toBeVisible()
-        await expect(next).toBeDisabled()
+        await expect(next).toHaveText('Skip for now')
         await expect(page.getByRole('button', { name: 'Try microphone again' })).toBeEnabled()
       }
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
@@ -33,22 +34,27 @@ for (const skip of [false, true]) {
           await page.screenshot({ path: resolve(evidence, `${skip ? 'denied' : 'untested'}-${width}-${appearance}.png`) })
         }
       }
-      // Keyboard activation keeps the existing Test / Skip actions and four-step focus flow.
-      const action = page.getByRole('button', { name: skip ? 'Skip for now' : 'Test microphone', exact: true })
-      await action.focus()
-      await page.keyboard.press('Enter')
-      if (!skip) await expect(page.getByText(/Microphone ready/)).toBeVisible()
-      await expect(next).toBeEnabled()
-      await next.focus()
-      await page.keyboard.press('Enter')
+      // Keyboard activation keeps the existing Test / Skip for now actions and the step's own focus flow. Skip for
+      // now is the forward button itself, so activating it both skips and advances in one press.
+      if (skip) {
+        await next.focus()
+        await page.keyboard.press('Enter')
+      } else {
+        const action = page.getByRole('button', { name: 'Test microphone', exact: true })
+        await action.focus()
+        await page.keyboard.press('Enter')
+        await expect(page.getByText(/Microphone ready/)).toBeVisible()
+        await expect(next).toHaveText('Continue')
+        await next.focus()
+        await page.keyboard.press('Enter')
+      }
       await expect(page.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeFocused()
       await page.getByRole('button', { name: 'Back', exact: true }).click()
-      await expect(next).toBeEnabled()
-      await next.click()
-      await next.click()
-      await expect(page.getByRole('button', { name: 'Finish setup' })).toBeEnabled()
-      await page.getByRole('button', { name: 'Finish setup' }).click()
-      await expect(page.getByRole('complementary', { name: 'Thread sidebar', exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Check your microphone' })).toBeFocused()
+      await firstRunForwardButton(page).click()
+      await firstRunForwardButton(page).click()
+      await expect(page.getByRole('heading', { name: 'One shortcut from speech to text' })).toBeFocused()
+      await finishFirstRunSetupFrom(page, 'shortcut')
       expect(await page.evaluate(async () => {
         const settings = await window.sotto!.getSettings()
         return { completed: settings.onboardingComplete, skipped: settings.microphoneSkipped, key: settings.llmApiKey }
@@ -62,7 +68,7 @@ for (const skip of [false, true]) {
 test('onboarding notices an ended microphone and allows retry', async () => {
   const launched = await launchSotto('microphone-browser')
   const { page } = launched
-  const evidence = resolve('artifacts/pkg-18-e2e/onboarding')
+  const evidence = evidenceDirectory('artifacts/pkg-18-e2e/onboarding')
   await mkdir(evidence, { recursive: true })
   try {
     await page.evaluate(async () => {
@@ -76,7 +82,8 @@ test('onboarding notices an ended microphone and allows retry', async () => {
         return stream
       }
     })
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await reachFirstRunStep(page, 'microphone')
+    const next = firstRunForwardButton(page)
     await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
     await expect(page.getByText(/Microphone ready/)).toBeVisible()
     await page.evaluate(() => {
@@ -86,7 +93,7 @@ test('onboarding notices an ended microphone and allows retry', async () => {
     await expect(page.getByText('No microphone was found.', { exact: true })).toBeVisible()
     await expect(page.getByRole('meter', { name: 'Microphone level' })).toHaveCount(0)
     await expect(page.locator('.onboarding-microphone-test .voice-wave')).toHaveAttribute('data-stage', 'idle')
-    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled()
+    await expect(next).toHaveText('Skip for now')
     expect(await page.evaluate(() => (window as unknown as { onboardingMicrophoneFixture: { streams: MediaStream[] } }).onboardingMicrophoneFixture.streams[0]!.getTracks().every(track => track.readyState === 'ended'))).toBe(true)
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
@@ -103,8 +110,8 @@ test('onboarding notices an ended microphone and allows retry', async () => {
     await page.getByRole('button', { name: 'Try microphone again' }).focus()
     await page.keyboard.press('Enter')
     await expect(page.getByText(/Microphone ready/)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await expect(next).toHaveText('Continue')
+    await next.click()
     await expect(page.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeFocused()
     await page.evaluate(async () => {
       await (window as unknown as { onboardingMicrophoneFixture: { context: AudioContext } }).onboardingMicrophoneFixture.context.close()

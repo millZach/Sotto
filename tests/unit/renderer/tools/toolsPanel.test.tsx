@@ -12,8 +12,8 @@ import { MAX_RENDERED_MARKDOWN_LENGTH, trustedImageSource } from '../../../../sr
 import { ToolsPanelStore, TOOL_SURFACES } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 import type { CloudIphoneBridge, CloudEvent } from '../../../../src/shared/cloudIphone'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, TOKEN_B, fakeFilesBridge, markdown, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, TOKEN_B, fakeFilesBridge, markdown, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAMAASsJTYQAAAAASUVORK5CYII='
 

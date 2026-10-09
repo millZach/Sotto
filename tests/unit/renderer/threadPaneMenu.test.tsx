@@ -8,8 +8,8 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
-import { openPaneMenu, paneMenuItems } from './paneMenu'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 // The voice coordinator is hidden for the beta, so Manage and its companions are listed only when it is on.

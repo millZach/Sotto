@@ -102,6 +102,8 @@ interface ActiveSession {
   errorCode?: WidgetErrorCode
   /** When listening began, kept so Try again returns to the same processing state. */
   startedAt: number
+  /** Whether the recorder reached listening, independent of its start timestamp. */
+  captureStarted: boolean
   /** The recording's parts in order: segments emitted while listening, then the tail. */
   readonly parts: RecordingPart[]
   /** The whole recording's length, once it has stopped. */
@@ -321,6 +323,7 @@ export class DictationController {
       progress: 0,
       acceptProgress: true,
       startedAt: 0,
+      captureStarted: false,
       parts: [],
       durationMs: 0,
       kept: false,
@@ -534,6 +537,7 @@ export class DictationController {
       return
     }
     session.startedAt = finiteTimestamp(this.now())
+    session.captureStarted = true
     this.dispatch(
       { type: 'STARTED', sessionId: session.id, startedAt: session.startedAt },
       session,
@@ -894,6 +898,8 @@ export class DictationController {
           status: state.status,
           ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
           code: session.errorCode ?? 'TRANSCRIPTION_FAILED',
+          ...(this.platform === 'linux' && session.errorCode === 'MIC_DEVICE_NOT_FOUND'
+            ? { captureStarted: session.captureStarted } : {}),
           ...(state.kept === true ? { kept: true } : {}),
           ...(state.retried === true ? { retried: true } : {}),
           ...metadata,

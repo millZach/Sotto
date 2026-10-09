@@ -16,7 +16,7 @@ test('keeps workspace choices and project actions reachable with many worktrees 
   const git = (...args: string[]): void => { execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'commit.gpgSign=false', ...args], { cwd: repository, windowsHide: true, stdio: 'pipe' }) }
   git('init', '-b', 'main')
   git('commit', '--allow-empty', '-m', 'Initial fixture')
-  const title = 'Talk to Text Application with a very long project name'
+  const title = 'Sotto Workspace Projects with a very long project name'
   const threads = Array.from({ length: 12 }, (_, index) => {
     const path = join(profile, `worktree-${index}`)
     const branch = `fix/task-${index}-with-a-long-branch-name`

@@ -19,6 +19,7 @@ artifacts/babysitting-surfaces-run/
 coverage/
 playwright-report/
 test-results/
+artifacts/e2e-runs/
 .vite/
 .cache/
 *.log
@@ -159,6 +160,20 @@ artifacts/forge-question-ack/
 artifacts/show-thinking/
 
 # Hyprland clipboard proof and Linux copy captures; retain only cited evidence.
+artifacts/linux-package/*
+!artifacts/linux-package/proof.json
+!artifacts/linux-package/settings-dark.png
+!artifacts/linux-package/settings-light.png
+!artifacts/linux-package/settings-unavailable-dark.png
+!artifacts/linux-package/settings-unavailable-light.png
+!artifacts/linux-package/gates.txt
+!artifacts/linux-package/package-verification.json
+!artifacts/linux-package/package-list.txt
+!artifacts/linux-package/proof.txt
+apps/omarchy/src/
+apps/omarchy/pkg/
+apps/omarchy/*.tar.gz
+apps/omarchy/*.pkg.tar.zst
 artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-proof.txt
 !artifacts/linux-hyprland-paste/hyprctl-arguments.jsonl
@@ -194,3 +209,9 @@ artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/upright-small-displays.png
 !artifacts/omarchy-shell-plugin/verbs-received.png
 !artifacts/omarchy-shell-plugin/without-motion.png
+# Linux shell plumbing proof; retain only the evidence cited in its verification note.
+artifacts/linux-shell-plumbing/*
+!artifacts/linux-shell-plumbing/real-check.txt
+!artifacts/linux-shell-plumbing/plugin-present.png
+!artifacts/linux-shell-plumbing/plugin-socket-held.png
+!artifacts/linux-shell-plumbing/widget-returned.png

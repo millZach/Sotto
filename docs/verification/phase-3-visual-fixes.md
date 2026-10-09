@@ -19,7 +19,7 @@ Scoped edit inside the established Crossing identity. There is no new concept, t
 
 ## Results
 
-**Build.** Worktree `out/`, built with `npm run build` from this branch's source. Journeys ran in `tests/e2e/phase-three-visual-fixes.spec.ts` (2 passed) with owned temp profiles, the `success` fixtures and a local HTTP page. No paid or native provider ran.
+**Build.** Worktree `out/`, built with `npm run build` from this branch's source. Journeys ran in `tests/e2e/browser-theme-editor-layout.spec.ts` (2 passed) with owned temp profiles, the `success` fixtures and a local HTTP page. No paid or native provider ran.
 
 **Captures.** All are composed `desktopCapturer` window captures at the window's device pixels, in `artifacts/phase-three-visual-fixes/`. Every image named below was opened and inspected. The "before" images are the critic's, in main `artifacts/phase-three-visual-critic/` (`editor-minimized-browser-820x560-dark.png`, `editor-minimized-browser-1280-dark.png`) and `artifacts/phase-three-ui-recovery/chat-not-sent-*.png`.
 
@@ -34,7 +34,7 @@ Scoped edit inside the established Crossing identity. There is no new concept, t
    - After the moves, resizes between 820x560 and 1280x860, an expand and minimize, and three editor openings, the page is the same: same `webContents` id, same `performance.timeOrigin` (no reload), same URL and same typed note. The window count is unchanged. A patched `shell.openExternal` recorded no calls.
 3. **Modal behavior unchanged: pass.**
    - `browserSurface.test.tsx`: a plain `role="dialog"` still hides the page while the bar is clear, and an expanded editor still hides it.
-   - The existing `phase-three-ui.spec.ts` link-menu journey passes.
+   - The existing `tools-workspace.spec.ts` link-menu journey passes.
 4. **Failed message hierarchy: pass.**
    - `chat-not-sent-820x560-dark.png` and `-light.png`, `chat-not-sent-1280-dark.png`.
    - The card reads: "You", Not sent, the message at body size, then a muted line "Codex did not take this message." with **Edit in composer** on the same row, then ▸ Details.
@@ -52,7 +52,7 @@ Scoped edit inside the established Crossing identity. There is no new concept, t
    - `chat-not-sent-recovered-820x560-dark.png`: with Details open, Shift+Tab then Enter on Edit in composer puts the message in the composer after the newer draft ("Also check the weather", a blank line, then "Book the ferry with $brainstorm for Saturday").
    - The `brainstorm` skill ref is kept, there is still one submission, and the composer has focus.
    - "It is in the composer." replaces the button, and the diagnostic stays under Details.
-   - The existing `phase-three-ui-recovery.spec.ts` failed-send journey passes.
+   - The existing `browser-retry-and-terminal-themes.spec.ts` failed-send journey passes.
 
 ## Limits
 

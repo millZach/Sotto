@@ -1,8 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest'
 import mermaid from 'mermaid'
 import { readFileSync } from 'node:fs'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { assertDiagramSafe } from '../../../src/renderer/src/agents/diagrams/diagramSafety'
-import { inspectDiagramSource } from '../../../src/shared/diagramSource'
 
 beforeEach(() => mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false,
   maxTextSize: 12000, maxEdges: 300, flowchart: { htmlLabels: false }, class: { htmlLabels: false } }))
@@ -109,22 +108,4 @@ it('admits ordinary grouped, annotated and styled examples', async () => {
 
 it('fails closed for an unknown database/type', () => {
   expect(() => assertDiagramSafe({ type: 'future-kind', db: {} })).toThrow(/cannot be checked/i)
-})
-
-it('reinspection keeps quoted titles stable while stripping configuration', () => {
-  const source = '---\ntitle: "Quoted \\"title\\" and \\\\ slash"\nconfig:\n  securityLevel: loose\n---\nflowchart TD\nA --> B'
-  const once = inspectDiagramSource(source)
-  const twice = inspectDiagramSource(once.code)
-  expect(twice).toEqual(once)
-  expect(twice.code).not.toContain('securityLevel')
-})
-
-it('bounds dense-state and 1000-node parser work independently of source length', () => {
-  const state = 'stateDiagram-v2\n' + Array.from({ length: 40 }, (_, i) =>
-    Array.from({ length: 39 - i }, (_, j) => `A${i}-->A${i + j + 1}`).join('\n')).join('\n')
-  const nodes = 'flowchart TD\n' + Array.from({ length: 1000 }, (_, i) => `A${i}`).join('\n')
-  for (const source of [state, nodes, state.replaceAll('\n', ';')]) {
-    expect(source.length).toBeLessThan(12000)
-    expect(inspectDiagramSource(source).problem).toMatch(/parser work limit/i)
-  }
 })

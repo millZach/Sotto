@@ -1,5 +1,7 @@
 # A new worktree starts from the local branch when origin does not have it (#328)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Proved in the built app on September 24, 2026, on Windows 11, from `main` at `02e9185a` with this branch on top (`npm run build`, then Playwright). The images named here are in `artifacts/worktree-origin-fallback/`.
 
 ## What changed
@@ -17,7 +19,7 @@ npx playwright test tests/e2e/thread-worktrees.spec.ts
 
 After the two-axis review the notice's Dismiss got its full name, its dismissal is remembered on this computer, the outcome values were renamed to read at a glance, and the run's captures moved to an ignored `-run` folder. The test was run again on the rebuilt app with a reload added: 1 passed, 6 seconds. `tests/unit/renderer/localBranchNotice.test.tsx` (2 tests) covers the notice's three states and its dismissal across a remount.
 
-Unit: `npx vitest run tests/unit/main/threadWorktrees.test.ts`, 22 passed. Its origin test now covers the three outcomes on real repositories with a bare remote: origin has the branch (`originBase: 'fetched'`, the worktree carries origin's content), origin lacks it (`originBase: 'not-on-origin'`, the worktree carries the local commit), and a remote that cannot be reached (still "could not be fetched"). A project with no origin remote allocates with `originBase: 'no-origin'`.
+Original unit run (the origin cases now live in integration): `npx vitest run tests/integration/threadWorktreeAllocation.test.ts`, 22 passed. Its origin test now covers the three outcomes on real repositories with a bare remote: origin has the branch (`originBase: 'fetched'`, the worktree carries origin's content), origin lacks it (`originBase: 'not-on-origin'`, the worktree carries the local commit), and a remote that cannot be reached (still "could not be fetched"). A project with no origin remote allocates with `originBase: 'no-origin'`.
 
 ## What was checked
 

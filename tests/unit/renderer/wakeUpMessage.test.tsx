@@ -9,7 +9,7 @@ import { ThreadFollowups } from '../../../src/renderer/src/agents/ThreadFollowup
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /** A wake-up in the thread and in its follow-up queue (ADR-0061, variant C), told by the host's mark alone. */
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

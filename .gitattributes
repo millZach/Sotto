@@ -15,3 +15,6 @@ apps/omarchy/**/*.mts text eol=lf
 apps/omarchy/**/*.c text eol=lf
 scripts/verify-omarchy-shell-plugin.sh text eol=lf
 scripts/omarchy-nested-pointer.c text eol=lf
+apps/omarchy/install.sh text eol=lf
+apps/omarchy/PKGBUILD text eol=lf
+apps/omarchy/sotto.desktop text eol=lf

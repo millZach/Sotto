@@ -23,11 +23,12 @@ Scope: branch `work/phase3-themes`. The built-ins were renamed late at the user'
 
 ## Tests
 
-Focused unit run, 17 files, 350 tests passed:
-- `themesIpc`, `themesOpenVsx`, `themeOpenVsxCorrections`
+Focused unit run, 17 original files, 350 tests passed. The citations below name their current split locations:
+
+- `themesIpc`, `themesOpenVsx`, `tests/unit/main/themes/openVsxCorrections.test.ts`, `tests/unit/shared/themes/vscodeImportCorrections.test.ts`
 - `designCaptureMatrix`, `notices`
-- `app`, `appearance`, `designSystem`, `diagramSafety` (two files), `messageDiagrams`
-- `settingsView`, `themeInspector`, `themeLibrary`, `themeTokens`
+- `tests/unit/renderer/appFrame.test.tsx`, `tests/unit/renderer/appRecovery.test.tsx`, `tests/unit/renderer/appAppearance.test.tsx`, `tests/unit/renderer/appUpdates.test.tsx`, `tests/unit/renderer/appOnboarding.test.tsx`, `tests/unit/renderer/appPrewarm.test.tsx`, `appearance`, `designSystem`, `tests/unit/renderer/diagramSafety.test.ts`, `tests/unit/renderer/agents/diagrams/diagramRendering.test.tsx`, `tests/unit/shared/diagramSource.test.ts`, `messageDiagrams`
+- `tests/unit/renderer/features/settings/settingsNavigation.test.tsx`, `tests/unit/renderer/features/settings/settingsMicrophone.test.tsx`, `tests/unit/renderer/features/settings/settingsCaptureOutput.test.tsx`, `tests/unit/renderer/features/settings/settingsGit.test.tsx`, `tests/unit/renderer/features/settings/settingsAppearance.test.tsx`, `tests/unit/renderer/features/settings/settingsTranscriptionKey.test.tsx`, `tests/unit/renderer/features/settings/settingsUpdatesPrivacy.test.tsx`, `tests/unit/renderer/features/settings/projectThreadDefaults.test.tsx`, `tests/unit/renderer/features/settings/settingsDictionary.test.tsx`, `themeInspector`, `themeLibrary`, `themeTokens`
 - shared `settings` and `themes`
 
 Other checks:
@@ -36,7 +37,7 @@ Other checks:
 - `npm run notices:verify` verified 170 components.
 - The full suite is root's final gate and was not run here.
 
-Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/phase-three-themes.spec.ts --workers=1`: 3 passed (about 37 s). One earlier run of the whole file failed test 1 at 8.4 s on a visibility check, and that run's output was overwritten. The next two whole-file runs and three repeats of test 1 passed.
+Electron, after `npm run build`, `SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts --workers=1`: 3 passed (about 37 s). One earlier run of the whole file failed test 1 at 8.4 s on a visibility check, and that run's output was overwritten. The next two whole-file runs and three repeats of test 1 passed.
 
 1. **The whole themes journey (about 22 s).** Every item in the checklist above, plus:
    - keyboard activation of a theme card keeps focus;
