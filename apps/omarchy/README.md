@@ -61,7 +61,7 @@ apps/omarchy/install-shell-plugin.sh --checkout   # runs this checkout's apps/om
 apps/omarchy/install-shell-plugin.sh --command /absolute/path/to/sotto
 ```
 
-The script copies the plugin to `~/.config/omarchy/plugins/sotto.dictation/`, where the shell looks for plugins, and puts the glyph on the bar after Omarchy's indicators with `omarchy bar put`. `--command` saves the launcher in the plugin's settings with `omarchy bar set sotto.dictation command <path>`; you can run that yourself later. Run the script again after updating Sotto. A running shell keeps the plugin code it loaded first, so restart it afterwards with `omarchy restart shell`.
+The script copies the plugin to `$HOME/.config/omarchy/plugins/sotto.dictation/` and puts the glyph on the bar after Omarchy's indicators with `omarchy bar put`. That folder is the one Omarchy's shell loads plugins from: its `PluginRegistry` builds the path from `$HOME` and ignores `XDG_CONFIG_HOME`, so the script and Sotto, which hides its own widget while the folder exists, do the same. If `XDG_CONFIG_HOME` points elsewhere and holds a copy of the plugin, the script says the shell does not load it. `--command` saves the launcher in the plugin's settings with `omarchy bar set sotto.dictation command <path>`; you can run that yourself later. Run the script again after updating Sotto. A running shell keeps the plugin code it loaded first, so restart it afterwards with `omarchy restart shell`.
 
 How it behaves:
 

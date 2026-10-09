@@ -8,7 +8,9 @@ set -euo pipefail
 id="sotto.dictation"
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 source_dir="$here/shell-plugin/$id"
-# Where omarchy-shell and `omarchy plugin` look for plugins.
+# Where omarchy-shell and `omarchy plugin` look for plugins, and where Sotto
+# looks for this one. Omarchy's PluginRegistry builds it from $HOME and
+# ignores XDG_CONFIG_HOME, so this script does too.
 plugins_dir="$HOME/.config/omarchy/plugins"
 target="$plugins_dir/$id"
 
@@ -71,6 +73,16 @@ plugin_known() {
   omarchy-shell shell listPlugins 2>/dev/null | jq -e --arg id "$id" 'any(.[]; .id == $id)' >/dev/null 2>&1
 }
 
+# A copy under an XDG_CONFIG_HOME other than ~/.config is one the shell never
+# loads. Only then is the difference worth a word.
+note_elsewhere() {
+  [[ -n ${XDG_CONFIG_HOME:-} && $XDG_CONFIG_HOME == /* ]] || return 0
+  local copy="$XDG_CONFIG_HOME/omarchy/plugins/$id"
+  [[ -e $copy || -L $copy ]] || return 0
+  [[ $(realpath -m -- "$copy") != "$(realpath -m -- "$target")" ]] || return 0
+  echo "There is another copy of the plugin in $copy. Omarchy's shell does not load it, since it reads plugins only from $plugins_dir, so you can delete that copy."
+}
+
 # Refuse to replace or delete a folder this script did not put there.
 ours() {
   [[ -L $target ]] && return 0
@@ -89,6 +101,7 @@ if (( uninstall )); then
   rm -rf -- "$target"
   shell_running && { omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; }
   echo "Removed Sotto's shell plugin from $plugins_dir."
+  note_elsewhere
   config="$HOME/.config/omarchy/shell.json"
   if [[ -f $config ]] && jq -e --arg id "$id" '[.bar.layout[]?[]? | .id?] | index($id)' "$config" >/dev/null 2>&1; then
     echo "Its glyph is still in the bar's layout in $config. Run 'omarchy plugin disable $id' in your desktop session to take it off."
@@ -133,6 +146,7 @@ fi
 mv -- "$staging" "$target"
 staging=""
 echo "Copied the plugin to $target."
+note_elsewhere
 
 if ! shell_running; then
   echo "omarchy-shell is not running, so Sotto is not on the bar yet. Run this again in your desktop session."
