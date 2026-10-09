@@ -1,6 +1,6 @@
 # 5. Codex App Server provider adapter
 
-October 8, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) ends supervision's automatic acceptance of URL elicitations and app-tool confirmations. Native decoding and the user's Continue/Decline answers remain; historical supervision attribution remains readable.
+October 8, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) ends supervision's automatic acceptance of URL elicitations and app-tool confirmations. Native decoding and the user's Continue/Decline answers remain; historical supervision attribution remains readable.
 
 Amended October 6, 2026: standalone Chats was retired under ADR-0010. References below to personal chats, their provider connections and their voice or memory paths describe historical behavior; those paths are removed. Thread behavior and the remaining beta gates continue as described.
 

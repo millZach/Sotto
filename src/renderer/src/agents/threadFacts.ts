@@ -1,5 +1,6 @@
-import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
@@ -70,16 +71,14 @@ const parse = (value: string | null | undefined): number => {
   return Date.parse(value)
 }
 
-const PROVIDER_KEYS: Readonly<Record<string, ProviderKey>> = {
-  claude: 'claude', anthropic: 'claude',
-  codex: 'codex', openai: 'codex', chatgpt: 'codex',
-  grok: 'grok', xai: 'grok',
-  devin: 'devin', cognition: 'devin',
+/** Other names a label may give a provider than its id or its name: its company's, or ChatGPT for Codex. */
+const OTHER_NAMES: Readonly<Record<string, ProviderKey>> = {
+  anthropic: 'claude', openai: 'codex', chatgpt: 'codex', xai: 'grok', cognition: 'devin',
 }
 
 /** The badge tint for a provider name as the provider reports it (a model's `provider` field), never a model's display name. */
 export function providerKey(provider: string): ProviderKey {
-  return PROVIDER_KEYS[provider.trim().toLocaleLowerCase()] ?? 'other'
+  return providerIdOfLabel(provider) ?? OTHER_NAMES[provider.trim().toLocaleLowerCase()] ?? 'other'
 }
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
@@ -204,6 +203,18 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     lastMessage,
   }
+}
+
+/**
+ * The state a sidebar row says. A thread the host marked finished while no client showed it says Just finished
+ * (ADR-0046); one that babysits a pull request says so where it would say Done (ADR-0061, variant C), so Working, Just
+ * finished and anything waiting on you all outrank it. Settling says Settled, which ends babysitting anyway.
+ */
+export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): { readonly text: string; readonly finished: boolean; readonly babysitting: boolean } {
+  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
+  const finished = row.thread.finishedUnread === true && label === 'Done'
+  const babysitting = !finished && label === 'Done' ? babysittingWord(row.thread) : undefined
+  return { text: finished ? 'Just finished' : babysitting ?? label, finished, babysitting: babysitting !== undefined }
 }
 
 /** Every thread Sotto knows, described from its own state. */

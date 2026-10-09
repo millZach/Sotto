@@ -103,6 +103,11 @@
 .thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: 15px; }
 .thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
+/* A wake-up babysitting sent (ADR-0061): on the user's side, labelled Sotto and Wake-up, edged in the accent. */
+.thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
+.thread-message[data-from='sotto'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }
+.thread-message__mark { flex: none; width: 16px; height: 16px; }
+.thread-message__tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
 .thread-message--pending[data-status='failed'], .thread-message--pending[data-status='uncertain'] { border-color: color-mix(in srgb, var(--threads-warning-text) 40%, var(--tt-hairline)); }
 .thread-message__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
 .thread-message__status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

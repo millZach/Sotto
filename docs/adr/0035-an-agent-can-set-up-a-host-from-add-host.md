@@ -1,6 +1,6 @@
 # An agent can set up a host from Add host
 
-October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice gate, managed assignments and supervision references below are historical. Host setup and provider jobs remain ordinary user-started threads; only the user answers their request cards.
+October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The voice gate, managed assignments and supervision references below are historical. Host setup and provider jobs remain ordinary user-started threads; only the user answers their request cards.
 
 ## Status
 

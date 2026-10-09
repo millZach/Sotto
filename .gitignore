@@ -1,4 +1,9 @@
 node_modules/
+artifacts/linux-no-window-controls/*
+!artifacts/linux-no-window-controls/checks.json
+!artifacts/linux-no-window-controls/threads-1600x1000-dark.png
+!artifacts/linux-no-window-controls/threads-820x560-dark.png
+!artifacts/linux-no-window-controls/settings-820x560-light-reduced-motion.png
 artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/threads-1600x1000-dark.png
 !artifacts/remove-personal-chats/threads-820x560-light.png
@@ -10,6 +15,7 @@ dist/
 dist-electron/
 /release/
 artifacts/windows-askpass/
+artifacts/babysitting-surfaces-run/
 coverage/
 playwright-report/
 test-results/
@@ -147,3 +153,20 @@ artifacts/disabled-coordinator-voice/
 artifacts/forge-question-ack/
 # Thinking row verification; the captures the note cites are committed.
 artifacts/show-thinking/
+
+# Hyprland clipboard proof and Linux copy captures; retain only cited evidence.
+artifacts/linux-hyprland-paste/*
+!artifacts/linux-hyprland-paste/clipboard-proof.txt
+!artifacts/linux-hyprland-paste/hyprctl-arguments.jsonl
+!artifacts/linux-hyprland-paste/onboarding-820x560-light.png
+!artifacts/linux-hyprland-paste/settings-820x560-dark.png
+!artifacts/linux-hyprland-paste/dictate-820x560-light.png
+!artifacts/linux-hyprland-paste/nested-paste-real.png
+!artifacts/linux-hyprland-paste/nested-paste-results.json
+!artifacts/linux-hyprland-paste/nested-proof.txt
+!artifacts/linux-hyprland-paste/clipboard-failure-widget.png
+!artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
+!artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
+
+# Captures from the removal merge?s first-run verification tool.
+artifacts/voice-control-removal/merged-setup/

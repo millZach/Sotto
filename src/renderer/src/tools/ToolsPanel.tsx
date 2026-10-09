@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
-import { type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import type { GitChangesBridge } from '../../../shared/gitChanges'
@@ -8,6 +8,8 @@ import type { TerminalBridge } from '../../../shared/terminal'
 import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
+import { offersBabysitting } from '../agents/babysitting'
+import { resolveModel } from '../../../shared/modelCatalog'
 import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
@@ -423,7 +425,10 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{chrome.surface === 'agents' ? 'The selected thread is no longer listed.' : 'The pinned thread is no longer listed.'}</strong>
     {chrome.surface !== 'agents' ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
-  else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus} />
+  // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
+  else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
+    babysit={offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
+      ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'the agent') } : undefined} />
   // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
   else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.

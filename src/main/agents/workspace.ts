@@ -11,7 +11,7 @@ import { cloneActivitySnapshot, immutableActivities, isImmutableActivities, subs
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -32,13 +32,13 @@ import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitAct
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
-import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, pullRequestAddress, pullRequestKey, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
+import { branchPullRequestUrl, GIT_PULL_REQUEST_LINKS_MAX, parsePullRequestReference, pullRequestAddress, pullRequestKey, type GitPullRequestAction, type GitPullRequestDetail, type GitPullRequestLink, type GitPullRequestLinkSource, type GitPullRequestMergeMethod, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { GitPullRequestLimited, GitPullRequestRefusal, PULL_REQUEST_ACTION_DONE, type GitPullRequests, type GitPullRequestView } from './gitPullRequests'
 import { MAX_AGENT_ACTIVITIES, isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
-import { BABYSITTING_PER_THREAD_MAX } from '../../shared/babysitting'
+import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../shared/babysitting'
 import { migrateWorkspaceThreadKinds } from './commandCenterRecords'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
@@ -1221,7 +1221,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       snapshot.connected = false
       // A Git action that was running when the host stopped did not finish here; the folder says what it did.
       for (const thread of snapshot.threads) if (thread.gitAction?.status === 'running') thread.gitAction = { ...thread.gitAction, status: 'failed', phase: null, stage: null, hook: null, finishedAt: new Date().toISOString(), error: 'Sotto stopped while this action ran. Check the folder before running it again.' }
-      snapshot.models.forEach(model => { model.ready = false })
+      // A Claude Code model saved before the adapter named it carries the provider's id as its label, and a model that
+      // has left the catalog is never refreshed, so it takes the name here.
+      snapshot.models.forEach(model => { model.ready = false; if (model.provider === 'claude') model.provider = PROVIDER_LABELS.claude })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
       for (const thread of snapshot.threads) dropLiveThreadState(thread)
@@ -1923,6 +1925,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
+        ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
         messages: [],
         ...(old?.activities || thread.activities ? { activities: this.mergeActivities(thread, old) } : {}),
@@ -2829,6 +2832,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (next === current) return
     if (next.length) { this.babysitRecords.set(threadId, [...next]); thread.babysitting = babysittingSummary(next) }
     else { this.babysitRecords.delete(threadId); delete thread.babysitting }
+    // A pull request babysat again is no longer one whose babysitting ended.
+    const babysat = new Set(next.map(record => pullRequestKey(record.url)))
+    const ended = thread.babysitEnded?.filter(item => !babysat.has(pullRequestKey(item.url)))
+    if (ended?.length) thread.babysitEnded = ended; else delete thread.babysitEnded
+    this.dirty = true
+    try { await this.flush() } finally { this.publish() }
+  }
+  /**
+   * Records why babysitting a pull request ended, where it ended on its own or with the switch, on the thread's record,
+   * so every client's Pull request surface can say so and why (ADR-0061, #825). One per pull request, the newest kept.
+   */
+  async recordBabysitEnded(threadId: string, url: string, reason: BabysitEndedReason): Promise<void> {
+    await this.initialize()
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const number = pullRequestAddress(url)?.number
+    if (!thread || number === undefined) return
+    const key = pullRequestKey(url)
+    const kept = (thread.babysitEnded ?? []).filter(item => pullRequestKey(item.url) !== key)
+    thread.babysitEnded = [...kept, { url, number, reason, endedAt: new Date().toISOString() }].slice(-BABYSITTING_PER_THREAD_MAX)
     this.dirty = true
     try { await this.flush() } finally { this.publish() }
   }

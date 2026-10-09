@@ -1,6 +1,8 @@
 // Renders build/icon.svg, build/installer-sidebar.svg and build/tray-template.svg
 // into the binary brand assets electron-builder consumes: icon.png, icon.ico,
-// installer-sidebar.bmp and the macOS menu-bar template PNGs.
+// installer-sidebar.bmp and the macOS menu-bar template PNGs. It also renders
+// the phone apps' icons from build/icon.svg: the iPhone app icon and Android's
+// square and round launcher icons.
 // Run after editing any SVG: node scripts/generate-brand-assets.mjs
 import { Buffer } from 'node:buffer'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -144,6 +146,27 @@ await writeFile(path.join(buildDir, 'installer-sidebar.bmp'), bmp24(sidebar, 164
 
 await trayTemplate()
 
+// The phone apps wear the same icon on the phones' canvas, and Android's round
+// launcher icon is the tile's colour as a circle under the same owl.
+const PHONE_CANVAS = '#1c1d27'
+const ANDROID_DENSITIES = [['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]]
+
+async function phoneIcons() {
+  const roundSvg = Buffer.from(
+    iconSvg.toString('utf8').replace(/<rect width="96" height="96" rx="22" fill="(#[0-9a-f]{6})"\/>/i,'<circle cx="48" cy="48" r="48" fill="$1"/>'),
+  )
+  if (roundSvg.equals(iconSvg)) throw new Error('build/icon.svg has no 96px tile to round')
+  const square = (size) => sharp(iconSvg, { density: 768 }).resize(size, size).flatten({ background: PHONE_CANVAS })
+  await square(1024).png().toFile(path.join(repoRoot, 'apps/ios/Sotto/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png'))
+  for (const [density, size] of ANDROID_DENSITIES) {
+    const dir = path.join(repoRoot, 'apps/android/app/src/main/res', `mipmap-${density}`)
+    await square(size).png().toFile(path.join(dir, 'ic_launcher.png'))
+    await sharp(roundSvg, { density: 768 }).resize(size, size).png().toFile(path.join(dir, 'ic_launcher_round.png'))
+  }
+}
+
+await phoneIcons()
+
 log(
-  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png',
+  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png, the iPhone app icon and the Android launcher icons',
 )

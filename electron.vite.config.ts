@@ -87,8 +87,11 @@ function headlessHostBuild(): Plugin {
 
 export default defineConfig({
   main: {
+    // Runtime assets keep their verified resource path; emit the tray PNG under out/ with ?asset.
+    publicDir: 'resources/runtime',
     build: { rollupOptions: { external: ['node-pty'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
+      dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

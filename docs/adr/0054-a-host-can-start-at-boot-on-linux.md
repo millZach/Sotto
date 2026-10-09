@@ -1,6 +1,6 @@
 # A host can start at boot on Linux
 
-October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Start at boot remains an explicit user action under the same consent, systemd and recovery rules.
+October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Start at boot remains an explicit user action under the same consent, systemd and recovery rules.
 
 ## Status
 

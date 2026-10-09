@@ -8,7 +8,7 @@ import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './vi
 import { compactionSchema } from './compaction'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
-import { agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
+import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
@@ -331,6 +331,10 @@ export const agentThreadSchema = z.object({
   /** The pull requests this thread babysits: which, who started each and since when (ADR-0061 decision 10). The
    * host keeps what the thread was last told; clients get only this. Absent when it babysits none, and from older hosts. */
   babysitting: z.array(agentBabysittingSchema).max(BABYSITTING_PER_THREAD_MAX).optional(),
+  /** Why babysitting each of its pull requests last ended, where it ended on its own or with the switch, newest last; one per
+   * pull request, gone when that pull request is babysat again. Read, never sent by a client: a reason this build does
+   * not know drops the field rather than the thread. Absent from older hosts. */
+  babysitEnded: z.array(agentBabysitEndedSchema).max(BABYSITTING_PER_THREAD_MAX).optional().catch(undefined),
   /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
    * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
   wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
@@ -531,6 +535,11 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
+}
+/** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
+export function providerIdOfLabel(label: string): ProviderId | undefined {
+  const name = label.trim().toLowerCase()
+  return providerIdSchema.options.find(id => id === name || PROVIDER_LABELS[id].toLowerCase() === name)
 }
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
@@ -880,7 +889,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
-    /** The Sotto thread ID the window already minted and is showing. Absent from voice and older callers, which let main mint one. */
+    /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),

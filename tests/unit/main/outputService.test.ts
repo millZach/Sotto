@@ -9,6 +9,7 @@ import {
   type SpawnedProcessLike,
   type OutputServiceDependencies,
 } from '../../../src/main/output/outputService'
+import { sanitizeLinuxPasteText } from '../../../src/main/output/pasteCommand.linux'
 import { createPasteCommands, type PasteInvocation } from '../../../src/main/output/pasteCommand'
 
 const buildWindowsPasteInvocation = createPasteCommands('win32').oneShot
@@ -63,6 +64,52 @@ function createHarness(
 }
 
 describe('OutputService', () => {
+  it.each([
+    { autoPaste: false, restoreWidget: false },
+    { autoPaste: false, restoreWidget: true },
+    { autoPaste: true, restoreWidget: false },
+    { autoPaste: true, restoreWidget: true },
+  ])('copies without hiding or waiting when no paste command exists with %j', async ({ autoPaste, restoreWidget }) => {
+    const harness = createHarness({ buildPasteInvocation: () => null })
+    const transcript = '  exact Linux transcript\r\n'
+
+    await expect(harness.service.deliver(transcript, { autoPaste, pasteDelayMs: 1000, restoreWidget })).resolves.toBe('copied')
+    expect(harness.clipboardText()).toBe(transcript)
+    expect(harness.processInput()).toBeUndefined()
+    expect(harness.events).toEqual(['clipboard'])
+  })
+
+  it('removes every C0 control except tabs and newlines before Linux automatic paste', async () => {
+    const controls = Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)).join('')
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    await expect(harness.service.deliver(`café 🚀${controls}\x1b[201~text`, {
+      autoPaste: true, pasteDelayMs: 50,
+    })).resolves.toBe('pasted')
+    expect(harness.clipboardText()).toBe('café 🚀\t\n[201~text')
+  })
+
+  it('leaves Linux user-initiated copy text intact', async () => {
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    const text = 'copy\x1b[201~\r\n\ttext'
+    await expect(harness.service.deliver(text, { autoPaste: false, pasteDelayMs: 0 })).resolves.toBe('copied')
+    expect(harness.clipboardText()).toBe(text)
+  })
+
+  it('sends no clipboard write or paste for Linux text containing only controls', async () => {
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    await expect(harness.service.deliver('\x00\x1b\x07', { autoPaste: true, pasteDelayMs: 0 })).resolves.toBe('empty')
+    expect(harness.events).toEqual([])
+  })
+
+  it.each(['win32', 'darwin'] as const)('keeps automatic paste bytes unchanged for %s', platform => {
+    const harness = createHarness({ buildPasteInvocation: createPasteCommands(platform).oneShot })
+    const text = 'unchanged\x1b[201~\r\n\ttext'
+    return harness.service.deliver(text, { autoPaste: true, pasteDelayMs: 0 }).then(result => {
+      expect(result).toBe('pasted')
+      expect(harness.clipboardText()).toBe(text)
+    })
+  })
+
   it('holds the next clipboard write until a successful paste settles', async () => {
     vi.useFakeTimers()
     try {
@@ -192,6 +239,23 @@ describe('OutputService', () => {
       harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 275 }),
     ).resolves.toBe('pasted')
     expect(harness.events).toEqual(['clipboard', 'hide', 'delay:275', 'process', 'delay:150'])
+  })
+
+  it.each([true, false])('keeps the Linux widget mapped through paste success=%s and a following dictation', async success => {
+    const widget = { hideWidget: vi.fn(), showWidget: vi.fn() }
+    const harness = createHarness({
+      widget, keepWidgetVisibleDuringPaste: true,
+      buildPasteInvocation: createPasteCommands('linux').oneShot,
+      process: { run: () => success },
+    })
+    for (const text of ['first', 'second']) {
+      await expect(harness.service.deliver(text, {
+        autoPaste: true, pasteDelayMs: 50, restoreWidget: true,
+      })).resolves.toBe(success ? 'pasted' : 'copied')
+    }
+    expect(widget.hideWidget).not.toHaveBeenCalled()
+    expect(widget.showWidget).not.toHaveBeenCalled()
+    expect(harness.events).toEqual(['clipboard', 'delay:50', 'delay:150', 'clipboard', 'delay:50', 'delay:150'])
   })
 
   it('restores the idle widget after paste when restoreWidget is requested', async () => {

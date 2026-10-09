@@ -16,7 +16,7 @@ import {
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
-import { pullRequestAddress } from './gitPullRequests'
+import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { wakeUpText } from './wakeUp'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'

@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import type { ProviderId } from '../../shared/agents'
 import type { AppSettings } from '../../shared/settings'
+import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
@@ -177,14 +178,19 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
   // Babysitting (ADR-0061): the thread's host reads each babysat pull request every two minutes, whether or not a
   // window is in front, and hands each thread its news as a wake-up through the thread's own send path (decision 8).
-  // A quiet ending takes back what a waiting wake-up said of that pull request (decision 9).
+  // A quiet ending takes back what a waiting wake-up said of that pull request (decision 9). An ending on its own, or the
+  // switch's, is kept on the thread's record with why, for the Pull request surface to say (#825).
   const babysitTool = (threadId: string): boolean => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const deliverWakeUp: BabysitDeliver = (threadId, news) => agentControl.deliverWakeUp(threadId, news, { tool: babysitTool(threadId) })
   const QUIET_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(['stopped-by-agent', 'stopped-by-user', 'switched-off', 'settled', 'archived', 'unlinked', 'forgotten'])
+  const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
-    ended: async (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
+    ended: async (threadId, url, reason) => {
+      if (SAID_ENDINGS.has(reason)) await agentHost.recordBabysitEnded(threadId, url, reason as BabysitEndedReason).catch(() => undefined)
+      if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined)
+    } }) : undefined
   // A part of a wake-up may go only while the babysitting it is news of still stands, and an agent's only while the
   // switch is on, a last one included; a user's last wake-up for an ending goes. Asked as the wake-up goes, whatever
   // withdrawal managed.

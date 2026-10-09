@@ -1,6 +1,6 @@
 # A prompt sent at once is saved by its outbox write
 
-October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. Assignment growth described below is historical; assignments are removed from live coordinator state. Drafts, deliveries, user follow-up queues and the compact outbox write remain.
+October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. Assignment growth described below is historical; assignments are removed from live coordinator state. Drafts, deliveries, user follow-up queues and the compact outbox write remain.
 
 ## Status
 

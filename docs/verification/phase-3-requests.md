@@ -1,6 +1,6 @@
 # Phase 3 request card verification (#52)
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Worker: phase3-requests (Claude Opus 5), branch `work/phase3-requests` from `e34936f`. This covers only the shared request card (`src/renderer/src/agents/requests/*`), its unit tests and one complete-app Electron spec. Target: the Windows Electron desktop window, checked at 1280 × 860 and at the window minimum of 820 × 560, in dark and light.
 

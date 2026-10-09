@@ -86,7 +86,7 @@ export const DEFAULT_WIDGET_PALETTE: WidgetPalette = widgetPaletteFor({
 export interface ThemeBrand {
   /** The mark's rounded tile: the theme's accent. */
   readonly tile: string
-  /** The mark's bar and wave, readable on the tile. */
+  /** The mark's owl, readable on the tile. */
   readonly glyph: string
 }
 

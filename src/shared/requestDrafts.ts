@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRequestSchema, providerIdSchema, type AgentHostSnapshot, type AgentRequest, type AgentThread, type ProviderId } from './agents'
+import { agentRequestSchema, providerIdOfLabel, providerIdSchema, type AgentHostSnapshot, type AgentRequest, type AgentThread, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 
 const id = z.string().min(1).max(256)
@@ -71,10 +71,10 @@ export interface RequestDraftBridge {
   check(target: RequestDraftTarget): Promise<RequestDraftCheckResult>
 }
 export const requestDraftOwnerKey = (owner: RequestDraftOwner): string => JSON.stringify([owner.kind, owner.providerId, owner.ownerId])
-/** Legacy single-provider snapshots can identify the owner through its model instead of providerId. */
+/** Legacy single-provider snapshots can identify the owner through its model instead of providerId: a model's provider label is the provider's id or its name. */
 export function requestDraftProvider(host: AgentHostSnapshot, thread: AgentThread, fallback: ProviderId): ProviderId {
   const model = resolveModel(host.models, thread.modelId)
-  return thread.providerId ?? model?.providerId ?? providerIdSchema.safeParse(model?.provider.toLowerCase()).data ?? fallback
+  return thread.providerId ?? model?.providerId ?? (model ? providerIdOfLabel(model.provider) : undefined) ?? fallback
 }
 export const requestDraftKey = (target: RequestDraftTarget): string => JSON.stringify([target.kind, target.providerId, target.ownerId, target.requestId, requestQuestionsSignature(target.questions)])
 export const requestQuestionsSignature = (questions: RequestDraftTarget['questions']): string => JSON.stringify(agentRequestSchema.shape.questions.unwrap().parse(questions))

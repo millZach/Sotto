@@ -51,6 +51,10 @@ export function createE2ENativeState(): E2ENativeState {
 
 export function createE2EClipboard(state: E2ENativeState, scenario?: E2EScenario): ClipboardAdapter {
   let attempts = 0
+  if (scenario === 'desktop-clipboard-unavailable') {
+    // Electron accepted the text, but Wayland still owns the old desktop selection.
+    return { writeText: () => undefined, canPaste: () => false }
+  }
   return { writeText: (text) => {
     attempts++
     if (scenario === 'clipboard-recovery' && attempts <= 3) throw new Error('Synthetic clipboard unavailable')

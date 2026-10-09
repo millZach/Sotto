@@ -130,6 +130,76 @@ function threadSidebar(page: Page): Locator {
   return page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })
 }
 
+/** First-run setup's nine steps, in the order the footer walks them. */
+const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'key', 'shortcut', 'agents', 'project', 'computers', 'phone'] as const
+export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
+
+export interface FirstRunSetupOptions {
+  /** 'test' runs the microphone test and waits for it to report ready before leaving that step; 'skip' (the default) leaves it untested. */
+  readonly microphone?: 'test' | 'skip'
+}
+
+/**
+ * The footer's forward action on a middle first-run step: Continue when the step's own task is done, Skip for now
+ * otherwise. Welcome's "Get started" and the final phone step's "Finish setup" are their own calls, since neither
+ * label varies with state.
+ */
+export function firstRunForwardButton(page: Page): Locator {
+  return page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
+}
+
+/** Clicks past one first-run step, in whichever way that step leaves setup: Welcome's Get started, Finish setup on the last step, or the footer's Continue/Skip for now in between. */
+async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: FirstRunSetupOptions): Promise<void> {
+  if (step === 'welcome') {
+    await page.getByRole('button', { name: 'Get started' }).click()
+    return
+  }
+  if (step === 'microphone' && options.microphone === 'test') {
+    await page.getByRole('button', { name: /test microphone/i }).click()
+    await expect(page.getByText(/microphone ready/i)).toBeVisible()
+  }
+  if (step === 'phone') {
+    await page.getByRole('button', { name: /finish setup/i }).click()
+    return
+  }
+  await firstRunForwardButton(page).click()
+}
+
+/** Walks first-run setup up to, but not through, the named step: that step's own heading is showing and nothing past it has been touched. */
+export async function reachFirstRunStep(page: Page, step: FirstRunStepId, options: FirstRunSetupOptions = {}): Promise<void> {
+  const stop = FIRST_RUN_STEPS.indexOf(step)
+  for (const current of FIRST_RUN_STEPS.slice(0, stop)) await advanceFirstRunStep(page, current, options)
+}
+
+/** Ends the Threads tour that first-run setup opens with, from whichever stop it is showing. */
+export async function skipThreadsTour(page: Page): Promise<void> {
+  const tour = page.locator('.threads-tour')
+  await expect(tour).toBeVisible()
+  const skipTour = tour.getByRole('button', { name: 'Skip tour' })
+  if ((await skipTour.count()) > 0) await skipTour.click()
+  else await tour.getByRole('button', { name: 'Done' }).click()
+  await expect(tour).toHaveCount(0)
+}
+
+/**
+ * Finishes first-run setup from wherever `reachFirstRunStep` left it (or from Welcome, the default), through Finish
+ * setup and the Threads tour that follows it.
+ */
+export async function finishFirstRunSetupFrom(
+  page: Page,
+  from: FirstRunStepId = 'welcome',
+  options: FirstRunSetupOptions = {},
+): Promise<void> {
+  for (const step of FIRST_RUN_STEPS.slice(FIRST_RUN_STEPS.indexOf(from))) await advanceFirstRunStep(page, step, options)
+  await expect(threadSidebar(page)).toBeVisible()
+  await skipThreadsTour(page)
+}
+
+/** Walks the whole of first-run setup, Welcome through the Threads tour, in one call. */
+export async function completeFirstRunSetup(page: Page, options: FirstRunSetupOptions = {}): Promise<void> {
+  await finishFirstRunSetupFrom(page, 'welcome', options)
+}
+
 /**
  * Opens the Threads page from wherever the window happens to be. Sotto now
  * opens on Threads, so the common case is that the workspace is already there and

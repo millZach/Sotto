@@ -1,6 +1,6 @@
 # Ticket 16: working preferences and memory inspector
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Implements [issue 16](https://github.com/millZach/Sotto/issues/16) and the questionnaire/inspector portion of the [memory-first spec](../superpowers/specs/2026-09-10-sotto-memory-first-prototype-spec.md).
 

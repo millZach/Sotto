@@ -7,7 +7,7 @@ import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { describeThreads, workingLabel } from '../../../src/renderer/src/agents/threadFacts'
+import { describeThreads, rowStatus, workingLabel } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from './liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
@@ -235,5 +235,57 @@ describe('sidebar working-copy context', () => {
     expect(button().querySelector('.thread-nav__branch')).toHaveTextContent('Worktree not ready')
     expect(button().querySelector('.thread-nav__branch .lucide-folder-git-2')).not.toBeNull()
     expect(button().querySelector('.thread-nav__branch')).not.toHaveTextContent('stale-branch')
+  })
+})
+
+// Babysitting is Sotto's claim, not the provider's (ADR-0061 decision 14): the row says it only where it would say Done.
+describe('a thread that babysits a pull request', () => {
+  const babysitting = [{ url: 'https://github.com/o/r/pull/74', number: 74, startedBy: 'agent' as const, startedAt: '2026-10-08T21:02:00.000Z' }]
+  const babysat = (state: AgentState, threadId: string, threadStatus: 'idle' | 'running', finishedUnread = false, numbers = [74]): Partial<AgentState> => {
+    const changed = withStatus(state, threadId, threadStatus, finishedUnread)
+    return { host: { ...changed.host!, threads: changed.host!.threads.map(thread => thread.id === threadId
+      ? { ...thread, babysitting: numbers.map(number => ({ ...babysitting[0]!, url: `https://github.com/o/r/pull/${number}`, number })) } : thread) } }
+  }
+
+  it('says Babysitting #74 where it would say Done, and gives way to Working and Just finished', () => {
+    const live = mount(threadsStateFixture(), NOW)
+    act(() => { live.publish(babysat(live.state, 'footer-links', 'idle')) })
+    expect(status('Footer links')).toHaveTextContent('Babysitting #74')
+    expect(status('Footer links')).toHaveAttribute('data-babysitting', 'true')
+    expect(status('Footer links')).toHaveAttribute('data-state', 'done')
+    act(() => { live.publish(babysat(live.state, 'footer-links', 'running')) })
+    expect(status('Footer links')).toHaveTextContent('Working')
+    expect(status('Footer links')).not.toHaveAttribute('data-babysitting')
+    act(() => { live.publish(babysat(live.state, 'footer-links', 'idle', true)) })
+    expect(status('Footer links')).toHaveTextContent('Just finished')
+    act(() => { live.publish(babysat(live.state, 'footer-links', 'idle', false, [74, 76])) })
+    expect(status('Footer links')).toHaveTextContent('Babysitting #74 and #76')
+  })
+
+  it('says the same in the collapsed rail, whose title would otherwise read Done', () => {
+    // Collapsing is remembered, so the width record is cleared either side of the test, even when it fails.
+    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+    try {
+      const live = mount(threadsStateFixture(), NOW)
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'idle')) })
+      act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+      const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Footer links"]')!
+      expect(rail).toHaveAttribute('title', 'Footer links · Babysitting #74')
+      expect(rail).toHaveAccessibleDescription('Footer links · Babysitting #74')
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'idle', true)) })
+      expect(rail).toHaveAttribute('title', 'Footer links · Just finished')
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'running')) })
+      expect(rail).toHaveAttribute('title', 'Footer links · Working')
+    } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
+  })
+
+  it('gives way to a request waiting on you, and to settling', () => {
+    const state = threadsStateFixture()
+    Object.assign(state, babysat(state, 'visual-gate', 'idle'))
+    expect(rowStatus(rowFor(state, 'visual-gate'))).toEqual({ text: 'Needs your approval', finished: false, babysitting: false })
+    const done = rowFor(state, 'footer-links')
+    const thread = { ...done.thread, babysitting }
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Babysitting #74', finished: false, babysitting: true })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', babysitting: false })
   })
 })

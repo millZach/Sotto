@@ -142,9 +142,11 @@ describe('which channel owns an install', () => {
 
   it('leaves a client whose own installer owns its binary to update itself', async () => {
     const home = await root('sotto-grok-home-')
-    expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), { GROK_HOME: home })).toBe('self-update')
+    // The fixture has no mise install, even when the developer's machine does.
+    const environment = { GROK_HOME: home, MISE_DATA_DIR: join(home, 'mise') }
+    expect(await detectClientChannel('grok', join(home, 'bin', 'grok.exe'), environment)).toBe('self-update')
     const clients = new ProviderClients({ fetchImpl: async () => answer('1.0.40') })
-    const reading = await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), { GROK_HOME: home })
+    const reading = await clients.check('grok', '1.0.5', join(home, 'bin', 'grok.exe'), environment)
     expect(reading).toMatchObject({ behind: true, channel: 'self-update', canInstall: true, command: 'grok update' })
   })
 

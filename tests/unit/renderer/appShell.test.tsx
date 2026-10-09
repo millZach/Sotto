@@ -26,6 +26,31 @@ const chrome = {
 }
 
 describe('AppShell', () => {
+  describe.each(['strip', 'sidebar'] as const)('%s chrome', (layout) => {
+    it.each(['win32', 'darwin', 'linux'] as const)('draws only the controls owned by Sotto on %s', (platform) => {
+      const { container } = render(<AppShell {...chrome} platform={platform} layout={layout} navigation="home"><p /></AppShell>)
+      expect(container.querySelector('.app-shell')).toHaveAttribute('data-platform', platform)
+      expect(container.querySelector(layout === 'strip' ? '.app-strip' : '.app-room__top')).toBeInTheDocument()
+      if (platform === 'win32') {
+        for (const name of ['Minimize Sotto', 'Maximize Sotto', 'Close Sotto to tray']) {
+          expect(screen.getByRole('button', { name })).toBeVisible()
+        }
+      } else {
+        expect(container.querySelector('.app-controls')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Sotto/ })).not.toBeInTheDocument()
+      }
+      if (layout === 'strip') expect(container.querySelector('.app-strip')?.classList.contains('app-strip--mac')).toBe(platform === 'darwin')
+    })
+  })
+
+  it('keeps the onboarding title strip on Linux without controls or a macOS inset', () => {
+    const { container } = render(<AppShell {...chrome} platform="linux" navigation={null}><p>Preparing Sotto...</p></AppShell>)
+    expect(screen.getByRole('banner')).toHaveClass('app-strip')
+    expect(screen.getByRole('banner')).not.toHaveClass('app-strip--mac')
+    expect(container.querySelector('.app-controls')).toBeNull()
+    expect(screen.getByRole('main')).toHaveTextContent('Preparing Sotto...')
+  })
+
   it('maximizes and restores from a keyboard-accessible window control', async () => {
     const onMaximize = vi.fn()
     const { rerender } = render(<AppShell {...chrome} onMaximize={onMaximize} navigation="home"><p /></AppShell>)

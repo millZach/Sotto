@@ -34,7 +34,7 @@ const SLIDER_SAVE_DELAY_MS = 250
 export function AppearanceSettings({ settings, platform, onSave, getSettings }: AppearanceSettingsProps): ReactNode {
   useAppearancePreviewVersion()
   const systemDark = useSystemPrefersDark()
-  const system = platform === 'darwin' ? 'macOS' : 'Windows'
+  const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark)
   const canFrost = window.sotto?.canFrostWindow === true
@@ -149,6 +149,7 @@ interface SliderBounds { readonly min: number; readonly max: number; readonly st
 
 /** What the Frosted window switch does here, and why it does nothing when the system cannot or will not draw it. */
 function frostDescription(platform: SottoPlatform, canFrost: boolean, on: boolean): string {
+  if (platform === 'linux') return 'Frosted windows are unavailable on Linux.'
   if (!canFrost) return 'Needs Windows 11 version 22H2 or later.'
   const what = 'Let the desktop show through the window, blurred and tinted by your theme.'
   if (on && !frostAvailable()) return `${what} Your system is set to reduce transparency, so the window stays solid.`

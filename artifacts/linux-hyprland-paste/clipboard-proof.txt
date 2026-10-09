@@ -1,0 +1,19 @@
+Hyprland instance folders before proof: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+Started Electron and clipboard children PID 4155557 in sotto-proof-9daa04cb3b784b3ba942a96bf1261a72-0.scope
+session locked (read-only query): true
+Started wl-copy sentinel PID 4155669 in sotto-proof-9daa04cb3b784b3ba942a96bf1261a72-1.scope
+wl-paste before: "before-hyprland-paste-proof"
+Sotto focused: false
+real output result: "copied"
+wl-paste after real output: "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+wl-paste after settle (no automatic restore): "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+stubbed app output result: "pasted"
+stubbed terminal output result: "pasted"
+live key dispatch: "NONE — every dispatch used a recording stub"
+Stopped Electron and clipboard children PID 4155557
+Stopped wl-copy sentinel PID 4155669
+Stopped proof slice app-sottoproof9daa04cb3b784b3ba942a96bf1261a72.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]

@@ -5,7 +5,7 @@ import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto,  openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, completeFirstRunSetup, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
 async function command(page: Page, value: AgentCommand): Promise<AgentCommandReceipt> {
@@ -26,15 +26,8 @@ async function event(page: Page, value: Parameters<NonNullable<SottoE2EBridge['a
   await page.evaluate(async data => { await (globalThis as unknown as BrowserGlobals).sottoE2E.agentEvent?.(data) }, value)
 }
 async function onboard(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
-  await openThreads(page)
-  await page.getByRole('button', { name: 'Connect providers' }).click()
-  await expect.poll(async () => (await state(page)).connection).toBe('connected')
+  // Setup connects this computer's installed provider before opening Threads.
+  await completeFirstRunSetup(page, { microphone: 'test' })
   await openThreads(page)
 }
 
