@@ -25,7 +25,7 @@ describe('the line docked above Merge', () => {
 
   it('says babysitting ended and why, and where to start it again on an open pull request', () => {
     expect(line(ended('unreadable', at(14, 48)))).toEqual({ kind: 'ended', title: 'Not babysitting',
-      detail: 'Ended at 2:48 pm. Sotto could not read #74 from GitHub for about 16 minutes. Babysit pull request is in the ··· menu.' })
+      detail: 'Ended at 2:48 pm. Sotto could not read #74 from GitHub for about 16 minutes. Babysit pull request is under More pull request actions.' })
     // Where the host cannot babysit, the menu has no such item, so the line does not send the reader there.
     expect(line(ended('comment-limit', at(17, 19)), 'open', false)).toEqual({ kind: 'ended', title: 'Not babysitting',
       detail: 'Ended at 5:19 pm, after ten wake-ups in a row brought only comments.' })

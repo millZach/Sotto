@@ -98,7 +98,10 @@ export function babysitLine(options: {
   readonly pullRequest: { readonly url: string; readonly number: number; readonly state: 'open' | 'closed' | 'merged' }
   /** The thread's provider, as the transcript names it, who started it when the agent did. */
   readonly agent: string
-  /** Babysit pull request is in the ··· menu, so the ended line can say where to start again. */
+  /**
+   * Babysit pull request is in the ··· menu, so the ended line can say where to start again. It names the menu as the
+   * button's accessible name and title do, never by its glyph, which a screen reader reads as dots.
+   */
   readonly offered: boolean
   readonly now?: Date
 }): BabysitLine {
@@ -114,7 +117,7 @@ export function babysitLine(options: {
   if (!ended) return null
   const words = endedWords(ended, now)
   return pullRequest.state === 'open'
-    ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is in the ··· menu.` : words }
+    ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is under More pull request actions.` : words }
     : { kind: 'ended', title: 'Babysitting ended', detail: words }
 }
 
