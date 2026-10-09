@@ -23,4 +23,7 @@ export async function saveTerminalImage(workingDirectory: string, dataUrl: strin
   } catch { return fail('path-unavailable', 'The image could not be saved under this folder. Paste it again after restoring access.') }
 }
 
-export const terminalImageInput = (path: string): string => /\s/u.test(path) ? `"${path}"` : path
+/** A literal argument for the terminal's PowerShell or POSIX shell, even when the folder contains expansions. */
+export const terminalImageInput = (path: string, platform: NodeJS.Platform = process.platform): string => platform === 'win32'
+  ? `'${path.replace(/['\u2018-\u201b]/gu, quote => quote + quote)}'`
+  : `'${path.replace(/'/gu, `'\\''`)}'`

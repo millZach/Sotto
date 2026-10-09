@@ -49,7 +49,7 @@ describe('persistent terminal service', () => {
     const enter = f.service.write({ ...request, data: '\r' })
     try { expect(f.processes[0]!.pty.write).not.toHaveBeenCalled() }
     finally { staging.resolve('first.png'); await Promise.all([pending, next, enter]); save.mockRestore() }
-    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(['first.png', 'second.png', '\r'])
+    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(["'first.png'", "'second.png'", '\r'])
   })
   it.each(['tools', 'drawer'] as const)('saves a pasted PNG and types its quoted path in %s, refusing invalid images and other owners', async place => {
     const f = await fixture()
@@ -66,7 +66,7 @@ describe('persistent terminal service', () => {
     const path = join(directory, image!)
     expect(await readFile(path)).toEqual(png)
     expect(await readFile(join(directory, '.gitignore'), 'utf8')).toBe('*\n')
-    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(/\s/u.test(path) ? `"${path}"` : path)
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(`'${path}'`)
     f.processes[0]!.exit(0)
     expect(await f.service.pasteImage({ ...request, dataUrl })).toMatchObject({ ok: false, error: { code: 'not-running' } })
     expect(f.processes[0]!.pty.write).toHaveBeenCalledOnce()

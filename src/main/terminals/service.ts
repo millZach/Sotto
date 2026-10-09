@@ -373,7 +373,7 @@ export class TerminalWorkspaceService extends ToolOperations {
     const path = await saveTerminalImage(record.terminal.workingDirectory, request.dataUrl, this.now())
     await this.owned(request.id)
     if (record.pty !== pty) return fail('not-running', 'The image was saved, but this terminal has exited. Paste it again in the restarted terminal.')
-    record.pty.write(terminalImageInput(path))
+    record.pty.write(terminalImageInput(path, this.dependencies.platform ?? process.platform))
     return { path }
     })
   }

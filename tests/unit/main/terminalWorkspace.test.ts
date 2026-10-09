@@ -68,7 +68,7 @@ describe('terminal workspace service', () => {
     const enter = f.service.write({ id: terminal.id, data: '\r' })
     try { expect(f.processes[0]!.pty.write).not.toHaveBeenCalled() }
     finally { staging.resolve('image.png'); await Promise.all([pending, enter]); save.mockRestore() }
-    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(['image.png', '\r'])
+    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(["'image.png'", '\r'])
   })
   it.each([false, true])('reserves an overlapping restart before launcher lookup (closed=%s)', async closed => {
     const executableExists = vi.fn(async () => true)
@@ -378,7 +378,7 @@ describe('terminal workspace service', () => {
     expect(unwrap(await f.service.pasteImage({ id: terminal.id, dataUrl: PNG })).path).toBe(join(f.project, '.sotto', 'clipboard', '20260916-101112-345-2.png'))
     expect((await stat(path)).size).toBe(11)
     expect(await readFile(join(f.project, '.sotto', 'clipboard', '.gitignore'), 'utf8')).toBe('*\n')
-    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(/\s/u.test(path) ? `"${path}"` : path)
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(`'${path}'`)
     expect(await f.service.pasteImage({ id: terminal.id, dataUrl: 'data:image/jpeg;base64,AAAA' })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
   })
 

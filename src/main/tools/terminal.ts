@@ -164,7 +164,7 @@ export class TerminalService extends ToolOperations {
     // A save yields; do not write to a shell closed or replaced while it was on disk.
     await this.owned(request)
     if (!record.pty) return fail('not-running', 'The image was saved, but this terminal has exited. Reopen it before pasting again.')
-    record.pty.write(terminalImageInput(path))
+    record.pty.write(terminalImageInput(path, this.dependencies.platform ?? process.platform))
     })
   }
   interrupt(payload: unknown) { return this.run(async () => {
