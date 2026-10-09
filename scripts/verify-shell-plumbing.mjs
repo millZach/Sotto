@@ -1,4 +1,4 @@
-// Usage after build: mise exec node@24.21.0 -- node tools/verify-shell-plumbing.mjs [Playwright spec ...]
+// Usage after build: mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs [Playwright spec ...]
 // An owned nested Hyprland and systemd scopes keep all input and descendants away from the locked live session.
 import assert from 'node:assert/strict'
 import console from 'node:console'
@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from '../scripts/owned-proof-processes.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const checkout = process.cwd()
 const root = resolve(checkout, '.cache/shell-plumbing-proof')

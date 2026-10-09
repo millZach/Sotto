@@ -18,7 +18,7 @@ After the documented install and runtime preparation, run from this worktree:
 
 ```sh
 mise exec node@24.21.0 -- npm run build
-mise exec node@24.21.0 -- node tools/verify-shell-plumbing.mjs tests/e2e/linux-dictation-command.spec.ts tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-shell-plumbing.spec.ts
+mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs tests/e2e/linux-dictation-command.spec.ts tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-shell-plumbing.spec.ts
 ```
 
 The wrapper keeps temporary profiles in the worktree root: a longer temporary path exceeds Linux’s Unix socket path limit for Chromium or the dictation listener. Generated profiles and Playwright transforms are ignored. The journey waits for published idle state before sending to a restarted app, rather than treating window readiness as socket readiness. The other Linux specs regenerate their existing captures; restore those incidental changes when the look was not changed on purpose. This change does not update design baselines.
