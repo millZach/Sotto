@@ -1,5 +1,7 @@
 # The AGENT_STATE broadcast omits a model catalog a window already has
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The two-window agent-state broadcast below is historical: the widget no longer receives thread state, model catalogs or command receipts. Catalog revision handling remains for the main window and paired clients; the widget receives dictation state only.
+
 Accepted September 23, 2026. Issue #286: typing in the Threads composer lagged while a thread worked. The shell/detail split that keeps `sotto:agents:state` free of thread history is described in `docs/perf/state-pipeline.md`, but no ADR covers it; this one records the model-catalog change below and stands for that corner of the split until a broader one is written.
 
 ## Context

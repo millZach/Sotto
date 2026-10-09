@@ -1,5 +1,7 @@
 # An agent can set up a host from Add host
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice gate, managed assignments and supervision references below are historical. Host setup and provider jobs remain ordinary user-started threads; only the user answers their request cards.
+
 ## Status
 
 Accepted September 28, 2026, for issue #431, part of map #134. The design is placement A2, "choose first", from round 2 of `prototype/host-setup-checklist` (commit bd54b00b), drawn with the device list in round 3 (commit 14fd23a6, moments 6 and 7), both picked by the owner on September 27. It lands before #207, the self-contained host archive, and before #430, the device list; see Consequences for what changes when each lands. Amends nothing: ADR-0004 and ADR-0012 apply unchanged, and the tool's transport is ADR-0020's, used for a second server.

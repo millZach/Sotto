@@ -1,5 +1,7 @@
 # Disabled voice coordinator on remote threads
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Verified on Windows on October 5, 2026, against main at `7453a2e5`.
 
 ## Failure and cause

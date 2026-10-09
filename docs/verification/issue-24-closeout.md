@@ -1,5 +1,7 @@
 # Issue 24: native-host closeout
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 September 14, 2026. Audited published `main` at `0e12b1c` against [ticket #24](https://github.com/millZach/Sotto/issues/24).
 
 ## Delivered implementation

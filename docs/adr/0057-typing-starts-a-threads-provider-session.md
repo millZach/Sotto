@@ -1,5 +1,7 @@
 # Typing starts a thread's provider session
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, wake phrase and wake session used as vocabulary contrasts below are retired. Early start remains unchanged; a babysitting wake-up is a separate message under ADR-0061.
+
 ## Status
 
 Accepted October 6, 2026. The trigger is the owner's decision of October 5, 2026 on #769 ("A stopped session wakes on the first keystroke in its thread's composer, not on opening the thread"); the mechanism below is the agent's, made while building #769 under tracking issue #762. Amends [ADR-0038](0038-one-client-process-per-thread.md), whose consequences said connect starts the watched threads' processes together: Claude Code's connect started them one after another, and now starts them a few at a time. Keeps [ADR-0014](0014-thread-follows-its-worktree-branch.md) whole: nothing native, no worktree and no branch exists before the first send.

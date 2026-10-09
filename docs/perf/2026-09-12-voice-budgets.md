@@ -1,5 +1,7 @@
 # Windows voice budget measurement - September 12, 2026
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 The fresh short-utterance screen reaches useful main-process feedback at **1,014 ms p50 (PASS)** and **2,412 ms p95 (FAIL)** when warm, against the 1,200/2,000 ms section 9 reference. These are production pipeline measurements from the last voiced PCM frame received by the renderer to the coordinator's useful state publication. They include endpoint silence, real MAI network transcription and command handling. They do not establish physical acoustic end to shipping-UI latency.
 
 Fresh Electron retrieval passes: **13.92 ms warm p95**, with 10,000 synthetic memories and 1,000 measured queries. First-query/new-connection retrieval passes at **7.46 ms p95**; that is not disk-cold startup. Cold voice requests have only three samples: 1,634 ms p50 and 5,527 ms p95. Network variation is visible; this sample is too small for a stable population p95.

@@ -1,5 +1,7 @@
 # Grok default and Kokoro option
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Implemented locally on 2026-09-11. Fresh configuration uses Grok Altair. Kokoro Heart is an explicit lower-cost choice using the shared OpenRouter credential. Existing saved provider/voice selections survive restart; selecting one provider never silently falls back to another. Legacy system selection remains readable but is not offered for a new selection.
 
 Kokoro requests fixed model hexgrad/kokoro-82m and voice af_heart. The main process holds the credential, validates and wraps PCM audio, bounds response size and duration, and cancels active synthesis when speech stops. Renderer receives WAV audio, never the key.

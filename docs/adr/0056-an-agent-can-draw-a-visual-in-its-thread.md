@@ -1,5 +1,7 @@
 # An agent can draw a visual in its thread
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The supervision exception cited below has ended. Drawing a visual remains confined to the thread and grants no authority; the browser grant and user-answer rules remain.
+
 ## Status
 
 Accepted October 6, 2026, for issue #792, the first of three tickets in `docs/plans/2026-10-06-visualize-tool.md`. The layout is the walkthrough Zach picked from `prototype/visualize-layout` (variant C); this ticket draws the card's header, the diagram and the Read all layout, and #793 adds the step-by-step walkthrough. Interactive pages are #794, with their own ADR. The tool's transport is ADR-0020's and its scoping is ADR-0035's, used for a third server. Amends ADR-0016: a visual is thread content kept beside its event store rather than in it, so it has no sequence number and no catch-up of events after one carries it (see **Kept in its own table** below, and ADR-0016's October 6 amendment).

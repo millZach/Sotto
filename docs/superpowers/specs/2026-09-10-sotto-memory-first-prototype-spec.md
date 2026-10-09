@@ -1,5 +1,7 @@
 # Sotto: Memory-First Voice Development Coordinator
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Research and working prototype specification. Version 0.2, September 2026. Version 0.1 was reviewed against primary sources and the current codebase on 2026-09-10 (see `docs/research/2026-09-10-memory-first-spec-review.md`); this version folds in the accepted changes.
 
 North star: Talk to one agent that knows how you work. Sotto manages the other agents for you.

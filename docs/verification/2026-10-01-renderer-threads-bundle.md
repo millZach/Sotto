@@ -1,5 +1,7 @@
 # Renderer thread recovery and previews
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Windows verification for package 19, from `origin/main` at `2f1d74f240cbcd2b3ab6a1b0e5a212111ccc5221`.
 
 - S-028: the sidebar regression moves a thread to the closed Settled shelf before its settle command resolves. The question remains, Keep folder and Escape keep the worktree, removal invokes reclaim, and closing returns keyboard focus to Settled. The real Electron reclaim journey also checks removal, branch retention and restoration on send. Its settle step now presses the sidebar row, covering the original failure.

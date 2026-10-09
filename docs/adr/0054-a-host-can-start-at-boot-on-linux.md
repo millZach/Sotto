@@ -1,5 +1,7 @@
 # A host can start at boot on Linux
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Start at boot remains an explicit user action under the same consent, systemd and recovery rules.
+
 ## Status
 
 Accepted October 5, 2026. The owner delegated the open decisions on October 5, 2026 ("Go ahead and do everything we discussed, no need to stop and ask me"), including the ones the owner's reviews of the pull request left open, so the picks below are the agent's, made under that delegation and recorded as such. The design is the boot offer and the consent modal of variant C with A's controls in `docs/prototypes/host-tailnet-prototype.html`; the plan is `docs/plans/host-tailnet-connection.md`. Companion to [ADR-0053](0053-a-desktop-reaches-a-host-over-its-tailnet-first.md). Amends [ADR-0025](0025-headless-host-and-client-identity.md), [ADR-0040](0040-an-older-host-is-updated-from-the-threads-page.md) and [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md), whose first consequence left running the host as a service to separate work. This is that work.

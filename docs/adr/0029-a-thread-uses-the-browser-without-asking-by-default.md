@@ -1,5 +1,7 @@
 # A thread uses Sotto's browser without asking, by default
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The supervision references below are historical; that machinery and its Codex confirmation exception have been removed. The browser grant, its Stop control and the user's explicit answers remain unchanged.
+
 ## Status
 
 Accepted September 25, 2026 (Zach, step 3 of `docs/plans/2026-09-25-agent-tool-exposure.md`, issue #332). Amended October 5, 2026: the grant shares every page in the thread (below). Supersedes, for Sotto's own browser, ADR-0020's rule that opening a page, navigating, clicking and typing each wait for the user's one-time answer, and its September 22 amendment's page-opening grant.

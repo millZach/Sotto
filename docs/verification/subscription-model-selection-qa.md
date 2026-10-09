@@ -1,5 +1,7 @@
 # Subscription model and reasoning selection
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 September 9, 2026. Follow-up to the subscription reasoning implementation.
 
 User acceptance: Sotto must offer all models available through the selected subscription, with that model's supported reasoning levels. Grok must be a working native subscription route. A handpicked subset is not sufficient.

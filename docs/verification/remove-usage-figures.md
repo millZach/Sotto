@@ -1,5 +1,7 @@
 # The context and cost figures leave the corner under the composer (#127)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 The owner's pick for the workspace and branch layout in #127, recorded in a comment on that issue, removed the two usage figures (how full the context window is, and the estimated cost at API rates) from under the composer on Threads and on Chats. Sotto still records and prices usage; nothing on screen shows it. The compaction row stays on Threads.
 
 What the row does now. On a pane by itself the row is empty until compaction has something to say, so it takes no height and the transcript keeps the space. With panes side by side it holds one quiet line open (23.3px) whether or not a pane has been compacted, so the composers stay level. That was the reason it was one row with the figures, and the figures were what used to hold it open. Below 450px of pane height the line tightens as the figures' padding used to.

@@ -1,5 +1,7 @@
 # Threads workspace implementation plan
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Status: approved and published on GitHub in six dependency phases, 2026-09-12. All 31 issues and native blocking relationships have been read back and verified. [Workspace milestone](https://github.com/millZach/Sotto/milestone/1). Implementation has not begun as part of this publication task.
 
 ## Published phases

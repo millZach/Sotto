@@ -1,5 +1,7 @@
 # A thread can babysit its pull request
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator gate, managed assignments and supervision exception referenced below are historical. Explicit babysitting remains and grants no authority; wake-ups no longer wait for a managed assignment, while pending requests, busy work, outbox entries and a paused follow-up queue still hold them.
+
 ## Status
 
 Accepted October 8, 2026, for issue #822, the first ticket of #821; proposed October 7. Zach's decisions of October 7 in #821 are settled and this record does not reopen them: the agent and the user can both start and stop it, it is on by default with a Settings switch, the five things that wake a thread, a wake-up is news and approves nothing, and it is a thread feature rather than voice coordination. This record decides what those leave open. On October 8 Zach confirmed the three things this record proposed that #821 had not settled: the word **babysit** (decision 1), the switch turning off only the agent's tool (decision 12), and a wake-up carrying links and never what anyone wrote (decision 7). He picked the look from #822's prototype, recorded under **The look**. Builds on ADR-0027 (Git on the host, the pull request surface) and #820's reserve and pause, and uses ADR-0056's list of scoped thread tool servers for a fourth server.

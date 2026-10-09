@@ -1,5 +1,7 @@
 Sotto voice model candidates. All linked sources checked 2026-09-10; September findings stop at that date. This is a benchmark proposal, not measured Sotto results.
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Shortlist three local challengers: **Kokoro v1.0**, **Pocket TTS ONNX**, **Supertonic 3**. Kokoro offers the clearest JavaScript integration; Pocket tests incremental synthesis; Supertonic 3 tests an incumbent-family upgrade. Hosted challengers: **Cartesia Sonic 3.6**, **Deepgram Flux TTS**, **ElevenLabs Flash v2.5**. Cartesia is the strongest quality-led candidate; Flux provides useful interruption controls; Flash supplies a latency reference. Retain current Supertonic, system speech and Grok as controls.
 
 The current stack matters. [System speech](../../src/main/agents/speech.ts) runs Windows System.Speech or macOS `say` into complete WAVs. [Grok](../../src/main/agents/grokSpeech.ts) accumulates the entire HTTP response, repairs streaming WAV headers, and returns base64. The [model manager](../../src/main/agents/speechModels.ts) and [manifest](../../src/main/agents/speechModelManifest.json) pin Supertonic v1, OpenRAIL-M, 263,304,827 bytes and ten English voices. Its [worker](../../src/renderer/src/agents/naturalSpeechWorker.ts) uses fp32 WASM, eight steps, speed 1.05, 44.1 kHz; 240-character chunks are joined before playback. None currently plays incrementally.

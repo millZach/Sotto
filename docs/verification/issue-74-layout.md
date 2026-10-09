@@ -1,5 +1,7 @@
 # Issue 74: Windows layout and recovery regression lane
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Scope: the three failures left in `2026-09-14-terminal-display.md`, on the existing Sotto Windows desktop at 1280x860, 1600x1000 and the shipped 820x560 minimum. The current Sotto sidecar is the reference: compact context and surface tabs, no redundant Tools rail, unchanged theme tokens and terminal fidelity. Physical microphone testing remains pending in #81; macOS is explicitly deferred by the user and unverified.
 
 ## Acceptance and current state

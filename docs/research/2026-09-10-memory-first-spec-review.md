@@ -1,5 +1,7 @@
 # Sotto memory-first spec review
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 The product thesis is credible, but v0.1 is not ready to serve as an engineering commitment. It combines a useful memory experiment with a provider-host rebuild and an oversized research program. The cited projects and paper exist, but local capability, benchmark portability, privacy, and voice responsiveness need tighter definitions. Keep the existing T3 thread layer, prove explicit memory and a small reviewed import first, and defer autonomous learning and competing backends until measured failures justify them.
 
 ## Founder decisions after review (2026-09-10)

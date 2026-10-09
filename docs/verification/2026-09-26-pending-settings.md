@@ -1,5 +1,7 @@
 # A thread setting shows the moment it is pressed (#319)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Checked on September 26, 2026, on Windows, in the built app driven by `tests/e2e/pending-settings.spec.ts`
 (`npm run build`, then `npx playwright test tests/e2e/pending-settings.spec.ts`: 1 passed). The provider is the e2e
 fixture host. Through the e2e bridge the spec holds its thread settings changes at the provider and lets them through

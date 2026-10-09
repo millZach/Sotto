@@ -1,5 +1,7 @@
 # The desktop lets paired phones reach its threads
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The assignment-context and coordinator-reasoning disclosure below is historical. Saved reasoning choices and credentials remain for native default resolution, but manual threads do not send context to a separate reasoning host. Phone access, pairing and Can answer policy remain unchanged.
+
 ## Status
 
 Accepted September 26, 2026, by the owner's choice of variant C, "Guided setup", in `docs/prototypes/phone-access-prototype.html`. Amends [ADR-0025](0025-headless-host-and-client-identity.md), which said the desktop adds no production listener. Amended by [ADR-0050](0050-a-hosts-phone-access-is-turned-on-from-the-desktop.md): a headless host now runs the same phone access, turned on from the desktop's Hosts page, and sends its name on the tailnet.

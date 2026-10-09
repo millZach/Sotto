@@ -1,5 +1,7 @@
 # Index Settings verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Reference: selected A — Index on `prototype/settings-redesigns` (`eb80be2`). Implementation is a production rewrite based on Sidecar (`0cfedf7`); no prototype route, sample action or comparison switcher is included.
 
 ## Verified behavior

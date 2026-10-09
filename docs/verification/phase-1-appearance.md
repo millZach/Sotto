@@ -1,5 +1,7 @@
 # Phase 1 appearance (#73): verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Lane `appearance`, branch `work/phase1-appearance`, based on 0598d48. The work was implemented by the authorized Opus 5 fallback for Fable. The ticket is `docs/plans/threads-workspace/tickets/30.md`. The decision is recorded in [ADR-0009](../adr/0009-main-window-appearance-apart-from-widget-theme.md).
 
 ## What shipped

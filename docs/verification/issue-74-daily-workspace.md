@@ -1,5 +1,7 @@
 # Issue 74 daily workspace verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 The acceptance evidence is split into explicit lanes. A synthetic provider can prove Sotto's routing and recovery behavior but cannot prove an installed provider's native persistence or network performance. A local bare Git repository can prove the reviewed commit is pushed without publishing this source repository.
 
 ## Integrated daily journey

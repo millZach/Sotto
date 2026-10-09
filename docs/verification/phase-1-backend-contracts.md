@@ -1,5 +1,7 @@
 # Phase 1 backend integration contracts
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Backend contracts for the pending Phase 1 renderer implementation. These describe implemented local backend behavior; they do not mark the tickets complete.
 
 Integration amendments: provider latency measures only host execution, excluding image-cache persistence and failure cleanup. Privacy changes attempt all independent stores and retry incomplete cleanup through the existing maintenance timer. Workspace cache recovery creates no raw-content backups and removes only its generated stale temporary/corrupt copies. See the accompanying implementation verification record for regression evidence.

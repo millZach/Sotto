@@ -1,5 +1,7 @@
 # Phase 5 personal voice (#71)
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 ## Acceptance and approach
 
 - Existing desktop Sotto identity, 1280x900 and minimum 820x560, keyboard/pointer, light/dark, reduced motion. Reference inspected: artifacts/phase-four-native-chats/claude-820-light.png.

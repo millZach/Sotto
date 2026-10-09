@@ -1,5 +1,7 @@
 # Main-window themes replace the accent
 
+October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice sphere described below has been removed. Theme roles, the Sotto mark and the dictation widget retain the selected palettes.
+
 Accepted September 13, 2026 for the Phase 3 theme replacement. The user rejected the accent chooser and asked for T3 Code's Themes capability instead. This supersedes the `accent` half of ADR-0009. The `appearance` mode (System, Light or Dark) stays as ADR-0009 describes, and so does the rule that the widget's `theme` setting is not the main window's look.
 
 Amended September 22, 2026 by ADR-0024: the built-ins are now six palettes of Sotto's own (Sotto, Hush, Linen, Nocturne, Tropic, Citrine), T3's five are retired and fall back to Sotto, the gallery is a Light column and a Dark column, and on the default theme the mark is the app icon. What follows about the built-ins' names and ids, the cards and the brand describes the look before that.

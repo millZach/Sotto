@@ -1,5 +1,7 @@
 # Phase 1 implementation and verification
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Local integration: `work/threads-phase-1` in `.worktrees/threads-phase-1`. Base `7e3809f` includes the required native-provider foundation `52f1f42`. Scope is #44, #45, #46 and #73. The parent checkout and its original untracked artifacts are preserved. At the end of implementation verification, this work was committed locally; the subsequent user-authorized push and merge are recorded in the GitHub pull request.
 
 ## Acceptance checklist

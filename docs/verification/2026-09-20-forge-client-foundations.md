@@ -1,5 +1,7 @@
 # Forge client foundations and pairing prototypes
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Work for #134's first parallel batch: #135, #136, #139 and #141. This note distinguishes local evidence from Forge and phone acceptance. Local implementation and review are complete; the checks and remaining external acceptance gaps are recorded below.
 
 ## Pairing prototype (#139)

@@ -1,5 +1,7 @@
 # Phase 3 review UI fixes
 
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+
 Two Spec review P2 findings (`../phase3-orchestration/spec-review-result.md`, findings 2 and 3), fixed in the existing
 design. Target: the desktop app window (pointer and keyboard), reviewed at 1280px and 820px wide as the brief requires.
 Phone layouts are out of scope for a desktop Electron app.
