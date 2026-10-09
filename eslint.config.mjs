@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
       'artifacts/babysitting-surfaces-run/**',
@@ -153,6 +154,10 @@ export default tseslint.config(
         process: 'readonly',
       },
     },
+  },
+  {
+    files: ['tools/**/*.mjs'],
+    languageOptions: { globals: { fetch: 'readonly', WebSocket: 'readonly' } },
   },
   {
     // The perf bench runs in Node but injects callbacks into a Playwright page.

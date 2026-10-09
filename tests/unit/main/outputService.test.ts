@@ -68,8 +68,8 @@ describe('OutputService', () => {
     { autoPaste: false, restoreWidget: true },
     { autoPaste: true, restoreWidget: false },
     { autoPaste: true, restoreWidget: true },
-  ])('copies Linux output without hiding or waiting with %j', async ({ autoPaste, restoreWidget }) => {
-    const harness = createHarness({ buildPasteInvocation: createPasteCommands('linux').oneShot })
+  ])('copies without hiding or waiting when no paste command exists with %j', async ({ autoPaste, restoreWidget }) => {
+    const harness = createHarness({ buildPasteInvocation: () => null })
     const transcript = '  exact Linux transcript\r\n'
 
     await expect(harness.service.deliver(transcript, { autoPaste, pasteDelayMs: 1000, restoreWidget })).resolves.toBe('copied')

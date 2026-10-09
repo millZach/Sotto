@@ -73,7 +73,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
               {linux ? null : <div><dt>Start or stop dictation</dt><dd><ShortcutKey accelerator={shortcut} platform={platform} /></dd></div>}
               {!linux && <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>}
               <div><dt>Search history</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
-              <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
+              <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{linux ? 'Super' : modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
           </section>
           <section className="tt-panel">

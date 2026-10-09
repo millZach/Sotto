@@ -102,6 +102,8 @@ import {
   type AccessibilityTrustAdapter,
 } from './output/pasteAccessibility'
 import { createPasteCommands } from './output/pasteCommand'
+import { createHyprlandPasteAdapter } from './output/pasteCommand.linux'
+import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
@@ -970,7 +972,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             }),
             log: logOperational,
           })
-        : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
+        : platform === 'linux'
+          ? createHyprlandPasteAdapter()
+          : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === APP_NAME,
@@ -982,7 +986,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ? { isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt) }
       : ALWAYS_TRUSTED_ACCESSIBILITY
   const output = new OutputService({
-    clipboard: e2eState === null ? clipboard : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
+    clipboard: e2eState === null
+      ? platform === 'linux'
+        ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
+        : clipboard
+      : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
     widget: windows,
     delay: (milliseconds) =>
       new Promise((resolve) => {

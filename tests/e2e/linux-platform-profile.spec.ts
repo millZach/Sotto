@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
-test('Linux saves a key during onboarding and copies dictation without attempting paste', async () => {
+test('Linux saves a key during onboarding and explains Hyprland paste', async () => {
   test.skip(process.platform !== 'linux', 'Linux desktop profile')
   const launched = await launchSotto('success')
   const { page } = launched
@@ -31,14 +31,45 @@ test('Linux saves a key during onboarding and copies dictation without attemptin
     await expect(page.getByText(/Sotto .*Linux\. No account/)).toBeVisible()
     await expect(page.getByText(/Compositor bindings live in Hyprland\. Omarchy defaults: hold F9 to talk/)).toBeVisible()
     await expect(page.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
+    await expect(page.getByText(/Sotto copies your text, then pastes into the focused window on Hyprland, terminals included/)).toBeVisible()
+    await expect(page.getByText(/use Super\+V, Omarchy’s universal paste for apps and terminals/)).toBeVisible()
     expect(await page.evaluate(() => window.sotto!.checkForUpdates())).toMatchObject({ phase: { phase: 'unsupported' } })
     await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false, autoPaste: true }))
     await openPage(page, 'Dictate')
     await expect(page.locator('.app-room__top')).toBeEmpty()
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Copied.', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pasted.', exact: true })).toBeVisible()
     await expect(page.getByText(/With Sotto’s compositor bindings: hold F9 to talk/)).toBeVisible()
-    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 0 })
+    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1 })
+  } finally { await closeSotto(launched) }
+})
+
+test('Linux keeps the transcript and names universal paste when paste fails', async () => {
+  test.skip(process.platform !== 'linux', 'Linux desktop profile')
+  const launched = await launchSotto('paste-failure')
+  try {
+    await expect(launched.page.getByRole('heading', { name: 'Dictation, ready when you are' })).toBeVisible()
+    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Skip for now' }).click()
+    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await launched.page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-paste-fallback-e2e')
+    await launched.page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
+    await expect(launched.page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
+    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Finish setup' }).click()
+    await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar', exact: true })).toBeVisible()
+    await launched.page.evaluate(async () => window.sotto!.updateSettings({
+      microphoneSkipped: false, autoPaste: true,
+    }))
+    await openPage(launched.page, 'Dictate')
+    await launched.page.getByRole('button', { name: 'Start dictation', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Stop', exact: true }).click()
+    await expect(launched.page.getByRole('heading', { name: 'Copied.', exact: true })).toBeVisible()
+    await expect(launched.page.getByText(/If needed, use Super\+V, Omarchy’s universal paste/)).toBeVisible()
+    const widget = launched.app.windows().find(window => window.url().includes('/widget.html'))!
+    await expect(widget.getByRole('status')).toContainText('Copied — paste manually')
+    await expect(widget.getByRole('status')).toContainText('Super+V to paste in apps and terminals')
+    expect(await launched.page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1 })
   } finally { await closeSotto(launched) }
 })

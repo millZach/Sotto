@@ -2,7 +2,8 @@ import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
 
 export interface ClipboardAdapter {
-  writeText(text: string): void
+  writeText(text: string): void | Promise<void>
+  canPaste?(): boolean
 }
 
 export interface WidgetAdapter {
@@ -126,12 +127,12 @@ export class OutputService {
     options: DeliveryOptions,
   ): Promise<OutputOutcome> {
     try {
-      this.dependencies.clipboard.writeText(text)
+      await this.dependencies.clipboard.writeText(text)
     } catch {
       throw new OutputClipboardError()
     }
 
-    if (!options.autoPaste) {
+    if (!options.autoPaste || this.dependencies.clipboard.canPaste?.() === false) {
       return 'copied'
     }
 

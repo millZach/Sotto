@@ -236,7 +236,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       return {
         tone: 'success',
         title: snapshot.output === 'pasted' ? 'Pasted' : 'Copied — paste manually',
-        detail: snapshot.output === 'pasted' ? 'Text delivered' : 'Clipboard is ready',
+        detail: snapshot.output === 'pasted' ? 'Text delivered' : platform === 'linux' ? 'Super+V to paste in apps and terminals' : 'Clipboard is ready',
         icon: <Check aria-hidden="true" size={23} strokeWidth={2.4} />,
       }
     case 'cancelled':

@@ -1,0 +1,9 @@
+session locked (read-only query): true
+wl-paste before: "before-hyprland-paste-proof"
+Sotto focused: false
+real output result: "copied"
+wl-paste after real output: "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+wl-paste after settle (no automatic restore): "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+stubbed app output result: "pasted"
+stubbed terminal output result: "pasted"
+real key dispatch: "NOT VERIFIED — screen locked; every dispatch used a recording stub"

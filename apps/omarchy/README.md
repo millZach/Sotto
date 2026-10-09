@@ -47,4 +47,4 @@ The snippet first unbinds F9 and Super+Ctrl+X, which Voxtype owns when Omarchy i
 
 To cancel from outside Sotto, choose an unused chord and bind it to `sotto dictation cancel`. Escape cancels in Sotto's window. The snippet does not take Escape from other apps.
 
-Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically. Transcripts are copied; paste with Ctrl+V, or Shift+Insert in a terminal. Hyprland paste is #838.
+Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
