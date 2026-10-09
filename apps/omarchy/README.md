@@ -1,6 +1,6 @@
 # Sotto on Omarchy
 
-This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR-0064 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. This ticket supplies the dictation command and bindings; packaging follows in #841.
+This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR-0062 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. This ticket supplies the dictation command and bindings; packaging follows in #841.
 
 ## Dictation command
 
