@@ -54,11 +54,11 @@ Standards review: production changes are Linux-only; the widget’s Windows and 
 
 Ticket review: the implementation follows the owner’s #850 decisions and [version-1 contract addendum](https://github.com/millZach/Sotto/issues/850#issuecomment-6084649108), including centred saved edges, top on Linux, the existing retry and dismiss actions, HOME-based widget ownership and the main-process pid in every state write. No new ADR decision was needed. Merge commit `bd1bcc75` brings in main’s accepted Linux guidance. Commit `9e3c503b` keeps the owl decision under its unique ADR-0064 number; that commit is retained as requested after the same correction landed through #873. The new term shell pill is added to CONTEXT. README and guide describe the new verbs, folder and schema.
 
-## Kept-failure copy
-
 ## Re-review: unavailable runtime directory
 
 Socket construction now runs inside `LinuxDictationShell.start()`, reached through the controller's guarded command-service startup. An unset or relative `XDG_RUNTIME_DIR` rejects that service, logs only `native-dictation-command-start-failed` and leaves shell state unpublished while Sotto continues opening. Stopped checks still precede construction and follow the socket await; disposal tolerates an unconstructed socket. Regression tests use the real shell owner and runtime controller for both invalid paths, assert main-window creation and reveal, no socket startup or command dispatch, no state publication, the stable event and safe disposal. The lifecycle file passes all 5 tests, including held startup and forced-exit cleanup. The final gates and built-app startup proof are recorded below after they run.
+
+## Earlier kept-failure copy
 
 Commit `91b373a5`. Every known error and the unknown-code fallback is checked with and without a kept recording. All details are under 60 characters, and every kept detail says “Recording kept.” The shell buttons provide Try again and Discard; key and credit failures keep the step needed before retry. The transcription reasons follow the Windows widget’s titles and kept-failure wording, shortened to fit the shell.
 
@@ -83,6 +83,36 @@ Commit `91b373a5`. Every known error and the unknown-code fallback is checked wi
 | `HISTORY_FAILED` | Text was delivered, but history could not be saved. | Text delivered; history failed. Recording kept. | 47 |
 | `SETTINGS_UNAVAILABLE` | Settings could not be read. Open Sotto and try again. | Settings could not be read. Recording kept. Open Sotto. | 55 |
 | Unknown code | Dictation failed. Open Sotto to try again. | Dictation failed. Recording kept. | 32 |
+
+## Re-review: recording and text outcomes
+
+The refined contract distinguishes six failures before any usable recording from twelve failures after captured audio. The two static copy maps form an exhaustive, disjoint partition of `WidgetErrorCode`; tests independently enumerate both groups and require every code exactly once. Every captured failure with `kept: false` positively states loss or names where the text is. Every `kept: true` detail says “Recording kept.”, even for a synthetic kept snapshot of a pre-recording error. Both unknown-code outcomes start “Dictation failed.” and follow `kept`. All 38 known/fallback variants stay under 60 characters and reject unreviewed provider copy.
+
+The actual controller retains completed output before attempting history for `OUTPUT_UNAVAILABLE`, `OUTPUT_FAILED` and `DESKTOP_CLIPBOARD_UNAVAILABLE`. AppContext keeps those entries in Dictate’s selectable recovery list, independent of history; a history save failure does not erase them. The existing controller tests cover unavailable, empty and throwing delivery, history off and history failure. `HISTORY_FAILED` alone follows successful clipboard delivery, so its copy points to the clipboard. Nothing about retention itself changed. The guide now describes these outcomes. Focused copy/state tests pass all 40 tests; the controller file passes all 92 tests.
+
+This table compares all copy with the re-reviewed `125df400` baseline. The group describes `kept: false`; an explicit `kept: true` always reports a kept recording.
+
+| Code | Group when not kept | Before (`kept: false`) | After (`kept: false`) | Before (`kept: true`) | After (`kept: true`) |
+| --- | --- | --- | --- | --- | --- |
+| `MIC_PERMISSION_DENIED` | Nothing recorded | Microphone access was denied. Allow it, then try again. | Microphone access was denied. Allow it, then try again. | Microphone access denied. Recording kept. | Microphone access denied. Recording kept. |
+| `MIC_DEVICE_NOT_FOUND` | Nothing recorded | No microphone was found. Connect one, then try again. | No microphone was found. Connect one, then try again. | No microphone found. Recording kept. | No microphone found. Recording kept. |
+| `MIC_START_FAILED` | Nothing recorded | The microphone could not start. Try again. | The microphone could not start. Try again. | Microphone could not start. Recording kept. | Microphone could not start. Recording kept. |
+| `MIC_NOT_SET_UP` | Nothing recorded | Set up your microphone in Settings. | Set up your microphone in Settings. | No microphone set up. Recording kept. Check Settings. | No microphone set up. Recording kept. Check Settings. |
+| `RECORDING_FAILED` | Audio captured; recording gone or text retained | Recording stopped unexpectedly. Dictate again. | Recording stopped and was lost. Dictate again. | Recording stopped unexpectedly. Recording kept. | Recording stopped unexpectedly. Recording kept. |
+| `NO_SPEECH` | Nothing recorded | No speech was heard. Dictate again. | No speech was heard. Dictate again. | No speech was heard. Recording kept. | No speech was heard. Recording kept. |
+| `TRANSCRIPTION_UNCONFIGURED` | Audio captured; recording gone or text retained | Add your OpenRouter key in Settings. | No OpenRouter key. Recording lost. Add it in Settings. | No OpenRouter key. Recording kept. Add it in Settings. | No OpenRouter key. Recording kept. Add it in Settings. |
+| `TRANSCRIPTION_UNAUTHORIZED` | Audio captured; recording gone or text retained | OpenRouter rejected the key. Check it in Settings. | OpenRouter key rejected. Recording lost. Check Settings. | API key rejected. Recording kept. Check it in Settings. | API key rejected. Recording kept. Check it in Settings. |
+| `TRANSCRIPTION_OFFLINE` | Audio captured; recording gone or text retained | Sotto could not reach OpenRouter. Check your connection. | OpenRouter unreachable. Recording lost. Check connection. | Sotto could not reach OpenRouter. Recording kept. | Sotto could not reach OpenRouter. Recording kept. |
+| `TRANSCRIPTION_BILLING` | Audio captured; recording gone or text retained | OpenRouter has no credit left. Add credit, then try again. | OpenRouter has no credit. Recording lost. Add credit. | OpenRouter has no credit. Recording kept. Add credit. | OpenRouter has no credit. Recording kept. Add credit. |
+| `TRANSCRIPTION_RATE_LIMITED` | Audio captured; recording gone or text retained | The transcription service is busy. Try again in a moment. | Transcription busy. Recording lost. Dictate again later. | The transcription service is busy. Recording kept. | The transcription service is busy. Recording kept. |
+| `TRANSCRIPTION_SERVICE_ERROR` | Audio captured; recording gone or text retained | OpenRouter could not transcribe. Try again. | OpenRouter error. Recording lost. Dictate again. | OpenRouter returned an error. Recording kept. | OpenRouter returned an error. Recording kept. |
+| `TRANSCRIPTION_FAILED` | Audio captured; recording gone or text retained | Sotto did not get usable text back. Try again. | No usable text returned. Recording lost. Dictate again. | Sotto did not get usable text back. Recording kept. | Sotto did not get usable text back. Recording kept. |
+| `OUTPUT_UNAVAILABLE` | Audio captured; recording gone or text retained | Text could not be delivered. Open Sotto to check it. | Text kept in Sotto. Open Dictate to copy it. | Text could not be delivered. Recording kept. Open Sotto. | Text could not be delivered. Recording kept. Open Sotto. |
+| `OUTPUT_FAILED` | Audio captured; recording gone or text retained | Text could not be delivered. Open Sotto to check it. | Text kept in Sotto. Open Dictate to copy it. | Text could not be delivered. Recording kept. Open Sotto. | Text could not be delivered. Recording kept. Open Sotto. |
+| `DESKTOP_CLIPBOARD_UNAVAILABLE` | Audio captured; recording gone or text retained | Text kept in Sotto. Open Dictate to copy it. | Text kept in Sotto. Open Dictate to copy it. | Clipboard unavailable. Recording kept. Open Dictate. | Clipboard unavailable. Recording kept. Open Dictate. |
+| `HISTORY_FAILED` | Audio captured; recording gone or text retained | Text was delivered, but history could not be saved. | Text on clipboard. History not saved. Paste with Super+V. | Text delivered; history failed. Recording kept. | Text delivered; history failed. Recording kept. |
+| `SETTINGS_UNAVAILABLE` | Nothing recorded | Settings could not be read. Open Sotto and try again. | Settings could not be read. Open Sotto and try again. | Settings could not be read. Recording kept. Open Sotto. | Settings could not be read. Recording kept. Open Sotto. |
+| Unknown code | Outcome follows `kept` | Dictation failed. Open Sotto to try again. | Dictation failed. Recording lost. Dictate again. | Dictation failed. Recording kept. | Dictation failed. Recording kept. |
 
 ## Notes for the plugin
 

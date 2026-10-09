@@ -20,26 +20,32 @@ export interface ShellDictationState {
 
 // Only reviewed copy can reach the file. Neither a renderer error message nor
 // a provider's response is accepted, even if a caller carries extra fields.
-const failureDetail: Readonly<Record<WidgetErrorCode, string>> = {
+const nothingRecordedDetail = {
   MIC_PERMISSION_DENIED: 'Microphone access was denied. Allow it, then try again.',
   MIC_DEVICE_NOT_FOUND: 'No microphone was found. Connect one, then try again.',
   MIC_START_FAILED: 'The microphone could not start. Try again.',
   MIC_NOT_SET_UP: 'Set up your microphone in Settings.',
-  RECORDING_FAILED: 'Recording stopped unexpectedly. Dictate again.',
   NO_SPEECH: 'No speech was heard. Dictate again.',
-  TRANSCRIPTION_UNCONFIGURED: 'Add your OpenRouter key in Settings.',
-  TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter rejected the key. Check it in Settings.',
-  TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Check your connection.',
-  TRANSCRIPTION_BILLING: 'OpenRouter has no credit left. Add credit, then try again.',
-  TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy. Try again in a moment.',
-  TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter could not transcribe. Try again.',
-  TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. Try again.',
-  OUTPUT_UNAVAILABLE: 'Text could not be delivered. Open Sotto to check it.',
-  OUTPUT_FAILED: 'Text could not be delivered. Open Sotto to check it.',
-  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
-  HISTORY_FAILED: 'Text was delivered, but history could not be saved.',
   SETTINGS_UNAVAILABLE: 'Settings could not be read. Open Sotto and try again.',
+} as const satisfies Partial<Record<WidgetErrorCode, string>>
+
+// These failures follow captured audio. Say it was lost, or where the completed
+// text remains. Output recovery in Dictate exists even when history is off.
+const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof nothingRecordedDetail>, string>> = {
+  RECORDING_FAILED: 'Recording stopped and was lost. Dictate again.',
+  TRANSCRIPTION_UNCONFIGURED: 'No OpenRouter key. Recording lost. Add it in Settings.',
+  TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter key rejected. Recording lost. Check Settings.',
+  TRANSCRIPTION_OFFLINE: 'OpenRouter unreachable. Recording lost. Check connection.',
+  TRANSCRIPTION_BILLING: 'OpenRouter has no credit. Recording lost. Add credit.',
+  TRANSCRIPTION_RATE_LIMITED: 'Transcription busy. Recording lost. Dictate again later.',
+  TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter error. Recording lost. Dictate again.',
+  TRANSCRIPTION_FAILED: 'No usable text returned. Recording lost. Dictate again.',
+  OUTPUT_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
+  OUTPUT_FAILED: 'Text kept in Sotto. Open Dictate to copy it.',
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
+  HISTORY_FAILED: 'Text on clipboard. History not saved. Paste with Super+V.',
 }
+const failureDetail: Readonly<Record<WidgetErrorCode, string>> = { ...nothingRecordedDetail, ...capturedDetail }
 
 // The shell pill displays detail directly; its buttons supply Try again and
 // Discard. Keep the reason and recording outcome in every kept failure.
@@ -75,7 +81,7 @@ export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictat
       state: 'failed',
       detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code)
         ? (snapshot.kept === true ? keptFailureDetail : failureDetail)[snapshot.code]
-        : snapshot.kept === true ? 'Dictation failed. Recording kept.' : 'Dictation failed. Open Sotto to try again.',
+        : snapshot.kept === true ? 'Dictation failed. Recording kept.' : 'Dictation failed. Recording lost. Dictate again.',
       kept: snapshot.kept === true,
     }
   }

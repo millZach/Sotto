@@ -21,14 +21,44 @@ function snapshot(fields: object): WidgetSnapshot {
 }
 
 describe('shell dictation copy', () => {
-  it.each([...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'])('states whether %s kept the recording in fewer than 60 characters', code => {
+  const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_DEVICE_NOT_FOUND', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
+  const captured = ['RECORDING_FAILED', 'TRANSCRIPTION_UNCONFIGURED', 'TRANSCRIPTION_UNAUTHORIZED', 'TRANSCRIPTION_OFFLINE', 'TRANSCRIPTION_BILLING', 'TRANSCRIPTION_RATE_LIMITED', 'TRANSCRIPTION_SERVICE_ERROR', 'TRANSCRIPTION_FAILED', 'OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE', 'HISTORY_FAILED'] as const
+
+  it('puts every known failure in exactly one recording group', () => {
+    const grouped = [...nothingRecorded, ...captured]
+    expect(new Set(grouped).size).toBe(grouped.length)
+    expect(grouped.slice().sort()).toEqual([...WIDGET_ERROR_CODES].sort())
+  })
+
+  it.each([...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'])('states the recording or text outcome for %s in fewer than 60 characters', code => {
     for (const kept of [false, true]) {
       const fields = shellDictationFields(snapshot({ status: 'error', code, kept, message: 'PRIVATE PROVIDER BODY' }))
       expect(fields).toMatchObject({ state: 'failed', kept })
       expect(fields.detail!.length).toBeLessThan(60)
-      expect(fields.detail!.includes('Recording kept.')).toBe(kept)
+      if (kept) expect(fields.detail).toContain('Recording kept.')
+      else if ((nothingRecorded as readonly string[]).includes(code)) {
+        expect(fields.detail).not.toMatch(/Recording (kept|lost)|was lost/)
+        expect(fields.detail).toMatch(/try again|Dictate again|Settings/i)
+      } else {
+        expect(fields.detail).toMatch(/Recording lost\.|was lost\.|Text kept in Sotto\.|Text on clipboard\./)
+      }
       expect(fields.detail).not.toContain('PRIVATE')
     }
+  })
+
+  it.each(['OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE'])('points %s to completed text in Dictate, independent of history', code => {
+    expect(shellDictationFields(snapshot({ status: 'error', code, kept: false })).detail)
+      .toBe('Text kept in Sotto. Open Dictate to copy it.')
+  })
+
+  it('names the clipboard when only history saving failed', () => {
+    expect(shellDictationFields(snapshot({ status: 'error', code: 'HISTORY_FAILED' })).detail)
+      .toBe('Text on clipboard. History not saved. Paste with Super+V.')
+  })
+
+  it.each([false, true])('uses kept=%s for the unknown-code fallback', kept => {
+    expect(shellDictationFields(snapshot({ status: 'error', code: 'UNKNOWN_ERROR', kept })).detail)
+      .toBe(kept ? 'Dictation failed. Recording kept.' : 'Dictation failed. Recording lost. Dictate again.')
   })
 
   it('keeps the key and credit next steps and the copied instruction short', () => {
