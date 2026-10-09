@@ -1,16 +1,30 @@
 {
-  "terminal": {
+  "foot": {
     "focused": "foot",
+    "pid": 3811903,
+    "address": "0x5f2690b84ae0",
     "tags": [
       "terminal*"
     ],
-    "result": "pasted"
+    "result": "pasted",
+    "receivedText": "Sotto pasted into foot — café 🚀"
   },
-  "app": {
+  "Alacritty": {
+    "focused": "Alacritty",
+    "pid": 3811904,
+    "address": "0x5f2690bda190",
+    "tags": [
+      "terminal*"
+    ],
+    "result": "pasted",
+    "receivedText": "Sotto pasted into Alacritty — café 🚀"
+  },
+  "Chromium": {
     "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
+    "pid": 3811905,
+    "address": "0x5f2690c88e60",
     "tags": [],
-    "result": "pasted"
-  },
-  "terminalText": "Sotto pasted into a terminal — café 🚀",
-  "appText": "Sotto pasted into an app — naïve façade ✓"
+    "result": "pasted",
+    "receivedText": "Sotto pasted into Chromium — naïve façade ✓"
+  }
 }

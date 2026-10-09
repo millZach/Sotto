@@ -1,0 +1,16 @@
+nested: efb50993780079460b0cbed1363e2166a2de1d9f_1791539328_1526525591 on wayland-2; live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
+foot: focused=foot tags=["terminal*"] deliverOutput=pasted
+foot received: "Sotto pasted into foot — café 🚀"
+Alacritty: focused=Alacritty tags=["terminal*"] deliverOutput=pasted
+Alacritty received: "Sotto pasted into Alacritty — café 🚀"
+Chromium: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+Chromium received: "Sotto pasted into Chromium — naïve façade ✓"
+screenshot: /tmp/nested-paste-final/nested.png
+PASS: exact paste into foot, Alacritty and Chromium
+Stopped Hyprland process group 3811886
+Stopped foot process group 3811903
+Stopped Alacritty process group 3811904
+Stopped Chromium process group 3811905
+Stopped Sotto process group 3811906
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]

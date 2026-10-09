@@ -41,5 +41,11 @@ export function createOwnedProofProcesses(report) {
     report(`Owned processes still running: ${JSON.stringify(remaining)}`)
     assert.deepEqual(remaining, [], 'Every proof-owned process must stop')
   }
-  return { start, stop }
+  const owns = (pid, child) => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      return Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[2]) === child.pid
+    } catch { return false }
+  }
+  return { start, stop, owns }
 }

@@ -1,5 +1,5 @@
 // Real paste only in an owned nested Hyprland; the locked live session receives no keys.
-// Usage after building, Node 24 on Omarchy: node scripts/verify-hyprland-paste-nested.mjs <out-dir>
+// Usage after building, Node 24 with foot, Alacritty and Chromium: node scripts/verify-hyprland-paste-nested.mjs <out-dir>
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
@@ -76,8 +76,17 @@ try {
   console.log(`nested: ${sig} on ${sock}; live: ${liveSig} on ${live.WAYLAND_DISPLAY} (untouched)`)
 
   const footFile = join(out, 'foot.txt')
+  const alacrittyFile = join(out, 'alacritty.txt')
+  const footReady = join(out, 'foot-ready')
+  const alacrittyReady = join(out, 'alacritty-ready')
+  for (const file of [footReady, alacrittyReady]) rmSync(file, { force: true })
   writeFileSync(footFile, '')
-  owned.start('foot', 'foot', ['-a', 'foot', '-e', 'sh', '-c', 'stty raw -echo; exec cat > "$1"', 'proof-cat', footFile], { env: nested, stdio: 'ignore' })
+  writeFileSync(alacrittyFile, '')
+  const catArgs = (file, ready) => ['sh', '-c', 'stty raw -echo; : > "$2"; exec cat > "$1"', 'proof-cat', file, ready]
+  const foot = owned.start('foot', 'foot', ['-a', 'foot', '-e', ...catArgs(footFile, footReady)], { env: nested, stdio: 'ignore' })
+  // A missing system executable can be extracted into this checkout's ignored cache.
+  const alacrittyExecutable = existsSync('/usr/bin/alacritty') ? '/usr/bin/alacritty' : join(checkout, '.cache/alacritty/usr/bin/alacritty')
+  const alacritty = owned.start('Alacritty', alacrittyExecutable, ['--class', 'Alacritty', '-e', ...catArgs(alacrittyFile, alacrittyReady)], { env: nested, stdio: 'ignore' })
   const chromium = owned.start('Chromium', 'chromium', [`--user-data-dir=${join(out, 'chromium')}`, '--ozone-platform=wayland', '--no-first-run', '--remote-debugging-port=9347',
     '--app=data:text/html,<title>pastebox</title><textarea id=t autofocus style="width:95vw;height:90vh"></textarea>'], { env: nested, stdio: 'ignore' })
   const data = join(out, `sotto-profile-${process.pid}`)
@@ -85,45 +94,75 @@ try {
   const sotto = owned.start('Sotto', join(checkout, 'node_modules/electron/dist/electron'), ['--inspect=9346', checkout], { env: { ...nested, XDG_CONFIG_HOME: data }, stdio: 'ignore' })
   const inspectorTarget = await discover(9346, sotto)
   const inspector = await connect(inspectorTarget.webSocketDebuggerUrl)
-  assert.equal(await inspector.evaluate('process.pid'), sotto.pid, 'The inspector must belong to the spawned Sotto')
-  assert.deepEqual(await inspector.evaluate('({ instance: process.env.HYPRLAND_INSTANCE_SIGNATURE, display: process.env.WAYLAND_DISPLAY })'), { instance: sig, display: sock })
+  assert.equal(await inspector.evaluate('process.pid', 5000, false), sotto.pid, 'The inspector must belong to the spawned Sotto')
+  assert.deepEqual(await inspector.evaluate('({ instance: process.env.HYPRLAND_INSTANCE_SIGNATURE, display: process.env.WAYLAND_DISPLAY })', 5000, false), { instance: sig, display: sock })
   assertNested()
   const win = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))"
   await poll('Sotto preload startup', async remaining => {
-    try { return await inspector.evaluate(`(() => { if (!process.mainModule) return false; const w = ${win}; return Boolean(w && !w.webContents.isLoading()) })()`, Math.min(2000, remaining)) }
+    try { return await inspector.evaluate(`(() => { if (!process.mainModule) return false; const w = ${win}; return Boolean(w && !w.webContents.isLoading()) })()`, Math.min(2000, remaining), false) }
     catch (error) { if (/Promise was collected|Execution context was destroyed/u.test(error.message)) return false; throw error }
   }, sotto)
   const invoke = js => inspector.evaluate(`(async () => (${win}).webContents.executeJavaScript(${JSON.stringify(js)}))()`)
   await invoke('window.sotto.updateSettings({ autoPaste: true, showWidgetWhenIdle: false, localHostEnabled: false })')
+  await poll('Sotto initial window shown', remaining => inspector.evaluate(`Boolean((${win}).isVisible())`, Math.min(2000, remaining), false), sotto)
   await inspector.evaluate("process.mainModule.require('electron').BrowserWindow.getAllWindows().forEach(w => w.hide())")
   await poll('Nested target startup', () => {
     const clients = JSON.parse(hyprctl('clients', '-j'))
-    return clients.some(client => client.class === 'foot') && clients.some(client => client.title === 'pastebox')
+    return clients.some(client => client.class === 'foot' && owned.owns(client.pid, foot))
+      && clients.some(client => client.class === 'Alacritty' && owned.owns(client.pid, alacritty))
+      && clients.some(client => client.title === 'pastebox' && owned.owns(client.pid, chromium))
+      && existsSync(footReady) && existsSync(alacrittyReady)
   }, chromium)
 
-  const deliver = async (label, selector, text) => {
-    assertNested()
-    hyprctl('dispatch', `hl.dsp.focus({ window = "${selector}" })`)
-    await wait(500)
-    const active = JSON.parse(hyprctl('activewindow', '-j'))
-    const result = await invoke(`window.sotto.deliverOutput(${JSON.stringify({ text, autoPaste: true, pasteDelayMs: 150 })})`)
-    await wait(1200)
-    results[label] = { focused: active.class, tags: active.tags, result }
-    console.log(`${label}: focused=${active.class} tags=${JSON.stringify(active.tags)} deliverOutput=${result}`)
-  }
-  await deliver('terminal', 'class:foot', 'Sotto pasted into a terminal — café 🚀')
-  await deliver('app', 'title:pastebox', 'Sotto pasted into an app — naïve façade ✓')
-  results.terminalText = readFileSync(footFile, 'utf8')
-  console.log('foot received:', JSON.stringify(results.terminalText))
   const pages = await fetchProofJson('http://127.0.0.1:9347/json/list')
   const page = pages.find(p => p.title === 'pastebox')
   assert.ok(page, 'Chromium pastebox debugger must exist')
   const cdp = await connect(page.webSocketDebuggerUrl)
-  results.appText = await cdp.evaluate('document.getElementById("t").value')
-  console.log('chromium textarea:', JSON.stringify(results.appText))
+  assert.equal(await cdp.evaluate('document.getElementById("t").value'), '')
+
+  const deliver = async (label, child, matches, tags, text, receive) => {
+    assertNested()
+    const target = JSON.parse(hyprctl('clients', '-j')).find(client => matches(client) && owned.owns(client.pid, child))
+    assert.ok(target, `${label}: target must be a window owned by this proof`)
+    const active = await poll(`${label} focus`, async () => {
+      assert.equal(hyprctl('dispatch', `hl.dsp.focus({ window = "address:${target.address}" })`).trim(), 'ok')
+      // Initial window activation and keyboard focus delivery are asynchronous.
+      await wait(500)
+      const window = JSON.parse(hyprctl('activewindow', '-j'))
+      return window.address === target.address ? window : undefined
+    }, child)
+    assert.equal(active.pid, target.pid, `${label}: focused PID`)
+    assert.equal(active.class, target.class, `${label}: focused class`)
+    assert.equal(active.title, target.title, `${label}: focused title`)
+    assert.deepEqual(active.tags, tags, `${label}: expected Omarchy tags`)
+    assertNested()
+    const result = await invoke(`window.sotto.deliverOutput(${JSON.stringify({ text, autoPaste: true, pasteDelayMs: 150 })})`)
+    assert.equal(result, 'pasted', `${label}: real deliverOutput must paste`)
+    const after = JSON.parse(hyprctl('activewindow', '-j'))
+    if (after.address !== target.address) {
+      console.error(`${label} unexpected focus after paste:`, JSON.stringify({ class: after.class, pid: after.pid, title: after.title }))
+      execFileSync('grim', [join(out, `${label}-failure.png`)], { env: nested, timeout: 5000 })
+    }
+    assert.equal(after.address, target.address, `${label}: focus after paste`)
+    try { await poll(`${label} exact text`, async () => (await receive()) === text, child) }
+    catch (error) {
+      console.error(`${label} mismatched text:`, JSON.stringify(await receive()))
+      execFileSync('grim', [join(out, `${label}-failure.png`)], { env: nested, timeout: 5000 })
+      throw error
+    }
+    const receivedText = await receive()
+    assert.equal(receivedText, text, `${label}: exact received transcript`)
+    results[label] = { focused: active.class, pid: active.pid, address: active.address, tags: active.tags, result, receivedText }
+    console.log(`${label}: focused=${active.class} tags=${JSON.stringify(active.tags)} deliverOutput=${result}`)
+    console.log(`${label} received:`, JSON.stringify(receivedText))
+  }
+  await deliver('foot', foot, client => client.class === 'foot', ['terminal*'], 'Sotto pasted into foot — café 🚀', () => readFileSync(footFile, 'utf8'))
+  await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
+  await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', () => cdp.evaluate('document.getElementById("t").value'))
   execFileSync('grim', [join(out, 'nested.png')], { env: nested, timeout: 5000 })
   console.log('screenshot:', join(out, 'nested.png'))
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
+  console.log('PASS: exact paste into foot, Alacritty and Chromium')
 } finally {
   for (const debuggerClient of debuggers) debuggerClient.close()
   // Startup may fail before discovery completes. A lock naming our PID still
