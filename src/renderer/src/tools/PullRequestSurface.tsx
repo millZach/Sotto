@@ -132,9 +132,18 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
       undefined, start ? `Babysitting #${number}` : `Stopped babysitting #${number}`)
     if (start) return
     if (!done) { setNotice(current => current?.tone === 'error' ? { ...current, at: 'babysit' } : current); return }
-    // Stop took its own button away; Babysit pull request is in the ··· menu again, so focus waits there.
-    requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) (surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') ?? top.current)?.focus() })
+    // Stop takes its own line away, once the thread's state says so; Babysit pull request is in the ··· menu again, so focus waits there.
+    leaveLine(true)
   }
+  /**
+   * Focus after a press that takes the babysitting line away: on ··· (`menu`), where Babysit pull request is, else on the
+   * pull request, unless the reader has already moved on elsewhere in the surface.
+   */
+  const leaveLine = (menu: boolean): void => { requestAnimationFrame(() => {
+    const active = document.activeElement
+    if (surface.current?.contains(active) && !active?.closest('.pr-surface__babysit')) return
+    ((menu ? surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') : null) ?? top.current)?.focus()
+  }) }
   const copyLink = async (url: string): Promise<void> => {
     try { await writeClipboard(url); onStatus('Link copied') } catch { onStatus('Could not copy the link. Open on GitHub and copy the address from your browser.') }
   }
@@ -194,7 +203,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const dismissEnding = (): void => {
     if (!endingShown) return
     endings.dismiss(endingShown)
-    requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) ((open ? surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') : null) ?? top.current)?.focus() })
+    leaveLine(open)
   }
   // A refused Stop is said in the line it answers, while that line is still there to say it.
   const stopRefused = notice?.at === 'babysit' && line?.kind === 'babysitting' ? notice.text : null

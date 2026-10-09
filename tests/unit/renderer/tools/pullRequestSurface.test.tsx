@@ -521,9 +521,13 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-    fireEvent.click(within(line).getByRole('button', { name: 'Stop babysitting #74' }))
+    const stop = within(line).getByRole('button', { name: 'Stop babysitting #74' })
+    stop.focus()
+    fireEvent.click(stop)
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'stop-babysitting', threadId: 'thread-1', url: URL }]))
     await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Stopped babysitting #74'))
+    // Focus moves on to ···, where Babysit pull request will be, without waiting for the line to go.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'More pull request actions' })).toHaveFocus())
     expect(screen.queryByRole('status')).toBeNull()
   })
 
