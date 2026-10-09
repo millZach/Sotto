@@ -235,135 +235,138 @@ export function Onboarding({
       </nav>
 
       <Card className="onboarding-card">
-        {StepIcon ? <div className="onboarding-step-icon"><StepIcon aria-hidden="true" size={22} strokeWidth={1.8} /></div> : null}
+        {/* The step scrolls inside the card, so Back and the way forward always stay in view. */}
+        <div className="onboarding-card__body">
+          {StepIcon ? <div className="onboarding-step-icon"><StepIcon aria-hidden="true" size={22} strokeWidth={1.8} /></div> : null}
 
-        {step.id === 'welcome' ? (
-          <section aria-labelledby="onboarding-heading">
-            <SottoMark className="onboarding-welcome__mark" />
-            {heading('Welcome to Sotto', 'Talk to your computer and your coding agents', platform === 'linux'
-              ? 'Start dictation in Sotto, speak, then stop, and your words are copied for you to paste. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
-              : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
-            <div className="onboarding-assurances">
-              <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
-              <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
-              <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
-              <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
-            </div>
-            <p className="onboarding-aside">Every step after this one can be skipped and finished later in Settings.</p>
-          </section>
-        ) : null}
+          {step.id === 'welcome' ? (
+            <section aria-labelledby="onboarding-heading">
+              <SottoMark className="onboarding-welcome__mark" />
+              {heading('Welcome to Sotto', 'Talk to your computer and your coding agents', platform === 'linux'
+                ? 'Start dictation in Sotto, speak, then stop, and your words are copied for you to paste. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
+                : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
+              <div className="onboarding-assurances">
+                <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
+                <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
+                <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
+                <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
+              </div>
+              <p className="onboarding-aside">Every step after this one can be skipped and finished later in Settings.</p>
+            </section>
+          ) : null}
 
-        {step.id === 'look' ? (
-          <LookStep settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
-            heading={heading('Look', 'Choose how Sotto looks', 'Pick light or dark and a theme. The window and the owl follow your choice.')} />
-        ) : null}
+          {step.id === 'look' ? (
+            <LookStep settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
+              heading={heading('Look', 'Choose how Sotto looks', 'Pick light or dark and a theme. The window and the owl follow your choice.')} />
+          ) : null}
 
-        {step.id === 'microphone' ? (
-          <section aria-labelledby="onboarding-heading">
-            {heading('Microphone', 'Check your microphone', 'Sotto needs microphone access only while you record or run this test. Choose the input you will speak into if more than one is available. Test your microphone or choose Skip for now to continue.')}
-            <Field
-              className="onboarding-microphone-picker"
-              label="Microphone"
-              {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
-              {...(microphoneSaveFailed ? { error: 'Sotto could not save that microphone. The previous one is still selected.' } : {})}
-            >
-              <Select
-                value={microphoneId ?? ''}
-                onChange={(event) => void chooseMicrophone(event.currentTarget.value || null)}
+          {step.id === 'microphone' ? (
+            <section aria-labelledby="onboarding-heading">
+              {heading('Microphone', 'Check your microphone', 'Sotto needs microphone access only while you record or run this test. Choose the input you will speak into if more than one is available. Test your microphone or choose Skip for now to continue.')}
+              <Field
+                className="onboarding-microphone-picker"
+                label="Microphone"
+                {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
+                {...(microphoneSaveFailed ? { error: 'Sotto could not save that microphone. The previous one is still selected.' } : {})}
               >
-                <option value="">{copy.settingsMicrophoneDefaultOption}</option>
-                {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
-                {microphones.map((microphone, at) => (
-                  <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${at + 1}`}</option>
-                ))}
-              </Select>
-            </Field>
-            <div className="onboarding-microphone-test" data-state={microphoneState}>
-              {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
-              <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
-              <p role="status">
-                {microphoneState === 'ready' ? 'Microphone ready. Access is confirmed; retest any time to check current input activity.' : null}
-                {microphoneState === 'requesting' ? 'Checking the microphone...' : null}
-                {microphoneState === 'idle' ? 'Run a quick input-level test.' : null}
-                {microphoneState === 'denied' ? 'Microphone access is blocked.' : null}
-                {microphoneState === 'missing' ? 'No microphone was found.' : null}
-                {microphoneState === 'error' ? 'The microphone test could not start.' : null}
-              </p>
-              <Button
-                variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
-                disabled={microphoneState === 'requesting'}
-                onClick={() => void onRequestMicrophone(microphoneId)}
-              >
-                <Mic2 aria-hidden="true" size={18} />
-                {microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error'
-                  ? 'Try microphone again'
-                  : microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
-              </Button>
-            </div>
-            {microphoneSkipped ? (
-              <p className="onboarding-aside">Microphone test skipped. Dictation waits until you run the test in Settings.</p>
-            ) : null}
-            {microphoneState === 'denied' ? (
-              <>
-                <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
-                <OpenSystemSettingsButton platform={platform} pane="microphone" />
-              </>
-            ) : null}
-            {microphoneState === 'missing' ? (
-              <p className="onboarding-recovery">{copy.onboardingMicrophoneMissing}</p>
-            ) : null}
-          </section>
-        ) : null}
+                <Select
+                  value={microphoneId ?? ''}
+                  onChange={(event) => void chooseMicrophone(event.currentTarget.value || null)}
+                >
+                  <option value="">{copy.settingsMicrophoneDefaultOption}</option>
+                  {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
+                  {microphones.map((microphone, at) => (
+                    <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${at + 1}`}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="onboarding-microphone-test" data-state={microphoneState}>
+                {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
+                <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
+                <p role="status">
+                  {microphoneState === 'ready' ? 'Microphone ready. Access is confirmed; retest any time to check current input activity.' : null}
+                  {microphoneState === 'requesting' ? 'Checking the microphone...' : null}
+                  {microphoneState === 'idle' ? 'Run a quick input-level test.' : null}
+                  {microphoneState === 'denied' ? 'Microphone access is blocked.' : null}
+                  {microphoneState === 'missing' ? 'No microphone was found.' : null}
+                  {microphoneState === 'error' ? 'The microphone test could not start.' : null}
+                </p>
+                <Button
+                  variant={microphoneState === 'ready' ? 'secondary' : 'primary'}
+                  disabled={microphoneState === 'requesting'}
+                  onClick={() => void onRequestMicrophone(microphoneId)}
+                >
+                  <Mic2 aria-hidden="true" size={18} />
+                  {microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error'
+                    ? 'Try microphone again'
+                    : microphoneState === 'ready' ? 'Retest microphone' : 'Test microphone'}
+                </Button>
+              </div>
+              {microphoneSkipped ? (
+                <p className="onboarding-aside">Microphone test skipped. Dictation waits until you run the test in Settings.</p>
+              ) : null}
+              {microphoneState === 'denied' ? (
+                <>
+                  <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
+                  <OpenSystemSettingsButton platform={platform} pane="microphone" />
+                </>
+              ) : null}
+              {microphoneState === 'missing' ? (
+                <p className="onboarding-recovery">{copy.onboardingMicrophoneMissing}</p>
+              ) : null}
+            </section>
+          ) : null}
 
-        {step.id === 'key' ? (
-          <section aria-labelledby="onboarding-heading">
-            {heading('Transcription', 'Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. Paste a key from openrouter.ai/keys, then verify it.')}
-            <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
-            <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
-          </section>
-        ) : null}
+          {step.id === 'key' ? (
+            <section aria-labelledby="onboarding-heading">
+              {heading('Transcription', 'Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. Paste a key from openrouter.ai/keys, then verify it.')}
+              <OpenRouterKeyField apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckTranscriptionKey={onCheckTranscriptionKey} />
+              <p className="onboarding-aside">You can skip this step and add a key in Settings later.</p>
+            </section>
+          ) : null}
 
-        {step.id === 'shortcut' ? (
-          <section aria-labelledby="onboarding-heading">
-            {platform === 'linux'
-              ? heading('Shortcut & paste', 'Copy your words, then paste', 'On Wayland, use the dictation button to start and stop. Your text is copied for you to paste with Ctrl+V, or Shift+Insert in a terminal.')
-              : heading('Shortcut & paste', 'One shortcut from speech to text', 'Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.')}
-            <div className="onboarding-shortcut"><span>{platform === 'linux' ? 'Saved shortcut' : 'Active shortcut'}</span><ShortcutKey accelerator={shortcut} platform={platform} /></div>
-            <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
-              <textarea
-                className="tt-input onboarding-paste-field"
-                value={pasteTest}
-                onChange={(event) => setPasteTest(event.currentTarget.value)}
-                placeholder="Paste or type here"
-              />
-            </Field>
-            {microphoneSkipped ? <p className="onboarding-aside">Microphone test skipped. Run it in Settings when you want to dictate.</p> : null}
-          </section>
-        ) : null}
+          {step.id === 'shortcut' ? (
+            <section aria-labelledby="onboarding-heading">
+              {platform === 'linux'
+                ? heading('Shortcut & paste', 'Copy your words, then paste', 'On Wayland, use the dictation button to start and stop. Your text is copied for you to paste with Ctrl+V, or Shift+Insert in a terminal.')
+                : heading('Shortcut & paste', 'One shortcut from speech to text', 'Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.')}
+              <div className="onboarding-shortcut"><span>{platform === 'linux' ? 'Saved shortcut' : 'Active shortcut'}</span><ShortcutKey accelerator={shortcut} platform={platform} /></div>
+              <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
+                <textarea
+                  className="tt-input onboarding-paste-field"
+                  value={pasteTest}
+                  onChange={(event) => setPasteTest(event.currentTarget.value)}
+                  placeholder="Paste or type here"
+                />
+              </Field>
+              {microphoneSkipped ? <p className="onboarding-aside">Microphone test skipped. Run it in Settings when you want to dictate.</p> : null}
+            </section>
+          ) : null}
 
-        {step.id === 'agents' ? (
-          <AgentsStep onOpenLink={onOpenLink}
-            heading={heading('Coding agents', 'Check your coding agents', 'Sotto drives the agents installed on this computer, each signed in with your own account.')} />
-        ) : null}
+          {step.id === 'agents' ? (
+            <AgentsStep onOpenLink={onOpenLink}
+              heading={heading('Coding agents', 'Check your coding agents', 'Sotto drives the agents installed on this computer, each signed in with your own account.')} />
+          ) : null}
 
-        {step.id === 'project' ? (
-          <ProjectStep
-            heading={heading('First project', 'Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it, and the sidebar lists them under its name.')} />
-        ) : null}
+          {step.id === 'project' ? (
+            <ProjectStep
+              heading={heading('First project', 'Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it, and the sidebar lists them under its name.')} />
+          ) : null}
 
-        {step.id === 'computers' ? (
-          <ComputersStep bridge={hostsBridge ?? window.sotto?.hosts} onHostsChange={setHostCount}
-            heading={heading('Other computers', 'Run agents on another computer', "If you have another PC, a Mac or a Linux box, Sotto can run threads there and show them here beside this computer's. It reaches them over Tailscale or SSH.")} />
-        ) : null}
+          {step.id === 'computers' ? (
+            <ComputersStep bridge={hostsBridge ?? window.sotto?.hosts} onHostsChange={setHostCount}
+              heading={heading('Other computers', 'Run agents on another computer', "If you have another PC, a Mac or a Linux box, Sotto can run threads there and show them here beside this computer's. It reaches them over Tailscale or SSH.")} />
+          ) : null}
 
-        {step.id === 'phone' ? (
-          <>
-            <PhoneStep phoneAccess={settings.phoneAccess} onUpdateSettings={onUpdateSettings} onOpenLink={onOpenLink}
-              bridge={phonesBridge ?? window.sotto?.phones} onBetaOpened={() => setBetaOpened(true)}
-              heading={heading('iPhone', 'Answer your threads from your iPhone', 'The iPhone app is in beta. It reads and answers threads on your computers, including questions and permissions waiting for you. It needs Tailscale on the iPhone and on this computer.')} />
-            {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
-          </>
-        ) : null}
+          {step.id === 'phone' ? (
+            <>
+              <PhoneStep phoneAccess={settings.phoneAccess} onUpdateSettings={onUpdateSettings} onOpenLink={onOpenLink}
+                bridge={phonesBridge ?? window.sotto?.phones} onBetaOpened={() => setBetaOpened(true)}
+                heading={heading('iPhone', 'Answer your threads from your iPhone', 'The iPhone app is in beta. It reads and answers threads on your computers, including questions and permissions waiting for you. It needs Tailscale on the iPhone and on this computer.')} />
+              {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
+            </>
+          ) : null}
+        </div>
 
         <footer className="onboarding-actions">
           {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing}>Back</Button> : <span />}
