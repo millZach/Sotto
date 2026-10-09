@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentFollowup, AgentMessage, AgentState } from '../../../src/shared/agents'
-import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from '../../../src/renderer/src/agents/babysitting'
+import { isWakeUpFollowup, isWakeUpMessage, messageSpeaker, wakeUpMarkdown } from '../../../src/renderer/src/agents/babysitting'
 import { MessageList, QueuedMessage, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { ThreadFollowups } from '../../../src/renderer/src/agents/ThreadFollowups'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
@@ -31,6 +31,12 @@ describe('telling a wake-up', () => {
     expect(isWakeUpMessage({ role: 'assistant', wakeUp: true })).toBe(false)
     expect(isWakeUpFollowup({ wakeUp: true })).toBe(true)
     expect(isWakeUpFollowup({})).toBe(false)
+  })
+
+  it('is Sotto’s in the Agent room’s short transcript too, where the rest stay You and Agent', () => {
+    expect(messageSpeaker({ role: 'user', wakeUp: true })).toBe('Sotto')
+    expect(messageSpeaker({ role: 'user' })).toBe('You')
+    expect(messageSpeaker({ role: 'assistant' })).toBe('Agent')
   })
 
   it('draws every word as sent: nothing becomes formatting, each line keeps its break, each link is a link', () => {

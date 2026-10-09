@@ -144,6 +144,9 @@ export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRe
 
 /** A message babysitting sent, told by the host's own mark (ADR-0061 decision 8), never by what it says. */
 export const isWakeUpMessage = (message: Pick<AgentMessage, 'role' | 'wakeUp'>): boolean => message.role === 'user' && message.wakeUp === true
+/** Who a short transcript says sent a message: Sotto for a wake-up, as the thread's own transcript does, else You or the agent. */
+export const messageSpeaker = (message: Pick<AgentMessage, 'role' | 'wakeUp'>): 'Sotto' | 'You' | 'Agent' =>
+  isWakeUpMessage(message) ? 'Sotto' : message.role === 'user' ? 'You' : 'Agent'
 /** Sotto's wake-up waiting in the follow-up queue: removable, never editable, moved or steered. */
 export const isWakeUpFollowup = (item: Pick<AgentFollowup, 'wakeUp'>): boolean => item.wakeUp === true
 
