@@ -1,12 +1,13 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
+`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
 
 ## When each job runs
 
 Gates (Windows) runs for every push to `main` and every pull request, and is the check a merge waits for. A push to `main` also runs the other two jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the two slower jobs are needed:
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
+- **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run runtime:prepare` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
 - **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.
 
 A job that is not needed reports as skipped, not failed. A change that should have run a skipped job still gets it on the push to `main` after merging.
@@ -56,7 +57,7 @@ The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-
   ```
 - **iPhone CPU.** Eleven journeys in `FocusJourneyTests` record the app's CPU time. Five hold Threads or a thread still for three seconds: with its looping lights and wash running, with them stopped (`--ui-still`), and in the thread with the reply keyboard open. Two type a sentence into a reply box. Four sit on Threads or in the working thread for three seconds while it streams (`--ui-streaming`: a word every 50 milliseconds, with the thread list sent again unchanged each time). The typing and streaming journeys each run once as the app is and once with `--ui-publish-everything`, which publishes every change on the whole model as the app did before its stores. All three switches are Debug-only. The journeys skip unless the test runner sees `SOTTO_IOS_PERF=1`; run them on a Mac with `TEST_RUNNER_SOTTO_IOS_PERF=1 sh apps/ios/Scripts/verify-ui.sh`, which xcodebuild passes to the runner. They assert nothing; [the idle note](perf/2026-10-06-iphone-idle-cpu.md) and [the publishing note](perf/2026-10-06-iphone-publishing.md) say what the numbers mean.
 - **Wall-clock budgets.** See below.
-- **Desktop packaging and all publishing.** Desktop releases are still cut by hand on the Windows PC and the Apple silicon Mac. The Linux host archive is built and verified in its separate job, then published manually.
+- **Desktop installers and all publishing.** Desktop releases are still cut by hand on the Windows PC and the Apple silicon Mac. Package (Windows) builds and verifies the unpacked Windows app, but not the NSIS installer or the macOS disk image. The Linux host archive is built and verified in its separate job, then published manually.
 
 The historical `tests/review/composer-polish` capture harness was removed (#605).
 It had no npm runner and used fixed sleeps. Its retained captures and verdicts
