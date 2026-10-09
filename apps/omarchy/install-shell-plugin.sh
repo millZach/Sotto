@@ -119,7 +119,7 @@ if (( uninstall )); then
       on_bar || break
       sleep 0.1
     done
-    on_bar && fail "Sotto's glyph is still in the bar's layout in $config, so the plugin folder was left in place. Run this again in your desktop session."
+    on_bar && fail "Sotto's glyph is still in the bar's layout in $config. Nothing else was removed. Run this again in your desktop session."
     echo "Took Sotto's glyph off the bar."
   elif (( ! installed )); then
     echo "Sotto's shell plugin is not installed in $plugins_dir, and its glyph is not on the bar."
