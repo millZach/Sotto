@@ -35,10 +35,10 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,383 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,390 tests; 50 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
-| Three Linux Playwright specs in the nested session | PASS, 5 tests in 25.6 s |
+| Three Linux Playwright specs in the nested session | PASS, 5 tests in 26.5 s |
 | Built main/preload external dependency inventories | `allowlist check: PASS` |
 
 ## Review
@@ -188,3 +188,9 @@ Starting at `4698b45a`, the controller now marks whether its recorder reached li
 | Disappears while listening | No microphone was found. Connect one, then try again. | Microphone lost. Recording lost. Connect it again. |
 
 Controller-to-publication regressions pass the real controller's snapshots through `widgetSnapshotSchema` and `shellDictationFields` for both cases. The loss case captures a streaming segment, loses the microphone and resolves a late partial transcript; Retry and Stop cannot deliver or retain that discarded recording or text. Capture begins at timestamp zero in the test, so timestamp truthiness cannot stand in for capture status. Both cases also assert the complete unchanged Windows and macOS snapshots and controller error sentence. Copy tests classify the microphone code as capture-dependent and check both outcomes, kept wording, privacy and the under-60-character limit. The guide describes the distinction.
+
+The integration fixture was cherry-picked unchanged from `e941ef89` as `d33384e1`. Its one-refusal scenario only changes the deterministic e2e transcriber. `resolveE2EConfiguration` refuses packaged apps, absent `SOTTO_E2E=1`, invalid scenarios and non-absolute or missing test profiles. Main clears the e2e environment when admission fails; preload exposes its e2e bridge only for an admitted main renderer, and the renderer selects this factory only while that bridge exists. The existing admission test checks every scenario, including this addition, against packaged builds; IPC tests check bridge refusal. Ordinary dictation still constructs the production transcriber. Merge commit `d734937a` brings in `origin/main` at `e7e85323` without conflicts or additional tree changes.
+
+All gates were rerun after the third-review fixes, the fixture cherry-pick and the merge: typecheck, lint, build and built main/preload allowlist PASS; the full CI-form suite passed 629 files and 9,390 tests with 50 files and 182 tests skipped (504.49 s); notices verified 174 components. The focused controller/copy/schema run passed 201 tests in three files. The three Linux specs passed all five built-app journeys in 26.5 s. The refreshed real-check output records those journeys and cleanup. Fresh plugin-present and widget-returned captures were inspected; the look was unchanged, so the retained captures and incidental Linux output captures were restored.
+
+The nested proof stopped Hyprland PID `1668966`, Playwright PID `1669069` and its proof slice. Recorded PIDs, cgroup processes and owned processes remaining were all `[]`; the live Hyprland instances were preserved, and `/tmp/sp-AyOXjL` was removed. The empty generated `test-results` folder was removed; the checkout root has no proof debris. Standards review and review against this brief found no remaining findings. No runtime import, dependency, host, permission, Windows/macOS copy or widget behavior changed.
