@@ -617,6 +617,18 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
   })
 
+  it('keeps focus on the line when babysitting ends on its own while Stop has it', async () => {
+    const view = mount({ babysit: { agent: 'Claude Code' }, thread: babysat('user') })
+    await opened()
+    const stop = within(screen.getByRole('group', { name: /^Babysitting since / })).getByRole('button', { name: 'Stop babysitting #74' })
+    stop.focus()
+    const ended = thread({ babysitEnded: [{ url: URL, number: 74, reason: 'comment-limit', endedAt: new Date().toISOString() }] })
+    view.rerender(<PullRequestSurface thread={ended} command={view.command} onStatus={view.onStatus} babysit={{ agent: 'Claude Code' }} />)
+    const line = await screen.findByRole('group', { name: 'Not babysitting' })
+    expect(document.activeElement).not.toBe(document.body)
+    expect(line.contains(document.activeElement)).toBe(true)
+  })
+
   it('lets Stop end babysitting a pull request that merged before the next pass saw it', async () => {
     const { command } = mount({ babysit: { agent: 'Codex' }, thread: babysat('agent'), detail: detail({ state: 'merged', mergedAt: new Date().toISOString() }) })
     await opened()

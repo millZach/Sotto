@@ -65,7 +65,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const [linksOpen, setLinksOpen] = useState(false)
   const [preferred, choosePreferred] = usePullRequestMergeMethod()
   // Worked out for every ending the thread holds, before a read of GitHub says which one shows.
-  const endings = useBabysitEndingsDismissed((thread.babysitEnded ?? []).map(item => ({ threadId: thread.id, url: item.url, endedAt: item.endedAt })))
+  const endings = useBabysitEndingsDismissed()
   const generation = useRef(0)
   const surface = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)

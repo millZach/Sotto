@@ -64,8 +64,8 @@ wake-up wording and the real send path through the follow-up queue.
    ([ended](../../artifacts/babysitting-surfaces/ended-1280x800-dark.png)). The time is when babysitting ended, which is
    when the pass noticed the merge, so the sentence does not put it on the merge, which the card above dates. Dismiss,
    named "Dismiss why babysitting #74 ended", puts the line away, focus goes back to the pull request's name, and
-   Refresh does not bring it back. What the window keeps for it is a 16-byte SHA-256 digest of the thread, the pull
-   request and when it ended, never their names.
+   Refresh does not bring it back. What the window keeps for it is a 128-bit digest of the thread, the pull request
+   and when it ended, never their names.
 8. **Settings.** Settings → Application has **Let agents babysit pull requests** right after "Let agents draw visuals in
    threads", on by default, saying what Sotto does with the value shown. Turned off it says "Agents cannot start
    babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request

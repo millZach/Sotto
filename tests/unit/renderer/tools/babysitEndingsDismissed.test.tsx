@@ -13,9 +13,9 @@ let run = 0
 const ending = (endedAt = '2026-10-08T21:07:00.000Z'): BabysitEnding => ({ threadId: `thread-${run}`, url: 'https://github.com/Octo-Org/Greeter/pull/74', endedAt })
 
 async function mounted(endings: readonly BabysitEnding[]) {
-  const view = renderHook(({ list }) => useBabysitEndingsDismissed(list), { initialProps: { list: endings } })
-  // A line stays away until its digest is worked out, a moment after it first appears.
-  await waitFor(() => expect(endings.every(item => !view.result.current.dismissed(item))).toBe(true))
+  const view = renderHook(() => useBabysitEndingsDismissed())
+  // The digest is worked out at once, so a line not dismissed shows from the first render rather than after a moment.
+  expect(endings.every(item => !view.result.current.dismissed(item))).toBe(true)
   return view
 }
 
@@ -48,7 +48,7 @@ describe('the endings this window dismissed', () => {
       localStorage.setItem(BABYSIT_ENDINGS_DISMISSED_KEY, JSON.stringify(record))
       window.dispatchEvent(new StorageEvent('storage', { key: BABYSIT_ENDINGS_DISMISSED_KEY }))
     })
-    const view = renderHook(() => useBabysitEndingsDismissed([ending()]))
+    const view = renderHook(() => useBabysitEndingsDismissed())
     keep(['0'.repeat(32)])
     await waitFor(() => expect(view.result.current.dismissed(ending())).toBe(false))
     keep(['0'.repeat(32), digest])
@@ -65,5 +65,14 @@ describe('the endings this window dismissed', () => {
     expect(kept.slice(0, -1)).toEqual(older.slice(1))
     expect(kept.at(-1)).toMatch(/^[0-9a-f]{32}$/u)
     expect(localStorage.getItem(BABYSIT_ENDINGS_DISMISSED_KEY)).not.toContain('greeter')
+  })
+
+  it('remembers in memory no more than it keeps, so the oldest of 201 dismissals shows again', async () => {
+    const many = Array.from({ length: 201 }, (_, index) => ending(new Date(Date.parse('2026-10-08T21:07:00.000Z') + index * 1000).toISOString()))
+    const view = await mounted([])
+    act(() => { for (const item of many) view.result.current.dismiss(item) })
+    expect(view.result.current.dismissed(many[0]!)).toBe(false)
+    expect(view.result.current.dismissed(many[1]!)).toBe(true)
+    expect(view.result.current.dismissed(many.at(-1)!)).toBe(true)
   })
 })
