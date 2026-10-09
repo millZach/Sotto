@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeTerminalHook } from '../../../src/main/terminals/hooksNormalizer'
+import { terminalAgentHookEventSchema } from '../../../src/main/terminals/hooksProtocol'
 
 const binding = { terminalId: 'terminal-1', runId: 'run-1' }
 const claude = (hook: string, extra: Record<string, unknown> = {}) => normalizeTerminalHook('claude', hook, {
@@ -27,10 +28,26 @@ describe('terminal hook normalization', () => {
       expect(claude('PermissionRequest', { tool_name: 'Write', tool_input })).toBeNull()
     }
   })
-  it('does not complete continuing stops or stops with background tasks', () => {
-    for (const extra of [{ stop_hook_active: true }, { stop_hook_active: 'false' }, { background_tasks: [{}] }, { session_crons: [{}] }, { background_tasks: 'unknown-shape' }]) {
+  it('reports known continuing/background/session-cron Stops as Working without forwarding their bodies', () => {
+    for (const extra of [{ stop_hook_active: true }, { background_tasks: [{ text: 'SECRET_TASK' }] }, { session_crons: [{ text: 'SECRET_CRON' }] }]) {
+      const normalized = claude('Stop', extra)
+      expect(normalized?.event).toMatchObject({ kind: 'working', state: 'working', workPhase: 'continuing' })
+      expect(normalized?.blocking).toBe(false)
+      expect(JSON.stringify(normalized)).not.toContain('SECRET')
+      expect(terminalAgentHookEventSchema.safeParse(normalized?.event).success).toBe(true)
+    }
+  })
+  it('rejects malformed Stop types even when another field reports continuing work', () => {
+    for (const extra of [{ stop_hook_active: 'false' }, { stop_hook_active: 1 }, { background_tasks: 'unknown-shape' },
+      { session_crons: {} }, { stop_hook_active: true, background_tasks: null }]) {
       expect(claude('Stop', extra)).toBeNull()
     }
+  })
+  it('allowlists explicit submit/tool phases and rejects unknown work metadata', () => {
+    for (const [hook, phase] of [['UserPromptSubmit', 'submitted'], ['PreToolUse', 'tool-start'], ['PostToolUse', 'tool-end']]) {
+      expect(claude(hook!)?.event.workPhase).toBe(phase)
+    }
+    expect(terminalAgentHookEventSchema.safeParse({ ...claude('PreToolUse')!.event, workPhase: 'SECRET_UNKNOWN' }).success).toBe(false)
   })
   it('admits only known notifications and no invalid provider IDs', () => {
     expect(claude('Notification', { notification_type: 'permission_prompt' })?.event.notificationType).toBe('permission_prompt')

@@ -11,6 +11,7 @@ export const terminalAgentHookEventSchema = z.object({
   providerSessionId: terminalHookId.optional(), turnId: terminalHookId.optional(),
   requestId: terminalHookId.optional(), approvalId: terminalHookId.optional(),
   notificationType: z.enum(['permission_prompt', 'idle_prompt', 'elicitation_dialog', 'question']).optional(),
+  workPhase: z.enum(['submitted', 'tool-start', 'tool-end', 'continuing']).optional(),
 }).strict()
 export type TerminalAgentHookEvent = z.infer<typeof terminalAgentHookEventSchema>
 export const terminalHookFrameSchema = terminalAgentHookEventSchema.extend({ secret: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()

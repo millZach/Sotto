@@ -82,19 +82,56 @@ describe('terminal agent run state', () => {
   it.each([
     ['continuing', { stop_hook_active: true }],
     ['background', { background_tasks: [{}] }],
-  ] as const)('admits fresh hidden continuation after visible readiness when a %s Stop supplies no completion', (reason, extra) => {
+    ['session-cron', { session_crons: [{}] }],
+  ] as const)('admits silent hidden continuation after visible readiness when a %s Stop supplies Working evidence', (reason, extra) => {
     const state = agent(); state.hook(event('session-start')); state.output(idle); state.setVisible(true)
     state.hook(event('working', { turnId: 'turn' })); state.output(work)
     const binding = { terminalId: 'terminal', runId: 'run' }
     const payload = { hook_event_name: 'Stop', session_id: 'session', prompt_id: 'turn' }
-    expect(normalizeTerminalHook('claude', 'Stop', { ...payload, ...extra }, binding), `${reason} Stop cannot emit completion`).toBeNull()
     state.quiet(); expect(state.state).toBe('working')
     state.output(idle)
-    // Continuing/background Stop is rejected by the helper; only idle corroboration reaches this run.
-    state.hook(event('notification', { notificationType: 'idle_prompt' })); expect(state.state).toBe('idle')
-    state.setVisible(false); state.hook(event('working', { turnId: 'turn' })); expect(state.state).toBe('working')
-    state.output(work); state.hook(normalizeTerminalHook('claude', 'Stop', payload, binding)!.event); expect(state.state).toBe('working')
+    const continuing = normalizeTerminalHook('claude', 'Stop', { ...payload, ...extra }, binding)!.event
+    expect(continuing, `${reason} Stop cannot emit completion`).toMatchObject({ kind: 'working', workPhase: 'continuing' })
+    state.hook(continuing); expect(state.state).toBe('working')
+    state.output(idle); state.quiet(); expect(state.state).toBe('working')
+    state.setVisible(false); state.hook(event('working', { turnId: 'turn', workPhase: 'tool-start' })); expect(state.state).toBe('working')
+    state.hook(normalizeTerminalHook('claude', 'Stop', payload, binding)!.event); expect(state.state).toBe('working')
     state.output(idle); expect(state.state).toBe('just-finished')
+  })
+  it.each(['none', 'legacy', 'tool-start', 'tool-end'] as const)('remembers viewing hidden readiness before delayed Stop and ignores %s late tool evidence', phase => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'first', workPhase: 'submitted' })); state.output(work); state.output(idle)
+    expect(state.state).toBe('idle')
+    state.setVisible(true); state.setVisible(false)
+    if (phase !== 'none') state.hook(event('working', { turnId: 'first', ...(phase === 'legacy' ? {} : { workPhase: phase }) }))
+    state.hook(event('completed', { turnId: 'first' })); expect(state.state).not.toBe('just-finished')
+    state.output(idle); expect(state.state).toBe('idle')
+  })
+  it.each(['legacy', 'tool-start', 'tool-end'] as const)('preserves admitted completion and its visibility through delayed %s evidence without turn IDs', phase => {
+    for (const visible of [false, true]) {
+      const state = agent(); state.hook(event('session-start')); state.output(idle); state.setVisible(visible)
+      state.hook(event('working')); state.output(work); state.hook(event('completed'))
+      state.setVisible(false); state.hook(event('working', phase === 'legacy' ? {} : { workPhase: phase }))
+      state.output(work); state.output(idle)
+      expect(state.state).toBe(visible ? 'idle' : 'just-finished')
+    }
+  })
+  it('admits a genuinely submitted hook-only turn after a viewed finish and refuses the prior turn callbacks', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'first', workPhase: 'submitted' })); state.output(work); state.output(idle)
+    state.setVisible(true); state.setVisible(false)
+    state.hook(event('working', { turnId: 'next', workPhase: 'submitted' })); expect(state.state).toBe('working')
+    state.hook(event('working', { turnId: 'first', workPhase: 'tool-end' }))
+    state.hook(event('completed', { turnId: 'first' })); state.output(idle); expect(state.state).toBe('working')
+    state.hook(event('completed', { turnId: 'next' })); expect(state.state).toBe('just-finished')
+  })
+  it('retains the pending ready turn binding when the next submitted turn reaches ready before the first Stop', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'a', workPhase: 'submitted' })); state.output(work); state.output(idle)
+    state.hook(event('working', { turnId: 'b', workPhase: 'submitted' })); state.output(work); state.output(idle)
+    state.hook(event('working', { turnId: 'a', workPhase: 'tool-end' })); expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'a' })); expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'b' })); expect(state.state).toBe('just-finished')
   })
   it('keeps a live permission ahead of out-of-order Working, completion and a ready screen', () => {
     const state = agent(); state.hook(event('working')); state.hook(event('permission', { requestId: 'r' }))

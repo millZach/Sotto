@@ -27,9 +27,9 @@ export function normalizeTerminalHook(provider: string, hookName: string | undef
   if (turn) event.turnId = turn
   switch (hookName) {
     case 'SessionStart': return { event: { ...event, kind: 'session-start', state: 'starting' }, blocking: false }
-    case 'UserPromptSubmit':
-    case 'PreToolUse':
-    case 'PostToolUse': return { event, blocking: false }
+    case 'UserPromptSubmit': return { event: { ...event, workPhase: 'submitted' }, blocking: false }
+    case 'PreToolUse': return { event: { ...event, workPhase: 'tool-start' }, blocking: false }
+    case 'PostToolUse': return { event: { ...event, workPhase: 'tool-end' }, blocking: false }
     case 'PermissionRequest': {
       // Tool-mode/plan changes and AskUserQuestion have no supported answer shape.
       if (payload.tool_name !== 'Write' || typeof payload.tool_input !== 'object' ||
@@ -39,12 +39,14 @@ export function normalizeTerminalHook(provider: string, hookName: string | undef
       return { event: { ...event, kind: 'permission', state: 'needs-you', requestId: randomUUID(), approvalId: randomUUID() }, blocking: true }
     }
     case 'Stop':
-      if (payload.stop_hook_active === true ||
-        (payload.stop_hook_active !== undefined && typeof payload.stop_hook_active !== 'boolean') ||
-        (Array.isArray(payload.background_tasks) && payload.background_tasks.length !== 0) ||
-        (Array.isArray(payload.session_crons) && payload.session_crons.length !== 0) ||
+      if ((payload.stop_hook_active !== undefined && typeof payload.stop_hook_active !== 'boolean') ||
         (payload.background_tasks !== undefined && !Array.isArray(payload.background_tasks)) ||
         (payload.session_crons !== undefined && !Array.isArray(payload.session_crons))) return null
+      if (payload.stop_hook_active === true ||
+        (Array.isArray(payload.background_tasks) && payload.background_tasks.length !== 0) ||
+        (Array.isArray(payload.session_crons) && payload.session_crons.length !== 0)) {
+        return { event: { ...event, workPhase: 'continuing' }, blocking: false }
+      }
       return { event: { ...event, kind: 'completed', state: 'idle' }, blocking: false }
     case 'StopFailure': return { event: { ...event, kind: 'cancelled', state: 'idle' }, blocking: false }
     case 'SessionEnd': return { event: { ...event, kind: 'ended', state: 'idle' }, blocking: false }

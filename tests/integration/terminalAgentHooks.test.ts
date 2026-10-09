@@ -96,6 +96,44 @@ describe('run-scoped terminal agent hooks', () => {
     expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|secret|input-messages|last-assistant-message/u)
     expect(errors()).toBe('')
   })
+  it.each([
+    ['continuing', { stop_hook_active: true }],
+    ['background', { background_tasks: [{ text: 'PRIVATE_TASK' }] }],
+    ['session-cron', { session_crons: [{ text: 'PRIVATE_CRON' }] }],
+  ] as const)('delivers %s Working through the packaged helper and finishes later silent work without an unread race', async (reason, extra) => {
+    const { run, events } = await prepared()
+    const machine = new TerminalAgentStateMachine(run.runId, 'claude', 120, 30, run.providerSessionId)
+    machine.started()
+    const ready = '\x1b[2J\x1b[HClaude Code v2.1.295\r\n❯ \r\n? for shortcuts'
+    const working = '\x1b[2J\x1b[HClaude Code v2.1.295\r\n✻ Working… (esc to interrupt)'
+    machine.setVisible(true); machine.output(ready)
+    const submit = await hook(run, 'UserPromptSubmit', { prompt_id: 'turn-1', prompt: 'PRIVATE_PROMPT' })
+    expect(await submit.exited).toBe(0); await expect.poll(() => events.length).toBe(1)
+    expect(events[0]?.workPhase).toBe('submitted'); machine.hook(events[0]!); machine.output(working); machine.output(ready)
+    const continuing = await hook(run, 'Stop', { prompt_id: 'turn-1', ...extra })
+    expect(await continuing.exited).toBe(0); await expect.poll(() => events.length).toBe(2)
+    expect(events[1], `${reason} carries only continued work`).toMatchObject({ kind: 'working', workPhase: 'continuing' })
+    machine.hook(events[1]!); machine.output(ready); machine.quiet(); expect(machine.state).toBe('working')
+    machine.setVisible(false)
+    const tool = await hook(run, 'PreToolUse', { prompt_id: 'turn-1' })
+    expect(await tool.exited).toBe(0); await expect.poll(() => events.length).toBe(3)
+    machine.hook(events[2]!)
+    const stopped = await hook(run, 'Stop', { prompt_id: 'turn-1', stop_hook_active: false, background_tasks: [], session_crons: [] })
+    expect(await stopped.exited).toBe(0); await expect.poll(() => events.length).toBe(4)
+    machine.hook(events[3]!); machine.output(ready); expect(machine.state).toBe('just-finished')
+    expect(events.filter(event => event.kind === 'completed')).toHaveLength(1)
+    expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|secret|tool_input|last_assistant_message|background_tasks|session_crons/u)
+    for (const child of [submit, continuing, tool, stopped]) { expect(child.output()).toBe(''); expect(child.errors()).toBe('') }
+  })
+  it('drops malformed Stop fields through the packaged helper without inventing Working or completion', async () => {
+    const { run, events } = await prepared()
+    for (const extra of [{ stop_hook_active: 'false' }, { background_tasks: 'PRIVATE_UNKNOWN_SHAPE' }, { session_crons: {} },
+      { stop_hook_active: true, background_tasks: null }]) {
+      const invalid = await hook(run, 'Stop', extra)
+      expect(await invalid.exited).toBe(0); expect(invalid.output()).toBe(''); expect(invalid.errors()).toBe('')
+      expect(events).toEqual([])
+    }
+  })
   it.each(['claude', 'codex', 'grok'] as const)('recognizes the live %s question while keeping its answer in the CLI', async provider => {
     const { run, events } = await prepared(provider)
     const machine = new TerminalAgentStateMachine(run.runId, provider, 120, 40, run.providerSessionId)
