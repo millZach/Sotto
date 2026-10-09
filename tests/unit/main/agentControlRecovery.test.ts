@@ -96,6 +96,14 @@ it.each(['claude', 'grok', 'codex'] as const)('changes the default to %s without
   expect(connected.notice).toBe(`${PROVIDER_LABELS[provider]} connected`)
 })
 
+it('says nothing when Sotto reconnects on its own at start, and says it connected when asked', async () => {
+  const f = await fixture()
+  expect(f.control.get().notice).toMatch(/connected$/)
+  await f.restart()
+  await vi.waitFor(() => expect(f.control.get().host.connected).toBe(true))
+  expect(f.control.get().notice).toBe('')
+})
+
 it('preserves the native account sign-in guidance when the adapter cannot connect', async () => {
   const f = await fixture()
   await f.control.command({ type: 'configure', patch: { provider: 'claude' } })

@@ -2503,7 +2503,8 @@ export class AgentControl {
           const refusal = connectionRefusal(snapshot, command.provider, `${PROVIDER_LABELS[this.state.configuration.provider]} did not confirm the connection.`)
           if (refusal) throw new Error(refusal)
           if (!this.dependencies.host.concurrentProviders) this.state.configuration.enabled = true
-          this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
+          // A connection Sotto makes on its own at start says nothing; one the user asked for says it worked.
+          if (!this.automaticConnects.has(command)) this.say(command.provider ? `${PROVIDER_LABELS[command.provider]} connected` : snapshot.providers ? 'Thread providers connected' : `${PROVIDER_LABELS[this.state.configuration.provider]} connected`)
           // Asking the registry must not hold up the connection the user is waiting on, and a check
           // during an install would race the reading the install is about to take.
           if (!this.updatingClient) void this.checkClientUpdates().then(() => this.publish()).catch(() => undefined)
