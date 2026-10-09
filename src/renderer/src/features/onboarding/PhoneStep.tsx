@@ -1,5 +1,5 @@
 import { Check, ExternalLink } from 'lucide-react'
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
@@ -14,8 +14,6 @@ export interface PhoneStepProps {
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onOpenLink: (url: string) => Promise<boolean>
   readonly bridge?: PhonesBridge | undefined
-  /** Called when the beta page opened, so setup knows this step did something. */
-  readonly onBetaOpened?: () => void
 }
 
 /**
@@ -23,12 +21,14 @@ export interface PhoneStepProps {
  * Phone access is the same setting and the same code as Settings › Phones, which keeps the steps, the paired phones and
  * the name phones show; this step shows only what a first pairing needs.
  */
-export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, bridge = window.sotto?.phones, onBetaOpened }: PhoneStepProps): ReactNode {
+export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, bridge = window.sotto?.phones }: PhoneStepProps): ReactNode {
   const [state, setState] = useState<PhonesState | null>(null)
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const showButton = useRef<HTMLButtonElement>(null)
+  const codeBox = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!bridge) return
@@ -45,6 +45,18 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [code])
+  // Show a pairing code gives way to the code, so focus goes to the code; when the code closes, focus that went with
+  // it comes back to the button, as on Settings › Phones.
+  const codeShown = code?.code ?? null
+  const previousCode = useRef<string | null>(null)
+  useEffect(() => {
+    const before = previousCode.current
+    previousCode.current = codeShown
+    if (codeShown) { codeBox.current?.focus(); return }
+    if (!before) return
+    const focused = document.activeElement
+    if (focused === null || focused === document.body || !focused.isConnected) showButton.current?.focus()
+  }, [codeShown])
 
   const run = async (command: PhonesCommand): Promise<void> => {
     if (!bridge) return
@@ -54,15 +66,15 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   }
 
   const openBeta = async (): Promise<void> => {
-    const opened = await onOpenLink(IPHONE_BETA_URL)
-    setBeta(opened ? 'opened' : 'failed')
-    if (opened) onBetaOpened?.()
+    setBeta(await onOpenLink(IPHONE_BETA_URL) ? 'opened' : 'failed')
   }
 
   const localHostRunning = state?.localHostRunning ?? true
   const on = state?.phase === 'on' && state.enabled
   const failure = state && phoneAccess ? phonesFailure(state) : null
   const left = code ? countdown(code.expiresAt, now) : null
+  // The name the iPhone app's Add computer step asks for: this computer's name on the tailnet.
+  const machine = state?.tailscale.status === 'ok' ? state.tailscale.dnsName.split('.')[0]! : null
 
   return (
     <section aria-labelledby="onboarding-heading">
@@ -97,14 +109,16 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
             {failure ? <span className="onboarding-recovery" role="alert">{failure}</span> : null}
             {failure ? <Button variant="secondary" onClick={() => void run({ type: 'retry' })}>Try again</Button> : null}
             {on && code && left ? (
-              <div className="onboarding-phone__code" role="group" aria-label="Pairing code">
+              <div ref={codeBox} className="onboarding-phone__code" role="group" aria-label="Pairing code" tabIndex={-1}
+                onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void run({ type: 'cancel-code' }) } }}>
                 <span>Pairing code</span>
                 <b aria-hidden="true">{code.code.slice(0, 4)} {code.code.slice(4)}</b>
                 <span className="tt-visually-hidden">Pairing code {[...code.code].join(' ')}</span>
-                <span>Type it in the app's Add computer step. Works once. Expires in {left.text}.</span>
+                <span>In the app, tap Add computer, enter {machine ?? 'this computer’s name on your tailnet'}, then this code. It works once and expires in {left.text}.</span>
+                <Button variant="ghost" onClick={() => void run({ type: 'cancel-code' })}>Cancel code</Button>
               </div>
             ) : null}
-            {on && !code ? <Button variant="secondary" onClick={() => void run({ type: 'show-code' })}>Show a pairing code</Button> : null}
+            {on && !code ? <Button ref={showButton} variant="secondary" onClick={() => void run({ type: 'show-code' })}>Show a pairing code</Button> : null}
             {error ? <span className="onboarding-recovery" role="alert">{error}</span> : null}
           </div>
         </li>

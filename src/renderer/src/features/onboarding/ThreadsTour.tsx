@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { formatAccelerator } from '../../../../shared/accelerator'
 import type { SottoPlatform } from '../../../../shared/platform'
+import { useSidebarMode } from '../../agents/SidebarFrame'
 import { Button } from '../../components/Button'
 import './threadsTour.css'
 
@@ -31,6 +32,8 @@ export function threadsTourStops(shortcut: string): readonly TourStop[] {
 
 interface Box { readonly top: number; readonly left: number; readonly width: number; readonly height: number }
 
+/** Frames a stop's part may be missing, while the page is still laying out, before the tour passes over it. */
+const MISSING_FRAMES = 30
 const GAP = 14
 const PAD = 6
 const BUBBLE_WIDTH = 320
@@ -71,12 +74,15 @@ function bubblePlace(target: Box | null, height: number): { top: number; left: n
 /**
  * The Threads tour: four stops on the real Threads page right after first-run setup, each a spotlight on one part with
  * a short note. It is a modal dialog, so focus stays in its note and Escape ends it; a part that is not on the page is
- * passed over.
+ * passed over, and the count covers only the parts it can show.
  */
 export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): ReactNode {
   const stops = threadsTourStops(formatAccelerator(shortcut, platform, 'editing'))
   const [index, setIndex] = useState(0)
   const [target, setTarget] = useState<Box | null>(null)
+  // Which stops' parts are on the page now; the tour shows and counts only those.
+  const [present, setPresent] = useState<readonly number[]>(() => stops.map((_, at) => at))
+  const [, setSidebarMode] = useSidebarMode()
   const [bubbleHeight, setBubbleHeight] = useState(180)
   const bubble = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -84,7 +90,9 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
   const bodyId = useId()
   const finished = useRef(false)
   const stop = stops[index]!
-  const last = index === stops.length - 1
+  const later = present.find(at => at > index)
+  const earlier = present.filter(at => at < index).pop()
+  const last = later === undefined
 
   const finish = (): void => {
     if (finished.current) return
@@ -93,17 +101,33 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
     queueMicrotask(() => document.querySelector<HTMLElement>(stops[1]!.selector)?.focus())
   }
 
-  // Follow the part as the page lays out, the way an anchored popover does.
+  // The tour describes the Threads sidebar, so a window that remembered Terminal mode shows Threads for it.
+  useEffect(() => { setSidebarMode('threads') }, [setSidebarMode])
+
+  // Follow the part as the page lays out, the way an anchored popover does. A part that stays missing is passed
+  // over for the next one on the page, and with none left the tour ends.
   useEffect(() => {
     let frame = 0
+    let missing = 0
     const measure = (): void => {
+      // A part is on the page when it is there and takes up room; one hidden or not drawn yet is not.
+      const shown = stops.map((candidate, at) => boxOf(document.querySelector(candidate.selector)) ? at : -1).filter(at => at >= 0)
+      setPresent(current => current.length === shown.length && current.every((at, i) => at === shown[i]) ? current : shown)
       const next = boxOf(document.querySelector(stop.selector))
       setTarget(current => current && next && current.top === next.top && current.left === next.left && current.width === next.width && current.height === next.height ? current : next)
+      missing = next ? 0 : missing + 1
+      if (missing >= MISSING_FRAMES) {
+        const onward = shown.find(at => at > index) ?? shown.filter(at => at < index).pop()
+        if (onward === undefined) { finish(); return }
+        setIndex(onward)
+        return
+      }
       frame = requestAnimationFrame(measure)
     }
     measure()
     return () => cancelAnimationFrame(frame)
-  }, [stop.selector])
+    // finish and stops are rebuilt each render; the loop restarts only when the stop changes.
+  }, [index])
 
   useLayoutEffect(() => {
     if (bubble.current) setBubbleHeight(bubble.current.offsetHeight)
@@ -142,11 +166,11 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
         <h2 id={titleId} ref={heading} tabIndex={-1}>{stop.title}</h2>
         <p id={bodyId}>{stop.body}</p>
         <footer>
-          <span className="threads-tour__count">{index + 1} of {stops.length}</span>
+          <span className="threads-tour__count">{Math.max(1, present.indexOf(index) + 1)} of {Math.max(1, present.length)}</span>
           <span className="threads-tour__actions">
             {last ? null : <Button variant="ghost" onClick={finish}>Skip tour</Button>}
-            {index > 0 ? <Button variant="ghost" onClick={() => setIndex(index - 1)}>Back</Button> : null}
-            {last ? <Button onClick={finish}>Done</Button> : <Button onClick={() => setIndex(index + 1)}>Next</Button>}
+            {earlier !== undefined ? <Button variant="ghost" onClick={() => setIndex(earlier)}>Back</Button> : null}
+            {later === undefined ? <Button onClick={finish}>Done</Button> : <Button onClick={() => setIndex(later)}>Next</Button>}
           </span>
         </footer>
       </div>

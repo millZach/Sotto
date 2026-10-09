@@ -1,7 +1,7 @@
 import React, { StrictMode } from 'react'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App, applyDocumentPreferences } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
@@ -1105,6 +1105,13 @@ describe('Sotto application onboarding integration', () => {
 })
 
 describe('Threads tour after first-run setup', () => {
+  // jsdom lays nothing out, and the tour passes over a part with no box, so every element reports one here.
+  let layout: { mockRestore: () => void } | undefined
+  beforeEach(() => {
+    layout = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 20, left: 20, width: 200, height: 40, right: 220, bottom: 60, x: 20, y: 20, toJSON: () => ({}) } as DOMRect)
+  })
+  afterEach(() => layout?.mockRestore())
+
   it('opens the Threads tour on the Threads page right after setup finishes', async () => {
     const user = userEvent.setup()
     renderApp(createBridge())
@@ -1114,12 +1121,13 @@ describe('Threads tour after first-run setup', () => {
     expect(dialog).toBeVisible()
   })
 
-  it('dismisses the Threads tour with Skip tour', async () => {
+  it('ends the Threads tour from its note', async () => {
     const user = userEvent.setup()
     renderApp(createBridge())
     await completeReadySetup(user)
-    await screen.findByRole('dialog', { name: 'Projects and threads' })
-    await user.click(screen.getByRole('button', { name: 'Skip tour' }))
+    const note = await screen.findByRole('dialog', { name: 'Projects and threads' })
+    // This page has no agents bridge, so the tour may have only the parts it can show: Skip tour, or Done on its last stop.
+    await user.click(within(note).getByRole('button', { name: /^(Skip tour|Done)$/ }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 

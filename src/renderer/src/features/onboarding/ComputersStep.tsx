@@ -17,8 +17,9 @@ export interface ComputersStepProps {
 
 /**
  * Setup's other computers: the hosts this computer reaches, and Add a computer, which opens Settings › Hosts' own Add
- * host dialog with its device list, Tailscale prompt and host setup checklist. The dialog follows main's hosts state
- * live, so this step keeps that state as the Hosts page does.
+ * host dialog with its device list, Tailscale prompt and host setup checklist. It offers Add it only: a host setup
+ * thread asks its questions in Threads, which setup does not show yet. The dialog follows main's hosts state live, so
+ * this step keeps that state as the Hosts page does.
  */
 export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsChange }: ComputersStepProps): ReactNode {
   const [state, setState] = useState<HostsState | null>(null)
@@ -69,7 +70,7 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
       </Button>
       {failure ? <p className="onboarding-recovery" role="alert">{failure}</p> : null}
       <p className="onboarding-aside">Only using this computer? Skip this. Settings › Hosts adds one any time.</p>
-      {adding && bridge ? createPortal(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={state} tailscale={tailscale} onClose={close} />, document.body) : null}
+      {adding && bridge ? createPortal(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={state} tailscale={tailscale} agentSetup={false} onClose={close} />, document.body) : null}
     </section>
   )
 }

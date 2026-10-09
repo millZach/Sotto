@@ -199,13 +199,22 @@
   white-space: nowrap;
 }
 
+/* The words keep the text colour, which reads at 4.5:1 on the tint; the icon beside them carries the state's colour. */
 .onboarding-agent[data-kind='ready'] .onboarding-agent__state {
   background: color-mix(in srgb, var(--tt-success) 12%, transparent);
+  color: var(--tt-text);
+}
+
+.onboarding-agent[data-kind='ready'] .onboarding-agent__state svg {
   color: var(--tt-success);
 }
 
 .onboarding-agent[data-kind='needs-you'] .onboarding-agent__state {
   background: color-mix(in srgb, var(--tt-warning) 12%, transparent);
+  color: var(--tt-text);
+}
+
+.onboarding-agent[data-kind='needs-you'] .onboarding-agent__state svg {
   color: var(--tt-warning);
 }
 
@@ -270,10 +279,6 @@
 
 .onboarding-project__path {
   font-family: var(--tt-font-mono);
-}
-
-.onboarding-host[data-phase='connected'] span span {
-  color: var(--tt-success);
 }
 
 .onboarding-hosts__empty {

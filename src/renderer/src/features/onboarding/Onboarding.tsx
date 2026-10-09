@@ -132,7 +132,6 @@ export function Onboarding({
   const [finishing, setFinishing] = useState(false)
   const [completionError, setCompletionError] = useState(false)
   const [hostCount, setHostCount] = useState(0)
-  const [betaOpened, setBetaOpened] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const copy = platformCopy(platform)
   const { devices: microphones, state: deviceState } = useAudioInputDevices(mediaDevices, microphoneState)
@@ -165,7 +164,6 @@ export function Onboarding({
       case 'agents': return agentState !== null && localProviders(agentState).some(provider => provider.connection === 'connected')
       case 'project': return agentState !== null && localProjects(agentState).length > 0
       case 'computers': return hostCount > 0
-      case 'phone': return betaOpened || settings.phoneAccess
       default: return true
     }
   }
@@ -361,7 +359,7 @@ export function Onboarding({
           {step.id === 'phone' ? (
             <>
               <PhoneStep phoneAccess={settings.phoneAccess} onUpdateSettings={onUpdateSettings} onOpenLink={onOpenLink}
-                bridge={phonesBridge ?? window.sotto?.phones} onBetaOpened={() => setBetaOpened(true)}
+                bridge={phonesBridge ?? window.sotto?.phones}
                 heading={heading('iPhone', 'Answer your threads from your iPhone', 'The iPhone app is in beta. It reads and answers threads on your computers, including questions and permissions waiting for you. It needs Tailscale on the iPhone and on this computer.')} />
               {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
             </>

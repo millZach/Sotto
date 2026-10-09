@@ -1,4 +1,4 @@
-import React, { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
@@ -39,11 +39,15 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
   const resolved = resolveAppearance(shown.appearance, systemDark)
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const [saveFailed, setSaveFailed] = useState(false)
 
+  // A choice that cannot be saved falls back to the saved look, and says so.
   const choose = async (patch: Partial<AppearanceChoice> & SettingsPatch): Promise<void> => {
+    setSaveFailed(false)
     const sequence = appearancePreview.choose(patch)
     const saved = await onUpdateSettings(patch).catch(() => false)
     appearancePreview.settle(sequence, saved, settingsRef.current)
+    setSaveFailed(!saved)
   }
 
   const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
@@ -95,6 +99,7 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
           )
         })}
       </div>
+      {saveFailed ? <p className="onboarding-recovery" role="alert">That look could not be saved. Your previous look is still on. Choose it again to retry.</p> : null}
       <p className="onboarding-aside">Change it any time, or make your own theme, in Settings › Appearance.</p>
     </section>
   )

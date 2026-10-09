@@ -1,12 +1,12 @@
 import React from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCapabilities, type AgentProject, type AgentProviderStatus, type AgentState } from '../../../src/shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../src/shared/hostProviders'
 import type { HostsBridge, HostsState, HostStatus } from '../../../src/shared/hosts'
-import type { PhonesBridge, PhonesCommand, PhonesState } from '../../../src/shared/phones'
+import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../src/shared/phones'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
@@ -45,6 +45,17 @@ function appearanceSettings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 describe('LookStep', () => {
+  it('says when a look could not be saved, and clears that once a choice saves', async () => {
+    const onUpdateSettings = vi.fn(async () => false)
+    const user = userEvent.setup()
+    render(<LookStep settings={appearanceSettings({ appearance: 'dark' })} platform="win32" onUpdateSettings={onUpdateSettings} heading={<div />} />)
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('That look could not be saved. Your previous look is still on.')
+    onUpdateSettings.mockResolvedValue(true)
+    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
   it('sends an appearance patch and shows the saved mode as checked', async () => {
     const onUpdateSettings = vi.fn(async () => true)
     const user = userEvent.setup()
@@ -84,7 +95,7 @@ describe('LookStep', () => {
 })
 
 describe('AgentsStep', () => {
-  it('sends connect exactly once when a live state first arrives, never for a stale one', () => {
+  it('sends connect exactly once when a live state first arrives, never for a stale one', async () => {
     const command = vi.fn(async () => agentState([]))
     provide(agentState([], [], { stale: true }), command)
     const { rerender } = render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
@@ -92,22 +103,54 @@ describe('AgentsStep', () => {
 
     provide(agentState([{ id: 'codex', connection: 'disconnected', name: 'Codex', version: '', capabilities: CAPS }]), command)
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
-    expect(command).toHaveBeenCalledTimes(1)
-    expect(command).toHaveBeenCalledWith({ type: 'connect' })
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' }))
 
     rerender(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     expect(command).toHaveBeenCalledTimes(1)
   })
 
-  it('resends on Check again, and never auto-connects when a provider is already connected', async () => {
-    const connected = agentState([{ id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS }])
-    const command = vi.fn(async () => connected)
-    provide(connected, command)
+  it('never auto-connects when a provider is already connected, and Check again retries only the clients with a problem', async () => {
+    const providers: AgentProviderStatus[] = [
+      { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
+      { id: 'grok', connection: 'error', name: 'Grok Build', version: '', capabilities: CAPS, problem: 'signed-out' },
+    ]
+    const command = vi.fn(async () => agentState(providers))
+    provide(agentState(providers), command)
     const user = userEvent.setup()
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     expect(command).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Check again' }))
-    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect' })
+    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', provider: 'grok' })
+  })
+
+  it('runs Connect providers again on Check again while no client is connected', async () => {
+    const providers: AgentProviderStatus[] = [{ id: 'claude', connection: 'error', name: 'Claude Code', version: '', capabilities: CAPS, problem: 'signed-out' }]
+    const command = vi.fn(async () => agentState(providers))
+    provide(agentState(providers), command)
+    const user = userEvent.setup()
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    command.mockClear()
+    await user.click(await screen.findByRole('button', { name: 'Check again' }))
+    expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'claude' })
+    expect(command).toHaveBeenCalledWith({ type: 'connect' })
+  })
+
+  it('says Not connected, never Not installed, for a client main has not tried, and connects it on Connect', async () => {
+    const providers: AgentProviderStatus[] = [
+      { id: 'codex', connection: 'connected', name: 'Codex', version: '1.2.3', capabilities: CAPS },
+      { id: 'claude', connection: 'disconnected', name: 'Claude Code', version: '', capabilities: CAPS },
+    ]
+    const command = vi.fn(async () => agentState(providers))
+    provide(agentState(providers), command)
+    const user = userEvent.setup()
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    const claudeRow = screen.getByText('Claude Code').closest('li')!
+    expect(claudeRow).toHaveTextContent('Not connected')
+    expect(claudeRow).not.toHaveTextContent('Not installed')
+    expect(screen.queryByRole('button', { name: 'Open the Claude Code install guide' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Connect Claude Code' }))
+    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude' })
   })
 
   it('maps each provider problem to its row label and detail', () => {
@@ -254,6 +297,7 @@ function phonesFixture(initial: Partial<PhonesState> = {}): { readonly bridge: P
   }
   const command = vi.fn(async (request: PhonesCommand) => {
     if (request.type === 'show-code') state = { ...state, code: { code: '12345678', expiresAt: new Date(Date.now() + 300_000).toISOString() } }
+    if (request.type === 'cancel-code') state = { ...state, code: null }
     return state
   })
   const bridge: PhonesBridge = { get: async () => state, command, onChanged: () => () => undefined }
@@ -265,12 +309,11 @@ describe('PhoneStep', () => {
     const { bridge } = phonesFixture()
     const user = userEvent.setup()
     const onOpenLink = vi.fn(async () => true)
-    const onBetaOpened = vi.fn()
-    render(<PhoneStep heading={<div />} phoneAccess={false} onUpdateSettings={vi.fn(async () => true)} onOpenLink={onOpenLink} bridge={bridge} onBetaOpened={onBetaOpened} />)
+    render(<PhoneStep heading={<div />} phoneAccess={false} onUpdateSettings={vi.fn(async () => true)} onOpenLink={onOpenLink} bridge={bridge} />)
     await user.click(screen.getByRole('button', { name: 'Get the iPhone beta' }))
     expect(onOpenLink).toHaveBeenCalledOnce()
+    expect(onOpenLink).toHaveBeenCalledWith(IPHONE_BETA_URL)
     expect(await screen.findByText('Opened in your browser')).toBeVisible()
-    expect(onBetaOpened).toHaveBeenCalledOnce()
   })
 
   it('reports failure when the beta link does not open', async () => {
@@ -298,6 +341,19 @@ describe('PhoneStep', () => {
     await user.click(await screen.findByRole('button', { name: 'Show a pairing code' }))
     expect(command).toHaveBeenCalledWith({ type: 'show-code' })
     expect(await screen.findByRole('group', { name: 'Pairing code' })).toBeVisible()
+  })
+
+  it('moves focus to the code, names this computer as the app asks for it, and gives focus back when Escape cancels the code', async () => {
+    const { bridge, command } = phonesFixture({ phase: 'on', enabled: true, tailscale: { status: 'ok', hostName: 'forge', dnsName: 'forge.tail1234.ts.net' } })
+    const user = userEvent.setup()
+    render(<PhoneStep heading={<div />} phoneAccess onUpdateSettings={vi.fn(async () => true)} onOpenLink={vi.fn(async () => true)} bridge={bridge} />)
+    await user.click(await screen.findByRole('button', { name: 'Show a pairing code' }))
+    const code = await screen.findByRole('group', { name: 'Pairing code' })
+    await waitFor(() => expect(code).toHaveFocus())
+    expect(code).toHaveTextContent('In the app, tap Add computer, enter forge, then this code.')
+    await user.keyboard('{Escape}')
+    expect(command).toHaveBeenCalledWith({ type: 'cancel-code' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show a pairing code' })).toHaveFocus())
   })
 })
 
