@@ -11,7 +11,7 @@ import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, provide
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -30,6 +30,9 @@ type Slot = { snapshot: AgentHostSnapshot; status: AgentProviderStatus; wanted: 
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
 export class ConfiguredProviderHost implements AgentHost {
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useLaunchProfiles?.(profiles)
+  }
   readonly concurrentProviders = true
   private legacyProjectProvider: ProviderId | undefined
   private identityLoad: Promise<void> | undefined

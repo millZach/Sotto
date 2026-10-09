@@ -12,7 +12,7 @@ const output = frame => process.stdout.write(JSON.stringify(frame) + '\n')
 const models = existsSync(join(root, 'models.json')) ? JSON.parse(readFileSync(join(root, 'models.json'), 'utf8'))
   : [{ value: 'fixture-model', displayName: 'Fixture Claude', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]
 if (args.includes('--help')) {
-  console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose'); process.exit(0)
+  console.log('--safe-mode --tools --permission-prompts --no-session-persistence --input-format --output-format --system-prompt --model --effort --verbose --strict-mcp-config --restricted --setting-sources --disable-slash-commands --no-chrome --managed-settings'); process.exit(0)
 }
 // version.txt: the client installed now. `--version` reads it as the real CLI reads its own build, and a session
 // names the one it was started from in its init frame. Without the file the fake keeps no version, as before.
@@ -33,7 +33,22 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
+const commandCenter = args.includes('--restricted')
+const commandCenterConfig = commandCenter ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : undefined
+const commandCenterPolicy = commandCenter ? JSON.parse(value('--managed-settings')) : undefined
+const commandCenterTools = commandCenter ? Object.entries(commandCenterConfig.mcpServers).flatMap(([name]) => {
+  const position = args.indexOf('--allowedTools')
+  const following = args.slice(position + 1)
+  return following.slice(0, following.findIndex(argument => argument.startsWith('--')) < 0 ? following.length : following.findIndex(argument => argument.startsWith('--')))
+    .filter(tool => tool.startsWith(`mcp__${name}__`))
+}) : []
+if (commandCenter) {
+  if (args.includes('--bare') || value('--tools') !== 'AskUserQuestion' || value('--permission-mode') !== 'manual'
+    || value('--setting-sources') !== '' || !['--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-chrome'].every(flag => args.includes(flag))
+    || Object.keys(commandCenterConfig.mcpServers).join() !== 'sotto_threads'
+    || !commandCenterPolicy.disableAllHooks || !commandCenterPolicy.disableCommandPluginSources || !commandCenterPolicy.disableSkillShellExecution
+    || !commandCenterTools.length) throw new Error('The command-center launch did not retain its restrictive profile')
+} else if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || value('--permission-prompts') !== 'host' || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(value('--permission-mode')))) throw new Error('Coding threads must retain tools and host permission decisions')
 // Both permission flags or none of the surface: the real CLI treats --permission-prompts host as
 // permission to ask and --permission-prompt-tool stdio as the thing that makes this process the asker.
 // Dropping the second is silent there, so it is loud here.
@@ -41,6 +56,7 @@ if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error(
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
 record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
+if (commandCenter) record('command-center-profile', { policy: commandCenterPolicy, serverNames: Object.keys(commandCenterConfig.mcpServers), tools: ['AskUserQuestion', ...commandCenterTools] })
 // The isolated Electron journey uses the adapter's normal ~/.claude discovery path.
 const folder = join(process.env.SOTTO_FAKE_CLAUDE_HOME ?? join(root, 'home'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
 const log = join(folder, session + '.jsonl')
@@ -191,7 +207,7 @@ lines.on('line', line => {
         // A started session announces its tools, and AskUserQuestion is in that list only where someone
         // can answer it. `approvalSurface: false` is the CLI that took the flag and offered no surface.
         if (!script.fail && !metadata) output({ type: 'system', subtype: 'init', session_id: session, ...(installed !== undefined ? { claude_code_version: installed } : {}),
-          tools: ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])] })
+          tools: commandCenter ? ['AskUserQuestion', ...commandCenterTools] : ['Task', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', ...(script.approvalSurface === false ? [] : ['AskUserQuestion'])] })
       }
       if (script.gate) {
         writeFileSync(join(root, 'initialize-waiting'), session)

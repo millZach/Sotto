@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
+import { CommandCenterProfileRefusal } from './commandCenterProfile'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -105,6 +106,15 @@ export class ThreadRegistry {
 
 /** Sotto-owned thread IDs around a provider adapter; provider session IDs never cross this boundary. */
 export class SottoThreadHost implements AgentHost {
+  private launchProfiles: ThreadLaunchProfiles | undefined
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
+    this.launchProfiles = profiles
+    this.inner.useLaunchProfiles?.({ profileFor: async sessionId => {
+      await this.registry.load()
+      const threadId = this.threadFor(sessionId)
+      return threadId ? profiles.profileFor(threadId) : undefined
+    } })
+  }
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
   /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */
@@ -161,6 +171,7 @@ export class SottoThreadHost implements AgentHost {
 
   async listThreadSkills(threadId: string, forceReload = false, scope?: AgentSkillScope) {
     await this.registry.load()
+    if (await this.launchProfiles?.profileFor(threadId)) throw new CommandCenterProfileRefusal('The command center cannot use native skills. Nothing was started.')
     const binding = this.registry.byThread(threadId)
     if (binding && binding.provider !== this.provider || !binding && scope?.providerId !== this.provider) throw new Error('This thread is not known to this provider.')
     if (!this.inner.listThreadSkills) throw new Error('This provider does not expose skills.')

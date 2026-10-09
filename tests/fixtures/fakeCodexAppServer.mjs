@@ -118,7 +118,8 @@ const alive = pid => { try { process.kill(pid, 0); return true } catch (error) {
 /** Record that this process has the thread loaded, in the shared state. */
 const owns = threadId => { state.owners = { ...state.owners, [threadId]: process.pid } }
 /** Which process Sotto started for what: an introduction, and each thread's start or resume. Never a body. */
-const served = (method, threadId) => appendFileSync(file('servers.jsonl'), JSON.stringify({ pid: process.pid, method, ...(threadId ? { threadId } : {}) }) + '\n')
+const served = (method, threadId) => appendFileSync(file('servers.jsonl'), JSON.stringify({ pid: process.pid, method,
+  ...(method === 'initialize' ? { args: process.argv.slice(3) } : {}), ...(threadId ? { threadId } : {}) }) + '\n')
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
@@ -207,9 +208,11 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   if (method === 'skills/list') { reply({ data: params.cwds.map(cwd => ({ cwd, skills: script.skills ?? [], errors: script.skillErrors ?? [] })) }); return }
   if (method === 'config/read') {
     reply(script.configReadMalformed ? { config: null, origins: {}, layers: null }
-      : { config: { developer_instructions: script.developerInstructions ?? null }, origins: {}, layers: null })
+      : { config: { developer_instructions: script.developerInstructions ?? null, ...script.effectiveConfig }, origins: {}, layers: null })
     return
   }
+  // Native MCP status proves only MCP inventory. It deliberately says nothing about the builtin toolset.
+  if (method === 'mcpServerStatus/list') { reply({ data: script.mcpServers ?? [], nextCursor: null }); return }
   if (method === 'config/mcpServer/reload') { mcpConfigStamp = configStamp(); reply({}); return }
   // Its account, only when a test scripts one (ADR-0037); otherwise the method is unknown, as from an older Codex.
   if (method === 'account/read' && 'account' in script) { reply({ account: script.account, requiresOpenaiAuth: true }); return }

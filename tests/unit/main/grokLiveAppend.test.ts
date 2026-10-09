@@ -23,9 +23,10 @@ afterEach(async () => {
   }
 })
 
-/** The adapter's private parts this test drives: a thread's alias and history, and its update handler. */
+/** The adapter's private parts this test drives: a thread's alias, owning process and history, and its update handler. */
 interface GrokInternals {
   aliases: Record<string, unknown>
+  processes: Map<string, { rpc: { close(): void } }>
   histories: Map<string, { offset: number; total: number; messages: AgentMessage[]; activities: []; events: Set<string>; statusEvents: Set<string>; status: 'running' }>
   record(id: string, status: 'running'): void
   frame(frame: { method: string; params: unknown }, rpc: unknown): Promise<void>
@@ -46,10 +47,14 @@ async function threadHolding(held: number) {
   if (messages.at(-1)!.role !== 'user') messages.push({ id: 'prompt', role: 'user', text: 'The prompt', createdAt: '2026-10-07T00:00:00.000Z' })
   internals.histories.set('thread', { offset: 0, total: messages.length, messages, activities: [], events: new Set(), statusEvents: new Set(), status: 'running' })
   internals.record('thread', 'running')
+  // Streaming updates belong to the thread's own RPC. This unit fixture supplies that identity
+  // without starting a provider process; an unowned RPC cannot update the thread.
+  const rpc = { close: vi.fn() }
+  internals.processes.set('thread', { rpc })
   const events: ThreadHostEvent[] = []
   adapter.subscribeEvents(event => events.push(event))
   const chunk = (text: string) => internals.frame({ method: 'session/update', params: { sessionId, _meta: { promptId: 'turn', streamStartMs: 1 },
-    update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } }, undefined)
+    update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } }, rpc)
   return { adapter, internals, events, chunk, prompt: messages.at(-1)!.id }
 }
 

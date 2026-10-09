@@ -40,6 +40,10 @@ import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from '.
 import type { BabysitStore, BabysitThread } from './babysitting'
 import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../shared/babysitting'
 import { migrateWorkspaceThreadKinds } from './commandCenterRecords'
+import { CommandCenterLaunchProfiles } from './commandCenterLaunchProfiles'
+import { CommandCenterProfileRefusal } from './commandCenterProfile'
+import { preflightCommandCenterConfiguration } from './commandCenterPreflight'
+import type { CommandCenterProfileTools } from './host'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -192,6 +196,8 @@ const WRITE_WINDOW_MS = 250
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
 export class WorkspaceHost implements AgentHost, BabysitStore {
+  private readonly launchProfiles: CommandCenterLaunchProfiles
+  useCommandCenterTools(tools: CommandCenterProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(tools) }
   readonly concurrentProviders: boolean
@@ -931,6 +937,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
+      if (await this.launchProfiles.profileFor(threadId)) throw new CommandCenterProfileRefusal('The command center’s working folder cannot be changed.')
       const thread = this.thread(threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
       if (thread.nativeSessionStarted !== false || creation?.phase !== 'unstarted' || thread.worktree?.mode === 'independent' && thread.worktree.path) {
@@ -1163,6 +1170,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
     private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS) {
     this.concurrentProviders = inner.concurrentProviders === true
+    this.launchProfiles = new CommandCenterLaunchProfiles(directory, () => this.hostId,
+      id => this.state.snapshot.threads.find(thread => thread.id === id))
+    inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'))
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'))
@@ -2484,6 +2494,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async executeOne(command: AgentHostCommand, checkoutHeld = false): Promise<AgentHostResult> {
     await this.initialize()
+    const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
+    if ('threadId' in command) {
+      if (commandProfile && (command.type === 'configure-thread' && (command.runtimeMode !== undefined || command.providerMode !== undefined)
+        || command.type === 'create-thread' && (command.workingCopy === 'independent' || command.existingWorktreePath !== undefined))) {
+        throw new CommandCenterProfileRefusal('The command center’s read-only profile and working folder cannot be changed. Choose only its model and effort.')
+      }
+      if (commandProfile && command.type === 'configure-thread') {
+        const thread = this.thread(command.threadId)
+        const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)
+        if (model?.providerId !== thread.providerId) throw new CommandCenterProfileRefusal('Changing the command center’s provider needs a new command-center conversation. This conversation was kept.')
+        const version = this.state.snapshot.providers?.find(provider => provider.id === thread.providerId)?.version ?? this.state.snapshot.version
+        preflightCommandCenterConfiguration(commandProfile, thread.providerId, version, model!.id)
+      }
+    }
     let preparedSkills: AgentSkillReference[] | undefined
     let firstSend = false
     if ('threadId' in command && command.type !== 'create-thread' && command.type !== 'interrupt' && await this.checkpointHooks?.isBlocked(command.threadId)) throw new Error('Wait for Git changes or resolve the interrupted checkpoint revert before changing this thread.')
@@ -2516,8 +2540,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!this.state.snapshot.projects.some(project => project.id === command.projectId)) throw new Error('Choose an available project.')
       validateThreadOptions(this.state.snapshot, command)
       const model = resolveModel(this.state.snapshot.models, command.modelId)!
+      if (commandProfile) {
+        await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)
+        const version = this.state.snapshot.providers?.find(provider => provider.id === model.providerId)?.version ?? this.state.snapshot.version
+        preflightCommandCenterConfiguration(commandProfile, model.providerId, version, model.id)
+      }
       this.requireCreation(model.providerId)
       const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+        ...(commandProfile ? { kind: 'command-center' } : {}),
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),

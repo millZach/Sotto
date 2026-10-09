@@ -112,6 +112,19 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
     })
     afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; await f?.cleanup() })
+    it('keeps ordinary permissions when main supplies no command-center profile', async context => {
+      if (!f.host.useLaunchProfiles) { context.skip(); return }
+      f.host.useLaunchProfiles({ profileFor: async () => undefined })
+      const before = await thread()
+      expect(await send()).toEqual({ accepted: true })
+      await f.driver.raisePermission(sessionId, 'Ordinary permission')
+      await expect.poll(async () => (await thread()).requests.some(request => request.kind === 'permission')).toBe(true)
+      const request = (await thread()).requests.find(request => request.kind === 'permission')!
+      expect(await f.host.execute({ type: 'answer', threadId: sessionId, commandId: randomUUID(), requestId: request.id,
+        answer: 'Allow once', approved: true })).toMatchObject({ accepted: true })
+      expect((await thread()).runtimeMode).toBe(before.runtimeMode)
+      expect((await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(true)
+    })
     it('observes provider takeover and rejects a reply based on stale user input', async () => {
       await send()
       await f.driver.typeInProvider(sessionId, 'Typed in the provider')

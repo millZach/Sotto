@@ -21,6 +21,8 @@ import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinPending, devinAnswer, devinDecline, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
+import type { ThreadLaunchProfiles } from './host'
+import { CommandCenterProfileRefusal } from './commandCenterProfile'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
@@ -179,6 +181,42 @@ export interface DevinAcpOptions {
 
 /** Devin owns its account and tools. Sotto saves only session/dispatch identities in this adapter. */
 export class DevinAcpHost implements AgentHost {
+  private launchProfiles: ThreadLaunchProfiles | undefined
+  useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  private async refuseCommandCenter(id: string, origin?: Connection, observer = false): Promise<void> {
+    const generation = this.generation
+    const current = (): boolean => generation === this.generation && (!origin || !origin.intentionalClose
+      && (observer ? this.allProcesses.has(origin.rpc) : this.connections.get(id) === origin))
+    let profile
+    try { profile = await this.launchProfiles?.profileFor(id) }
+    catch (error) {
+      if (!current()) throw new DevinUncertain('Devin connection changed.')
+      const refusal = error instanceof CommandCenterProfileRefusal ? error : new CommandCenterProfileRefusal('The command center’s saved profile could not be verified. Nothing was sent.')
+      await this.stopProfileSession(id, refusal.message, origin, observer)
+      throw refusal
+    }
+    if (!current()) throw new DevinUncertain('Devin connection changed.')
+    if (!profile) return
+    const reason = 'Devin cannot host the command center. Choose a verified Codex, Claude Code or Grok Build profile. Devin can still work in ordinary threads.'
+    try { profile.revoke(reason) } catch { /* Refusal still closes the provider process. */ }
+    await this.stopProfileSession(id, reason, origin, observer)
+    throw new CommandCenterProfileRefusal(reason)
+  }
+  /** A receive callback cannot await the close barrier that drains that same callback. */
+  private stopProfileSession(id: string, reason: string, origin?: Connection, observer = false): Promise<void> {
+    if (!observer) {
+      this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id)
+      const thread = this.threads.get(id)
+      if (thread) { thread.status = 'error'; thread.requestNotice = reason }
+      this.state.error = reason; this.emit()
+    }
+    if (!origin) return this.stopSession(id)
+    let stopped: Promise<void>
+    if (observer) { origin.intentionalClose = true; origin.rpc.close(); stopped = origin.rpc.closed }
+    else stopped = this.stopSession(id)
+    this.shutdown = Promise.all([this.shutdown, stopped.catch(() => undefined)]).then(() => undefined)
+    return Promise.resolve()
+  }
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
@@ -278,6 +316,8 @@ export class DevinAcpHost implements AgentHost {
 
   private async start(cwd: string, allows: DevinAllowance, id?: string, observer = false): Promise<Connection> {
     const generation = this.generation
+    if (id) await this.refuseCommandCenter(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const check = ++this.checksStarted
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
     // Before the process exists: an integration it would load is refused before it can start.
@@ -458,11 +498,17 @@ export class DevinAcpHost implements AgentHost {
    * send has not happened gets nothing: Devin's process opens on a session, and making one is the send's to do.
    */
   async startThreadSession(id: string): Promise<void> {
+    const generation = this.generation
+    await this.refuseCommandCenter(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (!this.state.connected || !this.aliases[id]?.devinSessionId) return
     await this.open(id)
     this.reaper.touch(id)
   }
-  private open(id: string): Promise<Connection> {
+  private async open(id: string): Promise<Connection> {
+    const generation = this.generation
+    await this.refuseCommandCenter(id)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const stopping = this.stopping.get(id)
     if (stopping) return stopping.then(() => this.open(id))
     // A connection still loading has not had its mode set, so a caller waits for the load rather than using it.
@@ -726,6 +772,13 @@ export class DevinAcpHost implements AgentHost {
       this.emit(true); return
     }
     if (frame.method && frame.id !== undefined) {
+      const generation = this.generation
+      if (this.launchProfiles) {
+        try { await this.refuseCommandCenter(id, connection, observer) }
+        catch { return }
+      }
+      if (generation !== this.generation || connection.intentionalClose
+        || !observer && this.connections.get(id) !== connection) return
       if (observer || !params || params.sessionId !== alias.devinSessionId) { this.unsupported(connection.rpc, frame); return }
       try {
         const toolId = record(params.toolCall)?.toolCallId
@@ -755,6 +808,9 @@ export class DevinAcpHost implements AgentHost {
     }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
+    const generation = this.generation
+    if ('threadId' in command && command.type !== 'interrupt') await this.refuseCommandCenter(command.threadId)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     if (command.type !== 'send' && command.type !== 'create-thread') return this.executeNative(command)
     if (this.dispatching.has(command.threadId)) throw new Error('Devin is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)

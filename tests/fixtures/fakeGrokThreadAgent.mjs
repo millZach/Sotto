@@ -95,7 +95,8 @@ const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...f
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 // A process is one binary: the version it reports is the one it started as, whatever script.json says later.
 const startup = read('script.json', {})
-record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.0.5' } })
+record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.0.5', args: process.argv.slice(3),
+ environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['GROK_HOME', 'GROK_AUTH_PATH', 'GROK_MEMORY', 'GROK_SUBAGENTS', 'GROK_MANAGED_MCPS_ENABLED', 'GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED'].includes(key))) } })
 const defaultCatalog = { currentModelId: 'fixture-model', availableModels: [{ modelId: 'fixture-model', name: 'Fixture Grok', _meta: { supportsReasoningEffort: true, reasoningEffort: 'high', reasoningEfforts: [{ id: 'high' }] } }] }
 // script.json may carry a whole catalog, so a case can reproduce Grok's own highest-first level list.
 const catalogOf = script => script.catalog ?? defaultCatalog
@@ -106,7 +107,15 @@ let heldCreate
 // loaded while not resident; loading a resident session can add always-approve but never removes it.
 const nativeMode = meta => meta?.yoloMode ? 'bypassPermissions' : meta?.autoMode ? 'auto' : 'default'
 // Sotto must always state both flags explicitly, never both on, and never swap the agent profile.
-function checkPolicy(meta) {
+function checkPolicy(meta, servers) {
+ if (meta?.agentProfile?.name === 'sotto-command-center') {
+  const p = meta.agentProfile
+  if (meta.yoloMode !== false || meta.autoMode !== false || p.injectDefaultTools !== false || p.discoverSkills !== false || p.inheritSkills !== false || p.agentsMd !== false
+   || p.mcpInheritance !== 'none' || p.memory !== null || Object.keys(p.hooks ?? {}).length || p.skills?.length || p.mcpServers?.length
+   || JSON.stringify(p.toolConfig?.tools.map(tool => tool.id)) !== JSON.stringify(['GrokBuild:search_tool','GrokBuild:use_tool'])
+   || servers?.length !== 1 || servers[0].name !== 'sotto_threads') appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Command center configuration wrong'})+'\n')
+  return
+ }
  if (typeof meta?.yoloMode !== 'boolean' || typeof meta?.autoMode !== 'boolean' || (meta.yoloMode && meta.autoMode) || meta.agentProfile) appendFileSync(path('violations.jsonl'),JSON.stringify({reason:'Coding session policy wrong',meta})+'\n')
 }
 function update(sessionId, update, extension = false, notify = true, meta = {}) {
@@ -159,8 +168,10 @@ createInterface({input:process.stdin}).on('line', line => {
  if (frame.method === 'initialize') send({id:frame.id,result:{protocolVersion:script.protocolVersion ?? 1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:script.browserHttp ?? true},promptCapabilities:{image:false,audio:false,embeddedContext:true}},authMethods:script.authMethods ?? [{id:'cached_token'}],_meta:{agentVersion:startup.cliVersion ?? '1.0.5',modelState:catalogOf(script)}}})
  else if (frame.method === 'authenticate') { if (!script.ignoreAuthenticate) send({id:frame.id,result:{}}) }
  else if (frame.method === 'session/new') {
-  checkPolicy(p._meta)
-  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta)}; resident.add(sessionId); holding(sessionId, true); save()
+  checkPolicy(p._meta, p.mcpServers)
+  const sessionId = randomUUID(); sessions[sessionId] = {cwd:p.cwd,updates:[],permissionMode:nativeMode(p._meta),
+   ...(p._meta?.agentProfile ? {requestedProfile:p._meta.agentProfile,offeredNativeTools:p._meta.agentProfile.toolConfig?.tools.map(tool => tool.id),mcpServers:p.mcpServers} : {})}; resident.add(sessionId); holding(sessionId, true); save()
+  if (p._meta?.agentProfile) record({method:'fixture/offered-tools',params:{sessionId,nativeTools:sessions[sessionId].offeredNativeTools,servers:p.mcpServers.map(server=>server.name)}})
   record({method:'fixture/session-resident',params:{sessionId,resident:true}})
   const reply = () => send({id:frame.id,result:{sessionId,models:catalogOf(script)}})
   // `holdCreate` keeps the answer until a `release-create` command, so a test can act while a create is open.
@@ -168,11 +179,15 @@ createInterface({input:process.stdin}).on('line', line => {
   else if (script.delayCreate) setTimeout(reply,script.delayCreate); else reply()
  }
  else if (frame.method === 'session/load') {
-  checkPolicy(p._meta)
+  checkPolicy(p._meta, p.mcpServers)
   if (!hold(p.sessionId)) send({id:frame.id,error:{code:-32602,message:'Missing session'}})
   else if (script.rejectLoad) { letGo(p.sessionId); send({id:frame.id,error:{code:-32603,message:'Rejected load'}}) }
   else {
    const session = sessions[p.sessionId]
+   if (p._meta?.agentProfile) {
+    session.requestedProfile=p._meta.agentProfile; session.offeredNativeTools=p._meta.agentProfile.toolConfig?.tools.map(tool=>tool.id); session.mcpServers=p.mcpServers
+    record({method:'fixture/offered-tools',params:{sessionId:p.sessionId,nativeTools:session.offeredNativeTools,servers:p.mcpServers.map(server=>server.name)}})
+   }
    if (!resident.has(p.sessionId)) session.permissionMode = nativeMode(p._meta)
    else if (p._meta?.yoloMode) session.permissionMode = 'bypassPermissions'
    resident.add(p.sessionId); holding(p.sessionId, true); save()
@@ -219,12 +234,14 @@ createInterface({input:process.stdin}).on('line', line => {
  for (const sessionId of resident) { holding(sessionId, false); record({method:'fixture/session-resident',params:{sessionId,resident:false}}) }
  process.exit(0)
 })
-// Several processes read control.json. A command for a session another running process holds is that process's
-// alone; one for a session nobody holds, or with no session, goes to whichever process claims it first. A command
-// is carried out once: its claim is a file only one process can create.
+// Several processes read control.json. A native permission or question comes only from the process holding
+// its session resident, so it waits for that process instead of being claimed by a connection probe. External
+// history controls for a session nobody holds still go to whichever process claims them first. A command is
+// carried out once: its claim is a file only one process can create.
 let last
 function claim(command) {
  if (command.type === 'release-create' && !heldCreate) return false
+ if (command.sessionId && ['permission','question','unreadable'].includes(command.type) && !resident.has(command.sessionId)) return false
  if (command.sessionId && !resident.has(command.sessionId)) { const holder = holderOf(command.sessionId); if (holder && holder !== process.pid) return false }
  try { mkdirSync(path('control-claims'), {recursive:true}); writeFileSync(path(`control-claims/${command.id}`), String(process.pid), {flag:'wx'}); return true }
  catch { return 'taken' }
@@ -234,6 +251,7 @@ function check() {
  const command = read('control.json', {}); if (!command.id || command.id === last) return
  const claimed = claim(command); if (!claimed) return
  last = command.id; if (claimed === 'taken') return
+ record({method:'fixture/control-claimed',params:{type:command.type,resident:resident.has(command.sessionId)}})
  if (command.sessionId && !hold(command.sessionId)) return
  try { run(command) } finally { if (command.sessionId) letGo(command.sessionId) }
 }

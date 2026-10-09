@@ -6,6 +6,7 @@ import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import type { AdapterFixture } from './adapterContract'
 import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
+import type { GrokRpc } from '../../src/main/agents/grokRpc'
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} does not replay an already dispatched native request after reconnect`, async () => {
   let f: AdapterFixture = provider === 'claude' ? await claudeFixture() : await grokFixture()
@@ -28,6 +29,29 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} does not rep
     expect(await f.host.execute({ type: 'answer', commandId: 'replay', threadId, requestId: request.id, answer: '', approved: true })).toEqual({ accepted: false, uncertain: true })
     expect((await f.driver.requests()).filter(record => f.protocol!.permissionDecision(record) === true)).toHaveLength(1)
   } finally { await f.cleanup() }
+})
+
+it('grok raises session permissions only on the process that holds the session', async () => {
+  const f = await grokFixture(undefined, 2000, 60000); const threadId = randomUUID()
+  let probe: GrokRpc | undefined
+  try {
+    await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: 't', threadId, projectId: 'p', modelId: f.modelId, title: 'T' })
+    f.host.disconnect(); await f.host.closed(); await f.host.connect()
+    // The provider probe is a real fake-client process, with no loaded session and no thread RPC ownership.
+    const native = f.host as unknown as { spawn(executable: string, lost: () => void): GrokRpc }
+    probe = native.spawn(process.execPath, () => undefined)
+    await probe.request('initialize', { protocolVersion: 1 })
+    await f.driver.raisePermission(threadId, 'Synthetic permission before load')
+    // The fixture checks control input before handling a protocol frame. This deliberately gives the
+    // unowned probe the first chance to consume a request intended for the session's next process.
+    await probe.request('initialize', { protocolVersion: 1 })
+    expect((await f.driver.requests()).filter(record => record.method === 'fixture/control-claimed')).toEqual([])
+    await f.host.startThreadSession(threadId)
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]?.requests.length).toBe(1)
+    const claims = (await f.driver.requests()).filter(record => record.method === 'fixture/control-claimed')
+    expect(claims).toHaveLength(1); expect(claims[0]?.params).toEqual({ type: 'permission', resident: true })
+  } finally { probe?.close(); await probe?.closed; await f.cleanup() }
 })
 
 for (const provider of ['claude', 'grok'] as const) it(`${provider} pins structured answers and reserves concurrent decisions once`, async () => {
