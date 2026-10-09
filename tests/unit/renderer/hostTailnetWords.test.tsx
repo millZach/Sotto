@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { hostStatus } from '../../fixtures/renderer/hostBridges'
 import { describe, expect, it } from 'vitest'
 import { lastReached, tailnetRowNote, tailnetStepNote } from '../../../src/renderer/src/features/settings/hostTailnetWords'

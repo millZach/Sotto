@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { registerSubagentIpc } from '../../../src/main/agents/subagentIpc'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'

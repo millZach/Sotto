@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from 'vitest'
 import { devinReadInterval, isDevinTurnWork } from '../../../src/main/agents/devin'
 

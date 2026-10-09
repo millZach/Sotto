@@ -200,7 +200,7 @@ const medians = (samples: readonly Sample[]) => ({
   storeWritesByFile: samples.at(-1)!.whole.stores, storeWritesBeforeWrittenByFile: samples.at(-1)!.beforeWritten.stores,
 })
 
-describe.skipIf(!PERF_BENCH)('Send to first words', () => {
+describe.skipIf(!PERF_BENCH)("Send to first words (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   const repositories = new Map<string, string>()
   beforeAll(async () => {
     instrument()

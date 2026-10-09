@@ -41,7 +41,7 @@ const CASES = [
   { provider: 'codex', label: 'in place', modes: ['full-access', 'auto-accept-edits'] },
 ] as const
 
-describe.skipIf(!PERF_BENCH)('permission chip press to paint', () => {
+describe.skipIf(!PERF_BENCH)("permission chip press to paint (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   it.each(['claude', 'codex'] as const)('%s: reports press to painted selection, to reply and to confirmed', async provider => {
     const native = provider === 'claude' ? await claudeFixture() : await codexFixture()
     const stack = await threadSettingsStack(provider, native)

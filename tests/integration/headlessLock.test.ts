@@ -51,16 +51,18 @@ describe('the host data folder lock', () => {
     await start()
     await expect(start()).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder, so this host did not start`)
   })
-  it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('records this boot in the lease, and reclaims a lock from an earlier boot whose pid a running process now has', async () => {
-    const boot = await readBootId()
-    if (boot === undefined) throw new Error('readBootId found no boot identity on a platform that has one')
-    const reused = sleeper()
-    await new Promise(resolve => reused.once('spawn', resolve))
-    await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: reused.pid, nonce: 'before-reboot', boot: boot + '-earlier' }))
-    const host = await start()
-    expect(JSON.parse(await lock())).toMatchObject({ pid: process.pid, boot })
-    expect(events).toContain('host-lock-reclaimed')
-    await host.close()
+  describe("boot identity on Windows, Linux or macOS", () => {
+    it.runIf(['win32', 'linux', 'darwin'].includes(process.platform))('records this boot in the lease, and reclaims a lock from an earlier boot whose pid a running process now has', async () => {
+      const boot = await readBootId()
+      if (boot === undefined) throw new Error('readBootId found no boot identity on a platform that has one')
+      const reused = sleeper()
+      await new Promise(resolve => reused.once('spawn', resolve))
+      await writeFile(join(data, 'host-listener.lock'), JSON.stringify({ pid: reused.pid, nonce: 'before-reboot', boot: boot + '-earlier' }))
+      const host = await start()
+      expect(JSON.parse(await lock())).toMatchObject({ pid: process.pid, boot })
+      expect(events).toContain('host-lock-reclaimed')
+      await host.close()
+    })
   })
   it('lets exactly one of two hosts started together after a crash open the folder', async () => {
     const dead = sleeper()

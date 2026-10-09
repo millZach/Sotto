@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
   MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource, isFenceClosed, stripDiagramConfiguration,

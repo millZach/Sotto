@@ -72,7 +72,7 @@ async function time(work: () => unknown): Promise<number> {
   return round(median(samples), 2)
 }
 
-describe.skipIf(!PERF_BENCH)('command reply cost', () => {
+describe.skipIf(!PERF_BENCH)("command reply cost (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root = ''
   let control: AgentControl | undefined
   let dispose: (() => void) | undefined

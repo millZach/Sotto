@@ -79,7 +79,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     })
 
     it('reconciles a lost prompt acknowledgement without resending', async context => {
-      if (f.skips?.uncertain) { context.skip(); return }
+      if (f.skips?.uncertain) { context.skip(f.skips.uncertain); return }
       const method = f.protocol?.promptMethod ?? 'turn/start'
       await f.driver.delayNextAck(method)
       await send()
@@ -88,7 +88,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     })
 
     it('keeps the same thread and saved messages across host restart during a run', async context => {
-      if (f.skips?.restart) { context.skip(); return }
+      if (f.skips?.restart) { context.skip(f.skips.restart); return }
       await send()
       const before = thread().messages
       const identity = f.service.state().hostId
@@ -101,7 +101,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     })
 
     it('reaps an unwatched idle session beside a running one and resumes it on send with its history', async context => {
-      if (!f.sessions || f.skips?.lazy) { context.skip(); return }
+      if (!f.sessions || f.skips?.lazy) { context.skip(f.skips?.lazy ?? 'The fixture has no provider-session driver.'); return }
       await send()
       await expect.poll(() => thread().status).toBe('running')
       const runningStarts = await f.sessions.starts(threadId)

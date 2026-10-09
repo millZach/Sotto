@@ -10,6 +10,8 @@ import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { describeAdapterContract } from './adapterContract'
 
 describeAdapterContract('Codex App Server', session => codexFixture(undefined, false, undefined, session))
+const fakeSkips = { uncertain: 'FakeProviderHost has no transport acknowledgement seam.', restart: 'FakeProviderHost has no persisted process state.',
+  lazy: 'FakeProviderHost has no provider session to start or stop.', sendStages: 'FakeProviderHost writes no prompt to a client.' }
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-contract-'))
   const host = new FakeProviderHost()
@@ -27,8 +29,7 @@ describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   }
   const get = (id: string) => host.state.threads.find(t => t.id === id)!
   return { root, host, projectId: 'contract-project', modelId: 'fake:model',
-    skips: { uncertain: 'FakeProviderHost has no transport acknowledgement seam.', restart: 'FakeProviderHost has no persisted process state.',
-      lazy: 'FakeProviderHost has no provider session to start or stop.', sendStages: 'FakeProviderHost writes no prompt to a client.' },
+    skips: fakeSkips,
     driver: {
       typeInProvider: async (id, text) => { get(id).messages.push({ id: randomUUID(), role: 'user', text, createdAt: new Date().toISOString() }); host.emit() },
       completeTurn: async (id, text) => { const thread = get(id); thread.status = 'idle'; thread.messages.push({ id: randomUUID(), role: 'assistant', text, createdAt: new Date().toISOString() }); host.emit() },
@@ -42,4 +43,4 @@ describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
       await rm(root, { recursive: true, force: true })
     },
   }
-})
+}, fakeSkips)

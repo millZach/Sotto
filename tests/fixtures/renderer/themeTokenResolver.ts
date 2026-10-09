@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { oklchToRgb, parseThemeColor, rgbToOklch } from '../../../src/shared/themes/color'
@@ -26,7 +25,7 @@ interface Block {
   readonly index: number
 }
 
-export function parseTokenBlocks(css: string = readFileSync(TOKENS_PATH, 'utf8')): Block[] {
+export function parseTokenBlocks(css: string): Block[] {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//gu, '')
   const blocks: Block[] = []
   for (const match of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
@@ -70,7 +69,7 @@ export interface PaintOptions {
 }
 
 /** The custom properties on the root for one mode, with a palette and strengths written inline as applyAppearance does. */
-export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID, options: PaintOptions = {}, blocks: readonly Block[] = parseTokenBlocks()): Map<string, string> {
+export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID, options: PaintOptions = {}, blocks: readonly Block[]): Map<string, string> {
   const effortColor = options.effortColor ?? 'ember'
   const applicable = blocks
     .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode, effortColor) ?? -1)) }))

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { agentStateSchema, agentThreadSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST } from '../../../src/shared/agents'
 import { clockLabel, describeThreads, groupThreads, listThreads, threadCounts } from '../../../src/renderer/src/agents/threadFacts'

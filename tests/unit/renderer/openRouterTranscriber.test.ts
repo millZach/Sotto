@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { deferred } from '../../fixtures/deferred'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenRouterTranscriber, TranscriptionError, type TranscribeOptions, type TranscriptionBridge } from '../../../src/renderer/src/transcription/openRouterTranscriber'
