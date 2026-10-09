@@ -13,6 +13,8 @@ source_dir="$here/shell-plugin/$id"
 # ignores XDG_CONFIG_HOME, so this script does too.
 plugins_dir="$HOME/.config/omarchy/plugins"
 target="$plugins_dir/$id"
+# The shell's own settings, which hold the bar's layout.
+config="$HOME/.config/omarchy/shell.json"
 
 usage() {
   cat <<USAGE
@@ -25,7 +27,8 @@ then puts Sotto's glyph on the bar next to Omarchy's indicators.
   --command <path>  Run this sotto launcher instead of \`sotto\` on PATH.
   --checkout        Run the launcher in this checkout:
                     $here/sotto
-  --uninstall       Take the glyph off the bar and remove the plugin folder.
+  --uninstall       Take the glyph off the bar, which needs the shell running,
+                    then remove the plugin folder.
 USAGE
 }
 
@@ -69,6 +72,15 @@ shell_running() {
   omarchy-shell shell ping >/dev/null 2>&1
 }
 
+# Whether shell.json still names the plugin, on the bar or among plugins.
+on_bar() {
+  [[ -f $config ]] || return 1
+  jq -e --arg id "$id" '
+    [(.bar.layout? // {} | objects | .[] | arrays | .[]), (.plugins? // [] | arrays | .[])]
+    | any(.[]; (if type == "object" then .id else . end) == $id)
+  ' "$config" >/dev/null 2>&1
+}
+
 plugin_known() {
   omarchy-shell shell listPlugins 2>/dev/null | jq -e --arg id "$id" 'any(.[]; .id == $id)' >/dev/null 2>&1
 }
@@ -91,23 +103,37 @@ ours() {
 
 if (( uninstall )); then
   [[ -n $command_path ]] && fail "--uninstall takes no other option"
-  if [[ ! -e $target && ! -L $target ]]; then
-    echo "Sotto's shell plugin is not installed in $plugins_dir."
+  installed=0
+  if [[ -e $target || -L $target ]]; then
+    ours || fail "$target is not Sotto's plugin; it was left alone"
+    installed=1
+  fi
+  # The glyph comes off the bar first, and the folder goes only once
+  # shell.json no longer names it, so no entry is left behind that a second
+  # run could not see. The shell takes the entry off even when the folder
+  # has already gone.
+  if on_bar; then
+    shell_running || fail "Sotto's glyph is on the bar, and only a running Omarchy shell can take it off. Nothing was removed. Run this again in your desktop session."
+    omarchy plugin disable "$id" >/dev/null || fail "'omarchy plugin disable $id' did not take Sotto's glyph off the bar. Nothing was removed."
+    for (( attempt = 0; attempt < 50; attempt++ )); do
+      on_bar || break
+      sleep 0.1
+    done
+    on_bar && fail "Sotto's glyph is still in the bar's layout in $config, so the plugin folder was left in place. Run this again in your desktop session."
+    echo "Took Sotto's glyph off the bar."
+  elif (( ! installed )); then
+    echo "Sotto's shell plugin is not installed in $plugins_dir, and its glyph is not on the bar."
+    note_elsewhere
     exit 0
   fi
-  ours || fail "$target is not Sotto's plugin; it was left alone"
-  # The shell drops the bar entry even for a plugin it has not scanned.
-  shell_running && { omarchy plugin disable "$id" >/dev/null 2>&1 || true; }
-  rm -rf -- "$target"
-  shell_running && { omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; }
-  echo "Removed Sotto's shell plugin from $plugins_dir."
-  note_elsewhere
-  config="$HOME/.config/omarchy/shell.json"
-  if [[ -f $config ]] && jq -e --arg id "$id" '[.bar.layout[]?[]? | .id?] | index($id)' "$config" >/dev/null 2>&1; then
-    echo "Its glyph is still in the bar's layout in $config. Run 'omarchy plugin disable $id' in your desktop session to take it off."
+  if (( installed )); then
+    rm -rf -- "$target"
+    shell_running && { omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; }
+    echo "Removed Sotto's shell plugin from $plugins_dir."
   else
-    echo "Its glyph is off the bar."
+    echo "Its plugin folder had already gone from $plugins_dir."
   fi
+  note_elsewhere
   exit 0
 fi
 
