@@ -577,7 +577,8 @@ export function SettingsView({
                   <Toggle label="Remove a worktree when its pull request is merged" checked={settings.worktreeCleanup.merged} onCheckedChange={checked => void save({ worktreeCleanup: { merged: checked } })} description="Once an hour, asks GitHub through gh, on your own sign-in, whether the worktree's branch has a merged pull request." />
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
-                  <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup} onCheckedChange={async (checked) => {
+                  <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
+                    {...(platform === 'linux' ? { disabled: true, description: 'Starting at sign-in comes with the installed package.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
                     setNotice(result?.enabled !== checked
                       ? { text: copy.settingsStartupFailureNotice, error: true }

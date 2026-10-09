@@ -82,6 +82,18 @@ async function selectCategory(name: string): Promise<void> {
 }
 
 describe('SettingsView', () => {
+  it('disables Linux startup with the package explanation and never calls native startup or shows an error', async () => {
+    const props = baseProps({ platform: 'linux', onSetStartup: vi.fn(async () => { throw new Error('unsupported') }) })
+    render(<SettingsView {...props} />)
+    await selectCategory('Application')
+    const startup = screen.getByRole('switch', { name: platformCopy('linux').settingsLaunchAtStartupLabel })
+    expect(startup).toBeDisabled()
+    expect(screen.getByText('Starting at sign-in comes with the installed package.')).toBeVisible()
+    await userEvent.click(startup)
+    expect(props.onSetStartup).not.toHaveBeenCalled()
+    expect(screen.queryByText(platformCopy('linux').settingsStartupFailureNotice)).not.toBeInTheDocument()
+  })
+
   it('does not save or announce unchanged shortcut and numeric fields on blur', async () => {
     const props = baseProps()
     render(<SettingsView {...props} />)
