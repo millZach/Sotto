@@ -371,6 +371,15 @@ describe('terminal agent run state', () => {
     state.hook(event('completed', { providerSessionId: 'companion', turnId: 'b' })); expect(state.providerSessionId).toBeUndefined()
     state.output(redraw('› \r\n? for shortcuts', 'OpenAI Codex (v0.162.0)')); expect(state.providerSessionId).toBeUndefined()
   })
+  it('refuses an older Codex notify during a new local submission reservation', () => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30); state.started(); state.output(codexIdle)
+    state.setVisible(true); state.output(codexWork); state.output(codexIdle)
+    state.input('new turn\r'); state.setVisible(false); state.output(codexIdle)
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'a' }))
+    expect(state.state).toBe('working')
+    state.output(codexWork); state.hook(event('completed', { providerSessionId: 'session', turnId: 'b' }))
+    state.output(codexIdle); expect(state.state).toBe('just-finished')
+  })
   it('withdraws queued and future Codex notify completion after an identity conflict, then uses observed screen work', () => {
     const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started(); state.output(codexIdle)
     state.output(redraw('Unmatched new widget', codexTitle))

@@ -116,7 +116,8 @@ export class TerminalAgentStateMachine {
         this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
-        if (this.awaitingSubmissionHook) break
+        // Codex has no submitted hook: its previous notify may arrive while the old composer is still being redrawn.
+        if (this.awaitingSubmissionHook || this.provider === 'codex' && this.pendingSubmission) break
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') {
           this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false
