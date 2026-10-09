@@ -1,6 +1,6 @@
 import type { AgentClientHost, AgentFollowup, AgentMessage, AgentThread } from '../../../shared/agents'
 import type { AgentBabysitEnded, AgentBabysitting, BabysitEndedReason } from '../../../shared/babysitting'
-import { GITHUB_PULL_REQUEST_URL } from '../../../shared/gitPullRequests'
+import { pullRequestKey } from '../../../shared/gitPullRequests'
 
 /**
  * What the window says about babysitting (ADR-0061, variant C): the Pull request surface's line, the sidebar row's
@@ -8,14 +8,10 @@ import { GITHUB_PULL_REQUEST_URL } from '../../../shared/gitPullRequests'
  * claim here is read from what the thread's host published, never from a message's text.
  */
 
-/** One pull request's address as one key, so a link and a record of the same pull request match whatever their case. */
-export function pullRequestKeyOf(url: string): string | null {
-  const match = GITHUB_PULL_REQUEST_URL.exec(url)
-  return match ? `${match[1]}/${match[2]}#${Number(match[3])}`.toLowerCase() : null
-}
+/** A link and a record of the same pull request match by the key the host keeps its records by. */
 const samePullRequest = (left: string, right: string): boolean => {
-  const key = pullRequestKeyOf(left)
-  return key !== null && key === pullRequestKeyOf(right)
+  const key = pullRequestKey(left)
+  return key !== null && key === pullRequestKey(right)
 }
 
 /** What the thread babysits of this pull request, if anything. */

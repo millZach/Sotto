@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  babysitClock, babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting, pullRequestKeyOf, pullRequestNumbers,
+  babysitClock, babysitEndedOf, babysitLine, babysittingOf, babysittingWord, endedWords, offersBabysitting, pullRequestNumbers,
 } from '../../../src/renderer/src/agents/babysitting'
 import type { AgentThread } from '../../../src/shared/agents'
 
@@ -48,9 +48,10 @@ describe('the line docked above Merge', () => {
   })
 
   it('matches a pull request by its address, whatever its case or what follows the number', () => {
-    expect(pullRequestKeyOf('https://github.com/O/R/pull/74/files')).toBe('o/r#74')
     expect(babysittingOf(babysat('user'), 'https://github.com/O/r/pull/74')).toBeDefined()
     expect(babysittingOf(babysat('user'), 'https://github.com/o/r/pull/7')).toBeUndefined()
+    // The same key the host keeps its records by, so an address with space around it matches as it does there.
+    expect(babysittingOf(babysat('user'), ' https://github.com/o/r/pull/74\n')).toBeDefined()
   })
 })
 

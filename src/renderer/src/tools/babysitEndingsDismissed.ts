@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { pullRequestKeyOf } from '../agents/babysitting'
+import { pullRequestKey } from '../../../shared/gitPullRequests'
 
 /**
  * The babysitting endings the user dismissed on the Pull request surface (ADR-0061, #825). An ending stays on the
@@ -18,7 +18,7 @@ const DIGEST = /^[0-9a-f]{32}$/u
 
 export interface BabysitEnding { readonly threadId: string; readonly url: string; readonly endedAt: string }
 /** One ending as one string, held only in memory and hashed before anything is kept. */
-const identity = (ending: BabysitEnding): string => `${ending.threadId}\0${pullRequestKeyOf(ending.url) ?? ending.url}\0${ending.endedAt}`
+const identity = (ending: BabysitEnding): string => `${ending.threadId}\0${pullRequestKey(ending.url) ?? ending.url}\0${ending.endedAt}`
 
 /** What an ending is kept as: the opaque digest of its thread, pull request and the moment it ended. */
 export async function babysitEndingDigest(ending: BabysitEnding): Promise<string> {
