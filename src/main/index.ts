@@ -139,7 +139,6 @@ import {
   type Rectangle,
   type RendererDiagnostic,
   type WebContentsLike,
-  type WindowConstructorOptions,
 } from './windows/windowManager'
 import {
   DICTATION_COMMAND,
@@ -191,6 +190,7 @@ import { registerThemesIpc } from './themes/ipc'
 import { OpenVsxClient } from './themes/openVsx'
 import { createOpenVsxFixtureFetch } from './themes/openVsxFixture'
 import { TerminalService } from './tools/terminal'
+import { terminalTakesMenuShortcut } from './terminals/menuShortcuts'
 import { BrowserService } from './tools/browser'
 import { createBrowserAgentServer } from './tools/browserAgentTools'
 import { GitChangesService } from './tools/gitChanges'
@@ -539,10 +539,6 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
   }
 }
 
-function createBrowserWindow(options: WindowConstructorOptions): BrowserWindowLike {
-  return new ElectronBrowserWindowAdapter(new BrowserWindow(options))
-}
-
 async function createRuntime(): Promise<NativeRuntimeController> {
   blockSpellcheckDictionaryDownloads(session.defaultSession)
   const resourceRoot = app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources')
@@ -605,8 +601,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // current theme halves, so a theme change repaints the widget mid-session.
   let widgetPresentation = widgetPresentationFor(await settings.get())
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
+  const terminalFocus = new WeakSet<Electron.WebContents>()
   const windows = new WindowManager({
-    createWindow: createBrowserWindow,
+    createWindow: options => {
+      const window = new BrowserWindow(options)
+      window.webContents.on('before-input-event', (_event, input) => {
+        window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
+      })
+      window.webContents.on('did-start-loading', () => terminalFocus.delete(window.webContents))
+      return new ElectronBrowserWindowAdapter(window)
+    },
     display: screen,
     platform: profile.platform,
     chrome: profile,
@@ -1314,6 +1318,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }
       const cleanupTools = registerToolsIpc(ipcMain, {
         terminal: terminalService,
+        onTerminalFocus: focused => {
+          const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
+          if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }
+        },
         browser: browserService,
         gitChanges,
         hostedGitChanges: {

@@ -30,6 +30,7 @@ function fakeTerminal(initial: TerminalSession[] = []) {
     read: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
     write: vi.fn(async () => ok(undefined)),
     resize: vi.fn(async () => ok(undefined)),
+    pasteImage: vi.fn(async () => ok(undefined)),
     interrupt: vi.fn(async () => ok(undefined)),
     close: vi.fn(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return ok(undefined) }),
     reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),

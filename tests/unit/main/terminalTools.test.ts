@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
@@ -37,6 +37,26 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> =
   return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it.each(['tools', 'drawer'] as const)('saves a pasted PNG and types its quoted path in %s, refusing invalid images and other owners', async place => {
+    const f = await fixture()
+    const snapshot = unwrap(await f.service.create({ ...f.target, place }))
+    const request = { ...f.target, sessionId: snapshot.session.id }
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+    expect(await f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,ZmFrZQ==' })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(await f.service.pasteImage({ ...request, threadId: 'b', dataUrl })).toMatchObject({ ok: false, error: { code: 'session-unavailable' } })
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    unwrap(await f.service.pasteImage({ ...request, dataUrl }))
+    const directory = join(f.directory, '.sotto', 'clipboard')
+    const [image] = (await readdir(directory)).filter(name => name.endsWith('.png'))
+    const path = join(directory, image!)
+    expect(await readFile(path)).toEqual(png)
+    expect(await readFile(join(directory, '.gitignore'), 'utf8')).toBe('*\n')
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledWith(/\s/u.test(path) ? `"${path}"` : path)
+    f.processes[0]!.exit(0)
+    expect(await f.service.pasteImage({ ...request, dataUrl })).toMatchObject({ ok: false, error: { code: 'not-running' } })
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledOnce()
+  })
   it('keeps writes in request order while another session can pass a held workspace validation', async () => {
     const f = await fixture()
     const first = unwrap(await f.service.create(f.target)), other = unwrap(await f.service.create(f.target))

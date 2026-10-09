@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolTargetSchema, toolsResultSchema } from '../shared/tools'
-import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
+import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalImageSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
 import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitPathRequestSchema, gitReviewRequestSchema, gitReviewSchema, gitWatchRequestSchema, gitListingSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
@@ -28,6 +28,8 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       interrupt: request => call(TERMINAL_CHANNEL + 'interrupt', terminalRequestSchema, z.undefined(), request),
       close: request => call(TERMINAL_CHANNEL + 'close', terminalRequestSchema, z.undefined(), request),
       reopen: request => call(TERMINAL_CHANNEL + 'reopen', terminalRequestSchema, terminalSnapshotSchema, request),
+      pasteImage: request => call(TERMINAL_CHANNEL + 'pasteImage', terminalImageSchema, z.undefined(), request),
+      setFocused: focused => call(TERMINAL_CHANNEL + 'focus', z.boolean(), z.undefined(), focused),
       onEvent: listener => subscribe(TERMINAL_EVENT, terminalEventSchema, listener),
     }),
     browser: Object.freeze<BrowserBridge>({

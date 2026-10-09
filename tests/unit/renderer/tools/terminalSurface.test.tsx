@@ -40,6 +40,7 @@ function fakeTerminal(initial: TerminalSession[], snapshots: Record<string, Term
     }),
     write: vi.fn(async () => ok(undefined)),
     resize: vi.fn(async () => ok(undefined)),
+    pasteImage: vi.fn(async () => ok(undefined)),
     interrupt: vi.fn(async () => ok(undefined)),
     close: vi.fn(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return ok(undefined) }),
     reopen: vi.fn(async ({ sessionId }) => {

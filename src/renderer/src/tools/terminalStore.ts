@@ -29,6 +29,8 @@ export interface TerminalViewHandlers {
   readonly isPageShortcut?: ((event: KeyboardEvent) => boolean) | undefined
   /** Whether the terminal turns see-through while the room is frosted (ADR-0048), as a pane's drawer does. */
   readonly followsFrost?: boolean | undefined
+  /** Font zoom changes the cell grid as well as the renderer; main must resize the PTY. */
+  readonly onResize?: ((size: { cols: number; rows: number }) => void) | undefined
 }
 
 export type TerminalViewFactory = (handlers: TerminalViewHandlers) => TerminalViewLike
@@ -217,6 +219,14 @@ export class TerminalStore {
       record.view = factory({
         onInput: data => this.write(bridge, threadId, sessionId, data),
         onInterrupt: () => this.interrupt(bridge, threadId, sessionId),
+        onResize: size => this.resize(bridge, threadId, sessionId, size),
+        onPasteImage: dataUrl => {
+          const target = this.target(threadId)
+          if (!bridge || !target || record.replaying || record.closing || !this.running(threadId, sessionId)) return
+          void settle(bridge.pasteImage({ ...target, sessionId, dataUrl })).then(result => {
+            if (!result.ok) this.fail(bridge, threadId, result.error, 'The image could not be pasted. Try again.')
+          })
+        },
         onNotice: notice => {
           if (notice !== null || this.thread(threadId)?.notice === copyNotice) this.patch(threadId, { notice })
           copyNotice = notice

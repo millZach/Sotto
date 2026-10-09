@@ -208,6 +208,7 @@ export class TerminalWorkspaceStore {
           copyNotice = notice
         },
         onPasteImage: dataUrl => void this.pasteImage(bridge, id, dataUrl),
+        onResize: size => this.resize(bridge, id, size),
       })
     }
     record.view.mount(container)

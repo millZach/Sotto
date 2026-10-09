@@ -96,6 +96,14 @@ When the Codex app changes its connection, Sotto refreshes the thread's tools be
 
 In Terminal mode, **Close** releases the terminal's output and keeps its row on **Closed** until Sotto quits. **Reopen** starts the same command with fresh output. **Stop**, a command finishing, or hiding its pane keeps the output readable. Up to 64 terminals can be open at once; Closed rows do not count toward that limit.
 
+In Terminal mode, the Terminal drawer and the Tools terminal, **Ctrl+F** (**Cmd+F** on a Mac) opens Find at the top right of the focused terminal. Type to highlight matches in its output; Enter and Shift+Enter move forward and back, and Escape or Close search returns focus to the shell. An empty field clears the highlights. Search stays with that terminal when it is hidden. At 1,000 matches, the count shows **1000+**; next and previous still search beyond that count.
+
+**Ctrl+click** (**Cmd+click** on a Mac) opens an HTTP or HTTPS URL, including a named OSC 8 link, in your browser. A click without that modifier keeps the link in the terminal. Other link schemes do not open.
+
+**Ctrl+=**, **Ctrl+-** and **Ctrl+0** (**Cmd** on a Mac) make terminal text larger, smaller and reset it to 13 pixels. The size, from 8 to 32 pixels, is shared by all terminals and remembered when Sotto restarts. Search and zoom leave a chord to dictation when it is your global dictation shortcut; other keys still go to the shell. Wide characters and emoji occupy their Unicode 11 cell widths.
+
+Pasting an image in any of these terminals saves a PNG under `.sotto/clipboard` in its working folder and types its path, quoted when it contains spaces. That folder excludes the images from Git. PNGs are limited to 10 MiB; a save failure says to restore folder access and paste again. Text pastes work as before.
+
 ### Sending, steering and screenshots
 
 If a permission arrives while you type, the composer keeps focus and your draft. It becomes read-only until you allow or deny the request above. Tab still reaches the other controls.

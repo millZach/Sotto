@@ -1,9 +1,14 @@
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalViewHandlers, TerminalViewLike } from './terminalStore'
 import { writeClipboard } from '../agents/richActions'
+import { externalLinkSchema } from '../../../shared/externalLinks'
+import { terminalSearch } from './terminalSearch'
+import { followTerminalFontSize, terminalFontSize, terminalShortcut, zoomTerminal } from './terminalPreferences'
 
 /** ANSI colours per appearance, tuned to stay readable on the panel field in each mode. */
 const ANSI_DARK = {
@@ -118,25 +123,44 @@ function monoFont(): string {
  * terminal, since Tab itself belongs to the shell.
  */
 export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor = defaultResolver() }: { readonly resolveColor?: ColorResolver } = {}): TerminalViewLike => {
-  const platform = (window.sotto as { platform?: string } | undefined)?.platform
+  const platform = window.sotto?.platform ?? 'win32'
   const systemMotion = matchMedia('(prefers-reduced-motion: reduce)')
   const blinks = (): boolean => document.documentElement.dataset.reducedMotion !== 'on' && !systemMotion.matches
   // A drawer's terminal is see-through while the room is frosted; its drawer paints the frosted colour behind it.
   const seeThrough = (): boolean => handlers.followsFrost === true && document.documentElement.dataset.frost !== undefined
   let theme = terminalTheme(document.documentElement, resolveColor, seeThrough())
   let painted = JSON.stringify(theme)
+  const openLink = (event: MouseEvent, uri: string): void => {
+    if (event.button !== 0 || event.altKey || !(platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return
+    if (!externalLinkSchema.safeParse(uri).success || !/^https?:/iu.test(uri)) return
+    event.preventDefault()
+    const open = window.sotto?.openExternalLink
+    if (!open) { handlers.onNotice?.('The link could not open. Copy it into your browser.'); return }
+    void open(uri).then(result => {
+      if (!disposed) handlers.onNotice?.(result.ok ? null : 'The link could not open. Copy it into your browser.')
+    }, () => { if (!disposed) handlers.onNotice?.('The link could not open. Copy it into your browser.') })
+  }
   const terminal = new Terminal({
-    fontFamily: monoFont(), fontSize: 13, lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: false,
+    // Search decorations and the Unicode provider are xterm's proposed APIs, supplied by its pinned addons.
+    fontFamily: monoFont(), fontSize: terminalFontSize(), lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: true,
+    linkHandler: { activate: openLink, allowNonHttpProtocols: false },
     theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false, allowTransparency: handlers.followsFrost === true,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
   const fit = new FitAddon()
   terminal.loadAddon(fit)
+  terminal.loadAddon(new WebLinksAddon(openLink))
+  terminal.loadAddon(new Unicode11Addon())
+  terminal.unicode.activeVersion = '11'
   const element = document.createElement('div')
   element.className = 'terminal-view__screen'
+  const reportFocus = (focused: boolean): void => { void window.sotto?.terminal?.setFocused?.(focused).catch(() => undefined) }
+  element.addEventListener('focusin', () => reportFocus(true))
+  element.addEventListener('focusout', event => { if (!(event.relatedTarget instanceof Node) || !element.contains(event.relatedTarget)) reportFocus(false) })
   let opened = false
   let inputEnabled = false
   let disposed = false
+  const search = terminalSearch(terminal, element, resolveColor, handlers.isPageShortcut)
   let selectionRevision = 0
   const selectionChanges = terminal.onSelectionChange(() => { selectionRevision++ })
   // xterm reports a dragged selection on release. Protect it from queued copies from the first press.
@@ -164,6 +188,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   terminal.onData(data => { if (inputEnabled) handlers.onInput(data) })
   // An image on the clipboard goes to the handler as PNG; text keeps flowing through xterm's own paste.
   element.addEventListener('paste', event => {
+    if (!(event.target instanceof Element) || !event.target.closest('.xterm')) return
     const image = handlers.onPasteImage ? [...event.clipboardData?.items ?? []].find(item => item.kind === 'file' && item.type.startsWith('image/')) : undefined
     const file = image?.getAsFile()
     if (!file || !inputEnabled) return
@@ -171,8 +196,25 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     event.stopPropagation()
     void pngDataUrl(file).then(dataUrl => { if (dataUrl) handlers.onPasteImage?.(dataUrl) })
   }, true)
+  const handleShortcut = (event: KeyboardEvent): boolean => {
+    const shortcut = terminalShortcut(event, platform)
+    if (shortcut) {
+      event.preventDefault()
+      event.stopPropagation()
+      if (shortcut === 'search') search.open()
+      else void zoomTerminal(shortcut).then(saved => {
+        if (!saved && !disposed) handlers.onNotice?.('The text size could not be saved. Try the shortcut again.')
+      })
+      return true
+    }
+    if (!event.isComposing && event.key === 'Escape' && search.close()) { event.preventDefault(); event.stopPropagation(); return true }
+    return false
+  }
+  // Capture also covers the search controls; only keys from this view can claim terminal shortcuts.
+  element.addEventListener('keydown', handleShortcut, true)
   terminal.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') return true
+    if (event.defaultPrevented || handleShortcut(event)) return false
     const ctrl = event.ctrlKey && !event.altKey && !event.metaKey
     if (ctrl && event.key === 'Tab') {
       event.preventDefault()
@@ -221,21 +263,22 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     followMotion()
     const next = terminalTheme(document.documentElement, resolveColor, seeThrough())
     const key = JSON.stringify(next)
-    if (key === painted) return
+    if (key === painted) { search.refreshTheme(); return }
     theme = next
     painted = key
     terminal.options.theme = theme
+    search.refresh()
   })
   retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'data-frost', 'style', 'class'] })
 
   const view: TerminalViewLike = {
     mount(container) {
       if (element.parentElement !== container) container.replaceChildren(element)
-      if (!opened) { terminal.open(element); opened = true }
+      if (!opened) { terminal.open(element); search.mount(); opened = true }
       // The GPU renderer draws box/block glyphs to cell edges, independent of font and line spacing.
       paintGrid()
     },
-    unmount() { releaseRenderer(); element.remove() },
+    unmount() { if (element.contains(document.activeElement)) reportFocus(false); releaseRenderer(); element.remove() },
     write(data, done) { terminal.write(data, done) },
     reset() { terminal.reset() },
     setInputEnabled(enabled) {
@@ -253,16 +296,27 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     focus() { terminal.focus() },
     dispose() {
       disposed = true
+      if (element.contains(document.activeElement)) reportFocus(false)
       selectionChanges.dispose()
       element.removeEventListener('pointerdown', startSelection, true)
       element.removeEventListener('mousedown', startSelection, true)
       retheme.disconnect()
       systemMotion.removeEventListener('change', followMotion)
+      stopFollowingFont()
+      search.dispose()
       releaseRenderer()
       terminal.dispose()
       element.remove()
     },
   }
+  const stopFollowingFont = followTerminalFontSize(() => {
+    const size = terminalFontSize()
+    if (terminal.options.fontSize === size) return
+    terminal.options.fontSize = size
+    const grid = view.fit()
+    if (grid) handlers.onResize?.(grid)
+    search.refresh()
+  })
   return view
 }
 

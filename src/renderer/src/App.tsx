@@ -19,6 +19,7 @@ import {
   type MicrophoneTestState,
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
+import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
@@ -193,7 +194,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   // the render that selected it, so the choice and the room never disagree.
   useLayoutEffect(() => {
     applyDocumentPreferences(app.settings, document.documentElement, systemDark, window.sotto?.canFrostWindow === true && !reducesTransparency)
-  }, [app.settings, systemDark, reducesTransparency, appearanceEdits])
+    if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
+  }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {

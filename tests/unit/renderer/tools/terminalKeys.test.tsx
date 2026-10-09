@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
+import { setTerminalPreferences } from '../../../../src/renderer/src/tools/terminalPreferences'
 
 type KeyHandler = (event: KeyboardEvent) => boolean
 const xterm = vi.hoisted(() => ({ instances: [] as { options: Record<string, unknown>; keys?: KeyHandler; selection: string; cleared: number }[] }))
 vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class { dispose(): void {} onContextLoss(): void {} } }))
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
+    readonly unicode = { activeVersion: "6" }
     readonly options: Record<string, unknown>
     keys?: KeyHandler
     selection = 'selected text'
@@ -20,6 +23,7 @@ vi.mock('@xterm/xterm', () => ({
     getSelectionPosition(): { start: { x: number; y: number }; end: { x: number; y: number } } | undefined {
       return this.selection ? { start: { x: 0, y: 0 }, end: { x: 13, y: 0 } } : undefined
     }
+    focus(): void {}
     open(): void {}
     dispose(): void {}
   },
@@ -27,6 +31,8 @@ vi.mock('@xterm/xterm', () => ({
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions(): undefined { return undefined } } }))
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 const clipboard = vi.hoisted(() => ({ writeText: undefined as undefined | ((text: string) => Promise<void>) }))
+const links = vi.hoisted(() => ({ activate: vi.fn() as (event: MouseEvent, uri: string) => void }))
+vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class { constructor(activate: typeof links.activate) { links.activate = activate } } }))
 vi.mock('../../../../src/renderer/src/agents/richActions', () => ({ writeClipboard: (text: string) => clipboard.writeText!(text) }))
 
 const { createXtermView } = await import('../../../../src/renderer/src/tools/terminalView')
@@ -48,6 +54,36 @@ function terminalOn(platform: 'win32' | 'darwin') {
 afterEach(() => { vi.unstubAllGlobals(); xterm.instances.length = 0 })
 
 describe('terminal keys', () => {
+  it.each(['win32', 'darwin'] as const)('opens URL and OSC 8 links on the platform modifier only, and refuses other schemes on %s', async platform => {
+    const { view, terminal } = terminalOn(platform)
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('sotto', { platform, openExternalLink })
+    const osc = (terminal.options.linkHandler as { activate: typeof links.activate }).activate
+    const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
+    for (const activate of [links.activate, osc]) {
+      activate(new MouseEvent('click'), 'https://example.com')
+      activate(new MouseEvent('click', { altKey: true, ...modifiers }), 'https://example.com')
+      for (const uri of ['file:///tmp/a', 'javascript:alert(1)', 'mailto:a@example.com', 'https://user:pass@example.com', 'https://example.com/\u000a']) activate(new MouseEvent('click', modifiers), uri)
+      expect(openExternalLink).not.toHaveBeenCalled()
+    }
+    links.activate(new MouseEvent('click', modifiers), 'https://example.com')
+    osc(new MouseEvent('click', modifiers), 'http://example.com/docs')
+    await Promise.resolve()
+    expect(openExternalLink.mock.calls).toEqual([['https://example.com'], ['http://example.com/docs']])
+    view.dispose()
+  })
+
+  it('does not send claimed chords to the shell, but yields search to a conflicting dictation chord', () => {
+    const { view, press } = terminalOn('win32')
+    setTerminalPreferences(DEFAULT_SETTINGS, async () => true)
+    expect(press('f', { ctrlKey: true })).toBe(false)
+    expect(press('Escape')).toBe(false)
+    expect(press('Escape')).toBe(true)
+    setTerminalPreferences({ ...DEFAULT_SETTINGS, hotkey: 'Control+F' }, async () => true)
+    expect(press('f', { ctrlKey: true })).toBe(true)
+    setTerminalPreferences(DEFAULT_SETTINGS, async () => true)
+    view.dispose()
+  })
   it('copies a selection with Ctrl+C on Windows, interrupts without one, and leaves Ctrl+V to the paste event', async () => {
     const { view, terminal, press, onInterrupt, writeText } = terminalOn('win32')
     expect(press('c', { ctrlKey: true })).toBe(false)

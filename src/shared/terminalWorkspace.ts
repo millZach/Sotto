@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentWorktreeSchema } from './agents'
 import { TERMINAL_MAX_OUTPUT, terminalSizeSchema } from './terminal'
+export { TERMINAL_IMAGE_MAX_BYTES } from './terminal'
 import type { ToolsResult } from './tools'
 
 /** Terminal mode: terminals opened beside Threads, owned by a project rather than a thread. */
@@ -9,7 +10,6 @@ export const TERMINALS_EVENT = `${TERMINALS_CHANNEL}event`
 /** Active terminals only; the session's Closed shelf retains every row. */
 export const TERMINALS_MAX = 64
 /** A pasted image on its way to a terminal's folder: PNG only, the same ceiling as an attachment. */
-export const TERMINAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
 // Terminal launchers are implemented separately from thread-provider adapters.
 export const terminalProviderSchema = z.enum(['codex', 'claude', 'grok'])

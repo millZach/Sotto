@@ -171,3 +171,5 @@ artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/clipboard-failure-widget.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
 !artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
+
+artifacts/terminal-search-links-zoom/

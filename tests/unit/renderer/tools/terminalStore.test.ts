@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
-import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
+import { TerminalStore, type TerminalViewHandlers } from '../../../../src/renderer/src/tools/terminalStore'
 
 const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 const ID_TOOLS = '11111111-1111-4111-8111-111111111111'
@@ -19,6 +19,7 @@ function fakeBridge(sessions: TerminalSession[]) {
     read: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
     write: vi.fn(async () => ok(undefined)),
     resize: vi.fn(async () => ok(undefined)),
+    pasteImage: vi.fn(async () => ok(undefined)),
     interrupt: vi.fn(async () => ok(undefined)),
     close: vi.fn(async () => ok(undefined)),
     reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
@@ -28,6 +29,26 @@ function fakeBridge(sessions: TerminalSession[]) {
 }
 
 describe('a terminal store filters by place', () => {
+  it.each(['tools', 'drawer'] as const)('routes pasted images from %s to its running session, and reports a save failure', async place => {
+    const { bridge, emit } = fakeBridge([session(ID_TOOLS, place)])
+    const store = new TerminalStore(place)
+    await store.activate(bridge, 'thread-a')
+    let handlers: TerminalViewHandlers | undefined
+    store.attach(bridge, 'thread-a', ID_TOOLS, document.createElement('div'), callbacks => {
+      handlers = callbacks
+      return { mount() {}, unmount() {}, write(_data, done) { done?.() }, reset() {}, setInputEnabled() {}, fit: () => null, focus() {}, dispose() {} }
+    })
+    await vi.waitFor(() => expect(store.replaying(ID_TOOLS)).toBe(false))
+    handlers!.onPasteImage!('data:image/png;base64,AAAA')
+    expect(bridge.pasteImage).toHaveBeenCalledWith({ threadId: 'thread-a', workspaceId: workspace.workspaceId, sessionId: ID_TOOLS, dataUrl: 'data:image/png;base64,AAAA' })
+    vi.mocked(bridge.pasteImage).mockResolvedValueOnce({ ok: false, error: { code: 'path-unavailable', message: 'The image could not be saved under this folder.' } })
+    handlers!.onPasteImage!('data:image/png;base64,BBBB')
+    await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('The image could not be saved under this folder.'))
+    emit({ type: 'session', session: session(ID_TOOLS, place, { status: 'exited' }) })
+    handlers!.onPasteImage!('data:image/png;base64,CCCC')
+    expect(bridge.pasteImage).toHaveBeenCalledTimes(2)
+    await store.close(bridge, 'thread-a', ID_TOOLS)
+  })
   it('lists only its own place, passing it on every list and create call', async () => {
     const { bridge } = fakeBridge([session(ID_TOOLS, 'tools'), session(ID_DRAWER, 'drawer')])
     const toolsStore = new TerminalStore('tools')
