@@ -29,10 +29,10 @@ function withDraft(draftThreadId: string | null, connection: AgentState['connect
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
-    assignments: [], queue: [],
+
     activeThreadId: null, activeProjectId: 'workshop',
     draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
 
     credentials: { reasoning: false, secure: true },
     reasoningAccounts: [],

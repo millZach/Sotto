@@ -15,7 +15,7 @@ const THREAD = 'grok-previews'
 
 function mount(open: boolean) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'idle' as const, ...(open ? { providerSessionOpen: true as const } : {}) } : thread) }
   const live = liveAgentState(state)

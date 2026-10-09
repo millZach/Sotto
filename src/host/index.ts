@@ -10,7 +10,6 @@ import { SecureSettings } from '../main/agents/secureSettings'
 import { createStorageRepositories } from '../main/storage/repositories'
 import { RecoveryNoticeCenter } from '../main/storage/recoveryNoticeCenter'
 import { openRuntimeMemory } from '../main/memory/runtime'
-import { MemoryProfile } from '../main/memory/profile'
 import { PolicyStore } from '../main/memory/policies'
 import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
@@ -106,7 +105,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
-      ...(memory && startup.memoryEnabled ? { preferences: new MemoryProfile(memory) } : {}),
       ...(options.providers ? { providers: options.providers } : {}),
       ...(options.reasoner ? { reasoner: options.reasoner } : {}),
       ...(options.clients ? { clients: options.clients } : {}),

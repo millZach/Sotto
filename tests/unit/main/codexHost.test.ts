@@ -33,7 +33,7 @@ function threadChild(f: Awaited<ReturnType<typeof codexFixture>>, threadId: stri
 async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: v => Buffer.from(v), decryptString: v => v.toString() }); await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   controls.push(control); await control.start(); await control.command({ type: 'connect' })
   return control
@@ -357,8 +357,7 @@ describe('Codex App Server provider adapter', () => {
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
   })
   it('clears the durable coordinator outbox and draft after a late send acknowledgement without retrying', async () => {
-    const f = await fixture(true); const { threadId } = await create(f); const control = await startControl(f)
-    await control.command({ type: 'assign', threadId }); await control.command({ type: 'select-thread', threadId })
+    const f = await fixture(true); const { threadId } = await create(f); const control = await startControl(f); await control.command({ type: 'select-thread', threadId })
     await control.command({ type: 'compose', text: 'Retained draft' })
     await f.driver.delayNextAck('turn/start')
     const uncertain = await control.command({ type: 'send' })
@@ -366,7 +365,7 @@ describe('Codex App Server provider adapter', () => {
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toHaveLength(1)
     await expect.poll(() => control.get().draft).toBe('')
     await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox.length).toBe(0)
-    expect(control.get().assignments[0]!.mode).toBe('managed')
+
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
   })
   it('keeps a completed turn idle after its delayed start response and preserves the reply across restart', async () => {
@@ -477,29 +476,28 @@ describe('Codex App Server provider adapter', () => {
     expect(connected.includes(false)).toBe(false)
     expect((await f.host.snapshot()).connected).toBe(true)
   })
-  it('routes attention requests and detects CLI takeover through AgentControl without mistaking its own prompt', async () => {
+  it('routes native requests and detects CLI takeover through AgentControl without mistaking its own prompt', async () => {
     const f = await fixture(true); const { threadId } = await create(f)
-    const control = await startControl(f)
-    await control.command({ type: 'assign', threadId }); await control.command({ type: 'select-thread', threadId })
+    const control = await startControl(f); await control.command({ type: 'select-thread', threadId })
     await control.command({ type: 'compose', text: 'Own prompt' }); expect((await control.command({ type: 'send' })).error).toBeNull()
     const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
     const path = join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
     await writeFile(path, rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
       rolloutLine(2, { type: 'user_message', client_id: control.get().host.threads.find(t => t.id === threadId)!.messages.find(m => m.role === 'user')!.id, message: 'Own prompt' }) +
       rolloutLine(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
-    await f.adapter.pollSessionLogs(); expect(control.get().assignments[0]!.mode).toBe('managed')
+    await f.adapter.pollSessionLogs()
+    expect(control.get().host.threads.find(t => t.id === threadId)!.messages.find(m => m.text === 'Own prompt')?.commandId).toEqual(expect.any(String))
     await f.driver.raisePermission(threadId, 'Allow build?')
-    await expect.poll(() => control.get().queue.some(q => q.kind === 'permission')).toBe(true)
-    await control.command({ type: 'later' })
+    await expect.poll(() => control.get().host.threads.find(t => t.id === threadId)!.requests.some(q => q.kind === 'permission')).toBe(true)
     expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
-    const requestId = control.get().queue.find(q => q.kind === 'permission')!.requestId!
+    const requestId = control.get().host.threads.find(t => t.id === threadId)!.requests.find(q => q.kind === 'permission')!.id
     expect((await control.command({ type: 'answer', threadId, requestId, answer: '', approved: false })).error).toBeNull()
     await f.driver.raiseQuestion(threadId, 'Choose color')
-    await expect.poll(() => control.get().queue.some(q => q.kind === 'question')).toBe(true)
-    const questionId = control.get().queue.find(q => q.kind === 'question')!.requestId!
+    await expect.poll(() => control.get().host.threads.find(t => t.id === threadId)!.requests.some(q => q.kind === 'question')).toBe(true)
+    const questionId = control.get().host.threads.find(t => t.id === threadId)!.requests.find(q => q.kind === 'question')!.id
     await control.command({ type: 'answer', threadId, requestId: questionId, answer: 'Blue' })
     await appendFile(path, rolloutLine(4, { type: 'item_completed', item: { type: 'UserMessage', id: 'cli-user', content: [{ type: 'text', text: 'I am controlling this' }] } }))
-    await expect.poll(() => control.get().assignments[0]!.mode).toBe('manual')
+    await expect.poll(() => control.get().host.threads.find(t => t.id === threadId)!.messages.some(m => m.id === 'cli-user')).toBe(true)
     expect(control.get().host.threads[0]!.messages.find(m => m.id === 'cli-user')!.commandId).toBeUndefined()
     expect(await readFile(join(f.root, 'codex-threads.json'), 'utf8')).not.toContain('Own prompt')
   })

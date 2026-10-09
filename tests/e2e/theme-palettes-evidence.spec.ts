@@ -29,9 +29,8 @@ async function withProfile(
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   if (threads) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-      assignments: [],
-      queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')
   }
   let launched: LaunchedSotto | undefined

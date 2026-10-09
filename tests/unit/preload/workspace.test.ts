@@ -9,8 +9,8 @@ const state: AgentState = {
   host: { ...EMPTY_AGENT_HOST,
     projects: [{ id: 'project', title: 'Project', path: 'D:/project', workspaceSettledAt: '2026-09-12T12:00:00.000Z' }],
     threads: [{ id: 'thread', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, workspaceSettledAt: null }] },
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-  composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+  activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
+  composing: false, globalLaneBusy: false, notice: '', error: null,
 
   credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
 

@@ -1273,8 +1273,8 @@ describe('SettingsView', () => {
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+      draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
       credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
     }
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
@@ -1295,8 +1295,8 @@ describe('SettingsView', () => {
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
-      assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+      draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
       credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
     }
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
@@ -1324,8 +1324,8 @@ function withProjects(hostId?: string): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
       projects: [{ id: 'one', title: 'One', path: 'C:/One' }, { id: 'two', title: 'Two', path: 'C:/Two' }],
     },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
   const clientState = hostId ? clientAgentState({ ...state, hostId }) : state

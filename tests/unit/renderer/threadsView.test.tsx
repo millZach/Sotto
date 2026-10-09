@@ -19,7 +19,7 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 
 const NOW = E2E_THREADS_NOW
 
-/** The design fixture as the coordinator would publish it: the permission request already sits in the attention queue. */
+/** The design fixture as the coordinator publishes it, with its native permission request. */
 function stateFixture(): AgentState {
   const fixture = designThreadsFixture()
   return {
@@ -30,11 +30,9 @@ function stateFixture(): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
-    assignments: [],
-    queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(NOW).toISOString(), deferred: false }],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
 
     credentials: { reasoning: false, secure: true },
     reasoningAccounts: [],
@@ -131,7 +129,7 @@ describe('ThreadsView workspace', () => {
   })
 
   it('shows a pending manual message immediately and follows only its own delivery record', async () => {
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const state = stateFixture();  state.activeThreadId = 'grok-previews'
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
     render(<ThreadsView now={NOW} />)
@@ -160,7 +158,7 @@ describe('ThreadsView workspace', () => {
 
   it('keeps an unmanaged composer available when another thread owns the saved draft', () => {
     const state = stateFixture()
-    state.assignments = []; state.activeThreadId = 'grok-previews'
+     state.activeThreadId = 'grok-previews'
     state.draft = 'Keep the saved draft'; state.draftThreadId = 'visual-gate'
     const { rerender } = renderThreads(state)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
@@ -175,7 +173,7 @@ describe('ThreadsView workspace', () => {
   })
 
   for (const edited of [false, true]) it(`handles a late manual delivery receipt with ${edited ? 'a newer draft and its images preserved' : 'the composer left empty'}`, async () => {
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const state = stateFixture();  state.activeThreadId = 'grok-previews'
     state.host.models.forEach(model => { model.supportsImages = true })
     let draftId = ''
     const command = vi.fn(async (...args: unknown[]) => {
@@ -214,7 +212,7 @@ describe('ThreadsView workspace', () => {
     const bridge = window.sotto
     vi.stubGlobal('sotto', { ...bridge, agents: { ...bridge?.agents, stageAttachment: async (request: AgentAttachmentStageRequest) => handleOf(request.bytes, crypto.randomUUID(), request.name) } })
     onTestFinished(() => { vi.unstubAllGlobals() })
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const state = stateFixture();  state.activeThreadId = 'grok-previews'
     state.host.models.forEach(model => { model.supportsImages = true })
     const { command, rerender } = renderThreads(state)
     const drafts = connectionStores.get(command)!
@@ -244,7 +242,7 @@ describe('ThreadsView workspace', () => {
       async convertToBlob({ type }: { type: string }) { return new Blob([new Uint8Array(4)], { type }) }
     })
     try {
-      const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+      const state = stateFixture();  state.activeThreadId = 'grok-previews'
       state.host.models.forEach(model => { model.supportsImages = true })
       const { command, rerender } = renderThreads(state)
       const drafts = connectionStores.get(command)!
@@ -266,7 +264,7 @@ describe('ThreadsView workspace', () => {
 
   it('reconciles a late manual receipt after leaving its composer', async () => {
     const state = stateFixture(); state.activeThreadId = 'grok-previews'
-    state.assignments = state.assignments.filter(assignment => assignment.threadId === 'footer-links')
+
     let draftId = ''
     const command = vi.fn(async (...args: unknown[]) => {
       const request = args[0] as AgentCommand
@@ -338,7 +336,7 @@ describe('ThreadsView workspace', () => {
 
   it('puts Ultrathink in the visible Claude prompt and sends exactly that draft once', async () => {
     const state = stateFixture()
-    state.activeThreadId = 'grok-previews'; state.assignments = []
+    state.activeThreadId = 'grok-previews';
     const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
     thread.providerId = 'claude'; thread.modelId = 'claude:sonnet'; thread.status = 'idle'; thread.requests = []
     state.host.capabilities.configureThread = true
@@ -372,7 +370,7 @@ describe('ThreadsView workspace', () => {
   })
 
   it('keeps an unconfirmed manual prompt in its message, with the composer empty and blocked', async () => {
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
+    const state = stateFixture();  state.activeThreadId = 'grok-previews'
     const { command } = renderThreads(state)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'An edited unsent prompt' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
@@ -391,14 +389,14 @@ describe('ThreadsView workspace', () => {
   })
 
   it('shows an empty workspace and a way to create a thread', () => {
-    const state = stateFixture(); state.host.threads = []; state.queue = []
+    const state = stateFixture(); state.host.threads = [];
     renderThreads(state)
     expect(screen.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
     expect(screen.getByRole('region', { name: 'Projects' })).toHaveTextContent('No open threads.')
   })
 
   it('opens a thread in the active project at once from the empty workspace’s own button', async () => {
-    const state = stateFixture(); state.host.threads = []; state.queue = []
+    const state = stateFixture(); state.host.threads = [];
     const { command } = renderThreads(state)
     const emptyPageButton = screen.getAllByRole('button', { name: 'New thread' }).find(button => button.closest('.thread-workspace__empty'))!
     fireEvent.click(emptyPageButton)
@@ -411,7 +409,7 @@ describe('ThreadsView workspace', () => {
 
   it('shows a failed provider connection on the empty workspace and leaves Connect providers usable', () => {
     const state = stateFixture()
-    state.host.threads = []; state.host.connected = false; state.queue = []; state.activeThreadId = null
+    state.host.threads = []; state.host.connected = false;  state.activeThreadId = null
     state.connection = 'disconnected'
     state.error = 'Install Codex and sign in before connecting this provider.'
     const view = renderThreads(state)
@@ -464,8 +462,8 @@ describe('ThreadsView workspace', () => {
 
   it('writes an answer in the selected workspace without changing pages', () => {
     const state = stateFixture()
-    state.assignments = []
-    state.queue[0] = { ...state.queue[0]!, kind: 'question', text: 'Which direction?' }
+
+
     state.host.threads.find(thread => thread.id === state.activeThreadId)!.requests = [{ id: 'visual-gate-permission', kind: 'question', text: 'Which direction?', options: [] }]
     const { command } = renderThreads(state)
     fireEvent.click(screen.getByRole('button', { name: 'Write an answer' }))
@@ -727,7 +725,7 @@ describe('monitoring in the thread composer', () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
   it('keeps the draft and creature while live evidence updates, then removes only the perch', () => {
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
+    const state = stateFixture();  state.activeThreadId = 'footer-links'
     const thread = state.host.threads.find(item => item.id === 'footer-links')!
     thread.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
     const view = renderThreads(state)
@@ -747,7 +745,7 @@ describe('monitoring in the thread composer', () => {
 
   it.each(['unconfirmed', 'disconnected', 'settled', 'archived', 'error', 'permission', 'question'] as const)(
     'hides the creature for %s even if old evidence is present', reason => {
-      const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
+      const state = stateFixture();  state.activeThreadId = 'footer-links'
       const thread = state.host.threads.find(item => item.id === 'footer-links')!
       thread.monitoring = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
       if (reason === 'unconfirmed') delete thread.monitoring
@@ -772,7 +770,7 @@ describe('background work in the thread composer', () => {
     id: `6f0c1a2e-8f4b-4d3c-9a1e-${String(index).padStart(12, '0')}`, label: `Agent ${index + 1}`, type: 'subagent' as const,
   }))
   const watched = () => {
-    const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
+    const state = stateFixture();  state.activeThreadId = 'footer-links'
     return { state, thread: state.host.threads.find(item => item.id === 'footer-links')! }
   }
   const ornament = (view: ReturnType<typeof renderThreads>) => view.container.querySelector<HTMLElement>('.thread-monitor')

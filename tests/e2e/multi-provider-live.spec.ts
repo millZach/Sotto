@@ -127,7 +127,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     if (!restoreRoot) {
       // Keep speech and automatic supervision out of this manual three-turn check.
       await page.evaluate(async () => {
-        const result = await window.sotto!.agents!.command({ type: 'configure', patch: { followupLimit: 0, reasoning: 'none' } })
+        const result = await window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: 'none' } })
         if (result.error) throw new Error(result.error)
       })
       await openProviders(page)
@@ -167,7 +167,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
         await expect(page.getByRole('heading', { name: title(provider), exact: true })).toBeVisible()
         const created = await state(page)
         expect(created.host.threads).toHaveLength(index + 1)
-        expect(created.assignments).toHaveLength(0)
+
         expect(created.host.threads.find(thread => thread.id === created.activeThreadId)).toMatchObject({ providerId: provider, modelId: model!.id })
         await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill(prompt)
         // Persist intent before the paid action. A failed run is investigated or
@@ -263,7 +263,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     expect(identities(restored)).toEqual(expectedIdentities)
     expect(restored.configuration.reasoning).toBe('claude')
     expect(restored.configuration.enabled).toBe(false)
-    expect(restored.assignments).toHaveLength(0)
+
     expect(await registry(profile)).toEqual(bindingBefore)
     expect(await aliases(profile)).toEqual(aliasesBefore)
     expect(await readdir(project)).toEqual([])

@@ -30,7 +30,7 @@ const CATALOG: AgentSkillCatalog = {
 
 function manualState({ running = false, capabilities = {} }: { readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities> } = {}): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.capabilities = { ...BASE, ...capabilities }
   if (running) state.host.threads.find(item => item.id === THREAD)!.status = 'running'

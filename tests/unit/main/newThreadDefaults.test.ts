@@ -55,7 +55,7 @@ async function controlFixture() {
 describe('new-thread defaults applied on create-thread (issue #347)', () => {
   it('leaves a create-thread with nothing configured exactly as before: neither field is sent to the provider', async () => {
     const f = await controlFixture()
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Plain', modelId: 'claude:test', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Plain', modelId: 'claude:test' })
     expect(created.error).toBeNull()
     const dispatched = f.host.attempts.find((item): item is { type: string; reasoningEffort?: string; runtimeMode?: string } => (item as { type: string }).type === 'create-thread')
     expect(dispatched).not.toHaveProperty('reasoningEffort')
@@ -65,7 +65,7 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
   it('applies the configured default effort and permission when the caller leaves them unset', async () => {
     const f = await controlFixture()
     await f.control.command({ type: 'configure', patch: { newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'full-access' } })
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Defaulted', modelId: 'claude:test', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Defaulted', modelId: 'claude:test' })
     expect(created.error).toBeNull()
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'full-access' })
   })
@@ -73,7 +73,7 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
   it('lets an explicit choice win over the configured default', async () => {
     const f = await controlFixture()
     await f.control.command({ type: 'configure', patch: { newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'full-access' } })
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Explicit', modelId: 'claude:test', reasoningEffort: 'low', runtimeMode: 'approval-required', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Explicit', modelId: 'claude:test', reasoningEffort: 'low', runtimeMode: 'approval-required' })
     expect(created.error).toBeNull()
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'approval-required' })
   })
@@ -81,7 +81,7 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
   it('starts a provider lacking the chosen permission on its nearest safer mode instead', async () => {
     const f = await controlFixture()
     await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'auto-accept-edits' } })
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Grok thread', modelId: 'grok:test', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Grok thread', modelId: 'grok:test' })
     expect(created.error).toBeNull()
     // Grok has no Allow edits; the nearest safer mode it offers is Ask for approval.
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ runtimeMode: 'approval-required' })
@@ -90,7 +90,7 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
   it('maps the chosen reasoning effort onto a model with fewer levels by position', async () => {
     const f = await controlFixture()
     await f.control.command({ type: 'configure', patch: { newThreadModelId: 'claude:test', newThreadReasoningEffort: 'xhigh' } })
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Grok effort', modelId: 'grok:test', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Grok effort', modelId: 'grok:test' })
     expect(created.error).toBeNull()
     // 'xhigh' sits fourth of five on Claude's list (ratio 3/4); Grok's own list has two levels, landing on 'high'.
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'high' })
@@ -100,7 +100,7 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
     const f = await controlFixture(); f.host.devinModes = true
     await f.control.command({ type: 'refresh' })
     await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
-    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Devin thread', modelId: 'devin:test', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Devin thread', modelId: 'devin:test' })
     expect(created.error).toBeNull()
     const dispatched = f.host.attempts.find((item): item is { type: string; providerMode?: string } => (item as { type: string }).type === 'create-thread' && (item as { modelId?: string }).modelId === 'devin:test')
     expect(dispatched).toMatchObject({ providerMode: 'ask-first' })

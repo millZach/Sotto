@@ -72,7 +72,7 @@ describe('a Claude thread whose host stopped before any read reached its first s
       const created = await command({ type: 'create-project', provider: 'claude', title: 'Project', path: f.root, useExisting: true })
       const projectId = created.host.projects.find(project => project.path === f.root)!.id
       const threadId = randomUUID()
-      expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: f.modelId, workingCopy: 'shared', managed: false })).error).toBeNull()
+      expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: f.modelId, workingCopy: 'shared' })).error).toBeNull()
       await command({ type: 'observe-threads', threadIds: [threadId] })
       const thread = () => f.service.state().host.threads.find(item => item.id === threadId)!
       expect((await command({ type: 'manual-send', threadId, text: 'First prompt' })).error).toBeNull()

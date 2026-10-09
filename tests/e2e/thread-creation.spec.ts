@@ -78,7 +78,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await page.getByRole('combobox', { name: 'Thread model' }).click()
     await expect(page.getByRole('dialog', { name: 'Choose model' })).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: 'artifacts/new-thread-setup/composer-provider-models.png' })
@@ -127,7 +127,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     const created = (await page.evaluate(async id => window.sotto!.agents!.threadDetail!(id), state.activeThreadId!))!
     expect(created.messages.filter(message => message.role === 'user')).toHaveLength(2)
     expect(created.messages.at(-1)).toMatchObject({ text: '', attachments: [{ name: 'pasted.png' }] })
-    expect(state.assignments).toHaveLength(0)
+
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()

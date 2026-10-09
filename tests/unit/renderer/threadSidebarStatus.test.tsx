@@ -30,7 +30,7 @@ const withStatus = (state: AgentState, threadId: string, threadStatus: 'idle' | 
 function asQuestion(state: AgentState): AgentState {
   const thread = state.host.threads.find(entry => entry.id === 'visual-gate')!
   thread.requests = [{ id: 'visual-gate-question', kind: 'question', text: 'Which report should I keep?', options: [] }]
-  state.queue = [{ ...state.queue[0]!, id: 'visual-gate:visual-gate-question:question', kind: 'question', requestId: 'visual-gate-question', text: 'Which report should I keep?' }]
+
   return state
 }
 
@@ -54,7 +54,7 @@ describe('a row that needs you says what it needs', () => {
   it('says so for a thread with no assignment, whose request never enters the attention queue', () => {
     // The coordinator queues only for threads with an assignment; the provider's request on the thread is what you answer.
     const unqueued = (state: AgentState): AgentState => {
-      state.queue = []; state.assignments = state.assignments.filter(entry => entry.threadId !== 'visual-gate'); return state
+        return state
     }
     expect(rowFor(unqueued(threadsStateFixture()), 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval',
       request: { kind: 'permission', requestId: 'visual-gate-permission' } })
@@ -75,22 +75,20 @@ describe('a row that needs you says what it needs', () => {
     } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
   })
 
-  it('says so on a managed thread while supervision decides, because the question is still yours to answer', () => {
-    // Supervision keeps a question out of the queue while it decides whether to answer it. The provider still
-    // holds the question and the composer answers it, so the row says the same until either answer lands.
-    const supervised = asQuestion(threadsStateFixture())
-    supervised.queue = []
-    expect(rowFor(supervised, 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
+  it('keeps the native question visible until the user answers', () => {
+    const pending = asQuestion(threadsStateFixture())
+
+    expect(rowFor(pending, 'visual-gate')).toMatchObject({ state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer',
       request: { kind: 'question', requestId: 'visual-gate-question' } })
   })
 
   it('keeps the older wording where nothing is pending but you are still needed', () => {
     const blocked = threadsStateFixture()
     blocked.host.threads.find(thread => thread.id === 'visual-gate')!.requests = []
-    blocked.queue = [{ id: 'footer-links:blocked', threadId: 'footer-links', kind: 'blocked', text: 'Scope changed. Decide whether to keep going.', createdAt: new Date(NOW).toISOString(), deferred: false }]
+
     expect(rowFor(blocked, 'footer-links')).toMatchObject({ state: 'working', waitingFor: null, stateLabel: 'Working' })
     const failed = threadsStateFixture()
-    failed.queue = []
+
     failed.host.threads.find(thread => thread.id === 'visual-gate')!.requests = []
     failed.host.threads.find(thread => thread.id === 'weekly-note')!.status = 'error'
     expect(rowFor(failed, 'weekly-note')).toMatchObject({ state: 'needs', waitingFor: null, stateLabel: 'Needs attention' })

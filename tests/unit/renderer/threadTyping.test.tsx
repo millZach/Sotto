@@ -28,8 +28,8 @@ afterEach(cleanup)
 
 it('keeps typing within the composer once the draft has content', () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
@@ -50,8 +50,8 @@ it('keeps typing within the composer once the draft has content', () => {
 
 it('does not process a closed model picker catalog while typing or deleting', () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const thread = state.host.threads.find(thread => thread.id === state.activeThreadId)!
   thread.nativeSessionStarted = false
@@ -78,8 +78,8 @@ it('does not process a closed model picker catalog while typing or deleting', ()
 
 it('sends the latest text after edits that did not render the surrounding controls', async () => {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = 'grok-previews'
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)

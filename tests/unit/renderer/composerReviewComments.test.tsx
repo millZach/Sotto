@@ -17,7 +17,7 @@ const remove = (oldLine: number, text: string): ReviewLine => ({ kind: 'remove',
 
 function mount(running = false) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   if (running) state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'running' as const } : thread) }
   const live = liveAgentState(state)

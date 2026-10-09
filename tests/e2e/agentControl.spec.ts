@@ -59,7 +59,7 @@ test('creates real folders using configured and explicit locations, rejects conf
     result = await command(launched.page, { type: 'create-thread', title: 'Requested model', projectId: first.id, modelId: 'claude:test' })
     expect(result.error).toBeNull()
     expect(result.host.threads.find(t => t.title === 'Requested model')?.modelId).toBe('claude:test')
-    expect(result.assignments).toHaveLength(0)
+
   } finally { await closeSotto(launched) }
 })
 

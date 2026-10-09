@@ -206,7 +206,7 @@ async function createThreads(page: Page, provider: Provider, project: string, co
     if (!model) throw new Error(`No ready ${provider} model.`)
     const ids: string[] = []
     for (let index = 0; index < count; index++) {
-      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: `Held ${index + 1}`, titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Synthetic benchmark prompt.' })
       if (sent.error) throw new Error(sent.error)

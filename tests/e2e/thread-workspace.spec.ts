@@ -42,7 +42,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     await expect(prompt).toHaveValue('')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-foreign-draft.png' })
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop'), assignments: [] })
+    expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop') })
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     expect(state.followups).toEqual([expect.objectContaining({ threadId: key('docs'), text: 'Prepare the next message while Docs runs.', status: 'queued' })])
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
@@ -156,12 +156,10 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
     // Visible pending text precedes native confirmation; wait for the matching receipt to clear the draft.
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state.assignments).toHaveLength(0)
     await expect.poll(() => userMessageTexts(page, 'workshop')).toHaveLength(1)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.status, workshop)).toBe('idle')
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: 'Here is the next small change.' }))
     await expect(page.getByLabel('Thread transcript')).toContainText('Here is the next small change.')
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Keep this draft in Workshop.')
@@ -173,7 +171,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'manual-permission', text: 'Allow the manual test step?' }))
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.requests.length, workshop)).toBe(0)
-    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).assignments)).toHaveLength(0)
+
 
   } finally { await closeSotto(launched) }
 })
@@ -184,9 +182,8 @@ test('settled work stays off the active shelf, with real timestamps and an expan
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
-    assignments: [],
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],
-    activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
@@ -199,14 +196,13 @@ test('settled work stays off the active shelf, with real timestamps and an expan
     const release = sidebar.getByRole('button', { name: 'Release notes 1.4', exact: true })
     await expect(release.locator('time')).toHaveAttribute('datetime', fixture.threads.find(thread => thread.id === 'release-notes')!.updatedAt!)
     await release.click()
-    const releaseNotes = (await hostKeys(page))('release-notes')
+
     await expect(page.getByRole('heading', { name: 'Release notes 1.4', exact: true })).toBeVisible()
     await expect(page.getByLabel('Thread transcript')).toContainText('Release notes are in the draft release.')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-settled.png' })
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Start a new manual task in this thread.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Start a new manual task in this thread.')
-    await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).assignments.some(assignment => assignment.threadId === id), releaseNotes)).toBe(false)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
 
   } finally {

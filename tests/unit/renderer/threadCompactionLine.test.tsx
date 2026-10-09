@@ -21,7 +21,7 @@ const compaction = (patch: Partial<AgentActivity> = {}): AgentActivity =>
 
 function mount(activities: AgentActivity[]): { transcript: HTMLElement } {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.connected = true
   Object.assign(state.host.threads.find(item => item.id === THREAD)! as AgentThread, { status: 'idle' as const, activities })

@@ -184,8 +184,8 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
     state.host.models.unshift({ id: 'native:devin:model:swe-1-6-fast', provider: 'Devin', providerId: 'devin', name: 'SWE fast', ready: true })
     state.configuration.defaultModelId = 'native:devin:model:swe-1-6-fast'
   }
-  state.assignments = []
-  state.queue = []
+
+
   const live = liveAgentState(state)
   const command = vi.fn(async (request: AgentCommand): Promise<AgentState | null> => live.command(request))
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))

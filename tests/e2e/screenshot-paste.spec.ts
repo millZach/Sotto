@@ -51,7 +51,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     await expect(queue).toContainText('Check this next.')
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.followups).toContainEqual(expect.objectContaining({ attachments: [expect.objectContaining({ name: 'Next screenshot.png' })] }))
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     await page.screenshot({ path: 'artifacts/codex-images/sent-and-queued.png', animations: 'disabled' })
   } finally { await closeSotto(launched) }
 })

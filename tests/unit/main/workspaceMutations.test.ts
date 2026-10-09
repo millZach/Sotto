@@ -18,8 +18,6 @@ it.each([
   ['history-loading', 'Thread "b" is loading its history. Try again in a moment.'],
   ['failed-followups', 'Thread "b" has queued follow-ups that did not send. Resume or remove them, then try again.'],
   ['paused-followups', 'Thread "b" has paused follow-ups. Resume or remove them, then try again.'],
-  ['paused-assignment', 'Thread "b" has paused management and queued work. Stop managing it and review its queue, or archive it, then try again.'],
-  ['managed-assignment', 'Thread "b" is managed by Sotto. Stop managing it, or archive it, then try again.'],
   ['uncertain-send', 'Thread "b" has a message whose delivery is unconfirmed. Open it and refresh to check whether it was sent, then try again.'],
 ] as const)('names the sibling reason %s and how to release it', async (reason, copy) => {
   const f = await fixture()

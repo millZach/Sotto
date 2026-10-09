@@ -8,8 +8,8 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import { LEGACY_VOICE_CONFIGURATION, MANAGEMENT_REMOVED, protocolAgentStateSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
-import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
+import { LEGACY_VOICE_CONFIGURATION, MANAGEMENT_REMOVED, commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
+import { agentCommandSchema } from '../../../src/shared/agents'
 import { remoteCommandRefusal } from '../../../src/host/remoteCommands'
 import { maintainProviderRecovery } from '../../../src/main/agents/providerRetirement'
 import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
@@ -28,8 +28,8 @@ async function fixture() {
   const legacy = new AgentControl({ directory: root, host, credentials, reasoner: e2eAgentReasoner, schedule: immediatePublishScheduler })
   await legacy.start(); await legacy.command({ type: 'connect' }); legacy.dispose(); await legacy.closed()
   const path = join(root, 'agents.json'), saved = JSON.parse(await readFile(path, 'utf8'))
-  const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent), decide: vi.fn(e2eAgentReasoner.decide) }
-  const control = new AgentControl({ directory: root, host, credentials, reasoner, removalMode: true, coordinatorEnabled: () => true, schedule: immediatePublishScheduler })
+  const reasoner = { account: vi.fn(e2eAgentReasoner.account) }
+  const control = new AgentControl({ directory: root, host, credentials, reasoner, schedule: immediatePublishScheduler })
   controls.push(control)
   return { root, path, saved, host, control, reasoner, credentials }
 }
@@ -67,7 +67,8 @@ describe('voice control upgrade', () => {
     f.host.event({ type: 'question', threadId: 'workshop', requestId: 'native-question', text: 'Native question' })
     await f.control.command({ type: 'refresh' })
     const state = f.control.get()
-    expect(state).toMatchObject({ assignments: [], queue: [], pendingRequest: '', composing: false,
+    for (const key of ['assignments', 'queue', 'pendingRequest', 'coordinatorConversation']) expect(state).not.toHaveProperty(key)
+    expect(state).toMatchObject({ composing: false,
       draft: 'Unsent answer', draftThreadId: 'workshop', draftRequestId: 'native-question',
       configuration: { reasoning: 'claude', reasoningModel: 'claude:test', newThreadModelId: 'claude:test', newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'approval-required' } })
     expect(state.draftAttachments).toHaveLength(1)
@@ -77,15 +78,16 @@ describe('voice control upgrade', () => {
     expect(state.deliveries).toEqual(expect.arrayContaining([expect.objectContaining({ draftId: receiptId, status: 'uncertain' })]))
     expect(state.host.threads.find(thread => thread.id === 'workshop')?.requests).toHaveLength(1)
     expect(execute.mock.calls.filter(([command]) => ['send', 'answer'].includes(command.type))).toEqual([])
-    expect(f.reasoner.intent).not.toHaveBeenCalled(); expect(f.reasoner.decide).not.toHaveBeenCalled()
+    expect(f.reasoner).not.toHaveProperty('intent'); expect(f.reasoner).not.toHaveProperty('decide')
     const migrated = JSON.parse(await readFile(f.path, 'utf8'))
+    for (const key of ['assignments', 'queue', 'pendingRequest', 'coordinatorConversation']) expect(migrated).not.toHaveProperty(key)
     expect(migrated.outbox).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'unknown-dispatch' })]))
     for (const key of Object.keys(LEGACY_VOICE_CONFIGURATION)) expect(migrated.configuration).not.toHaveProperty(key)
     expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
     f.control.dispose(); await f.control.closed()
-    const again = new AgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: f.reasoner, removalMode: true })
+    const again = new AgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: f.reasoner })
     controls.push(again); await again.start()
-    expect(again.get()).toMatchObject({ assignments: [], draft: 'Unsent answer', draftRequestId: 'native-question' })
+    expect(again.get()).toMatchObject({ draft: 'Unsent answer', draftRequestId: 'native-question' })
   })
 
   it('keeps drafts readable and management inert when the migration save fails', async () => {
@@ -100,10 +102,10 @@ describe('voice control upgrade', () => {
     })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     await f.control.start()
-    expect(f.control.get()).toMatchObject({ draft: 'Keep this', assignments: [], queue: [], pendingRequest: '', error: expect.stringContaining('Your drafts are readable') })
+    expect(f.control.get()).toMatchObject({ draft: 'Keep this', error: expect.stringContaining('Your drafts are readable') })
     expect(warn).toHaveBeenCalledWith('management-removal-save-failed')
-    expect(f.reasoner.decide).not.toHaveBeenCalled()
-    expect((await f.control.command({ type: 'assign', threadId: 'workshop' })).error).toBe(MANAGEMENT_REMOVED)
+    expect(f.reasoner).not.toHaveProperty('decide')
+    expect(agentCommandSchema.safeParse({ type: 'assign', threadId: 'workshop' }).success).toBe(false)
     expect(JSON.parse(await readFile(f.path, 'utf8')).draft).toBe('Keep this')
   })
 
@@ -113,20 +115,23 @@ describe('voice control upgrade', () => {
       { type: 'assign', threadId: 'workshop' }, { type: 'unassign', threadId: 'workshop' }, { type: 'pause', threadId: 'workshop' }, { type: 'resume', threadId: 'workshop' },
       { type: 'utterance', text: 'Manage workshop' },
       { type: 'create-thread', projectId: 'project', title: 'Managed', modelId: 'claude:test', managed: true },
-    ] as AgentCommand[]
-    for (const command of commands) expect((await f.control.command(command)).error, command.type).toBe(MANAGEMENT_REMOVED)
+    ]
+    for (const command of commands) {
+      expect(agentCommandSchema.safeParse(command).success, command.type).toBe(false)
+      expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse(command))).toThrow(MANAGEMENT_REMOVED)
+    }
     for (const retired of [
       { type: 'voice', action: 'mute' }, { type: 'voice-state', status: 'idle', error: null }, { type: 'preview-voice' },
       { type: 'utterance', text: 'Old capture', voiceTiming: { speechEndedAt: new Date().toISOString(), phase: 'warm', basis: 'detector-frame-received' } },
       { type: 'credential', slot: 'grokSpeech', value: 'fixture' },
-      ...Object.entries(LEGACY_VOICE_CONFIGURATION).filter(([key]) => key !== 'followupLimit').map(([key, value]) => ({ type: 'configure', patch: { [key]: value } })),
+      ...Object.entries(LEGACY_VOICE_CONFIGURATION).map(([key, value]) => ({ type: 'configure', patch: { [key]: value } })),
     ]) expect(agentCommandSchema.safeParse(retired).success).toBe(false)
     const manual = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'Explicit prompt' })
-    expect(manual.error).toBeNull(); expect(manual.assignments).toEqual([]); expect(manual).not.toHaveProperty('speech'); expect(manual).not.toHaveProperty('voice')
-    expect(f.reasoner.intent).not.toHaveBeenCalled(); expect(f.reasoner.decide).not.toHaveBeenCalled()
+    expect(manual.error).toBeNull(); expect(manual).not.toHaveProperty('assignments'); expect(manual).not.toHaveProperty('speech'); expect(manual).not.toHaveProperty('voice')
+    expect(f.reasoner).not.toHaveProperty('intent'); expect(f.reasoner).not.toHaveProperty('decide')
     for (const managed of [undefined, false]) {
-      const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Manual thread', modelId: 'claude:test', ...(managed === undefined ? {} : { managed }) })
-      expect(created.error).toBeNull(); expect(created.assignments).toEqual([])
+      const created = await f.control.command(commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'create-thread', projectId: 'project', title: 'Manual thread', modelId: 'claude:test', ...(managed === undefined ? {} : { managed }) })))
+      expect(created.error).toBeNull(); expect(created).not.toHaveProperty('assignments')
     }
   })
 
@@ -137,16 +142,17 @@ describe('voice control upgrade', () => {
     expect(wire).toMatchObject({ assignments: [], queue: [], pendingRequest: '', credentials: { grokSpeech: false }, configuration: LEGACY_VOICE_CONFIGURATION })
     const legacy = { ...wire, assignments: [{ threadId: 'workshop', mode: 'managed' }], configuration: { ...wire.configuration, speak: true } }
     const read = protocolAgentStateSchema.parse(legacy)
-    expect(read).toMatchObject({ legacyManagement: true, assignments: [], queue: [] })
+    expect(read).toMatchObject({ legacyManagement: true })
     expect(read).not.toHaveProperty('speech'); expect(read).not.toHaveProperty('voice')
     expect(read.credentials).not.toHaveProperty('grokSpeech')
-    for (const key of Object.keys(LEGACY_VOICE_CONFIGURATION).filter(key => key !== 'followupLimit')) expect(read.configuration).not.toHaveProperty(key)
+    for (const key of Object.keys(LEGACY_VOICE_CONFIGURATION)) expect(read.configuration).not.toHaveProperty(key)
     expect(protocolAgentStateSchema.parse(read).legacyManagement).toBe(true)
     expect(protocolAgentStateSchema.parse(wire).legacyManagement).toBe(false)
     expect(protocolAgentStateSchema.safeParse({ ...legacy, configuration: { ...legacy.configuration, unknownGrant: true } }).success).toBe(false)
     for (const managed of [undefined, false, true]) {
-      const command = agentCommandSchema.parse({ type: 'create-thread', projectId: 'project', title: 'Manual', modelId: 'claude:test', ...(managed === undefined ? {} : { managed }) })
-      expect(remoteCommandRefusal(command, { mayAnswer: true })).toBe(managed === true ? 'forbidden' : null)
+      const raw = { type: 'create-thread', projectId: 'project', title: 'Manual', modelId: 'claude:test', ...(managed === undefined ? {} : { managed }) }
+      if (managed) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse(raw))).toThrow(MANAGEMENT_REMOVED)
+      else expect(remoteCommandRefusal(commandFromProtocolV1(protocolAgentCommandSchema.parse(raw)), { mayAnswer: true })).toBeNull()
     }
   })
 
@@ -155,14 +161,16 @@ describe('voice control upgrade', () => {
     await mkdir(f.root, { recursive: true })
     await writeFile(path, JSON.stringify({ version: 1, sourceDigest: 'a'.repeat(64), migratedAt: Date.now(), expiresAt: Date.now() + 86_400_000,
       state: { ...f.saved, assignments: [{ threadId: 'workshop', mode: 'managed', instruction: 'Old work' }], draft: 'Historical draft' } }), 'utf8')
-    await maintainProviderRecovery(f.root, true, Date.now(), true)
-    expect(JSON.parse(await readFile(path, 'utf8')).state).toMatchObject({ assignments: [], queue: [], draft: 'Historical draft' })
+    await maintainProviderRecovery(f.root)
+    const recovered = JSON.parse(await readFile(path, 'utf8')).state
+    expect(recovered).toMatchObject({ draft: 'Historical draft' })
+    for (const key of ['assignments', 'queue', 'pendingRequest', 'coordinatorConversation']) expect(recovered).not.toHaveProperty(key)
   })
   it('keeps an old host readable with draft saves and Stop, but requires updating before new work', async () => {
     const f = await fixture(); await f.control.start()
     const state = { ...f.control.get(), legacyManagement: true }, hostId = randomUUID()
     const command = vi.fn(async () => state)
-    const router = new DesktopHostRouter(() => f.control.shell(), { removalMode: true })
+    const router = new DesktopHostRouter(() => f.control.shell())
     router.add({ hostId, name: 'Old host', kind: 'remote', service: { shell: () => state, command, subscribe: () => () => undefined },
       detail: id => f.control.threadDetail(id), preview: request => f.control.attachmentPreview(request) })
     const threadId = hostEntityKey(hostId, 'workshop'), client = desktopWindowClient()

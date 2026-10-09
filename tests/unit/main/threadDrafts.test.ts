@@ -70,17 +70,16 @@ const save = (threadId: string, text: string, attachments: AgentAttachmentHandle
 const send = (draft: ReturnType<typeof save>) => ({ ...draft, type: 'manual-send' as const })
 
 describe('persistent per-thread drafts', () => {
-  it('shows the saved manual draft on management handoff and preserves edits after release and restart', async () => {
+  it('edits a saved manual draft without losing its images and skills across restart', async () => {
     const f = await fixture()
     const skills = [{ name: 'build', path: 'C:/synthetic/SKILL.md' }]
     const draft = { ...save('docs', '$build Unsent manual draft', [image]), skills }
     await f.control.command(draft)
-    await f.control.command({ type: 'assign', threadId: 'docs' })
-    expect(f.control.get()).toMatchObject({ draft: draft.text, draftThreadId: 'docs', draftAttachments: [image] })
-    await f.control.command({ type: 'compose', text: 'Unsent manual draft with managed edit' })
-    await f.control.command({ type: 'unassign', threadId: 'docs' })
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ threadId: draft.threadId, draftId: draft.draftId, text: draft.text, attachments: draft.attachments, skills }))
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    await f.control.command({ type: 'compose', text: 'Unsent manual draft with an edit' })
     const edited = f.control.get().threadDrafts?.find(item => item.threadId === 'docs')
-    expect(edited).toMatchObject({ text: 'Unsent manual draft with managed edit', attachments: [image], skills })
+    expect(edited).toMatchObject({ text: 'Unsent manual draft with an edit', attachments: [image], skills })
     expect(edited?.draftId).not.toBe(draft.draftId)
     await f.restart()
     expect(f.control.get().threadDrafts).toContainEqual(edited)
@@ -94,7 +93,6 @@ describe('persistent per-thread drafts', () => {
     const foreign = f.control.get().threadDrafts?.find(item => item.threadId === 'workshop')
     const docs = save('docs', 'Docs draft')
     await f.control.command(docs)
-    await f.control.command({ type: 'assign', threadId: 'docs' })
     expect(f.control.get()).toMatchObject({ draft: 'Workshop draft', draftThreadId: 'workshop', draftAttachments: [image] })
     expect(f.control.get().threadDrafts).toContainEqual(foreign)
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: docs.draftId, text: docs.text }))
@@ -107,7 +105,7 @@ describe('persistent per-thread drafts', () => {
     await f.control.command({ type: 'disconnect' }); await f.control.command(b)
     await f.restart()
     expect(f.control.get().threadDrafts).toEqual([a, b].map(draft => expect.objectContaining({ threadId: draft.threadId, draftId: draft.draftId, text: draft.text, attachments: draft.attachments })))
-    expect(f.control.get().assignments).toEqual([])
+    expect(f.control.get()).not.toHaveProperty('assignments')
     expect(f.host.attempts).toEqual([])
     expect(f.control.get().threadDraftPersistence).toEqual([a, b].map(draft => ({ threadId: draft.threadId, draftId: draft.draftId, status: 'saved' })))
     expect(await f.disk()).not.toHaveProperty('threadDraftPersistence')
@@ -118,14 +116,15 @@ describe('persistent per-thread drafts', () => {
     const f = await fixture()
     const draft = save('workshop', 'Already on disk', [image])
     await f.control.command(draft)
-    await expect(f.restart(saved => {
+    await f.restart(saved => {
       Object.assign(saved, { threadDraftPersistence: [{ threadId: 'workshop', draftId: randomUUID(), status: 'saved' }] })
       const original = AtomicJsonStore.prototype.write
       vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function(this: AtomicJsonStore<unknown>, value) {
         if ('threadDrafts' in (value as object)) return Promise.reject(new Error('Startup rewrite failed'))
         return original.call(this, value)
       })
-    })).rejects.toThrow('Startup rewrite failed')
+    })
+    expect(f.control.get().error).toContain('Your drafts are readable')
     expect(f.control.get().threadDraftPersistence).toEqual([{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }])
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ text: draft.text, attachments: [image] }))
   })
@@ -161,7 +160,7 @@ describe('persistent per-thread drafts', () => {
     try {
       await f.control.command(save('docs', 'Saved during discovery', [image]))
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'docs', text: 'Saved during discovery', attachments: [image] }))
-      expect(f.control.get()).toMatchObject({ activeThreadId: previous.activeThreadId, assignments: previous.assignments })
+
     } finally { gate.resolve(previous.host); await refresh }
   })
 
@@ -173,11 +172,12 @@ describe('persistent per-thread drafts', () => {
     expect(agentCommandSchema.safeParse(save('docs', 'Bad', [{ ...image, digest: 'file:///secret' }])).success).toBe(false)
   })
 
-  it('keeps managed compose revisions and clears in sync with the per-thread draft', async () => {
-    const f = await fixture(); await f.control.command({ type: 'assign', threadId: 'workshop' })
+  it('keeps saved compose revisions and clears in sync with the per-thread draft', async () => {
+    const f = await fixture();
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     await f.control.command(save('workshop', 'Earlier text', [image]))
-    await f.control.command({ type: 'compose', text: 'Managed edit' })
-    expect(f.control.get().threadDrafts).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Managed edit', attachments: [image] })])
+    await f.control.command({ type: 'compose', text: 'Saved edit' })
+    expect(f.control.get().threadDrafts).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Saved edit', attachments: [image] })])
     await f.control.command({ type: 'compose', text: '', attachments: [] }); await f.restart()
     expect(f.control.get().threadDrafts).toEqual([])
   })
@@ -188,7 +188,7 @@ describe('persistent per-thread drafts', () => {
     expect((await f.control.command(save('workshop', 'Replace answer'))).error).not.toBeNull()
     expect((await f.control.command(send(save('workshop', 'Manual prompt')))).error).not.toBeNull()
     expect(f.control.get().threadDrafts).toEqual([expect.objectContaining({ draftId: answer.draftId, requestId: 'question-a', text: 'Answer remains' })])
-    expect(f.control.get().assignments).toEqual([]); expect(f.host.attempts).toEqual([])
+    expect(f.control.get()).not.toHaveProperty('assignments'); expect(f.host.attempts).toEqual([])
   })
 
   it.each([false, true])('clears a submitted per-thread answer while preserving a newer revision (%s)', async edit => {
@@ -269,10 +269,9 @@ describe('truthful durable draft delivery', () => {
     expect(f.control.get().threadDrafts![0]!.draftId).toBe(newer.draftId)
   })
 
-  it.each(['disconnected', 'managed', 'rejected'] as const)('reports %s as failed, keeps the complete draft before dispatch', async condition => {
+  it.each(['disconnected', 'rejected'] as const)('reports %s as failed, keeps the complete draft before dispatch', async condition => {
     const f = await fixture()
     if (condition === 'disconnected') await f.control.command({ type: 'disconnect' })
-    if (condition === 'managed') await f.control.command({ type: 'assign', threadId: 'workshop' })
     if (condition === 'rejected') f.host.result = { accepted: false }
     const count = f.host.attempts.length; const draft = save('workshop', 'Keep me', [image])
     const result = await f.control.command(send(draft))

@@ -565,7 +565,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
-  const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
   const startup = new StartupService(e2eConfiguration === null ? app : {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
@@ -646,7 +645,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const error = await shell.openPath(path); if (error) throw new Error(error)
     },
     ...(authority === undefined ? {} : { authority }),
-    ...(memoryProfile === undefined || !agentMemoryEnabled ? {} : { preferences: memoryProfile }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     ...(e2eConfiguration === null ? { installedProviders: detectInstalledProviders } : {}),
@@ -688,7 +686,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
-    removalMode: true,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter

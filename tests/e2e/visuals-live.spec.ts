@@ -67,7 +67,7 @@ for (const provider of ['claude', 'codex', 'grok'] as const) {
       const model = await page.evaluate(async (chosen: ProviderId) => {
         await window.sotto!.updateSettings({ onboardingComplete: true, visualsInThreads: true })
         const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-          provider: chosen, enabled: true, enabledProviders: [chosen], reasoning: 'none', followupLimit: 0 } })
+          provider: chosen, enabled: true, enabledProviders: [chosen], reasoning: 'none', } })
         if (configured.error) throw new Error(configured.error)
         const connected = await window.sotto!.agents!.command({ type: 'connect', provider: chosen })
         if (connected.error) throw new Error(connected.error)

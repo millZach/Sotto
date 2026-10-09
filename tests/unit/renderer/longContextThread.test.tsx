@@ -22,7 +22,7 @@ function mount() {
   thread.modelId = 'claude:sonnet[1m]'
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, configureThread: true }
-  state.queue = []
+
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(() => live.useLive())
   render(<ThreadsView now={E2E_THREADS_NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} />)

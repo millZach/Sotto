@@ -111,7 +111,7 @@ describe('a thread pane whose worktree moved', () => {
   const THREAD = 'grok-previews'
   function stateWith(worktree: AgentWorktree): AgentState {
     const state = threadsStateFixture()
-    state.assignments = []
+
     state.activeThreadId = THREAD
     state.host.connected = true
     Object.assign(state.host.threads.find(item => item.id === THREAD) as AgentThread, { worktree, workingDirectory: worktreePath })

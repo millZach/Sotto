@@ -99,7 +99,7 @@ describe('Codex native skills', () => {
     const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
     await credentials.load()
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-      reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+      reasoner: {},
     })
     controls.push(control); await control.start(); await control.command({ type: 'connect' })
     const draft = { type: 'save-thread-draft' as const, threadId: f.threadId, draftId: randomUUID(), text: 'Keep my draft' }
@@ -116,7 +116,7 @@ describe('Codex native skills', () => {
     expect(after.skillCatalogs?.[0]?.skills[0]?.path).toBe(join(f.root, 'new', 'SKILL.md'))
     expect(after.threadDrafts).toEqual(before.threadDrafts)
     expect(after.activeThreadId).toBe(before.activeThreadId)
-    expect(after.assignments).toEqual([])
+    expect(after).not.toHaveProperty('assignments')
     expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(0)
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('skillCatalogs')
   })

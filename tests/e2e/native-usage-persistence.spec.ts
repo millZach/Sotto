@@ -65,7 +65,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1280, 800))
     await page.evaluate(async () => {
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none', followupLimit: 0,
+        provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none',
       } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
@@ -95,7 +95,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
       const project = state.host.projects.find(value => value.title === 'Synthetic usage project')!
       const model = state.host.models.find(value => value.providerId === 'claude' && value.ready)!
       const thread = await agents.command({ type: 'create-thread', projectId: project.id, title: 'Native usage verification', titleSource: 'user', modelId: model.id,
-        workingCopy: 'shared', runtimeMode: 'approval-required', managed: false })
+        workingCopy: 'shared', runtimeMode: 'approval-required' })
       if (thread.error) throw new Error(thread.error)
       const id = thread.activeThreadId!
       await agents.command({ type: 'select-thread', threadId: id })

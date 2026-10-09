@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { vi } from 'vitest'
 import type { AgentSkillCatalog } from '../../../src/shared/agentSkills'
 import { defaultAgentConfiguration, type AgentCommand, type AgentDelivery, type AgentFollowup, type AgentState } from '../../../src/shared/agents'
-import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { designThreadsFixture } from '../../../src/shared/e2e'
 import type { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -21,11 +21,9 @@ export function threadsStateFixture(): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
-    assignments: [],
-    queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(E2E_THREADS_NOW).toISOString(), deferred: false }],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
 
     credentials: { reasoning: false, secure: true },
     reasoningAccounts: [],

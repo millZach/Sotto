@@ -9,8 +9,8 @@ function state(thread: Partial<AgentThread> = {}, error: string | null = null, u
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
       models: [{ id: 'model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'] }],
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Work', modelId: 'model', status: 'idle', messages: [], requests: [], runtimeMode: 'approval-required', ...thread }] },
-    assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error,
+    activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
+    globalLaneBusy: false, notice: '', error,
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
     ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}),
   }

@@ -18,8 +18,8 @@ const ARTIFACTS = 'artifacts/empty-page-saved-draft'
 async function launchWithDraft(draftThreadId: string, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-leftover-draft-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), assignments: [], queue: [], activeThreadId: null, activeProjectId: 'workshop',
-    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false, pendingRequest: '', outbox: [] }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), activeThreadId: null, activeProjectId: 'workshop',
+    draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false, outbox: [] }))
   const launched = await launchSotto('design-threads', profile)
   try {
     await mkdir(ARTIFACTS, { recursive: true })

@@ -463,7 +463,6 @@ export class SocketHostService implements HostService {
     }
     this.recoveryError = undefined
     const admitted = structuredClone(command)
-    if (admitted.type === 'create-thread') admitted.managed = false
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
@@ -475,7 +474,7 @@ export class SocketHostService implements HostService {
     // Saves admitted before a command go onto the wire first. Send never waits for their replies.
     this.flushCompose()
     const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? this.shell().draftThreadId ?? this.shell().activeThreadId
-      : admitted.type === 'cancel-draft' || admitted.type === 'pause-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
+      : admitted.type === 'cancel-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
     let edit = owner ? this.retainedDrafts.get(this.retainedHostId(), owner) : undefined
     const priorAdmission = this.wireAdmission
     const generation = this.generation
@@ -502,7 +501,7 @@ export class SocketHostService implements HostService {
       this.wireAdmission = admission
       void admission.then(() => { if (this.wireAdmission === admission) this.wireAdmission = undefined })
     }
-    const barrierOwner = owner && (admitted.type === 'send' || admitted.type === 'cancel-draft' || admitted.type === 'pause-draft') ? owner : undefined
+    const barrierOwner = owner && (admitted.type === 'send' || admitted.type === 'cancel-draft') ? owner : undefined
     if (barrierOwner) this.delivering.set(barrierOwner, (this.delivering.get(barrierOwner) ?? 0) + 1)
     try {
       if (releaseAdmission) { if (priorAdmission) await priorAdmission; if (this.retainedDrafts.requiresDurableWrites) await this.retainedDrafts.flush(); this.sameGeneration(generation) }
@@ -530,11 +529,6 @@ export class SocketHostService implements HostService {
             this.retainedDrafts.put(kept)
           }
         }
-      }
-      if (result.error === null && (admitted.type === 'pause-draft' || admitted.type === 'resume-draft')) {
-        const threadId = admitted.type === 'resume-draft' ? admitted.threadId : owner
-        const retained = threadId ? this.retainedDrafts.get(this.retainedHostId(), threadId) : undefined
-        if (retained) this.retainedDrafts.put({ ...retained, editing: admitted.type === 'resume-draft' })
       }
       return { ...this.state(), error: result.error }
     } catch (error) {
@@ -729,7 +723,7 @@ export class SocketHostService implements HostService {
       providerId: requestDraftProvider(before.host, thread, before.configuration.provider), requestId: request.id,
       questionsDigest: requestQuestionsDigest(questions) } : undefined
     const generation = this.generation, epoch = this.snapshotEpoch
-    const operation = { op: 'command' as const, command }
+    const operation = { op: 'command' as const, command: command.type === 'create-thread' ? { ...command, managed: false } : command }
     const state = this.read(protocolAgentStateSchema, await (onPlacement ? this.call(operation, commandId, onPlacement) : this.call(operation, commandId))); this.sameGeneration(generation)
     if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId

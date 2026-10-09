@@ -88,7 +88,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
       return img.top >= frame.top && img.bottom <= frame.bottom + 1 && img.left >= frame.left && img.right <= frame.right + 1
     })).toBe(true)
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('Docs draft is independently owned.')
     await selectThread(page, 'Docs')
@@ -215,7 +215,7 @@ test('project settlement preserves individual choices, drafts and running work i
     expect(state.host.projects.find(project => project.id === 'project')!.workspaceSettledAt).toBeFalsy()
     expect(state.host.threads.find(thread => thread.id === 'docs')!.workspaceSettledAt).toBe(individuallySettled)
     expect(state.host.threads.find(thread => thread.id === 'workshop')!).toMatchObject({ status: 'running', projectId: 'project' })
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     await selectThread(page, 'Docs')
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this document draft while the project is settled.')
     await selectThread(page, 'Workshop')
@@ -292,7 +292,7 @@ test('light provider controls remain readable and uncertain delivery can be chec
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(await userMessageTexts(page, 'docs')).toEqual(['A prompt with an uncertain acknowledgement.'])
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('A newer draft while confirmation is pending.')
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
   } finally { await closeSotto(launched) }
 })
 

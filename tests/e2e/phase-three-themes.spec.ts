@@ -33,8 +33,8 @@ async function createProfile(settings: Partial<AppSettings> = {}): Promise<strin
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }), 'utf8')
   return profile
 }

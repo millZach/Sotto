@@ -17,8 +17,8 @@ const THREAD = 'grok-previews'
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
 function mount({ beside = true }: { readonly beside?: boolean } = {}) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
   const live = liveAgentState(state)
@@ -86,7 +86,7 @@ describe('the manual composer', () => {
   it('writes by hand even in a thread the saved state says Sotto manages', () => {
     const state = threadsStateFixture()
     state.activeThreadId = 'visual-gate'
-    state.assignments = [{ threadId: 'visual-gate', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: E2E_THREADS_NOW, startedAt: '' } as unknown as AgentState['assignments'][number]]
+
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
     const row = describeThreads(live.state, E2E_THREADS_NOW).find(item => item.thread.id === 'visual-gate')!

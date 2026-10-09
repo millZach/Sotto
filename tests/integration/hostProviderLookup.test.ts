@@ -33,7 +33,7 @@ async function saved(data: string, configuration: Partial<AgentConfiguration>): 
   await mkdir(data, { recursive: true })
   await writeFile(join(data, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), ...configuration },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [],
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [],
   }))
 }
 const connection = (state: AgentState, provider: ProviderId) => state.host.providers?.find(status => status.id === provider)?.connection

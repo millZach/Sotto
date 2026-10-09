@@ -22,7 +22,7 @@ const ALL: AgentCapabilities = { projects: true, threads: true, submit: true, ob
 /** An unmanaged idle thread: the manual composer is the one on the page. */
 function manualState(threadId = 'grok-previews'): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = threadId
   return state
 }
@@ -326,7 +326,7 @@ describe('Threads manual composer', () => {
     const state = manualState('visual-gate')
     const thread = state.host.threads.find(item => item.id === 'visual-gate')!
     thread.requests = [{ id: 'direction', kind: 'question', text: 'Which direction?', options: [] }]
-    state.queue = [{ id: 'visual-gate:direction:question', threadId: 'visual-gate', kind: 'question', text: 'Which direction?', requestId: 'direction', createdAt: new Date(NOW).toISOString(), deferred: false }]
+
     const { live } = mount(state)
     const answer = screen.getByRole('textbox', { name: 'Your answer' })
     fireEvent.change(answer, { target: { value: 'Go left' } })

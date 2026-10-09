@@ -80,8 +80,8 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   const launched = await launchSotto('design-threads', profile)
   try {

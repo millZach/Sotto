@@ -549,7 +549,7 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
       await agents.command({ type: 'connect' })
       const created = await agents.command({ type: 'create-project', title: 'Scopes project', path: repo, useExisting: true })
       const projectId = created.host.projects.find(project => project.title === 'Scopes project')!.id
-      const state = await agents.command({ type: 'create-thread', projectId, title: 'Scopes review', modelId: 'codex:gpt', managed: false, workingCopy: 'shared' })
+      const state = await agents.command({ type: 'create-thread', projectId, title: 'Scopes review', modelId: 'codex:gpt', workingCopy: 'shared' })
       if (!state.activeThreadId || state.error) throw new Error(state.error ?? 'No selected thread')
       return state.activeThreadId
     }, repo)

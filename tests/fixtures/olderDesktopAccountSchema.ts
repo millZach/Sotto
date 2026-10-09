@@ -6,6 +6,7 @@ import { agentConfigurationSchema, agentStateSchema } from '../../src/shared/age
 export const olderDesktopAccountSchema = agentStateSchema.extend({
   configuration: agentConfigurationSchema.extend({
     membershipEndpoint: z.string().max(2_048),
+    followupLimit: z.number().int().min(0).max(100),
     orbColor: z.enum(['teal', 'violet', 'ice', 'amber', 'mono']),
     speak: z.boolean(), speechProvider: z.enum(['grok', 'kokoro', 'natural', 'system']),
     speechVoice: z.enum(['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']),

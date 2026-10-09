@@ -45,7 +45,6 @@ export interface AgentRuntimeOptions {
   openExternal: (url: string) => Promise<unknown>
   openThreadFolder?: ControlDependencies['openThreadFolder']
   authority?: ControlDependencies['authority']
-  preferences?: ControlDependencies['preferences']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
   logFailure?: ControlDependencies['logFailure']
   /** How a Claude settings change reached its CLI, as stable event names; never a model, a level or a mode. */
@@ -140,17 +139,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
   })
-  const reasoner = options.reasoner ?? new ConfiguredAgentReasoner(() => agentControl.configuration(), credentials, {
+  const reasoner = options.reasoner ?? new ConfiguredAgentReasoner({
       claude: new ClaudeSubscriptionClient(join(directory, 'reasoning', 'claude')),
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns,
-    historyEnabled: options.historyEnabled, removalMode: true,
+    historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
-    ...(options.preferences ? { preferences: options.preferences } : {}),
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),

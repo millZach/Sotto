@@ -58,7 +58,7 @@ test('opening a remote thread keeps a disabled voice coordinator dormant', async
       const project = projects.host.projects.find(item => item.path === folder)!
       const model = (await window.sotto!.agents!.get()).host.models.find(item => item.providerId === 'codex')!
       const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: project.id, modelId: model.id,
-        title: 'Remote voice regression', managed: false })
+        title: 'Remote voice regression' })
       if (created.error) throw new Error(created.error)
       return created.host.threads.find(item => item.title === 'Remote voice regression')!.id
     }, root)

@@ -503,10 +503,6 @@ export function dropLiveThreadState(thread: AgentThread): void {
   delete thread.monitoring; delete thread.backgroundWork; delete thread.providerSessionOpen
 }
 export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>
-export function supportsAgentSupervision(capabilities: AgentCapabilities): boolean {
-  return capabilities.observe && capabilities.questions && capabilities.permissions
-    && capabilities.messageOrigin && capabilities.reconcile
-}
 export type AgentHostSnapshot = z.infer<typeof agentHostSnapshotSchema>
 
 export const subscriptionProviderSchema = z.enum(['codex', 'claude', 'grok'])
@@ -545,7 +541,6 @@ export const agentConfigurationSchema = z.object({
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(6_144),
-  followupLimit: z.number().int().min(0).max(100),
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
@@ -567,31 +562,10 @@ export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
+  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
-export const agentAssignmentSchema = z.object({
-  threadId: id, mode: z.enum(['managed', 'manual']), instruction: text,
-  followups: z.number().int().nonnegative(), paused: z.boolean(),
-  seenMessageIds: z.array(z.string()), ownMessageIds: z.array(z.string()),
-  handledRequestIds: z.array(z.string()), lastFailure: z.string(),
-  contextUpdatedAt: z.number().default(0),
-  /** ISO time the assignment began (assign or create-thread). Empty for assignments saved before it was recorded. */
-  startedAt: z.string().default(''),
-  /** How the current instruction reached the thread: a spoken "send it", a typed Send, or not yet known. */
-  origin: z.enum(['voice', 'typed', 'unknown']).default('unknown'),
-  /** Why Sotto stopped managing on its own; 'none' while managing or after a user pause. Cleared by resume. */
-  stopReason: z.enum(['none', 'limit', 'repeat', 'error']).default('none'),
-  /** ISO time of that stop; empty when stopReason is 'none'. */
-  stoppedAt: z.string().default(''),
-})
-export type AgentAssignment = z.infer<typeof agentAssignmentSchema>
-export const agentQueueItemSchema = z.object({
-  id, threadId: id, kind: z.enum(['ready', 'question', 'permission', 'blocked']),
-  text, requestId: z.string().optional(), createdAt: z.string(), deferred: z.boolean(),
-})
-export type AgentQueueItem = z.infer<typeof agentQueueItemSchema>
 export const MAX_DELIVERED_DRAFTS = 128
 export const agentThreadDraftSchema = z.object({
   threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema, skills: agentSkillReferencesSchema.optional(),
@@ -600,7 +574,7 @@ export const agentThreadDraftSchema = z.object({
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
 /**
- * The follow-up queue's items: the user's own follow-ups, independent of attention and dispatched outbox intent, and
+ * The follow-up queue's items: the user's own follow-ups, independent of dispatched outbox intent, and
  * at most one of Sotto's own, a `wakeUp` babysitting is holding until the thread is ready (ADR-0061 decision 8), after
  * the user's items, removable and never editable. Its draft ID is its own, so an older reader still reads the queue;
  * no draft or delivery receipt goes with it.
@@ -641,7 +615,6 @@ export const agentStateSchema = z.object({
   clientUpdatesDismissedAt: z.string().optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
-  assignments: z.array(agentAssignmentSchema), queue: z.array(agentQueueItemSchema),
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
   draft: text, draftThreadId: z.string().nullable(), composing: z.boolean(),
   draftAttachments: agentAttachmentHandlesSchema.optional(),
@@ -658,9 +631,8 @@ export const agentStateSchema = z.object({
   followups: z.array(agentFollowupSchema).optional(),
   followupReceipts: agentDeliveryReceiptsSchema.optional(),
   draftRequestId: z.string().nullable(),
-  pendingRequest: z.string().max(20_000),
   /**
-   * The one global lane is occupied: a command with no thread, or one that moves assignment authority,
+   * The one global lane is occupied: a command with no thread, or one that moves
    * the composer draft or a whole project. It says nothing about any thread's own lane — the provider
    * and configuration surfaces are what read it.
    */
@@ -791,7 +763,7 @@ export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSche
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
  * the one test for it. A visual message is never the final reply, never folds, and is left out of summaries, search,
- * titles and supervision. A `visual:` message without a visual it can read (a shape this reader does not know, or a
+ * titles. A `visual:` message without a visual it can read (a shape this reader does not know, or a
  * socket client's copy, which never carries one) is its words alone, and counts as a reply everywhere. The `visual`
  * field is asked first, so a pass over a long history reads no other message's ID.
  */
@@ -871,7 +843,6 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
   z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),
-  z.object({ type: z.literal('utterance'), text }).strict(),
   z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
     attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
@@ -892,9 +863,6 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
   z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
-  z.object({ type: z.literal('pause-draft') }).strict(),
-  z.object({ type: z.literal('resume-draft'), threadId: id }).strict(),
-  z.object({ type: z.literal('cancel-request') }).strict(),
   z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-project'), projectId: providerEntityId }).strict(),
@@ -912,7 +880,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
-    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(), managed: z.boolean().optional() }).strict(),
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
@@ -963,14 +931,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * inside the next send. Starts nothing a send would not, creates no provider session, worktree or branch, sends no
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
-  z.object({ type: z.literal('select-attention'), itemId: id }).strict(),
-  z.object({ type: z.literal('assign'), threadId: id, instruction: text.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
-  z.object({ type: z.literal('unassign'), threadId: id }).strict(),
-  z.object({ type: z.literal('resume'), threadId: id, expectedDraftId: z.uuid().nullable().optional() }).strict(),
-  z.object({ type: z.literal('pause'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
-  z.object({ type: z.enum(['next', 'later']) }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>

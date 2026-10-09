@@ -22,7 +22,7 @@ async function fixture(root?: string) {
   const recorder = new TurnRecorder({ directory: f.root, resolveSession: id => f.registry.byThread(id) })
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, turns: recorder,
     openThreadFolder: async path => { opened.push(path) },
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   let closing: Promise<void> | undefined
   const close = () => closing ??= (async () => { control.dispose(); await control.privacyChanged(); await f.stop() })()
@@ -51,21 +51,19 @@ describe('workspace controller integration', () => {
   it('stops native work even when the follow-up pause cannot be saved', async () => {
     const f = await fixture()
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
-    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
     const pause = vi.spyOn(FollowupStore.prototype, 'pause').mockRejectedValueOnce(new Error('Synthetic pause write failure'))
     try {
       const result = await f.control.command({ type: 'interrupt', threadId })
       expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toHaveLength(1)
-      expect(result.assignments.find(item => item.threadId === threadId)?.paused).toBe(true)
+
       expect((await f.recorder.recent(20)).find(turn => turn.commandType === 'interrupt')).toMatchObject({ outcome: 'completed' })
       expect(result.error).toBe('Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.')
     } finally { pause.mockRestore() }
   })
 
-  it.each(['closed', 'unsupported'] as const)('leaves management and queued messages unchanged when Stop is refused: %s', async refusal => {
+  it.each(['closed', 'unsupported'] as const)('leaves queued messages unchanged when Stop is refused: %s', async refusal => {
     const f = await fixture()
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
-    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
     const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
     if (refusal === 'closed') native.archivedAt = new Date().toISOString()
     else f.adapters.codex.state.capabilities.interrupt = false
@@ -76,17 +74,16 @@ describe('workspace controller integration', () => {
     try {
       const result = await f.control.command({ type: 'interrupt', threadId })
       expect(result.error).toBe(refusal === 'closed' ? 'This thread is settled or archived. There is no open work to stop.' : 'This connection cannot stop agent work.')
-      expect(result.assignments).toEqual(before.assignments)
+
       expect(result.followups).toEqual(before.followups)
       expect(pause).not.toHaveBeenCalled()
       expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toEqual([])
     } finally { pause.mockRestore() }
   })
 
-  it.each(['closed', 'unsupported'] as const)('restores management when Stop becomes unavailable during queue persistence: %s', async refusal => {
+  it.each(['closed', 'unsupported'] as const)('refuses Stop when it becomes unavailable during queue persistence: %s', async refusal => {
     const f = await fixture()
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
-    await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
     const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -101,8 +98,8 @@ describe('workspace controller integration', () => {
       release()
       const result = await stopping
       expect(result.error).toBe(refusal === 'closed' ? 'This thread is settled or archived. There is no open work to stop.' : 'This connection cannot stop agent work.')
-      expect(result.assignments.find(item => item.threadId === threadId)?.paused).toBe(false)
-      expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).assignments.find((item: { threadId: string }) => item.threadId === threadId).paused).toBe(false)
+
+
       expect(f.adapters.codex.commands.filter(command => command.type === 'interrupt')).toEqual([])
     } finally { release(); await stopping; pause.mockRestore() }
   })
@@ -243,7 +240,7 @@ describe('workspace controller integration', () => {
     const f = await fixture()
     const initial = f.control.get()
     const created = await f.control.command({ type: 'create-thread', projectId: initial.host.projects[0]!.id,
-      modelId: initial.host.models.find(model => model.providerId === 'codex')!.id, title: 'Shared', workingCopy: 'shared', managed: false })
+      modelId: initial.host.models.find(model => model.providerId === 'codex')!.id, title: 'Shared', workingCopy: 'shared' })
     const id = created.activeThreadId!
     expect((await f.control.command({ type: 'open-thread-folder', threadId: id })).error).toBeNull()
     expect(f.opened).toEqual([created.host.threads.find(thread => thread.id === id)!.workingDirectory])
@@ -256,7 +253,7 @@ describe('workspace controller integration', () => {
     const f = await fixture()
     const initial = f.control.get()
     const model = initial.host.models.find(model => model.providerId === 'codex')!
-    const created = await f.control.command({ type: 'create-thread', projectId: initial.host.projects[0]!.id, modelId: model.id, title: 'Retry', managed: false })
+    const created = await f.control.command({ type: 'create-thread', projectId: initial.host.projects[0]!.id, modelId: model.id, title: 'Retry' })
     const id = created.activeThreadId!
     const execute = f.adapters.codex.execute.bind(f.adapters.codex)
     const spy = vi.spyOn(f.adapters.codex, 'execute').mockImplementationOnce(async () => ({ accepted: false }))
@@ -315,13 +312,13 @@ describe('workspace controller integration', () => {
     expect(state.host.projects).toHaveLength(3)
     expect(f.adapters.codex.commands).toHaveLength(0)
     const model = state.host.models.find(model => model.providerId === 'codex')!
-    state = await f.control.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'First', managed: false })
+    state = await f.control.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'First' })
     expect(state.error).toBeNull(); const first = thread(state)
-    state = await f.control.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Second', managed: false })
+    state = await f.control.command({ type: 'create-thread', projectId: project.id, modelId: model.id, title: 'Second' })
     expect(state.error).toBeNull(); const second = thread(state)
     expect(first.id).not.toBe(second.id)
     expect([first.projectId, second.projectId]).toEqual([project.id, project.id])
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     await f.control.command({ type: 'disconnect', provider: 'codex' })
     const claude = state.host.models.find(model => model.providerId === 'claude')!
     state = await f.control.command({ type: 'configure-thread', threadId: first.id, modelId: claude.id, reasoningEffort: 'high', runtimeMode: 'approval-required' })
@@ -330,28 +327,27 @@ describe('workspace controller integration', () => {
     state = await f.control.command({ type: 'manual-send', threadId: first.id, text: 'Work on this project' })
     expect(state.error).toBeNull()
     expect(state.host.threads.find(thread => thread.id === first.id)).toMatchObject({ projectId: project.id, providerId: 'claude', nativeSessionStarted: true, status: 'running' })
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toEqual([])
   })
 
-  it('settles and restores offline while retaining working requests, attention, IDs and explicit management authority', async () => {
+  it('settles and restores offline while retaining working requests, IDs and saved drafts', async () => {
     const f = await fixture()
     const original = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!
-    await f.control.command({ type: 'assign', threadId: original.id, instruction: 'Keep watching' })
     const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(original.id)!.sessionId)!
     native.status = 'running'
     native.requests.push({ id: 'permission', kind: 'permission', text: 'Run the build?', options: [] })
     f.adapters.codex.emit()
     // Provider publishes are coalesced in the workspace host, so wait for this one to arrive.
-    await expect.poll(() => f.control.get().queue.some(item => item.requestId === 'permission')).toBe(true)
+    await expect.poll(() => f.control.get().host.threads.some(t => t.requests.some(r => r.id === 'permission'))).toBe(true)
     const before = f.control.get()
     const callCount = f.adapters.codex.commands.length
     let state = await f.control.command({ type: 'settle-thread', threadId: original.id })
     expect(state.error).toBeNull()
     state = await f.control.command({ type: 'settle-project', projectId: original.projectId })
     expect(state.error).toBeNull()
-    expect(state.assignments).toEqual(before.assignments)
-    expect(state.queue).toEqual(before.queue)
+
+    expect(state.host.threads.find(t => t.id === original.id)?.requests).toEqual(before.host.threads.find(t => t.id === original.id)?.requests)
     expect(state.host.threads.find(thread => thread.id === original.id)).toMatchObject({ status: 'running', requests: native.requests, workspaceSettledAt: expect.any(String) })
     expect(f.adapters.codex.commands).toHaveLength(callCount)
     await f.control.command({ type: 'disconnect' })
@@ -362,7 +358,7 @@ describe('workspace controller integration', () => {
     state = await f.control.command({ type: 'restore-thread', threadId: original.id })
     expect(state.error).toBeNull()
     expect(state.host.threads.find(thread => thread.id === original.id)?.workspaceSettledAt).toBeNull()
-    expect(state.queue).toEqual(before.queue)
+    expect(state.host.threads.find(t => t.id === original.id)?.requests).toEqual(before.host.threads.find(t => t.id === original.id)?.requests)
     expect(f.adapters.codex.commands).toHaveLength(callCount)
   })
 })

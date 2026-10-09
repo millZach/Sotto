@@ -49,7 +49,7 @@ for (const provider of ['claude', 'codex'] as const) {
         const projectId = created.host.projects.find(item => item.title === 'Stage timings')!.id
         const model = (await agents.get()).host.models.find(item => item.providerId === provider && item.ready)
         if (!model) throw new Error(`No ready ${provider} model.`)
-        const thread = await agents.command({ type: 'create-thread', projectId, title: 'Timed', titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+        const thread = await agents.command({ type: 'create-thread', projectId, title: 'Timed', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
         if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
         // Twice: the first send starts the provider's session, the second is a send to a session already running.
         for (let index = 0; index < 2; index++) {

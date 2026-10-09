@@ -144,7 +144,6 @@ describe('the published shell', () => {
     expect(workshop.summary!.lastMessageAt).toBe(f.control.get().host.threads.find(thread => thread.id === 'workshop')!.messages.at(-1)!.createdAt)
     // The rest of the state is untouched.
     expect(shell.configuration).toEqual(f.control.get().configuration)
-    expect(shell.queue).toEqual(f.control.get().queue)
   })
 
   it('is what listeners are broadcast, so no thread history crosses the state channel', async () => {

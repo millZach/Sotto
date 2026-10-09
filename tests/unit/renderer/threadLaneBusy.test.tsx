@@ -19,8 +19,8 @@ const IDLE = { id: 'wav-stall', title: 'Streaming WAV stall' }
 /** Two unmanaged, unsettled threads of the same project, so both panes carry their own composer and actions. */
 function laneState(): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
-  state.queue = []
+
+
   state.activeThreadId = BUSY.id
   return state
 }

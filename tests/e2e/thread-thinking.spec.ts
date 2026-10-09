@@ -48,7 +48,7 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     }
     await size(1280, 800)
     await page.evaluate(async () => {
-      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none', followupLimit: 0 } })
+      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none', } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)
@@ -61,7 +61,7 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
       const project = state.host.projects.find(value => value.title === 'Parser')!
       const model = state.host.models.find(value => value.providerId === 'claude' && value.ready)!
       const thread = await agents.command({ type: 'create-thread', projectId: project.id, title: 'Trailing newline', titleSource: 'user', modelId: model.id,
-        workingCopy: 'shared', runtimeMode: 'approval-required', managed: false })
+        workingCopy: 'shared', runtimeMode: 'approval-required' })
       if (thread.error) throw new Error(thread.error)
       await agents.command({ type: 'select-thread', threadId: thread.activeThreadId! })
       await agents.command({ type: 'observe-threads', threadIds: [thread.activeThreadId!] })

@@ -38,9 +38,9 @@ function time(work: () => void): number {
 function stateAround(host: AgentHostSnapshot): AgentState {
   return {
     configuration: defaultAgentConfiguration(), connection: 'connected', host,
-    assignments: [], queue: [], activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
+    activeThreadId: host.threads[0]?.id ?? null, activeProjectId: host.projects[0]?.id ?? null,
     draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }

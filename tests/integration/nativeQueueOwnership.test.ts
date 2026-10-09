@@ -18,7 +18,7 @@ async function fixture() {
   const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: text => text.toString() })
   await credentials.load()
   const create = () => new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   const control = create(); await control.start(); await control.command({ type: 'connect' })
   return { f, threadId, control, create }

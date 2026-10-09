@@ -33,7 +33,7 @@ const CLAUDE: AgentSkillCatalog = {
 
 function mount(catalog: AgentSkillCatalog) {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.capabilities = BASE
   const live = liveAgentState(state, { catalog: () => catalog })

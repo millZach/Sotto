@@ -69,8 +69,8 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   let launched = await launchSotto('design-threads', profile)
   try {
@@ -299,7 +299,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     const order = (await boxes(page)).map(box => box.id)
     const before = await agents(page)
     const userMessages = (state: typeof before) => state.host.threads.map(thread => [thread.id, thread.messages.filter(message => message.role === 'user').length])
-    expect(before.assignments).toHaveLength(0)
+
     await page.waitForTimeout(800)
     await closeSotto(launched)
 
@@ -316,7 +316,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect(restored.locator(`section.thread-pane[data-thread-id="${key('weekly-note')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Weekly draft survives the restart.')
     await expect(restored.locator(`section.thread-pane[data-thread-id="${key('grok-previews')}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Grok draft stays with its pane.')
     const after = await agents(page)
-    expect(after.assignments).toHaveLength(0)
+
     expect(userMessages(after)).toEqual(userMessages(before))
     await capture(page, 'four-restored-1600')
   } finally {

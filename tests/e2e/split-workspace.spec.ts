@@ -35,8 +35,8 @@ test('two threads split the workspace and stay independent through resize, narro
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+    draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
   }))
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
@@ -89,10 +89,11 @@ test('two threads split the workspace and stay independent through resize, narro
     await expect(previews.getByLabel('Thread transcript')).not.toContainText('Check the footer link targets.')
     await expect(previewsPrompt).toHaveValue('Keep this draft with the previews thread.')
     await expect(footerPrompt).toHaveValue('')
-    const afterSend = await page.evaluate(async () => window.sotto!.agents!.get())
+
+    await page.evaluate(async () => window.sotto!.agents!.get())
     await expect.poll(async () => (await userMessageTexts(page, 'footer-links')).filter(text => text === 'Check the footer link targets.')).toHaveLength(1)
     expect((await userMessageTexts(page, 'grok-previews')).some(text => text.includes('footer link targets'))).toBe(false)
-    expect(afterSend.assignments).toHaveLength(0)
+
     await expect.poll(() => threadStatus(page, key('footer-links'))).toBe('running')
     await footerPrompt.fill('Next: compare the mobile footer.')
     await capture(page, 'two-panes')

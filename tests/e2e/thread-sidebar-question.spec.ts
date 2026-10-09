@@ -96,7 +96,6 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await expect.poll(() => pending(page, 'workshop')).toEqual([question.id])
   // The cause of the report: nothing about this thread is in the attention queue.
   const snapshot = await state(page)
-  expect(snapshot.queue.filter(item => item.threadId === scopedThread(snapshot, 'workshop'))).toEqual([])
   await expectWaiting(page, 'Workshop', 'question', 'Needs your answer', 'question-1280x800-dark')
 
   await open(page, 'Workshop')

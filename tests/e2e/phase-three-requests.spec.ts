@@ -239,7 +239,7 @@ test('answers every native question in the thread that asked, keeping simultaneo
     } }])
     const after = await state(page)
     expect(after.error).toBeNull()
-    expect(after.assignments).toEqual([])
+    expect(after).not.toHaveProperty('assignments')
     expect(await pending(page, 'workshop')).toEqual([])
     expect(await pending(page, 'docs')).toEqual(['audience-form'])
     expect(await outbox(launched.userData)).toEqual([])
@@ -321,7 +321,7 @@ test('offers only native approval choices, keeps a refused answer, and sends a h
     ])
     expect(await pending(page, 'workshop')).toEqual([])
     expect(await pending(page, 'docs')).toEqual(['network-profile'])
-    expect((await state(page)).assignments).toEqual([])
+    expect((await state(page))).not.toHaveProperty('assignments')
     expect(await outbox(launched.userData)).toEqual([])
   } finally { await closeSotto(launched) }
 })

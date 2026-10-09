@@ -19,7 +19,7 @@ const CHOICES = [
 /** Visual Gate, unmanaged, with its pending permission offering `choices`. */
 function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = 'visual-gate'
   const thread = state.host.threads.find(item => item.id === 'visual-gate')!
   thread.requests = thread.requests.map(request => request.id === 'visual-gate-permission' ? { ...request, ...(choices ? { permissionChoices: choices } : {}) } : request)

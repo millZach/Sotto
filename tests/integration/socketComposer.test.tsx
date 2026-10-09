@@ -47,7 +47,7 @@ async function remoteDraftFixture() {
   const nativeIds = new Map<string, string>()
   const create = async (title: string) => {
     const before = new Set((await native.snapshot()).threads.map(thread => thread.id))
-    const state = await initial.client.command({ type: 'create-thread', projectId, title, titleSource: 'user', modelId: created.host.models[0]!.id, managed: false })
+    const state = await initial.client.command({ type: 'create-thread', projectId, title, titleSource: 'user', modelId: created.host.models[0]!.id })
     const thread = state.host.threads.find(thread => thread.title === title)!
     await initial.client.command({ type: 'select-thread', threadId: thread.id })
     expect((await initial.client.command({ type: 'send', draft: { threadId: thread.id, text: 'Initialize synthetic fixture', attachments: [] } })).error).toBeNull()
@@ -367,7 +367,7 @@ it('retains the latest manual edit when a held autosave loses its connection', a
     await client.command({ type: 'connect', provider: 'codex' })
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id })
     const thread = opened.host.threads.find(item => item.title === 'Remote thread')!
     await client.command({ type: 'select-thread', threadId: thread.id })
     const original = host.service.command.bind(host.service)
@@ -397,7 +397,7 @@ it('retains the latest manual edit when a held autosave loses its connection', a
       release(); spy.mockRestore()
       await act(async () => { await client!.connect() })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Fix the parser and add tests')
-      expect(host.service.shell().assignments).toEqual([])
+      expect(host.service.shell()).not.toHaveProperty('assignments')
       expect(host.service.threadDetail(thread.id)!.messages.filter(message => message.role === 'user')).toHaveLength(0)
     } finally { unsubscribe(); store.flushAll(); view.unmount(); spy.mockRestore() }
   } finally { release(); await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
@@ -419,7 +419,7 @@ it('keeps successive socket edits active in the manual composer and sends the pi
     const local = client.shell().host.threads[0]!
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id })
     const remote = opened.host.threads.find(thread => thread.title === 'Remote thread')!
     expect(host.service.shell()).toMatchObject({ composing: false, draftThreadId: null })
     await client.command({ type: 'select-thread', threadId: remote!.id })
@@ -455,7 +455,7 @@ it('keeps successive socket edits active in the manual composer and sends the pi
         expect(writes.mock.calls.find(([command]) => command.type === 'send')?.[0]).toMatchObject({ type: 'send', text: 'Second edit' })
       })
       expect(host.service.shell()).toMatchObject({ draft: 'Host draft', draftThreadId: local!.id })
-      expect(host.service.shell().assignments).toEqual([])
+      expect(host.service.shell()).not.toHaveProperty('assignments')
     } finally { unsubscribe(); view.unmount() }
   } finally { await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
 })

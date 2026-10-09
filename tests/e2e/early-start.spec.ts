@@ -46,7 +46,7 @@ test('typing in a new Claude thread starts its CLI before Send, and Send starts 
       const projectId = created.host.projects.find(item => item.title === 'Early start')!.id
       const model = (await agents.get()).host.models.find(item => item.providerId === 'claude' && item.ready)
       if (!model) throw new Error('No ready Claude model.')
-      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared', managed: false })
+      const thread = await agents.command({ type: 'create-thread', projectId, title: 'Typed into first', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
       if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
       return thread.activeThreadId
     }, project)

@@ -192,8 +192,7 @@ describe('a card whose page cannot run', () => {
   const THERE = '22222222-2222-4222-8222-222222222222'
   const ON_ANOTHER_COMPUTER = 'This page belongs to a thread on another computer, so it is not shown here.'
   const routedState = (): AgentState => ({ configuration: defaultAgentConfiguration(), connection: 'connected', host: { ...EMPTY_AGENT_HOST, hostId: HERE },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null,
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,     globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: false }, reasoningAccounts: [], hostId: HERE, clientScoped: true,
     connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] })
 

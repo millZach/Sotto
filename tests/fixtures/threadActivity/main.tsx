@@ -97,9 +97,9 @@ function state(scenario: Scenario): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: [thread, ...structuredClone(fixture.threads).filter(item => item.projectId !== 'workshop')] as AgentState['host']['threads'],
     },
-    assignments: [], queue: [], activeThreadId: THREAD, activeProjectId: 'workshop',
+    activeThreadId: THREAD, activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
 
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }

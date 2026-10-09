@@ -8,9 +8,8 @@ const state: AgentState = {
   hostId: 'aaaaaaaa-0000-4000-8000-000000000000',
   configuration: defaultAgentConfiguration(), connection: 'connected',
   host: { ...EMPTY_AGENT_HOST, hostId: 'aaaaaaaa-0000-4000-8000-000000000000' },
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-  globalLaneBusy: false, notice: '', error: null,
+  activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],   globalLaneBusy: false, notice: '', error: null,
   credentials: { reasoning: false, secure: false },
   reasoningAccounts: [],
 }

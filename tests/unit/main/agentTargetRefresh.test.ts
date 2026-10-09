@@ -19,20 +19,20 @@ class TargetHost extends E2EAgentHost {
   async refreshThread(id: string): Promise<AgentHostSnapshot> { this.reads.push(id); return super.snapshot() }
 }
 
-it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting for unrelated background history', async mode => {
+it.each(['manual', 'saved'] as const)('confirms a %s prompt without waiting for unrelated background history', async mode => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-target-read-'))
   const host = new TargetHost()
   const credentials = new AgentCredentials(join(root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+    reasoner: {},
   })
   let release!: () => void
   let sending: ReturnType<AgentControl['command']> | undefined
   try {
     await control.start(); await control.command({ type: 'connect' })
-    if (mode === 'managed') {
-      await control.command({ type: 'assign', threadId: 'workshop' })
+    if (mode === 'saved') {
+      await control.command({ type: 'select-thread', threadId: 'workshop' })
       await control.command({ type: 'compose', text: 'Selected thread prompt' })
     }
     host.reads.length = 0

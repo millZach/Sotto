@@ -50,7 +50,7 @@ function filesBridge(): { bridge: FilesBridge; list: ReturnType<typeof vi.fn> } 
 
 function mount() {
   const state: AgentState = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)

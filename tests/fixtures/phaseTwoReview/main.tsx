@@ -116,9 +116,9 @@ function state(scenario: Scenario): AgentState {
     },
     skillCatalogs: catalog(scenario),
     followups: followups(scenario), followupReceipts: [],
-    assignments: [], queue: [], activeThreadId: THREAD, activeProjectId: 'workshop',
+    activeThreadId: THREAD, activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
 
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }

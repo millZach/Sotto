@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
-import type { AgentIntent } from '../../../src/main/agents/reasoning'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, type AgentHostSnapshot, type AgentState } from '../../../src/shared/agents'
@@ -53,14 +52,14 @@ class FixtureHost extends E2EAgentHost {
 async function fixture(receiptIds: string[] = []) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-delivery-')); roots.push(root)
   const host = new FixtureHost()
-  const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
+  const reasoner = { ...e2eAgentReasoner }
   const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
   await credentials.load()
   const create = () => {
     const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, }); controls.add(control); return control
   }
   let control = create()
-  await control.start(); await stageInto(control, PIXEL_PNG, OTHER_PNG); await control.command({ type: 'connect' })
+  await control.start(); await stageInto(control, PIXEL_PNG, OTHER_PNG); await control.command({ type: 'connect' }); await control.command({ type: 'select-thread', threadId: 'workshop' })
   if (receiptIds.length) {
     control.dispose(); await control.privacyChanged(); controls.delete(control)
     const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8'))
@@ -77,7 +76,6 @@ async function fixture(receiptIds: string[] = []) {
 describe('navigation independent of action latency', () => {
   it.each(['prompt', 'image', 'answer'] as const)('creates a manual thread without consuming a saved coordinator %s', async kind => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
     if (kind === 'answer') f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })
     const text = kind === 'image' ? '' : 'Keep A'
     const attachments = kind === 'answer' ? [] : [image]
@@ -86,29 +84,17 @@ describe('navigation independent of action latency', () => {
     const before = f.control.get()
     if (kind === 'answer') expect(before.draftRequestId).toBe('question-a')
     const threadId = randomUUID()
-    const result = await f.control.command({ type: 'create-thread', threadId, projectId: 'project', title: 'New manual thread', modelId: 'claude:test', managed: false })
+    const result = await f.control.command({ type: 'create-thread', threadId, projectId: 'project', title: 'New manual thread', modelId: 'claude:test' })
     expect(result.error).toBeNull()
     expect(result.host.threads).toContainEqual(expect.objectContaining({ id: threadId }))
     expect(result).toMatchObject({ activeThreadId: threadId, draft: before.draft, draftThreadId: before.draftThreadId,
       draftAttachments: before.draftAttachments, draftRequestId: before.draftRequestId, threadDrafts: before.threadDrafts,
-      pendingRequest: before.pendingRequest, composing: before.composing, assignments: before.assignments })
+      composing: before.composing })
     expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'create-thread', threadId })])
     await f.restart()
     expect(f.control.get()).toMatchObject({ draft: text, draftThreadId: 'workshop', draftAttachments: attachments, draftRequestId: before.draftRequestId })
   })
 
-  it('keeps managed creation from replacing an unfinished coordinator draft', async () => {
-    const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    await f.control.command({ type: 'compose', text: 'Keep A' })
-    for (const managed of [true, undefined]) {
-      const result = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Managed thread', modelId: 'claude:test',
-        ...(managed === undefined ? {} : { managed }) })
-      expect(result.error).toBe('Send or clear your draft before creating another thread.')
-      expect(result).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop' })
-    }
-    expect(f.host.attempts).toEqual([])
-  })
 
   it('keeps both open panes observed through refresh without moving focus or granting authority', async () => {
     const f = await fixture()
@@ -117,7 +103,7 @@ describe('navigation independent of action latency', () => {
     const request = agentCommandSchema.parse({ type: 'observe-threads', threadIds: ['workshop', 'docs', 'workshop', 'missing'] })
     await f.control.command(request)
     expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
-    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', assignments: before.assignments, draft: before.draft })
+    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', draft: before.draft })
     expect(f.host.attempts).toEqual([])
     await f.control.command({ type: 'refresh' })
     expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
@@ -126,31 +112,11 @@ describe('navigation independent of action latency', () => {
     await f.control.command(request)
     await f.control.command(agentCommandSchema.parse({ type: 'observe-threads', threadIds: [] }))
     expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs'])
-    expect(f.control.get().assignments).toEqual([])
-  })
-
-  it('updates pane observation immediately while coordinator reasoning is pending', async () => {
-    const f = await fixture()
-    const request = agentCommandSchema.parse({ type: 'observe-threads', threadIds: ['workshop', 'docs'] })
-    const gate = deferred<AgentIntent>()
-    f.reasoner.intent.mockReturnValueOnce(gate.promise)
-    const reasoning = f.control.command({ type: 'utterance', text: 'A slow coordinator request' })
-    await vi.waitFor(() => expect(f.reasoner.intent).toHaveBeenCalled())
-    const observed = f.control.command(request)
-    try {
-      expect(f.host.observeThreads).toHaveBeenLastCalledWith(['workshop', 'docs'])
-      expect(f.control.get().assignments).toEqual([])
-      expect(f.host.attempts).toEqual([])
-    } finally {
-      gate.resolve({ type: 'clarify', text: 'Choose a thread.' })
-      await reasoning
-      await observed
-    }
+    expect(f.control.get()).not.toHaveProperty('assignments')
   })
 
   it('sends a manual prompt on B while preserving the saved draft on A', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
     await f.control.command({ type: 'compose', text: 'Keep A', attachments: [image] })
     await f.control.command({ type: 'select-thread', threadId: 'docs' })
     const draftId = randomUUID()
@@ -158,14 +124,13 @@ describe('navigation independent of action latency', () => {
     expect(result.error).toBeNull()
     expect(f.host.attempts.at(-1)).toMatchObject({ type: 'send', threadId: 'docs', text: 'Only B' })
     expect(result).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image], deliveredDrafts: [{ threadId: 'docs', draftId }] })
-    expect(result.assignments.map(assignment => assignment.threadId)).toEqual(['workshop'])
+    expect(result).not.toHaveProperty('assignments')
     await f.restart()
     expect(f.control.get()).toMatchObject({ draft: 'Keep A', draftThreadId: 'workshop', draftAttachments: [image] })
   })
 
   it('publishes cached B and observes it during deferred refresh, retaining the draft and send authority on A', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
     await f.control.command({ type: 'compose', text: 'Only A', attachments: [image] })
     const before = f.control.get()
     const gate = deferred<AgentHostSnapshot>()
@@ -177,8 +142,8 @@ describe('navigation independent of action latency', () => {
     try {
       expect(f.control.get().activeThreadId).toBe('docs')
       expect(states.at(-1)?.host.threads.find(t => t.id === states.at(-1)?.activeThreadId)?.title).toBe('Docs')
-      expect(f.host.observeThreads).toHaveBeenLastCalledWith(['workshop', 'docs'])
-      expect(f.control.get()).toMatchObject({ draftThreadId: 'workshop', draft: 'Only A', draftAttachments: [image], assignments: before.assignments })
+      expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs', 'workshop'])
+      expect(f.control.get()).toMatchObject({ draftThreadId: 'workshop', draft: 'Only A', draftAttachments: [image] })
       expect(f.host.attempts).toEqual([])
     } finally { gate.resolve(before.host); await refresh; await select }
     expect(f.control.get().activeThreadId).toBe('docs')
@@ -187,31 +152,6 @@ describe('navigation independent of action latency', () => {
     expect(f.control.get().activeThreadId).toBe('docs')
   })
 
-  it.each<AgentIntent>([
-    { type: 'select-thread', threadId: 'workshop' },
-    { type: 'select-project', projectId: 'project' },
-    { type: 'compose', threadId: 'workshop', text: 'For A' },
-    { type: 'assign', threadId: 'workshop', instruction: '' },
-  ])('does not let an older reasoning result %j override newer selection', async intent => {
-    const f = await fixture()
-    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
-    const gate = deferred<AgentIntent>(); f.reasoner.intent.mockReturnValueOnce(gate.promise)
-    const reasoning = f.control.command({ type: 'utterance', text: 'Resolve my request' })
-    await vi.waitFor(() => expect(f.reasoner.intent).toHaveBeenCalled())
-    const select = f.control.command({ type: 'select-thread', threadId: 'docs' })
-    try {
-      expect(f.control.get().activeThreadId).toBe('docs')
-      expect(f.host.observeThreads).toHaveBeenLastCalledWith(['docs'])
-      expect(f.control.get().assignments).toEqual([])
-      expect(f.host.attempts).toEqual([])
-    } finally { gate.resolve(intent); await reasoning; await select }
-    expect(f.control.get().activeThreadId).toBe('docs')
-    if (intent.type === 'compose') {
-      expect(f.control.get()).toMatchObject({ draft: 'For A', draftThreadId: 'workshop', assignments: [] })
-      expect((await f.control.command({ type: 'send' })).error).toMatch(/Assign/)
-      expect(f.host.attempts).toEqual([])
-    }
-  })
 
   it('does not let creation completion bind its draft or selection to a newly selected thread', async () => {
     const f = await fixture()
@@ -223,9 +163,8 @@ describe('navigation independent of action latency', () => {
     try { expect(f.control.get().activeThreadId).toBe('docs') }
     finally { gate.resolve(); await creating; await select }
     const created = f.control.get().host.threads.find(t => t.title === 'New A')!
-    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', draftThreadId: created.id, assignments: [expect.objectContaining({ threadId: created.id })] })
-    await f.control.command({ type: 'compose', text: 'Only new A' })
-    await f.control.command({ type: 'send' })
+    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', draftThreadId: null })
+    await f.control.command({ type: 'manual-send', threadId: created.id, text: 'Only new A' })
     expect(f.host.attempts.at(-1)).toMatchObject({ type: 'send', threadId: created.id })
   })
 
@@ -243,7 +182,6 @@ describe('navigation independent of action latency', () => {
 
   it('does not let an older answer completion force selection back to its remaining queue item', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
     for (const requestId of ['one', 'two']) f.host.event({ type: 'permission', threadId: 'workshop', requestId, text: 'Allow?' })
     const gate = deferred<void>(); const original = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { await gate.promise; return original(command) })
@@ -251,14 +189,15 @@ describe('navigation independent of action latency', () => {
     await vi.waitFor(() => expect(f.host.execute).toHaveBeenCalled())
     await f.control.command({ type: 'select-thread', threadId: 'docs' })
     gate.resolve(); await answering
-    expect(f.control.get()).toMatchObject({ activeThreadId: 'docs', queue: [expect.objectContaining({ threadId: 'workshop', requestId: 'two' })] })
+    expect(f.control.get().activeThreadId).toBe('docs')
+    expect(f.control.get().host.threads.find(t => t.id === 'workshop')?.requests).toEqual([expect.objectContaining({ id: 'two' })])
     expect(f.host.attempts).toEqual([expect.objectContaining({ type: 'answer', threadId: 'workshop', requestId: 'one' })])
   })
 
   it('selects cached history while disconnected without granting action authority', async () => {
     const f = await fixture()
     await f.control.command({ type: 'disconnect' })
-    expect(await f.control.command({ type: 'select-thread', threadId: 'docs' })).toMatchObject({ activeThreadId: 'docs', assignments: [], error: null, connection: 'disconnected' })
+    expect(await f.control.command({ type: 'select-thread', threadId: 'docs' })).toMatchObject({ activeThreadId: 'docs', error: null, connection: 'disconnected' })
     expect(f.host.attempts).toEqual([])
   })
 })
@@ -266,7 +205,6 @@ describe('navigation independent of action latency', () => {
 describe('manual delivery receipts', () => {
   it('preserves a foreign answer and images through uncertain manual delivery, restart, and acknowledgement', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
     f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })
     await f.control.command({ type: 'compose', text: 'Keep this answer', attachments: [image] })
     const saved = f.control.get()
@@ -303,7 +241,7 @@ describe('manual delivery receipts', () => {
       await f.host.acknowledge()
     }
     expect(f.control.get().deliveredDrafts).toEqual([{ threadId: 'workshop', draftId }])
-    expect(f.control.get()).toMatchObject({ draft: '', draftAttachments: [], assignments: [] })
+    expect(f.control.get()).toMatchObject({ draft: '', draftAttachments: [] })
     f.host.event({ type: 'ready', threadId: 'workshop', text: 'Done', status: 'idle' })
     await f.control.command(command)
     expect(f.host.attempts).toHaveLength(1)

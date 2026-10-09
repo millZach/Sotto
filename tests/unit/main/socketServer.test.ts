@@ -292,7 +292,7 @@ it.each([false, true])('offers atomic Send only when the service implements it a
   const { pairing, paired } = await pairedClient('Desktop')
   const { service, commands } = recordingService()
   Object.assign(service, { supportsAtomicSend: supported, shell: () => ({ hostId: 'host', host: { threads: [
-    { id: 'thread', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false }) })
+    { id: 'thread', projectId: 'project', requests: [] }], models: [] }, draft: '', composing: false }) })
   listener = await startSocketServer({ service, pairing })
   expect(listener.descriptor.features.includes('atomic-send')).toBe(supported)
   const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
@@ -314,7 +314,7 @@ it.each([false, true])('offers stable draft revisions only when implemented and 
   const { service, commands } = recordingService()
   Object.assign(service, { supportsAtomicSend: true, supportsDraftRevisions: supported,
     shell: () => ({ hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
-      queue: [], draft: '', composing: false }) })
+      draft: '', composing: false }) })
   listener = await startSocketServer({ service, pairing })
   expect(listener.descriptor.features.includes('draft-revisions')).toBe(supported)
   const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
@@ -339,7 +339,7 @@ it.each(['live', 'uncertain', 'retry-ready'].flatMap(delivery => ['send', 'compo
   Object.assign(service, { supportsAtomicSend: true, shell: () => ({ hostId: 'host', host: { threads: [
     { id: 'thread', projectId: 'project', requests: [{ id: 'native-question', kind: 'question', text: 'Choose', options: [],
       ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) }] },
-    { id: 'other', projectId: 'project', requests: [] }], models: [] }, queue: [], draft: '', composing: false, threadDrafts: [] }) })
+    { id: 'other', projectId: 'project', requests: [] }], models: [] }, draft: '', composing: false, threadDrafts: [] }) })
   listener = await startSocketServer({ service, pairing, mayAnswer: () => allowed })
   const desktop = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
   await desktop.call('hello', { op: 'hello' })
@@ -365,7 +365,7 @@ it('returns a targeted Compose refusal as its own outcome when the shared shell 
   const { pairing, paired } = await pairedClient('Desktop')
   const { service } = recordingService()
   const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [] }], models: [] },
-    queue: [], draft: '', composing: false, error: 'A different command changed the shared error.' }
+    draft: '', composing: false, error: 'A different command changed the shared error.' }
   Object.assign(service, { supportsAtomicSend: true, shell: () => state,
     command: async () => ({ ...state, error: 'The draft could not be saved. Your earlier draft is kept.' }) })
   listener = await startSocketServer({ service, pairing })
@@ -383,7 +383,7 @@ it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as 
   const saved = binding.startsWith('saved')
   const plain = binding.endsWith('plain')
   const state = { hostId: 'host', host: { threads: [{ id: 'thread', projectId: 'project', requests: [
-    { id: 'native-question', kind: 'question', text: 'Question', options: [] }] }], models: [] }, queue: [], draft: 'Active draft',
+    { id: 'native-question', kind: 'question', text: 'Question', options: [] }] }], models: [] }, draft: 'Active draft',
     composing: true, draftThreadId: 'thread', draftRequestId: saved ? plain ? 'native-question' : null : plain ? null : 'native-question',
     threadDrafts: saved ? [{ threadId: 'thread', requestId: plain ? null : 'native-question', text: 'Retained draft', attachments: [] }] : [] }
   Object.assign(service, { supportsAtomicSend: true, shell: () => state })

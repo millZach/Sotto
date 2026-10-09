@@ -49,7 +49,7 @@ async function fixture(partialAuthority?: Pick<Authority, 'authorizes'> & Partia
   const credentials = new AgentCredentials(join(root, 'vault'), encryption)
   await credentials.load()
   const recorder = new TurnRecorder({ directory: root, resolveSession: id => ({ provider: 'codex', sessionId: `session-${id}` }) })
-  const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
+  const reasoner = { ...e2eAgentReasoner }
   const host = new RecordingHost()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
     ...(recordTurns ? { turns: recorder } : {}),
@@ -58,7 +58,6 @@ async function fixture(partialAuthority?: Pick<Authority, 'authorizes'> & Partia
   controls.push(control)
   await control.start()
   await control.command({ type: 'connect' })
-  await control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the tests' })
   return { root, control, host, reasoner, recorder,
     permission(text = 'May I publish the release to npm?') {
       host.event({ type: 'permission', threadId: 'workshop', requestId: 'permission', text })
@@ -173,7 +172,7 @@ describe('authority at dispatch', () => {
       expect(result.error).toBeTruthy()
       expect(f.control.get().error).toBeNull()
       expect(publishedErrors.every(error => error === null)).toBe(true)
-      expect(f.control.get().notice).toBe(requestLeaves ? '' : before)
+      expect(f.control.get().notice).toBe(before)
     } finally { off() }
   })
 
@@ -213,7 +212,7 @@ describe('authority at dispatch', () => {
         : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
     await f.control.commandShell({ type: 'compose', text: 'Ordinary prompt' }, client)
     f.host.event({ type: 'question', threadId: 'workshop', requestId: 'choice', text: 'Which color?' })
-    await vi.waitFor(() => expect(f.control.get().queue.some(item => item.requestId === 'choice')).toBe(true))
+    await vi.waitFor(() => expect(f.control.get().host.threads.some(thread => thread.requests.some(request => request.id === 'choice'))).toBe(true))
     const edited = await f.control.commandShell({ type: 'compose', text: 'Edited prompt' }, client)
     expect(edited.error).toBeNull()
     expect(edited.threadDrafts?.find(draft => draft.threadId === 'workshop')).toMatchObject({ text: 'Edited prompt', requestId: null })
@@ -227,21 +226,18 @@ describe('authority at dispatch', () => {
     const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
         : { allowed: false, reason: 'no-policy' } })
-    await f.control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
-    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
+        await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     let release!: () => void
     const held = new Promise<void>(resolve => { release = resolve })
-    const intent = vi.spyOn(f.reasoner, 'intent').mockImplementation(async () => {
-      await held
-      return { type: 'clarify', text: 'Which action?' }
-    })
-    const thinking = f.control.command({ type: 'utterance', text: 'Choose the next action' })
-    await vi.waitFor(() => expect(intent).toHaveBeenCalled())
+    const read = f.host.snapshot.bind(f.host)
+    const snapshot = vi.spyOn(f.host, 'snapshot').mockImplementationOnce(async () => { await held; return read() })
+    const refresh = f.control.command({ type: 'refresh' })
+    await vi.waitFor(() => expect(snapshot).toHaveBeenCalled())
     const composing = f.control.commandShell({ type: 'compose', text: 'Blue' }, client)
     try {
       f.host.event({ type: 'question', threadId: 'workshop', requestId: 'choice', text: 'Which color?' })
     } finally { release() }
-    await thinking
+    await refresh
     const result = await composing
     expect(result.error).toBe(UNPAIRED_CLIENT_ERROR)
     expect(result.draft).not.toBe('Blue')
@@ -249,34 +245,6 @@ describe('authority at dispatch', () => {
     expect(result.draftRequestId).toBeNull()
     expect(result.threadDrafts?.some(draft => draft.requestId === 'choice')).not.toBe(true)
     expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
-  })
-
-  it('supervision leaves a pending permission in the attention queue', async () => {
-    const f = await fixture({ authorizes: () => ({ allowed: true, reason: 'allowed' }) })
-    await f.control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
-    f.permission()
-    f.host.event({ type: 'failure', threadId: 'workshop', text: 'A fixable test failure' })
-    await vi.waitFor(async () => expect((await f.recorder.recent(100)).some(record => record.source === 'supervision')).toBe(true))
-    expect(f.reasoner.decide).toHaveBeenCalled()
-    expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
-    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission', kind: 'permission' }))
-  })
-
-  it('guards a supervision answer when a question becomes a permission before dispatch', async () => {
-    const f = await fixture({ authorizes: () => ({ allowed: true, reason: 'allowed' }) })
-    await f.control.command({ type: 'configure', patch: { reasoning: 'openrouter', reasoningModel: 'fixture-model' } })
-    f.reasoner.decide.mockImplementation(async () => {
-      f.host.permissionOnSnapshot = true
-      return { decision: 'followup', text: 'Approved' }
-    })
-    f.host.event({ type: 'question', threadId: 'workshop', requestId: 'permission', text: 'May I publish?' })
-    await vi.waitFor(async () => {
-      expect((await f.recorder.recent(100)).find(record => record.source === 'supervision')).toMatchObject({
-        outcome: 'failed',
-      })
-    })
-    expect(f.host.executed.filter(command => command.type === 'answer')).toEqual([])
-    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission', kind: 'permission' }))
   })
 
   it('allows the user to approve a risky permission without configured authority', async () => {
@@ -341,47 +309,6 @@ describe('authority at dispatch', () => {
     expect(f.host.executed.filter(command => command.type === 'answer')).toHaveLength(2)
   })
 
-  it.each([
-    ['allow', true], ['approve', true], ['deny', false], ['reject', false],
-    ['ok', undefined], ['approved', undefined],
-  ] as const)('keeps the voice permission word check for %s', async (text, approved) => {
-    const authorizes = vi.fn<Authority['authorizes']>(() => ({ allowed: false, reason: 'always-confirm' }))
-    const f = await fixture({ authorizes })
-    f.permission()
-    expect((await f.control.command({ type: 'utterance', text })).error).toBeNull()
-    if (approved === undefined) {
-      expect(f.host.executed).toEqual([])
-      expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission', kind: 'permission' }))
-    } else {
-      expect(f.host.executed).toContainEqual(expect.objectContaining({ type: 'answer', answer: text, approved }))
-    }
-    expect(authorizes).toHaveBeenCalledTimes(approved === true ? 1 : 0)
-  })
-
-  it.each(['allow', 'deny'] as const)('routes voice %s through the exact offered native choice', async text => {
-    const f = await fixture()
-    f.host.event({ type: 'permission', threadId: 'workshop', requestId: 'permission', text: 'Run command?',
-      request: { id: 'permission', kind: 'permission', text: 'Run command?', options: [], permissionChoices: [
-        { id: 'once:42', label: 'Allow once', kind: 'allow-once' },
-        { id: 'session:42', label: 'Allow for session', kind: 'allow-session' },
-        { id: 'reject:42', label: 'Deny', kind: 'deny' },
-      ] } })
-    await f.control.command({ type: 'utterance', text })
-    expect(f.host.executed).toContainEqual(expect.objectContaining({ type: 'answer',
-      permissionChoice: text === 'allow' ? 'once:42' : 'reject:42', approved: text === 'allow' }))
-  })
-
-  it.each(['empty', 'persistent-only', 'ambiguous'] as const)('keeps %s native grants pending when voice cannot identify a one-time choice', async scenario => {
-    const f = await fixture()
-    f.host.event({ type: 'permission', threadId: 'workshop', requestId: 'permission', text: 'Run command?',
-      request: { id: 'permission', kind: 'permission', text: 'Run command?', options: [], permissionChoices:
-        scenario === 'empty' ? [] : scenario === 'persistent-only'
-          ? [{ id: 'always', label: 'Always allow', kind: 'allow-always' }]
-          : [{ id: 'first', label: 'Allow first', kind: 'allow-once' }, { id: 'second', label: 'Allow second', kind: 'allow-once' }] } })
-    await f.control.command({ type: 'utterance', text: 'allow' })
-    expect(f.host.executed.filter(command => command.type === 'answer')).toHaveLength(0)
-    expect(f.control.get().queue).toContainEqual(expect.objectContaining({ requestId: 'permission' }))
-  })
 
   it.each([
     ['spend', '*', 'May I buy more credits?'],

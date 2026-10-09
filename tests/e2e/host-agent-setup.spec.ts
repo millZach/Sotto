@@ -241,7 +241,7 @@ test('Add host follows a setup thread as it checks forge, waits in the thread, a
       const project = projects.host.projects.find(item => item.path === folder)!
       const model = (await window.sotto!.agents!.get()).host.models.find(item => item.providerId === 'codex')!
       const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: project.id, modelId: model.id,
-        title: 'Change permissions on forge', managed: false, runtimeMode: 'full-access' })
+        title: 'Change permissions on forge', runtimeMode: 'full-access' })
       if (created.error) throw new Error(created.error)
       return created.host.threads.find(item => item.title === 'Change permissions on forge')!.id
     }, root)

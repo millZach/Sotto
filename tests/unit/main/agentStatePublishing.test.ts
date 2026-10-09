@@ -11,9 +11,8 @@ import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '..
 /** A streamed frame only changes the notice here; identity is all these tests compare. */
 const state = (notice: string): AgentState => ({
   configuration: defaultAgentConfiguration(), connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST),
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-  globalLaneBusy: false, notice, error: null,
+  activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],   globalLaneBusy: false, notice, error: null,
   credentials: { reasoning: false, secure: false },
   reasoningAccounts: [],
 })

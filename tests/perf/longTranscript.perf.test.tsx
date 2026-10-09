@@ -69,10 +69,10 @@ function lengthen(thread: AgentThread, total: number): AgentThread {
 function stateAround(host: AgentHostSnapshot, activeThreadId: string): AgentState {
   return {
     configuration: defaultAgentConfiguration(), connection: 'connected', host,
-    assignments: [], queue: [], activeThreadId,
+    activeThreadId,
     activeProjectId: host.threads.find(thread => thread.id === activeThreadId)?.projectId ?? host.projects[0]?.id ?? null,
     draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }

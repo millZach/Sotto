@@ -90,7 +90,7 @@ test('browses real working folders in the shared tools panel, following focus or
       for (const [title, path, thread] of [['workshop', folders[0], 'Workshop files'], ['docs-site', folders[1], 'Docs site']] as const) {
         await agents.command({ type: 'create-project', title, path, useExisting: true })
         const projectId = (await agents.get()).host.projects.find(item => item.title === title)!.id
-        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test', managed: false })
+        await agents.command({ type: 'create-thread', projectId, title: thread, modelId: 'claude:test' })
         created.push((await agents.get()).activeThreadId!)
       }
       return created

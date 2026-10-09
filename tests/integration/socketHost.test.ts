@@ -69,7 +69,7 @@ describe('authenticated host socket', () => {
     await client.command({ type: 'connect', provider: 'codex' })
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Burst project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Burst thread', modelId: created.host.models[0]!.id, managed: false })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Burst thread', modelId: created.host.models[0]!.id })
     const threadId = opened.host.threads.find(thread => thread.title === 'Burst thread')!.id
     await client.command({ type: 'select-thread', threadId })
     const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
@@ -611,7 +611,7 @@ describe('authenticated host socket', () => {
     const localId = threads[0]!.id
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id })
     const remoteId = opened.host.threads.find(thread => thread.title === 'Remote thread')!.id
     await host.service.command({ type: 'select-thread', threadId: localId }, desktopWindowClient())
     await host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient())
@@ -633,7 +633,7 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().draft).toBe(before.draft)
     expect(host.service.shell().threadDrafts).toEqual(expect.arrayContaining(before.threadDrafts ?? []))
   })
-  it.each(['cancel-draft', 'pause-draft', 'cancel-request'] as const)('targets the peer selection for %s and preserves another thread draft', async type => {
+  it.each(['cancel-draft'] as const)('targets the peer selection for %s and preserves another thread draft', async type => {
     const { client } = await pair()
     await client.command({ type: 'connect', provider: 'codex' })
     const threads = client.shell().host.threads

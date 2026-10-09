@@ -9,8 +9,8 @@ export function emptyDesktopState(hostId?: string): AgentState {
   return {
     ...(hostId ? { hostId } : {}), configuration: defaultAgentConfiguration(), connection: 'disconnected',
     host: { ...structuredClone(EMPTY_AGENT_HOST), ...(hostId ? { hostId } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
   }
 }

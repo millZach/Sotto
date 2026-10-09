@@ -286,7 +286,7 @@ async function coordinator(host: VersionedHost, run: RunLike, published: string 
       ...typeof published === 'string' ? { fetchImpl: async () => answer(published) }
         : { fetchImpl: async () => answer(published.version), now: () => published.now } }),
     locateClient: async (provider: ProviderId) => join(prefix, `${provider}.exe`),
-    reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
+    reasoner: {},
 
     ...extra,
   })

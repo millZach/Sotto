@@ -21,8 +21,8 @@ function fixture(configuration: Partial<AgentState['configuration']> = {}): Agen
       ],
       threads: [],
     },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
+    globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }

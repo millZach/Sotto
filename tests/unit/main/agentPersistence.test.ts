@@ -105,7 +105,7 @@ describe('coordinator persistence', () => {
       return real.call(this, value as never)
     })
     const failed = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
-    expect(failed.error).toBe('Could not save agent state. Pause management until storage is available.')
+    expect(failed.error).toBe('Could not save agent state. Your drafts are kept in this session. Restore access to local storage and retry.')
     const beforeRetry = writes.count()
     const retried = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
     expect(retried.error).toBeNull()

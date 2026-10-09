@@ -29,7 +29,6 @@ export function useAgents() {
   return {
     state, command, threadDrafts, error: null, voice: { status: 'off' as const },
     muteVoice: () => undefined, stopSpeech: () => undefined, retryVoice: () => undefined,
-    attention: { items: state?.queue ?? [], show: false, dismiss: () => undefined, reopen: () => undefined, next: async () => undefined },
   }
 }
 export const useOptionalAgents = useAgents

@@ -31,9 +31,8 @@ async function withProfile(
   // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
   if (options.threads === true) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-      assignments: [],
-      queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
+      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')
   }
   let launched: LaunchedSotto | undefined

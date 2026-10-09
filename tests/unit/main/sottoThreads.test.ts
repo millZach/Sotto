@@ -36,8 +36,7 @@ async function startControl(root: string, host: SottoThreadHost): Promise<AgentC
   })
   await credentials.load()
   const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
-    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
-      decide: async () => ({ decision: 'human', text: 'Review this.' }) },
+    reasoner: {},
   })
   controls.push(control)
   await control.start()
@@ -184,23 +183,26 @@ describe('Sotto thread interface', () => {
     expect(restarted.registry.all()).toEqual(f.registry.all())
   })
 
-  it('retains real control assignments and queue entries as Sotto IDs across restart', async () => {
+  it('retains native requests and saved drafts as Sotto IDs across restart', async () => {
     const f = await fixture()
     const control = await startControl(f.root, f.host)
     const threadId = control.get().host.threads[0]!.id
-    expect((await control.command({ type: 'assign', threadId })).error).toBeNull()
+    expect((await control.command({ type: 'select-thread', threadId })).error).toBeNull()
     f.inner.state.threads[0]!.requests.push({ id: 'permission', kind: 'permission', text: 'Allow?', options: [] })
     f.inner.emit()
     const before = await control.command({ type: 'refresh' })
-    expect(before.queue).toEqual([expect.objectContaining({ threadId, requestId: 'permission' })])
+    expect(before.host.threads.find(t => t.id === threadId)?.requests).toEqual([expect.objectContaining({ id: 'permission' })])
+    const draftId = randomUUID()
+    await control.command({ type: 'save-thread-draft', threadId, draftId, text: 'Keep this prompt' })
     control.dispose()
     const restarted = adapter(f.root, new FakeProviderHost(f.inner.state))
     const next = await startControl(f.root, restarted.host)
     const state = await next.command({ type: 'refresh' })
     expect(state.error).toBeNull()
-    expect(state.assignments[0]?.threadId).toBe(threadId)
-    expect(state.host.threads.find(thread => thread.id === state.assignments[0]?.threadId)?.title).toBe('Workshop')
-    expect(state.queue).toEqual(before.queue)
+
+
+    expect(state.host.threads.find(t => t.id === threadId)?.requests).toEqual(before.host.threads.find(t => t.id === threadId)?.requests)
+    expect(state.threadDrafts).toContainEqual(expect.objectContaining({ threadId, draftId, text: 'Keep this prompt' }))
     expect(JSON.stringify(state)).not.toContain('session-workshop')
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain('session-workshop')
     expect(await readFile(join(f.root, 'threads.json'), 'utf8')).toContain('session-workshop')

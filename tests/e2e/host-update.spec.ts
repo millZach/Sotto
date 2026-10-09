@@ -132,7 +132,7 @@ test('an older host shows a pill on the Threads page, fails an update with its o
       const projectId = state.host.projects.find(item => item.title === 'render-farm')!.id
       const ids: string[] = []
       for (const title of ['Bake the hero shot lighting', 'Move finished renders']) {
-        await agents.command({ type: 'create-thread', projectId, title, modelId: state.host.models[0]!.id, managed: false, workingCopy: 'shared' })
+        await agents.command({ type: 'create-thread', projectId, title, modelId: state.host.models[0]!.id, workingCopy: 'shared' })
         ids.push((await agents.get()).host.threads.find(item => item.title === title)!.id)
       }
       return ids

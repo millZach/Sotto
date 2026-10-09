@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
@@ -36,7 +36,7 @@ export function withoutLegacyManagement(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
   const state = { ...value } as Record<string, unknown>
   if (state.configuration && typeof state.configuration === 'object' && !Array.isArray(state.configuration)) {
-    state.configuration = { ...withoutVoiceConfiguration(state.configuration), followupLimit: 5 }
+    state.configuration = withoutVoiceConfiguration(state.configuration)
   }
   delete state.speech
   delete state.voice
@@ -45,15 +45,46 @@ export function withoutLegacyManagement(value: unknown): unknown {
     delete credentials.grokSpeech
     state.credentials = credentials
   }
-  return { ...state, assignments: [], queue: [], pendingRequest: '', coordinatorConversation: false, composing: false }
+  for (const key of ['assignments', 'queue', 'pendingRequest', 'contextSavedAt', 'coordinatorConversation']) delete state[key]
+  return { ...state, composing: false }
 }
 
-export function managementCommandRefusal(command: z.infer<typeof agentCommandSchema>): string | null {
+export function managementCommandRefusal(command: { type: string; managed?: unknown; patch?: object }): string | null {
   if (['utterance', 'voice', 'voice-state', 'preview-voice', 'assign', 'unassign', 'pause', 'resume',
     'select-attention', 'next', 'later', 'pause-draft', 'resume-draft', 'cancel-request'].includes(command.type)) return MANAGEMENT_REMOVED
   if (command.type === 'create-thread' && command.managed === true) return MANAGEMENT_REMOVED
-  if (command.type === 'configure' && Object.keys(command.patch).some(key => key in LEGACY_VOICE_CONFIGURATION)) return MANAGEMENT_REMOVED
+  if (command.type === 'configure' && Object.keys(command.patch ?? {}).some(key => key in LEGACY_VOICE_CONFIGURATION)) return MANAGEMENT_REMOVED
   return null
+}
+const legacyId = z.string().min(1).max(512)
+const legacyText = z.string().max(20_000)
+const legacyCommandSchema = z.union([
+  z.object({ type: z.literal('utterance'), text: legacyText }).strict(),
+  z.object({ type: z.literal('assign'), threadId: legacyId, instruction: legacyText.optional(), expectedDraftId: z.uuid().nullable().optional() }).strict(),
+  z.object({ type: z.enum(['unassign', 'pause', 'resume']), threadId: legacyId, expectedDraftId: z.uuid().nullable().optional() }).strict(),
+  z.object({ type: z.literal('select-attention'), itemId: legacyId }).strict(),
+  z.object({ type: z.enum(['next', 'later', 'pause-draft', 'cancel-request']) }).strict(),
+  z.object({ type: z.literal('resume-draft'), threadId: legacyId }).strict(),
+  z.object({ type: z.literal('create-thread'), managed: z.boolean() }).passthrough().superRefine((command, context) => {
+    const { managed, ...manual } = command
+    void managed
+    if (!agentCommandSchema.safeParse(manual).success) context.addIssue({ code: 'custom', message: 'Invalid thread creation.' })
+  }),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.extend({
+    orbColor: z.string(), followupLimit: z.number().int().min(0).max(100), speak: z.boolean(), speechProvider: z.enum(['grok', 'kokoro', 'natural', 'system']),
+    speechVoice: z.string(), grokSpeechVoice: z.string(), wakeModelDirectory: z.string(), wakeRuntimeDirectory: z.string(),
+  }).partial().strict() }).strict(),
+])
+export const protocolAgentCommandSchema = z.union([agentCommandSchema, legacyCommandSchema])
+/** False-only creation is the inert spelling an older phone sends. */
+export function commandFromProtocolV1(command: z.infer<typeof protocolAgentCommandSchema>) {
+  if (managementCommandRefusal(command)) throw new Error(MANAGEMENT_REMOVED)
+  if (command.type === 'create-thread' && 'managed' in command) {
+    const { managed, ...manual } = command
+    void managed
+    return agentCommandSchema.parse(manual)
+  }
+  return agentCommandSchema.parse(command)
 }
 /** Retired account fields stay on v1's wire for desktops that still require them. */
 export function shellForProtocolV1<T extends AgentState>(state: T) {
@@ -246,7 +277,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('events'), afterSeq: z.number().int().nonnegative(), threadId: id.optional() }).strict(),
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
-  z.object({ ...base, op: z.literal('command'), command: agentCommandSchema }).strict(),
+  z.object({ ...base, op: z.literal('command'), command: protocolAgentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
   z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),

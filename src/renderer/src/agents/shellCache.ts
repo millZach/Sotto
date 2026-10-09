@@ -71,9 +71,7 @@ export function cacheableShell(state: AgentState): AgentState {
     host: trimCatalogsToReferencedModels({ ...shell.host, threads: shell.host.threads.map(thread => ({ ...thread, activities: [], ...NO_LIVE_THREAD_STATE })) }),
     draft: '', draftAttachments: [], threadDrafts: [], threadDraftPersistence: [],
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
-    // Attention is live: what needed the user last time is not what needs them now, and a restored
-    // queue would let the review narrate and navigate before main has said anything.
-    queue: [], pendingRequest: '', notice: '',
+    notice: '',
     stale: true,
   }
 }

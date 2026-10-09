@@ -19,10 +19,6 @@ export const turnRecordSchema = z.object({
   providerSessionId: z.string().nullable(),
   projectId: z.string().nullable(),
   timings: z.object({
-    speechEndedAt: z.string().datetime().nullable().optional(),
-    voicePhase: z.enum(['cold', 'warm']).nullable().optional(),
-    speechEndBasis: z.literal('detector-frame-received').nullable().optional(),
-    feedbackBasis: z.literal('main-state-published').nullable().optional(),
     retrievalCount: z.number().int().nonnegative().default(0),
     speechToIntentMs: z.number().int().nonnegative().nullable().optional(),
     speechToFirstFeedbackMs: z.number().int().nonnegative().nullable().optional(),
@@ -39,7 +35,7 @@ export const turnRecordSchema = z.object({
 export type TurnRecord = z.infer<typeof turnRecordSchema>
 
 export interface ActiveTurn {
-  source: TurnRecord['source']
+  source: 'command' | 'wake-up'
   commandType: string
   startedAt: string
   startedAtMs: number
@@ -100,7 +96,7 @@ export class TurnRecorder {
   }
 
   begin(input: {
-    source: TurnRecord['source']
+    source: 'command' | 'wake-up'
     commandType: string
     text: string
     threadId?: string | null

@@ -19,8 +19,8 @@ const WIDE = 1200
 /** Manual threads only, with a controller that moves the selection when asked. */
 function mount(options: { readonly width?: number; readonly height?: number; readonly store?: SplitLayoutStore; readonly tools?: (props: ThreadToolsProps) => React.ReactNode; readonly activeThreadId?: string; readonly slots?: Partial<ThreadsViewProps> } = {}) {
   const initial = threadsStateFixture()
-  initial.assignments = []
-  initial.queue = []
+
+
   initial.activeThreadId = options.activeThreadId ?? 'grok-previews'
   const live = liveAgentState(initial)
   const held: { threadId: string; release: () => void }[] = []

@@ -5,10 +5,9 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
-import type { SubscriptionClient } from '../../../src/main/agents/subscriptionTypes'
 import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
-import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, type SubscriptionProvider } from '../../../src/shared/agents'
+import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration, type SubscriptionProvider } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
@@ -22,11 +21,7 @@ async function fixture() {
   const configuration = defaultAgentConfiguration()
   const client = {
     status: vi.fn(async () => ({ provider: 'claude' as const, installed: true, ready: true, label: 'Claude Max', detail: 'Connected', models: [] })),
-    complete: vi.fn<SubscriptionClient['complete']>(async (_system, input, model) => {
-      if (model === 'unavailable-fixture-model') throw new Error('Fixture model unavailable')
-      return 'utterance' in (input as object)
-        ? { type: 'select-project', projectId: 'project' } : { decision: 'done', text: 'Assignment complete.' }
-    }),
+
   }
   const fetch = vi.fn()
   vi.stubGlobal('fetch', fetch)
@@ -47,79 +42,13 @@ describe('Sotto subscription reasoning integration', () => {
     expect(agentConfigurationSchema.parse(legacy).reasoningEffort).toBe('')
     expect(agentCommandSchema.parse({ type: 'configure', patch: { } })).toEqual({ type: 'configure', patch: { } })
   })
-  it.each(['claude', 'codex', 'grok'] as const)('uses the selected %s model and effort for both intent and supervision with no Sotto API credential', async provider => {
-    const f = await fixture()
-    f.configuration.reasoning = provider
-    f.configuration.reasoningModel = 'subscription-advertised-model'
-    f.configuration.reasoningEffort = 'high'
-    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { [provider]: f.client })
-    expect(await reasoner.intent('Select my project.', EMPTY_AGENT_HOST, null, '')).toEqual({ type: 'select-project', projectId: 'project' })
-    expect(await reasoner.decide('Finish the assigned change.', { id: 'thread', title: 'Feature', projectId: 'project', modelId: 'coding-model', status: 'idle', messages: [], requests: [] }))
-      .toEqual({ decision: 'done', text: 'Assignment complete.' })
-    expect(f.client.complete).toHaveBeenCalledTimes(2)
-    expect(f.client.complete.mock.calls.every(call => call[2] === 'subscription-advertised-model' && call[3] === 'high')).toBe(true)
-    expect(f.fetch).not.toHaveBeenCalled()
-    expect(f.credentials.has('reasoning')).toBe(false)
-  })
-
-  it('supervises from the agent\'s own words, leaving a visual out', async () => {
-    const f = await fixture()
-    f.configuration.reasoning = 'claude'
-    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { claude: f.client })
-    const visual = { id: 'v1', title: 'Flow', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
-    await reasoner.decide('Finish the assigned change.', { id: 'thread', title: 'Feature', projectId: 'project', modelId: 'coding-model', status: 'idle', requests: [], messages: [
-      { id: 'u1', role: 'user', text: 'Explain the flow.', createdAt: '2026-10-06T00:00:00.000Z' },
-      { id: 'a1', role: 'assistant', text: 'Here is the flow.', createdAt: '2026-10-06T00:00:01.000Z' },
-      { id: 'visual:v1', role: 'assistant', text: '**Flow**\n\nThe visual is in Sotto on your computer.', createdAt: '2026-10-06T00:00:02.000Z', visual },
-    ] })
-    const sent = f.client.complete.mock.calls[0]![1] as { messages: { id: string }[] }
-    expect(sent.messages.map(message => message.id)).toEqual(['u1', 'a1'])
-  })
-
-  it('does not use a saved API key or another client after a subscription error', async () => {
-    const f = await fixture()
-    await f.credentials.set('reasoning', 'fixture-api-key')
-    f.configuration.reasoning = 'claude'
-    f.client.complete.mockRejectedValue(new Error('Claude subscription allowance reached.'))
-    const other = { ...f.client, complete: vi.fn() }
-    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { claude: f.client, codex: other })
-    await expect(reasoner.intent('Open a project.', EMPTY_AGENT_HOST, null, '')).rejects.toThrow('subscription allowance reached')
-    expect(f.fetch).not.toHaveBeenCalled()
-    expect(other.complete).not.toHaveBeenCalled()
-  })
-
-  it('validates subscription output before accepting an action', async () => {
-    const f = await fixture()
-    f.configuration.reasoning = 'claude'
-    f.client.complete.mockResolvedValue({ type: 'execute-shell', command: 'not an allowed action' })
-    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { claude: f.client })
-    await expect(reasoner.intent('Open a project.', EMPTY_AGENT_HOST, null, '')).rejects.toThrow()
-    expect(f.fetch).not.toHaveBeenCalled()
-  })
-
-  it('queues simultaneous subscription decisions and continues after the first one fails', async () => {
-    const f = await fixture()
-    f.configuration.reasoning = 'codex'
-    let release!: () => void
-    const gate = new Promise<void>(resolveGate => { release = resolveGate })
-    f.client.complete.mockImplementationOnce(async () => { await gate; throw new Error('First request failed') })
-    const reasoner = new ConfiguredAgentReasoner(() => f.configuration, f.credentials, { codex: f.client })
-    const first = reasoner.intent('First project.', EMPTY_AGENT_HOST, null, '')
-    const second = reasoner.intent('Second project.', EMPTY_AGENT_HOST, null, '')
-    const results = Promise.allSettled([first, second])
-    await vi.waitFor(() => expect(f.client.complete).toHaveBeenCalledTimes(1))
-    release()
-    expect((await results).map(result => result.status)).toEqual(['rejected', 'fulfilled'])
-    expect(f.client.complete).toHaveBeenCalledTimes(2)
-    expect(f.fetch).not.toHaveBeenCalled()
-  })
 
   it('checks a newly selected subscription account without a separate connection check', async () => {
     const f = await fixture()
     const grok = { ...f.client, status: vi.fn(async () => ({ provider: 'grok' as const, installed: true, ready: true, label: 'Grok', detail: 'Connected',
       models: [{ id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: ['low', 'high'] }] })) }
     const control: AgentControl = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, host: new E2EAgentHost(),
-      reasoner: new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client, grok }),
+      reasoner: new ConfiguredAgentReasoner({ claude: f.client, grok }),
     })
     controls.push(control)
     await control.start()
@@ -132,10 +61,10 @@ describe('Sotto subscription reasoning integration', () => {
     expect(control.get().reasoningAccounts.find(account => account.provider === 'grok')?.models).toHaveLength(1)
   })
 
-  it('persists a subscription selection, restores its status, and executes through the real controller without a key', async () => {
+  it('persists a subscription selection, restores its status, and restores account discovery without a key', async () => {
     const f = await fixture()
     let control: AgentControl
-    const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, f.credentials, { claude: f.client })
+    const reasoner = new ConfiguredAgentReasoner({ claude: f.client })
     const start = async () => {
       control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, credentials: f.credentials, reasoner, host: new E2EAgentHost(),
       })
@@ -164,7 +93,7 @@ describe('Sotto subscription reasoning integration', () => {
     finishStatus()
     await vi.waitFor(() => expect(restarted.get().reasoningAccounts[0]?.ready).toBe(true))
     await restarted.command({ type: 'connect' })
-    const result = await restarted.command({ type: 'utterance', text: 'Select my project.' })
+    const result = await restarted.command({ type: 'select-project', projectId: 'project' })
     expect(result.error).toBeNull()
     expect(result.activeProjectId).toBe('project')
     expect(result.credentials.reasoning).toBe(false)

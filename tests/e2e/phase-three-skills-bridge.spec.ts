@@ -48,6 +48,6 @@ test('the full workspace inserts provider-native skills and retains selections w
     await expect(page.getByText(/takes one skill per message/)).toBeVisible()
     const state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state.host.threads.map(thread => [thread.id, thread.messages.length])).toEqual(before)
-    expect(state.assignments).toEqual([])
+    expect(state).not.toHaveProperty('assignments')
   } finally { await closeSotto(launched) }
 })

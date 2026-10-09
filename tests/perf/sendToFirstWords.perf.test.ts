@@ -138,7 +138,7 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
       .host.projects.find(item => resolve(item.path) === resolve(repository))!
     const modelId = runtime.agentControl.get().host.models.find(model => model.providerId === provider)!.id
     const threadId = randomUUID()
-    await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Benchmark', modelId, workingCopy: 'shared', managed: false })
+    await command({ type: 'create-thread', threadId, projectId: project.id, title: 'Benchmark', modelId, workingCopy: 'shared' })
     await command({ type: 'observe-threads', threadIds: [threadId] })
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ reply: REPLY }))
     const thread = () => runtime.agentControl.get().host.threads.find(item => item.id === threadId)!

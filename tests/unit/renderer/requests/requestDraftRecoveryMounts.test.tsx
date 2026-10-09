@@ -39,7 +39,7 @@ describe('saved answer recovery in its owner view', () => {
   it('appears in the thread pane for the closed request only, with the live form still an ordinary card', async () => {
     const bridge = requestDrafts()
     const state = threadsStateFixture()
-    state.assignments = []
+
     const thread = state.host.threads.find(item => item.id === 'visual-gate')!
     thread.requests = [current]
     vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)

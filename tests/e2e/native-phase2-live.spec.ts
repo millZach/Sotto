@@ -88,7 +88,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
   try {
     await launch()
     await command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'],
-      reasoning: 'none', followupLimit: 0 } })
+      reasoning: 'none', } })
     const connected = await command({ type: 'connect', provider: 'codex' })
     // A command answers with a receipt that names the model catalog by revision; the whole list is read here.
     const model = (await state()).host.models.find(value => value.providerId === 'codex' && value.ready && /luna|mini/i.test(value.name))
@@ -100,7 +100,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     const registered = await command({ type: 'create-project', provider: 'codex', path: project, title: 'Synthetic Phase 2', useExisting: true })
     const projectId = registered.host.projects.find(value => resolve(value.path) === resolve(project))!.id
     const created = await command({ type: 'create-thread', projectId, title: 'Synthetic native Phase 2', modelId: model.id,
-      workingCopy: 'independent', runtimeMode: 'full-access', reasoningEffort: effort, managed: false })
+      workingCopy: 'independent', runtimeMode: 'full-access', reasoningEffort: effort })
     threadId = created.activeThreadId!
     expect(created.host.threads).toHaveLength(1)
     const working = await thread()
@@ -166,7 +166,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     expect(await readFile(join(project, proofName), 'utf8').then(() => true, () => false)).toBe(false)
     expect(completed.messages.some(value => value.role === 'assistant' && value.text.trim() === 'STEER_APPLIED')).toBe(true)
     expect((await state()).followups).toHaveLength(0)
-    expect((await state()).assignments).toHaveLength(0)
+
     expect(completed.requests).toHaveLength(0)
     const commands = completed.activities!.filter(value => value.kind === 'command')
     expect(commands.some(value => value.status === 'completed' && value.exitCode === 0 && value.command?.includes(scriptName) &&

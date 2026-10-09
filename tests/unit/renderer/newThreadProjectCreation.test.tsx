@@ -13,8 +13,8 @@ function fixture(projects: AgentState['host']['projects'] = [unrelated], activeP
     host: { connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       projects, threads: [], models: [{ id: 'codex:model', name: 'Model', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'], runtimeModes: ['approval-required', 'full-access'] }] },
-    activeProjectId, activeThreadId: null, assignments: [], queue: [], draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    activeProjectId, activeThreadId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
+    globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: true },
     reasoningAccounts: [],
   }

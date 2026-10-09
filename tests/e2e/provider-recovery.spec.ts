@@ -64,7 +64,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await expect(notice).toContainText(attachment.name)
     let state = await page.evaluate(async () => window.sotto!.agents!.get())
     expect(state).toMatchObject({ configuration: { provider: 'codex', enabled: false }, draft, draftAttachments: [staged],
-      draftThreadId: null, draftRequestId: null, assignments: [], queue: [], composing: false })
+      draftThreadId: null, draftRequestId: null, composing: false })
     await capture(page, 'unbound')
     await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
     await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
@@ -77,7 +77,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     // Main learns the selection a beat after the popup closes; wait for it before reading the thread by id.
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toEqual(expect.any(String))
     state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, assignments: [], composing: false })
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: null, composing: false })
     const threadId = state.activeThreadId!
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
@@ -102,7 +102,7 @@ for (const localDraft of [false, true]) test(`recovered provider draft stays unb
     await expect(page.getByRole('img', { name: attachment.name })).toBeVisible()
     await expect(notice.getByRole('button', { name: 'Use saved draft here' })).toHaveCount(0)
     state = await page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, assignments: [], composing: true })
+    expect(state).toMatchObject({ draft, draftAttachments: [staged], draftThreadId: threadId, draftRequestId: null, composing: true })
     expect(await userMessageTexts(page, threadId)).toHaveLength(0)
     expect(state.host.threads.find(thread => thread.id === threadId)?.requests).toHaveLength(0)
     await capture(page, localDraft ? 'bound-after-local-clear' : 'bound-for-review')
@@ -121,7 +121,7 @@ test('clear saved draft removes recovered text and images and stays cleared afte
     await expect(launched.page.getByRole('textbox', { name: 'Recovered draft' })).toHaveCount(0)
     await expect(launched.page.getByText(attachment.name, { exact: true })).toHaveCount(0)
     const state = await launched.page.evaluate(async () => window.sotto!.agents!.get())
-    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, assignments: [], composing: false })
+    expect(state).toMatchObject({ draft: '', draftAttachments: [], draftThreadId: null, draftRequestId: null, composing: false })
     await capture(launched.page, 'cleared')
     await closeSotto(launched)
     launched = await launchSotto('success', profile)

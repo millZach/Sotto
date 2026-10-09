@@ -22,7 +22,7 @@ const lifecycle = (patch: Partial<AgentActivity> = {}): AgentActivity => activit
 
 function stateWith(patch: Partial<AgentThread>, connected = true): AgentState {
   const state = threadsStateFixture()
-  state.assignments = []
+
   state.activeThreadId = THREAD
   state.host.connected = connected
   const thread = state.host.threads.find(item => item.id === THREAD)!

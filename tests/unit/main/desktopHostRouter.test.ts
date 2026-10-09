@@ -284,11 +284,11 @@ describe('desktop host routing', () => {
       const moveLocalTo = (threadId: string) => { local.state.activeThreadId = threadId; local.state.activeProjectId = 'project' }
       return { router, local, remote, moveLocalTo }
     }
-    it('goes where Later and a new thread take the host', async () => {
+    it('follows the selection a new project or thread takes on the host', async () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
       local.command.mockImplementationOnce(async () => { moveLocalTo('other'); return local.state })
-      await router.command({ type: 'later' }, desktopWindowClient())
+      await router.command({ type: 'create-project', title: 'New project', path: '/repo/new' }, desktopWindowClient())
       expect(router.shell()).toMatchObject({ activeThreadId: hostEntityKey(LOCAL, 'other'), activeProjectId: hostEntityKey(LOCAL, 'project') })
       local.command.mockImplementationOnce(async () => { moveLocalTo('thread'); return local.state })
       await router.command({ type: 'create-thread', projectId: hostEntityKey(LOCAL, 'project'), title: 'Task', modelId: 'model' }, desktopWindowClient())
@@ -298,13 +298,13 @@ describe('desktop host routing', () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
       local.command.mockImplementationOnce(async () => { moveLocalTo('other'); throw new Error('The reply was lost.') })
-      await expect(router.command({ type: 'next' }, desktopWindowClient())).rejects.toThrow('reply was lost')
+      await expect(router.command({ type: 'create-thread', projectId: hostEntityKey(LOCAL, 'project'), title: 'Task', modelId: 'model' }, desktopWindowClient())).rejects.toThrow('reply was lost')
       expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
     })
     it('stays put when the host moves for an answer or on its own', async () => {
       const { router, local, moveLocalTo } = setup()
       await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
-      // Answering presents the host's next queued thread; the user stays in the thread they answered in.
+      // Another client may change the host's selection while this window answers.
       local.command.mockImplementationOnce(async () => { moveLocalTo('other'); return local.state })
       await router.command({ type: 'answer', threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'request', answer: 'Yes' }, desktopWindowClient())
       expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'thread'))
@@ -350,17 +350,6 @@ describe('desktop host routing', () => {
         remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
         const creating = createFromWindow(router)
         await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'other') }, desktopWindowClient())
-        finish(); await creating
-        expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
-      })
-      it('keeps where Next took the window while the host created it', async () => {
-        const { router, local, remote, moveLocalTo } = setup()
-        await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'thread') }, desktopWindowClient())
-        let finish: () => void = () => undefined
-        remote.command.mockImplementationOnce(() => new Promise(resolve => { finish = () => { addNewThread(remote); resolve(remote.state) } }))
-        const creating = createFromWindow(router)
-        local.command.mockImplementationOnce(async () => { moveLocalTo('other'); return local.state })
-        await router.command({ type: 'next' }, desktopWindowClient())
         finish(); await creating
         expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'other'))
       })
@@ -507,13 +496,11 @@ describe('desktop host routing', () => {
     expect(hostAbsolutePath('C:/work/repo', 'src/a.ts')).toBe('C:/work/repo/src/a.ts')
     expect(hostAbsolutePath('/home/forge/repo', '')).toBe('/home/forge/repo')
   })
-  it('splits observed threads, routes attention IDs, and refuses cross-host commands and local folder actions', async () => {
+  it('splits observed threads and refuses cross-host commands and local folder actions', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add(remote.connection)
     await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(LOCAL, 'thread'), hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())
     expect(local.observe).toHaveBeenCalledWith(['thread']); expect(remote.observe).toHaveBeenCalledWith(['thread'])
-    await router.command({ type: 'select-attention', itemId: hostEntityKey(REMOTE, 'attention') }, desktopWindowClient())
-    expect(remote.command).toHaveBeenCalledWith({ type: 'select-attention', itemId: 'attention' }, desktopWindowClient())
     await expect(router.command({ type: 'create-thread', projectId: hostEntityKey(LOCAL, 'project'), threadId: hostEntityKey(REMOTE, 'thread'), title: 'Task', modelId: '' }, desktopWindowClient())).rejects.toThrow('different hosts')
     await expect(router.command({ type: 'open-thread-folder', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).rejects.toThrow('host machine')
     router.remove(REMOTE)

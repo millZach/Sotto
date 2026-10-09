@@ -25,9 +25,8 @@ function fullState(threads: AgentThread[], activeThreadId: string | null = null)
   return {
     configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null,
+    activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],     globalLaneBusy: false, notice: '', error: null,
     credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
      historyEnabled: true,
   }
