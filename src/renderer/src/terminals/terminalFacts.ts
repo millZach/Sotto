@@ -25,6 +25,8 @@ export interface TerminalFolder {
   readonly title: string
   readonly rows: readonly TerminalRow[]
   readonly running: number
+  /** Open terminals of this project listed under Needs you or Working instead. */
+  readonly grouped: number
 }
 
 export interface TerminalOrganization {
@@ -135,8 +137,8 @@ export function organizeTerminals(state: Pick<AgentState, 'host'>, rows: readonl
     const title = project?.title ?? all[0]?.project?.title ?? 'Project'
     const openRows = all.filter(row => isOpenTerminal(row.terminal))
     const closedRows = all.filter(row => !isOpenTerminal(row.terminal))
-    if (openRows.length || (needle === '' && project !== undefined && !(project.workspaceSettledAt ?? null))) open.push({ id, project, title, rows: openRows, running: openRows.filter(row => isLiveTerminal(row.terminal)).length })
-    if (closedRows.length) closed.push({ id, project, title, rows: closedRows, running: 0 })
+    if (openRows.length || (needle === '' && project !== undefined && !(project.workspaceSettledAt ?? null))) open.push({ id, project, title, rows: openRows, running: openRows.filter(row => isLiveTerminal(row.terminal)).length, grouped: [...grouped].filter(row => row.terminal.projectId === id).length })
+    if (closedRows.length) closed.push({ id, project, title, rows: closedRows, running: 0, grouped: 0 })
   }
   const latest = (folder: TerminalFolder): number => folder.rows[0]?.terminal.openedAt ?? Number.NEGATIVE_INFINITY
   const ordered = (folders: TerminalFolder[]): TerminalFolder[] => folders.sort((first, second) => (latest(second) - latest(first)) || first.title.localeCompare(second.title))

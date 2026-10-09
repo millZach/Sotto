@@ -74,6 +74,9 @@ describe('terminal rows', () => {
     expect(workshop.rows.map(row => row.title)).toEqual(['Terminal 1'])
     expect(organization.working.map(row => row.title)).toEqual(['Terminal 2'])
     expect(workshop.running).toBe(1)
+    // The folder knows a row moved up, so its empty line can say "other"; a project with no terminals cannot.
+    expect(workshop.grouped).toBe(1)
+    expect(organization.open.filter(folder => folder.id !== 'workshop').every(folder => folder.grouped === 0)).toBe(true)
     // Every open project is listed so a terminal can be started there.
     expect(organization.open.map(folder => folder.id)).toEqual(expect.arrayContaining(state.host.projects.filter(project => !project.workspaceSettledAt).map(project => project.id)))
     expect(organization.closed.map(folder => folder.rows.map(row => row.title))).toEqual([['Terminal 3']])

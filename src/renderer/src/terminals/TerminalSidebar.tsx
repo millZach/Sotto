@@ -103,7 +103,7 @@ function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onTo
     {expanded ? <ul className="thread-folder__rows" id={listId}>
       {folder.rows.map(row => <TerminalNavRow key={row.terminal.id} row={row} state={stateOf(row.terminal.id)} current={panes.currentId === row.terminal.id} open={panes.openIds.includes(row.terminal.id)}
         busy={busy} liveClock={liveClock} onOpen={onOpen} panes={panes} />)}
-      {!folder.rows.length ? <li className="thread-nav__empty">No other open terminals.</li> : null}
+      {!folder.rows.length ? <li className="thread-nav__empty">{folder.grouped ? 'No other open terminals.' : 'No open terminals.'}</li> : null}
     </ul> : null}
   </div>
 }

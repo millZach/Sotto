@@ -220,6 +220,9 @@ describe('Terminal mode', () => {
     const needs = await within(sidebar()).findByRole('region', { name: 'Needs you' })
     const working = within(sidebar()).getByRole('region', { name: 'Working' })
     expect(needs.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A folder whose only terminal moved up says "other"; a project with no terminals does not.
+    expect(within(sidebar()).getByText('No other open terminals.')).toBeInTheDocument()
+    expect(within(sidebar()).getAllByText('No open terminals.').length).toBeGreaterThan(0)
     expect(within(needs).getByRole('button', { name: 'Needs approval' })).toHaveTextContent(otherProject.title)
     expect(within(working).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, workshop, Working')
     const finished = within(sidebar()).getByRole('button', { name: 'Finished tests' })
