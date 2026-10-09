@@ -592,6 +592,23 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     } finally { composer.remove() }
   })
 
+  it('marks each linked pull request the thread babysits in Linked pull requests', async () => {
+    const other = 'https://github.com/o/r/pull/76'
+    mount({ babysit: { agent: 'Claude Code' }, thread: thread({
+      pullRequests: [{ number: 76, url: other, title: 'Mention the greeting in the README', state: 'open', draft: false, source: 'linked', linkedAt: '2026-09-23T00:00:00.000Z' }],
+      // Babysitting records the address as GitHub gave it; the mark matches it whatever its case.
+      babysitting: [{ url: 'https://github.com/O/R/pull/76', number: 76, startedBy: 'agent', startedAt }],
+    }) })
+    await opened()
+    fireEvent.click(screen.getByRole('button', { name: 'Linked pull requests 2' }))
+    const list = screen.getByRole('list', { name: 'Linked pull requests' })
+    expect(within(list).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
+      'PR #74, Open: Make the greeting friendlier. This branch', 'PR #76, Open: Mention the greeting in the README. Linked by you. Babysitting'])
+    const [branchRow, linkedRow] = within(list).getAllByRole('listitem')
+    expect(linkedRow!.querySelector('.pr-surface__link-babysat')).toHaveTextContent(/^Babysitting$/u)
+    expect(branchRow!.querySelector('.pr-surface__link-babysat')).toBeNull()
+  })
+
   it('offers nothing where the host cannot babysit, still showing what the thread babysits', async () => {
     mount({ thread: babysat('user') })
     await opened()

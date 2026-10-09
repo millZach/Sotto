@@ -95,6 +95,8 @@
 .pr-surface__link-number { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .pr-surface__link-title { grid-area: title; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .pr-surface__link-source { grid-area: source; color: var(--tt-text-muted); font-size: 12.5px; }
+/* A linked pull request the thread babysits says so in the row's second text colour, as the sidebar row does (ADR-0061). */
+.pr-surface__link-babysat { color: var(--tt-text-2); }
 .pr-surface__link-add.tt-button { min-height: 30px; padding: 0 8px; margin-left: -8px; }
 
 /* No pull request yet. */

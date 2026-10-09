@@ -365,7 +365,10 @@ function Fold({ label, count, open, onToggle, children }: { readonly label: stri
   </div>
 }
 
-/** Linked pull requests: the thread's links, and its branch's pull request when that is not linked, each opening in the surface. */
+/**
+ * Linked pull requests: the thread's links, and its branch's pull request when that is not linked, each opening in the
+ * surface, and each the thread babysits marked Babysitting (ADR-0061, variant C).
+ */
 function LinkedFold({ thread, open, onToggle, onShow, onLink }: {
   readonly thread: AgentThread; readonly open: boolean; readonly onToggle: () => void
   readonly onShow: (url: string) => void; readonly onLink: (() => void) | null
@@ -380,12 +383,13 @@ function LinkedFold({ thread, open, onToggle, onShow, onLink }: {
   return <Fold label="Linked pull requests" count={rows.length} open={open} onToggle={onToggle}>
     {rows.length ? <ul className="pr-surface__links" aria-label="Linked pull requests">{rows.map(row => {
       const Icon = stateIcon(row)
+      const babysat = babysittingOf(thread, row.url) !== undefined
       return <li key={row.url} className="pr-surface__link">
-        <button type="button" className="pr-surface__link-open tt-focusable" onClick={() => onShow(row.url)} aria-label={`PR #${row.number}, ${stateLabel(row)}: ${row.title}. ${row.source}`}>
+        <button type="button" className="pr-surface__link-open tt-focusable" onClick={() => onShow(row.url)} aria-label={`PR #${row.number}, ${stateLabel(row)}: ${row.title}. ${row.source}${babysat ? '. Babysitting' : ''}`}>
           <Icon size={15} aria-hidden="true" data-state={stateKey(row)} />
           <span className="pr-surface__link-number">#{row.number}</span>
           <span className="pr-surface__link-title">{row.title}</span>
-          <span className="pr-surface__link-source">{row.source}</span>
+          <span className="pr-surface__link-source">{row.source}{babysat ? <>{' · '}<span className="pr-surface__link-babysat">Babysitting</span></> : null}</span>
         </button>
       </li>
     })}</ul> : <p className="pr-surface__quiet">None yet. A pull request the Git action creates is linked here, and so is one you link or check out from the branch picker.</p>}
