@@ -1,5 +1,5 @@
 // Real paste only in an owned nested Hyprland; the locked live session receives no keys.
-// Usage after building, Node 24 with foot, Alacritty and Chromium: node scripts/verify-hyprland-paste-nested.mjs <out-dir>
+// Usage after building, Node 24 with foot, Alacritty, Chromium, cc and Wayland client headers: node scripts/verify-hyprland-paste-nested.mjs <out-dir>
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync
 import { join, resolve } from 'node:path'
 import { URL } from 'node:url'
 import { performance } from 'node:perf_hooks'
+import { setTimeout, clearTimeout } from 'node:timers'
 import { setTimeout as wait } from 'node:timers/promises'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
@@ -131,6 +132,16 @@ try {
   }
   console.log(`nested: ${sig} on ${sock}; live: ${liveSig} on ${live.WAYLAND_DISPLAY} (untouched)`)
 
+  // A locked parent supplies no mouse to nested Hyprland. PRIMARY offers need
+  // pointer focus, so create a virtual pointer entirely inside the owned display.
+  const pointerExecutable = join(out, 'nested-pointer')
+  execFileSync('cc', [join(checkout, 'scripts/nested-proof-pointer.c'), '-o', pointerExecutable, '-lwayland-client', '-Wall', '-Wextra', '-Werror'], { timeout: 5000 })
+  assertNested()
+  const pointer = owned.start('nested pointer', pointerExecutable, [liveSig, sig, live.WAYLAND_DISPLAY, sock], { env: nested, stdio: ['ignore', 'pipe', 'ignore'] })
+  let pointerReady = false
+  pointer.stdout.on('data', chunk => { if (chunk.toString().includes('ready')) pointerReady = true })
+  await poll('Nested pointer startup', () => pointerReady, pointer)
+
   const footFile = join(out, 'foot.txt')
   const alacrittyFile = join(out, 'alacritty.txt')
   const stockFootFile = join(out, 'stock-foot.txt')
@@ -209,6 +220,13 @@ try {
     assert.ok(target, `${label}: target must be a window owned by this proof`)
     const active = refocus ? await poll(`${label} focus`, async () => {
       assert.equal(hyprctl('dispatch', `hl.dsp.focus({ window = "address:${target.address}" })`).trim(), 'ok')
+      // Hyprland delivers PRIMARY offers to pointer focus. Model selecting this
+      // stock terminal with the pointer as well as setting keyboard focus.
+      if (label === 'stock foot') {
+        const x = Math.round(target.at[0] + target.size[0] / 2)
+        const y = Math.round(target.at[1] + target.size[1] / 2)
+        assert.equal(hyprctl('dispatch', `hl.dsp.cursor.move({ x = ${x}, y = ${y} })`).trim(), 'ok')
+      }
       // Initial window activation and keyboard focus delivery are asynchronous.
       await wait(500)
       const window = JSON.parse(hyprctl('activewindow', '-j'))
@@ -241,6 +259,23 @@ try {
     console.log(`${label} received:`, JSON.stringify(receivedText))
   }
   await deliver('foot', foot, client => client.class === 'foot', ['terminal*'], 'Sotto pasted into foot — café 🚀', () => readFileSync(footFile, 'utf8'))
+  const stalePrimary = 'Different PRIMARY selection: never paste this'
+  await new Promise((resolve, reject) => {
+    const child = owned.start('Primary sentinel', 'wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], { env: nested, stdio: ['pipe', 'ignore', 'ignore'] })
+    const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Primary seed deadline')) }, 5000)
+    child.once('error', error => { clearTimeout(timeout); reject(error) })
+    child.stdin.once('error', error => { clearTimeout(timeout); child.kill('SIGTERM'); reject(error) })
+    child.once('exit', code => {
+      clearTimeout(timeout)
+      if (code === 0) resolve()
+      else reject(new Error('Primary seed failed'))
+    })
+    child.stdin.end(stalePrimary, 'utf8')
+  })
+  assert.equal(execFileSync('wl-paste', ['--primary', '--no-newline'], { env: nested, encoding: 'utf8', timeout: 5000 }), stalePrimary)
+  console.log('stock foot PRIMARY before:', JSON.stringify(stalePrimary))
+  await deliver('stock foot', stockFoot, client => client.title === 'stock foot', ['terminal*'], 'Sotto pasted into stock foot — café 🚀', () => readFileSync(stockFootFile, 'utf8'))
+  assert.equal(execFileSync('wl-paste', ['--primary', '--no-newline'], { env: nested, encoding: 'utf8', timeout: 5000 }), 'Sotto pasted into stock foot — café 🚀')
   await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
   await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', readChromium)
   await invoke('window.sotto.updateSettings({ showWidgetWhenIdle: true, onboardingComplete: true })')
@@ -257,18 +292,6 @@ try {
   }, false)
   assert.equal(await readChromium(), widgetFirst + widgetSecond, 'Both dictations reach the same textarea without refocusing')
   console.log('widget on: target focus retained; second dictation reached the same target without refocusing')
-  const stalePrimary = 'Different PRIMARY selection: never paste this'
-  await new Promise((resolve, reject) => {
-    const child = owned.start('Primary sentinel', 'wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], { env: nested, stdio: ['pipe', 'ignore', 'ignore'] })
-    const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Primary seed deadline')) }, 5000)
-    child.once('error', error => { clearTimeout(timeout); reject(error) })
-    child.stdin.once('error', error => { clearTimeout(timeout); child.kill('SIGTERM'); reject(error) })
-    child.once('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error('Primary seed failed')) })
-    child.stdin.end(stalePrimary, 'utf8')
-  })
-  assert.equal(execFileSync('wl-paste', ['--primary', '--no-newline'], { env: nested, encoding: 'utf8', timeout: 5000 }), stalePrimary)
-  console.log('stock foot PRIMARY before:', JSON.stringify(stalePrimary))
-  await deliver('stock foot', stockFoot, client => client.title === 'stock foot', ['terminal*'], 'Sotto pasted into stock foot — café 🚀', () => readFileSync(stockFootFile, 'utf8'))
   execFileSync('grim', [join(out, 'nested.png')], { env: nested, timeout: 5000 })
   console.log('screenshot:', join(out, 'nested.png'))
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
