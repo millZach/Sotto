@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 

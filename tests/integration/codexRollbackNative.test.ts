@@ -1,9 +1,12 @@
 // @vitest-environment node
+import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
+
+const artifacts = evidenceDirectory('artifacts/phase-four-checkpoints')
 
 it.runIf(process.env.SOTTO_NATIVE_CODEX_REWIND === '1')('rewinds a completed owned native Codex turn and resumes the same conversation after restart', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-codex-rewind-native-'))
@@ -39,7 +42,7 @@ it.runIf(process.env.SOTTO_NATIVE_CODEX_REWIND === '1')('rewinds a completed own
   } catch (error) { evidence.failure = error instanceof Error ? error.message : String(error); throw error }
   finally {
     host.disconnect(); await host.closed()
-    await mkdir('artifacts/phase-four-checkpoints', { recursive: true })
-    await writeFile('artifacts/phase-four-checkpoints/codex-native.json', JSON.stringify(evidence, null, 2))
+    await mkdir(artifacts, { recursive: true })
+    await writeFile(join(artifacts, 'codex-native.json'), JSON.stringify(evidence, null, 2))
   }
 }, 180000)

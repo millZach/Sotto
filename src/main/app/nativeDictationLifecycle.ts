@@ -17,6 +17,7 @@ export interface NativeDictationLifecycleDependencies {
    * mid-session cannot be undone by a publication built from older settings.
    */
   readonly presentation?: () => WidgetPresentationFields
+  readonly publishShellState?: (state: WidgetSnapshot) => void
   readonly log: (code: NativeDictationLifecycleDiagnostic) => void
 }
 
@@ -37,6 +38,7 @@ export class NativeDictationLifecycle {
   publish(state: WidgetSnapshot): Promise<boolean> {
     const presented = this.present(state)
     this.lastSnapshot = presented
+    this.dependencies.publishShellState?.(presented)
     this.updateNativeState(presented)
     return this.deliver(presented)
   }
@@ -75,6 +77,7 @@ export class NativeDictationLifecycle {
       cancellable: false,
     })
     this.lastSnapshot = idle
+    this.dependencies.publishShellState?.(idle)
     this.updateNativeState(idle)
     void this.deliver(idle)
   }

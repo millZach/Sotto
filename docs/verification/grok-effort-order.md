@@ -36,7 +36,7 @@ difference ADR-0044 decides.
   ![](../../artifacts/grok-effort-order/effort-card-after-default.png)
 
 New terminal was not opened. It lists levels through the same `ThreadOptionFields` as New thread, and
-`tests/unit/renderer/threadOptions.test.tsx` pins that list's order.
+`tests/unit/renderer/agents/threadCatalogOptions.test.tsx` pins that list's order.
 
 ## Not shown here
 

@@ -6,7 +6,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 

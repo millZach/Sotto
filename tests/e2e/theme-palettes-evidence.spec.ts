@@ -9,15 +9,16 @@ import { designThreadsFixture } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * Rendered evidence for Sotto's own palettes and the Light and Dark columns (ADR-0024): the Appearance page at
  * the three review sizes in both rooms, the Threads page in every built-in half, and the mark on the default theme
- * wearing the app icon. Run with SOTTO_THEME_EVIDENCE=1 after `npm run build`; images land in
+ * wearing the app icon. Run with SOTTO_THEME_EVIDENCE=1 after `npm run build`; images use disposable run evidence by default; publication uses
  * artifacts/verification/sotto-palettes.
  */
 const enabled = process.env.SOTTO_THEME_EVIDENCE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/verification/sotto-palettes')
+const evidenceRoot = evidenceDirectory('artifacts/verification/sotto-palettes')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 async function withProfile(

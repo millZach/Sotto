@@ -3,8 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DevinAcpHost } from '../../src/main/agents/devin'
-import type { RecordedRpc } from './codexFixture'
-import type { AdapterSessionOptions } from '../integration/adapterContract'
+import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 /** What a test of the send path changes about how the adapter waits. */
 export interface DevinPaceOptions {

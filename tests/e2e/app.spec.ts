@@ -13,7 +13,10 @@ import {
 import type { SottoBridge } from '../../src/shared/contracts'
 import { TRANSCRIPTION_KEPT_DETAIL } from '../../src/shared/dictation'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { closeSotto, e2eEnvironment, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/review-quit-drain')
 
 /** Onboarding, and then the Dictate page the dictation tests work on. */
 async function completeOnboarding(page: Page): Promise<void> {
@@ -551,8 +554,8 @@ test('quitting retains native windows during the drain and releases the lock for
   const launched = await launchSotto()
   let relaunched: Awaited<ReturnType<typeof launchSotto>> | undefined
   try {
-    await mkdir('artifacts/review-quit-drain', { recursive: true })
-    await launched.page.screenshot({ path: 'artifacts/review-quit-drain/before-quit.png' })
+    await mkdir(evidence, { recursive: true })
+    await launched.page.screenshot({ path: join(evidence, 'before-quit.png') })
     const exited = new Promise<number | null>(resolve => launched.app.process().once('exit', resolve))
     const state = await launched.app.evaluate(({ app, BrowserWindow }) => {
       let observed: { prevented: boolean; windows: number } | undefined

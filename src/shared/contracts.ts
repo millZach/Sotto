@@ -81,6 +81,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('error'),
       sessionId: boundedSessionId.optional(),
       code: widgetErrorCodeSchema,
+      captureStarted: z.boolean().optional(),
       kept: z.boolean().optional(),
       retried: z.boolean().optional(),
       ...widgetMetadataSchema,
@@ -300,6 +301,8 @@ export type DictationCommand = Readonly<{
 
 export interface StartupState {
   readonly enabled: boolean
+  /** Linux only: sign-in startup is available in packaged builds. */
+  readonly supported?: boolean | undefined
   /** macOS only: the login item is on but waits for the user to allow it in System Settings > General > Login Items. */
   readonly approvalRequired?: boolean | undefined
 }

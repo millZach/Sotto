@@ -4,6 +4,11 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/linux-shell-plumbing/**',
+      'artifacts/linux-package/**',
+      'apps/omarchy/src/**',
+      'apps/omarchy/pkg/**',
+      'artifacts/e2e-runs/**',
       'artifacts/linux-hyprland-paste/**',
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',

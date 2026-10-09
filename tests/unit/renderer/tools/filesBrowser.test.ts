@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FilesBridge, FilesResult, FilePreview } from '../../../../src/shared/files'
 import { FilesBrowserStore, sortEntries, visibleRows } from '../../../../src/renderer/src/tools/filesBrowser'
-import { TOKEN_A, TOKEN_B, fakeFilesBridge, text, type FakeFolders } from './fakeFilesBridge'
+import { TOKEN_A, TOKEN_B, fakeFilesBridge, text, type FakeFolders } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 

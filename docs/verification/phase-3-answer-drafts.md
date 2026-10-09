@@ -1,5 +1,7 @@
 # Structured answer draft durability
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Correction: [draft recovery verification](phase-3-draft-recovery.md) supersedes the cleanup and request-free restart claims below. Native request disappearance or definition changes now retain answers; automatic cleanup requires exact positive attempt acceptance. The earlier reintroduced-request Electron evidence remains historical.
 
 Verified September 13, 2026 in `phase3-answer-drafts`, based on `0bde0441bc75bef64dc203af6f16c0382ec88cd2`. Production source and the tested build are at `55d905312b5ad630bd02919b979c1c5a76b7e733`.
@@ -22,10 +24,10 @@ The original regression selected a structured radio option, recreated the render
 Final source checks: **312 tests passed in 15 scoped files**, no skips; both TypeScript projects passed; ESLint on all changed TypeScript/TSX files passed; `git diff 0bde044 --check` passed. No full suite was run.
 
 ```powershell
-npx vitest run tests/unit/main/requestDrafts.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/main/threadDrafts.test.ts tests/unit/main/agentControlRecovery.test.ts tests/unit/preload/requestDrafts.test.ts tests/unit/preload/personalChats.test.ts tests/unit/renderer/requests tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/threadsView.test.tsx tests/integration/requestDraftDelivery.test.ts tests/integration/draftManagementHandoff.test.ts tests/integration/ipc.test.ts --maxWorkers=1
+npx vitest run tests/unit/main/requestDraftPersistence.test.ts tests/unit/main/requestDraftDelivery.test.ts tests/unit/main/requestDraftLegacyPrivacy.test.ts tests/unit/main/requestDraftRetirement.test.ts tests/unit/main/requestDraftIpc.test.ts tests/unit/main/threadDrafts.test.ts tests/unit/main/agentProviderConfigurationRecovery.test.ts tests/unit/main/agentCompositionNavigation.test.ts tests/unit/main/agentCoordinatorGate.test.ts tests/unit/main/agentSupervisionRecovery.test.ts tests/unit/main/agentQuestionDraftRecovery.test.ts tests/unit/main/agentClarificationRecovery.test.ts tests/unit/preload/requestDrafts.test.ts tests/unit/preload/personalChats.test.ts tests/unit/renderer/requests tests/unit/renderer/threadRequestSurroundings.test.tsx tests/unit/renderer/personalChatsView.test.tsx tests/unit/renderer/agents/threadFacts.test.tsx tests/unit/renderer/agents/threadCreationRecovery.test.tsx tests/unit/renderer/agents/threadsView.test.tsx tests/integration/requestDraftDelivery.test.ts tests/integration/draftManagementHandoff.test.ts tests/integration/preloadBridge.test.ts tests/integration/ipcAuthorization.test.ts tests/integration/transcriptionIpc.test.ts tests/integration/updateIpc.test.ts tests/integration/settingsHistoryIpc.test.ts tests/integration/outputIpc.test.ts tests/integration/ipcLifecycle.test.ts tests/integration/widgetPresentationIpc.test.ts tests/unit/main/app/permissionPolicy.test.ts tests/unit/main/startupServiceIdempotence.test.ts tests/unit/main/tray/trayController.test.ts tests/unit/main/app/bootstrap.test.ts tests/unit/main/app/nativeRuntime.test.ts --maxWorkers=1
 npm run typecheck
 npm run build
-npx playwright test tests/e2e/request-draft-restart.spec.ts tests/e2e/phase-three-requests.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1
+npx playwright test tests/e2e/request-draft-restart.spec.ts tests/e2e/native-request-forms.spec.ts tests/e2e/phase-three-personal-requests.spec.ts --workers=1
 ```
 
 The final **nine complete-app Electron journeys passed in 31.1 seconds**:

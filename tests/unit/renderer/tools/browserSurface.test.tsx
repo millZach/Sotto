@@ -10,8 +10,8 @@ import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPl
 import { BrowserStore, normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: TOKEN_A }
 const PAGE_1 = '11111111-1111-4111-8111-111111111111'

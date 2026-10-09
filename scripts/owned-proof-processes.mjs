@@ -120,7 +120,8 @@ export function createOwnedProofProcesses(report) {
       // Chromium otherwise asks the live user manager to move it to a desktop scope.
       // The runner needs the real bus to create our scope; the command and its children do not.
       '--', '/usr/bin/env', `DBUS_SESSION_BUS_ADDRESS=unix:path=${systemdEnv.XDG_RUNTIME_DIR}/sotto-proof-${token}-no-bus`,
-      executable, ...args], { ...options, env: { ...systemdEnv, ...options.env }, detached: true })
+      // A supplied environment is complete: merging the parent back in can restore live display credentials.
+      executable, ...args], { ...options, env: options.env === undefined ? systemdEnv : { ...options.env }, detached: true })
     child.proofScope = scope
     child.once('error', error => { child.proofError = error })
     if (child.pid) { commands.push({ name, pid: child.pid, scope }); remember(child.pid) }

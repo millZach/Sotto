@@ -1,14 +1,16 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/review-388')
 
 for (const voiceCoordinatorEnabled of [false, true]) {
   test(`Settings mode row fits and keeps keyboard navigation with voice ${voiceCoordinatorEnabled}`, async () => {
     test.setTimeout(120_000)
     const launched = await launchSotto()
     const { page } = launched
-    const evidence = resolve('artifacts/review-388')
     const geometry: unknown[] = []
     await mkdir(evidence, { recursive: true })
     try {
@@ -45,7 +47,7 @@ for (const voiceCoordinatorEnabled of [false, true]) {
           expect(bounds.labels.map(label => label.name)).toEqual(voiceCoordinatorEnabled ? ['Dictate', 'Agents', 'Threads'] : ['Dictate', 'Threads'])
           expect(bounds.labels.every(label => label.fits && label.font === '12.5px')).toBe(true)
           expect(Math.max(...bounds.labels.map(label => label.width)) - Math.min(...bounds.labels.map(label => label.width))).toBeLessThan(1)
-          await page.screenshot({ path: resolve(evidence, `settings-${voiceCoordinatorEnabled ? 'three' : 'two'}-${width}-${appearance}.png`) })
+          await page.screenshot({ path: join(evidence, `settings-${voiceCoordinatorEnabled ? 'three' : 'two'}-${width}-${appearance}.png`) })
         }
       }
       const modes = page.getByRole('tablist', { name: 'Page', exact: true })
@@ -57,7 +59,7 @@ for (const voiceCoordinatorEnabled of [false, true]) {
       await page.keyboard.press('ArrowRight')
       await expect(page.getByRole('tab', { name: voiceCoordinatorEnabled ? 'Agents' : 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
     } finally {
-      await writeFile(resolve(evidence, `geometry-${voiceCoordinatorEnabled}.json`), JSON.stringify(geometry, null, 2))
+      await writeFile(join(evidence, `geometry-${voiceCoordinatorEnabled}.json`), JSON.stringify(geometry, null, 2))
       await closeSotto(launched)
     }
   })

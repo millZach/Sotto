@@ -1,5 +1,7 @@
 # Effort slider, colourways and the highest-level outline
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Date: 2026-09-20
 Plan: `docs/plans/effort-slider.md`. Decision: ADR-0019.
 
@@ -38,7 +40,7 @@ Captures in `artifacts/effort-slider/`, taken by the Electron spec with the synt
 
 ## Unit
 
-- `tests/unit/renderer/threadOptions.test.tsx`: the card's word and line, saving a step without closing, digits and Default, the chip and card marks at the highest level and the arrival starting and ending, the settled state when opened at the top, Ultra only when advertised (the slider's `max`), failed-save restoration, the card mounted through a pending save, an unknown saved level, a provider-default model without a Default button, Tab dismissal, the single-level model.
+- `tests/unit/renderer/agents/threadEffort.test.tsx`: the card's word and line, saving a step without closing, digits and Default, the chip and card marks at the highest level and the arrival starting and ending, the settled state when opened at the top, Ultra only when advertised (the slider's `max`), failed-save restoration, the card mounted through a pending save, an unknown saved level, a provider-default model without a Default button, Tab dismissal, the single-level model.
 - `tests/unit/renderer/themeTokens.test.ts`: the tinted effort word at 4.5:1 on the card and the chip for every built-in theme, both modes and all six colourways, and every colourway declaring its three hues and border hue. The resolver now reads the colourway blocks the way the cascade does.
 - `tests/unit/renderer/themeLibrary.test.tsx`: the six swatches in order, the active one named as such, a pick previewing at once, saving with its message, and the sample playing.
 - `tests/unit/renderer/appearance.test.ts`, `tests/unit/shared/settings.test.ts`: the attribute on the root, the cache, the fallback to Ember for an unknown value, the schema and defaults.
@@ -82,7 +84,7 @@ Captures the spec writes to `artifacts/effort-slider/`, in Rainbow:
 - Play again pressed mid-arrival: the tide in the card and in the composer is back under 300ms of its run after being more than 600ms into it.
 - `tests/unit/renderer/effortArrival.test.ts` holds the stylesheets to the rule: the letters' keyframes carry colour and nothing else, the word's carry the lift, and no rule moves a letter on either surface.
 - `tests/unit/renderer/themeLibrary.test.tsx`: the sample's scene is a fresh element on every play, mid-arrival included.
-- `tests/unit/renderer/threadOptions.test.tsx`: the Extra high line reads as the card's description at that level.
+- `tests/unit/renderer/agents/threadEffort.test.tsx`: the Extra high line reads as the card's description at that level.
 
 ## The lag between choosing a level and seeing it, September 21 2026
 
@@ -116,7 +118,7 @@ Both predate this change and both were proved on `origin/main`'s own build befor
 
 ## Checked through the tests
 
-- `tests/unit/renderer/threadOptions.test.tsx` renders the chips over a parent that applies main's answer before the command resolves, the way `AgentContext` does, because a static fixture confirms a change and then reports the level it always had. Three tests fail against the old code and pass against the new: the press shows at once and holds when the answer agrees with it; the card stays mounted and live while a selection is being confirmed, where the other two chips are fixed; and presses made during a save land on the card but only the level landed on is sent.
+- `tests/unit/renderer/agents/threadEffort.test.tsx` renders the chips over a parent that applies main's answer before the command resolves, the way `AgentContext` does, because a static fixture confirms a change and then reports the level it always had. Three tests fail against the old code and pass against the new: the press shows at once and holds when the answer agrees with it; the card stays mounted and live while a selection is being confirmed, where the other two chips are fixed; and presses made during a save land on the card but only the level landed on is sent.
 - The existing rejection test still holds the other end: a refused change takes the press back to the saved level and the error under the chips says so.
 
 ## After the two-axis review
