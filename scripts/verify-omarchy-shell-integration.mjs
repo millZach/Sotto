@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, copyRegularTree, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -108,6 +108,7 @@ async function orchestrate() {
   const root = mkdtempSync('/tmp/ssi-')
   const home = join(root, 'home'), runtime = join(root, 'rt'), evidence = join(root, 'evidence')
   for (const folder of [home, runtime, evidence, join(evidence, 'raw')]) mkdirSync(folder, { mode: 0o700 })
+  const temporary = prepareSandboxTmp(root)
   const proof = join(evidence, 'proof.txt')
   const say = message => { console.log(message); appendFileSync(proof, `${message}\n`) }
   say(`Temporary root ${root}: mode ${(statSync(root).mode & 0o777).toString(8)}`)
@@ -120,7 +121,7 @@ async function orchestrate() {
   const env = {
     HOME: home, USER: live.USER || process.env.USER, LANG: 'en_US.UTF-8', PATH: `${omarchy}/bin:/usr/local/bin:/usr/bin:/bin`,
     XDG_CONFIG_HOME: join(home, '.config'), XDG_STATE_HOME: join(home, '.local/state'), XDG_DATA_HOME: join(home, '.local/share'),
-    XDG_CACHE_HOME: join(home, '.cache'), XDG_RUNTIME_DIR: runtime, TMPDIR: root, TMP: root, TEMP: root,
+    XDG_CACHE_HOME: join(home, '.cache'), XDG_RUNTIME_DIR: runtime, TMPDIR: temporary, TMP: temporary, TEMP: temporary,
     OMARCHY_PATH: omarchy, HYPRLAND_NO_SD_NOTIFY: '1', XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland',
     QT_QPA_PLATFORM: 'wayland', XCURSOR_SIZE: '24', ELECTRON_OZONE_PLATFORM_HINT: 'wayland',
   }
@@ -230,13 +231,10 @@ async function orchestrate() {
     symlinkSync(join(live.XDG_RUNTIME_DIR, b.wl_socket), join(runtime, b.wl_socket))
     assert.ok(Buffer.byteLength(join(runtime, 'hypr', b.instance, '.socket.sock')) < 108)
     prepareSandboxHome(home, omarchy)
-    const config = rewriteSandboxConfig(home)
-    // A deterministic bar: the glyph is the centre anchor; clock on the right.
-    config.bar.centerAnchor = 'sotto.dictation'
-    config.bar.layout = { left: [{ id: 'omarchy.workspaces' }], center: [{ id: 'omarchy.indicators' }], right: [{ id: 'omarchy.clock', format: 'HH:mm' }] }
-    assertPlainTree(join(home, '.config/omarchy'))
-    writeFileSync(join(home, '.config/omarchy/shell.json'), JSON.stringify(config))
+    const config = rewriteSandboxConfig(home, omarchy)
+    say(`Sandbox config validated: version 1; only Sotto, bar and empty indicators; ${config.disabledPlugins.length} plugins excluded`)
     say(`Nested disabled plugins: ${config.disabledPlugins.join(', ')}`)
+    say(`Private TMPDIR: ${env.TMPDIR}; copied output paths removed`)
     const theme = join(home, '.local/state/omarchy/current/next-theme')
     copyRegularTree(join(omarchy, 'themes/tokyo-night'), theme)
     assertPlainTree(theme)
@@ -245,10 +243,8 @@ async function orchestrate() {
     copyRegularTree(theme, join(home, '.local/state/omarchy/current/theme'))
     assertPlainTree(join(home, '.local/state/omarchy/current/theme.name'))
     writeFileSync(join(home, '.local/state/omarchy/current/theme.name'), 'tokyo-night\n')
-    const backgrounds = readdirSync(join(theme, 'backgrounds')).sort()
-    copyRegularTree(join(home, '.local/state/omarchy/current/theme/backgrounds', backgrounds[0]), join(home, '.local/state/omarchy/current/background'))
     assertPlainTree(join(home, '.config/omarchy'))
-    validateSandboxConfig(home)
+    validateSandboxConfig(home, omarchy)
     startIsolated('nested Omarchy shell', 'dbus-run-session', ['--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
     await until('isolated shell answers', async () => { try { await run('omarchy-shell', ['shell', 'ping'], { env }); return true } catch { return false } }, 30000)
     assertPlainTree(join(home, '.config/omarchy'))
@@ -508,14 +504,6 @@ async function journey(configPath) {
     })
     await until('shell pill removed on uninstall', async () => !await pillOn() && !await pillOn('WAYLAND-2'))
     await state('h-plugin-removed-widget-mapped', 'listening', { edge: 'left' })
-    // Rescanning rebuilds the background too. Wait for its actual pixels, not a fixed delay.
-    const backgroundPixel = async path => (await run('magick', [path, '-format', '%[pixel:p{1200,700}]', 'info:'])).stdout
-    const expectedPixel = await backgroundPixel(join(evidence, 'raw/base-WAYLAND-1.png'))
-    await until('wallpaper repaint after rescan', async () => {
-      const frame = join(root, 'background-repaint.png')
-      await run('grim', ['-o', 'WAYLAND-1', frame], { timeout: 15000 })
-      return await backgroundPixel(frame) === expectedPixel
-    })
     await capture('h-widget-returned')
     await capture('h-output2-no-pill', 'WAYLAND-2')
     say('Electron widget visible=true and compositor mapped=true; plugin absent; no shell pill on either output')

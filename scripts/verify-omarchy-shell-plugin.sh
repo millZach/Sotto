@@ -68,7 +68,7 @@ check_dest() {
 check_dest || exit 2
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-node=$(mise which node@24.21.0)
+node=$(mise exec node@24.21.0 -- node -p 'process.execPath')
 sandbox() { "$node" "$here/omarchy-shell-sandbox.mjs" "$@"; }
 omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
@@ -79,6 +79,8 @@ run=/run/user/$uid
 # end. Until cleanup is armed below, an early exit just removes it.
 work=$(mktemp -d /tmp/sotto-shell-proof.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
+temporary=$(sandbox temporary "$work")
+export TMPDIR="$temporary" TMP="$temporary" TEMP="$temporary"
 evidence=$work/evidence
 mkdir -m 700 "$evidence" "$evidence/raw" "$evidence/curated"
 : >"$evidence/proof.txt"
@@ -301,7 +303,7 @@ scoped() { # name env-file command... (its output goes to <work>/<name>.log)
   # shellcheck disable=SC2046
   systemd-run --user --scope --quiet --collect --unit="sotto-shell-proof-$token-$units-$name.scope" \
     --slice="$slice" --property=KillMode=control-group --property=TimeoutStopSec=2s \
-    -- /usr/bin/env -i $(cat "$envfile") "$@" <"${scoped_stdin:-/dev/null}" >>"$work/$name.log" 2>&1 &
+    -- /usr/bin/env -i "HOME=$home" "TMPDIR=$temporary" "TMP=$temporary" "TEMP=$temporary" $(cat "$envfile") "$@" <"${scoped_stdin:-/dev/null}" >>"$work/$name.log" 2>&1 &
   last_pid=$!
   owned_pids+=("$last_pid")
 }
@@ -346,7 +348,7 @@ mkdir -p "$home"
 hypr_env() { # parent-display
   printf '%s\n' "HOME=$home" "XDG_CONFIG_HOME=$home/.config" "XDG_RUNTIME_DIR=$run" "WAYLAND_DISPLAY=$1" \
     "OMARCHY_PATH=$omarchy_path" "PATH=/usr/bin:/bin" "HYPRLAND_NO_SD_NOTIFY=1" \
-    "DBUS_SESSION_BUS_ADDRESS=unix:path=$work/no-bus"
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=$work/no-bus" "TMPDIR=$temporary" "TMP=$temporary" "TEMP=$temporary"
 }
 
 hypr_env "$live_wl" >"$work/env-a"
@@ -398,15 +400,18 @@ sandbox setup "$home" "$omarchy_path" || fail "could not build a link-free sandb
 # Services that would reach past the nested session stay off in the copy.
 config=$home/.config/omarchy/shell.json
 # A rewrite or validation failure must stop here, before any Quickshell starts.
-sandbox configure "$home" || fail "sandbox shell.json rewrite failed"
-sandbox validate "$home" || fail "sandbox shell.json validation failed"
+sandbox configure "$home" "$omarchy_path" || fail "sandbox shell.json rewrite failed"
+sandbox validate "$home" "$omarchy_path" || fail "sandbox shell.json validation failed"
+say "sandbox config validated: version 1; only Sotto, bar and empty indicators; $(jq '.disabledPlugins | length' "$config") plugins excluded"
+say "disabled plugins: $(jq -r '.disabledPlugins | join(", ")' "$config")"
+say "private TMPDIR: $temporary; copied output paths removed"
 
 make_theme() {
   local next=$home/.local/state/omarchy/current/next-theme current=$home/.local/state/omarchy/current/theme
   sandbox remove "$next"
   sandbox copy "$omarchy_path/themes/$1" "$next"
   sandbox check "$home/.config" "$next"
-  HOME=$home OMARCHY_PATH=$omarchy_path PATH="$omarchy_path/bin:$PATH" omarchy-theme-set-templates
+  HOME=$home XDG_CONFIG_HOME=$home/.config XDG_STATE_HOME=$home/.local/state XDG_DATA_HOME=$home/.local/share XDG_CACHE_HOME=$home/.cache TMPDIR=$temporary TMP=$temporary TEMP=$temporary OMARCHY_PATH=$omarchy_path PATH="$omarchy_path/bin:$PATH" omarchy-theme-set-templates
   sandbox remove "$current"
   sandbox check "$next" "$current" "$home/.local/state/omarchy/current/theme.name"
   mv "$next" "$current"
@@ -464,12 +469,13 @@ printf '%s\n' "HOME=$home" "USER=$USER" "LANG=en_US.UTF-8" "PATH=$work/bin:$omar
   "XDG_CONFIG_HOME=$home/.config" "XDG_STATE_HOME=$home/.local/state" "XDG_CACHE_HOME=$home/.cache" \
   "XDG_DATA_HOME=$home/.local/share" "XDG_RUNTIME_DIR=$rt" "WAYLAND_DISPLAY=$b_wl" \
   "HYPRLAND_INSTANCE_SIGNATURE=$b_sig" "OMARCHY_PATH=$omarchy_path" "XDG_CURRENT_DESKTOP=Hyprland" \
-  "XDG_SESSION_TYPE=wayland" "QT_QPA_PLATFORM=wayland" "XCURSOR_SIZE=24" >"$work/env-shell"
+  "XDG_SESSION_TYPE=wayland" "QT_QPA_PLATFORM=wayland" "XCURSOR_SIZE=24" \
+  "TMPDIR=$temporary" "TMP=$temporary" "TEMP=$temporary" >"$work/env-shell"
 in_shell() { sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"; env -i $(cat "$work/env-shell") "$@"; }
 
 shell_up() { in_shell omarchy-shell shell ping >/dev/null 2>&1; }
 start_shell() {
-  sandbox validate "$home" || fail "sandbox shell.json validation failed before startup"
+  sandbox validate "$home" "$omarchy_path" || fail "sandbox shell.json validation failed before startup"
   scoped omarchy-shell "$work/env-shell" dbus-run-session -- quickshell -p "$omarchy_path/shell"
   wait_for 30 shell_up || fail "the nested Omarchy shell did not answer"
   sleep 2
@@ -645,12 +651,16 @@ baseline
 write_state transcribing
 sleep 1
 pcapture bar-transcribing
-read -r gw gh gx gy <<<"$(magick "$evidence/raw/base-WAYLAND-1.png" "$evidence/raw/bar-transcribing.png" -compose difference -composite \
-  -crop 1600x26+0+0 +repage -colorspace gray -threshold 6% -format '%@' info: | sed -E 's/^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/\1 \2 \3 \4/')"
-glyph_x=$((gx + gw / 2)) glyph_y=$((gy + gh / 2))
 go_idle
+# The sparse proof bar can recenter a widget as its contents change. Use the
+# shell's actual idle hit box, rather than a changed pixel from another state.
+read -r gx gy gw gh <<<"$(in_shell omarchy-shell shell debugBarGeometry | jq -r '[.[] | select(.id == "sotto.dictation" and .visible and .itemVisible)][0] | "\(.x) \(.y) \(.width) \(.height)"')"
+glyph_x=$((gx + gw / 2)) glyph_y=$((gy + gh / 2))
+say "idle glyph hit box: ${gw}x${gh} at $gx,$gy; click $glyph_x,$glyph_y"
 n=$(verbs)
 click "$glyph_x" "$glyph_y"
+wait_for 5 '[[ $(verbs) == $((n + 1)) ]]' || fail "the bar glyph did not reach the stand-in launcher"
+
 check '[[ $(verbs) == $((n + 1)) && $(last_verb) == "dictation toggle" && $(last_runner) == "$checkout_sotto" ]]' "a click on the bar glyph runs: $checkout_sotto dictation toggle"
 
 say "--- the pill's buttons"
@@ -1122,8 +1132,7 @@ check '((w < w2))' "with Hyprland's animations off, the transcribing pill drops 
 say "--- Catppuccin Latte"
 make_theme catppuccin-latte
 current=$home/.local/state/omarchy/current/theme
-background=$(readlink "$home/.local/state/omarchy/current/background")
-in_shell omarchy-shell background themeTransition "" "$background" "$background" \
+in_shell omarchy-shell shell applyTheme \
   "$(base64 -w0 "$current/colors.toml")" "$(base64 -w0 "$current/shell.toml")" >/dev/null
 stop_terminals
 start_terminals

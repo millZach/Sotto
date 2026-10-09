@@ -74,7 +74,35 @@ export function prepareSandboxHome(home, omarchyPath) {
   copyRegularTree(join(omarchyPath, 'config/foot'), join(home, '.config/foot'))
 }
 
-const excludedPlugins = ['omarchy.polkit', 'omarchy.lock', 'omarchy.idle', 'omarchy.nightlight', 'omarchy.weather', 'omarchy.system-update', 'omarchy.clipboard', 'omarchy.battery']
+export const allowedShellPlugins = Object.freeze(['sotto.dictation', 'omarchy.bar', 'omarchy.indicators'])
+
+// First-party plugins are implicitly enabled, even when absent from the layout.
+// Discover every manifest so a new installed service is excluded automatically.
+export function excludedShellPlugins(omarchyPath) {
+  const root = join(omarchyPath, 'shell/plugins'), ids = new Set()
+  assertPlainTree(root)
+  const visit = path => {
+    if (lstatSync(path).isDirectory()) {
+      for (const name of readdirSync(path)) visit(join(path, name))
+    } else if (path.endsWith('/manifest.json') || path.endsWith('.manifest.json')) {
+      assertPlainPath(path)
+      const manifest = JSON.parse(readFileSync(path, 'utf8'))
+      assert.ok(typeof manifest.id === 'string' && manifest.id.length, `Missing plugin ID: ${path}`)
+      ids.add(manifest.id)
+    }
+  }
+  visit(root)
+  for (const id of allowedShellPlugins.filter(id => id.startsWith('omarchy.'))) assert.ok(ids.has(id), `Missing proof bar plugin: ${id}`)
+  return [...ids].filter(id => !allowedShellPlugins.includes(id)).sort()
+}
+
+export function prepareSandboxTmp(root) {
+  const path = join(root, 'tmp')
+  assertPlainTree(path)
+  mkdirSync(path, { recursive: true, mode: 0o700 })
+  assert.equal(lstatSync(path).mode & 0o777, 0o700, 'Sandbox TMPDIR must be private')
+  return path
+}
 
 function readShellConfig(path) {
   assertPlainTree(path)
@@ -83,34 +111,58 @@ function readShellConfig(path) {
   return config
 }
 
-function validateConfigFile(path) {
+function validateConfigFile(path, omarchyPath) {
   const config = readShellConfig(path)
   assert.ok(Array.isArray(config.disabledPlugins), 'Sandbox shell.json needs disabledPlugins')
-  for (const id of excludedPlugins) assert.ok(config.disabledPlugins.includes(id), `Sandbox shell.json must disable ${id}`)
+  for (const id of excludedShellPlugins(omarchyPath)) assert.ok(config.disabledPlugins.includes(id), `Sandbox shell.json must disable ${id}`)
+  assert.equal(config.bar?.id, 'omarchy.bar', 'Only the proof bar is allowed')
+  assert.equal(config.bar.transparent, false, 'Do not run the bar transparency helper')
+  for (const section of ['left', 'center', 'right']) {
+    assert.ok(Array.isArray(config.bar.layout?.[section]), `Missing sandbox bar section: ${section}`)
+    for (const entry of config.bar.layout[section]) {
+      assert.ok(['sotto.dictation', 'omarchy.indicators'].includes(entry.id), `Unneeded bar widget: ${entry.id}`)
+      if (entry.id === 'omarchy.indicators') assert.deepEqual(entry.items, [''], 'Do not load the built-in indicator services')
+    }
+  }
+  assert.ok(Array.isArray(config.plugins) && config.plugins.every(entry => allowedShellPlugins.includes(typeof entry === 'string' ? entry : entry.id)), 'Unneeded sandbox service')
   return config
 }
 
-export function validateSandboxConfig(home) {
+export function validateSandboxConfig(home, omarchyPath) {
   assertPlainTree(join(home, '.config/omarchy'))
-  return validateConfigFile(join(home, '.config/omarchy/shell.json'))
+  return validateConfigFile(join(home, '.config/omarchy/shell.json'), omarchyPath)
 }
 
-export function rewriteSandboxConfig(home) {
+export function rewriteSandboxConfig(home, omarchyPath) {
   const path = join(home, '.config/omarchy/shell.json'), temporary = `${path}.sandbox-tmp`
   assertPlainTree(join(home, '.config/omarchy'))
-  const config = readShellConfig(path)
-  assert.ok(config.disabledPlugins === undefined || Array.isArray(config.disabledPlugins), 'Invalid disabledPlugins in sandbox shell.json')
-  config.disabledPlugins = [...new Set([...(config.disabledPlugins || []), ...excludedPlugins])].sort()
+  readShellConfig(path)
+  // Retain no copied settings, including output paths (syncDir), exec strings,
+  // custom bars or third-party services. Only the installer adds a command path.
+  const config = {
+    version: 1,
+    bar: {
+      id: 'omarchy.bar', position: 'top', transparent: false, centerAnchor: 'sotto.dictation',
+      layout: {
+        left: [],
+        // An empty array loads Omarchy's defaults. A blank ID loads no children
+        // while retaining the marker that the installer places its glyph after.
+        center: [{ id: 'omarchy.indicators', items: [''] }],
+        right: [],
+      },
+    },
+    plugins: [], disabledPlugins: excludedShellPlugins(omarchyPath),
+  }
   let created = false
   try {
     assertPlainPath(temporary)
     writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
     created = true
-    validateConfigFile(temporary)
+    validateConfigFile(temporary, omarchyPath)
     assertPlainTree(join(home, '.config/omarchy'))
     renameSync(temporary, path)
     created = false
-    return validateSandboxConfig(home)
+    return validateSandboxConfig(home, omarchyPath)
   } finally { if (created) removePlainTree(temporary) }
 }
 
@@ -135,7 +187,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   else if (action === 'copy' && args.length === 2) copyRegularTree(...args)
   else if (action === 'remove' && args.length === 1) removePlainTree(args[0])
   else if (action === 'stamp' && args.length) console.log(JSON.stringify(args.map(snapshotTree)))
-  else if (action === 'configure' && args.length === 1) rewriteSandboxConfig(args[0])
-  else if (action === 'validate' && args.length === 1) validateSandboxConfig(args[0])
-  else throw new Error('Expected setup, check, copy, remove, stamp, configure or validate with sandbox paths')
+  else if (action === 'configure' && args.length === 2) rewriteSandboxConfig(...args)
+  else if (action === 'validate' && args.length === 2) validateSandboxConfig(...args)
+  else if (action === 'temporary' && args.length === 1) console.log(prepareSandboxTmp(args[0]))
+  else throw new Error('Expected setup, check, copy, remove, stamp, configure, validate or temporary with sandbox paths')
 }
