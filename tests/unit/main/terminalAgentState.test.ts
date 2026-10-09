@@ -330,6 +330,21 @@ describe('terminal agent run state', () => {
     state.output(idle); state.hook(event('completed')); expect(state.state).toBe('idle')
   })
   it.each([
+    ['claude', header, '✻ Working… (esc to interrupt)', '❯ \r\n? for shortcuts'],
+    ['codex', codexTitle, '• Working (0s • esc to interrupt)', '› Ask Codex to do anything\r\n? for shortcuts'],
+    ['grok', grokTitle, '⠧ Thinking… 0.2s       0.2s [stop]', '│>\r\nGrok 4.7 (xhigh) · auto-review'],
+  ] as const)('ignores historical %s interruption text while retaining current failure detection', (provider, title, status, ready) => {
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started(); state.output(redraw(ready, title))
+    state.input('new work\r'); state.output(redraw(`Interrupted\r\n${status}`, title))
+    state.output(redraw(`Interrupted\r\nA successful reply for the new turn.\r\n${ready}`, title))
+    if (provider !== 'grok') state.hook(event('completed', { turnId: 'turn' }))
+    expect(state.state).toBe('just-finished')
+    state.setVisible(true); state.setVisible(false); state.input('failing work\r'); state.output(redraw(status, title))
+    state.output(redraw(`Error: the current operation failed\r\n${ready}`, title))
+    if (provider !== 'grok') state.hook(event('completed', { turnId: 'next' }))
+    expect(state.state).toBe('idle')
+  })
+  it.each([
     ['input', true], ['input', false], ['hook', true], ['hook', false],
   ] as const)('does not revive %s-cancelled work from late tool callbacks with a turn ID: %s', (cancel, hasTurnId) => {
     const prior = hasTurnId ? { turnId: 'a' } : {}

@@ -210,7 +210,12 @@ export class TerminalScreenRules {
     const text = bottom.join('\n')
     // Approval chrome must own the current footer, not an example above a live draft or later output.
     const footer = bottom.at(-1) ?? ''
-    const failed = /^(?:Error:|Interrupted|Cancelled|Canceled|Turn cancelled|Turn canceled|Request failed)/imu.test(text)
+    // A prior cancellation can remain in the transcript above a later turn. Only the current result row,
+    // before the input chrome (or at the active tail), can invalidate this turn's completion.
+    const composer = bottom.findLastIndex(line => /^(?:[❯›](?:\s|$)|[│┃]\s*>)/u.test(line))
+    const result = bottom.slice(0, composer < 0 ? bottom.length : composer)
+      .filter(line => line !== '' && !/^[─━┌┐└┘│┃┬┴┼╭╮╰╯\s]+$/u.test(line)).at(-1) ?? ''
+    const failed = /^(?:Error:|Interrupted|Cancelled|Canceled|Turn cancelled|Turn canceled|Request failed)/iu.test(result)
     if (this.provider === 'claude') {
       const work = /^[✶✻✽✢·*]\s+\S[^\r\n]*(?:esc to interrupt|ctrl\+c to interrupt)[^\r\n]*$/imu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
