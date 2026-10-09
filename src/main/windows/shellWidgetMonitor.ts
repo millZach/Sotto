@@ -1,4 +1,4 @@
-import { statSync, watch, type FSWatcher } from 'node:fs'
+import { statSync, watch, type FSWatcher, type Stats } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { SottoPlatform } from '../../shared/platform'
 
@@ -6,6 +6,7 @@ import type { SottoPlatform } from '../../shared/platform'
 export class ShellWidgetMonitor {
   readonly path: string
   private watcher: FSWatcher | null = null
+  private watched: { path: string; identity: Stats } | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private present: boolean | null = null
   private running = false
@@ -27,16 +28,22 @@ export class ShellWidgetMonitor {
     if (!this.running) return
     const present = this.isDirectory(this.path)
     if (present !== this.present) { this.present = present; this.changed(present) }
-    this.watcher?.close()
-    this.watcher = null
+    if (!this.running) return
     let parent = dirname(this.path)
     while (!this.isDirectory(parent) && dirname(parent) !== parent) parent = dirname(parent)
     try {
+      const identity = statSync(parent)
+      if (this.watcher && this.watched?.path === parent &&
+        this.watched.identity.dev === identity.dev && this.watched.identity.ino === identity.ino) return
+      this.watcher?.close()
+      this.watcher = null
+      this.watched = null
       const watcher = watch(parent, () => this.refresh())
       this.watcher = watcher
+      this.watched = { path: parent, identity }
       watcher.on('error', () => {
         watcher.close()
-        if (this.watcher === watcher) this.watcher = null
+        if (this.watcher === watcher) { this.watcher = null; this.watched = null }
       })
     } catch { /* The periodic check recovers a missing or unwatched folder. */ }
   }
@@ -49,6 +56,7 @@ export class ShellWidgetMonitor {
     this.running = false
     this.watcher?.close()
     this.watcher = null
+    this.watched = null
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
   }

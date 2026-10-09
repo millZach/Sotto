@@ -5,11 +5,32 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ShellWidgetMonitor } from '../../../src/main/windows/shellWidgetMonitor'
 
+const { watched } = vi.hoisted(() => ({ watched: vi.fn() }))
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, watch: (...args: Parameters<typeof fs.watch>) => { watched(...args); return fs.watch(...args) } }
+})
+
 describe('shell plugin folder monitor', () => {
   let home: string
   let monitor: ShellWidgetMonitor | undefined
-  beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'sotto-shell-')) })
-  afterEach(() => { monitor?.dispose(); monitor = undefined; rmSync(home, { recursive: true, force: true }) })
+  beforeEach(() => { watched.mockClear(); home = mkdtempSync(join(tmpdir(), 'sotto-shell-')) })
+  afterEach(() => { monitor?.dispose(); monitor = undefined; vi.useRealTimers(); rmSync(home, { recursive: true, force: true }) })
+  it('keeps its watcher through periodic refreshes until the nearest parent changes', () => {
+    vi.useFakeTimers()
+    monitor = new ShellWidgetMonitor('linux', join(home, 'config'), home, vi.fn())
+    monitor.start()
+    vi.advanceTimersByTime(3_000)
+    expect(watched).toHaveBeenCalledTimes(1)
+    mkdirSync(monitor.path, { recursive: true })
+    vi.advanceTimersByTime(1_000)
+    expect(watched).toHaveBeenCalledTimes(2)
+    vi.advanceTimersByTime(3_000)
+    expect(watched).toHaveBeenCalledTimes(2)
+    rmSync(join(home, 'config'), { recursive: true })
+    vi.advanceTimersByTime(1_000)
+    expect(watched).toHaveBeenCalledTimes(3)
+  })
   it('watches installation, removal and reinstall even when config parents did not exist', async () => {
     const changed = vi.fn()
     monitor = new ShellWidgetMonitor('linux', join(home, 'config'), home, changed)
