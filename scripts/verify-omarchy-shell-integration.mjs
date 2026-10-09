@@ -39,6 +39,18 @@ function startOf(pid) {
   const raw = readFileSync(`/proc/${pid}/stat`, 'utf8')
   return Number(raw.slice(raw.lastIndexOf(')') + 1).trim().split(/\s+/u)[19])
 }
+function longRunningShellProcesses(shellPid) {
+  const processes = execFileSync('ps', ['-e', '-o', 'pid=,ppid=,etimes='], { encoding: 'utf8' })
+    .trim().split('\n').map(line => line.trim().split(/\s+/u).map(Number))
+  const parents = new Map(processes.map(([pid, parent]) => [pid, parent]))
+  return processes.filter(([pid, , age]) => {
+    if (age < 60) return false
+    for (let ancestor = pid; ancestor && ancestor !== 1; ancestor = parents.get(ancestor)) {
+      if (ancestor === shellPid) return true
+    }
+    return false
+  }).map(([pid]) => ({ pid, start: startOf(pid) }))
+}
 function hashFile(path) { return createHash('sha256').update(readFileSync(path)).digest('hex') }
 function treeStamp(root) {
   if (!existsSync(root)) return []
@@ -91,10 +103,13 @@ async function orchestrate() {
   assert.equal(process.cwd(), checkout, 'Run from this checkout')
   checkDestination()
   const shells = execFileSync('pgrep', ['-x', 'quickshell'], { encoding: 'utf8' }).trim().split('\n')
-    .map(Number).filter(pid => !readFileSync(`/proc/${pid}/cgroup`, 'utf8').includes('proof')).map(environmentOf)
-    .filter(env => env.XDG_RUNTIME_DIR === `/run/user/${process.getuid()}`)
+    .map(Number).filter(pid => !readFileSync(`/proc/${pid}/cgroup`, 'utf8').includes('proof'))
+    .map(pid => ({ pid, env: environmentOf(pid) }))
+    .filter(({ env }) => env.XDG_RUNTIME_DIR === `/run/user/${process.getuid()}`)
   assert.equal(shells.length, 1, 'Identify exactly one live Omarchy shell from its own environment')
-  const live = shells[0]
+  const live = shells[0].env
+  const liveProcesses = longRunningShellProcesses(shells[0].pid)
+  assert.ok(liveProcesses.length, 'Record the live shell and its long-running processes')
   assert.ok(live.HYPRLAND_INSTANCE_SIGNATURE && live.WAYLAND_DISPLAY)
   const instanceRoot = join(live.XDG_RUNTIME_DIR, 'hypr')
   const before = snapshotProofInstances(instanceRoot)
@@ -107,6 +122,7 @@ async function orchestrate() {
   const say = message => { console.log(message); appendFileSync(proof, `${message}\n`) }
   say(`Temporary root ${root}: mode ${(statSync(root).mode & 0o777).toString(8)}`)
   say(`Live ${live.HYPRLAND_INSTANCE_SIGNATURE} on ${live.WAYLAND_DISPLAY}: no input or config writes`)
+  say(`Live shell PID ${shells[0].pid}: ${liveProcesses.length} long-running process identities recorded`)
   say(`Checkout ${execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()}; Electron ${JSON.parse(readFileSync(join(checkout, 'node_modules/electron/package.json'))).version}`)
   for (const path of ['out/main/index.js', 'out/main/dictationClient.js', 'out/preload/index.js', 'out/renderer/index.html']) say(`Built ${path}: sha256 ${hashFile(join(checkout, path))}`)
   const owned = createOwnedProofProcesses(say)
@@ -156,6 +172,11 @@ async function orchestrate() {
     assertProofInstancesPreserved(instanceRoot, before)
     say(`Prior Hyprland instances preserved: ${JSON.stringify([...before.keys()])}`)
     liveDirectories.forEach((path, index) => { assert.deepEqual(treeStamp(path), liveStamps[index]); say(`Live ${path} unchanged`) })
+    for (const record of liveProcesses) {
+      assert.ok(isProofProcessAlive(record.pid), `Preserve live shell process ${record.pid}`)
+      assert.equal(startOf(record.pid), record.start, `Preserve live shell process identity ${record.pid}`)
+    }
+    say(`Live shell long-running process identities unchanged: ${liveProcesses.length}`)
   }, () => {
     checkDestination()
     mkdirSync(destination, { recursive: true })
@@ -222,11 +243,13 @@ async function orchestrate() {
     const config = JSON.parse(readFileSync(join(omarchy, 'config/omarchy/shell.json'), 'utf8'))
     // Clipboard.qml starts by pkill-ing watchers globally, including the live shell's.
     // It must never load in this sandbox; its cache writes would also reach beyond our session.
-    config.disabledPlugins = ['omarchy.polkit', 'omarchy.lock', 'omarchy.idle', 'omarchy.nightlight', 'omarchy.weather', 'omarchy.system-update', 'omarchy.clipboard']
+    // Battery can change the machine's power profile when its power source changes.
+    config.disabledPlugins = ['omarchy.polkit', 'omarchy.lock', 'omarchy.idle', 'omarchy.nightlight', 'omarchy.weather', 'omarchy.system-update', 'omarchy.clipboard', 'omarchy.battery']
     // A deterministic bar: the glyph is the centre anchor; clock on the right.
     config.bar.centerAnchor = 'sotto.dictation'
     config.bar.layout = { left: [{ id: 'omarchy.workspaces' }], center: [{ id: 'omarchy.indicators' }], right: [{ id: 'omarchy.clock', format: 'HH:mm' }] }
     writeFileSync(join(home, '.config/omarchy/shell.json'), JSON.stringify(config))
+    say(`Nested disabled plugins: ${config.disabledPlugins.join(', ')}`)
     const theme = join(home, '.local/state/omarchy/current/next-theme')
     cpSync(join(omarchy, 'themes/tokyo-night'), theme, { recursive: true })
     await run('omarchy-theme-set-templates', [], { env })
