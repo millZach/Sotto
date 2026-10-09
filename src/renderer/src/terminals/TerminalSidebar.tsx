@@ -169,7 +169,7 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
       focusedRow.current = button && id && button.dataset.terminalAction ? { id, action: button.dataset.terminalAction, element: button } : null
     }} onBlurCapture={event => {
       // Removing a focused row does not emit a browser blur. Explicitly leaving it does, and must not steal focus back.
-      if (event.target === focusedRow.current?.element && focusedRow.current.element.isConnected) focusedRow.current = null
+      if (event.nativeEvent.target === focusedRow.current?.element && focusedRow.current.element.isConnected) focusedRow.current = null
     }}>
       {stateGroup('Needs you', needsYou)}
       {stateGroup('Working', working)}

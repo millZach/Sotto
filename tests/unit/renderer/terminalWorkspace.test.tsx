@@ -212,12 +212,12 @@ afterEach(() => { cleanup(); localStorage.clear() })
 describe('Terminal mode', () => {
   it.each(['Tests', 'Close Tests', 'Open Tests beside'])('preserves focus on %s through asynchronous sidebar regrouping', async action => {
     const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })])
-    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build', exact: true }))
-    await screen.findByRole('region', { name: 'Build', exact: true })
-    within(sidebar()).getByRole('button', { name: action, exact: true }).focus()
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await screen.findByRole('region', { name: 'Build' })
+    within(sidebar()).getByRole('button', { name: action }).focus()
     for (const agentState of ['needs-you', 'idle', 'working'] as const) {
       await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState }) }) })
-      expect(within(sidebar()).getByRole('button', { name: action, exact: true })).toHaveFocus()
+      expect(within(sidebar()).getByRole('button', { name: action })).toHaveFocus()
     }
     search().focus()
     await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState: 'idle' }) }) })
@@ -227,9 +227,9 @@ describe('Terminal mode', () => {
     const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' })])
     const toggle = await within(sidebar()).findByRole('button', { name: /^workshop / })
     fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    within(sidebar()).getByRole('button', { name: 'Close Build', exact: true }).focus()
+    within(sidebar()).getByRole('button', { name: 'Close Build' }).focus()
     await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_1, { title: 'Build', agentState: 'idle' }) }) })
-    expect(within(sidebar()).getByRole('button', { name: 'Close Build', exact: true })).toHaveFocus()
+    expect(within(sidebar()).getByRole('button', { name: 'Close Build' })).toHaveFocus()
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
   it('shows main-owned agent states in Variant B order and leaves the pane header state free', async () => {
