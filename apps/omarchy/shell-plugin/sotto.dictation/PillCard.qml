@@ -22,7 +22,9 @@ BorderSurface {
 
   readonly property color ink: Color.popups.text
   readonly property int pad: Style.space(12)
-  readonly property int maxMessageWidth: Style.space(440)
+  // Room for Sotto's longest failure sentence, about 60 characters, while
+  // an upright pill still fits a 1280x800 display beside a top bar.
+  readonly property int maxMessageWidth: Style.space(470)
 
   color: Util.alpha(Color.background, 0.97)
   borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))

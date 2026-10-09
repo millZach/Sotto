@@ -17,7 +17,12 @@ BarWidget {
   readonly property var dictation: service ? service.dictation : (ownState.item || null)
   readonly property string status: dictation ? dictation.status : "idle"
   readonly property var record: dictation ? dictation.record : Model.idle()
-  readonly property var look: Model.barFor(status, record)
+  // Without the service there is no pill to say a command failed, so the
+  // glyph says it for a few seconds instead.
+  property string notice: ""
+  readonly property var look: notice !== ""
+    ? { glyph: "alert", alert: true, time: false, tooltip: notice }
+    : Model.barFor(status, record)
   readonly property bool showTime: look.time && !vertical
   readonly property color ink: look.alert ? (bar ? bar.urgent : Color.urgent) : (bar ? bar.barForeground : Color.foreground)
   // The bar shows its shared tooltip only for a target that says it is hovered.
@@ -40,12 +45,13 @@ BarWidget {
   onCommandSettingChanged: if (service) service.useCommand(commandSetting)
   Component.onCompleted: findService()
 
-  // The service may load a moment after the widget; look for it briefly.
+  // The service may load a moment after the widget: look for it often at
+  // first, then now and then.
   Timer {
     property int tries: 0
-    interval: 250
+    interval: tries < 40 ? 250 : 5000
     repeat: true
-    running: root.service === null && tries < 40
+    running: root.service === null
     onTriggered: { tries++; root.findService() }
   }
 
@@ -58,6 +64,16 @@ BarWidget {
   Commands {
     id: ownCommands
     command: root.commandSetting
+    onFailed: function(verb, text) {
+      root.notice = text
+      noticeTimer.restart()
+    }
+  }
+
+  Timer {
+    id: noticeTimer
+    interval: Model.NOTICE_MS
+    onTriggered: root.notice = ""
   }
 
   implicitWidth: vertical ? barSize : (showTime ? row.implicitWidth + Style.space(12) : Style.bar.iconSlot)

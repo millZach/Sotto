@@ -387,7 +387,7 @@ say "--- states, Tokyo Night"
 baseline
 capture idle
 for scene in "starting false - top 0" "listening false - top 12000" "transcribing false - top 0" "copied false - top 0" \
-  "failed true Could_not_reach_OpenRouter._Recording_kept. top 0" "failed false - top 0"; do
+  "failed true OpenRouter_has_no_credit_left._Add_credit,_then_try_again. top 0" "failed false - top 0"; do
   read -r st kept detail edge ago <<<"$scene"
   [[ $detail == - ]] && detail="" || detail=${detail//_/ }
   write_state "$st" "$kept" "$detail" "$edge" "$ago"
@@ -438,7 +438,7 @@ check '[[ $(focused) == "$terminal" ]]' "the focused terminal keeps keyboard foc
 check '[[ $(hypr_b layers -j | jq -r ".\"WAYLAND-1\".levels.\"3\" | map(.namespace) | index(\"sotto-dictation\")") != null ]]' "the pill is a layer-shell surface on the overlay layer"
 # Focus moved for that check, so measure against a fresh baseline.
 baseline
-write_state failed true "Could not reach OpenRouter. Recording kept." top 0
+write_state failed true "Sotto could not reach OpenRouter. Check your connection." top 0
 sleep 1
 pcapture buttons-failed
 read -r w h x y <<<"$(pill buttons-failed)"
@@ -598,7 +598,7 @@ stop_terminals
 start_terminals
 baseline
 capture light-idle
-for scene in "listening false - 12000" "transcribing false - 0" "failed true Could_not_reach_OpenRouter._Recording_kept. 0"; do
+for scene in "listening false - 12000" "transcribing false - 0" "failed true Sotto_could_not_reach_OpenRouter._Check_your_connection. 0"; do
   read -r st kept detail ago <<<"$scene"
   [[ $detail == - ]] && detail="" || detail=${detail//_/ }
   write_state "$st" "$kept" "$detail" top "$ago"
@@ -622,7 +622,9 @@ sleep 1
 pcapture verbs-received
 
 say "--- uninstall"
-in_shell bash "$omarchy_dir/install-shell-plugin.sh" --uninstall | sed 's/^/  uninstall: /' | tee -a "$out/proof.txt"
+in_shell bash "$omarchy_dir/install-shell-plugin.sh" --uninstall >"$work/uninstall.out" 2>&1 || fail "--uninstall failed"
+sed 's/^/  uninstall: /' "$work/uninstall.out" | tee -a "$out/proof.txt"
+check 'grep -q "^Its glyph is off the bar.$" "$work/uninstall.out"' "--uninstall says the glyph is off the bar"
 check '[[ ! -e $home/.config/omarchy/plugins/sotto.dictation ]]' "--uninstall removes the plugin folder"
 check '[[ $(jq -r ".bar.layout | [.left[], .center[], .right[]] | map(.id) | index(\"sotto.dictation\")" "$config") == null ]]' "--uninstall takes the glyph off the bar"
 

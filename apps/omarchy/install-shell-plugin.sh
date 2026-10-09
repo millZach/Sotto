@@ -84,14 +84,17 @@ if (( uninstall )); then
     exit 0
   fi
   ours || fail "$target is not Sotto's plugin; it was left alone"
-  if shell_running && plugin_known; then
-    omarchy plugin disable "$id" >/dev/null
-  elif ! shell_running; then
-    echo "omarchy-shell is not running. Its bar entry for $id stays in shell.json; run 'omarchy plugin disable $id' in your desktop session to drop it."
-  fi
+  # The shell drops the bar entry even for a plugin it has not scanned.
+  shell_running && { omarchy plugin disable "$id" >/dev/null 2>&1 || true; }
   rm -rf -- "$target"
-  shell_running && omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
-  echo "Removed Sotto's shell plugin from the bar and from $plugins_dir."
+  shell_running && { omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; }
+  echo "Removed Sotto's shell plugin from $plugins_dir."
+  config="$HOME/.config/omarchy/shell.json"
+  if [[ -f $config ]] && jq -e --arg id "$id" '[.bar.layout[]?[]? | .id?] | index($id)' "$config" >/dev/null 2>&1; then
+    echo "Its glyph is still in the bar's layout in $config. Run 'omarchy plugin disable $id' in your desktop session to take it off."
+  else
+    echo "Its glyph is off the bar."
+  fi
   exit 0
 fi
 
