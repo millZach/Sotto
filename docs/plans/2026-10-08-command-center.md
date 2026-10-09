@@ -419,7 +419,7 @@ The useful parallel lane is tickets 4/5 (Sol main/host) beside ticket 6, then ti
 
 ## 12. Risks and choices only Zach can settle
 
-Two product choices remain:
+Decided by Zach on 2026-10-08: both recommendations below. The command center itself is hidden on phones in v1, while its workers stay visible; and changing its provider starts a replacement native conversation, keeps the previous one as command-center history, and offers a visible bounded handover. ADR-0063 records both. The original framing is kept for the reasoning:
 
 1. **Phone access to the master.** Recommendation: hide current/retired masters on the phone for v1, while ordinary workers remain fully usable on their host. Alternatively, show the current master as a typed ordinary thread, clearly saying it can direct threads on other paired computers even though the phone does not show that combined roster. This choice determines socket projection and phone list work; it does not grant authority to answer workers.
 2. **Changing the master's provider.** Recommendation: start a replacement native conversation, preserve the previous one as command-center history, and offer a visible bounded handover. This fits the current immutable thread binding. Alternatively, require the same visible transcript/Sotto identity across providers; that needs a deliberately versioned binding/history design and an ADR-0002 amendment, rather than weakening `ThreadRegistry.reserve()`. Choose before provider-change UI and migration land.
