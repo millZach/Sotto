@@ -22,7 +22,7 @@ First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared
 Each machine produces only its own platform's artifacts:
 
 - Windows PC: `Sotto Setup X.Y.Z.exe`, the dashed `Sotto-Setup-X.Y.Z.exe` copies for GitHub upload, blockmaps, `latest.yml`.
-- forge (x64 Linux): `Sotto-X.Y.Z-linux-x64.tar.gz`, plus the `sotto-bin-X.Y.Z-1-x86_64.pkg.tar.zst` built from it.
+- forge (x64 Linux): `Sotto-X.Y.Z-linux-x64.tar.gz`, plus the `sotto-bin-X.Y.Z-<pkgrel>-x86_64.pkg.tar.zst` built from it.
 - Apple silicon Mac: `Sotto-X.Y.Z-arm64.dmg` and its blockmap. There is no `latest-mac.yml`: the mac build has a dmg target only, no zip target, and no auto-updater.
 
 The local `release/` folder (gitignored) holds only the CURRENT version's artifacts for the machine it was built on.
@@ -62,7 +62,7 @@ Set `pkgver`, `pkgrel` and the archive SHA-256 in `apps/omarchy/PKGBUILD` from t
 ```sh
 cd apps/omarchy
 SOTTO_TARBALL="$PWD/../../release/Sotto-X.Y.Z-linux-x64.tar.gz" makepkg --cleanbuild --force
-pacman -Qlp sotto-bin-X.Y.Z-1-x86_64.pkg.tar.zst
+pacman -Qlp "$(makepkg --packagelist)"
 ```
 
 No root is needed to build. Check `/opt/sotto`, `/usr/bin/sotto`, the desktop entry and hicolor icons. `bsdtar -tvf` must show `chrome-sandbox` owned by root:root with mode 4755. Extract into a temporary root and run that root's launcher and dictation client before installing with `sudo pacman -U`. The optional `install.sh` requires sudo and is not part of automated verification. A release pass on the installed app finishes onboarding, dictates into Chromium and a terminal, and opens a thread (ADR-0062).

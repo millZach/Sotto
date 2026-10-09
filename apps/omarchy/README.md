@@ -56,7 +56,7 @@ Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then c
 ```sh
 cd apps/omarchy
 makepkg --cleanbuild
-sudo pacman -U ./sotto-bin-<version>-1-x86_64.pkg.tar.zst
+sudo pacman -U "$(makepkg --packagelist)"
 ```
 
 Until a release tarball exists, build one from this checkout with Node 24, then point the recipe at it. Replace the archive checksum in `sha256sums` with `sha256sum ../../release/Sotto-<version>-linux-x64.tar.gz`; local builds still require a checksum, never `SKIP`.
@@ -65,8 +65,8 @@ Until a release tarball exists, build one from this checkout with Node 24, then 
 mise exec node@24.21.0 -- npm run package:linux
 cd apps/omarchy
 SOTTO_TARBALL="$PWD/../../release/Sotto-<version>-linux-x64.tar.gz" makepkg --cleanbuild --force
-pacman -Qlp ./sotto-bin-<version>-1-x86_64.pkg.tar.zst
-bsdtar -tvf ./sotto-bin-<version>-1-x86_64.pkg.tar.zst
+pacman -Qlp "$(makepkg --packagelist)"
+bsdtar -tvf "$(makepkg --packagelist)"
 ```
 
 Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst` installs the local package with pacman and offers the bindings and shell plugin instructions; it does not change your desktop configuration. Without a path it uses `omarchy-pkg-add sotto-bin` when a package repository carries it, or `yay -S --needed sotto-bin` for the AUR. Do not use that form before publication. The shell plugin is shipped separately by #850; follow its own README in `shell-plugin/` when available.
