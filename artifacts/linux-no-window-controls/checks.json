@@ -1,0 +1,101 @@
+{
+  "platform": "linux",
+  "electron": "43.1.0",
+  "node": "24.21.0",
+  "hyprland": "0.56.2",
+  "windowControls": 0,
+  "inspectorPort": 9342,
+  "rendererCdpPort": 9343,
+  "captures": [
+    {
+      "shot": "settings-820x560-light-reduced-motion.png",
+      "width": 820,
+      "height": 560,
+      "scrollWidth": 820,
+      "scrollHeight": 560,
+      "platform": "linux",
+      "titleArea": {
+        "width": 157,
+        "height": 44,
+        "drag": "drag"
+      },
+      "controlsInset": ""
+    },
+    {
+      "shot": "threads-1600x1000-dark.png",
+      "width": 1600,
+      "height": 1000,
+      "scrollWidth": 1600,
+      "scrollHeight": 1000,
+      "platform": "linux",
+      "titleArea": {
+        "width": 319,
+        "height": 44,
+        "drag": "drag"
+      },
+      "controlsInset": "0px"
+    },
+    {
+      "shot": "threads-820x560-dark.png",
+      "width": 820,
+      "height": 560,
+      "scrollWidth": 820,
+      "scrollHeight": 560,
+      "platform": "linux",
+      "titleArea": {
+        "width": 319,
+        "height": 44,
+        "drag": "drag"
+      },
+      "controlsInset": "0px"
+    }
+  ],
+  "close": {
+    "pid": 2728954,
+    "appStillRunning": true,
+    "mainVisible": false,
+    "mainInHyprlandClients": false,
+    "trayOwnedByProcess": true
+  },
+  "trayLine": "as 1 \":1.6154/org/chromium/StatusNotifierItem/1\"",
+  "legacyCloseExit": 7,
+  "legacyCloseError": "error: [string \"return hl.dispatch(closewindow class:sotto)\"]:1: ')' expected near 'class'",
+  "luaClose": "hyprctl dispatch 'hl.dsp.window.close({ window = \"class:sotto\" })'",
+  "luaCloseOutput": "ok",
+  "temporaryProbeAdjustments": [
+    "Background throttling disabled while screen was locked; restored before closing.",
+    "Native minimum lowered from 820x560 to 800x540 to obtain an actual 820x560 renderer; restored before closing."
+  ],
+  "stopped": "Stopped Electron PID 2728954; descendant PIDs: 2728957, 2728990, 2729025, 2728958, 2728960, 2729013, 2729045, 2728993, 2729069, 2729070",
+  "captureMatrix": {
+    "pages": [
+      "Threads",
+      "Dictate",
+      "Settings",
+      "History",
+      "Help"
+    ],
+    "sizes": [
+      [
+        1600,
+        1000
+      ],
+      [
+        1280,
+        800
+      ],
+      [
+        820,
+        560
+      ]
+    ],
+    "lightReducedMotionAtMinimum": [
+      "Settings",
+      "Dictate",
+      "Threads"
+    ],
+    "rootOverflow": false,
+    "titleAreasIntact": true,
+    "threadsControlsInset": "0px"
+  }
+}

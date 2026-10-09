@@ -1,4 +1,9 @@
 node_modules/
+artifacts/linux-no-window-controls/*
+!artifacts/linux-no-window-controls/checks.json
+!artifacts/linux-no-window-controls/threads-1600x1000-dark.png
+!artifacts/linux-no-window-controls/threads-820x560-dark.png
+!artifacts/linux-no-window-controls/settings-820x560-light-reduced-motion.png
 artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/threads-1600x1000-dark.png
 !artifacts/remove-personal-chats/threads-820x560-light.png

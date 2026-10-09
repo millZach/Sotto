@@ -159,6 +159,7 @@ describe('main-window theme tokens', () => {
     const owned = [
       'src/renderer/src/features/onboarding/onboarding.css',
       'src/renderer/src/features/onboarding/threadsTour.css',
+      'src/renderer/src/agents/threadsChrome.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',
       'src/renderer/src/features/settings/gitSettings.css',
