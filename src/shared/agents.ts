@@ -662,6 +662,7 @@ export type AgentDelivery = z.infer<typeof agentDeliverySchema>
 export const agentDeliveryReceiptsSchema = z.array(z.object({ threadId: id, draftId: z.uuid() })).max(MAX_DELIVERED_DRAFTS)
 export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migratedAt: z.number() })
 export const agentStateSchema = z.object({
+  legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),

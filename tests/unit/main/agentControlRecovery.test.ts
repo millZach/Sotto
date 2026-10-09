@@ -11,7 +11,7 @@ import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
 import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
-import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
+import { hostHelloSchema, hostPushSchema, LEGACY_VOICE_CONFIGURATION, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
@@ -164,25 +164,26 @@ describe('reasoning account route isolation', () => {
     await f.restart()
     expect(f.control.get().configuration).toMatchObject({ speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' })
   })
-  it('persists Grok speech credentials separately and preserves both voices through unrelated settings and restart', async () => {
+  it('clears the retired speech key on reload while preserving reasoning credentials', async () => {
     const f = await fixture()
     await f.account()
     const key = 'fixture-dedicated-grok-speech-key'
     await f.control.command({ type: 'credential', slot: 'grokSpeech', value: key })
     await f.control.command({ type: 'configure', patch: { speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3' } })
     await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { followupLimit: 4 } }))
+    await f.credentials.load()
     await f.restart()
     expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3', reasoning: 'openrouter' })
-    expect(f.control.get().credentials).toMatchObject({ grokSpeech: true, reasoning: true })
+    expect(f.control.get().credentials).toMatchObject({ grokSpeech: false, reasoning: true })
     expect(JSON.stringify(f.control.get())).not.toContain(key)
     expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
     const reloaded = new AgentCredentials(f.credentialsDirectory, encryption)
     await reloaded.load()
-    expect(reloaded.get('grokSpeech')).toBe(key)
+    expect(reloaded.get('grokSpeech')).toBe('')
     expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
     await f.control.command({ type: 'configure', patch: { reasoning: 'openai', speechProvider: 'natural' } })
-    expect(f.credentials.get('grokSpeech')).toBe(key)
+    expect(f.credentials.get('grokSpeech')).toBe('')
     await f.control.command({ type: 'credential', slot: 'grokSpeech', value: '' })
     expect(f.control.get().credentials.grokSpeech).toBe(false)
   })
@@ -267,13 +268,14 @@ describe('reasoning account route isolation', () => {
     expect(current).not.toHaveProperty('membership')
     expect(current.configuration).not.toHaveProperty('membershipEndpoint')
     const wire = shellForProtocolV1(current)
+    const compatibility = { ...current, legacyManagement: false, speech: { id: 0, text: '' }, configuration: { ...current.configuration, ...LEGACY_VOICE_CONFIGURATION } }
     const hello = hostHelloSchema.parse({ hostId: randomUUID(), clientId: 'older-host', shell: wire,
       capabilities: { mayAnswer: false }, sottoVersion: '0.1.21', features: [], events: [], latestSeq: 0, hasMore: false })
-    expect(hello.shell).toEqual(current)
+    expect(hello.shell).toEqual(compatibility)
     expect(olderDesktopAccountSchema.parse(wire)).toMatchObject({ membership: { status: 'beta' }, configuration: { membershipEndpoint: '' } })
     for (const state of [current, wire]) {
       const parsed = hostPushSchema.parse({ v: 1, event: 'shell', state })
-      expect(parsed).toMatchObject({ state: current })
+      expect(parsed).toMatchObject({ state: compatibility })
       if (parsed.event !== 'shell') throw new Error('Expected shell')
       expect(parsed.state).not.toHaveProperty('membership')
       expect(parsed.state.configuration).not.toHaveProperty('membershipEndpoint')

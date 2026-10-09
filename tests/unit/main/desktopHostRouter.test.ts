@@ -121,7 +121,7 @@ describe('desktop host routing', () => {
       await entered
       if (intervening === 'error') {
         f.call.mockResolvedValueOnce({ ...f.remote.state, error: 'Another action failed.' })
-        await f.router.command({ type: 'configure', patch: { followupLimit: 2 } }, desktopWindowClient())
+        await f.router.command({ type: 'configure', patch: { reasoningEffort: 'high' } }, desktopWindowClient())
         expect(f.notifications.some(item => item.error === 'Another action failed.')).toBe(true)
       } else if (intervening === 'selection') {
         await f.router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())

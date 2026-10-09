@@ -1260,8 +1260,10 @@ describe('IPC validation and lifecycle', () => {
     delete fullPatch['launchAtStartup']
     // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
     delete fullPatch['tailnetConnections']
+    delete fullPatch['voiceCoordinatorEnabled']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
+    await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true })).rejects.toThrow('Invalid IPC payload')
 
     await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
       'Invalid IPC payload',

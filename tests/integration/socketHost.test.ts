@@ -69,7 +69,7 @@ describe('authenticated host socket', () => {
     await client.command({ type: 'connect', provider: 'codex' })
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Burst project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Burst thread', modelId: created.host.models[0]!.id, managed: true })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Burst thread', modelId: created.host.models[0]!.id, managed: false })
     const threadId = opened.host.threads.find(thread => thread.title === 'Burst thread')!.id
     await client.command({ type: 'select-thread', threadId })
     const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
@@ -130,7 +130,7 @@ describe('authenticated host socket', () => {
     })
     const nativeWrites = vi.spyOn(native, 'execute'), pending: Promise<unknown>[] = []
     try {
-      pending.push(client.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } })); await started
       pending.push(client.command({ type: 'compose', threadId, text: 'First prompt', attachments: [image] }, undefined, 'first-save'))
       await expect.poll(() => admitted.filter(input => input.type === 'compose').length).toBe(1)
       native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
@@ -175,7 +175,7 @@ describe('authenticated host socket', () => {
     })
     const pending: Promise<unknown>[] = []
     try {
-      pending.push(client.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+      pending.push(client.command({ type: 'configure', patch: { reasoningEffort: 'high' } })); await started
       pending.push(client.command({ type: 'compose', threadId, text: 'First plain intent', attachments: [image] }))
       await expect.poll(() => admitted.some(input => input.type === 'compose')).toBe(true)
       native.event({ type: 'question', threadId: 'workshop', text: 'New question', request: {
@@ -208,7 +208,6 @@ describe('authenticated host socket', () => {
       id: 'bound-question', kind: 'question', text: 'Question', options: [{ id: 'native:blue', label: 'Blue' }],
       ...(delivery === 'uncertain' ? { delivery: 'uncertain' } : delivery === 'retry-ready' ? { answerRetryReady: true } : {}) } })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
-    await host.service.command({ type: 'configure', patch: { speak: true } }, desktopWindowClient())
     const sharedFeedback = () => {
       const state = host.service.shell()
       return structuredClone({ error: state.error, notice: state.notice, speech: state.speech })
@@ -260,7 +259,6 @@ describe('authenticated host socket', () => {
     const policy = async (allowed: boolean) => expect((await fetch(url + '/v1/admin/' + (allowed ? 'allow-answers' : 'deny-answers'), {
       method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
-    await host.service.command({ type: 'assign', threadId, instruction: 'Work' }, desktopWindowClient())
     await host.service.command({ type: 'select-thread', threadId }, desktopWindowClient())
     await policy(true)
     native.event({ type: 'question', threadId: 'workshop', text: 'Question', request: {
@@ -481,11 +479,10 @@ describe('authenticated host socket', () => {
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })
     const threadId = client.shell().host.threads.find(thread => thread.title === 'Workshop')!.id
-    await host.service.command({ type: 'assign', threadId, instruction: 'Fix the tests' }, desktopWindowClient())
     const descriptor = JSON.parse(await readFile(join(root, 'host-listener.json'), 'utf8')) as { adminToken: string }
     expect((await fetch(url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
     native.event({ type: 'question', threadId: 'workshop', requestId: 'question-draft-receipt', text: 'Which color?' })
-    await expect.poll(() => client.shell().queue.some(item => item.requestId === 'question-draft-receipt')).toBe(true)
+    await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.some(item => item.id === 'question-draft-receipt')).toBe(true)
     await client.command({ type: 'select-thread', threadId })
     expect(await client.command({ type: 'compose', text: 'Blue' })).toMatchObject({ composing: true, draft: 'Blue', draftRequestId: 'question-draft-receipt' })
     const execute = native.execute.bind(native)
@@ -614,9 +611,8 @@ describe('authenticated host socket', () => {
     const localId = threads[0]!.id
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: true })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
     const remoteId = opened.host.threads.find(thread => thread.title === 'Remote thread')!.id
-    await host.service.command({ type: 'pause-draft' }, desktopWindowClient())
     await host.service.command({ type: 'select-thread', threadId: localId }, desktopWindowClient())
     await host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient())
     await client.command({ type: 'select-thread', threadId: remoteId })
@@ -646,7 +642,8 @@ describe('authenticated host socket', () => {
     await client.command({ type: 'select-thread', threadId: threads[1]!.id })
     await client.command({ type: 'compose', text: 'Remote draft' })
     const before = host.service.shell()
-    expect((await client.command({ type })).error).toBeNull()
+    if (type === 'cancel-draft') expect((await client.command({ type })).error).toBeNull()
+    else await expect(client.command({ type })).rejects.toMatchObject({ code: 'forbidden' })
     expect(host.service.shell().activeThreadId).toBe(before.activeThreadId)
     expect(host.service.shell().draft).toBe(before.draft)
     expect(host.service.shell().threadDrafts?.find(draft => draft.threadId === threads[1]!.id)?.text).toBe(type === 'cancel-draft' ? undefined : 'Remote draft')

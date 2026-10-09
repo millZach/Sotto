@@ -544,7 +544,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
-    voiceCoordinatorEnabled: parseField(persisted, 'voiceCoordinatorEnabled', defaults),
+    voiceCoordinatorEnabled: false,
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),

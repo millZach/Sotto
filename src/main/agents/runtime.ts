@@ -148,7 +148,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     })
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns,
-    historyEnabled: options.historyEnabled, coordinatorEnabled: options.coordinatorEnabled,
+    historyEnabled: options.historyEnabled, coordinatorEnabled: options.coordinatorEnabled, removalMode: true,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
     ...(options.preferences ? { preferences: options.preferences } : {}),

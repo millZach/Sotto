@@ -5,7 +5,8 @@ import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agent
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'preview-voice', 'utterance', 'voice', 'voice-state', 'open-thread-folder']
+const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'preview-voice', 'utterance', 'voice', 'voice-state', 'open-thread-folder',
+  'assign', 'unassign', 'pause', 'resume', 'pause-draft', 'resume-draft', 'cancel-request', 'select-attention', 'next', 'later']
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -15,11 +16,9 @@ const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: 
 
 describe('remote command allow-list', () => {
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
-    // Spoken replies on or off and the orb colour are preferences; the follow-up limit bounds work the user
-    // already assigned, and a paired device may send those follow-ups itself. None of them answers anything.
-    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'followupLimit', 'orbColor', 'provider',
-      'reasoning', 'reasoningEffort', 'reasoningModel', 'speak'])
-    for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(refuse({ type: 'configure', patch }), Object.keys(patch)[0]).toBeNull()
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'provider',
+      'reasoning', 'reasoningEffort', 'reasoningModel'])
+    for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(refuse({ type: 'configure', patch }), Object.keys(patch)[0]).toBe('forbidden')
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
   })

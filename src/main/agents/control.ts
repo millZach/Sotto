@@ -46,7 +46,7 @@ import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
 import { FinishedUnread } from './finishedUnread'
-import type { HostAnswerTarget } from '../../shared/hostProtocol'
+import { managementCommandRefusal, withoutLegacyManagement, withoutVoiceConfiguration, type HostAnswerTarget } from '../../shared/hostProtocol'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -292,6 +292,7 @@ export class AgentControl {
   private reconnect: ReturnType<typeof setTimeout> | null = null
   private readonly providerReconnect = new Map<ProviderId, ReturnType<typeof setTimeout>>()
   private retirementFailure: string | null = null
+  private migrationSaveFailure: string | undefined
   private disposed = false
   private readonly earlierMessageBoundaries = new Map<string, string | undefined>()
   /** Requests Sotto owns, merged into their threads (ADR-0035); absent until main gives the coordinator some. */
@@ -364,6 +365,7 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Whether the voice coordinator ships. Off, no thread stays managed across a start (ADR-0012). */
     coordinatorEnabled?: () => boolean
+    removalMode?: boolean
     observeActiveThread?: boolean
     turns?: TurnRecorder
     authority?: Authority
@@ -413,8 +415,9 @@ export class AgentControl {
       credentials: { reasoning: false, grokSpeech: false, secure: false },
       reasoningAccounts: [],
     }
+    if (dependencies.removalMode) this.state.configuration.speak = false
     // Compact: it is rewritten before every send.
-    this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), savedSchema.parse, () => this.saved())
+    this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false)
@@ -427,7 +430,7 @@ export class AgentControl {
   async start(options: { readonly beforeConnect?: () => Promise<void> } = {}): Promise<void> {
     await this.dependencies.turns?.initialize()
     // Remove retired ciphertext without decrypting it, including while the vault is locked.
-    for (const slot of ['membership', 'membership-cache']) {
+    for (const slot of ['membership', 'membership-cache', ...(this.dependencies.removalMode ? ['grokSpeech'] : [])]) {
       try {
         if (this.dependencies.credentials.has(slot)) await this.dependencies.credentials.set(slot, '')
       } catch {
@@ -436,7 +439,8 @@ export class AgentControl {
     }
 
     try {
-      await retireLegacyProvider({ directory: this.dependencies.directory, parse: savedSchema.parse,
+      await retireLegacyProvider({ directory: this.dependencies.directory, parse: input => this.parseSaved(input),
+        ...(this.dependencies.removalMode ? { removalMode: true } : {}),
         historyEnabled: this.dependencies.historyEnabled?.() !== false, credentials: this.dependencies.credentials })
       this.retirementFailure = null
     } catch (error) {
@@ -528,7 +532,12 @@ export class AgentControl {
       this.state.configuration.enabledProviders = providerIdSchema.options.filter(provider => !off.has(provider))
     }
     // Redaction also reaches disk when control is disabled and no reconnect will run.
-    await this.persist()
+    await this.persist().catch(error => {
+      if (!this.dependencies.removalMode) throw error
+      this.migrationSaveFailure = 'Thread management has ended, but the saved state could not be updated. Your drafts are readable. Restore access to local storage and restart to save the upgrade.'
+      this.state.error = this.migrationSaveFailure
+      console.warn('management-removal-save-failed')
+    })
     await this.attachments.sweep(() => this.ownedAttachments())
     this.maintenanceTimer = setInterval(() => {
       const pendingPrivacy = this.privacyCleanupPending
@@ -610,6 +619,7 @@ export class AgentControl {
    */
   get(): AgentState {
     const state = structuredClone(this.state)
+    if (this.migrationSaveFailure) state.error = this.migrationSaveFailure
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
     state.host.threads = state.host.threads.map(thread => this.finishedUnread.publish(thread))
     state.hostId = state.host.hostId
@@ -652,7 +662,7 @@ export class AgentControl {
   }
   shell(): AgentState {
     const threads = this.state.host.threads
-    const bare = { ...this.state, host: { ...this.state.host, threads: threads.map(thread => this.finishedUnread.publish({
+    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, threads: threads.map(thread => this.finishedUnread.publish({
       ...thread, messages: EMPTY_MESSAGES,
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
       summary: threadSummaryOf(thread),
@@ -872,6 +882,12 @@ export class AgentControl {
       answeredRequests: this.answeredRequests,
       threadDrafts: this.state.threadDrafts ?? [], deliveries: this.state.deliveries ?? [] }
   }
+  private parseSaved(input: unknown): Saved {
+    return savedSchema.parse(this.dependencies.removalMode ? withoutLegacyManagement(input) : input)
+  }
+  private serializeSaved(saved: Saved): string {
+    return JSON.stringify(this.dependencies.removalMode ? { ...saved, configuration: withoutVoiceConfiguration(saved.configuration) } : saved)
+  }
   async privacyChanged(): Promise<void> {
     const revision = ++this.privacyRevision
     this.privacyCleanupPending = true
@@ -884,7 +900,7 @@ export class AgentControl {
     const cleanup = [
       // Turning history off removes at once the content only previews kept.
       () => this.maintainAttachments(this.dependencies.historyEnabled?.() === false),
-      () => maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false),
+      () => maintainProviderRecovery(this.dependencies.directory, this.dependencies.historyEnabled?.() !== false, Date.now(), this.dependencies.removalMode),
       () => this.dependencies.host.privacyChanged?.(),
       () => this.persist(),
     ]
@@ -904,7 +920,7 @@ export class AgentControl {
     // Most calls follow a provider snapshot that changed nothing saved, so the state is serialized to compare
     // and never copied: the store serializes what it writes as it is handed it.
     const saved = this.savedOverLiveState()
-    const serialized = JSON.stringify(saved)
+    const serialized = this.serializeSaved(saved)
     const queued = this.queuedWrite
     if (queued && (serialized === queued.serialized || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
       // The newest queued write already carries this state, so it is durable when that write lands. A write
@@ -919,6 +935,8 @@ export class AgentControl {
       this.queuedWrite = current
       try {
         await written
+        if (this.state.error === this.migrationSaveFailure) this.state.error = null
+        this.migrationSaveFailure = undefined
         // AtomicJsonStore serializes writes. Confirm only the snapshot that actually
         // completed, never newer state that changed while this write was outstanding.
         this.persistedDrafts = drafts
@@ -946,7 +964,7 @@ export class AgentControl {
     if (!this.settledSettings.size) return false
     const kept = queued.outbox.filter(item => !this.settledSettings.has(item.id))
     if (kept.length === queued.outbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false
-    return JSON.stringify({ ...saved, outbox: queued.outbox }) === queued.serialized
+    return this.serializeSaved({ ...saved, outbox: queued.outbox }) === queued.serialized
   }
   private draftSignatures(drafts: readonly Saved['threadDrafts'][number][]): Map<string, string> {
     return new Map(drafts.map(draft => [draft.threadId, this.draftSignature(draft)]))
@@ -1070,11 +1088,12 @@ export class AgentControl {
   private say(text: string, preview = false): void {
     this.attentionNarration = null
     this.state.notice = text
+    if (this.dependencies.removalMode) return
     this.state.speech = { id: this.state.speech.id + 1, text, preview }
   }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { reasoning: vault.has('reasoning'), grokSpeech: vault.has('grokSpeech'), secure: vault.available() }
+    this.state.credentials = { reasoning: vault.has('reasoning'), grokSpeech: !this.dependencies.removalMode && vault.has('grokSpeech'), secure: vault.available() }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)
@@ -1863,6 +1882,13 @@ export class AgentControl {
       draft.binding ? [draft.binding.requestId, draft.binding.questionsDigest] : null])).digest('hex')
   }
   commandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
+    const refusal = this.dependencies.removalMode ? managementCommandRefusal(command) : null
+    if (refusal) return Promise.resolve({ ...this.shell(), error: refusal })
+    if (this.dependencies.removalMode && command.type === 'create-thread' && command.managed === false) {
+      const { managed, ...manual } = command
+      void managed
+      command = manual
+    }
     if (command.type !== 'send' || !command.draft?.draftId || this.disposed) return this.admitCommandShell(command, client, answerDecisionId)
     const packet = structuredClone(command)
     const threadId = packet.draft!.threadId, draftId = packet.draft!.draftId!
@@ -2811,7 +2837,7 @@ export class AgentControl {
         return
       }
       case 'create-thread': {
-        const managed = command.managed !== false
+        const managed = !this.dependencies.removalMode && command.managed !== false
         if (managed && this.state.composing && this.hasDraft()) throw new Error('Send or clear your draft before creating another thread.')
         const model = resolveModel(this.state.host.models, command.modelId)
         this.canCreate(model?.providerId)
@@ -3055,12 +3081,15 @@ export class AgentControl {
   private scopedComposition(command: Extract<AgentCommand, { type: 'compose' }>, client: ClientIdentity): Extract<AgentCommand, { type: 'save-thread-draft' }> {
     const thread = this.thread(client.selectedThreadId ?? null)
     const saved = this.state.threadDrafts?.find(draft => draft.threadId === thread.id)
-    const requestId = saved ? saved.requestId : this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question')?.requestId ?? null
+    const requestId = saved ? saved.requestId : this.dependencies.removalMode
+      ? thread.requests.find(request => request.kind === 'question')?.id ?? null
+      : this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question')?.requestId ?? null
     if (requestId) this.guardClientGrant(client)
     return { type: 'save-thread-draft', threadId: thread.id, draftId: randomUUID(), text: command.text,
       attachments: command.attachments ?? saved?.attachments ?? [], skills: saved?.skills, files: saved?.files, requestId }
   }
   private assign(threadId: string, instruction: string, selectionRevision: number): void {
+    if (this.dependencies.removalMode) throw new Error('Thread management is no longer available.')
     if (!supportsAgentSupervision(capabilitiesForThread(this.state.host, this.thread(threadId)))) throw new Error('This connection cannot safely supervise threads. Its available controls remain visible.')
     const thread = this.thread(threadId)
     if (this.state.assignments.some(a => a.threadId === threadId)) return
@@ -3456,7 +3485,7 @@ export class AgentControl {
       turn.projectId = this.state.host.threads.find(thread => thread.id === draftThreadId)?.projectId ?? null
     }
     this.canAct()
-    this.observe()
+    this.observe(...(draftThreadId ? [draftThreadId] : []))
     const messageId = randomUUID()
     const readStartedAt = performance.now()
     const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
@@ -3467,7 +3496,7 @@ export class AgentControl {
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
     const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
-    const assignment = this.assignment(thread.id)
+    const assignment = this.dependencies.removalMode ? undefined : this.assignment(thread.id)
     const text = draftText.trim()
     const draftId = pickedDraftId
     const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
@@ -3483,11 +3512,13 @@ export class AgentControl {
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
     this.sendStages(turn)?.addRead(readMs)
-    assignment.ownMessageIds.push(messageId)
-    assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
-    assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
-    assignment.stopReason = 'none'; assignment.stoppedAt = ''
-    assignment.contextUpdatedAt = Date.now()
+    if (assignment) {
+      assignment.ownMessageIds.push(messageId)
+      assignment.instruction = text; assignment.followups = 0; assignment.lastFailure = ''
+      assignment.origin = turn?.source === 'utterance' ? 'voice' : 'typed'
+      assignment.stopReason = 'none'; assignment.stoppedAt = ''
+      assignment.contextUpdatedAt = Date.now()
+    }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest)
     this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
@@ -3499,6 +3530,7 @@ export class AgentControl {
   private draftRequestId(threadId: string | null): string | null {
     const thread = this.thread(threadId)
     const saved = !this.hasDraft() ? this.state.threadDrafts?.find(item => item.threadId === thread.id) : undefined
+    if (this.dependencies.removalMode) return saved ? saved.requestId : thread.requests.find(request => request.kind === 'question')?.id ?? null
     return saved ? saved.requestId : this.state.queue.find(item => item.threadId === thread.id && item.kind === 'question' && item.requestId)?.requestId ?? null
   }
   private startDraft(threadId = this.state.activeThreadId): void {
@@ -3648,6 +3680,7 @@ export class AgentControl {
 
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return
+    if (this.dependencies.removalMode) { this.state.assignments = []; this.state.queue = [] }
     this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
     // Sotto's own requests join the provider's before anything below reads the threads, so the attention queue
@@ -3657,6 +3690,11 @@ export class AgentControl {
     this.processedAssignmentThreads = new Set()
     const previousThreads = new Map(this.state.host.threads.map(thread => [thread.id, thread]))
     this.state.host = snapshot
+    if (this.dependencies.removalMode && snapshot.connected && this.state.activeThreadId && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
+      const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))
+      this.state.activeThreadId = selected?.id ?? null
+      this.state.activeProjectId = selected?.projectId ?? null
+    }
     for (const threadId of this.emptyDraftRevisions.keys()) {
       if (!snapshot.threads.some(thread => thread.id === threadId && !isThreadClosed(thread))) {
         this.clearEmptyDraftBinding(threadId)
@@ -3803,6 +3841,7 @@ export class AgentControl {
     })
   }
   private enqueue(thread: AgentThread, kind: AgentQueueItem['kind'], text: string, requestId?: string): void {
+    if (this.dependencies.removalMode) return
     const latest = this.state.host.threads.find(item => item.id === thread.id)
     if (!latest || isThreadClosed(latest)) return
     const id = `${thread.id}:${requestId ?? lastWrittenMessage(thread.messages)?.id ?? 'idle'}:${kind}`
@@ -3836,6 +3875,7 @@ export class AgentControl {
     this.attentionNarration = key
   }
   private async supervise(thread: AgentThread, assignment: AgentAssignment, key: string, requestId?: string): Promise<void> {
+    if (this.dependencies.removalMode) return
     if (this.deciding.has(thread.id) || !this.state.configuration.enabled) return
     this.deciding.add(thread.id); this.considered.set(thread.id, key)
     let turn: ActiveTurn | undefined

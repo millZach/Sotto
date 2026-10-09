@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
-import { AGENT_WAKE, AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
+import { AGENT_WAKE, AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_VOICE_MODEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
@@ -14,7 +14,7 @@ import { registerAgentIpc } from '../../../src/main/agents/ipc'
 const disposables: Array<() => void> = []
 afterEach(() => { for (const dispose of disposables.splice(0)) dispose(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
-function fixture(voiceCoordinatorEnabled = true) {
+function fixture(voiceCoordinatorEnabled = true, removalMode = false) {
   const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
   const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
   const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
@@ -33,7 +33,7 @@ function fixture(voiceCoordinatorEnabled = true) {
   disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', {
     status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-  }, grok, kokoro, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, voiceCoordinatorEnabled, wakeControl: control }))
+  }, grok, kokoro, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, voiceCoordinatorEnabled, wakeControl: control, removalMode }))
   const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => listeners.get(channel)!({ sender: source.webContents, senderFrame: frame }, payload)
   // A command answers with a receipt: the shell with its catalog named by revision (issue #323).
   const reply = new AgentStateBroadcaster().encodeReceipt(agentShell(state))
@@ -41,6 +41,14 @@ function fixture(voiceCoordinatorEnabled = true) {
 }
 
 describe('agent command IPC authorization', () => {
+  it('refuses wake, reply speech, catalog and download admission in removal mode', async () => {
+    const f = fixture(true, true), prepare = vi.spyOn(AgentWakeService.prototype, 'prepare')
+    for (const [channel, payload] of [[AGENT_WAKE, { type: 'prepare' }], [AGENT_SPEECH, 'Preview'], [AGENT_GROK_VOICES, undefined], [AGENT_VOICE_MODEL, 'download']] as const) {
+      await expect(f.invoke(channel, payload)).rejects.toThrow('no longer available')
+    }
+    expect(prepare).not.toHaveBeenCalled(); expect(f.grok.synthesize).not.toHaveBeenCalled(); expect(f.grok.voices).not.toHaveBeenCalled()
+    expect(f.kokoro.synthesize).not.toHaveBeenCalled(); expect(synthesizeAgentSpeech).not.toHaveBeenCalled()
+  })
   it.each([false, true])('allows a trusted widget to configure speak=%s', async speak => {
     const f = fixture()
     const command = { type: 'configure', patch: { speak } }

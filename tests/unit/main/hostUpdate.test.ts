@@ -66,6 +66,21 @@ function setup(options: { download?: (url: string, limit: number, signal: AbortS
 }
 
 describe('which hosts need an update', () => {
+  it('offers and runs the existing update action while a same-version host reports legacy management', async () => {
+    const hosts = new Hosts(), threads = new Threads()
+    hosts.list = [forge({ version: DESKTOP })]
+    let legacyManagement = true
+    const updates = new HostUpdates({ hosts, threads, version: DESKTOP, requiresManagementUpdate: () => legacyManagement })
+    expect(updates.state()).toMatchObject([{ phase: 'needs', error: expect.stringContaining('thread management running') }])
+    hosts.steps['update-restart'] = async () => { legacyManagement = false; return ready }
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ phase: 'done' }]))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
+    await updates.command(ID, 'dismiss'); expect(updates.state()).toEqual([])
+    hosts.list = [forge({ version: '1.0.0' })]; legacyManagement = true; hosts.emit()
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
   it('offers one for a host that runs an older Sotto than this computer, and for no other', () => {
     const { hosts, updates } = setup()
     expect(updates.state()).toMatchObject([{ id: ID, name: 'forge', from: '0.1.22', to: DESKTOP, phase: 'needs', owned: true, working: 0 }])

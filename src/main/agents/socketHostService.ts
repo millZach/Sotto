@@ -16,7 +16,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { ProviderId } from '../../shared/agents'
-import { protocolAgentStateSchema, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -456,8 +456,14 @@ export class SocketHostService implements HostService {
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
+    const refusal = managementCommandRefusal(command)
+    if (refusal) throw new HostConnectionError(refusal, 'forbidden')
+    if (this.shell().legacyManagement && !['select-thread', 'select-project', 'observe-threads', 'compose', 'save-thread-draft', 'interrupt'].includes(command.type)) {
+      throw new HostConnectionError(LEGACY_MANAGEMENT_UPDATE, 'forbidden')
+    }
     this.recoveryError = undefined
     const admitted = structuredClone(command)
+    if (admitted.type === 'create-thread') admitted.managed = false
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.

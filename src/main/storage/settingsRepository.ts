@@ -39,7 +39,7 @@ export class SettingsRepository {
   async save(input: unknown): Promise<AppSettings> {
     const settings = parseSettings(input, this.defaults)
     return this.enqueueMutation(async () => {
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
     })
   }
@@ -49,7 +49,7 @@ export class SettingsRepository {
     return this.enqueueMutation(async () => {
       const current = await this.readSettings()
       const settings = parseSettings({ ...current, ...patchSnapshot }, this.defaults)
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
     })
   }
@@ -57,7 +57,7 @@ export class SettingsRepository {
   async reset(): Promise<AppSettings> {
     const settings = parseSettings(this.defaults, this.defaults)
     return this.enqueueMutation(async () => {
-      await this.store.write(settings)
+      await this.writeSettings(settings)
       return parseSettings(settings, this.defaults)
     })
   }
@@ -80,12 +80,17 @@ export class SettingsRepository {
         delete defaults[id]
         changed = true
       }
-      if (changed) await this.store.write({ ...settings, projectThreadWorkingCopyDefaults: defaults })
+      if (changed) await this.writeSettings({ ...settings, projectThreadWorkingCopyDefaults: defaults })
     })
   }
 
   private async readSettings(): Promise<AppSettings> {
     return parseSettings(await this.store.read(), this.defaults)
+  }
+  private writeSettings(settings: AppSettings): Promise<void> {
+    const { voiceCoordinatorEnabled, ...current } = settings
+    void voiceCoordinatorEnabled
+    return this.store.writeSerialized(JSON.stringify(current, null, 2))
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

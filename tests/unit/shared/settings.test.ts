@@ -86,7 +86,7 @@ const customSettings = {
   phoneAccess: true,
   phoneAccessName: 'Studio',
   tailnetConnections: true,
-  voiceCoordinatorEnabled: true,
+  voiceCoordinatorEnabled: false,
   memoryEnabled: true,
   cloudIphoneMonthlyMinutes: 1_000,
   cloudIphoneIdleMinutes: 10,

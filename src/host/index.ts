@@ -3,6 +3,7 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
+import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
 import { SecureSettings } from '../main/agents/secureSettings'
@@ -92,6 +93,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
   })
   await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
+  await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
+  await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
   const memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
   try {

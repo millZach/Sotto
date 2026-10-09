@@ -21,6 +21,7 @@ import type { GrokSpeechService } from './grokSpeech'
 import type { KokoroSpeechService } from './kokoroSpeech'
 
 export interface AgentIpcOptions {
+  readonly removalMode?: boolean
   readonly voiceCoordinatorEnabled: boolean
   readonly wakeControl: Pick<AgentControl, 'configuration'>
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
@@ -60,11 +61,13 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   ipc.handle(AGENT_GROK_VOICES, async (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     z.undefined().parse(payload)
+    if (options.removalMode) throw new Error('Reply voices are no longer available.')
     return grokSpeech.voices()
   })
   ipc.handle(AGENT_VOICE_MODEL, async (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const action = z.enum(['status', 'download']).parse(payload)
+    if (options.removalMode) throw new Error('Reply voices are no longer available.')
     return action === 'download' ? speechModels.download() : speechModels.status()
   })
   /** The one client there is: this app's own window, over IPC, as this machine's user. */
@@ -78,6 +81,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
       z.object({ type: z.literal('release') }).strict(),
     ]).parse(payload)
     if (request.type === 'release') { wake.dispose(); return { detected: false, endSeconds: 0 } }
+    if (options.removalMode) throw new Error('Voice control is no longer available. Dictation is still available.')
     const configuration = options.wakeControl.configuration()
     if (!options.voiceCoordinatorEnabled || !configuration.enabled) throw new Error('Agent voice control is not enabled.')
     await wake.prepare(configuration.wakeModelDirectory, configuration.wakeRuntimeDirectory || undefined)
@@ -94,6 +98,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   })
   ipc.handle(AGENT_SPEECH, async (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    if (options.removalMode) throw new Error('Reply voices are no longer available.')
     if (speechOperation !== null) throw new Error('Speech is already being prepared.')
     const text = z.string().min(1).max(2000).parse(payload)
     const configuration = control.get().configuration

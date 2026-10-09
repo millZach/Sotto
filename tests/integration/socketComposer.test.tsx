@@ -10,13 +10,19 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { AgentComposer } from '../../src/renderer/src/agents/AgentView'
-import type { AgentCommand } from '../../src/shared/agents'
+import { agentAssignmentSchema, type AgentCommand, type AgentState } from '../../src/shared/agents'
 import { RetainedDraftStore } from '../../src/main/agents/retainedDraftStore'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
 import { requestDraftQuestions } from '../../src/shared/requestDrafts'
 
 afterEach(cleanup)
+
+function legacyComposerState(state: AgentState): AgentState {
+  const threadId = state.draftThreadId ?? state.activeThreadId
+  return { ...state, assignments: threadId === null ? [] : [agentAssignmentSchema.parse({ threadId, mode: 'manual', instruction: '',
+    followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '' })] }
+}
 
 async function remoteDraftFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-retained-composer-')), directory = join(root, 'desktop')
@@ -39,7 +45,7 @@ async function remoteDraftFixture() {
   const nativeIds = new Map<string, string>()
   const create = async (title: string) => {
     const before = new Set((await native.snapshot()).threads.map(thread => thread.id))
-    const state = await initial.client.command({ type: 'create-thread', projectId, title, titleSource: 'user', modelId: created.host.models[0]!.id, managed: true })
+    const state = await initial.client.command({ type: 'create-thread', projectId, title, titleSource: 'user', modelId: created.host.models[0]!.id, managed: false })
     const thread = state.host.threads.find(thread => thread.title === title)!
     await initial.client.command({ type: 'select-thread', threadId: thread.id })
     expect((await initial.client.command({ type: 'send', draft: { threadId: thread.id, text: 'Initialize synthetic fixture', attachments: [] } })).error).toBeNull()
@@ -289,7 +295,7 @@ it.each(['revocation', 'same-id form change'] as const)('checks current recovery
     release()
     await expect.poll(() => replacement.client.shell().error).toContain(boundary === 'revocation' ? 'permission' : 'question changed')
     const refusal = replacement.client.shell().error
-    await f.host.service.command({ type: 'configure', patch: { speak: false } }, desktopWindowClient())
+    await f.host.service.command({ type: 'configure', patch: { reasoningEffort: 'high' } }, desktopWindowClient())
     await replacement.client.readShell()
     expect(replacement.client.shell().error).toBe(refusal)
     expect(replacement.store.get(f.hostId, f.a.id)).toMatchObject({ saved: false, draft: retained.draft })
@@ -359,7 +365,7 @@ it('retains the latest managed edit when a held autosave loses its connection', 
     await client.command({ type: 'connect', provider: 'codex' })
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: true })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
     const thread = opened.host.threads.find(item => item.title === 'Remote thread')!
     await client.command({ type: 'select-thread', threadId: thread.id })
     const original = host.service.command.bind(host.service)
@@ -375,8 +381,8 @@ it('retains the latest managed edit when a held autosave loses its connection', 
       writes.push(task)
       return task
     }
-    const view = render(<AgentComposer state={client.shell()} command={command} />)
-    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={state} command={command} />) })
+    const view = render(<AgentComposer state={legacyComposerState(client.shell())} command={command} />)
+    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={legacyComposerState(state)} command={command} />) })
     try {
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix' } })
@@ -388,6 +394,7 @@ it('retains the latest managed edit when a held autosave loses its connection', 
       release(); spy.mockRestore()
       await act(async () => { await client!.connect() })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Fix the parser and add tests')
+      expect(host.service.shell().assignments).toEqual([])
       expect(host.service.threadDetail(thread.id)!.messages.filter(message => message.role === 'user')).toHaveLength(0)
     } finally { unsubscribe(); view.unmount(); spy.mockRestore() }
   } finally { release(); await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
@@ -407,15 +414,14 @@ it('keeps successive socket edits active in the managed composer and sends the p
     const local = client.shell().host.threads[0]!
     const created = await client.command({ type: 'create-project', provider: 'codex', title: 'Remote project', path: root, useExisting: true })
     const projectId = created.host.projects.find(project => project.path === root)!.id
-    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: true })
+    const opened = await client.command({ type: 'create-thread', projectId, title: 'Remote thread', modelId: created.host.models[0]!.id, managed: false })
     const remote = opened.host.threads.find(thread => thread.title === 'Remote thread')!
-    await host.service.command({ type: 'pause-draft' }, desktopWindowClient())
     expect(host.service.shell()).toMatchObject({ composing: false, draftThreadId: null })
     await client.command({ type: 'select-thread', threadId: remote!.id })
     const calls: { type: string; error: string | null }[] = []
     const command = async (input: AgentCommand) => { const result = await client!.command(input); calls.push({ type: input.type, error: result.error }); return result }
-    const view = render(<AgentComposer state={client.shell()} command={command} />)
-    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={state} command={command} />) })
+    const view = render(<AgentComposer state={legacyComposerState(client.shell())} command={command} />)
+    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={legacyComposerState(state)} command={command} />) })
     try {
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'First edit' } })
@@ -440,6 +446,7 @@ it('keeps successive socket edits active in the managed composer and sends the p
         expect(host.service.threadDetail(remote!.id)!.messages).toContainEqual(expect.objectContaining({ role: 'user', text: 'Second edit' }))
       })
       expect(host.service.shell()).toMatchObject({ draft: 'Host draft', draftThreadId: local!.id })
+      expect(host.service.shell().assignments).toEqual([])
       expect(host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: local!.id, text: 'Host draft' }))
     } finally { unsubscribe(); view.unmount() }
   } finally { await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }

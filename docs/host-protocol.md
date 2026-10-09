@@ -2,6 +2,10 @@
 
 This is every message a client and a host exchange: the desktop reaching a remote host through `SocketHostService`, and the iPhone client (`apps/ios`) from its own Swift code. The schemas are in `src/shared/hostProtocol.ts`; the listener is `src/host/socketServer.ts`. Why the host works this way is ADR-0025.
 
+October 8, 2026 amendment ([ADR-0062](adr/0062-remove-voice-control-and-thread-management.md)): voice control and thread management are retired. Protocol v1 retains `assignments:[]`, `queue:[]`, `pendingRequest:''`, `speech:{id:0,text:''}`, `voice:{status:'off',error:null,action:'none',revision:0}` and `credentials.grokSpeech:false`. Configuration retains inert `orbColor:'teal'`, `followupLimit:5`, `speak:false`, `speechProvider:'grok'`, `speechVoice:'F1'`, `grokSpeechVoice:'altair'`, `wakeModelDirectory:''` and `wakeRuntimeDirectory:''`, alongside its existing membership placeholder. They are compatibility fields and grant nothing.
+
+Readers inspect an old host's assignments before discarding those retired fields. A host with live assignments requires Update from the Threads page before ordinary commands continue; history and drafts stay readable, and selection, observation, draft saves and Stop remain available. A host without assignments can continue ordinary v1 work. The desktop sends `managed:false` when creating a thread on v1, including when its caller omitted the field, because old hosts defaulted to managed creation. New hosts accept false or omission as manual creation and refuse true. They also refuse assign, unassign, pause, resume, attention navigation, conversation pause/resume, spoken input and voice configuration. Manual answers, permission policy, receipts, follow-up queues and explicit babysitting are unchanged. No legacy unassign exchange is used.
+
 Version 1 is frozen from the pull request that added detail deltas and the version check (#238, #239). A later host may add to it, and only in these ways:
 
 - an optional field on a response or push, which a client may ignore;

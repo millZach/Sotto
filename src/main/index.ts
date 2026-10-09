@@ -207,6 +207,7 @@ import { CodexAppServerHost } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { NaturalSpeechModels } from './agents/speechModels'
+import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
 import { GrokSpeechService } from './agents/grokSpeech'
 import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
@@ -553,7 +554,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const authority = memoryStore === undefined ? undefined : new PolicyStore(memoryStore)
   app.on('will-quit', () => memoryStore?.close())
   const naturalSpeechModels = new NaturalSpeechModels(join(userDataPath, 'models'))
-  await naturalSpeechModels.initialize()
+  await removeRetiredVoiceCache(userDataPath)
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
@@ -576,6 +577,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const kokoroSpeech = new KokoroSpeechService({ credentials, ...(e2eConfiguration === null ? {} : { fetchFn: e2eKokoroSpeechFetch }) })
   const settings = new SecureSettings(plainSettings, credentials, () => recoveryNotices.publish({ code: 'OPENROUTER_KEY_UNREADABLE' }))
   await migrateDesktopKey(settings, recoveryNotices, logOperational)
+  await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
   let agentHistoryEnabled = startupSettings.historyEnabled
@@ -708,6 +710,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.get().hostId), {
+    removalMode: true,
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -808,6 +811,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
   const hostUpdates = new HostUpdates({ version: appVersion, ...(releasesStandIn ? { releasesUrl: releasesStandIn } : {}),
+    requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
     threads: busyThreads })
@@ -1310,7 +1314,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), platform, e2eConfiguration === null ? naturalSpeechModels : {
         status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
         download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
-      }, grokSpeech, kokoroSpeech, { voiceCoordinatorEnabled: startupSettings.voiceCoordinatorEnabled, wakeControl: agentControl, encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      }, grokSpeech, kokoroSpeech, { removalMode: true, voiceCoordinatorEnabled: startupSettings.voiceCoordinatorEnabled, wakeControl: agentControl, encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.get().hostId) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanup = registerIpc(ipcMain, {

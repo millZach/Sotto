@@ -26,6 +26,15 @@ afterEach(async () => {
 })
 
 describe('SettingsRepository', () => {
+  it('canonically removes the voice gate without changing dictation or memory settings', async () => {
+    const { filePath, repository } = await createRepository()
+    const legacy = { ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false }
+    await writeFile(filePath, JSON.stringify(legacy), 'utf8')
+    expect(await repository.get()).toEqual({ ...legacy, voiceCoordinatorEnabled: false })
+    await repository.save(await repository.get())
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toHaveProperty('voiceCoordinatorEnabled')
+    expect(await repository.get()).toEqual({ ...legacy, voiceCoordinatorEnabled: false })
+  })
   it('migrates only local host project defaults durably and preserves existing raw overrides', async () => {
     const local = '11111111-1111-4111-8111-111111111111'
     const remote = '22222222-2222-4222-8222-222222222222'

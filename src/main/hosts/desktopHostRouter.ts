@@ -4,7 +4,7 @@ import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey 
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
-import type { HostAnswerTarget } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_UPDATE, managementCommandRefusal, type HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -104,7 +104,14 @@ export class DesktopHostRouter {
     reads: number
   }>()
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; removalMode?: boolean } = {}) {}
+
+  requiresManagementUpdate(hostId: string): boolean {
+    const connection = this.hosts.get(hostId)?.connection
+    if (connection?.kind !== 'remote') return false
+    const state = connection.service.shell()
+    return state.legacyManagement === true || state.assignments.length > 0
+  }
 
   add(connection: DesktopHostConnection): void {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
@@ -442,6 +449,12 @@ export class DesktopHostRouter {
       return this.shell()
     }
     const { connection, command } = this.route(input)
+    const refusal = this.options.removalMode ? managementCommandRefusal(command) : null
+    if (refusal) return { ...this.shell(), error: refusal }
+    if (this.options.removalMode && this.requiresManagementUpdate(connection.hostId)
+      && !['select-thread', 'select-project', 'compose', 'save-thread-draft', 'interrupt'].includes(command.type)) {
+      return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
+    }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
     if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
       && priorNotice === this.publishedNotice && priorNotice?.unsupportedCompose === connection) this.notice = priorNotice
@@ -540,6 +553,7 @@ export class DesktopHostRouter {
   private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
     try {
       const { connection, command } = this.route(input)
+      if (this.options.removalMode && this.requiresManagementUpdate(connection.hostId)) return { ...agentShell(this.shell()), error: LEGACY_MANAGEMENT_UPDATE }
       if (connection.available?.() !== false) await connection.service.command(command, client)
     } catch { /* The send that follows starts the session itself and reports what it finds. */ }
     return agentShell(this.shell())

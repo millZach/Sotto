@@ -3,6 +3,7 @@ import { link, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { defaultAgentConfiguration, type AgentAssignment, type AgentConfiguration, type AgentQueueItem } from '../../shared/agents'
+import { withoutLegacyManagement, withoutVoiceConfiguration } from '../../shared/hostProtocol'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 
@@ -27,8 +28,9 @@ export function stripRetiredEndpoint(value: object): Record<string, unknown> {
   return clean
 }
 
-function redact(state: Record<string, unknown>, historyEnabled: boolean, now: number): Record<string, unknown> {
-  const clean = structuredClone(state)
+function redact(state: Record<string, unknown>, historyEnabled: boolean, now: number, removalMode = false): Record<string, unknown> {
+  const clean = structuredClone(removalMode ? withoutLegacyManagement(state) as Record<string, unknown> : state)
+  if (removalMode && clean.configuration && typeof clean.configuration === 'object') clean.configuration = withoutVoiceConfiguration(clean.configuration)
   const cutoff = now - RETENTION_MS
   clean.assignments = (clean.assignments as AgentAssignment[]).map(assignment => ({ ...assignment,
     instruction: historyEnabled && assignment.contextUpdatedAt >= cutoff ? assignment.instruction : '',
@@ -46,12 +48,12 @@ async function readRecovery(path: string): Promise<Recovery | null> {
 }
 
 /** Recovery context has the same privacy policy as live state and a bounded lifetime. */
-export async function maintainProviderRecovery(directory: string, historyEnabled: boolean, now = Date.now()): Promise<void> {
+export async function maintainProviderRecovery(directory: string, historyEnabled: boolean, now = Date.now(), removalMode = false): Promise<void> {
   const path = join(directory, RECOVERY_FILE)
   const recovery = await readRecovery(path)
   if (!recovery) return
   if (recovery.expiresAt <= now) { await unlink(path); return }
-  const next = { ...recovery, state: redact(recovery.state, historyEnabled, now) }
+  const next = { ...recovery, state: redact(recovery.state, historyEnabled, now, removalMode) }
   if (JSON.stringify(next) !== JSON.stringify(recovery)) {
     await new AtomicJsonStore(path, recoverySchema.parse, () => next).write(next)
   }
@@ -69,7 +71,7 @@ async function preserveRecovery(path: string, recovery: Recovery): Promise<void>
 /** Runs before strict parsing: an omitted provider in an existing file historically meant t3. */
 export async function retireLegacyProvider<S extends RetirableState>(options: {
   directory: string; parse(input: unknown): S; historyEnabled: boolean
-  credentials: Pick<AgentCredentials, 'has' | 'set'>; now?: number
+  credentials: Pick<AgentCredentials, 'has' | 'set'>; now?: number; removalMode?: boolean
 }): Promise<void> {
   const now = options.now ?? Date.now()
   // Interrupted staging files never carry execution authority; remove their duplicate context on restart.
@@ -84,7 +86,7 @@ export async function retireLegacyProvider<S extends RetirableState>(options: {
   try { bytes = await readFile(path, 'utf8') }
   catch (error) {
     if (!missing(error)) throw error
-    await maintainProviderRecovery(options.directory, options.historyEnabled, now)
+    await maintainProviderRecovery(options.directory, options.historyEnabled, now, options.removalMode)
     if (options.credentials.has('t3')) await options.credentials.set('t3', '')
     return
   }
@@ -94,7 +96,7 @@ export async function retireLegacyProvider<S extends RetirableState>(options: {
   if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) return
   const provider = (configuration as Record<string, unknown>).provider
   if (provider !== undefined && provider !== 't3') {
-    await maintainProviderRecovery(options.directory, options.historyEnabled, now)
+    await maintainProviderRecovery(options.directory, options.historyEnabled, now, options.removalMode)
     if (options.credentials.has('t3')) await options.credentials.set('t3', '')
     return
   }
@@ -108,11 +110,11 @@ export async function retireLegacyProvider<S extends RetirableState>(options: {
   const migratedAt = previous?.migratedAt ?? now
   const recovery: Recovery = { version: 1, sourceDigest, migratedAt, expiresAt: migratedAt + RETENTION_MS,
     state: redact({ ...parsed, configuration: { ...parsed.configuration, provider: provider ?? 't3',
-      ...('endpoint' in configuration ? { endpoint: (configuration as Record<string, unknown>).endpoint } : {}) } }, options.historyEnabled, now) }
+      ...('endpoint' in configuration ? { endpoint: (configuration as Record<string, unknown>).endpoint } : {}) } }, options.historyEnabled, now, options.removalMode) }
   if (!previous) await preserveRecovery(recoveryPath, recovery)
   else {
     // Keep durable evidence through live-state replacement even when a very late retry has expired.
-    const retained = { ...previous, state: redact(previous.state, options.historyEnabled, now) }
+    const retained = { ...previous, state: redact(previous.state, options.historyEnabled, now, options.removalMode) }
     if (JSON.stringify(retained) !== JSON.stringify(previous)) await new AtomicJsonStore(recoveryPath, recoverySchema.parse, () => retained).write(retained)
   }
   const migrated = options.parse({ ...parsed,
@@ -124,5 +126,5 @@ export async function retireLegacyProvider<S extends RetirableState>(options: {
   // No secret is read, decrypted or archived. The vault's write is failure-atomic and preserves unrelated slots.
   if (options.credentials.has('t3')) await options.credentials.set('t3', '')
   await new AtomicJsonStore(path, options.parse, () => migrated).write(migrated)
-  await maintainProviderRecovery(options.directory, options.historyEnabled, now)
+  await maintainProviderRecovery(options.directory, options.historyEnabled, now, options.removalMode)
 }
