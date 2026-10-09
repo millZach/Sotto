@@ -385,7 +385,7 @@ Answering a question or permission request and creating a project are also part 
 
 **Personal dictionary.** The user's list of names and terms, one per line (`llmDictionary`), up to 4,000 characters. Its draft saves when the field loses focus or Settings is left. It is sent with every transcription request as an Azure phrase list so MAI spells those words as written, and it is also quoted in the cleanup prompt. Avoid: "vocabulary hints" in user-facing text.
 
-**Cleanup pass.** The optional LLM pass over the finished transcript (punctuation, fillers, self-corrections, lists), run through OpenRouter chat completions at the chosen quality tier and skipped for very short transcripts. Audio never goes through it. Avoid: "polish" in user-facing text (the code still says `polish`).
+**Cleanup pass.** The optional LLM pass over the finished transcript (punctuation, fillers, self-corrections, lists), run through OpenRouter chat completions and skipped for very short transcripts. Sotto picks the model, not the user: one model cleans up, and a faster backup takes over when it fails or runs long (ADR-0065). Audio never goes through it. Avoid: "polish" in user-facing text (the code still says `polish`).
 
 **Segment.** One slice of a dictation, cut at a pause while streaming transcription is on, transcribed as its own request so the final text is ready almost as soon as the user stops. Avoid: "chunk".
 

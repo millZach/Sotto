@@ -27,7 +27,6 @@ export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
-export type LlmQuality = 'low' | 'medium' | 'value' | 'high'
 
 /**
  * The rules under which Sotto reclaims a thread's worktree on its own (ADR-0041), the same four
@@ -198,11 +197,14 @@ export interface AppSettings {
    * clears it. Older settings files have no such field and load as `false`.
    */
   microphoneSkipped: boolean
+  /**
+   * AI cleanup on or off. One model does every cleanup (ADR-0065); the `llmQuality` tier
+   * picker is gone, and a settings file that still carries the key parses and drops it.
+   */
   llmFormatting: boolean
   /** OpenRouter key shared by transcription and AI cleanup; stored in the formatting credential slot. */
   llmApiKey: string
   llmDictionary: string
-  llmQuality: LlmQuality
   llmTimeoutMs: number
   llmMinWords: number
   /**
@@ -312,7 +314,6 @@ const fieldSchemas = {
   llmFormatting: z.boolean(),
   llmApiKey: z.string().max(256),
   llmDictionary: z.string().max(4_000),
-  llmQuality: z.enum(['low', 'medium', 'value', 'high']),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
   threadTitles: z.boolean(),
@@ -391,7 +392,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmFormatting: false,
   llmApiKey: '',
   llmDictionary: '',
-  llmQuality: 'low',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
   // On by default: the thread's own provider names it, on the account the thread
@@ -517,7 +517,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmFormatting: parseField(persisted, 'llmFormatting', defaults),
     llmApiKey: parseField(persisted, 'llmApiKey', defaults),
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
-    llmQuality: parseField(persisted, 'llmQuality', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),

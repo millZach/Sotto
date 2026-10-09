@@ -1,4 +1,4 @@
-// Does OpenRouter MAI beat Forge Parakeet plus Sotto's medium cleanup pass,
+// Does OpenRouter MAI beat Forge Parakeet plus Sotto's cleanup pass,
 // and where do Voxtral Mini Transcribe 2 and GPT Transcribe land?
 //
 // Sends the seven synthetic WAV fixtures, serially. Times from before fetch
@@ -15,9 +15,10 @@
 //
 // Writes stt-<stamp>.json + .md in results. Warmups and hint probes are
 // excluded from scores but retained and charged. No API keys are persisted.
-// The cleanup deadline mirrors production: max(user timeout 2500ms, medium
-// tier floor 7000ms) plus min(9000, 30ms per word), so a timed-out cleanup
-// here means a timed-out cleanup in the app.
+// The cleanup deadline mirrors production: max(user timeout 2500ms, the cleanup
+// model's floor 8000ms) plus min(9000, 30ms per word), so a timed-out cleanup
+// here means a timed-out cleanup in the app. Runs before ADR-0065 (2026-10-09)
+// used the retired medium tier: Nova 2 Lite, then Gemini 3.1 Flash Lite, 7000ms.
 
 /* global AbortSignal */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
@@ -46,9 +47,10 @@ const CONFIGS = Object.entries(MODELS).flatMap(([base, spec]) =>
     id: base + suffix, base, ...spec, hints: suffix.includes('+hints'), cleanup: suffix.includes('+cleanup'),
     requestForm: suffix.includes('+hints') ? 'json/input_audio/wav' : 'multipart/file/wav',
   })))
+// Mirrors CLEANUP_MODELS in src/main/llm/transcriptPolishService.ts (ADR-0065).
 const CLEANUP = [
-  { model: 'amazon/nova-2-lite-v1', reasoning: { enabled: false } },
-  { model: 'google/gemini-3.1-flash-lite', reasoning: { effort: 'minimal' } },
+  { model: 'anthropic/claude-haiku-5.5', reasoning: { effort: 'low' } },
+  { model: 'inception/mercury-2', reasoning: { enabled: false } },
 ]
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/u, ''))
 const hash = (text) => createHash('sha256').update(text).digest('hex')
@@ -170,7 +172,7 @@ async function main() {
     setup: {
       node: process.version, platform: process.platform, dictionary: DICTIONARY, cleanupModels: CLEANUP,
       cleanupSystemPrompt: system, cleanupPromptSha256: hash(system),
-      cleanupPolicy: 'Production deadline: max(user llmTimeoutMs 2500, medium tier floor 7000) + min(9000, 30 * inputWords) ms; fallback reserve min(6000, 1200 + 15 * inputWords) ms; minimum fallback budget 500ms. Fewer than five whitespace words skips cleanup. Production prompts, reasoning, max_tokens=4000 and output guards mirrored. One network/429 retry within each leg deadline is a benchmark requirement.',
+      cleanupPolicy: 'Production deadline: max(user llmTimeoutMs 2500, cleanup model floor 8000) + min(9000, 30 * inputWords) ms; fallback reserve min(6000, 1200 + 15 * inputWords) ms; minimum fallback budget 500ms. Fewer than five whitespace words skips cleanup. Production prompts, reasoning, max_tokens=4000 and output guards mirrored. One network/429 retry within each leg deadline is a benchmark requirement.',
       fixtures: allFixtures.map(({ wav: _wav, ...f }) => ({ ...f, bytes: _wav.length })),
       networkRoute: '', forge: {}, endpoints: {}, cleanupPricing: {},
       priceSource: 'docs/research/2026-09-11-stt-bench-candidates.md; Voxtral estimate uses conservative EU $0.0033/min (default $0.003). usage.cost wins.',
@@ -274,8 +276,8 @@ async function main() {
     if (shouldSkipCleanup(raw)) return { text: raw, ms: 0, outcome: 'skipped', attempts: [] }
     const start = performance.now()
     const inputWords = raw.split(/\s+/u).filter(Boolean).length
-    // Mirrors transcriptPolishService: max(llmTimeoutMs, tier.minTimeoutMs) + length budget.
-    const deadline = start + Math.max(2500, 7000) + Math.min(9000, inputWords * 30)
+    // Mirrors transcriptPolishService: max(llmTimeoutMs, CLEANUP_MODELS.minTimeoutMs) + length budget.
+    const deadline = start + Math.max(2500, 8000) + Math.min(9000, inputWords * 30)
     const fallbackReserve = Math.min(6000, 1200 + inputWords * 15)
     const attempts = []
     for (let index = 0; index < CLEANUP.length; index++) {

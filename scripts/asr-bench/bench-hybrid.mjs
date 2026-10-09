@@ -25,7 +25,8 @@ const RESULTS_DIR = join(HERE, 'results')
 const FIXTURE_DIR = join(HERE, 'fixtures')
 const OPENROUTER = 'https://openrouter.ai/api/v1/chat/completions'
 
-// Mirrors QUALITY_TIERS in src/main/llm/transcriptPolishService.ts.
+// The July 2026 cleanup quality tiers, kept so this run can be reproduced. ADR-0065
+// retired the tiers for one model; scripts/llm-bench/compare-cleanup.mjs measures it.
 const TIERS = {
   low: { id: 'inception/mercury-2', reasoning: false },
   medium: { id: 'amazon/nova-2-lite-v1', reasoning: false },
