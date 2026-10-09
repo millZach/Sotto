@@ -40,8 +40,9 @@ describe('Hyprland paste', () => {
     const h = harness(tags.flat())
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
     const chord = hyprlandPasteChord({ tags: tags.flat() })
-    expect(h.run.mock.calls.slice(0, 3).map(([i]) => i.args)).toEqual([
+    expect(h.run.mock.calls.slice(0, 4).map(([i]) => i.args)).toEqual([
       ['locked', '-j'], ['repl', MODIFIERS_HELD_QUERY], ['activewindow', '-j'],
+      ['locked', '-j'],
     ])
     expect(dispatched(h.run)).toEqual(['down', 'up'].map(state => ({
       executable: 'hyprctl',
@@ -58,6 +59,44 @@ describe('Hyprland paste', () => {
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
     expect(h.delay.mock.calls).toEqual([[25], [25], [50]])
     expect(h.run.mock.calls.findIndex(([i]) => i.args[0] === 'activewindow')).toBe(4)
+  })
+
+  it.each(['modifier wait', 'target query'])('sends no down when the session locks during the %s', async phase => {
+    const h = harness()
+    const base = h.run.getMockImplementation()!
+    let locked = false
+    let checks = 0
+    h.run.mockImplementation(async i => {
+      if (i.args[0] === 'locked') return JSON.stringify({ locked })
+      if (i.args[0] === 'repl' && phase === 'modifier wait' && ++checks === 1) return 'true'
+      if (i.args[0] === 'activewindow' && phase === 'target query') locked = true
+      return base(i)
+    })
+    h.delay.mockImplementation(async () => { locked = true })
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
+    expect(dispatched(h.run)).toEqual([])
+  })
+
+  it('sends no down when the final lock query fails', async () => {
+    const h = harness()
+    const base = h.run.getMockImplementation()!
+    let lockChecks = 0
+    h.run.mockImplementation(i => i.args[0] === 'locked' && ++lockChecks === 2
+      ? Promise.reject(new Error('unavailable')) : base(i))
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
+    expect(dispatched(h.run)).toEqual([])
+  })
+
+  it('still releases the key when the session locks between down and up', async () => {
+    const h = harness()
+    const base = h.run.getMockImplementation()!
+    let locked = false
+    h.run.mockImplementation(i => i.args[0] === 'locked' ? Promise.resolve(JSON.stringify({ locked })) : base(i))
+    h.delay.mockImplementation(async () => { locked = true })
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
+    expect(locked).toBe(true)
+    expect(dispatched(h.run)).toEqual(['down', 'up'].map(state =>
+      buildHyprlandKeyInvocation({ mods: 'CTRL', key: 'V' }, state as 'down' | 'up')))
   })
 
   it('leaves the result copied if a modifier stays held for 300 ms', async () => {

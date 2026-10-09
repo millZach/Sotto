@@ -55,6 +55,9 @@ export function createHyprlandPasteAdapter(
         }
         // Query after Sotto's paste delay and modifier release, as close to dispatch as possible.
         const chord = hyprlandPasteChord(JSON.parse(await run(invocation)))
+        // Modifier polling and target lookup can outlast the initial lock check.
+        // Fail closed immediately before down, but never gate its matching up.
+        if (JSON.parse(await run({ executable: 'hyprctl', args: ['locked', '-j'] })).locked !== false) return false
         let pressed = false
         let released = false
         try {

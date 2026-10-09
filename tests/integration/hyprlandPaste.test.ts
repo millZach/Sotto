@@ -41,6 +41,7 @@ describe.skipIf(process.platform !== 'linux')('Hyprland process transport over a
     const key = target === 'terminal' ? 'Insert' : 'V'
     expect(args).toEqual([
       ['locked', '-j'], ['repl', MODIFIERS_HELD_QUERY], ['activewindow', '-j'],
+      ['locked', '-j'],
       ['dispatch', `hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "down" })`],
       ['dispatch', `hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "up" })`],
     ])
