@@ -429,6 +429,19 @@ done
 printf '#!/bin/bash\nprintf "%%s\\t%%s\\n" "$0" "$*" >>%q\necho "Sotto could not receive the dictation command." >&2\nexit 1\n' "$work/verbs.log" >"$work/failing/sotto"
 chmod +x "$work/bin/sotto" "$work/checkout/apps/omarchy/sotto" "$work/failing/sotto"
 checkout_sotto=$work/checkout/apps/omarchy/sotto
+# A slow one holds each verb until the scene releases it, then fails, as a
+# launcher stuck on a Sotto that has gone does.
+mkdir -p "$work/slow"
+: >"$work/slow/finished"
+cat >"$work/slow/sotto" <<EOF
+#!/bin/bash
+printf '%s\t%s\n' "\$0" "\$*" >>$(printf %q "$work/verbs.log")
+until [[ -e $(printf %q "$work/slow/release") ]]; do sleep 0.1; done
+printf '%s\n' "\$*" >>$(printf %q "$work/slow/finished")
+echo "Sotto could not receive the dictation command." >&2
+exit 1
+EOF
+chmod +x "$work/slow/sotto"
 
 # A stand-in for Sotto's main process, which every state file names in
 # `pid`, with its start time in `pidStart`; the plugin checks it is alive
@@ -850,6 +863,66 @@ rm -f "$state_file"
 dictation=""
 sleep 3.5
 
+say "--- a Stop that fails after Sotto quit"
+# Stop is pressed with the slow launcher, Sotto quits while it holds, and
+# the plugin says so; then the Stop fails. That late failure must leave
+# "Sotto quit" and its Dismiss as they are, with the state file readable
+# or not, and must bring nothing back once that notice is dismissed.
+in_shell omarchy bar set sotto.dictation command "$work/slow/sotto" >/dev/null
+sleep 1
+same_pill() { # capture capture x y w h: no pixel differs inside those bounds
+  local diff
+  diff=$(magick compare -metric AE -fuzz 2% \( "$evidence/raw/$1.png" -crop "${5}x${6}+${3}+${4}" +repage \) \
+    \( "$evidence/raw/$2.png" -crop "${5}x${6}+${3}+${4}" +repage \) null: 2>&1 >/dev/null)
+  [[ ${diff%% *} == 0 ]]
+}
+for variant in readable unreadable dismissed; do
+  rm -f "$work/slow/release"
+  stand_in "sotto-late-$variant"
+  late_pid=$last_pid
+  baseline
+  state_pid=$late_pid write_state listening false "" top 8000
+  sleep 1
+  if [[ $variant == unreadable ]]; then
+    state_pid=$late_pid state_mode=000 write_state listening false "" top 8000
+    sleep 1.5
+  fi
+  pcapture "late-$variant-before"
+  read -r w h x y <<<"$(pill "late-$variant-before")"
+  finished=$(wc -l <"$work/slow/finished")
+  click $((x + w - 103)) $((y + h / 2))
+  wait_for 3 '[[ $(last_runner) == "$work/slow/sotto" && $(last_verb) == "dictation stop" ]]'
+  check '[[ $(last_runner) == "$work/slow/sotto" && $(last_verb) == "dictation stop" ]]' "$variant: Stop runs the slow launcher, which holds"
+  kill_owned "$late_pid"
+  wait_for 3 '! kill -0 "$late_pid" 2>/dev/null' || fail "the stand-in did not stop"
+  sleep 3.5
+  pcapture "late-$variant-lost"
+  read -r lw lh lx ly <<<"$(pill "late-$variant-lost")"
+  check '[[ -n $lw ]] && ((lh > 44)) && [[ $(wc -l <"$work/slow/finished") == "$finished" ]]' "$variant: the pill says Sotto quit while that Stop still runs (${lw}x${lh} at $lx,$ly)"
+  [[ $variant == dismissed ]] && click $((lx + lw - 47)) $((ly + lh / 2))
+  touch "$work/slow/release"
+  wait_for 3 '(($(wc -l <"$work/slow/finished") > finished))' || fail "the slow launcher did not finish"
+  sleep 1
+  pcapture "late-$variant-failed"
+  if [[ $variant == dismissed ]]; then
+    check '[[ -z $(pill late-dismissed-failed) ]]' "dismissed: once Sotto quit is dismissed, the Stop failing after it brings no notice back"
+  else
+    check '[[ $(pill "late-$variant-failed") == "$lw $lh $lx $ly" ]] && same_pill "late-$variant-lost" "late-$variant-failed" "$lx" "$ly" "$lw" "$lh"' "$variant: the Stop failing after it leaves Sotto quit and its Dismiss as they were"
+    sleep 5.5
+    pcapture "late-$variant-later"
+    check 'same_pill "late-$variant-lost" "late-$variant-later" "$lx" "$ly" "$lw" "$lh"' "$variant: six and a half seconds later the notice is still there"
+    n=$(verbs)
+    click $((lx + lw - 47)) $((ly + lh / 2))
+    pcapture "late-$variant-dismissed"
+    check '[[ -z $(pill "late-$variant-dismissed") && $(verbs) == "$n" ]]' "$variant: its Dismiss puts it away and runs nothing"
+  fi
+  rm -f "$state_file"
+  dictation=""
+  sleep 3.5
+done
+in_shell omarchy bar set sotto.dictation command "$checkout_sotto" >/dev/null
+sleep 1
+
 say "--- rule A: the display focused when dictation starts"
 # Both baselines with the pointer on the second display, where a dictation
 # will start, so the first display's baseline has no pointer in it.
@@ -1115,6 +1188,7 @@ magick $(for s in notice-missing notice-cleared; do crop_top "$s"; done) -append
 magick $(for s in stop-before stop-failed stop-failed-later cancel-failed; do crop_top "$s"; done) -append "$evidence/curated/failed-stop-keeps-pill.png"
 magick $(for s in crash-before crash-listening crash-kept crash-reused older-sotto; do crop_top "$s"; done) -append "$evidence/curated/sotto-quit.png"
 magick $(for s in unreadable-before unreadable unreadable-later unreadable-recovered unreadable-quit unreadable-first; do crop_top "$s"; done) -append "$evidence/curated/read-failure-keeps-pill.png"
+magick $(for s in late-readable-before late-readable-lost late-readable-failed late-readable-later late-unreadable-lost late-unreadable-failed late-unreadable-later late-dismissed-failed; do crop_top "$s"; done) -append "$evidence/curated/late-stop-after-quit.png"
 magick $(for s in still-listening still-transcribing; do crop_top "$s"; done) -append "$evidence/curated/without-motion.png"
 magick \( drag-to-left.png snapped-left.png +append \) \( drag-to-bottom.png snapped-bottom.png +append \) \
   \( drag-to-right.png snapped-right.png +append \) \( drag-to-top.png snapped-top.png +append \) -append -resize 35% "$evidence/curated/drag-and-snap.png"
