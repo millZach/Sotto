@@ -12,6 +12,7 @@ artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/privacy-cleanup-notice-820x560.png
 artifacts/first-run-setup-fit/*
 !artifacts/first-run-setup-fit/checks.json
+!artifacts/first-run-setup-fit/agents-real-clients-1080x720.png
 !artifacts/first-run-setup-fit/step-1-820x560-dark.png
 !artifacts/first-run-setup-fit/step-2-820x560-light.png
 !artifacts/first-run-setup-fit/step-3-1080x720-dark.png
