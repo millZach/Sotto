@@ -16,6 +16,7 @@ import {
   pillFor,
   processGone,
   restingPosition,
+  sentenceLines,
   snapEdge,
   startsDictation,
   watchesProcess,
@@ -253,6 +254,23 @@ describe('where the pill rests', () => {
     expect(messageWidth(maxLength('top', workArea(820, 560, 'top', 26), 5), fixed, 470, 120)).toBe(470)
     expect(messageWidth(maxLength('left', workArea(1600, 1000, 'top', 26), 5), fixed, 470, 120)).toBe(470)
     expect(messageWidth(200, fixed, 470, 120)).toBe(120)
+  })
+
+  it('breaks words that do not fit between sentences, and sizes them to the widest line', () => {
+    const measure = (text: string) => text.length * 8
+    expect(sentenceLines('Transcribing', 470, measure)).toEqual({ text: 'Transcribing', width: 96 })
+    expect(sentenceLines('Sotto quit. This dictation was lost. Open Sotto to dictate again.', 470, measure))
+      .toEqual({ text: 'Sotto quit. This dictation was lost.\nOpen Sotto to dictate again.', width: 288 })
+    expect(sentenceLines('OpenRouter has no credit left. Add credit. Recording kept.', 312, measure))
+      .toEqual({ text: 'OpenRouter has no credit left.\nAdd credit. Recording kept.', width: 240 })
+    expect(sentenceLines('Stop did not get through. Recording may still be running. Open Sotto to stop it.', 312, measure).text)
+      .toBe('Stop did not get through.\nRecording may still be running.\nOpen Sotto to stop it.')
+  })
+
+  it('leaves a sentence longer than the line to wrap on its own', () => {
+    const measure = (text: string) => text.length * 8
+    expect(sentenceLines('Copied, paste with Super+V into any app you like', 200, measure))
+      .toEqual({ text: 'Copied, paste with Super+V into any app you like', width: 200 })
   })
 
   it('starts a pill longer than the room at the start, so its glyph and words show', () => {

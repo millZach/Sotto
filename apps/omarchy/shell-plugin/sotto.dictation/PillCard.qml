@@ -26,7 +26,7 @@ BorderSurface {
   readonly property color ink: Color.popups.text
   readonly property int pad: Style.space(12)
   // Room for Sotto's longest failure sentence, about 60 characters, on one
-  // line, where the screen has it. Longer words wrap.
+  // line, where the screen has it. Longer words break between sentences.
   readonly property int fixedLength: Math.ceil(card.borderLeft + card.pad + lead.implicitWidth + row.spacing
     + (buttonRow.visible ? row.spacing + buttonRow.implicitWidth : 0) + card.pad + card.borderRight)
   readonly property int maxMessageWidth: card.maxLength > 0
@@ -47,13 +47,15 @@ BorderSurface {
     else service.run(verb)
   }
 
-  TextMetrics {
+  FontMetrics {
     id: messageMetrics
     font.family: Style.font.family
     font.bold: true
     font.pixelSize: Style.font.subtitle
-    text: card.look.message
   }
+
+  readonly property var lines: Model.sentenceLines(card.look.message, card.maxMessageWidth,
+    function(text) { return messageMetrics.advanceWidth(text) })
 
   Row {
     id: row
@@ -132,10 +134,10 @@ BorderSurface {
     Text {
       id: messageText
       visible: card.look.message !== ""
-      width: Math.min(Math.ceil(messageMetrics.advanceWidth), card.maxMessageWidth)
+      width: Math.min(Math.ceil(card.lines.width), card.maxMessageWidth)
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
-      text: card.look.message
+      text: card.lines.text
       font: messageMetrics.font
       color: card.ink
       wrapMode: Text.Wrap

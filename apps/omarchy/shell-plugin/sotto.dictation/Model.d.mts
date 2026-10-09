@@ -49,6 +49,7 @@ export function workArea(width: number, height: number, barPosition: string, bar
 export function verticalEdge(edge: string): boolean
 export function maxLength(edge: string, area: Area, gap: number): number
 export function messageWidth(length: number, fixed: number, preferred: number, minimum: number): number
+export function sentenceLines(message: string, width: number, measure: (text: string) => number): { text: string; width: number }
 export function restingPosition(edge: string, area: Area, width: number, height: number, gap: number): Point
 export function snapEdge(bounds: Area, area: Area): Edge
 export function animationsEnabled(text: unknown): boolean

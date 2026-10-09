@@ -263,6 +263,42 @@ export function messageWidth(length, fixed, preferred, minimum) {
   return Math.max(minimum, Math.min(preferred, Math.floor(length - fixed)))
 }
 
+// Sotto's words laid out for the pill: on one line when they fit `width`,
+// and otherwise broken between sentences, each line taking whole sentences
+// while they fit. A sentence longer than `width` is left for the text to
+// wrap. `measure` gives a string's width; `width` in the result is the
+// widest line's, at most `width`.
+export function sentenceLines(message, width, measure) {
+  var text = String(message || "")
+  var whole = measure(text)
+  if (text === "" || whole <= width) return { text: text, width: whole }
+  var words = text.split(" ")
+  var sentences = []
+  var current = []
+  for (var i = 0; i < words.length; i++) {
+    current.push(words[i])
+    if (/[.!?]$/.test(words[i]) || i === words.length - 1) {
+      sentences.push(current.join(" "))
+      current = []
+    }
+  }
+  var lines = []
+  var line = ""
+  for (var j = 0; j < sentences.length; j++) {
+    var joined = line === "" ? sentences[j] : line + " " + sentences[j]
+    if (line !== "" && measure(joined) > width) {
+      lines.push(line)
+      line = sentences[j]
+    } else {
+      line = joined
+    }
+  }
+  lines.push(line)
+  var widest = 0
+  for (var k = 0; k < lines.length; k++) widest = Math.max(widest, measure(lines[k]))
+  return { text: lines.join("\n"), width: Math.min(widest, width) }
+}
+
 // Centred on its edge, `gap` in from the work area, as the Windows pill is
 // centred on its edge of the work area. A pill longer than the room starts
 // at the area's start, so its glyph and words stay on screen.
