@@ -84,4 +84,4 @@ apps/omarchy/install-shell-plugin.sh --uninstall
 
 This takes the glyph off the bar, checks that `shell.json` no longer names it, and only then deletes the plugin folder; Sotto's own widget comes back. Taking the glyph off needs the Omarchy shell running, so without it the script removes nothing and says so. It also takes off a glyph left on the bar after the folder was deleted by hand. `omarchy plugin remove sotto.dictation` also takes the glyph off and keeps a hidden backup of the folder.
 
-`shell-plugin/verify/nested-proof.sh <out-dir>` checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.
+`scripts/verify-omarchy-shell-plugin.sh <out-dir>`, from the checkout's root, checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.

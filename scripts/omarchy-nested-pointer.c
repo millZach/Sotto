@@ -1,5 +1,6 @@
-// A mouse for the owned nested Hyprland in nested-proof.sh, which drags and
-// clicks the plugin there while the live session stays locked and untouched.
+// A mouse for the owned nested Hyprland in verify-omarchy-shell-plugin.sh,
+// which drags and clicks the plugin there while the live session stays
+// locked and untouched.
 // Reads one command per line on stdin and answers "ok" once the compositor
 // has it:  move <x> <y> <layout-width> <layout-height> | down | up
 // Usage: nested-pointer <live-instance> <nested-instance> <live-display> <nested-display>

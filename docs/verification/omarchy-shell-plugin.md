@@ -39,12 +39,12 @@ The holds after delivered and copied count from `since` and only stop a finished
 ## The nested shell
 
 ```sh
-apps/omarchy/shell-plugin/verify/nested-proof.sh /tmp/sotto-shell-proof-out
+scripts/verify-omarchy-shell-plugin.sh /tmp/sotto-shell-proof-out
 ```
 
 Nested Hyprland A runs as a window of the live session, found by reading the environment of the live session's own `quickshell`. The live session tiles that window, and no request goes to the live compositor to change it. So nested B runs inside A, and A floats B's two displays at 1600x1000 and 1280x800. `hyprctl output create headless` was tried first: on this NVIDIA GPU a headless output cannot allocate its buffers (`GBM: Failed to allocate a GBM buffer`), so B's second display is a second nested Wayland output, still inside the instance this run owns.
 
-The Omarchy shell runs in B with its own `HOME`, XDG folders, runtime folder and D-Bus session. The config is copied from forge with polkit, lock, idle and night light turned off. The theme is generated with Omarchy's own templates. The runtime folder is `/tmp/ssp-*`, because Hyprland's socket path must fit in 108 bytes. `omarchy-shell`, `omarchy bar` and `omarchy plugin` reach only that shell, since Quickshell finds instances through the runtime folder. A wlr virtual pointer (`nested-pointer.c`) refuses any display but B's, and moves, clicks and drags there. Captures come from `grim` on B's outputs, with the pointer parked in a corner. The pill's bounds are what differs from an idle capture of the same desktop. Every process runs in one systemd slice that is stopped at the end, and only the Hyprland runtime folders this run made are removed, after their inode and lock PID are checked.
+The Omarchy shell runs in B with its own `HOME`, XDG folders, runtime folder and D-Bus session. The config is copied from forge with polkit, lock, idle and night light turned off. The theme is generated with Omarchy's own templates. The runtime folder is `/tmp/ssp-*`, because Hyprland's socket path must fit in 108 bytes. `omarchy-shell`, `omarchy bar` and `omarchy plugin` reach only that shell, since Quickshell finds instances through the runtime folder. A wlr virtual pointer (`scripts/omarchy-nested-pointer.c`) refuses any display but B's, and moves, clicks and drags there. Captures come from `grim` on B's outputs, with the pointer parked in a corner. The pill's bounds are what differs from an idle capture of the same desktop. Every process runs in one systemd slice that is stopped at the end, and only the Hyprland runtime folders this run made are removed, after their inode and lock PID are checked.
 
 ## Results
 

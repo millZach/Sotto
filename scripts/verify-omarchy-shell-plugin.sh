@@ -15,7 +15,7 @@
 # removed.
 #
 # Usage, from a Sotto checkout on an Omarchy machine, in its desktop session:
-#   apps/omarchy/shell-plugin/verify/nested-proof.sh <out-dir>
+#   scripts/verify-omarchy-shell-plugin.sh <out-dir>
 # Needs Hyprland, quickshell, grim, ImageMagick, jq, foot, systemd --user,
 # dbus-run-session and cc with the Wayland client headers. It writes raw
 # captures to <out-dir>/raw, composites to <out-dir>/curated and the
@@ -23,9 +23,9 @@
 
 set -euo pipefail
 
-out=$(realpath -m -- "${1:?usage: nested-proof.sh <out-dir>}")
+out=$(realpath -m -- "${1:?usage: verify-omarchy-shell-plugin.sh <out-dir>}")
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-omarchy_dir=$(cd -- "$here/../.." && pwd -P)
+omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
 uid=$(id -u)
 run=/run/user/$uid
@@ -281,7 +281,7 @@ check '[[ -S $rt/quickshell/by-id/$(ls "$rt/quickshell/by-id" | head -n1)/ipc.so
 
 # ------------------------------------------------------------- the pointer
 
-cc "$here/nested-pointer.c" -o "$work/nested-pointer" -lwayland-client -Wall -Wextra -Werror
+cc "$here/omarchy-nested-pointer.c" -o "$work/nested-pointer" -lwayland-client -Wall -Wextra -Werror
 mkfifo "$work/pointer.in"
 exec 7<>"$work/pointer.in"
 printf '%s\n' "XDG_RUNTIME_DIR=$rt" "WAYLAND_DISPLAY=$b_wl" "HYPRLAND_INSTANCE_SIGNATURE=$b_sig" >"$work/env-pointer"
