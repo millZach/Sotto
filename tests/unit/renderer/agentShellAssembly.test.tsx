@@ -390,6 +390,34 @@ describe('the startup shell cache', () => {
 })
 
 describe('a shell held for its frame', () => {
+  it('keeps a prompt when its save reply arrives before an older held question shell paints', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    let paint!: FrameRequestCallback
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { paint = callback; return 1 })
+    const initial = fullState([thread('workshop', [])], 'workshop')
+    const wire = shellBridge(initial)
+    let resolveSave!: (state: AgentState) => void
+    vi.mocked(wire.bridge.command).mockImplementation(() => new Promise(resolve => { resolveSave = resolve }))
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    const store = result.current.threadDrafts
+    act(() => { store.edit('workshop', { text: 'Keep the separate prompt' }); store.flush('workshop') })
+    const draft = store.draft('workshop')
+    const waiting = { ...initial, host: { ...initial.host, threads: [{ ...initial.host.threads[0]!, requests: [
+      { id: 'question', kind: 'question' as const, text: 'Which layout?', options: [] },
+    ] }] } }
+    act(() => wire.publish(waiting))
+    await act(async () => { resolveSave({ ...waiting,
+      threadDrafts: [{ ...draft, attachments: [...draft.attachments], skills: [...draft.skills], files: [...draft.files],
+        threadId: 'workshop', updatedAt: '2026-10-09T00:00:00.000Z' }],
+      threadDraftPersistence: [{ threadId: 'workshop', draftId: draft.draftId, status: 'saved' }],
+    }) })
+    expect(store.snapshot('workshop').save).toBe('saved')
+    act(() => paint(1))
+    expect(result.current.state!.host.threads[0]!.requests[0]!.id).toBe('question')
+    expect(store.draft('workshop').text).toBe('Keep the separate prompt')
+  })
+
   it('commits before a command response, so the older shell never lands after it', async () => {
     const wire = shellBridge(fullState([thread('workshop', [])], 'workshop'))
     const { result } = renderHook(() => useAgentConnection(wire.bridge))

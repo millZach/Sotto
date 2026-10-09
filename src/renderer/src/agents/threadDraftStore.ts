@@ -529,7 +529,8 @@ export class ThreadDraftStore {
       current.saving = null
       const status = result === null ? 'unsaved' : persistence(result, threadId, draft.draftId)
       current.saved ||= status === 'saved'
-      if (current.saved) current.observed = true
+      // A save acknowledgement can precede an older shell's paint. Only receive marks a revision
+      // observed in published state; until then that older shell must not replace the saved edit.
       current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
       this.emit(new Set([threadId]))
     }
