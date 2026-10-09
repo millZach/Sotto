@@ -54,6 +54,18 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
   return value
 }
 
+async function closeMainToTray(app: ElectronApplication, page: Page): Promise<void> {
+  if (process.platform === 'win32') {
+    await page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+  } else {
+    // Only Windows draws a close button. macOS closes through its traffic light and Linux through the
+    // compositor (Super+W), and both arrive as the window's native close event.
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.close()
+    })
+  }
+}
+
 interface NativeRectangle {
   readonly x: number
   readonly y: number
@@ -352,10 +364,11 @@ test('keeps the real main window frameless, with a strip while onboarding and th
     await finishOnboarding(launched.page)
 
     // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
-    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours.
+    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours, and
+    // Linux draws none, because Hyprland closes windows itself (#849).
     await expect(launched.page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
     await expect(launched.page.locator('header.app-strip')).toHaveCount(0)
-    await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'darwin' ? 0 : 1)
+    await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'win32' ? 1 : 0)
   } finally {
     await closeSotto(launched)
   }
@@ -521,7 +534,7 @@ test('closing the main window hides it to the tray without quitting', async () =
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+    await closeMainToTray(launched.app, launched.page)
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
     expect(launched.app.process().exitCode).toBeNull()
   } finally {
@@ -533,7 +546,7 @@ test('a second instance reveals the existing hidden window', async () => {
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+    await closeMainToTray(launched.app, launched.page)
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
 
     const electronExecutable = createRequire(join(process.cwd(), 'package.json'))('electron') as string

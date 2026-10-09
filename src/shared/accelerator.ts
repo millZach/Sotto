@@ -38,7 +38,7 @@ const darwinModifierAliases = new Map<string, string>([
 ])
 
 const modifierAliases: Readonly<Record<SottoPlatform, ReadonlyMap<string, string>>> =
-  Object.freeze({ win32: win32ModifierAliases, darwin: darwinModifierAliases })
+  Object.freeze({ win32: win32ModifierAliases, darwin: darwinModifierAliases, linux: win32ModifierAliases })
 
 const darwinModifierGlyphs = new Map<string, string>([
   ['CommandOrControl', '⌘'],

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { AGENT_TEXT_MAX } from '../../shared/agents'
 import { babysitStarterSchema } from '../../shared/babysitting'
 import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
-import { pullRequestKey } from './gitPullRequests'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's

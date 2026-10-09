@@ -6,6 +6,16 @@ export interface LoginItemAdapter {
   setLoginItemSettings(settings: { readonly openAtLogin: boolean }): void
 }
 
+/**
+ * Electron's login items do nothing on Linux, so nothing there may reach them: not the Settings row, not a
+ * remembered setting at startup, not the settings channel. Starting at sign-in comes with the installed
+ * package (#841); until then Linux reads as off and a request to turn it on changes nothing.
+ */
+export const LINUX_LOGIN_ITEMS: LoginItemAdapter = Object.freeze({
+  getLoginItemSettings: () => ({ openAtLogin: false }),
+  setLoginItemSettings: () => undefined,
+})
+
 export class StartupService {
   constructor(private readonly loginItems: LoginItemAdapter) {}
 

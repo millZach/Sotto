@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
-import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests, pullRequestKey } from '../../../src/main/agents/gitPullRequests'
+import { githubRepositoryOf, GitPullRequestLimited, GitPullRequestRefusal, GitPullRequests } from '../../../src/main/agents/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { parsePullRequestReference, type GitPullRequestAction } from '../../../src/shared/gitPullRequests'
 
@@ -192,7 +192,6 @@ describe('reading a pull request through gh, the way T3 reads it', () => {
     expect(parsePullRequestReference('https://gitlab.com/o/r/-/merge_requests/42')).toBeNull()
     expect(parsePullRequestReference('main')).toBeNull()
     expect(parsePullRequestReference('#0')).toBeNull()
-    expect(pullRequestKey('https://github.com/O/R/pull/42/files')).toBe(pullRequestKey('https://github.com/o/r/pull/42'))
   })
 })
 

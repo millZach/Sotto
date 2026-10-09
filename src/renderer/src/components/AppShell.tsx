@@ -85,7 +85,8 @@ export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppL
  * sentence of status in a footer line; the strip is the frameless window's
  * drag region. macOS paints its own traffic lights over the strip's left end
  * and closes to the tray through the same intercepted close, so it gets no
- * custom controls. In the `sidebar` layout the Threads sidebar stands in the
+ * custom controls. Linux keeps the drag regions without window controls; the
+ * compositor asks it to close to the tray. In the `sidebar` layout the Threads sidebar stands in the
  * strip's and footer's stead: its top row drags, its foot carries the page
  * links and the update control, and the room keeps a top edge for the window
  * controls and a foot line for the sentence. The `page` layout hands over the
@@ -142,7 +143,7 @@ export function AppShell({
   const beside = layout === 'sidebar'
   const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
-    <div className={shellClass}>
+    <div className={shellClass} data-platform={platform}>
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
           <div className="app-mark" aria-label="Sotto application">
@@ -170,11 +171,11 @@ export function AppShell({
               ))}
             </div>
           ) : <span />}
-          {nativeWindowControls ? <span /> : <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} />}
+          {platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : <span />}
         </header>
       )}
       {beside ? sidebar : null}
-      {beside ? <div className="app-room__top">{nativeWindowControls ? null : <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} />}</div> : null}
+      {beside ? <div className="app-room__top">{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (
