@@ -1,4 +1,5 @@
 -- Load after Omarchy's defaults, from ~/.config/hypr/bindings.lua.
+-- For ~/.config/hypr/sotto-bindings.lua, use require("hypr.sotto-bindings").
 -- hl.unbind removes every occurrence, including Voxtype's F9 release binding.
 hl.unbind("F9")
 hl.unbind("SUPER + CTRL + X")

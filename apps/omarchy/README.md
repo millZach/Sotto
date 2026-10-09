@@ -33,10 +33,10 @@ mise exec node@24.21.0 -- npm run build
 
 ## Install the bindings
 
-Omarchy loads `~/.config/hypr/bindings.lua` after its defaults. Copy this folder's `bindings.lua` to `~/.config/hypr/sotto-bindings.lua` and add this line to the end of your own `bindings.lua`:
+The snippet must run after Omarchy's defaults so it can remove Voxtype's bindings. Stock Omarchy guarantees that order for `~/.config/hypr/bindings.lua`. Copy this folder's `bindings.lua` to `~/.config/hypr/sotto-bindings.lua` and add this line to the end of your own `bindings.lua`:
 
 ```lua
-require("sotto-bindings")
+require("hypr.sotto-bindings")
 ```
 
 Or paste the snippet at the end of your own file. For a checkout, change `local sotto = "sotto"` to the absolute launcher path. If the path has spaces, include shell quotes inside the Lua string, for example `local sotto = "'/home/me/Sotto checkout/apps/omarchy/sotto'"`.
