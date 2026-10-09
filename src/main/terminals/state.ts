@@ -115,6 +115,7 @@ export class TerminalAgentStateMachine {
         this.knownWork = true; this.interrupted = false; this.awaitingReady = false; this.finishedObserved = false
         this.fresh = false; this.state = 'working'; break
       case 'permission':
+        if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (this.interrupted || !event.requestId) break
         this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':

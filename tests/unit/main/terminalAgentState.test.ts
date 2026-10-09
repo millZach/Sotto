@@ -368,6 +368,16 @@ describe('terminal agent run state', () => {
     state.hook(event('completed', { turnId: 'b' })); state.output(idle)
     expect(state.state).toBe('just-finished')
   })
+  it('refuses a delayed permission from the cancelled turn while newer work runs', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'a', workPhase: 'submitted' })); state.output(work)
+    state.input('\x03'); state.output(idle); state.input('new work\r')
+    state.hook(event('working', { turnId: 'b', workPhase: 'submitted' })); state.output(work)
+    state.hook(event('permission', { turnId: 'a', requestId: 'stale-request' }))
+    expect(state.state).toBe('working')
+    state.hook(event('completed', { turnId: 'b' })); state.output(idle)
+    expect(state.state).toBe('just-finished')
+  })
   it('rejects stale runs/duplicate events and makes Exited final', () => {
     const state = agent(); state.hook(event('working', { runId: 'old-run' })); expect(state.state).toBe('idle')
     const completed = event('completed', { eventId: 'once', turnId: 'turn' }); state.hook(completed); state.setVisible(true)
