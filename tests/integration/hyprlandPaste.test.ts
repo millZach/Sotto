@@ -26,24 +26,30 @@ describe.skipIf(process.platform !== 'linux')('Hyprland process transport over a
     vi.stubEnv('SOTTO_HYPRCTL_TAGS', target)
     vi.stubEnv('SOTTO_HYPRCTL_FAIL', target)
     let clipboard = ''
+    const copyToPrimary = vi.fn(async () => { expect(clipboard).toBe(text) })
     const output = new OutputService({
       clipboard: { writeText: text => { clipboard = text } },
       widget: { hideWidget: vi.fn(), showWidget: vi.fn() }, delay: vi.fn(),
-      process: createHyprlandPasteAdapter(), buildPasteInvocation: buildLinuxPasteInvocation,
+      process: createHyprlandPasteAdapter(undefined, undefined, undefined, copyToPrimary), buildPasteInvocation: buildLinuxPasteInvocation,
     })
     const text = 'exact text "$(touch no)"; `echo no`\n'
     await expect(output.deliver(text, { autoPaste: true, pasteDelayMs: 75 })).resolves.toBe(
       ['exit', 'reply'].includes(target) ? 'copied' : 'pasted',
     )
     expect(clipboard).toBe(text)
+    expect(copyToPrimary).toHaveBeenCalledTimes(target === 'terminal' ? 1 : 0)
     const args = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     const mods = target === 'terminal' ? 'SHIFT' : 'CTRL'
     const key = target === 'terminal' ? 'Insert' : 'V'
     expect(args).toEqual([
       ['locked', '-j'], ['repl', MODIFIERS_HELD_QUERY], ['activewindow', '-j'],
       ['locked', '-j'],
-      ['dispatch', `hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "down" })`],
-      ['dispatch', `hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "up" })`],
+      ['eval', [
+        `hl.dispatch(hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "down" }))`,
+        'hl.timer(function()',
+        `  hl.dispatch(hl.dsp.send_key_state({ mods = "${mods}", key = "${key}", state = "up" }))`,
+        'end, { timeout = 50, type = "oneshot" })',
+      ].join('\n')],
     ])
     expect(JSON.stringify(args)).not.toContain(text)
   })
