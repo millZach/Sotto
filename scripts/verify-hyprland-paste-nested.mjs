@@ -3,10 +3,11 @@
 // Runs a nested Hyprland so a locked live session never receives a key event.
 /* global WebSocket, fetch */
 import console from 'node:console'
+import assert from 'node:assert/strict'
 import process from 'node:process'
 import { setTimeout } from 'node:timers'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const checkout = process.cwd()
@@ -29,20 +30,28 @@ writeFileSync(join(out, 'hyprland.lua'), [
   'require("default.hypr.apps.terminals")',
 ].join('\n') + '\n')
 
-const sigsBefore = new Set(readdirSync(join(runtime, 'hypr')))
-const socksBefore = new Set(readdirSync(runtime).filter(n => /^wayland-\d+$/.test(n)))
 const started = []
 const hypr = spawn('Hyprland', ['-c', join(out, 'hyprland.lua')], { env: { ...base, WAYLAND_DISPLAY: live.WAYLAND_DISPLAY, HYPRLAND_NO_SD_NOTIFY: '1' }, stdio: ['ignore', 'ignore', 'ignore'] })
 started.push(['Hyprland', hypr.pid])
 let sig, sock
+const instances = () => JSON.parse(execFileSync('/usr/bin/hyprctl', ['instances', '-j'], { env: live, encoding: 'utf8', timeout: 5000 }))
 for (let i = 0; i < 60 && !(sig && sock); i++) {
   await wait(250)
-  sig = readdirSync(join(runtime, 'hypr')).find(s => !sigsBefore.has(s) && s !== liveSig)
-  sock = readdirSync(runtime).find(n => /^wayland-\d+$/.test(n) && !socksBefore.has(n))
+  const owned = instances().find(instance => instance.pid === hypr.pid)
+  if (owned) { sig = owned.instance; sock = owned.wl_socket }
 }
 if (!sig || !sock) throw new Error('nested Hyprland did not start')
+const assertNested = () => {
+  assert.notEqual(sig, liveSig, 'Never dispatch to the live instance')
+  assert.notEqual(sock, live.WAYLAND_DISPLAY, 'Never use the live display')
+  assert.ok(instances().some(instance => instance.pid === hypr.pid && instance.instance === sig && instance.wl_socket === sock), 'The spawned compositor must own both the instance and display')
+}
+assertNested()
 const nested = { ...base, WAYLAND_DISPLAY: sock, HYPRLAND_INSTANCE_SIGNATURE: sig, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland' }
-const hyprctl = (...args) => execFileSync('hyprctl', args, { env: nested, encoding: 'utf8', timeout: 5000 })
+const hyprctl = (...args) => {
+  if (args[0] === 'dispatch') assertNested()
+  return execFileSync('/usr/bin/hyprctl', args, { env: nested, encoding: 'utf8', timeout: 5000 })
+}
 log(`nested: ${sig} on ${sock}; live: ${liveSig} (untouched)`)
 
 const results = {}
@@ -75,6 +84,8 @@ try {
     socket.addEventListener('message', onMessage)
     socket.send(JSON.stringify({ id: mine, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
   })
+  assert.equal(await evaluate('process.pid'), sotto.pid, 'The inspector must belong to the spawned Sotto')
+  assertNested()
   const win = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))"
   for (let i = 0; i < 80; i++) { try { if (await evaluate(`(() => { const w = ${win}; return Boolean(w && !w.webContents.isLoading()) })()`)) break } catch { /* main is still starting */ } await wait(250) }
   const invoke = js => evaluate(`(async () => (${win}).webContents.executeJavaScript(${JSON.stringify(js)}))()`)
@@ -84,6 +95,7 @@ try {
   log('nested clients:', hyprctl('clients', '-j').match(/"class": "[^"]+"/g)?.join(' '))
 
   const deliver = async (label, selector, text) => {
+    assertNested()
     hyprctl('dispatch', `hl.dsp.focus({ window = "${selector}" })`)
     await wait(500)
     const active = JSON.parse(hyprctl('activewindow', '-j'))
