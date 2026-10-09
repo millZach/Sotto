@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 8, 2026, for the owner's decision. Nothing here is accepted until the owner says so. The questions marked **Owner** below need his answer before this is accepted.
+Proposed October 8, 2026, for the owner's decision. On October 8 the owner agreed to the proposals and answered the three questions marked **Owner** below; the answers follow each question. It is accepted when the owner merges it.
 
 Amends [ADR-0025](0025-headless-host-and-client-identity.md), which says "Linux is host-only". Map: [Map: run the desktop app on Linux, made for Omarchy](https://github.com/millZach/Sotto/issues/833). Ticket: [Decide in an ADR how Linux becomes a desktop platform, Omarchy first](https://github.com/millZach/Sotto/issues/834).
 
@@ -58,8 +58,8 @@ Proposed: **option 2**. The tarball is verified the same way the Windows and mac
 
 **Owner:**
 
-- (a) Option 2, or another?
-- (b) Publish to the AUR under the owner's account, or ship only the release tarball and a `pacman -U`-able package from `Sotto-releases` at first?
+- (a) Option 2, or another? **Answered: option 2.**
+- (b) Publish to the AUR under the owner's account, or ship only the release tarball and a `pacman -U`-able package from `Sotto-releases` at first? **Answered: `Sotto-releases` first, the AUR once packaging (#841) is proven.**
 
 **Who cuts it.** The Linux build is cut by hand on forge with Node 24 and a clean `npm ci`, the way the Windows PC and the Mac cut theirs, and it joins `SHA256SUMS.txt`. Steps:
 
@@ -77,7 +77,7 @@ Proposed: **option 2**. The tarball is verified the same way the Windows and mac
 - Linux-only surfaces get verification notes with screenshots taken on forge, under `docs/verification/` and `artifacts/<slug>/`: the window chrome, the widget on Omarchy and the Omarchy theme.
 - Linux does not get its own capture baselines until a Linux CI runner can draw them.
 
-**Owner:** (c) whether that is enough, or Linux captures should be a gate now.
+**Owner:** (c) whether that is enough, or Linux captures should be a gate now. **Answered: verification notes are enough until a Linux CI runner can draw captures.**
 
 **CI.** `Gates (Windows)` stays the merge gate. The existing Linux job adds `npm run typecheck` and the unit suite, so a change that breaks Linux shows up before a release.
 
@@ -86,9 +86,15 @@ Proposed: **option 2**. The tarball is verified the same way the Windows and mac
 ## Consequences
 
 - **A third release machine.** Each release adds a manual Linux pass on forge: install the package, finish onboarding, dictate into Chromium and a terminal, open a thread.
-- **Two dictation tools can collide.** Voxtype owns F9 and Super+Ctrl+X when installed. Whether Sotto replaces it is [Decide whether Sotto replaces Voxtype or sits beside it](https://github.com/millZach/Sotto/issues/836).
+- **Sotto takes over Omarchy's dictation keys.** Voxtype owns F9 and Super+Ctrl+X when installed. The owner decided that Sotto's setup offers to take those keys over ([Decide whether Sotto replaces Voxtype or sits beside it](https://github.com/millZach/Sotto/issues/836)), and that Voxtype's engine can become a local transcription option on Omarchy. That option amends ADR-0006 and has its own ticket.
 - **The hotkey setting means something different on Linux.** It names a compositor binding rather than a shortcut Sotto registers. Copy in Settings and `docs/guide.md` says so.
 - **Credential storage depends on a Secret Service.** On Omarchy that is gnome-keyring, which runs on forge and which Electron finds available once the password store is set. What happens when the keyring is locked has not been tried. Where no Secret Service runs, Sotto says so with the existing "Secure credential storage is unavailable" message.
 - **Linux lacks the system reply voice.** Reply voice has Windows and macOS system speech only. The hosted voices work. Voice is gated for the beta (ADR-0012).
 - **Documents change on acceptance.** `AGENTS.md` ("Windows first, Apple silicon macOS second"), the README's platform list and `docs/release/releasing.md` change when this is accepted, not before.
+- **The Windows build must not break.** The owner's condition for merging Linux work. Three measures apply:
+  - `Gates (Windows)` becomes a required check on `main`;
+  - CI packages and verifies the Windows app (`npm run package:dir`) when a pull request touches packaging, `src/main` or `src/shared`;
+  - Linux behaviour lives only behind the `linux` profile, with Windows and macOS values pinned by tests, and `electron-builder.yml` changes stay inside a new `linux` block.
+
+  The desktop smoke check on the Windows PC before each release stays as it is.
 - **Nothing is undone.** A Linux target is additive. Windows and macOS keep their installers, gates and captures.
