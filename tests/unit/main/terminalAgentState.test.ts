@@ -126,6 +126,17 @@ describe('terminal agent run state', () => {
     state.setVisible(true); state.setVisible(false)
     state.hook(event('working', { turnId: 'turn', workPhase: 'continuing' })); expect(state.state).toBe('idle')
   })
+  it.each(['ready-first', 'stop-first'] as const)('retires the known turn after a successful Stop without a turn ID, with %s delivery', order => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); state.output(work)
+    if (order === 'ready-first') state.output(idle)
+    state.hook(event('completed'))
+    if (order === 'stop-first') state.output(idle)
+    expect(state.state).toBe('just-finished')
+    state.setVisible(true); state.setVisible(false)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'continuing' })); expect(state.state).toBe('idle')
+    state.output(idle); state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('idle')
+  })
   it('admits a later genuine completion after a prior callback was blocked by a live request', () => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)
     state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); state.output(work)
@@ -180,6 +191,29 @@ describe('terminal agent run state', () => {
     state.hook(event('completed', { turnId: 'a' })); expect(state.state).toBe('idle')
     state.hook(event('completed', { turnId: 'b' })); expect(state.state).toBe('just-finished')
     state.hook(event('working', { turnId: 'a', workPhase: 'continuing' })); expect(state.state).toBe('just-finished')
+  })
+  it.each(['ready-first', 'stop-first'] as const)('settles locally submitted work bound by its tool hook before delayed submitted evidence, with %s delivery', order => {
+    for (const visible of [false, true]) {
+      const state = agent(); state.hook(event('session-start')); state.output(idle); state.setVisible(true)
+      state.hook(event('working', { turnId: 'a', workPhase: 'submitted' })); state.output(work); state.output(idle)
+      state.setVisible(false); state.input('next turn\r'); state.output(idle)
+      state.hook(event('completed', { turnId: 'a' })); state.hook(event('completed')); expect(state.state).toBe('working')
+      state.hook(event('working', { turnId: 'b', workPhase: 'tool-start' })); state.output(work); state.setVisible(visible)
+      if (order === 'ready-first') state.output(idle)
+      state.hook(event('completed', { turnId: 'b' }))
+      expect(state.state).toBe(order === 'ready-first' ? visible ? 'idle' : 'just-finished' : 'working')
+      state.setVisible(false); state.hook(event('working', { turnId: 'b', workPhase: 'submitted' }))
+      if (order === 'stop-first') { expect(state.state).toBe('working'); state.output(idle) }
+      expect(state.state).toBe(visible ? 'idle' : 'just-finished')
+      state.hook(event('working', { turnId: 'b', workPhase: 'submitted' })); expect(state.state).toBe(visible ? 'idle' : 'just-finished')
+    }
+  })
+  it('preserves viewed readiness when a same-turn submitted hook arrives after its tool evidence but before Stop', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('a turn\r'); state.hook(event('working', { turnId: 'turn', workPhase: 'tool-end' })); state.output(work)
+    state.setVisible(true); state.output(idle); expect(state.state).toBe('idle')
+    state.setVisible(false); state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('idle')
   })
   it('binds a locally submitted turn through its native submitted phase even when the hook supplies no turn ID', () => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)

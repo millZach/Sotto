@@ -86,7 +86,10 @@ export class TerminalAgentStateMachine {
         if (this.interrupted && event.workPhase !== 'submitted' && event.workPhase !== 'continuing') break // Late tool evidence cannot revive an interrupted turn, even without a provider turn ID.
         if (event.workPhase !== 'submitted' && event.turnId && this.activeTurn && this.activeTurn !== event.turnId) break
         if (event.workPhase !== 'submitted' && event.workPhase !== 'continuing' && this.finishedObserved && this.fresh && this.evidence.state === 'idle') break // A delayed tool hook cannot create a second unseen finish.
+        if (this.awaitingSubmissionHook && event.turnId && (event.workPhase === 'tool-start' || event.workPhase === 'tool-end' || event.workPhase === 'continuing')) this.awaitingSubmissionHook = false
         if (event.workPhase === 'submitted') {
+          // Independent hook helpers can deliver submission after this turn's tool work or Stop. Its same opaque ID corroborates that turn, without starting it again.
+          if (event.turnId && this.activeTurn === event.turnId) { this.awaitingSubmissionHook = false; break }
           if (this.activeTurn !== event.turnId) this.retireTurn(this.activeTurn)
           this.activeTurn = event.turnId; this.awaitingSubmissionHook = false
         }
