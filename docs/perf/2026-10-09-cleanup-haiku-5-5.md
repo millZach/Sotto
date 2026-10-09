@@ -44,7 +44,8 @@ from its `/generation` endpoint, is given alongside so the link can be told apar
 | GLM-5.3 Flash (old Value) | 8.31 | 45% | 4.6% | 1.59 | 6.61 | 15.25 | 2.90 | 1.32 | 0.14 | 0 | 0 |
 | Haiku 4.5 (old High) | 7.73 | 35% | 4.4% | 1.28 | 1.83 | 5.79 | 1.76 | 1.11 | 1.40 | 0 | 0 |
 
-"Rejected" counts outputs the app's own guard would throw away (`assessOutput`): thinking off read "no wait let me
+"Rejected" counts outputs the app's own guard would throw away (`src/main/llm/cleanupOutput.ts`, which the harness
+imports): thinking off read "no wait let me
 back up" in the ramble fixture as a self-correction and dropped everything before it, more than half the words.
 Mercury 2's three errors were "Provider returned error" from Inception, two of them seconds apart. The grade's
 standard error is about 0.2, so Haiku 5.5 and GLM sit about two standard errors above Mercury 2, Nova 2 Lite and

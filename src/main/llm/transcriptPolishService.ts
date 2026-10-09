@@ -1,6 +1,7 @@
 import type { TranscriptPolishAsrContext, TranscriptPolishResult } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
 import { collapseRepeatedPhrases, countWords } from '../../shared/textRepair'
+import { assessOutput, readCleanupChoice } from './cleanupOutput'
 import { buildPolishSystemPrompt, buildPolishUserPrompt } from './prompt'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -46,15 +47,6 @@ export const CLEANUP_MODELS: CleanupModels = {
 }
 
 /**
- * A cleanup the model did not finish is not a cleanup. One cut off at the
- * token limit drops the end of the dictation, and Haiku 5.5's safety
- * classifiers can decline a transcript outright, which OpenRouter reports as
- * a content filter. Either way the fallback gets its turn.
- */
-const UNFINISHED_FINISH_REASONS: ReadonlySet<unknown> = new Set(['length', 'content_filter'])
-const UNFINISHED_NATIVE_REASONS: ReadonlySet<unknown> = new Set(['max_tokens', 'refusal'])
-
-/**
  * Every failure path returns the raw transcript unchanged: dictation must
  * never break or hang because the network or the model misbehaved. The
  * fallback model only runs when the primary failed fast enough to leave a
@@ -81,17 +73,6 @@ const PER_WORD_BUDGET_MS = 30
 const MAX_LENGTH_BUDGET_MS = 9_000
 const PER_WORD_RESERVE_MS = 15
 const MAX_FALLBACK_RESERVE_MS = 6_000
-
-/** A wildly longer or empty response is a misbehaving model, not a cleanup. */
-const MAX_GROWTH_FACTOR = 4
-
-/**
- * Cleanup legitimately shrinks text (fillers, self-corrections), but a long
- * transcript losing more than half its words is a truncating model, not a
- * cleanup. Short inputs are exempt: one resolved correction can halve them.
- */
-const MIN_WORDS_FOR_SHRINK_GUARD = 20
-const MAX_SHRINK_FACTOR = 0.5
 
 export interface PolishDiagnostic {
   readonly at: number
@@ -125,46 +106,6 @@ interface AttemptOutcome {
   readonly text: string | null
   readonly reason: string
   readonly rejectedShrink?: boolean
-}
-
-type OutputVerdict = 'ok' | 'rejected' | 'rejected-shrink'
-
-function assessOutput(input: string, output: string): OutputVerdict {
-  if (output.length === 0) return 'rejected'
-  if (output.length > input.length * MAX_GROWTH_FACTOR + 200) return 'rejected'
-  // Hallucinated repetition loops inflate the raw word count; measuring
-  // shrinkage against the collapsed count keeps legitimate cleanups of such
-  // input from being rejected as truncation.
-  const inputWords = countWords(collapseRepeatedPhrases(input))
-  if (
-    inputWords >= MIN_WORDS_FOR_SHRINK_GUARD &&
-    countWords(output) < inputWords * MAX_SHRINK_FACTOR
-  ) {
-    return 'rejected-shrink'
-  }
-  return 'ok'
-}
-
-interface Choice {
-  readonly content: string | null
-  readonly finished: boolean
-}
-
-function extractChoice(payload: unknown): Choice | null {
-  if (typeof payload !== 'object' || payload === null) return null
-  const choices = (payload as { choices?: unknown }).choices
-  if (!Array.isArray(choices) || choices.length === 0) return null
-  const choice = choices[0] as {
-    message?: { content?: unknown }
-    finish_reason?: unknown
-    native_finish_reason?: unknown
-  }
-  const content = choice.message?.content
-  return {
-    content: typeof content === 'string' ? content.trim() : null,
-    finished: !UNFINISHED_FINISH_REASONS.has(choice.finish_reason) &&
-      !UNFINISHED_NATIVE_REASONS.has(choice.native_finish_reason),
-  }
 }
 
 export class TranscriptPolishService {
@@ -281,7 +222,7 @@ export class TranscriptPolishService {
         signal: AbortSignal.timeout(budget),
       })
       if (!response.ok) return { text: null, reason: `http-${response.status}` }
-      const choice = extractChoice(await response.json())
+      const choice = readCleanupChoice(await response.json())
       if (choice?.finished === false) return { text: null, reason: 'unfinished' }
       const content = choice?.content ?? null
       if (content === null) return { text: null, reason: 'empty' }

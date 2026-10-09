@@ -52,7 +52,8 @@ registerHooks({
 })
 const srcUrl = (path) => pathToFileURL(join(ROOT, 'src', path)).href
 const { buildPolishSystemPrompt, buildPolishUserPrompt } = await import(srcUrl('main/llm/prompt.ts'))
-const { collapseRepeatedPhrases, countWords } = await import(srcUrl('shared/textRepair.ts'))
+// The app's own acceptance rules, so a run counts what the app would keep.
+const { assessOutput, readCleanupChoice } = await import(srcUrl('main/llm/cleanupOutput.ts'))
 
 // `reasoning` follows ModelSpec in transcriptPolishService.ts, plus 'low' for
 // Haiku 5.5's effort levels and undefined for the request that leaves it out.
@@ -75,21 +76,6 @@ const ASR_DICTIONARY = [
 
 const JUDGE_MODEL = 'anthropic/claude-opus-5.5'
 const REQUEST_TIMEOUT_MS = 30_000
-
-// Mirrors assessOutput in transcriptPolishService.ts.
-const MAX_GROWTH_FACTOR = 4
-const MIN_WORDS_FOR_SHRINK_GUARD = 20
-const MAX_SHRINK_FACTOR = 0.5
-
-function assessOutput(input, output) {
-  if (output.length === 0) return 'rejected'
-  if (output.length > input.length * MAX_GROWTH_FACTOR + 200) return 'rejected'
-  const inputWords = countWords(collapseRepeatedPhrases(input))
-  if (inputWords >= MIN_WORDS_FOR_SHRINK_GUARD && countWords(output) < inputWords * MAX_SHRINK_FACTOR) {
-    return 'rejected-shrink'
-  }
-  return 'ok'
-}
 
 function parseArgs(argv) {
   const args = { runs: 5, asrRuns: 3, judge: true, configs: null, asrSource: null }
@@ -178,14 +164,16 @@ async function runCleanup(apiKey, config, dictionary, text) {
     })
     const json = await res.json()
     const ms = performance.now() - t0
-    if (!res.ok || json.error) return { ms, error: json.error?.message ?? `HTTP ${res.status}` }
-    const choice = json.choices?.[0]
-    const output = typeof choice?.message?.content === 'string' ? choice.message.content.trim() : ''
+    // A provider's error text is a protocol body, which never reaches a log (AGENTS.md): keep the
+    // HTTP status and OpenRouter's numeric error code only.
+    if (!res.ok || json.error) return { ms, error: `http-${res.status}${json.error?.code ? ` code-${json.error.code}` : ''}` }
+    const choice = readCleanupChoice(json)
+    const output = choice?.content ?? ''
     return {
       ms,
       output,
-      verdict: assessOutput(text, output),
-      finish: choice?.finish_reason ?? null,
+      verdict: choice?.finished === false ? 'unfinished' : assessOutput(text, output),
+      finish: json.choices?.[0]?.finish_reason ?? null,
       generationId: json.id,
       servedBy: json.provider,
       outputTokens: json.usage?.completion_tokens ?? null,
@@ -193,7 +181,7 @@ async function runCleanup(apiKey, config, dictionary, text) {
       cost: json.usage?.cost ?? null,
     }
   } catch (error) {
-    return { ms: performance.now() - t0, error: error.name === 'TimeoutError' ? 'timeout' : error.message }
+    return { ms: performance.now() - t0, error: error.name === 'TimeoutError' ? 'timeout' : 'network' }
   }
 }
 
