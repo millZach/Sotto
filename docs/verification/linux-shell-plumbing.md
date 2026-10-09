@@ -1,6 +1,6 @@
 # Dictation state and commands for the Omarchy shell
 
-October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. The contract addendum follows `e691a9c6`, with the HOME-folder change in `a410b110`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance.
+October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. The contract addendum follows `e691a9c6`, with the HOME-folder change in `a410b110`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance. This re-review starts at `125df400`; startup recovery is fixed in `4f37aa58`, and recording/text outcomes in `10cb49ff`.
 
 **VERIFIED on forge:** the built, unpackaged Electron 43.1.0 app, with isolated profiles and HOME folders, driven through the checkout’s actual `apps/omarchy/sotto dictation …` command and Unix socket. Node 24.21.0 ran every Node command. Microphone samples, transcription failures and output effects used the existing development-only e2e fixtures; no paid provider or live microphone was needed. This verifies Sotto’s command, controller, state publication, placement and window boundaries, not provider availability or the separately built Quickshell plugin.
 
@@ -35,7 +35,7 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 628 files and 9,353 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 628 files and 9,363 tests; 50 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
 | Three Linux Playwright specs in the nested session | PASS, 5 tests |
@@ -56,7 +56,7 @@ Ticket review: the implementation follows the owner’s #850 decisions and [vers
 
 ## Re-review: unavailable runtime directory
 
-Socket construction now runs inside `LinuxDictationShell.start()`, reached through the controller's guarded command-service startup. An unset or relative `XDG_RUNTIME_DIR` rejects that service, logs only `native-dictation-command-start-failed` and leaves shell state unpublished while Sotto continues opening. Stopped checks still precede construction and follow the socket await; disposal tolerates an unconstructed socket. Regression tests use the real shell owner and runtime controller for both invalid paths, assert main-window creation and reveal, no socket startup or command dispatch, no state publication, the stable event and safe disposal. The lifecycle file passes all 5 tests, including held startup and forced-exit cleanup. The final gates and built-app startup proof are recorded below after they run.
+Socket construction now runs inside `LinuxDictationShell.start()`, reached through the controller's guarded command-service startup. An unset or relative `XDG_RUNTIME_DIR` rejects that service, logs only `native-dictation-command-start-failed` and leaves shell state unpublished while Sotto continues opening. Stopped checks still precede construction and follow the socket await; disposal tolerates an unconstructed socket. Regression tests use the real shell owner and runtime controller for both invalid paths, assert main-window creation and reveal, no socket startup or command dispatch, no state publication, the stable event and safe disposal. The lifecycle file passes all 5 tests, including held startup and forced-exit cleanup. All final gates passed. The three Linux startup and command specs were rerun through `scripts/verify-shell-plumbing.mjs` because construction moved within the startup path they exercise. Invalid runtime paths are covered by the two controller regression tests; the built-app proof covers valid startup, restart, handover and teardown.
 
 ## Earlier kept-failure copy
 
@@ -88,7 +88,7 @@ Commit `91b373a5`. Every known error and the unknown-code fallback is checked wi
 
 The refined contract distinguishes six failures before any usable recording from twelve failures after captured audio. The two static copy maps form an exhaustive, disjoint partition of `WidgetErrorCode`; tests independently enumerate both groups and require every code exactly once. Every captured failure with `kept: false` positively states loss or names where the text is. Every `kept: true` detail says “Recording kept.”, even for a synthetic kept snapshot of a pre-recording error. Both unknown-code outcomes start “Dictation failed.” and follow `kept`. All 38 known/fallback variants stay under 60 characters and reject unreviewed provider copy.
 
-The actual controller retains completed output before attempting history for `OUTPUT_UNAVAILABLE`, `OUTPUT_FAILED` and `DESKTOP_CLIPBOARD_UNAVAILABLE`. AppContext keeps those entries in Dictate’s selectable recovery list, independent of history; a history save failure does not erase them. The existing controller tests cover unavailable, empty and throwing delivery, history off and history failure. `HISTORY_FAILED` alone follows successful clipboard delivery, so its copy points to the clipboard. Nothing about retention itself changed. The guide now describes these outcomes. Focused copy/state tests pass all 40 tests; the controller file passes all 92 tests.
+The actual controller retains completed output before attempting history for `OUTPUT_UNAVAILABLE`, `OUTPUT_FAILED` and `DESKTOP_CLIPBOARD_UNAVAILABLE`. AppContext keeps those entries in Dictate’s selectable recovery list, independent of history; a history save failure does not erase them. The existing controller tests cover unavailable, empty and throwing delivery, history off and history failure. `HISTORY_FAILED` alone follows successful clipboard delivery, so its copy points to the clipboard. Nothing about retention itself changed. The guide now describes these outcomes. The copy/state file passes all 41 tests; the controller file passes all 92 tests.
 
 This table compares all copy with the re-reviewed `125df400` baseline. The group describes `kept: false`; an explicit `kept: true` always reports a kept recording.
 
@@ -101,7 +101,7 @@ This table compares all copy with the re-reviewed `125df400` baseline. The group
 | `RECORDING_FAILED` | Audio captured; recording gone or text retained | Recording stopped unexpectedly. Dictate again. | Recording stopped and was lost. Dictate again. | Recording stopped unexpectedly. Recording kept. | Recording stopped unexpectedly. Recording kept. |
 | `NO_SPEECH` | Nothing recorded | No speech was heard. Dictate again. | No speech was heard. Dictate again. | No speech was heard. Recording kept. | No speech was heard. Recording kept. |
 | `TRANSCRIPTION_UNCONFIGURED` | Audio captured; recording gone or text retained | Add your OpenRouter key in Settings. | No OpenRouter key. Recording lost. Add it in Settings. | No OpenRouter key. Recording kept. Add it in Settings. | No OpenRouter key. Recording kept. Add it in Settings. |
-| `TRANSCRIPTION_UNAUTHORIZED` | Audio captured; recording gone or text retained | OpenRouter rejected the key. Check it in Settings. | OpenRouter key rejected. Recording lost. Check Settings. | API key rejected. Recording kept. Check it in Settings. | API key rejected. Recording kept. Check it in Settings. |
+| `TRANSCRIPTION_UNAUTHORIZED` | Audio captured; recording gone or text retained | OpenRouter rejected the key. Check it in Settings. | OpenRouter key rejected. Recording lost. Check Settings. | API key rejected. Recording kept. Check it in Settings. | OpenRouter key rejected. Recording kept. Check Settings. |
 | `TRANSCRIPTION_OFFLINE` | Audio captured; recording gone or text retained | Sotto could not reach OpenRouter. Check your connection. | OpenRouter unreachable. Recording lost. Check connection. | Sotto could not reach OpenRouter. Recording kept. | Sotto could not reach OpenRouter. Recording kept. |
 | `TRANSCRIPTION_BILLING` | Audio captured; recording gone or text retained | OpenRouter has no credit left. Add credit, then try again. | OpenRouter has no credit. Recording lost. Add credit. | OpenRouter has no credit. Recording kept. Add credit. | OpenRouter has no credit. Recording kept. Add credit. |
 | `TRANSCRIPTION_RATE_LIMITED` | Audio captured; recording gone or text retained | The transcription service is busy. Try again in a moment. | Transcription busy. Recording lost. Dictate again later. | The transcription service is busy. Recording kept. | The transcription service is busy. Recording kept. |
@@ -113,6 +113,8 @@ This table compares all copy with the re-reviewed `125df400` baseline. The group
 | `HISTORY_FAILED` | Audio captured; recording gone or text retained | Text was delivered, but history could not be saved. | Text on clipboard. History not saved. Paste with Super+V. | Text delivered; history failed. Recording kept. | Text delivered; history failed. Recording kept. |
 | `SETTINGS_UNAVAILABLE` | Nothing recorded | Settings could not be read. Open Sotto and try again. | Settings could not be read. Open Sotto and try again. | Settings could not be read. Recording kept. Open Sotto. | Settings could not be read. Recording kept. Open Sotto. |
 | Unknown code | Outcome follows `kept` | Dictation failed. Open Sotto to try again. | Dictation failed. Recording lost. Dictate again. | Dictation failed. Recording kept. | Dictation failed. Recording kept. |
+
+The rejected-key detail is pinned exactly to “OpenRouter key rejected. Recording kept. Check Settings.” It uses the glossary’s specific noun and is 56 characters. The key/credit next-step test also requires “Check Settings.”
 
 ## Notes for the plugin
 
@@ -126,4 +128,14 @@ The watch follows Omarchy’s `PluginRegistry.qml`: `$HOME/.config/omarchy/plugi
 
 The additive version-1 field `pid` is initialized from `process.pid` in main and retained through state and placement updates. Atomic-write tests inspect it in the old and replacement JSON; debounce tests reject a caller-supplied pid, and failure-copy tests inspect every serialized write. The built-app journey compares each published pid with its actual Electron main PID across five launches, including startup, listening, processing, failure, success, placement and the forced-exit check. Readers still use version 1. The file has no heartbeat, so a long dictation does not change `updatedAt` merely to show liveness. The plugin’s process-liveness handling belongs to its separate branch.
 
-The latest proof passed all five tests across the three Linux specs in 27.6 seconds. Main PID `899178` published listening while the isolated HOME plugin was present; restart published PID `899718`, and the other launches published `899906`, `900126` and `900274`. Every state kept version 1, folder mode `700` and file mode `600`. The allowlist printed `allowlist check: PASS` before the proof. Incidental Linux paste captures were restored; only the cited shell-plumbing evidence is updated. Cleanup stopped nested Hyprland PID `898291` and Playwright PID `898305`, reported empty recorded-PID, cgroup and owned-process lists, preserved earlier Hyprland instances and removed `/tmp/sp-pMQVFA`. The checkout root has no proof profiles, Chromium scope folders, transform caches or `tools/`; the empty test-results folder from the unit gate was removed.
+The re-review proof passed all five tests across `linux-dictation-command.spec.ts`, `linux-platform-profile.spec.ts` and `linux-shell-plumbing.spec.ts` in 25.4 seconds. The built main output contains both the lost and kept OpenRouter-key copy. Main PID `1174178` published listening with the isolated HOME plugin present; restart published PID `1174523`, and the other launches published `1174707`, `1174854` and `1174997`. Every state kept version 1, folder mode `700` and file mode `600`. The allowlist printed `allowlist check: PASS` before the proof. Both new handover captures were opened and inspected; they confirm the same widget absence/return, so the existing curated images are retained. Incidental Linux paste captures were restored. The cited real-check output is updated verbatim to this run. Cleanup stopped nested Hyprland PID `1173272` and Playwright PID `1173286`, reported empty recorded-PID, cgroup and owned-process lists, preserved earlier Hyprland instances and removed `/tmp/sp-u5E3F3`. A post-run `ls` of the checkout root confirms no proof profiles, Chromium scope folders, transform caches or `tools/`; the empty test-results folder was removed.
+
+```text
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+cleanup: owned PIDs stopped; prior Hyprland instances preserved
+Temporary root removed: /tmp/sp-u5E3F3
+```
+
+Re-review against AGENTS.md: only the Linux shell owner and static shell-state copy changed in production. Imports, provider/network paths, authority and runtime dependencies are unchanged; Windows and macOS do not construct the owner. Against the refined #850 contract: both invalid runtime paths preserve startup, six pre-recording codes need no retention claim, twelve captured codes state loss or text location, every kept variant names retention, unknown codes follow `kept`, and rejected-key copy names the OpenRouter key exactly. Tests independently cover the partition, positive outcomes, privacy and length. No outstanding finding remains.

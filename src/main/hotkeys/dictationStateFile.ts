@@ -57,7 +57,7 @@ const keptFailureDetail: Readonly<Record<WidgetErrorCode, string>> = {
   RECORDING_FAILED: 'Recording stopped unexpectedly. Recording kept.',
   NO_SPEECH: 'No speech was heard. Recording kept.',
   TRANSCRIPTION_UNCONFIGURED: 'No OpenRouter key. Recording kept. Add it in Settings.',
-  TRANSCRIPTION_UNAUTHORIZED: 'API key rejected. Recording kept. Check it in Settings.',
+  TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter key rejected. Recording kept. Check Settings.',
   TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Recording kept.',
   TRANSCRIPTION_BILLING: 'OpenRouter has no credit. Recording kept. Add credit.',
   TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy. Recording kept.',

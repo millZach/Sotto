@@ -64,7 +64,7 @@ describe('shell dictation copy', () => {
   it('keeps the key and credit next steps and the copied instruction short', () => {
     for (const [code, nextStep] of [
       ['TRANSCRIPTION_UNCONFIGURED', 'Add it in Settings.'],
-      ['TRANSCRIPTION_UNAUTHORIZED', 'Check it in Settings.'],
+      ['TRANSCRIPTION_UNAUTHORIZED', 'Check Settings.'],
       ['TRANSCRIPTION_BILLING', 'Add credit.'],
     ]) {
       expect(shellDictationFields(snapshot({ status: 'error', code, kept: true })).detail).toContain(nextStep)
@@ -72,6 +72,11 @@ describe('shell dictation copy', () => {
     const copied = shellDictationFields(snapshot({ status: 'success', output: 'copied' }))
     expect(copied.detail).toBe('Copied — paste with Super+V')
     expect(copied.detail!.length).toBeLessThan(60)
+  })
+
+  it('names the rejected OpenRouter key and pins the kept-recording next step', () => {
+    expect(shellDictationFields(snapshot({ status: 'error', code: 'TRANSCRIPTION_UNAUTHORIZED', kept: true })).detail)
+      .toBe('OpenRouter key rejected. Recording kept. Check Settings.')
   })
 })
 
