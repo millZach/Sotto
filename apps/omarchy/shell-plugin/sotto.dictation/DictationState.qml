@@ -18,6 +18,9 @@ Item {
   readonly property string path: runtimeDir === "" ? "" : runtimeDir + "/sotto/dictation-state.json"
 
   property var record: Model.idle()
+  // The dictation the file is about, numbered as dictations begin, so a
+  // command's result can be told to be about it or an older one.
+  property int number: 0
   // The last read failed for a reason other than a missing file.
   property bool unreadable: false
   // The dictation the user put away (Dismiss, or a command Sotto never took)
@@ -67,7 +70,10 @@ Item {
   function read(text, missing) {
     var next = Model.afterRead(record, text, missing)
     unreadable = next.unreadable
-    if (next.record !== record) record = next.record
+    if (next.record !== record) {
+      number = Model.dictationNumber(number, record, next.record)
+      record = next.record
+    }
     refresh()
   }
 

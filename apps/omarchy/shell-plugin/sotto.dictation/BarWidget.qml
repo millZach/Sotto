@@ -18,10 +18,10 @@ BarWidget {
   readonly property string status: dictation ? dictation.status : "idle"
   readonly property var record: dictation ? dictation.record : Model.idle()
   // Without the service there is no pill to say a command failed or Sotto
-  // quit, so the glyph says it for a few seconds instead.
-  property string notice: ""
-  readonly property var look: notice !== ""
-    ? { glyph: "alert", alert: true, time: false, tooltip: notice }
+  // quit, so the glyph says it for a few seconds instead, in the same order.
+  property var notice: Model.noNotice(null)
+  readonly property var look: notice.text !== ""
+    ? { glyph: "alert", alert: true, time: false, tooltip: notice.text }
     : Model.barFor(status, record, dictation ? dictation.unreadable : false)
   readonly property bool showTime: look.time && !vertical
   readonly property color ink: look.alert ? (bar ? bar.urgent : Color.urgent) : (bar ? bar.barForeground : Color.foreground)
@@ -38,7 +38,12 @@ BarWidget {
 
   function press() {
     if (service) service.run("toggle")
-    else ownCommands.run("toggle")
+    else ownCommands.run("toggle", undefined, Model.issuedFor(dictation ? dictation.number : 0, status !== "idle"))
+  }
+
+  function showNotice(next) {
+    notice = next
+    noticeTimer.restart()
   }
 
   onBarChanged: findService()
@@ -64,24 +69,23 @@ BarWidget {
   Commands {
     id: ownCommands
     command: root.commandSetting
-    onFailed: function(verb, started) {
-      root.notice = Model.failureNotice(verb, started, root.status)
-      noticeTimer.restart()
+    onFailed: function(verb, started, about) {
+      var next = Model.noticeOnFailure(root.notice, about, verb, started, root.status, root.record)
+      if (next !== root.notice) root.showNotice(next)
     }
   }
 
   Connections {
     target: ownState.item
     function onLost(text) {
-      root.notice = text
-      noticeTimer.restart()
+      root.showNotice(Model.noticeOnLoss(text, root.record, ownState.item.number))
     }
   }
 
   Timer {
     id: noticeTimer
     interval: Model.NOTICE_MS
-    onTriggered: root.notice = ""
+    onTriggered: root.notice = Model.noNotice(root.notice.lostFor)
   }
 
   implicitWidth: vertical ? barSize : (showTime ? row.implicitWidth + Style.space(12) : Style.bar.iconSlot)

@@ -463,3 +463,44 @@ export function failureNotice(verb, started, state) {
 export function noticeHolds(verb, state) {
   return verb !== "place" && ACTIVE.indexOf(state) !== -1
 }
+
+// Dictations numbered in the order they begin, as startsDictation tells them
+// apart: by `dictation` where Sotto names them. That identifier is opaque,
+// so the number is what says one dictation came before another.
+export function dictationNumber(number, previous, next) {
+  return startsDictation(previous, next) ? number + 1 : number
+}
+
+// The dictation a command is issued for, by number: the one on screen, or,
+// with nothing on screen, the next one, which a toggle then starts.
+export function issuedFor(number, onScreen) {
+  return onScreen ? number : number + 1
+}
+
+// The notice over the pill's state. `text` is "" while there is none, and
+// `lost` says it is that Sotto quit. `shownFor` is the state it went up
+// over, as `key` reads it, and `holds` says it stays until Sotto writes
+// another state or the user acts, rather than for NOTICE_MS. `lostFor`
+// outlives the words: the last dictation Sotto quit during, by number, or
+// null for none.
+export function noNotice(lostFor) {
+  return { text: "", lost: false, shownFor: "", holds: false, lostFor: lostFor === undefined ? null : lostFor }
+}
+
+// Sotto quit while dictation `number` showed as `record`. That is confirmed,
+// so the notice has only Dismiss and stays until it is dismissed or Sotto
+// writes again.
+export function noticeOnLoss(text, record, number) {
+  return { text: text, lost: true, shownFor: key(record), holds: true, lostFor: number }
+}
+
+// A command issued for dictation `about` did not get through, with `record`
+// on screen in `state`. A confirmed loss outranks the result of any command
+// issued for that dictation or an older one, whether its notice is still up
+// or was dismissed: a slow launcher can fail after Sotto's process was found
+// gone, and its words would say the recording may still be running.
+export function noticeOnFailure(notice, about, verb, started, state, record) {
+  var lostFor = notice ? notice.lostFor : null
+  if (lostFor !== null && about <= lostFor) return notice
+  return { text: failureNotice(verb, started, state), lost: false, shownFor: key(record), holds: noticeHolds(verb, state), lostFor: lostFor }
+}

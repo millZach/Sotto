@@ -19,6 +19,7 @@ export interface Area { x: number; y: number; width: number; height: number }
 export interface Point { x: number; y: number }
 export interface PillLook { glyph: string; tone: '' | 'live' | 'error'; message: string; buttons: Button[] }
 export interface BarLook { glyph: string; alert: boolean; time: boolean; tooltip: string }
+export interface Notice { text: string; lost: boolean; shownFor: string; holds: boolean; lostFor: number | null }
 
 export const STATES: readonly DictationStatus[]
 export const EDGES: readonly Edge[]
@@ -67,3 +68,8 @@ export function commandFrom(barConfig: unknown, pluginId: string): string
 export function cleanCommand(value: unknown): string
 export function failureNotice(verb: Verb, started: boolean, state: DictationStatus): string
 export function noticeHolds(verb: Verb, state: DictationStatus): boolean
+export function dictationNumber(number: number, previous: DictationRecord | null, next: DictationRecord | null): number
+export function issuedFor(number: number, onScreen: boolean): number
+export function noNotice(lostFor?: number | null): Notice
+export function noticeOnLoss(text: string, record: DictationRecord, number: number): Notice
+export function noticeOnFailure(notice: Notice | null, about: number, verb: Verb, started: boolean, state: DictationStatus, record: DictationRecord): Notice

@@ -39,14 +39,12 @@ Item {
   readonly property string edge: draggedEdge !== "" ? draggedEdge : savedEdge
   onSavedEdgeChanged: draggedEdge = ""
 
-  // What to say when a command did not get through. A notice about a
-  // dictation still on screen keeps the pill and its buttons, and stays
-  // until Sotto writes another state or the user presses again; any other
-  // lasts a few seconds. A failed command never puts a dictation away.
-  // A notice that Sotto quit stays until it is dismissed or Sotto is back.
-  property string notice: ""
-  property bool noticeLost: false
-  property string noticeShownFor: ""
+  // What to say when a command did not get through or Sotto quit, kept as
+  // Model's notice: which stays and for how long, and which outranks which.
+  // A failed command never puts a dictation away.
+  property var noticeState: Model.noNotice(null)
+  readonly property string notice: noticeState.text
+  readonly property bool noticeLost: noticeState.lost
 
   // The words the pill shows over its state, a state file that could not
   // be read among them.
@@ -109,13 +107,13 @@ Item {
 
   function run(verb, argument) {
     endNotice()
-    commands.run(verb, argument)
+    commands.run(verb, argument, Model.issuedFor(dictation.number, shown))
   }
 
   function place(edge) {
     if (!Model.validEdge(edge)) return
     draggedEdge = edge
-    commands.run("place", edge)
+    commands.run("place", edge, Model.issuedFor(dictation.number, shown))
   }
 
   function dismiss() {
@@ -123,27 +121,24 @@ Item {
     dictation.dismiss()
   }
 
-  function showNotice(verb, started) {
-    var state = dictation.status
-    noticeShownFor = Model.key(dictation.record)
-    noticeLost = false
-    notice = Model.failureNotice(verb, started, state)
-    if (Model.noticeHolds(verb, state)) noticeTimer.stop()
+  function showNotice(next) {
+    noticeState = next
+    if (next.text === "" || next.holds) noticeTimer.stop()
     else noticeTimer.restart()
   }
 
+  // A result Model says is outranked leaves the notice, and its timer, be.
+  function showFailure(verb, started, about) {
+    var next = Model.noticeOnFailure(noticeState, about, verb, started, dictation.status, dictation.record)
+    if (next !== noticeState) showNotice(next)
+  }
+
   function showLost(text) {
-    noticeTimer.stop()
-    noticeShownFor = Model.key(dictation.record)
-    noticeLost = true
-    notice = text
+    showNotice(Model.noticeOnLoss(text, dictation.record, dictation.number))
   }
 
   function endNotice() {
-    noticeTimer.stop()
-    noticeShownFor = ""
-    noticeLost = false
-    notice = ""
+    showNotice(Model.noNotice(noticeState.lostFor))
   }
 
   Connections {
@@ -152,7 +147,7 @@ Item {
       var record = root.dictation.record
       root.pillScreenName = Model.displayFor(root.pillScreenName, root.lastRecord, record, root.shown, root.focusedName())
       root.lastRecord = record
-      if (root.notice !== "" && Model.key(record) !== root.noticeShownFor) root.endNotice()
+      if (root.notice !== "" && Model.key(record) !== root.noticeState.shownFor) root.endNotice()
     }
     function onLost(text) { root.showLost(text) }
   }
@@ -164,7 +159,7 @@ Item {
   Commands {
     id: commands
     command: root.command
-    onFailed: function(verb, started) { root.showNotice(verb, started) }
+    onFailed: function(verb, started, about) { root.showFailure(verb, started, about) }
   }
 
   Timer {

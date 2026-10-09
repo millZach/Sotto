@@ -4,17 +4,22 @@ import {
   afterRead,
   barFor,
   buttonsFor,
+  dictationNumber,
   displayFor,
   effectiveState,
   failureNotice,
   idle,
+  issuedFor,
   key,
   lostNotice,
   maxLength,
   messageWidth,
   nextExpiry,
+  noNotice,
   noticeFor,
   noticeHolds,
+  noticeOnFailure,
+  noticeOnLoss,
   parse,
   pillFor,
   processGone,
@@ -305,6 +310,80 @@ describe('a command that does not get through', () => {
     expect(failureNotice('place', true, 'listening')).toBe('Sotto did not save this edge. Open Sotto and drag again.')
     expect(failureNotice('toggle', false, 'idle')).toBe('Could not run sotto. Check the command path.')
     expect(failureNotice('toggle', true, 'idle')).toBe('Sotto did not answer. Open Sotto and try again.')
+  })
+})
+
+describe('a command result that arrives after Sotto quit', () => {
+  // Dictation 1 listening, with Stop pressed on its pill before Sotto's
+  // process was found gone. The plugin then puts the dictation away, so the
+  // state on screen is idle under the notice.
+  const listening = record('listening', 1_000, { dictation: 'a', pidStart: 177_000 })
+  const stopAbout = issuedFor(1, true)
+  const lost = noticeOnLoss(lostNotice(listening), listening, 1)
+  const lateStop = (notice: ReturnType<typeof noNotice>, about = stopAbout) =>
+    noticeOnFailure(notice, about, 'stop', true, 'idle', listening)
+  const pill = (notice: ReturnType<typeof noNotice>, unreadable: boolean) =>
+    pillFor('idle', listening, noticeFor(notice.text, unreadable, 'idle'), notice.lost)
+  const sottoQuit = { glyph: 'alert', tone: 'error', message: 'Sotto quit. This dictation was lost. Open Sotto to dictate again.', buttons: ['dismiss'] }
+
+  it('keeps "Sotto quit" and its Dismiss when a Stop issued before it fails late', () => {
+    expect(lost).toEqual({ text: sottoQuit.message, lost: true, shownFor: key(listening), holds: true, lostFor: 1 })
+    const after = lateStop(lost)
+    expect(after).toBe(lost)
+    expect(after.holds).toBe(true)
+    expect(pill(after, false)).toEqual(sottoQuit)
+  })
+
+  it('keeps it with a state file that cannot be read', () => {
+    const read = afterRead(listening, null, false)
+    expect(read).toEqual({ record: listening, unreadable: true })
+    expect(watchesProcess(read.record)).toBe(true)
+    const after = lateStop(noticeOnLoss(lostNotice(read.record), read.record, 1))
+    expect(after.lost).toBe(true)
+    expect(pill(after, read.unreadable)).toEqual(sottoQuit)
+  })
+
+  it('outranks every verb, a failed edge included, for that dictation or an older one', () => {
+    for (const verb of ['toggle', 'stop', 'cancel', 'retry', 'discard', 'place'] as const) {
+      for (const about of [0, 1]) expect(noticeOnFailure(lost, about, verb, false, 'idle', listening)).toBe(lost)
+    }
+  })
+
+  it('still outranks it once the notice is put away, by Dismiss or by Sotto writing again', () => {
+    const dismissed = noNotice(lost.lostFor)
+    expect(lateStop(dismissed)).toBe(dismissed)
+    expect(pill(lateStop(dismissed), true).message).toBe('')
+  })
+
+  it('gives way to a press made after it, which is for the next dictation', () => {
+    const toggle = noticeOnFailure(noNotice(lost.lostFor), issuedFor(1, false), 'toggle', false, 'idle', listening)
+    expect(toggle).toEqual({ text: 'Could not run sotto. Check the command path.', lost: false, shownFor: key(listening), holds: false, lostFor: 1 })
+  })
+
+  it('gives way to a result for a newer dictation, and keeps the loss for older ones', () => {
+    const next = record('listening', 9_000, { dictation: 'b' })
+    const newer = noticeOnFailure(lost, 2, 'stop', true, 'listening', next)
+    expect(newer.lost).toBe(false)
+    expect(newer.text).toBe('Stop did not get through. Recording may still be running. Open Sotto to stop it.')
+    expect(newer.lostFor).toBe(1)
+    expect(lateStop(newer)).toBe(newer)
+  })
+
+  it('shows a failed command as before when nothing was lost', () => {
+    const shown = noticeOnFailure(noNotice(), 1, 'stop', true, 'listening', listening)
+    expect(shown).toEqual({ text: failureNotice('stop', true, 'listening'), lost: false, shownFor: key(listening), holds: true, lostFor: null })
+    expect(noticeOnFailure(null, 0, 'place', true, 'idle', idle()).holds).toBe(false)
+  })
+
+  it('numbers dictations as they begin, by dictation where Sotto names them', () => {
+    const a = record('listening', 1_000, { dictation: 'a' })
+    expect(dictationNumber(0, idle(), a)).toBe(1)
+    expect(dictationNumber(1, a, record('transcribing', 2_000, { dictation: 'a' }))).toBe(1)
+    expect(dictationNumber(1, a, record('idle', 3_000, { dictation: '' }))).toBe(1)
+    expect(dictationNumber(1, a, record('listening', 1_000, { dictation: 'b' }))).toBe(2)
+    expect(dictationNumber(1, record('idle', 0), record('starting', 5_000))).toBe(2)
+    expect(issuedFor(3, true)).toBe(3)
+    expect(issuedFor(3, false)).toBe(4)
   })
 })
 
