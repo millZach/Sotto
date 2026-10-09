@@ -1,0 +1,33 @@
+# First-run setup fits the window
+
+October 9, 2026, branch `fix/first-run-setup-fit` (ADR-0063 and ADR-0036, both amended that day).
+
+## What the owner found
+
+Walking setup in the "Sotto Onboarding Test" build, at the 1080 by 720 window Sotto opens with, the owner found four problems. The microphone, shortcut, coding agents and iPhone steps each scrolled inside the card. A passed microphone test said only "Microphone ready. Access is confirmed", in grey, so nothing showed that it had worked. Only Codex connected by itself; Claude Code, Grok Build and Devin each needed **Connect**. The first prototype had been drawn at 1280 by 800, which is why it never showed the scroll. `docs/prototypes/first-run-setup-fit-prototype.html` drew three layouts at the real size, with a button that walks every step and reports any that scroll, and two ways for the microphone test to pass. The owner picked A, "Trimmed card", the test that passes once it hears a voice, and connecting every installed agent wherever Connect providers runs.
+
+## Every step fits
+
+`tests/e2e/first-run-setup-fit.spec.ts` launches the built app on a fresh profile and walks all nine steps. At each step it measures the card's scroll at 1080 by 720, at the 820 by 560 minimum, and at 1280 by 800 and 1600 by 1000, in dark and light, and fails on any step that scrolls. The microphone step is measured after its test has heard a voice. It passed, and every one of the 72 measurements was 0 ([checks](../../artifacts/first-run-setup-fit/checks.json)). Its first run failed on two steps: the look step scrolled 10 pixels at the minimum, and the coding agents step 63 pixels there while the end-to-end fixture has no word on any client. The look step's theme cards are now tighter on a short window, and the agents step's "no word yet" sentence now replaces the count beside **Check again** rather than adding a block under it. The fixture shows no client details, so a scratch run filled the four agent rows the way a real install does: two with an account and version, two with Not found and **Install guide**. That fitted at 1080 by 720 but scrolled 20 pixels at the minimum until the rows' padding and the gaps between blocks were trimmed on a short window; after that it scrolled 0 pixels at both sizes.
+
+Screenshots: [welcome at 820 by 560](../../artifacts/first-run-setup-fit/step-1-820x560-dark.png), [look at 820 by 560 in light](../../artifacts/first-run-setup-fit/step-2-820x560-light.png), [microphone after the test heard a voice](../../artifacts/first-run-setup-fit/step-3-1080x720-dark.png), [coding agents](../../artifacts/first-run-setup-fit/step-6-1080x720-dark.png) and [iPhone in light](../../artifacts/first-run-setup-fit/step-9-1080x720-light.png).
+
+## The microphone test
+
+Pressing **Test microphone** opens the microphone and says "Listening. Say something.", with **Stop test** in place of the button, so focus stays on it. While the microphone opens the button is marked unavailable rather than disabled, because a disabled button drops keyboard focus to the page. Once the level has been above `MICROPHONE_HEARD_LEVEL`, the level Settings' own test counts as a voice, for 300 ms in all, the box turns to the success colour with a check and says "Sotto heard you. Your microphone works.", the microphone closes, and the step's button reads **Continue**. Six seconds of silence makes it say "Nothing heard yet." Unit tests cover the silence that does not pass, the voice that does, Stop test, a new microphone choice starting over, and the six seconds. The end-to-end fixture's microphone reports one level and holds it, which the test reads on a timer, so it passes there too. A test that opened the microphone but heard nothing still lets dictation run when the user skips, as before.
+
+## Every installed agent connects
+
+On a Connect providers press, from setup or the Threads page, main now turns on every client it finds installed, Devin included, except one the user turned off, and keeps the list it found in the state. A client already on stays on even when it is not found, since one being updated can be missing for a moment; only a missing default resets the set to what is installed, as before. Setup sends that press on arrival even when Codex is already connected. A coordinator test connects three installed clients from a configuration that had only Codex on and checks that all three are on and connected, with the found list in the state. Unit tests cover the rows that list makes possible: Not installed with its install guide for a client it did not find, and Turned off with **Connect** for one the user turned off.
+
+## Review
+
+A review of the change against `AGENTS.md` and the owner's choices found, and this branch fixed: a client already on was dropped when a press did not find it; the guide still said Devin starts disabled and the README's privacy section did not say the desktop now starts every installed client; the docs said Codex stays the default where the code keeps whatever the default is; a client both turned off and missing read Turned off; the completion error lost its space above it; the glossary's Turned off named hosts only; focus left the test button while the microphone opened; and a unit test slept for real. The agents step's foot now says Settings › Providers manages the agents later, which the removed aside used to.
+
+## Tests
+
+`npm test -- --maxWorkers=2` passed, 9243 tests, before the review fixes; the four suites those fixes touch (`onboarding`, `onboardingSteps`, `app` and `providerSwitch`) passed again after them. `npm run notices:verify` passed. These Playwright specs passed against the built app: `first-run-setup-fit`, `onboarding-microphone-step`, `app`, `agents`, `agentControl`, `agentSetup`, `crossing`, `widget-topmost` and `phase-three-theme-branding`. The design captures were regenerated for the setup steps, whose look changed on purpose, and `npm run design:capture` verified 152 captures; baselines for other pages that differed only in their encoding were put back.
+
+## Not checked
+
+The agents step against this computer's real clients: the end-to-end fixture runs no real client, so all four connecting by themselves was checked in the coordinator test and the scratch layout run, not on a real install. A desktop profile that turned a client off before `disconnectedProviders` existed has no record of it, so a Connect providers press turns that client back on; a host has a migration for this and the desktop does not. A pairing code or an error on a window at its smallest can still make the card scroll; the card scrolls rather than clipping.

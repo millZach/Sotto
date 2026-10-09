@@ -765,7 +765,7 @@ test.describe('authoritative design-review captures', () => {
 
       await forward.click()
       await page.getByRole('button', { name: /test microphone/i }).click()
-      await expect(page.getByText(/microphone ready/i)).toBeVisible()
+      await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-3-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
 
       await forward.click()
@@ -777,7 +777,7 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-5-shortcut.png', { category: 'onboarding', state: 'shortcut-paste' })
 
       await forward.click()
-      await expect(page.getByRole('heading', { name: /check your coding agents/i })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Your coding agents', exact: true })).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-6-agents.png', { category: 'onboarding', state: 'coding-agents' })
 
       await forward.click()
@@ -1035,7 +1035,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: 'Get started' }).click()
       await forward.click()
       await page.getByRole('button', { name: /test microphone/i }).click()
-      await expect(page.getByText(/microphone ready/i)).toBeVisible()
+      await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
       await forward.click()
       await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-4-openrouter-light.png', { theme: 'light' })
@@ -1208,7 +1208,7 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('button', { name: 'Get started' }).click()
         await forward.click()
         await page.getByRole('button', { name: /test microphone/i }).click()
-        await expect(page.getByText(/microphone ready/i)).toBeVisible()
+        await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
         await forward.click()
         await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
         await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)

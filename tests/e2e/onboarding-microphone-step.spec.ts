@@ -15,7 +15,7 @@ for (const skip of [false, true]) {
       await reachFirstRunStep(page, 'microphone')
       const next = firstRunForwardButton(page)
       await expect(next).toHaveText('Skip for now')
-      await expect(page.getByText(/Test your microphone or choose Skip for now to continue/)).toBeVisible()
+      await expect(page.getByText('Sotto opens the microphone only while you dictate or run this test.')).toBeVisible()
       if (skip) {
         await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
         await expect(page.getByText('Microphone access is blocked.', { exact: true })).toBeVisible()
@@ -42,7 +42,7 @@ for (const skip of [false, true]) {
         const action = page.getByRole('button', { name: 'Test microphone', exact: true })
         await action.focus()
         await page.keyboard.press('Enter')
-        await expect(page.getByText(/Microphone ready/)).toBeVisible()
+        await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
         await expect(next).toHaveText('Continue')
         await next.focus()
         await page.keyboard.press('Enter')
@@ -84,7 +84,8 @@ test('onboarding notices an ended microphone and allows retry', async () => {
     await reachFirstRunStep(page, 'microphone')
     const next = firstRunForwardButton(page)
     await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
-    await expect(page.getByText(/Microphone ready/)).toBeVisible()
+    // The fixture's stream is silent, so the test keeps listening with the stream open.
+    await expect(page.getByText('Listening. Say something.')).toBeVisible()
     await page.evaluate(() => {
       const fixture = (window as unknown as { onboardingMicrophoneFixture: { streams: MediaStream[] } }).onboardingMicrophoneFixture
       fixture.streams[0]!.getTracks()[0]!.dispatchEvent(new Event('ended'))
@@ -108,8 +109,9 @@ test('onboarding notices an ended microphone and allows retry', async () => {
     }
     await page.getByRole('button', { name: 'Try microphone again' }).focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByText(/Microphone ready/)).toBeVisible()
-    await expect(next).toHaveText('Continue')
+    await expect(page.getByText('Listening. Say something.')).toBeVisible()
+    // Access is confirmed but nothing was heard, so moving on is still a skip.
+    await expect(next).toHaveText('Skip for now')
     await next.click()
     await expect(page.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeFocused()
     await page.evaluate(async () => {

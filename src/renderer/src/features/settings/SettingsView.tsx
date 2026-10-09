@@ -49,6 +49,7 @@ import {
   type MediaDevicesAdapter,
 } from '../../audio/useAudioInputDevices'
 import {
+  MICROPHONE_HEARD_LEVEL,
   WorkletMicrophoneTest,
   type MicrophoneTestController,
   type MicrophoneTestState,
@@ -76,9 +77,6 @@ export interface SettingsViewProps {
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
 }
-
-// VoiceWave reports a normalized 0..1 level. Ignore tiny background activity.
-const MICROPHONE_TEST_HEARD_THRESHOLD = 0.02
 
 const SETTINGS_SECTIONS = [
   { id: 'settings-capture', label: 'Dictation', icon: Mic },
@@ -458,7 +456,7 @@ export function SettingsView({
                       <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={microphoneState === 'ready'} />
                       <p role="status">
                         {microphoneState === 'ready' ? 'Listening. Say something.' : null}
-                        {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_TEST_HEARD_THRESHOLD ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
+                        {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_HEARD_LEVEL ? 'Sotto heard you. The microphone is closed.' : 'Sotto did not hear anything. Check that the microphone is not muted.' : null}
                         {microphoneState === 'requesting' ? 'Waiting for microphone permission...' : null}
                         {microphoneState === 'idle' ? (settings.microphoneSkipped ? 'No microphone is set up. Run this test to set one up.' : 'Run a quick input-level test.') : null}
                         {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}

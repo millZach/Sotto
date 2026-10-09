@@ -262,7 +262,7 @@ test('recovers after microphone permission is denied once', async () => {
     await expect(launched.page.getByText('Microphone access is blocked.')).toBeVisible()
     await expect(launched.page.getByText(/privacy & security.*microphone/i)).toBeVisible()
     await launched.page.getByRole('button', { name: /try microphone again/i }).click()
-    await expect(launched.page.getByText(/microphone ready/i)).toBeVisible()
+    await expect(launched.page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
   } finally {
     await closeSotto(launched)
   }
