@@ -116,6 +116,24 @@ describe('terminal agent run state', () => {
     state.setVisible(true); expect(state.state).toBe('working')
     state.setVisible(false); state.output(idle); expect(state.state).toBe('idle')
   })
+  it('allows continuing evidence to revoke a pending completion before its ready screen settles the turn', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); state.output(work)
+    state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('working')
+    state.hook(event('working', { turnId: 'turn', workPhase: 'continuing' }))
+    state.output(idle); state.quiet(); expect(state.state).toBe('working')
+    state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('just-finished')
+    state.setVisible(true); state.setVisible(false)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'continuing' })); expect(state.state).toBe('idle')
+  })
+  it('admits a later genuine completion after a prior callback was blocked by a live request', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); state.output(work)
+    state.hook(event('permission', { turnId: 'turn', requestId: 'request' }))
+    state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('needs-you')
+    state.output(idle); state.requestClosed('request'); expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'turn' })); expect(state.state).toBe('just-finished')
+  })
   it.each(['none', 'legacy', 'tool-start', 'tool-end'] as const)('remembers viewing hidden readiness before delayed Stop and ignores %s late tool evidence', phase => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)
     state.hook(event('working', { turnId: 'first', workPhase: 'submitted' })); state.output(work); state.output(idle)
@@ -224,6 +242,29 @@ describe('terminal agent run state', () => {
     if (reason === 'failure') state.hook(event('cancelled'))
     if (reason === 'error') state.output(redraw('Error: the operation failed\r\n❯ \r\n? for shortcuts'))
     state.output(idle); state.hook(event('completed')); expect(state.state).toBe('idle')
+  })
+  it.each([
+    ['input', true], ['input', false], ['hook', true], ['hook', false],
+  ] as const)('does not revive %s-cancelled work from late tool callbacks with a turn ID: %s', (cancel, hasTurnId) => {
+    const prior = hasTurnId ? { turnId: 'a' } : {}
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { ...prior, workPhase: 'submitted' })); state.output(work)
+    if (cancel === 'input') state.input('\x03'); else state.hook(event('cancelled', prior))
+    state.output(idle); expect(state.state).toBe('idle')
+    state.hook(event('working', { ...prior, workPhase: 'tool-end' })); expect(state.state).toBe('idle')
+    state.hook(event('working', prior)); state.hook(event('completed', prior)); state.output(idle)
+    expect(state.state).toBe('idle')
+  })
+  it.each(['submitted', 'continuing', 'native'] as const)('admits genuinely new %s work after interruption without admitting the cancelled turn', source => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'a', workPhase: 'submitted' })); state.output(work)
+    state.input('\x03'); state.output(idle)
+    if (source !== 'native') state.hook(event('working', { turnId: 'b', workPhase: source }))
+    state.output(work); expect(state.state).toBe('working')
+    state.hook(event('working', { turnId: 'a', workPhase: 'tool-end' }))
+    state.hook(event('completed', { turnId: 'a' })); state.output(idle)
+    expect(state.state).not.toBe('just-finished')
+    state.hook(event('completed', { turnId: 'b' })); expect(state.state).toBe('just-finished')
   })
   it('binds submitted input across individual typed keys and starts new work after cancellation', () => {
     const state = agent(); state.output(work); state.input('\x03'); state.output(idle)

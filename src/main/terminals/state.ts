@@ -58,7 +58,7 @@ export class TerminalAgentStateMachine {
     if (this.inputReady && !this.draftStarted && data.charCodeAt(0) >= 32) { this.localCommand = data.trimStart().startsWith('/'); this.draftStarted = true }
     const cancel = data.includes('\x03') || this.provider !== 'grok' && data === '\x1b' && this.state === 'working'
     this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'
-    if (cancel) { this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false }
+    if (cancel) { this.retireTurn(this.activeTurn); this.activeTurn = undefined; this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false }
     if (submitted && !cancel && !this.localCommand) {
       // Enter starts new work before its helper can bind it. Neither the prior turn's Stop nor an unbound Stop may settle this new submission.
       this.retireTurn(this.activeTurn); this.activeTurn = undefined
@@ -83,6 +83,7 @@ export class TerminalAgentStateMachine {
       case 'session-start': this.hooksKnown = true; this.awaitingReady = true; break // SessionStart precedes the actual live input prompt.
       case 'working':
         if (event.turnId && this.inactiveTurns.has(event.turnId)) break
+        if (this.interrupted && event.workPhase !== 'submitted' && event.workPhase !== 'continuing') break // Late tool evidence cannot revive an interrupted turn, even without a provider turn ID.
         if (event.workPhase !== 'submitted' && event.turnId && this.activeTurn && this.activeTurn !== event.turnId) break
         if (event.workPhase !== 'submitted' && event.workPhase !== 'continuing' && this.finishedObserved && this.fresh && this.evidence.state === 'idle') break // A delayed tool hook cannot create a second unseen finish.
         if (event.workPhase === 'submitted') {
@@ -104,10 +105,13 @@ export class TerminalAgentStateMachine {
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
         if (this.awaitingSubmissionHook) break
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
-        if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') { this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false }
-        this.retireTurn(event.turnId)
+        if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') {
+          this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false
+          this.activeTurn ??= event.turnId
+        }
         break
       case 'cancelled': case 'ended':
+        this.retireTurn(this.activeTurn); this.retireTurn(event.turnId); this.activeTurn = undefined
         this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false; break
       case 'notification':
         // Delayed notifications corroborate a *current* screen, never invent a request/completion.
@@ -141,6 +145,8 @@ export class TerminalAgentStateMachine {
       if (this.visible && (this.readyForCompletion || this.completion)) this.completionViewed = true
       const finished = completed && !this.completionViewed
       this.knownWork = false; this.screenWork = false; this.completion = false
+      // Receipt is not settlement: current requests or explicit continuing work can still revoke a pending completion.
+      if (completed) this.retireTurn(this.activeTurn)
       // A live ready prompt can precede Stop. Retain its turn until that callback settles it or new submitted work replaces it.
       if (completed || this.interrupted || !this.readyForCompletion) this.activeTurn = undefined
       if (completed) { this.finishedObserved = true; this.readyForCompletion = false; this.continuingWork = false; this.state = finished && !this.visible ? 'just-finished' : 'idle' }
