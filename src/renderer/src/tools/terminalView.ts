@@ -203,15 +203,28 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   // off its cells, and off the search highlights drawn on them. Any option change measures again, so once the page has
   // laid out, set the weight to its twin and back.
   let respacing = 0
-  const respace = (): void => {
+  let measureGpu = false
+  const respace = (fontLoaded = false): void => {
+    measureGpu ||= fontLoaded
     cancelAnimationFrame(respacing)
     respacing = requestAnimationFrame(() => {
-      if (disposed || renderer || !element.isConnected) return
+      const includeGpu = measureGpu
+      measureGpu = false
+      if (disposed || renderer && !includeGpu || !element.isConnected) return
       const weight = terminal.options.fontWeight ?? 'normal'
       terminal.options.fontWeight = weight === 'normal' ? 400 : 'normal'
       terminal.options.fontWeight = weight
+      if (includeGpu) {
+        const grid = view.fit()
+        if (grid) handlers.onResize?.(grid)
+        search.refresh()
+      }
     })
   }
+  // Opening can measure a fallback before the bundled font arrives. Both renderers then need new cell metrics.
+  const fonts = document.fonts
+  const fontLoaded = (): void => respace(true)
+  fonts?.addEventListener('loadingdone', fontLoaded)
 
   terminal.onData(data => { if (inputEnabled) handlers.onInput(data) })
   // An image on the clipboard goes to the handler as PNG; text keeps flowing through xterm's own paste.
@@ -305,6 +318,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       if (!opened) { terminal.open(output); search.mount(); opened = true }
       // The GPU renderer draws box/block glyphs to cell edges, independent of font and line spacing.
       paintGrid()
+      void fonts?.load(`${terminal.options.fontSize}px ${monoFont()}`).then(fontLoaded, () => undefined)
     },
     unmount() { if (element.contains(document.activeElement)) reportFocus(false); releaseRenderer(); element.remove() },
     write(data, done) { terminal.write(data, done) },
@@ -331,6 +345,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
       element.removeEventListener('mousedown', startSelection, true)
       retheme.disconnect()
       systemMotion.removeEventListener('change', followMotion)
+      fonts?.removeEventListener('loadingdone', fontLoaded)
       stopFollowingFont()
       search.dispose()
       picker.dispose()

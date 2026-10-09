@@ -334,6 +334,44 @@ describe('a live terminal', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([true, false])('remeasures a delayed bundled font and removes its listener on dispose (DOM fallback=%s)', async fail => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+    const frames = new Map<number, FrameRequestCallback>()
+    let frame = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frame, callback); return frame })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
+    const flush = (): void => { const due = [...frames.values()]; frames.clear(); for (const callback of due) callback(0) }
+    const ready = Promise.withResolvers<FontFace[]>()
+    const fonts = new EventTarget() as EventTarget & { load: ReturnType<typeof vi.fn> }
+    fonts.load = vi.fn(() => ready.promise)
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', { value: fonts, configurable: true })
+    const remove = vi.spyOn(fonts, 'removeEventListener')
+    gpu.fail = fail
+    const view = createXtermView({ onInput() {}, onInterrupt() {} }, { resolveColor: resolve })
+    const host = document.body.appendChild(document.createElement('div'))
+    const weights: unknown[] = []
+    let weight: unknown = 'normal'
+    Object.defineProperty(xterm.instances.at(-1)!.options, 'fontWeight', { get: () => weight, set: value => { weight = value; weights.push(value) }, configurable: true })
+    try {
+      view.mount(host); flush(); weights.length = 0
+      ready.resolve([]); await Promise.resolve(); flush()
+      expect(weights).toEqual([400, 'normal'])
+      weights.length = 0
+      fonts.dispatchEvent(new Event('loadingdone')); flush()
+      expect(weights).toEqual([400, 'normal'])
+      view.dispose(); weights.length = 0
+      fonts.dispatchEvent(new Event('loadingdone')); flush()
+      expect(weights).toEqual([])
+      expect(remove).toHaveBeenCalledWith('loadingdone', expect.any(Function))
+    } finally {
+      view.dispose(); host.remove()
+      if (descriptor) Object.defineProperty(document, 'fonts', descriptor)
+      else Reflect.deleteProperty(document, 'fonts')
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('repaints the same xterm when the theme, its mode or its colours change on the root, and only then', async () => {
     const root = document.documentElement
     root.dataset.theme = 'dark'
