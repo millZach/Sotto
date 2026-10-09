@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
+      'artifacts/babysitting-surfaces-run/**',
       'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
       'artifacts/show-thinking/**',

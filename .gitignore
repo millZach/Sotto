@@ -15,6 +15,7 @@ dist/
 dist-electron/
 /release/
 artifacts/windows-askpass/
+artifacts/babysitting-surfaces-run/
 coverage/
 playwright-report/
 test-results/

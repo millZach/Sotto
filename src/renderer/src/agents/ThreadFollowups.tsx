@@ -9,6 +9,8 @@ import { retainFileReferences } from './composerFiles'
 import { retainSkillReferences, skillSigils } from './composerSkills'
 import { hasDraftContent, queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
+import { isWakeUpFollowup } from './babysitting'
+import { SottoMark } from '../components/SottoMark'
 
 type Command = AgentConnection['command']
 
@@ -16,6 +18,10 @@ type Command = AgentConnection['command']
 export function followupsFor(state: AgentState, threadId: string): AgentFollowup[] {
   return state.followups?.filter(item => item.threadId === threadId) ?? []
 }
+
+/** How a queued item is said in one line: Sotto's wake-up by whose it is, the user's own by what it says. */
+const WAKE_UP_NAME = 'Wake-up from Sotto'
+const itemWords = (item: AgentFollowup): string => isWakeUpFollowup(item) ? WAKE_UP_NAME : item.text || item.attachments.map(image => image.name).join(', ')
 
 /** A focus move that follows a change made in this window alone, with no reply from main to wait for. */
 const shownNow = (): boolean => true
@@ -193,7 +199,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     if (!fresh.length) return
     for (const item of fresh) shown.current.add(item.id)
     const newest = fresh.at(-1)!
-    setArrival({ id: newest.id, text: newest.text || newest.attachments.map(image => image.name).join(', ') })
+    setArrival({ id: newest.id, text: itemWords(newest) })
     unseen.current = reveal(newest.id) ? null : newest.id
   })
   useEffect(() => {
@@ -224,7 +230,9 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const canSteer = row.connected && !isThreadClosed(row.thread) && !isWorkspaceThreadSettled(row.thread, row.project)
     && !row.thread.requests.length && !isThreadBusy(state, threadId)
     && !pendingDelivery && !state.deliveries?.some(item => item.threadId === threadId && (item.status === 'submitting' || item.status === 'uncertain'))
-  const movable = items.filter(followupEditable)
+  // Sotto's wake-up waits after the user's own items and stays there (ADR-0061 decision 8): it is never moved, and none moves past it.
+  const movable = items.filter(item => followupEditable(item) && !isWakeUpFollowup(item))
+  const lastMovable = items.findLastIndex(item => !isWakeUpFollowup(item))
   const resumable = items.some(item => item.status === 'paused' || item.status === 'failed')
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // A pause stops the whole queue: it is said once, beside Resume queue, not on every item.
@@ -249,12 +257,12 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     const order = items.map(candidate => candidate.id)
     const from = order.indexOf(item.id)
     const to = from + offset
-    if (to < 0 || to >= order.length || busy?.itemId === item.id && busy.error === null) return
+    if (to < 0 || to > lastMovable || isWakeUpFollowup(item) || busy?.itemId === item.id && busy.error === null) return
     ;[order[from], order[to]] = [order[to]!, order[from]!]
     run(item.id, { type: 'reorder-followups', threadId, itemIds: order },
       next => followupsFor(next, threadId).map(candidate => candidate.id).join(' ') === order.join(' '), 'Sotto could not confirm the new order. Check the queue before changing it again.',
       // At the end of the list the pressed arrow has nowhere to go; the other one keeps the item in hand.
-      shown => { refocus.current = { target: () => to === 0 || to === order.length - 1 ? tool(item.id, offset < 0 ? 'down' : 'up') : tool(item.id, offset < 0 ? 'up' : 'down'), shown } })
+      shown => { refocus.current = { target: () => to === 0 || to === lastMovable ? tool(item.id, offset < 0 ? 'down' : 'up') : tool(item.id, offset < 0 ? 'up' : 'down'), shown } })
   }
   const remove = (item: AgentFollowup): void => {
     const index = visible.indexOf(item)
@@ -276,7 +284,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const needsUser = (item: AgentFollowup): boolean => item.status === 'uncertain' || item.status === 'failed' || busy?.itemId === item.id && busy.error !== null
   const listed = expanded ? visible : visible.filter(needsUser)
   const listedAdmissions = expanded ? admissions : admissions.filter(item => submissionStatus(item, state).status === 'failed')
-  const next = visible[0]?.text ?? admissions[0]?.text
+  const next = visible[0] ? itemWords(visible[0]) : admissions[0]?.text
   const added = arrival !== null && visible.some(item => item.id === arrival.id) ? arrival : null
   // Collapsed without a pause to explain, the managed hold is the head's state instead of a line of its own.
   const heldChip = managed && !expanded && !queuePaused
@@ -315,16 +323,20 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       {listed.map(item => {
         const index = items.indexOf(item)
         const editable = followupEditable(item)
+        const wakeUp = isWakeUpFollowup(item)
         const itemBusy = busy?.itemId === item.id && busy.error === null
         const itemError = busy?.itemId === item.id && editing?.id !== item.id ? busy.error : null
         const unconfirmed = item.status === 'uncertain'
         const note = unconfirmed ? `Sotto will not send it twice.${row.connected ? '' : ' Reconnect to check it.'}` : item.error === pauseNote && item.status === 'paused' ? undefined : item.error
         // A busy or end-of-list control stays focusable (aria-disabled): disabling the focused button would drop focus to the page.
         const off = (blocked: boolean): { readonly 'aria-disabled'?: true } => blocked ? { 'aria-disabled': true } : {}
-        return <li key={item.id} className="thread-followup" data-status={item.status} data-followup={item.id} data-arriving={arrival?.id === item.id || undefined}>
-          <p className="thread-followup__text" title={item.text}>{item.text}{item.attachments.length ? <span className="thread-followup__extra"> · {item.attachments.length === 1 ? '1 image' : `${item.attachments.length} images`}</span> : null}</p>
+        return <li key={item.id} className="thread-followup" data-status={item.status} data-followup={item.id} data-wake-up={wakeUp || undefined} data-arriving={arrival?.id === item.id || undefined}>
+          <p className="thread-followup__text" title={item.text}>{wakeUp ? <span className="thread-followup__sotto"><SottoMark className="thread-followup__mark" />Sotto · Wake-up</span> : null}{item.text}{item.attachments.length ? <span className="thread-followup__extra"> · {item.attachments.length === 1 ? '1 image' : `${item.attachments.length} images`}</span> : null}</p>
           {item.status === 'queued' || item.status === 'paused' && queuePaused ? null : <span className="thread-followup__state" data-status={item.status}><i aria-hidden="true" />{STATUS_LABELS[item.status]}</span>}
-          {editable ? <span className="thread-followup__tools">
+          {editable && wakeUp ? <span className="thread-followup__tools">
+            {/* Sotto's own item: removed as the user's are, never edited, moved or steered. Babysitting goes on either way. */}
+            <Button variant="ghost" iconOnly data-tool="remove" aria-label="Remove the wake-up from the queue" title="Remove the wake-up. Babysitting goes on." {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
+          </span> : editable ? <span className="thread-followup__tools">
             {steerVisible && item.status === 'queued' ? <Button variant="secondary" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
               if (!canSteer || itemBusy) return
               run(item.id, { type: 'steer-followup', threadId, itemId: item.id },
@@ -334,7 +346,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
             }}>Steer now</Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
               <Button variant="ghost" iconOnly data-tool="up" aria-label={`Move queued message ${index + 1} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
-              <Button variant="ghost" iconOnly data-tool="down" aria-label={`Move queued message ${index + 1} down`} {...off(itemBusy || index === items.length - 1)} onClick={() => { if (index < items.length - 1) move(item, 1) }}><ArrowDown size={15} /></Button>
+              <Button variant="ghost" iconOnly data-tool="down" aria-label={`Move queued message ${index + 1} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
             </> : null}
             <Button variant="ghost" iconOnly data-tool="edit" aria-label={`Edit queued message ${index + 1}`} {...off(itemBusy)} onClick={() => { if (itemBusy) return; setBusy(null); setEditing(item) }}><Pencil size={15} /></Button>
             <Button variant="ghost" iconOnly data-tool="remove" aria-label={`Remove queued message ${index + 1}`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>

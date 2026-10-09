@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BabysitStart, BabysitListing } from '../../../src/main/agents/babysitting'
 import { BABYSITTING_SWITCHED_OFF, PULL_REQUEST_MCP_SERVER, PullRequestToolServer, pullRequestToolDefinitions, type PullRequestToolHandlers } from '../../../src/main/agents/pullRequestTools'
-import { pullRequestKey } from '../../../src/main/agents/gitPullRequests'
+import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 
 /**
  * `sotto_pull_requests` (ADR-0061 decision 2): which pull request a call means, the words each answer is in, and what the
