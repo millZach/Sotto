@@ -36,16 +36,29 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
-  let selected: { marker: IMarker; column: number; length: number; term: string } | undefined
+  let selected: { marker: IMarker; column: number; length: number; term: string; line: string } | undefined
   const rememberSelection = (): void => {
     const range = terminal.getSelectionPosition()
     if (!range || terminal.getSelection().toLowerCase() !== input.value.toLowerCase()) return
     selected?.marker.dispose()
     selected = { marker: terminal.registerMarker(range.start.y - terminal.buffer.active.baseY - terminal.buffer.active.cursorY), column: range.start.x,
-      length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value }
+      length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value,
+      line: terminal.buffer.active.getLine(range.start.y)?.translateToString(true) ?? '' }
   }
   const restoreSelection = (): void => {
-    if (!selected || selected.marker.isDisposed || selected.term !== input.value || terminal.getSelectionPosition()) return
+    if (!selected || selected.marker.isDisposed || selected.term !== input.value || terminal.getSelection().toLowerCase() === selected.term.toLowerCase()) return
+    const buffer = terminal.buffer.active
+    if (buffer.getLine(selected.marker.line)?.translateToString(true) !== selected.line) {
+      // ConPTY can repaint the same screen at a new buffer row after a resize, without moving old markers.
+      let nearest: number | undefined
+      for (let row = 0; row < buffer.length; row++) {
+        if (buffer.getLine(row)?.translateToString(true) !== selected.line) continue
+        if (nearest === undefined || Math.abs(row - selected.marker.line) < Math.abs(nearest - selected.marker.line)) nearest = row
+      }
+      if (nearest === undefined) { selected.marker.dispose(); selected = undefined; return }
+      selected.marker.dispose()
+      selected.marker = terminal.registerMarker(nearest - buffer.baseY - buffer.cursorY)
+    }
     terminal.select(selected.column, selected.marker.line, selected.length)
     // A width change or repaint can replace the cells; never preserve an unrelated selection.
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()

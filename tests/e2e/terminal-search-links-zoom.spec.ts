@@ -46,7 +46,9 @@ async function expectHighlightOnText(scope: Locator): Promise<void> {
 }
 
 async function clickTerminalLink(page: Page, scope: Locator, text: string, modifier = false): Promise<void> {
-  const box = await renderedText(scope, text, text)
+  let box!: Awaited<ReturnType<typeof renderedText>>
+  // ConPTY can repaint after a size change; wait for the actual linked text before hit testing it.
+  await expect(async () => { box = await renderedText(scope, text, text) }).toPass({ timeout: 10_000 })
   const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   await page.mouse.move(point.x, point.y)
   if (modifier) await page.keyboard.down('Control')
