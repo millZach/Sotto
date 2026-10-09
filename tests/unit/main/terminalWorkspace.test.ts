@@ -167,6 +167,24 @@ describe('terminal workspace service', () => {
     expect(acquireReclaim).toHaveBeenCalledOnce()
   })
 
+  it('drains an earlier branch read when Close cancels a later Restart', async () => {
+    const acquireReclaim = vi.fn(async () => () => {})
+    const f = await fixture({ acquireReclaim })
+    const branch = Promise.withResolvers<string>(), entered = Promise.withResolvers<void>()
+    f.git.mockImplementationOnce(() => { entered.resolve(); return branch.promise })
+    const opened = unwrap(await f.service.open({ projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }))
+    await entered.promise
+    await expect.poll(() => f.spawn.mock.calls.length).toBe(1)
+    const restarting = f.service.restart({ id: opened.terminal.id })
+    try {
+      unwrap(await f.service.close({ id: opened.terminal.id }))
+      // Let settled launcher continuations drain; only the deliberately held branch read remains.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(acquireReclaim).not.toHaveBeenCalled()
+    } finally { branch.resolve('main\n'); await restarting }
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+  })
+
   it('does not recreate a reclaimed checkout from a restart cancelled during shell lookup', async () => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })

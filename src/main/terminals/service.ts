@@ -298,12 +298,15 @@ export class TerminalWorkspaceService extends ToolOperations {
   restart(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(workspaceTerminalRequestSchema, payload).id, false)
     if (record.starting || record.terminal.status === 'starting') return fail('busy', 'This terminal is already starting.')
+    const preparation = record.ready
     record.starting = true
     const generation = ++record.generation
     this.end(record)
     const restarting = (async () => {
       try {
         await record.reclaiming
+        // A running shell may still owe its first branch read; retain that debt across Restart.
+        await preparation
         const launcher = await this.launcher(record.terminal.launch)
         await this.prepareFolder(record, generation)
         await this.start(record, launcher, generation)
