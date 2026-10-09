@@ -48,6 +48,10 @@ Item {
   property bool noticeLost: false
   property string noticeShownFor: ""
 
+  // The words the pill shows over its state, a state file that could not
+  // be read among them.
+  readonly property string pillNotice: Model.noticeFor(notice, dictation.unreadable, dictation.status)
+
   readonly property bool shown: dictation.active || notice !== ""
   // The display the pill is on, by name, chosen by Model.displayFor.
   property string pillScreenName: ""

@@ -19,8 +19,8 @@ BorderSurface {
 
   readonly property var dictation: service.dictation
   readonly property string status: dictation.status
-  readonly property var look: Model.pillFor(status, dictation.record, service.notice, service.noticeLost)
-  readonly property bool live: service.notice === "" && (status === "starting" || status === "listening")
+  readonly property var look: Model.pillFor(status, dictation.record, service.pillNotice, service.noticeLost)
+  readonly property bool live: service.pillNotice === "" && (status === "starting" || status === "listening")
   readonly property string buttonList: look.buttons.join(" ")
 
   readonly property color ink: Color.popups.text
@@ -106,7 +106,7 @@ BorderSurface {
 
       Rectangle {
         id: track
-        visible: card.service.notice === "" && card.status === "transcribing" && card.service.motion
+        visible: card.service.pillNotice === "" && card.status === "transcribing" && card.service.motion
         width: Style.space(142)
         height: Math.max(Style.space(6), Style.spacing.sm)
         anchors.verticalCenter: parent.verticalCenter

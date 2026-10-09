@@ -6,7 +6,9 @@ import "Model.mjs" as Model
 // Follows Sotto's dictation state file. Sotto writes it atomically, never
 // with the transcript in it; a missing file means Sotto is idle or not
 // running, and the plugin shows nothing but the bar glyph. A file that
-// outlives Sotto's process was left by a crash: what it shows is not
+// cannot be read for any other reason keeps what was read before, since
+// Sotto may still be recording, and is read again every few seconds. A file
+// that outlives Sotto's process was left by a crash: what it shows is not
 // happening, so it is put away and `lost` says what went with it.
 Item {
   id: root
@@ -16,6 +18,8 @@ Item {
   readonly property string path: runtimeDir === "" ? "" : runtimeDir + "/sotto/dictation-state.json"
 
   property var record: Model.idle()
+  // The last read failed for a reason other than a missing file.
+  property bool unreadable: false
   // The dictation the user put away (Dismiss, or a command Sotto never took)
   // stays hidden until Sotto moves on to another.
   property string dismissedKey: ""
@@ -56,8 +60,12 @@ Item {
     }
   }
 
-  function apply(text) {
-    record = Model.parse(text)
+  // `text` is null when the read failed, and `missing` when it failed
+  // because there is no file.
+  function read(text, missing) {
+    var next = Model.afterRead(record, text, missing)
+    unreadable = next.unreadable
+    if (next.record !== record) record = next.record
     refresh()
   }
 
@@ -67,17 +75,18 @@ Item {
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.apply(text())
-    onLoadFailed: root.apply("")
+    onLoaded: root.read(text(), false)
+    onLoadFailed: function(error) { root.read(null, error === FileViewError.FileNotFound) }
   }
 
-  // A file that is missing when watching starts is never noticed, so look
-  // for it once a second until it appears. Once loaded, the watch follows
-  // Sotto's atomic replacements and a later removal on its own.
+  // A file that is missing when watching starts is never noticed, and one
+  // that cannot be read cannot be watched, so look again until a read
+  // succeeds. Once loaded, the watch follows Sotto's atomic replacements
+  // and a later removal on its own.
   Timer {
-    interval: 1000
+    interval: root.unreadable ? Model.UNREADABLE_RETRY_MS : Model.MISSING_RETRY_MS
     repeat: true
-    running: root.path !== "" && !file.loaded
+    running: root.path !== "" && (!file.loaded || root.unreadable)
     onTriggered: file.reload()
   }
 

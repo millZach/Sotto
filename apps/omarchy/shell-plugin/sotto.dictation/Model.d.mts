@@ -24,6 +24,9 @@ export const ACTIVE: readonly DictationStatus[]
 export const HOLD_MS: Readonly<Partial<Record<DictationStatus, number>>>
 export const NOTICE_MS: number
 export const PROCESS_CHECK_MS: number
+export const MISSING_RETRY_MS: number
+export const UNREADABLE_RETRY_MS: number
+export const UNREADABLE: string
 export const GLYPH: Readonly<Record<'sand' | 'check' | 'copy' | 'alert', string>>
 export const BUTTON_TEXT: Readonly<Record<Button, string>>
 export const BUTTON_NAME: Readonly<Record<Button, string>>
@@ -33,6 +36,7 @@ export function validEdge(edge: unknown): boolean
 export function finiteNumber(value: unknown): number
 export function processId(value: unknown): number
 export function parse(text: unknown): DictationRecord
+export function afterRead(previous: DictationRecord | null, text: string | null, missing: boolean): { record: DictationRecord; unreadable: boolean }
 export function key(record: Pick<DictationRecord, 'state' | 'since'>): string
 export function startsDictation(previous: DictationRecord | null, next: DictationRecord | null): boolean
 export function displayFor(current: string, previous: DictationRecord | null, next: DictationRecord | null, shown: boolean, focused: string): string
@@ -43,8 +47,9 @@ export function processGone(stat: string | null | undefined, pid: number): boole
 export function lostNotice(record: DictationRecord | null): string
 export function formatElapsed(since: number, now: number): string
 export function buttonsFor(state: DictationStatus, record: DictationRecord | null): Button[]
+export function noticeFor(notice: string, unreadable: boolean, state: DictationStatus): string
 export function pillFor(state: DictationStatus, record: DictationRecord, notice?: string, lost?: boolean): PillLook
-export function barFor(state: DictationStatus, record: DictationRecord): BarLook
+export function barFor(state: DictationStatus, record: DictationRecord, unreadable?: boolean): BarLook
 export function workArea(width: number, height: number, barPosition: string, barSize: number): Area
 export function verticalEdge(edge: string): boolean
 export function maxLength(edge: string, area: Area, gap: number): number

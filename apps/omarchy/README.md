@@ -71,6 +71,7 @@ How it behaves:
 - Stop, Cancel, Try again and Discard run `sotto dictation stop`, `cancel`, `retry` and `discard`. A failure with nothing kept shows Dismiss, which only hides the pill.
 - If a command does not get through, the pill says so and what to do, and keeps its buttons so you can press again. The dictation stays on screen until Sotto moves on, since after a Stop that did not get through the recording may still be running. A notice with no dictation behind it lasts five seconds.
 - If Sotto quits while the pill shows a dictation, the pill says so within a few seconds, and whether a recording was lost with it; Sotto keeps recordings only in memory. Dismiss puts it away. An older Sotto that does not name its process in the state file is taken at its word.
+- If the state file is there but cannot be read, the pill keeps what it last showed, with its buttons, says "Could not read Sotto's dictation state. Trying again." and reads it again every few seconds. With nothing on screen, only the glyph says so, in the urgent colour. Only a missing file means there is nothing to show.
 - The pill never takes keyboard focus. From the keyboard, use the bindings above, Escape in Sotto's window, or a cancel binding of your own.
 - With Hyprland's animations turned off, the pill holds still.
 

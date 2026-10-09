@@ -22,7 +22,7 @@ BarWidget {
   property string notice: ""
   readonly property var look: notice !== ""
     ? { glyph: "alert", alert: true, time: false, tooltip: notice }
-    : Model.barFor(status, record)
+    : Model.barFor(status, record, dictation ? dictation.unreadable : false)
   readonly property bool showTime: look.time && !vertical
   readonly property color ink: look.alert ? (bar ? bar.urgent : Color.urgent) : (bar ? bar.barForeground : Color.foreground)
   // The bar shows its shared tooltip only for a target that says it is hovered.

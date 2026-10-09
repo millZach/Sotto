@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
+  afterRead,
+  barFor,
   buttonsFor,
   displayFor,
   effectiveState,
@@ -11,6 +13,7 @@ import {
   maxLength,
   messageWidth,
   nextExpiry,
+  noticeFor,
   noticeHolds,
   parse,
   pillFor,
@@ -19,6 +22,7 @@ import {
   sentenceLines,
   snapEdge,
   startsDictation,
+  UNREADABLE,
   watchesProcess,
   workArea,
   type DictationRecord,
@@ -63,6 +67,67 @@ describe('reading the state file', () => {
     for (const pid of [0, -1, 1.5, '4242', null, true, Number.NaN]) expect(parse(file({ pid })).pid).toBe(0)
     expect(parse(file({ pid: 1 })).pid).toBe(1)
     expect(parse(file({ pid: 4_194_304 })).pid).toBe(4_194_304)
+  })
+})
+
+describe('a state file that cannot be read', () => {
+  const listening = record('listening', 1_000)
+
+  it('takes only a missing file as idle', () => {
+    expect(afterRead(listening, null, true)).toEqual({ record: idle(), unreadable: false })
+  })
+
+  it('keeps the last state through any other failed read, and says the file could not be read', () => {
+    const kept = afterRead(listening, null, false)
+    expect(kept.record).toBe(listening)
+    expect(kept.unreadable).toBe(true)
+    expect(effectiveState(kept.record, 3_600_000, '')).toBe('listening')
+    expect(watchesProcess(kept.record)).toBe(true)
+    const look = pillFor('listening', kept.record, noticeFor('', kept.unreadable, 'listening'))
+    expect(look).toEqual({ glyph: 'alert', tone: 'error', message: UNREADABLE, buttons: ['stop', 'cancel'] })
+    expect(UNREADABLE).toBe("Could not read Sotto's dictation state. Trying again.")
+  })
+
+  it('keeps a kept failure and its buttons too', () => {
+    const failure = record('failed', 1_000, { kept: true, detail: 'The transcription service is busy. Recording kept.' })
+    const kept = afterRead(failure, null, false)
+    expect(kept.record).toBe(failure)
+    expect(pillFor('failed', kept.record, noticeFor('', true, 'failed')).buttons).toEqual(['retry', 'discard'])
+  })
+
+  it('treats text that is not JSON as a failed read, not as idle', () => {
+    for (const text of ['', '{"version":1,"state":"lis', 'not json']) {
+      expect(afterRead(listening, text, false)).toEqual({ record: listening, unreadable: true })
+    }
+  })
+
+  it('reads JSON that is not a v1 state as idle, as parse does', () => {
+    for (const text of ['null', '[]', '{"state":"listening"}', file({ version: 2 })]) {
+      expect(afterRead(listening, text, false)).toEqual({ record: idle(), unreadable: false })
+    }
+  })
+
+  it('starts from idle when the first read fails, and takes the next good read whole', () => {
+    expect(afterRead(null, null, false)).toEqual({ record: idle(), unreadable: true })
+    const next = afterRead(listening, file({ state: 'transcribing', since: 2_000 }), false)
+    expect(next.unreadable).toBe(false)
+    expect(next.record.state).toBe('transcribing')
+  })
+
+  it('puts a command that did not get through, or Sotto quitting, before the unreadable notice', () => {
+    const stop = failureNotice('stop', true, 'listening')
+    expect(noticeFor(stop, true, 'listening')).toBe(stop)
+    expect(noticeFor('', true, 'transcribing')).toBe(UNREADABLE)
+    expect(noticeFor('', false, 'listening')).toBe('')
+  })
+
+  it('shows no pill for it while nothing is on screen, only the glyph', () => {
+    expect(noticeFor('', true, 'idle')).toBe('')
+    expect(barFor('idle', idle(), true)).toEqual({
+      glyph: 'alert', alert: true, time: false, tooltip: "Start dictation. Could not read Sotto's dictation state. Trying again.",
+    })
+    expect(barFor('idle', idle(), false).tooltip).toBe('Start dictation')
+    expect(barFor('listening', listening, true)).toEqual(barFor('listening', listening, false))
   })
 })
 

@@ -16,6 +16,12 @@ export const HOLD_MS = { delivered: 1500, copied: 4000 }
 export const NOTICE_MS = 5000
 // How often to look for Sotto's process while the file shows a dictation.
 export const PROCESS_CHECK_MS = 3000
+// How often to look for a missing state file, and to read again one that
+// could not be read. A replaced file is noticed at once through its folder;
+// these catch what the watch cannot, and each try at an unreadable file
+// costs a line in the shell's log.
+export const MISSING_RETRY_MS = 1000
+export const UNREADABLE_RETRY_MS = 3000
 
 export const GLYPH = {
   sand: String.fromCodePoint(0xF051F),
@@ -43,12 +49,13 @@ export function processId(value) {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0
 }
 
-// JSON or null. Only a malformed file is expected; anything else is a fault.
+// The JSON in `text`, or undefined when it holds none. Only text that is not
+// JSON is expected; anything else is a fault.
 function parseJson(text) {
   try {
     return JSON.parse(String(text || ""))
   } catch (error) {
-    if (error instanceof SyntaxError) return null
+    if (error instanceof SyntaxError) return undefined
     throw error
   }
 }
@@ -57,7 +64,10 @@ function parseJson(text) {
 // reads as idle, so a newer Sotto never leaves a pill on screen that the
 // plugin cannot explain. Fields it does not know are ignored.
 export function parse(text) {
-  var data = parseJson(text)
+  return fromData(parseJson(text))
+}
+
+function fromData(data) {
   if (!data || typeof data !== "object" || data.version !== 1) return idle()
   if (STATES.indexOf(data.state) === -1) return idle(data.edge)
   var detail = typeof data.detail === "string" ? data.detail.replace(/\s+/g, " ").trim() : ""
@@ -70,6 +80,24 @@ export function parse(text) {
     edge: validEdge(data.edge) ? data.edge : "top",
     pid: processId(data.pid)
   }
+}
+
+export const UNREADABLE = "Could not read Sotto's dictation state. Trying again."
+
+// What a read of the state file leaves the plugin with. `text` is what was
+// read, or null when the read failed, and `missing` says the file does not
+// exist. Only a missing file is the contract's idle. Any other failure, or
+// text that is not JSON at all, keeps the last state, its buttons and its
+// process check, since Sotto may still be recording, and marks it
+// unreadable until a read succeeds.
+export function afterRead(previous, text, missing) {
+  var last = previous || idle()
+  if (text === null || text === undefined) {
+    return missing ? { record: idle(), unreadable: false } : { record: last, unreadable: true }
+  }
+  var data = parseJson(text)
+  if (data === undefined) return { record: last, unreadable: true }
+  return { record: fromData(data), unreadable: false }
 }
 
 // One dictation's state is told apart from the next by when it began.
@@ -175,6 +203,14 @@ export function buttonsFor(state, record) {
   return []
 }
 
+// The words over the pill's state: first what the user must act on, a
+// command that did not get through or Sotto quitting; then a state file
+// that could not be read, while there is a state on screen to keep.
+export function noticeFor(notice, unreadable, state) {
+  if (notice) return notice
+  return unreadable && state !== "idle" ? UNREADABLE : ""
+}
+
 // The pill's words and buttons for one state. A notice takes the words and
 // keeps the state's buttons, so a command that did not get through can be
 // pressed again; a notice that Sotto quit, `lost`, has only Dismiss.
@@ -211,7 +247,12 @@ export const BUTTON_NAME = {
 
 // The bar glyph. A press always runs toggle, which starts a dictation, stops
 // a running one and does nothing while Sotto transcribes; the tooltip says so.
-export function barFor(state, record) {
+// With nothing on screen and a state file that could not be read, only the
+// glyph says so, since a pill would announce itself unasked.
+export function barFor(state, record, unreadable) {
+  if (unreadable && state === "idle") {
+    return { glyph: "alert", alert: true, time: false, tooltip: "Start dictation. " + UNREADABLE }
+  }
   switch (state) {
   case "starting":
     return { glyph: "sotto", alert: true, time: false, tooltip: "Stop dictation" }
