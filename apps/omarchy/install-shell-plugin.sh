@@ -1,0 +1,154 @@
+#!/bin/bash
+
+# Install Sotto's Omarchy shell plugin, sotto.dictation, and put its glyph on
+# the bar; or remove both with --uninstall. Run it in your desktop session.
+
+set -euo pipefail
+
+id="sotto.dictation"
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+source_dir="$here/shell-plugin/$id"
+# Where omarchy-shell and `omarchy plugin` look for plugins.
+plugins_dir="$HOME/.config/omarchy/plugins"
+target="$plugins_dir/$id"
+
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [--command <path> | --checkout]
+       $(basename "$0") --uninstall
+
+Copies the plugin to $target,
+then puts Sotto's glyph on the bar next to Omarchy's indicators.
+
+  --command <path>  Run this sotto launcher instead of \`sotto\` on PATH.
+  --checkout        Run the launcher in this checkout:
+                    $here/sotto
+  --uninstall       Take the glyph off the bar and remove the plugin folder.
+USAGE
+}
+
+fail() {
+  echo "$(basename "$0"): $*" >&2
+  exit 1
+}
+
+command_path=""
+uninstall=0
+while (( $# > 0 )); do
+  case "$1" in
+    --command)
+      command_path="${2:-}"
+      [[ -n $command_path ]] || fail "--command needs a path"
+      shift 2
+      ;;
+    --checkout)
+      command_path="$here/sotto"
+      shift
+      ;;
+    --uninstall)
+      uninstall=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown option: $1 (see --help)"
+      ;;
+  esac
+done
+
+for tool in omarchy omarchy-shell jq; do
+  command -v "$tool" >/dev/null || fail "$tool was not found. This script needs Omarchy's shell."
+done
+
+shell_running() {
+  omarchy-shell shell ping >/dev/null 2>&1
+}
+
+plugin_known() {
+  omarchy-shell shell listPlugins 2>/dev/null | jq -e --arg id "$id" 'any(.[]; .id == $id)' >/dev/null 2>&1
+}
+
+# Refuse to replace or delete a folder this script did not put there.
+ours() {
+  [[ -L $target ]] && return 0
+  [[ -f $target/manifest.json ]] && [[ $(jq -r '.id // ""' "$target/manifest.json" 2>/dev/null) == "$id" ]]
+}
+
+if (( uninstall )); then
+  [[ -n $command_path ]] && fail "--uninstall takes no other option"
+  if [[ ! -e $target && ! -L $target ]]; then
+    echo "Sotto's shell plugin is not installed in $plugins_dir."
+    exit 0
+  fi
+  ours || fail "$target is not Sotto's plugin; it was left alone"
+  if shell_running && plugin_known; then
+    omarchy plugin disable "$id" >/dev/null
+  elif ! shell_running; then
+    echo "omarchy-shell is not running. Its bar entry for $id stays in shell.json; run 'omarchy plugin disable $id' in your desktop session to drop it."
+  fi
+  rm -rf -- "$target"
+  shell_running && omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+  echo "Removed Sotto's shell plugin from the bar and from $plugins_dir."
+  exit 0
+fi
+
+[[ -f $source_dir/manifest.json ]] || fail "the plugin's source is missing: $source_dir"
+omarchy plugin validate "$source_dir" >/dev/null || fail "the plugin in $source_dir did not pass 'omarchy plugin validate'"
+
+if [[ -n $command_path ]]; then
+  [[ $command_path == /* ]] || fail "--command needs an absolute path"
+  [[ -x $command_path ]] || fail "$command_path is not an executable file"
+elif ! command -v sotto >/dev/null; then
+  echo "There is no sotto command on PATH yet. In a Sotto checkout, run this again with --checkout."
+fi
+
+# Copy into a hidden folder first, which the shell ignores, then swap it in,
+# so the shell reloads a whole plugin once rather than a file at a time.
+mkdir -p -- "$plugins_dir"
+if [[ -e $target || -L $target ]]; then
+  ours || fail "$target exists and is not Sotto's plugin; it was left alone"
+fi
+staging=$(mktemp -d "$plugins_dir/.$id.install.XXXXXX")
+previous=""
+updated=0
+cleanup() {
+  [[ -n $staging && -d $staging ]] && rm -rf -- "$staging"
+  [[ -n $previous && -e $previous ]] && rm -rf -- "$previous"
+  return 0
+}
+trap cleanup EXIT
+cp -R -- "$source_dir/." "$staging/"
+chmod -R u+rwX,go+rX,go-w -- "$staging"
+if [[ -e $target || -L $target ]]; then
+  previous=$(mktemp -u "$plugins_dir/.$id.previous.XXXXXX")
+  mv -- "$target" "$previous"
+  updated=1
+fi
+mv -- "$staging" "$target"
+staging=""
+echo "Copied the plugin to $target."
+
+if ! shell_running; then
+  echo "omarchy-shell is not running, so Sotto is not on the bar yet. Run this again in your desktop session."
+  exit 0
+fi
+
+omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+for (( attempt = 0; attempt < 100; attempt++ )); do
+  plugin_known && break
+  sleep 0.1
+done
+plugin_known || fail "omarchy-shell did not pick up $id; run 'omarchy-shell shell rescanPlugins' and try again"
+
+omarchy bar put "$id" --section center --after omarchy.indicators
+if [[ -n $command_path ]]; then
+  omarchy bar set "$id" command "$command_path" >/dev/null
+  echo "Sotto's glyph runs $command_path."
+fi
+# A running shell keeps the plugin code it loaded first.
+if (( updated )); then
+  echo "The shell still runs the version it loaded before. Restart it to load this one: omarchy restart shell"
+fi

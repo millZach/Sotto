@@ -1,6 +1,6 @@
 # Sotto on Omarchy
 
-This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR-0062 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. This ticket supplies the dictation command and bindings; packaging follows in #841.
+This folder holds configuration Omarchy reads, rather than code Sotto loads. ADR-0062 assigns Omarchy's compositor bindings, shell integration, themes and packaging here. It holds the dictation command and bindings, and the shell plugin; packaging follows in #841.
 
 ## Dictation command
 
@@ -48,3 +48,39 @@ The snippet first unbinds F9 and Super+Ctrl+X, which Voxtype owns when Omarchy i
 To cancel from outside Sotto, choose an unused chord and bind it to `sotto dictation cancel`. Escape cancels in Sotto's window. The snippet does not take Escape from other apps.
 
 Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then check Hyprland's configuration after it reloads. No installer changes these files automatically. Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals.
+
+## Shell plugin
+
+`shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed, Sotto does not show its own floating widget on Linux.
+
+Install it from your desktop session, with the Omarchy shell running:
+
+```sh
+apps/omarchy/install-shell-plugin.sh              # runs `sotto` from PATH
+apps/omarchy/install-shell-plugin.sh --checkout   # runs this checkout's apps/omarchy/sotto
+apps/omarchy/install-shell-plugin.sh --command /absolute/path/to/sotto
+```
+
+The script copies the plugin to `~/.config/omarchy/plugins/sotto.dictation/`, where the shell looks for plugins, and puts the glyph on the bar after Omarchy's indicators with `omarchy bar put`. `--command` saves the launcher in the plugin's settings with `omarchy bar set sotto.dictation command <path>`; you can run that yourself later. Run the script again after updating Sotto. A running shell keeps the plugin code it loaded first, so restart it afterwards with `omarchy restart shell`.
+
+How it behaves:
+
+- A click on the glyph runs `sotto dictation toggle`: it starts dictating, or stops a dictation that is running. While Sotto transcribes, a click does nothing. While a recording is kept, a click starts a new dictation and the kept recording is let go.
+- The pill appears on the display the mouse is on when dictation starts, which is Hyprland's focused monitor, and stays there until the dictation ends.
+- It starts top centre, just under the bar. Drag it, and on release it snaps to the nearest edge of the screen, centred on that edge; Sotto saves the edge with `sotto dictation place <edge>`. On the left and right edges the pill stands upright and its words read top to bottom.
+- Stop, Cancel, Try again and Discard run `sotto dictation stop`, `cancel`, `retry` and `discard`. A failure with nothing kept shows Dismiss, which only hides the pill.
+- If a command does not get through, the pill says so for five seconds. Sotto not answering a Stop or Cancel also puts that dictation's pill away.
+- The pill never takes keyboard focus. From the keyboard, use the bindings above, Escape in Sotto's window, or a cancel binding of your own.
+- With Hyprland's animations turned off, the pill holds still.
+
+The plugin follows `$XDG_RUNTIME_DIR/sotto/dictation-state.json`, which Sotto writes and which never carries what you said; a missing file means there is nothing to show. It runs the dictation command with its own arguments, never through a shell, and opens no network connection.
+
+To remove it:
+
+```sh
+apps/omarchy/install-shell-plugin.sh --uninstall
+```
+
+This takes the glyph off the bar and deletes the plugin folder, and Sotto's own widget comes back. `omarchy plugin remove sotto.dictation` does the same and keeps a hidden backup of the folder.
+
+`shell-plugin/verify/nested-proof.sh <out-dir>` checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.
