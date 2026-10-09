@@ -105,7 +105,8 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
     })
     await expect(panel.locator('.xterm-rows')).toContainText('COLOR_DEPTH=24', { timeout: 10_000 })
     await input.press('Control+c')
-    await expect.poll(output).toMatch(/PS .*terminal-display\.cjs[\s\S]*COLOR_DEPTH=24[\s\S]*PS /u)
+    // ConPTY can redraw the command on a later line; keep the command, output and restored prompt in order.
+    await expect.poll(output).toMatch(/PS [\s\S]*terminal-display\.cjs[\s\S]*COLOR_DEPTH=24[\s\S]*PS /u)
     expect(errors).toEqual([])
   } finally { await closeSotto(launched) }
 })
