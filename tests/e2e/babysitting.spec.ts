@@ -51,6 +51,19 @@ async function sinceFits(pose: Locator, since?: string): Promise<'whole' | 'drop
     return fit
   }, since)
 }
+/**
+ * The pose and a follow-up queue above the composer at once: the queue whole above the pose, neither over the other,
+ * the pose's readout inside its width, and the queue's Resume queue in view.
+ */
+async function expectPoseClearOfQueue(page: Page, pose: Locator, queue: Locator): Promise<void> {
+  const [poseBox, queueBox, paneBox] = [(await pose.boundingBox())!, (await queue.boundingBox())!, (await pane(page).boundingBox())!]
+  expect(poseBox.y, 'the pose starts below the queue').toBeGreaterThanOrEqual(queueBox.y + queueBox.height - 0.5)
+  expect(queueBox.y, 'the queue starts inside the pane').toBeGreaterThanOrEqual(paneBox.y)
+  expect(poseBox.x + poseBox.width, 'the pose stays inside the pane').toBeLessThanOrEqual(paneBox.x + paneBox.width + 0.5)
+  expect(await pose.evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'the pose readout fits its width').toBe(true)
+  expect(await pose.locator('.thread-monitor__label').evaluate(element => element.getBoundingClientRect().height > 0)).toBe(true)
+  await expect(queue.getByRole('button', { name: 'Resume queue', exact: true })).toBeInViewport()
+}
 /** The widest times the pose says: today's, and an earlier day's. */
 const WIDEST_TODAY = ' since 12:55 pm', WIDEST_EARLIER = ' since Oct 17, 12:55 pm'
 async function theme(page: Page, appearance: 'light' | 'dark'): Promise<void> {
@@ -273,6 +286,23 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await expect(line).toBeVisible()
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Mentioned it in README.md.' })
     await expect(sentWakeUps).toHaveCount(1)
+    // The thread rests with its queue paused: the pose and the queue stand above the composer together, clear of each other.
+    await expect(queue.getByRole('button', { name: 'Resume queue', exact: true })).toBeVisible()
+    await expect(pose).toBeVisible()
+    await expectPoseClearOfQueue(page, pose, queue)
+    const composeShot = async (name: string): Promise<void> => {
+      const [queueBox, paneBox] = [(await queue.boundingBox())!, (await pane(page).boundingBox())!]
+      const top = Math.max(paneBox.y, queueBox.y - 24)
+      await page.screenshot({ path: join(SHOTS, `${name}.png`), animations: 'disabled',
+        clip: { x: paneBox.x, y: top, width: paneBox.width, height: paneBox.y + paneBox.height - top } })
+    }
+    await mkdir(SHOTS, { recursive: true })
+    await composeShot('c-pose-beside-queue-1280x800-dark')
+    await resize(launched, 820, 560)
+    await expectPoseClearOfQueue(page, pose, queue)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await composeShot('c-pose-beside-queue-820x560-dark')
+    await resize(launched, 1280, 800)
     // The scripted provider's turn reports no completion, so the queue pauses on it; Resume queue sends the user's own.
     await queue.getByRole('button', { name: 'Resume queue', exact: true }).click()
     await expect(queue).toHaveCount(0, { timeout: 30_000 })
