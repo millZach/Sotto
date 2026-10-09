@@ -75,6 +75,9 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
     content: textToPromptDoc(text, skills, sigils), editable,
     shouldRerenderOnTransaction: false,
     editorProps: {
+      // A permission makes this div read-only. Keep its tab stop so Chromium
+      // retains focus and Tab still leads to the request's decision controls.
+      attributes: { tabindex: '0' },
       handleDOMEvents: {
         // Let the IME own confirmation without running the editor's Enter keymap.
         keydown: (_view, event) => isCompositionKey(event),
