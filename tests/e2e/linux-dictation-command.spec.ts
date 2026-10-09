@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
+import { closeSotto, finishFirstRunSetupFrom, firstRunForwardButton, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
 
 const run = promisify(execFile)
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
@@ -47,21 +47,20 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
   }
   try {
     await expect(page.getByText(/Hold F9 to talk after installing/)).toBeVisible()
-    await checkOnboardingLayout(page, /Hold F9 to talk after installing/, 'Continue')
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Skip for now' }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await checkOnboardingLayout(page, /Hold F9 to talk after installing/, 'Get started')
+    await reachFirstRunStep(page, 'key', { microphone: 'skip' })
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-command-e2e')
     await page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
     await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await firstRunForwardButton(page).click()
     await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
-    await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, 'Finish setup')
+    await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, 'Continue')
     await page.setViewportSize({ width: 820, height: 560 })
     await capture('onboarding-820x560-light.png')
     await page.setViewportSize({ width: 1280, height: 800 })
-    await page.getByRole('button', { name: 'Finish setup' }).focus()
+    await firstRunForwardButton(page).focus()
     await page.keyboard.press('Enter')
+    await finishFirstRunSetupFrom(page, 'agents', { microphone: 'skip' })
     await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false }))
     await openPage(page, 'Dictate')
     const room = page.getByRole('region', { name: 'Dictation', exact: true })
