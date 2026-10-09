@@ -9,9 +9,9 @@ import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
-test('opening a remote thread keeps a disabled voice coordinator dormant', async () => {
+test('opening a thread on a paired host shows its composer with no error or permission banner', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-disabled-coordinator-'))
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-thread-opening-'))
   const root = join(profile, 'ssh-root')
   await mkdir(root, { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
@@ -54,24 +54,24 @@ test('opening a remote thread keeps a disabled voice coordinator dormant', async
     const remoteThread = await page.evaluate(async folder => {
       const hostId = (await window.sotto!.hosts!.get()).hosts.find(host => host.name === 'forge')!.hostId!
       await window.sotto!.hosts!.command({ type: 'select', hostId })
-      const projects = await window.sotto!.agents!.command({ type: 'create-project', provider: 'codex', title: 'Remote voice regression', path: folder, useExisting: true })
+      const projects = await window.sotto!.agents!.command({ type: 'create-project', provider: 'codex', title: 'Remote thread opening', path: folder, useExisting: true })
       const project = projects.host.projects.find(item => item.path === folder)!
       const model = (await window.sotto!.agents!.get()).host.models.find(item => item.providerId === 'codex')!
       const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: project.id, modelId: model.id,
-        title: 'Remote voice regression' })
+        title: 'Remote thread opening' })
       if (created.error) throw new Error(created.error)
-      return created.host.threads.find(item => item.title === 'Remote voice regression')!.id
+      return created.host.threads.find(item => item.title === 'Remote thread opening')!.id
     }, root)
     await openThreads(page)
     await page.evaluate(async threadId => window.sotto!.agents!.command({ type: 'select-thread', threadId }), localThread)
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(localThread)
-    await page.getByRole('button', { name: 'Remote voice regression', exact: true }).click()
+    await page.getByRole('button', { name: 'Remote thread opening', exact: true }).click()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).activeThreadId)).toBe(remoteThread)
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeVisible()
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).error)).toBeNull()
     await expect(page.getByText(REMOTE_PERMISSION_DENIED)).toHaveCount(0)
     await expect(page.locator('.thread-workspace__error')).toHaveCount(0)
-    await page.screenshot({ path: test.info().outputPath('disabled-coordinator-remote-thread.png'), animations: 'disabled' })
+    await page.screenshot({ path: test.info().outputPath('remote-thread-opening.png'), animations: 'disabled' })
     expect(errors).toEqual([])
   } finally {
     const descriptor = await readFile(join(root, '~', '.sotto', 'host-listener.json'), 'utf8').then(text => JSON.parse(text) as { pid?: number }, () => undefined)

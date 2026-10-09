@@ -258,8 +258,8 @@ describe('Threads manual composer', () => {
     // The send's own unconfirmed error is told once, by the pending message; an unrelated error still shows.
     act(() => { live.publish({ error: 'The provider did not confirm the result.' }) })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    act(() => { live.publish({ error: 'Could not save the spoken reply setting.' }) })
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not save the spoken reply setting.')
+    act(() => { live.publish({ error: 'Could not save the projects folder.' }) })
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not save the projects folder.')
     act(() => { live.publish({ error: null, host: { ...live.state.host, connected: false } }) })
     const menu = openPaneMenu(document.body)
     expect(within(menu).getAllByRole('menuitem', { name: 'Reconnect' })).toHaveLength(1)

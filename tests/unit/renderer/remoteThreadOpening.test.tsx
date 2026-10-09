@@ -20,7 +20,7 @@ it.each([
   { selected: 'remote', mayAnswer: false, settingsPending: false },
   { selected: 'local', mayAnswer: true, settingsPending: false },
   { selected: 'remote', mayAnswer: true, settingsPending: true },
-])('opening $selected after voice removal and answer authority=$mayAnswer while settingsPending=$settingsPending does not produce the remote permission banner', async ({ selected, mayAnswer, settingsPending }) => {
+])('opening $selected with answer authority=$mayAnswer while settingsPending=$settingsPending does not produce the remote permission banner', async ({ selected, mayAnswer, settingsPending }) => {
   const hostId = '22222222-2222-4222-8222-222222222222'
   const state = emptyDesktopState(hostId)
   state.host.connected = true
@@ -57,10 +57,6 @@ it.each([
     if (selected === 'remote') {
       await act(async () => { await agents.command({ type: 'select-thread', threadId: hostEntityKey(hostId, 'thread') }) })
     }
-    expect(agents).not.toHaveProperty('voice')
-    expect(agents).not.toHaveProperty('attention')
-    expect(sent.filter(type => type === 'voice' || type === 'local:voice')).toEqual([])
-    expect(sent.filter(type => type.endsWith(':voice-state') || type === 'voice-state')).toEqual([])
     expect(agents.state?.error).toBeNull()
   } finally { cleanup(); router.dispose() }
 })

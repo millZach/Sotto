@@ -5,7 +5,7 @@ import { closeSotto, launchSotto,  openThreads, type LaunchedSotto } from './sup
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
 // queue, which holds requests only for threads with one. The sidebar row still has to say the thread is waiting on you,
-// with the voice coordinator on or off, and stop saying so once you answer. The app is real end to end; only
+// and stop saying so once you answer. The app is real end to end; only
 // the provider's effects come from the unpackaged E2E host.
 
 const question: AgentRequest = {
@@ -85,7 +85,7 @@ async function expectClear(page: Page, title: string): Promise<void> {
 let launched: LaunchedSotto | undefined
 test.afterEach(async () => { if (launched) await closeSotto(launched); launched = undefined })
 
-test('shows a question on a thread you run in its sidebar row until you answer it, with the voice coordinator off', async () => {
+test('shows a question on a thread you run in its sidebar row until you answer it', async () => {
   test.setTimeout(120_000)
   launched = await launchSotto()
   const { page, app } = launched
@@ -122,7 +122,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
   await page.screenshot({ path: 'artifacts/sidebar-question/question-answered-1280x800-dark.png', animations: 'disabled' })
 })
 
-test('shows a permission the same way with the voice coordinator on, at the minimum window in light', async () => {
+test('shows a permission the same way at the minimum window in light', async () => {
   test.setTimeout(120_000)
   launched = await launchSotto()
   const { page, app } = launched

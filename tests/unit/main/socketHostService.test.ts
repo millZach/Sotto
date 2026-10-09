@@ -330,12 +330,12 @@ describe('bounded targeted autosaves', () => {
     const pending: Promise<unknown>[] = []
     f.state.activeThreadId = threadId
     try {
-      const save = f.client.command({ type: 'compose', threadId, text: 'Spoken send intent', attachments: [] })
+      const save = f.client.command({ type: 'compose', threadId, text: 'Remote send intent', attachments: [] })
       f.reply(f.frames[0]!); await save
       const send = f.client.command({ type: 'send' })
       pending.push(send); void Promise.allSettled(pending)
       expect(f.frames[1]).toMatchObject({ op: 'command', command: { type: 'send', draft: {
-        threadId, text: 'Spoken send intent', attachments: [], binding: { requestId: null, questionsDigest: null },
+        threadId, text: 'Remote send intent', attachments: [], binding: { requestId: null, questionsDigest: null },
       } } })
       f.reply(f.frames[1]!); await send
       expect(f.retainedDrafts.get(hostId, threadId)).toBeUndefined()
