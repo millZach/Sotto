@@ -416,6 +416,16 @@ describe('terminal agent run state', () => {
     state.output(codexWork); state.hook(event('completed', { providerSessionId: 'session', turnId: 'b' }))
     state.output(codexIdle); expect(state.state).toBe('just-finished')
   })
+  it('does not bind an older Codex notify to the new turn after its Working frame', () => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 120, 30); state.started(); state.output(codexIdle)
+    state.setVisible(true); state.output(codexWork); state.output(codexIdle)
+    state.input('new turn\r'); state.output(codexWork)
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'a' }))
+    state.setVisible(false)
+    state.hook(event('completed', { providerSessionId: 'session', turnId: 'b' }))
+    state.output(codexIdle); expect(state.state).toBe('just-finished')
+    expect(state.providerSessionId).toBe('session')
+  })
   it('withdraws queued and future Codex notify completion after an identity conflict, then uses observed screen work', () => {
     const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started(); state.output(codexIdle)
     state.output(redraw('Unmatched new widget', codexTitle))

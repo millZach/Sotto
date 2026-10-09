@@ -120,8 +120,9 @@ export class TerminalAgentStateMachine {
         this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
-        // Codex has no submitted hook: its previous notify may arrive while the old composer is still being redrawn.
-        if (this.awaitingSubmissionHook || this.provider === 'codex' && this.pendingSubmission) break
+        // Codex has no submitted hook to bind a notify to current work. An older callback can arrive both before
+        // and during its new Working frame; only the current ready screen can settle that native transition.
+        if (this.awaitingSubmissionHook || this.provider === 'codex' && (this.pendingSubmission || this.screenWork)) break
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') {
           this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false
