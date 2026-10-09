@@ -36,11 +36,13 @@ Item {
   // older Sotto names none, and its file is taken at its word.
   readonly property bool watching: Model.watchesProcess(record) && dismissedKey !== Model.key(record)
 
+  // The notice goes up before the state is put away, so a pill that says
+  // Sotto quit stays on the display and surface it was already on.
   function checkProcess(stat) {
     if (!watching || !Model.processGone(stat, record.pid)) return
     var notice = Model.lostNotice(record)
-    dismissedKey = Model.key(record)
     if (notice !== "") lost(notice)
+    dismissedKey = Model.key(record)
   }
 
   function refresh() {

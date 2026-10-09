@@ -715,6 +715,24 @@ for previous in copied kept; do
   check '[[ -z $(pill "after-$previous-1" WAYLAND-1) && -n $(pill "after-$previous-2" WAYLAND-2) ]]' "$previous: a new dictation started meanwhile opens on the focused second display"
   go_idle
 done
+# Sotto quitting while the pointer is on the other display: the notice
+# stays where the dictation was, rather than reopening where focus is.
+scoped sotto-crash-elsewhere "$work/env-sotto" sleep infinity
+crash_pid=$last_pid
+move_to 1300 600
+sleep 1.2
+state_pid=$crash_pid write_state listening false "" top 2000
+sleep 0.6
+move_to 2240 420
+sleep 1.2
+kill -KILL "$crash_pid"
+wait_for 3 '! kill -0 "$crash_pid" 2>/dev/null' || fail "the crash stand-in did not stop"
+sleep 3.5
+capture quit-elsewhere-1 WAYLAND-1
+capture quit-elsewhere-2 WAYLAND-2
+read -r w h x y <<<"$(pill quit-elsewhere-1 WAYLAND-1)"
+check '[[ -n $w && -z $(pill quit-elsewhere-2 WAYLAND-2) ]] && ((h > 44))' "when Sotto quits, its notice stays on the display the dictation was on (${w}x${h})"
+go_idle
 
 say "--- an upright failure on a small display, then a scaled one"
 # B's second display shrinks to the 820x560 minimum, then becomes a full-HD
