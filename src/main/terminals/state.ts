@@ -52,7 +52,10 @@ export class TerminalAgentStateMachine {
   resize(cols: number, rows: number): void { this.screen.resize(cols, rows); this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'; this.reconcile() }
   output(chunk: string): void {
     if (this.state === 'exited') return
-    this.screen.write(chunk); this.fresh = true
+    this.screen.write(chunk, () => this.readScreen()); this.readScreen()
+  }
+  private readScreen(): void {
+    this.fresh = true
     this.evidence = this.rules.read(this.screen); this.detection = this.evidence.detection
     if (this.evidence.unsupportedVersion) this.awaitingReady = false
     if (this.evidence.unresolvedVersion) this.unversioned = true

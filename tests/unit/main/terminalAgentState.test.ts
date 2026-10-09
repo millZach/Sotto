@@ -20,6 +20,17 @@ const event = (kind: TerminalAgentHookEvent['kind'], values: Partial<TerminalAge
 const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude', 100, 30, 'session'); state.started(); state.output(idle); return state }
 
 describe('terminal agent run state', () => {
+  it.each([
+    ['claude', work, idle], ['codex', codexWork, codexIdle],
+    ['grok', redraw('⠧ Thinking… 0.2s       0.2s [stop]', grokTitle), grokIdle],
+  ] as const)('observes %s work and ready redraws coalesced into one PTY chunk', (provider, working, ready) => {
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started(); state.output(ready)
+    state.input('work\r')
+    if (provider === 'claude') state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    state.output(working + ready)
+    if (provider !== 'grok') state.hook(event('completed', { turnId: 'turn' }))
+    expect(state.state).toBe('just-finished')
+  })
   it('recognises the native empty Codex composer at startup and after visible or hidden completion', () => {
     for (const visible of [false, true]) {
       const state = new TerminalAgentStateMachine('run', 'codex', 120, 30); state.started(); state.output(codexIdle)

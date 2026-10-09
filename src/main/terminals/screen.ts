@@ -90,7 +90,7 @@ export class TerminalAgentScreen {
       default: this.valid = false
     }
   }
-  write(chunk: string): void {
+  write(chunk: string, beforeRedraw?: () => void): void {
     if (this.discardedString) {
       // ANSI string terminators are ESC backslash and BEL, not printable screen content.
       // eslint-disable-next-line no-control-regex
@@ -109,6 +109,8 @@ export class TerminalAgentScreen {
           // eslint-disable-next-line no-control-regex
           const match = /^\x1b\[([\x20-\x3f]*)([\x40-\x7e])/u.exec(data.slice(index))
           if (!match) { this.pending = data.slice(index, index + 256); if (data.length - index > 256) { this.pending = ''; this.valid = false }; break }
+          // ConPTY can coalesce several full redraws into one output event. Observe the prior frame before erasing it.
+          if (match[2] === 'J' && /^(?:2|3)$/u.test(match[1]!)) beforeRedraw?.()
           this.csi(match[1]!, match[2]!); index += match[0].length; continue
         }
         if ([']', 'P', '_', '^', 'X'].includes(next)) {
@@ -123,7 +125,7 @@ export class TerminalAgentScreen {
         else if (next === 'D') this.down()
         else if (next === 'E') { this.x = 0; this.down() }
         else if (next === 'M') { if (this.y > this.top) this.y--; else this.reverseScroll() }
-        else if (next === 'c') { this.primary = this.blank(); this.alternate = undefined; this.primaryWrap.fill(false); this.alternateWrap = undefined; this.x = this.y = this.top = 0; this.bottom = this.rows - 1; this.valid = true }
+        else if (next === 'c') { beforeRedraw?.(); this.primary = this.blank(); this.alternate = undefined; this.primaryWrap.fill(false); this.alternateWrap = undefined; this.x = this.y = this.top = 0; this.bottom = this.rows - 1; this.valid = true }
         else if (['(', ')', '*', '+', '%', '#'].includes(next)) { if (index + 2 >= data.length) { this.pending = data.slice(index); break }; index++ }
         index += 2; continue
       }
