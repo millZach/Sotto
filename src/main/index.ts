@@ -151,7 +151,7 @@ import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
-import linuxTrayIconPath from '../../resources/tray/sottoTemplate.png?asset'
+import linuxTrayIconPath from '../../build/icon.png?asset'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
@@ -1092,7 +1092,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         // The build emits this PNG under out/, which existing packaging includes on every platform.
         // macOS keeps its existing resource path and automatic @2x template lookup.
         resolveResourcePath: (relativePath) => platform === 'linux' ? linuxTrayIconPath : join(resourceRoot, relativePath),
-        loadImageIcon: (path) => nativeImage.createFromPath(path),
+        loadImageIcon: (path) => {
+          const icon = nativeImage.createFromPath(path)
+          // Keep the colour app icon small enough for the tray, with pixels for a 2x bar.
+          return platform === 'linux' ? icon.resize({ width: 44, height: 44 }) : icon
+        },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
         configure: (tray) => tray.setToolTip(APP_NAME),
