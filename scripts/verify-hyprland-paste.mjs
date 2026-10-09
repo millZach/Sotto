@@ -5,9 +5,9 @@ import console from 'node:console'
 import process from 'node:process'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { execFileSync } from 'node:child_process'
-import { mkdir, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createOwnedProofProcesses, installProofCleanup, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const root = process.cwd()
@@ -19,6 +19,10 @@ const shellPid = execFileSync('pgrep', ['-x', 'quickshell']).toString().trim().s
 const session = Object.fromEntries((await readFile(`/proc/${shellPid}/environ`, 'utf8')).split('\0')
   .filter(Boolean).map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]))
 const env = { ...process.env, ...session, XDG_CONFIG_HOME: join(scratch, `profile-${Date.now()}`) }
+const instanceDirectory = join(env.XDG_RUNTIME_DIR, 'hypr')
+const instancesBefore = snapshotProofInstances(instanceDirectory)
+assert.ok(instancesBefore.has(session.HYPRLAND_INSTANCE_SIGNATURE), 'The live instance folder must exist before the proof')
+console.log('Hyprland instance folders before proof:', JSON.stringify([...instancesBefore.keys()]))
 await mkdir(env.XDG_CONFIG_HOME, { recursive: true })
 for (const key of Object.keys(env)) if (key.startsWith('SOTTO_E2E') || key === 'ELECTRON_RUN_AS_NODE') delete env[key]
 const clipboard = () => execFileSync('wl-paste', ['--no-newline'], { env, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
@@ -57,9 +61,8 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
   () => bootLog.close(),
   () => rm(env.XDG_CONFIG_HOME, { recursive: true, force: true }),
   async () => {
-    const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
+    const remainingInstances = assertProofInstancesPreserved(instanceDirectory, instancesBefore)
     console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
-    assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
   },
 ]), console.log)
 try {

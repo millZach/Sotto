@@ -4,9 +4,11 @@ import { Buffer } from 'node:buffer'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, proofSystemdEnvironment, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, proofSystemdEnvironment, snapshotProofInstances, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
@@ -93,6 +95,34 @@ describe('proof cleanup ordering', () => {
     } catch (error) { caught = error }
     expect(calls).toEqual(['terminate', 'discover', 'assert'])
     expect(caught.errors).toContain(discoveryError)
+  })
+})
+describe('proof runtime folders', () => {
+  const withInstances = check => {
+    const cache = join(process.cwd(), '.cache')
+    mkdirSync(cache, { recursive: true })
+    const directory = mkdtempSync(join(cache, 'proof-runtime-test-'))
+    for (const name of ['live', 'other-existing']) mkdirSync(join(directory, name))
+    try { check(directory, snapshotProofInstances(directory)) }
+    finally { rmSync(directory, { recursive: true, force: true }) }
+  }
+  it('allows unrelated instances and requires the owned folder to be gone', () => {
+    withInstances((directory, before) => {
+      mkdirSync(join(directory, 'other-new'))
+      expect(assertProofInstancesPreserved(directory, before, 'owned')).toEqual(['live', 'other-existing', 'other-new'])
+      mkdirSync(join(directory, 'owned'))
+      expect(() => assertProofInstancesPreserved(directory, before, 'owned')).toThrow('must be removed')
+      rmSync(join(directory, 'owned'), { recursive: true })
+      expect(assertProofInstancesPreserved(directory, before)).toEqual(['live', 'other-existing', 'other-new'])
+    })
+  })
+  it.each(['live', 'other-existing'])('rejects a replaced or missing pre-existing instance: %s', name => {
+    withInstances((directory, before) => {
+      renameSync(join(directory, name), join(directory, 'saved'))
+      expect(() => assertProofInstancesPreserved(directory, before)).toThrow('Preserve the existing')
+      mkdirSync(join(directory, name))
+      expect(() => assertProofInstancesPreserved(directory, before)).toThrow('Preserve the existing')
+    })
   })
 })
 describe.skipIf(!hasUserSystemd())('proof process ownership', () => {

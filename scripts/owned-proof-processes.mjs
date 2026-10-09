@@ -4,13 +4,28 @@ import console from 'node:console'
 import process from 'node:process'
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 import { setTimeout, clearTimeout } from 'node:timers'
 
 const run = promisify(execFile)
+export const snapshotProofInstances = directory => new Map(readdirSync(directory).sort().map(name => {
+  const { dev, ino } = statSync(join(directory, name))
+  return [name, { dev, ino }]
+}))
+export function assertProofInstancesPreserved(directory, before, ownedInstance) {
+  const after = snapshotProofInstances(directory)
+  if (ownedInstance) {
+    assert.ok(!before.has(ownedInstance), 'The nested instance must belong only to this run')
+    assert.ok(!after.has(ownedInstance), 'This run’s nested instance folder must be removed')
+  }
+  for (const [name, identity] of before) {
+    assert.deepEqual(after.get(name), identity, `Preserve the existing Hyprland instance folder ${name}`)
+  }
+  return [...after.keys()]
+}
 export const proofSystemdEnvironment = () => {
   const runtime = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid()}`
   return { ...process.env, XDG_RUNTIME_DIR: runtime, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=${runtime}/bus` }

@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { URL } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { setTimeout as wait } from 'node:timers/promises'
-import { createOwnedProofProcesses, installProofCleanup, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const checkout = process.cwd()
@@ -21,6 +21,10 @@ const live = Object.fromEntries(readFileSync(`/proc/${shellPid}/environ`, 'utf8'
   .map(e => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]))
 const liveSig = live.HYPRLAND_INSTANCE_SIGNATURE
 assert.ok(liveSig && live.WAYLAND_DISPLAY, 'The live instance and display must be known')
+const instanceDirectory = join(runtime, 'hypr')
+const instancesBefore = snapshotProofInstances(instanceDirectory)
+assert.ok(instancesBefore.has(liveSig), 'The live instance folder must exist before the proof')
+console.log('Hyprland instance folders before proof:', JSON.stringify([...instancesBefore.keys()]))
 const base = { PATH: process.env.PATH, HOME: process.env.HOME, USER: process.env.USER, LANG: 'C.UTF-8', XDG_RUNTIME_DIR: runtime, DBUS_SESSION_BUS_ADDRESS: live.DBUS_SESSION_BUS_ADDRESS }
 const instances = () => JSON.parse(execFileSync('/usr/bin/hyprctl', ['instances', '-j'], { env: live, encoding: 'utf8', timeout: 5000 }))
 const owned = createOwnedProofProcesses(console.log)
@@ -74,8 +78,8 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
     // Startup may fail before discovery completes. A lock naming our PID still
     // establishes ownership; never infer it from a newly appeared directory.
     if (hypr?.pid && !runtimeIdentity) {
-      for (const candidate of readdirSync(join(runtime, 'hypr'))) {
-        if (candidate === liveSig) continue
+      for (const candidate of readdirSync(instanceDirectory)) {
+        if (instancesBefore.has(candidate)) continue
         const folder = join(runtime, 'hypr', candidate)
         try {
           const [pid, display] = readFileSync(join(folder, 'hyprland.lock'), 'utf8').split('\n')
@@ -83,7 +87,7 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
             sig = candidate; sock = display; runtimeIdentity = statSync(folder)
             break
           }
-        } catch { /* No owned runtime folder was created here. */ }
+        } catch (error) { if (error.code !== 'ENOENT') throw error }
       }
     }
     const folder = sig && join(runtime, 'hypr', sig)
@@ -100,9 +104,8 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
     }
   },
   () => {
-    const remaining = readdirSync(join(runtime, 'hypr'))
+    const remaining = assertProofInstancesPreserved(instanceDirectory, instancesBefore, sig)
     console.log('Hyprland instance folders after cleanup:', JSON.stringify(remaining))
-    assert.deepEqual(remaining, [liveSig], 'Only the live session instance folder may remain')
   },
 ]), console.log)
 
