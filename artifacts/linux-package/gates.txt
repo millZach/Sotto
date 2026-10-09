@@ -1,0 +1,68 @@
+PR #875 bot review verification; mise node@24.21.0
+
+npm run typecheck
+
+> sotto@0.1.34 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json
+
+
+npm run lint
+
+> sotto@0.1.34 lint
+> eslint .
+
+
+npm test -- --maxWorkers=2
+
+> sotto@0.1.34 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v4.1.10 /home/zach/Projects/Sotto/.worktrees/linux-package
+
+Recorded preimage for 'work.txt'
+Recorded preimage for 'work.txt'
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Windows backend send timing (ms): {"observedLocalFeedbackMs":0.32177899999999227,"localFeedbackMs":0.04253500000004351,"providerLatencyMs":51}
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+(process:1923897): VIPS-WARNING **: 12:02:45.724: unable to load "/usr/lib/vips-modules-8.18/vips-openslide.so" -- libopenslide.so.1: cannot open shared object file: No such file or directory
+
+ Test Files  629 passed | 50 skipped (679)
+      Tests  9312 passed | 182 skipped (9494)
+   Start at  11:54:28
+   Duration  529.83s (transform 11.90s, setup 42.22s, import 105.91s, tests 772.36s, environment 79.53s)
+
+
+npm run notices:verify
+
+> sotto@0.1.34 notices:verify
+> node scripts/verify-notices.mjs
+
+Verified 174 third-party notice components.
+
+npm run build: PASS
+allowlist check: PASS
+
+Nested Playwright: 4 passed (14.8s), one worker
+Linux package: unpacked and tarball verified; 254 files checked
+makepkg: sotto-bin-0.1.34-3-x86_64.pkg.tar.zst
+{
+  "package": "sotto-bin-0.1.34-3-x86_64.pkg.tar.zst",
+  "accessModesChecked": 290,
+  "sandbox": {
+    "uid": 0,
+    "gid": 0,
+    "mode": "0o4755"
+  },
+  "onlySpecialPermissionEntry": "opt/sotto/chrome-sandbox",
+  "allEntriesOwnedByRoot": true
+}
+packaged autostart review: 10 cases passed
+
+Final checks before push
+packaged input comparison: PASS
+allowlist check: PASS

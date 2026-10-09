@@ -82,6 +82,28 @@ describe('release platform profile', () => {
   })
 
   it('refuses to guess a layout for an unsupported platform', () => {
-    expect(() => releasePlatformProfile('linux')).toThrow(/win32 and darwin only/u)
+    expect(() => releasePlatformProfile('freebsd')).toThrow(/win32, darwin and linux only/u)
+  })
+
+  it('locates the Linux executable, resources and licenses without a bundle', () => {
+    const profile = releasePlatformProfile('linux')
+    expect(profile.packagedDirName).toBe('linux-unpacked')
+    expect(profile.executableLabel).toBe('sotto')
+    expect(profile.distributableLabel).toBe('tarball')
+    expect(posix(profile.executablePath('release/linux-unpacked'))).toBe('release/linux-unpacked/sotto')
+    expect(posix(profile.resourcesPath('release/linux-unpacked'))).toBe('release/linux-unpacked/resources')
+    expect(profile.licenseRoot('release/linux-unpacked')).toBe('release/linux-unpacked')
+  })
+
+  it('isolates the Linux home, XDG config and password store for both smoke probes', async () => {
+    const root = await temporaryRoot()
+    const profile = releasePlatformProfile('linux')
+    expect(posixValues(await profile.smokeEnvironment(root))).toEqual({
+      HOME: `${posix(root)}/Home`, XDG_CONFIG_HOME: `${posix(root)}/Home/.config`,
+    })
+    expect(profile.smokeArgs).toEqual(['--password-store=basic'])
+    expect(releasePlatformProfile('win32').smokeArgs).toEqual([])
+    expect(releasePlatformProfile('darwin').smokeArgs).toEqual(['--use-mock-keychain'])
+    await expect(stat(join(root, 'Home', '.config'))).resolves.toBeDefined()
   })
 })

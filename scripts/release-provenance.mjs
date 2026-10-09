@@ -28,6 +28,7 @@ const BUILD_INPUT_PATHS = Object.freeze([
   'scripts/verify-runtime.mjs',
   'scripts/verify-notices.mjs',
   'scripts/verify-packaged-resources.mjs',
+  'scripts/verify-linux-tarball.mjs',
   'scripts/write-build-provenance.mjs',
 ])
 

@@ -7,7 +7,7 @@
 **Your coding agents in one desktop window, with dictation built in.**
 
 [![Latest release](https://img.shields.io/github/v/release/millZach/Sotto-releases?label=release&color=2f6f6a)](https://github.com/millZach/Sotto-releases/releases/latest)
-[![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%C2%B7%20macOS%20arm64-2f6f6a)](#install)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%C2%B7%20macOS%20arm64%20%C2%B7%20Linux%20x64-2f6f6a)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f6f6a)](LICENSE.md)
 
 **[Download the latest release](https://github.com/millZach/Sotto-releases/releases/latest)**
@@ -69,7 +69,7 @@ Terminal mode keeps closed terminals on its Closed shelf until you quit. Reopen 
 
 ## Install
 
-You need Windows 10 or 11 (x64), or an Apple silicon Mac with macOS 12 or newer.
+You need Windows 10 or 11 (x64), an Apple silicon Mac with macOS 12 or newer, or Omarchy on x64 Linux (Arch and Hyprland).
 
 **Windows.** Run `Sotto Setup <version>.exe`. Connecting an SSH host uses Windows' .NET Framework 4, which Windows 10 and 11 include. At least 1 GB of free space during installation is needed. The desktop shortcut is optional and unchecked by default. The installer isn't code-signed, so Windows may show a SmartScreen warning.
 
@@ -78,6 +78,8 @@ You need Windows 10 or 11 (x64), or an Apple silicon Mac with macOS 12 or newer.
 ```bash
 xattr -dr com.apple.quarantine /Applications/Sotto.app
 ```
+
+**Linux (Omarchy).** Build `sotto-bin` from the [package recipe](apps/omarchy/README.md), then install it with `sudo pacman -U ./sotto-bin-*.pkg.tar.zst`. Open Sotto from the application menu. The package includes its own Electron, the `sotto` command and icons. Install the optional dictation bindings and shell plugin using the same guide. In Settings → Application, **Launch when you sign in** starts the installed app through XDG autostart. Updates come from the next package; the AUR follows once packaging is proven. Linux downloads will join [Sotto releases](https://github.com/millZach/Sotto-releases/releases); the first Linux release has not been published yet.
 
 First-run setup takes a few minutes, and every step after the welcome can be skipped: the look, the microphone, your [OpenRouter API key](https://openrouter.ai/keys) for dictation, the shortcut, your coding agents, a first project, other computers to run agents on, and the iPhone beta. The coding agents step connects the first agent client it finds installed on this computer, offers Connect for the others, and says what each one needs. Sotto signs in to none of them itself, so install and sign in to at least one client first. When setup finishes, the Threads page opens with a short tour of where things are. Anything you skipped is in Settings: the microphone under **Dictation**, the key under **Transcription**, agents under **Settings → Providers**, other computers under **Settings → Hosts**, and the iPhone under **Settings → Phones**.
 
@@ -147,7 +149,7 @@ npm run dev
 
 `npm run package:win` and `npm run package:mac` build the installers. Each packaging command automatically verifies the source runtime before packaging.
 
-An unpackaged Linux build can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one or use KDE, where Chromium chooses the store. Transcripts reach the desktop clipboard through wl-clipboard, even while Sotto is unfocused. With automatic paste on, Hyprland pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste for both. If the desktop clipboard cannot be updated, the widget says **Text kept in Sotto**. Open Sotto, then Dictate, and use **Copy text** or select the text there. Copy buttons still work through Electron while Sotto has focus. Install wl-clipboard if it is missing to restore automatic delivery. Hyprland compositor bindings run `sotto dictation start|stop|toggle|cancel`: hold F9 to talk, or press Super+Ctrl+X to start and stop, after installing [Sotto’s snippet](apps/omarchy/README.md). The floating widget names F9 rather than the saved global shortcut. The dictation button still works. Linux keeps the title area without window controls. On Omarchy, Super+W closes Sotto to the tray; it keeps running. Linux has no installer, frosted window or in-app updater. Starting at sign-in comes with the installed package; the setting is disabled in development builds. See the [Linux development notes](docs/guide.md#linux-development-builds).
+The Linux desktop app can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one or use KDE, where Chromium chooses the store. Transcripts reach the desktop clipboard through wl-clipboard, even while Sotto is unfocused. With automatic paste on, Hyprland pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste for both. If the desktop clipboard cannot be updated, the widget says **Text kept in Sotto**. Open Sotto, then Dictate, and use **Copy text** or select the text there. Copy buttons still work through Electron while Sotto has focus. Install wl-clipboard if it is missing to restore automatic delivery. Hyprland compositor bindings run `sotto dictation start|stop|toggle|cancel`: hold F9 to talk, or press Super+Ctrl+X to start and stop, after installing [Sotto’s snippet](apps/omarchy/README.md). The floating widget names F9 rather than the saved global shortcut. The dictation button still works. Linux keeps the title area without window controls. On Omarchy, Super+W closes Sotto to the tray; it keeps running. Linux installs through pacman. It has no frosted window or in-app updater. Starting at sign-in uses the installed package; the setting is disabled in development builds. See the [Linux development notes](docs/guide.md#linux-development-builds).
 
 ## More
 
