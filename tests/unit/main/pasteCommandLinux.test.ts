@@ -10,6 +10,7 @@ import { buildDarwinPasteInvocation } from '../../../src/main/output/pasteComman
 import { buildPasteInvocation as buildWindowsPasteInvocation } from '../../../src/main/output/pasteCommand.win32'
 
 function harness(tags: unknown = []) {
+  let clock = 0
   const run = vi.fn(async (invocation: PasteInvocation) => {
     switch (invocation.args[0]) {
       case 'locked': return '{"locked":false}'
@@ -18,8 +19,8 @@ function harness(tags: unknown = []) {
       default: return 'ok'
     }
   })
-  const delay = vi.fn(async () => undefined)
-  return { run, delay, adapter: createHyprlandPasteAdapter(run, delay) }
+  const delay = vi.fn(async (ms: number) => { clock += ms })
+  return { run, delay, adapter: createHyprlandPasteAdapter(run, delay, () => clock), advance: (ms: number) => { clock += ms } }
 }
 
 const dispatched = (run: ReturnType<typeof harness>['run']) => run.mock.calls
@@ -106,6 +107,35 @@ describe('Hyprland paste', () => {
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
     expect(h.delay.mock.calls).toEqual(Array.from({ length: 12 }, () => [25]))
     expect(dispatched(h.run)).toEqual([])
+  })
+
+  it('bounds a slow modifier query by the remaining budget and sends no keys', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = vi.fn(async (i: PasteInvocation, _timeout?: number) => {
+        if (i.args[0] === 'locked') return '{"locked":false}'
+        return new Promise<string>(resolve => setTimeout(() => resolve('false'), 301))
+      })
+      const adapter = createHyprlandPasteAdapter(run, undefined, () => performance.now())
+      const result = adapter.run(buildLinuxPasteInvocation())
+      await vi.advanceTimersByTimeAsync(300)
+      await expect(result).resolves.toBe(false)
+      expect(run.mock.calls[1]![1]).toBe(300)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(run.mock.calls.map(([i]) => i.args[0])).toEqual(['locked', 'repl'])
+    } finally { vi.useRealTimers() }
+  })
+
+  it('counts query time and rejects a release arriving after the monotonic deadline', async () => {
+    const h = harness()
+    const base = h.run.getMockImplementation()!
+    h.run.mockImplementation(async i => {
+      if (i.args[0] === 'repl') { h.advance(301); return 'false' }
+      return base(i)
+    })
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
+    expect(dispatched(h.run)).toEqual([])
+    expect(h.delay).not.toHaveBeenCalled()
   })
 
   it.each(['locked', 'repl', 'activewindow', 'dispatch'])('leaves the text copied on a %s failure', async command => {

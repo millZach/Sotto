@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { performance } from 'node:perf_hooks'
 import type { PasteInvocation } from './pasteCommand'
 import type { PasteProcessAdapter } from './outputService'
 import { PASTE_PROCESS_TIMEOUT_MS } from './outputService'
@@ -32,26 +33,43 @@ export function buildHyprlandKeyInvocation(
 }
 
 const execute = promisify(execFile)
-export async function runHyprctl(invocation: PasteInvocation): Promise<string> {
+export async function runHyprctl(invocation: PasteInvocation, timeoutMs = PASTE_PROCESS_TIMEOUT_MS): Promise<string> {
   const { stdout } = await execute(invocation.executable, [...invocation.args], {
-    shell: false, encoding: 'utf8', timeout: PASTE_PROCESS_TIMEOUT_MS, maxBuffer: 256 * 1024,
+    shell: false, encoding: 'utf8', timeout: Math.max(1, Math.ceil(timeoutMs)), maxBuffer: 256 * 1024,
   })
   return stdout.trim()
 }
 
 export function createHyprlandPasteAdapter(
-  run: (invocation: PasteInvocation) => Promise<string> = runHyprctl,
+  run: (invocation: PasteInvocation, timeoutMs?: number) => Promise<string> = runHyprctl,
   delay: (milliseconds: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  now: () => number = () => performance.now(),
 ): PasteProcessAdapter {
   return {
     async run(invocation): Promise<boolean> {
       try {
         if (JSON.parse(await run({ executable: 'hyprctl', args: ['locked', '-j'] })).locked !== false) return false
-        for (let waited = 0; ; waited += MODIFIER_RELEASE_POLL_MS) {
-          const held = await run({ executable: 'hyprctl', args: ['repl', MODIFIERS_HELD_QUERY] })
+        const deadline = now() + MODIFIER_RELEASE_WAIT_MS
+        for (;;) {
+          const remaining = deadline - now()
+          if (remaining <= 0) return false
+          let timeout: ReturnType<typeof setTimeout> | undefined
+          let held: string
+          try {
+            held = await Promise.race([
+              run({ executable: 'hyprctl', args: ['repl', MODIFIERS_HELD_QUERY] }, remaining),
+              new Promise<never>((_, reject) => {
+                timeout = setTimeout(() => reject(new Error('Modifier query deadline')), remaining)
+              }),
+            ])
+          } finally {
+            clearTimeout(timeout)
+          }
+          // A late release cannot authorize paste, even if its timer has not run yet.
+          if (now() >= deadline) return false
           if (held === 'false') break
-          if (held !== 'true' || waited >= MODIFIER_RELEASE_WAIT_MS) return false
-          await delay(MODIFIER_RELEASE_POLL_MS)
+          if (held !== 'true') return false
+          await delay(Math.min(MODIFIER_RELEASE_POLL_MS, deadline - now()))
         }
         // Query after Sotto's paste delay and modifier release, as close to dispatch as possible.
         const chord = hyprlandPasteChord(JSON.parse(await run(invocation)))
