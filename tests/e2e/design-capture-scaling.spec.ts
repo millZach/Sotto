@@ -17,7 +17,7 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('button', { name: 'Get started' }).click()
         await forward.click()
         await page.getByRole('button', { name: /test microphone/i }).click()
-        await expect(page.getByText(/microphone ready/i)).toBeVisible()
+        await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
         await forward.click()
         await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
         await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)

@@ -102,7 +102,7 @@ const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'key', 'shortcut', 'ag
 export type FirstRunStepId = typeof FIRST_RUN_STEPS[number]
 
 export interface FirstRunSetupOptions {
-  /** 'test' runs the microphone test and waits for it to report ready before leaving that step; 'skip' (the default) leaves it untested. */
+  /** 'test' runs the microphone test and waits for it to hear a voice before leaving that step; 'skip' (the default) leaves it untested. */
   readonly microphone?: 'test' | 'skip'
 }
 
@@ -123,7 +123,7 @@ async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: Fi
   }
   if (step === 'microphone' && options.microphone === 'test') {
     await page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(page.getByText(/microphone ready/i)).toBeVisible()
+    await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
   }
   if (step === 'phone') {
     await page.getByRole('button', { name: /finish setup/i }).click()
