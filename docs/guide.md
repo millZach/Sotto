@@ -630,7 +630,7 @@ Artifacts are written to:
 - `release/win-unpacked/Sotto.exe` — unpacked x64 application
 - `release/Sotto Setup <version>.exe` — assisted, per-user x64 NSIS installer
 
-Brand assets (`build/icon.png`, `build/icon.ico`, `build/installer-sidebar.bmp`) are generated from the SVG masters in `build/` with `node scripts/generate-brand-assets.mjs`.
+Brand assets (`build/icon.png`, `build/icon.ico`, `build/installer-sidebar.bmp`, the iPhone app icon and the Android launcher icons) are generated from the SVG masters in `build/` with `node scripts/generate-brand-assets.mjs`. The owl in `build/icon.svg` is the one master; `build/tray-template.svg` is the same owl simplified for 16 pixels.
 
 The packaged `resources` directory contains `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source runtime before packaging and verifies the packaged runtime, notices, bridge and worklet afterward.
 

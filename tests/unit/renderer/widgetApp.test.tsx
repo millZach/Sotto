@@ -494,10 +494,10 @@ describe('WidgetApp', () => {
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
     // The mark wears the painted theme half: its accent tile and a readable glyph.
     const brand = themeBrand(tropic.dark, 'dark')
-    expect([...glyph.querySelectorAll('stop')].map((stop) => stop.getAttribute('stop-color')))
-      .toEqual([brand.tile, brand.tile])
-    expect(glyph.querySelector('rect[x="26"]')).toHaveAttribute('fill', brand.glyph)
-    expect(glyph.querySelector('path')).toHaveAttribute('stroke', brand.glyph)
+    expect(glyph.querySelector('rect')).toHaveAttribute('fill', brand.tile)
+    expect(glyph.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.glyph)
+    expect([...glyph.querySelectorAll('circle')].map((circle) => circle.getAttribute('fill')))
+      .toEqual([brand.glyph, brand.glyph])
     release()
   })
 

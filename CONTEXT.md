@@ -441,6 +441,8 @@ Pressing Stop or the dictation shortcut again while the microphone is connecting
 
 **Ink.** Sotto's own dark half: an almost-black room for the thread beside a lighter graphite sidebar, with the app icon's teal as the accent. Not a separate theme; it is the dark variant of the Sotto theme.
 
+**Sotto mark.** The owl: a black owl's head on a rounded teal tile, its eyes and beak cut through to the tile (ADR-0062). `build/icon.svg` is its one master, and every icon Sotto ships is rendered from it; inside the app `SottoMark` draws the same owl in the theme's colours, and the macOS menu bar shows it simplified for 16 pixels. The wordmark beside it is "Sotto". Avoid: "logo" for the in-app mark, "glyph" for the whole mark (the glyph is the owl, the tile is the tile).
+
 **App icon brand.** How the Sotto mark looks on the default theme: the icon's own teal tile (`#47b8a9`) and black glyph in both halves, whatever the half's accent. Both windows mark the root `data-brand="app-icon"` when the default theme paints it; on any other theme the mark takes that theme's accent (ADR-0024).
 
 **Contrast and Glass.** The two appearance sliders. Contrast (50-200%) strengthens or softens text and borders against the theme's own background. Glass (40-100%) sets how solid dialogs, menus and floating panels are over the blurred room.
