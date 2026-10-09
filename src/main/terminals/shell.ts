@@ -15,10 +15,19 @@ export class TerminalShell {
   constructor(private readonly dependencies: ShellDependencies) {}
 
   async resolve(): Promise<string> {
-    if (this.cached && (!this.cached.discovered || await this.exists(this.cached.path))) return this.cached.path
-    this.cached = null
-    const found = await (this.lookup ??= this.find().finally(() => { this.lookup = null }))
-    this.cached = found
+    const cached = this.cached
+    if (cached) {
+      if (!cached.discovered) return cached.path
+      const exists = await this.exists(cached.path)
+      // Another validation may have invalidated or replaced this entry while the check waited.
+      if (this.cached !== cached) return this.resolve()
+      if (exists) return cached.path
+      this.cached = null
+    }
+    const found = await (this.lookup ??= this.find().then(value => {
+      this.cached = value
+      return value
+    }).finally(() => { this.lookup = null }))
     return found.path
   }
 
