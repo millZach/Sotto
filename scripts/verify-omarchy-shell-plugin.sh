@@ -68,6 +68,8 @@ check_dest() {
 check_dest || exit 2
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+node=$(mise which node@24.21.0)
+sandbox() { "$node" "$here/omarchy-shell-sandbox.mjs" "$@"; }
 omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
 run=/run/user/$uid
@@ -146,6 +148,8 @@ live_before=$(live_processes)
 [[ -n $live_before ]] || fail "the live shell's processes were not found"
 say "live shell: PID $live_shell, $(wc -l <<<"$live_before") long-running processes recorded"
 live_plugins=$(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true)
+live_trees=("$HOME/.config/omarchy" "$HOME/.config/hypr" "$HOME/.local/state/omarchy")
+live_tree_stamp=$(sandbox stamp "${live_trees[@]}")
 
 # ------------------------------------------------------------- ownership
 
@@ -247,6 +251,11 @@ cleanup() {
     say "live plugins folder unchanged"
   else
     say "FAIL: live plugins folder changed"; status=1
+  fi
+  if [[ $(sandbox stamp "${live_trees[@]}") == "$live_tree_stamp" ]]; then
+    say "all three live configuration/state trees unchanged (identities, timestamps and file bytes)"
+  else
+    say "FAIL: a live configuration/state tree changed"; status=1
   fi
   left=""
   while read -r pid start cmd; do
@@ -384,31 +393,30 @@ hypr_b dismissnotify >/dev/null
 
 # ---------------------------------------------------------- isolated Omarchy
 
-mkdir -p "$home/.config" "$home/.local/state/omarchy/current" "$home/.cache" "$home/.local/share"
-cp -r "$HOME/.config/omarchy" "$home/.config/omarchy"
-rm -rf -- "$home/.config/omarchy/plugins"
-mkdir -p "$home/.config/omarchy/plugins"
-[[ -d $HOME/.config/foot ]] && cp -r "$HOME/.config/foot" "$home/.config/foot"
+# Generate from installed regular files, never the live HOME (which may be linked).
+sandbox setup "$home" "$omarchy_path" || fail "could not build a link-free sandbox HOME"
 # Services that would reach past the nested session stay off in the copy.
 config=$home/.config/omarchy/shell.json
-[[ -s $config ]] || cp "$omarchy_path/config/omarchy/shell.json" "$config"
 # Clipboard.qml starts by killing every matching clipboard watcher, including
 # the live shell's. Never load that unrelated service in a nested proof. The
 # battery service sets the system's power profile when the power source
 # changes, which the live shell does already.
+sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"
 jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight", "omarchy.clipboard", "omarchy.battery"] | unique)' \
   "$config" >"$config.tmp" && mv "$config.tmp" "$config"
 
 make_theme() {
   local next=$home/.local/state/omarchy/current/next-theme current=$home/.local/state/omarchy/current/theme
-  rm -rf -- "$next"
-  mkdir -p "$next"
-  cp -r "$omarchy_path/themes/$1/." "$next/"
+  sandbox remove "$next"
+  sandbox copy "$omarchy_path/themes/$1" "$next"
+  sandbox check "$home/.config" "$next"
   HOME=$home OMARCHY_PATH=$omarchy_path PATH="$omarchy_path/bin:$PATH" omarchy-theme-set-templates
-  rm -rf -- "$current"
+  sandbox remove "$current"
+  sandbox check "$next" "$current" "$home/.local/state/omarchy/current/theme.name"
   mv "$next" "$current"
   echo "$1" >"$home/.local/state/omarchy/current/theme.name"
-  ln -sfn "$(find "$current/backgrounds" -maxdepth 1 -type f | sort | head -n1)" "$home/.local/state/omarchy/current/background"
+  sandbox remove "$home/.local/state/omarchy/current/background"
+  sandbox copy "$(find "$current/backgrounds" -maxdepth 1 -type f | sort | head -n1)" "$home/.local/state/omarchy/current/background"
 }
 make_theme tokyo-night
 
@@ -461,10 +469,11 @@ printf '%s\n' "HOME=$home" "USER=$USER" "LANG=en_US.UTF-8" "PATH=$work/bin:$omar
   "XDG_DATA_HOME=$home/.local/share" "XDG_RUNTIME_DIR=$rt" "WAYLAND_DISPLAY=$b_wl" \
   "HYPRLAND_INSTANCE_SIGNATURE=$b_sig" "OMARCHY_PATH=$omarchy_path" "XDG_CURRENT_DESKTOP=Hyprland" \
   "XDG_SESSION_TYPE=wayland" "QT_QPA_PLATFORM=wayland" "XCURSOR_SIZE=24" >"$work/env-shell"
-in_shell() { env -i $(cat "$work/env-shell") "$@"; }
+in_shell() { sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"; env -i $(cat "$work/env-shell") "$@"; }
 
 shell_up() { in_shell omarchy-shell shell ping >/dev/null 2>&1; }
 start_shell() {
+  sandbox check "$home/.config/omarchy" || fail "linked sandbox configuration"
   scoped omarchy-shell "$work/env-shell" dbus-run-session -- quickshell -p "$omarchy_path/shell"
   wait_for 30 shell_up || fail "the nested Omarchy shell did not answer"
   sleep 2
@@ -1167,7 +1176,8 @@ check '! uninstall uninstall-without-shell XDG_RUNTIME_DIR="$work/no-shell" && [
 # anything, so the copy takes the same path.
 unreadable_home=$work/unreadable-home
 mkdir -p "$unreadable_home/.config"
-cp -a "$home/.config/omarchy" "$unreadable_home/.config/omarchy"
+sandbox copy "$home/.config/omarchy" "$unreadable_home/.config/omarchy"
+sandbox check "$unreadable_home/.config/omarchy/shell.json"
 chmod 000 "$unreadable_home/.config/omarchy/shell.json"
 uninstall uninstall-unreadable HOME="$unreadable_home" && unreadable_status=0 || unreadable_status=$?
 check '((unreadable_status != 0)) && [[ -d $unreadable_home/.config/omarchy/plugins/sotto.dictation ]] && grep -q "^.*Could not read $unreadable_home/.config/omarchy/shell.json to see whether Sotto.s glyph is on the bar: .*Permission denied. Nothing was removed." "$work/uninstall-unreadable.out"' "with shell.json unreadable, --uninstall keeps the plugin folder and says why"
@@ -1175,6 +1185,7 @@ sleep 1
 check 'on_bar' "the glyph is still on the bar after that"
 check 'uninstall uninstall && [[ ! -e $plugin_dir ]] && ! on_bar && grep -q "glyph off the bar" "$work/uninstall.out"' "--uninstall takes the glyph off the bar, then removes the plugin folder"
 # A glyph left on the bar after its folder was deleted by hand.
+sandbox check "$home/.config/omarchy"
 jq '.bar.layout.center += [{"id": "sotto.dictation"}]' "$config" >"$config.tmp" && mv "$config.tmp" "$config"
 in_shell omarchy-shell shell reloadConfig >/dev/null
 sleep 1

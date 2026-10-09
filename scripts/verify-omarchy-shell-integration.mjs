@@ -10,6 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
+import { assertPlainTree, copyRegularTree, prepareSandboxHome, snapshotTree } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -52,17 +53,6 @@ function longRunningShellProcesses(shellPid) {
   }).map(([pid]) => ({ pid, start: startOf(pid) }))
 }
 function hashFile(path) { return createHash('sha256').update(readFileSync(path)).digest('hex') }
-function treeStamp(root) {
-  if (!existsSync(root)) return []
-  const entries = []
-  const visit = path => {
-    const stat = lstatSync(path)
-    entries.push([path, stat.ino, stat.size, stat.mtimeMs])
-    if (stat.isDirectory()) for (const name of readdirSync(path).sort()) visit(join(path, name))
-  }
-  visit(root)
-  return entries
-}
 // Evidence always stays in this checkout; refuse links before writing and again at delivery.
 function checkDestination() {
   for (let path = destination; path !== dirname(path); path = dirname(path)) {
@@ -114,7 +104,7 @@ async function orchestrate() {
   const instanceRoot = join(live.XDG_RUNTIME_DIR, 'hypr')
   const before = snapshotProofInstances(instanceRoot)
   const liveDirectories = ['.config/omarchy', '.config/hypr', '.local/state/omarchy'].map(path => join(live.HOME, path))
-  const liveStamps = liveDirectories.map(treeStamp)
+  const liveStamps = liveDirectories.map(snapshotTree)
   const root = mkdtempSync('/tmp/ssi-')
   const home = join(root, 'home'), runtime = join(root, 'rt'), evidence = join(root, 'evidence')
   for (const folder of [home, runtime, evidence, join(evidence, 'raw')]) mkdirSync(folder, { mode: 0o700 })
@@ -171,7 +161,7 @@ async function orchestrate() {
     }
     assertProofInstancesPreserved(instanceRoot, before)
     say(`Prior Hyprland instances preserved: ${JSON.stringify([...before.keys()])}`)
-    liveDirectories.forEach((path, index) => { assert.deepEqual(treeStamp(path), liveStamps[index]); say(`Live ${path} unchanged`) })
+    liveDirectories.forEach((path, index) => { assert.deepEqual(snapshotTree(path), liveStamps[index]); say(`Live ${path} unchanged`) })
     for (const record of liveProcesses) {
       assert.ok(isProofProcessAlive(record.pid), `Preserve live shell process ${record.pid}`)
       assert.equal(startOf(record.pid), record.start, `Preserve live shell process identity ${record.pid}`)
@@ -239,8 +229,8 @@ async function orchestrate() {
     symlinkSync(join(instanceRoot, b.instance), join(runtime, 'hypr', b.instance))
     symlinkSync(join(live.XDG_RUNTIME_DIR, b.wl_socket), join(runtime, b.wl_socket))
     assert.ok(Buffer.byteLength(join(runtime, 'hypr', b.instance, '.socket.sock')) < 108)
-    for (const path of [env.XDG_CONFIG_HOME, env.XDG_STATE_HOME, env.XDG_DATA_HOME, env.XDG_CACHE_HOME, join(home, '.config/omarchy'), join(home, '.local/state/omarchy/current')]) mkdirSync(path, { recursive: true })
-    const config = JSON.parse(readFileSync(join(omarchy, 'config/omarchy/shell.json'), 'utf8'))
+    prepareSandboxHome(home, omarchy)
+    const config = JSON.parse(readFileSync(join(home, '.config/omarchy/shell.json'), 'utf8'))
     // Clipboard.qml starts by pkill-ing watchers globally, including the live shell's.
     // It must never load in this sandbox; its cache writes would also reach beyond our session.
     // Battery can change the machine's power profile when its power source changes.
@@ -248,17 +238,23 @@ async function orchestrate() {
     // A deterministic bar: the glyph is the centre anchor; clock on the right.
     config.bar.centerAnchor = 'sotto.dictation'
     config.bar.layout = { left: [{ id: 'omarchy.workspaces' }], center: [{ id: 'omarchy.indicators' }], right: [{ id: 'omarchy.clock', format: 'HH:mm' }] }
+    assertPlainTree(join(home, '.config/omarchy'))
     writeFileSync(join(home, '.config/omarchy/shell.json'), JSON.stringify(config))
     say(`Nested disabled plugins: ${config.disabledPlugins.join(', ')}`)
     const theme = join(home, '.local/state/omarchy/current/next-theme')
-    cpSync(join(omarchy, 'themes/tokyo-night'), theme, { recursive: true })
+    copyRegularTree(join(omarchy, 'themes/tokyo-night'), theme)
+    assertPlainTree(theme)
+    assertPlainTree(env.XDG_CONFIG_HOME)
     await run('omarchy-theme-set-templates', [], { env })
-    cpSync(theme, join(home, '.local/state/omarchy/current/theme'), { recursive: true })
+    copyRegularTree(theme, join(home, '.local/state/omarchy/current/theme'))
+    assertPlainTree(join(home, '.local/state/omarchy/current/theme.name'))
     writeFileSync(join(home, '.local/state/omarchy/current/theme.name'), 'tokyo-night\n')
     const backgrounds = readdirSync(join(theme, 'backgrounds')).sort()
-    symlinkSync(join(home, '.local/state/omarchy/current/theme/backgrounds', backgrounds[0]), join(home, '.local/state/omarchy/current/background'))
+    copyRegularTree(join(home, '.local/state/omarchy/current/theme/backgrounds', backgrounds[0]), join(home, '.local/state/omarchy/current/background'))
+    assertPlainTree(join(home, '.config/omarchy'))
     startIsolated('nested Omarchy shell', 'dbus-run-session', ['--', 'quickshell', '-p', join(omarchy, 'shell')], logOptions('shell'))
     await until('isolated shell answers', async () => { try { await run('omarchy-shell', ['shell', 'ping'], { env }); return true } catch { return false } }, 30000)
+    assertPlainTree(join(home, '.config/omarchy'))
     const installed = await run('bash', [join(checkout, 'apps/omarchy/install-shell-plugin.sh'), '--command', join(checkout, 'apps/omarchy/sotto')], { env })
     say(`Install: ${installed.stdout.trim()}`)
     const plugin = join(home, '.config/omarchy/plugins/sotto.dictation')
@@ -505,6 +501,7 @@ async function journey(configPath) {
     await capture('g-output2-stays', 'WAYLAND-2')
     say('Rule A: focused output changed to WAYLAND-1; only WAYLAND-2 has sotto-dictation overlay')
 
+    assertPlainTree(join(home, '.config/omarchy'))
     const removed = await run('bash', [join(checkout, 'apps/omarchy/install-shell-plugin.sh'), '--uninstall'])
     say(`Uninstall: ${removed.stdout.trim()}`)
     assert.ok(!existsSync(join(home, '.config/omarchy/plugins/sotto.dictation')))
