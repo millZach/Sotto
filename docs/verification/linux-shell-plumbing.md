@@ -1,18 +1,12 @@
 # Dictation state and commands for the Omarchy shell
 
-## Contract addendum 2: process start time
-
-Following PR #877 at `0b589a65`, Linux main reads field 22 of `/proc/self/stat` once when constructing its shell owner. The parser starts after the last `)` so spaces and parentheses in the command name cannot shift the field. Every state and placement write carries the resulting integer `pidStart` beside `pid`. Read or parse failure logs only `native-dictation-pid-start-unavailable`, omits the field and leaves startup working. Windows and macOS never construct this owner or read procfs.
-
-The three focused process-start, lifecycle and state files pass 58 tests. They cover the parenthesized command name, invalid records, private read/parse errors, one startup read, publication without procfs and preservation through every serialized write. The built-app journey now compares each `pidStart` with field 22 of the actual main PID's stat record across all five launches. The complete addendum proof and gate results are recorded below when rerun.
-
 October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. The contract addendum follows `e691a9c6`, with the HOME-folder change in `a410b110`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance. This re-review starts at `125df400`; startup recovery is fixed in `4f37aa58`, and recording/text outcomes in `10cb49ff`.
 
 **VERIFIED on forge:** the built, unpackaged Electron 43.1.0 app, with isolated profiles and HOME folders, driven through the checkout’s actual `apps/omarchy/sotto dictation …` command and Unix socket. Node 24.21.0 ran every Node command. Microphone samples, transcription failures and output effects used the existing development-only e2e fixtures; no paid provider or live microphone was needed. This verifies Sotto’s command, controller, state publication, placement and window boundaries, not provider availability or the separately built Quickshell plugin.
 
 ## Evidence
 
-- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON with its actual main-process `pid`, folder mode `700`, file mode `600`, five shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
+- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON with its actual main-process `pid`, `pidStart` and opaque `dictation` identifier or null, folder mode `700`, file mode `600`, five shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
 - [Plugin folder present](../../artifacts/linux-shell-plumbing/plugin-present.png): the main window remains and the Electron widget is absent. Both Electron visibility and Hyprland’s mapped client list were checked before capture. The proof requests a native main-window frame first because the locked parent can suspend frame callbacks; compositor tiling and frame timing still control these captures.
 - [Plugin folder removed](../../artifacts/linux-shell-plumbing/widget-returned.png): the Electron widget returns during dictation. Its placement here is controlled by the nested compositor; the shell pill’s layer-shell placement belongs to the other half of #850.
 
@@ -41,10 +35,10 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 628 files and 9,363 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,383 tests; 50 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
-| Three Linux Playwright specs in the nested session | PASS, 5 tests |
+| Three Linux Playwright specs in the nested session | PASS, 5 tests in 25.6 s |
 | Built main/preload external dependency inventories | `allowlist check: PASS` |
 
 ## Review
@@ -145,3 +139,39 @@ Temporary root removed: /tmp/sp-u5E3F3
 ```
 
 Re-review against AGENTS.md: only the Linux shell owner and static shell-state copy changed in production. Imports, provider/network paths, authority and runtime dependencies are unchanged; Windows and macOS do not construct the owner. Against the refined #850 contract: both invalid runtime paths preserve startup, six pre-recording codes need no retention claim, twelve captured codes state loss or text location, every kept variant names retention, unknown codes follow `kept`, and rejected-key copy names the OpenRouter key exactly. Tests independently cover the partition, positive outcomes, privacy and length. No outstanding finding remains.
+
+## Contract addendum 2: process start time
+
+Following PR #877 at `0b589a65`, Linux main reads field 22 of `/proc/self/stat` once when constructing its shell owner. The parser starts after the last `)` so spaces and parentheses in the command name cannot shift the field. Every state and placement write carries the resulting integer `pidStart` beside `pid`. Read or parse failure logs only `native-dictation-pid-start-unavailable`, omits the field and leaves startup working. Windows and macOS never construct this owner or read procfs.
+
+The three focused process-start, lifecycle and state files pass 66 tests after both additions. They cover the parenthesized command name, invalid records, private read/parse errors, one startup read, publication without procfs and preservation through every serialized write. The built-app journey compares each `pidStart` with field 22 of the actual main PID's stat record across all five launches.
+
+## Contract addendum 2: dictation identity
+
+Sotto creates a random UUID for each dictation session. The shell publisher hashes only that snapshot identifier with SHA-256 and publishes the opaque result as `dictation`; it never reads content to construct the identity. Starting, listening, transcribing, delivered, copied and failed keep one identifier, including a kept recording's retries. Idle and cancellation publish null, as cancellation maps to idle. An error without a session also publishes null. Placement updates keep the current identifier. These fields are additive and stay version 1.
+
+Unit tests drive each terminal outcome, keep identity through retry, change it for the next dictation, preserve B's own identity when cancelled A and B coalesce inside 50 ms, and publish a changed identifier even when the mapped state stays the same. They check null without a dictation, edge-only placement, and rejection of caller-supplied identity and content. The built-app journey checks a new identifier for every start, retention through failures, retries, success and all four placement edges, and null after Cancel and Discard. The plugin can now choose the focused display on a new non-null identity instead of relying on intermediate states surviving coalescing.
+
+## Addendum 2 verification
+
+**VERIFIED on forge:** the latest built Electron 43.1.0 app passed the same three-spec, five-test nested proof in 25.6 seconds. All CI-form gates passed again: typecheck, lint, 629 test files and 9,383 tests (50 files and 182 tests skipped, 506.73 seconds), 174 notices components, build and `allowlist check: PASS`. Every Node command used 24.21.0 and the suite used two workers.
+
+The verbatim real-check output now contains both fields on every state line. It independently checks each main process's field 22 across PIDs `1286294`, `1286690`, `1286886`, `1287047` and `1287187`. Eight dictations received distinct identifiers; the first kept its identifier through two failures and a copied result, and the delivered dictation kept its identifier through all four edge changes. Cancel and Discard published null. The file remained version 1 and mode `600`, in a mode `700` folder. Graceful and forced exits removed it. One actual state line:
+
+```json
+{"version":1,"pid":1286294,"pidStart":177392692,"dictation":"140a911326a4ee334cb3e63775c441ad2389be00ae0277e9541920e873038e64","state":"listening","since":1791567755339,"updatedAt":1791567755339,"detail":null,"kept":false,"edge":"top"}
+```
+
+All three shell captures from this run were opened. The two handover captures were also compared with the committed images: the same widget absence and return, with only the desktop background and frame timing changed. The existing curated captures are retained. Incidental Linux paste captures were restored. The checkout root has no proof profiles, Chromium scopes, transform caches, `test-results` or `tools/` folder.
+
+Cleanup stopped nested Hyprland PID `1285094`, Playwright PID `1285116` and the owned proof slice, preserved earlier compositor instances and removed the entire owned temporary root:
+
+```text
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+cleanup: owned PIDs stopped; prior Hyprland instances preserved
+Temporary root removed: /tmp/sp-80oDgh
+```
+
+Standards review against AGENTS.md found no remaining issue: procfs reads occur only in the Linux owner, imports remain allowlisted, logs carry stable names, content never supplies either field, and provider, authority, network, runtime dependencies and Windows/macOS behavior are unchanged. Contract review against addendum 2 found no remaining issue: the parser handles the command name, startup reads once and recovers without procfs, every write retains process identity, and dictation identity follows the snapshot through coalescing and placement. The guide records both additive fields and the existing cancellation-to-idle mapping.

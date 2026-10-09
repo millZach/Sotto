@@ -27,6 +27,8 @@ test('publishes private shell state, retries and discards, remembers placement a
   let rawAppClosed: Promise<number | null> | undefined
   let mainPid: number | undefined
   let mainStart: number | undefined
+  let currentDictation: string | null = null
+  const seenDictations = new Set<string>()
   const readMainStart = async (): Promise<void> => {
     const stat = await readFile(`/proc/${mainPid}/stat`, 'utf8')
     mainStart = Number(stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19])
@@ -43,7 +45,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     mainPid = app.app.process().pid
     await readMainStart()
     await openPage(app.page, 'Dictate')
-    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, pidStart: mainStart, state: 'idle' })
+    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, pidStart: mainStart, dictation: null, state: 'idle' })
     return app
   }
   const command = (...args: string[]) => run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', ...args], { env: { ...process.env, XDG_RUNTIME_DIR: profile } })
@@ -54,16 +56,32 @@ test('publishes private shell state, retries and discards, remembers placement a
       throw error
     }
   }
-  const showState = async (label: string, state: string, extra: object = {}): Promise<void> => {
+  const showState = async (label: string, state: string, extra: object = {}): Promise<string | null> => {
     expect(mainPid).toBeGreaterThan(0)
     await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, pidStart: mainStart, state, ...extra })
     const raw = (await readFile(statePath, 'utf8')).trim()
     expect(raw).not.toContain(E2E_TRANSCRIPT)
-    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'pid', 'pidStart', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
+    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'pid', 'pidStart', 'dictation', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
     const published = JSON.parse(raw)
+    if (state === 'idle') {
+      expect(published.dictation).toBeNull()
+      currentDictation = null
+    } else {
+      expect(published.dictation).toEqual(expect.any(String))
+      if (currentDictation !== null) expect(published.dictation).toBe(currentDictation)
+    }
     if (published.detail !== null) expect(published.detail.length).toBeLessThan(60)
     if (published.kept) expect(published.detail).toContain('Recording kept.')
     console.log(`${label}: ${raw}`)
+    return published.dictation
+  }
+  const beginDictation = async (label: string, state = 'listening'): Promise<void> => {
+    currentDictation = null
+    const identifier = await showState(label, state)
+    expect(identifier).not.toBeNull()
+    expect(seenDictations.has(identifier!)).toBe(false)
+    seenDictations.add(identifier!)
+    currentDictation = identifier
   }
   const widgetVisible = () => launched!.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))?.isVisible() ?? false)
   const capture = async (name: string, visible: boolean): Promise<void> => {
@@ -99,7 +117,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     console.log(`modes: sotto=${((await stat(join(profile, 'sotto'))).mode & 0o777).toString(8)} state=${((await stat(statePath)).mode & 0o777).toString(8)}`)
     expect((await stat(statePath)).mode & 0o777).toBe(0o600)
     await command('start')
-    await showState('start', 'listening')
+    await beginDictation('start')
     await command('stop')
     await showState('stop failed', 'failed', { kept: true })
     const firstFailure = (await read()).since as number
@@ -110,12 +128,12 @@ test('publishes private shell state, retries and discards, remembers placement a
     await command('retry')
     await showState('retry copied', 'copied', { kept: false })
     await command('start')
-    await showState('start again', 'listening')
+    await beginDictation('start again')
     await command('cancel')
     await showState('cancel', 'idle')
     await launched.page.evaluate(async () => window.sotto!.updateSettings({ autoPaste: true }))
     await command('start')
-    await showState('start for delivery', 'listening')
+    await beginDictation('start for delivery')
     await command('stop')
     await showState('stop delivered', 'delivered')
     for (const edge of ['left', 'right', 'bottom', 'top']) {
@@ -137,7 +155,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     console.log(`plugin created under isolated HOME/.config (${plugin}): Electron widget visible=false`)
     await capture('plugin-present.png', false)
     await command('start')
-    await showState('start with plugin', 'listening')
+    await beginDictation('start with plugin')
     expect(await widgetVisible()).toBe(false)
     await rm(plugin, { recursive: true })
     await expect.poll(widgetVisible).toBe(true)
@@ -155,7 +173,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     expect(await widgetVisible()).toBe(false)
     console.log('plugin present at startup: Electron widget visible=false')
     await command('start')
-    await showState('start to discard', 'listening')
+    await beginDictation('start to discard')
     await command('stop')
     await showState('stop to discard', 'failed', { kept: true })
     const beforeDiscardRetry = (await read()).since as number
@@ -173,7 +191,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     await quit()
     launched = await launch('design-processing')
     await command('start')
-    await showState('start before processing cancel', 'listening')
+    await beginDictation('start before processing cancel')
     await command('stop')
     await showState('stop transcribing', 'transcribing', { kept: false })
     await command('cancel')
@@ -181,7 +199,7 @@ test('publishes private shell state, retries and discards, remembers placement a
     await quit()
     launched = await launch('design-permission')
     await command('start')
-    await showState('start connecting', 'starting')
+    await beginDictation('start connecting', 'starting')
     await command('cancel')
     await showState('cancel connecting', 'idle')
     await quit()
@@ -211,7 +229,7 @@ const timer = setInterval(() => {
     console.log(`Built app PID ${forcedPid}; isolated profile; no main-process debugger`)
     await showState('launch before forced exit', 'idle')
     await command('start')
-    await showState('start before forced exit', 'listening')
+    await beginDictation('start before forced exit')
     await writeFile(exitSignal, '')
     await expect.poll(() => stat(exitObserved).then(() => true, () => false)).toBe(true)
     await expect.poll(read).toEqual({})

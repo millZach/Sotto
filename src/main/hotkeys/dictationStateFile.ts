@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { closeSync, fchmodSync, lstatSync, openSync, renameSync, unlinkSync, writeFileSync, type Stats } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { WIDGET_ERROR_CODES, type WidgetErrorCode, type WidgetSnapshot } from '../../shared/dictation'
@@ -11,6 +11,7 @@ export interface ShellDictationState {
   readonly version: 1
   readonly pid: number
   readonly pidStart?: number
+  readonly dictation: string | null
   readonly state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'delivered' | 'copied' | 'failed'
   readonly since: number
   readonly updatedAt: number
@@ -71,14 +72,20 @@ const keptFailureDetail: Readonly<Record<WidgetErrorCode, string>> = {
   SETTINGS_UNAVAILABLE: 'Settings could not be read. Recording kept. Open Sotto.',
 }
 
-export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictationState, 'state' | 'detail' | 'kept'> {
+export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictationState, 'dictation' | 'state' | 'detail' | 'kept'> {
+  // Cancel ends the dictation and maps to idle. All other session states retain
+  // one opaque identity, including kept failures and their retries. Hash only
+  // Sotto's session identifier, never text, audio or provider data.
+  const dictation = snapshot.status === 'idle' || snapshot.status === 'cancelled' || snapshot.sessionId === undefined
+    ? null : createHash('sha256').update(snapshot.sessionId).digest('hex')
   switch (snapshot.status) {
-    case 'idle': case 'cancelled': return { state: 'idle', detail: null, kept: false }
-    case 'requesting-permission': return { state: 'starting', detail: null, kept: false }
-    case 'listening': return { state: 'listening', detail: null, kept: false }
-    case 'processing': return { state: 'transcribing', detail: null, kept: false }
-    case 'success': return { state: snapshot.output === 'pasted' ? 'delivered' : 'copied', detail: snapshot.output === 'pasted' ? null : 'Copied — paste with Super+V', kept: false }
+    case 'idle': case 'cancelled': return { dictation, state: 'idle', detail: null, kept: false }
+    case 'requesting-permission': return { dictation, state: 'starting', detail: null, kept: false }
+    case 'listening': return { dictation, state: 'listening', detail: null, kept: false }
+    case 'processing': return { dictation, state: 'transcribing', detail: null, kept: false }
+    case 'success': return { dictation, state: snapshot.output === 'pasted' ? 'delivered' : 'copied', detail: snapshot.output === 'pasted' ? null : 'Copied — paste with Super+V', kept: false }
     case 'error': return {
+      dictation,
       state: 'failed',
       detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code)
         ? (snapshot.kept === true ? keptFailureDetail : failureDetail)[snapshot.code]
@@ -101,7 +108,7 @@ export class DictationStateFile {
     this.path = join(dirname(dictationSocketPath(runtimeDirectory)), 'dictation-state.json')
     this.directories = [...validateDictationRuntime(runtimeDirectory), validateDictationFolder(dirname(this.path))]
     const now = Date.now()
-    this.state = { version: 1, pid: process.pid, ...(pidStart === undefined ? {} : { pidStart }), state: 'idle', since: now, updatedAt: now, detail: null, kept: false, edge }
+    this.state = { version: 1, pid: process.pid, ...(pidStart === undefined ? {} : { pidStart }), dictation: null, state: 'idle', since: now, updatedAt: now, detail: null, kept: false, edge }
     this.flush()
   }
 
@@ -113,7 +120,7 @@ export class DictationStateFile {
     this.update({ edge })
   }
 
-  private update(fields: Partial<Pick<ShellDictationState, 'state' | 'detail' | 'kept' | 'edge'>>): void {
+  private update(fields: Partial<Pick<ShellDictationState, 'dictation' | 'state' | 'detail' | 'kept' | 'edge'>>): void {
     if (this.disposed || Object.entries(fields).every(([key, value]) => this.state[key as keyof ShellDictationState] === value)) return
     const now = Date.now()
     this.state = { ...this.state, ...fields, since: fields.state !== undefined && fields.state !== this.state.state ? now : this.state.since, updatedAt: now }

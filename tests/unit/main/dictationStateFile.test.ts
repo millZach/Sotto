@@ -107,7 +107,7 @@ describe.skipIf(process.platform !== 'linux')('private shell dictation state', (
   })
   it('replaces complete JSON atomically in the validated folder with mode 0600', () => {
     file = new DictationStateFile(runtime, 'top', failure)
-    expect(read()).toEqual({ version: 1, pid: process.pid, state: 'idle', since: 1000, updatedAt: 1000, detail: null, kept: false, edge: 'top' })
+    expect(read()).toEqual({ version: 1, pid: process.pid, dictation: null, state: 'idle', since: 1000, updatedAt: 1000, detail: null, kept: false, edge: 'top' })
     const original = lstatSync(file.path)
     vi.advanceTimersByTime(50)
     renamed.mockImplementation((temp, target) => {
@@ -157,6 +157,95 @@ describe.skipIf(process.platform !== 'linux')('private shell dictation state', (
       expect(JSON.parse(data)).toMatchObject({ pid: process.pid, pidStart: 12345678 })
     }
     expect(read().edge).toBe('left')
+  })
+  it.each([
+    { status: 'success', output: 'pasted' }, { status: 'success', output: 'copied' },
+    { status: 'error', code: 'TRANSCRIPTION_RATE_LIMITED', kept: true },
+    { status: 'error', code: 'RECORDING_FAILED', kept: false },
+  ])('keeps one opaque identifier from starting through terminal $status $output $code', terminal => {
+    file = new DictationStateFile(runtime, 'top', failure)
+    const sessionId = 'sotto-session-A'
+    let identifier: string | undefined
+    for (const fields of [
+      { status: 'requesting-permission' }, { status: 'listening', startedAt: 1, level: 0 },
+      { status: 'processing', startedAt: 1, stage: 'transcribing', progress: 0 }, terminal,
+    ]) {
+      file.publish(snapshot({ ...fields, sessionId, text: 'PRIVATE TRANSCRIPT', dictation: 'PRIVATE OVERRIDE' }))
+      vi.advanceTimersByTime(50)
+      const published = read()
+      expect(published.dictation).toEqual(expect.any(String))
+      expect(published.dictation).not.toBe(sessionId)
+      identifier ??= published.dictation
+      expect(published.dictation).toBe(identifier)
+      expect(JSON.stringify(published)).not.toMatch(/PRIVATE|sotto-session-A/)
+    }
+    if (terminal.status === 'error' && terminal.kept) {
+      file.publish(snapshot({ status: 'processing', sessionId, startedAt: 1, stage: 'transcribing', progress: 0 }))
+      vi.advanceTimersByTime(50)
+      expect(read().dictation).toBe(identifier)
+      file.publish(snapshot({ ...terminal, sessionId, retried: true }))
+      vi.advanceTimersByTime(50)
+      expect(read().dictation).toBe(identifier)
+    }
+    file.publish(snapshot({ status: 'requesting-permission', sessionId: 'sotto-session-B' }))
+    vi.advanceTimersByTime(50)
+    expect(read().dictation).toEqual(expect.any(String))
+    expect(read().dictation).not.toBe(identifier)
+  })
+  it('publishes B\'s own identity when A is cancelled and B starts inside one coalescing window', () => {
+    file = new DictationStateFile(runtime, 'top', failure)
+    vi.advanceTimersByTime(50)
+    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, level: 0 }))
+    const a = read().dictation
+    vi.advanceTimersByTime(10)
+    file.publish(snapshot({ status: 'cancelled', sessionId: 'A' }))
+    file.publish(snapshot({ status: 'requesting-permission', sessionId: 'B' }))
+    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, level: 0 }))
+    expect(read().dictation).toBe(a)
+    vi.advanceTimersByTime(40)
+    const b = read().dictation
+    expect(read().state).toBe('listening')
+    expect(b).toEqual(expect.any(String))
+    expect(b).not.toBe(a)
+    // A later B state must retain the identity published by the merged burst.
+    file.publish(snapshot({ status: 'success', sessionId: 'B', output: 'copied' }))
+    vi.advanceTimersByTime(50)
+    expect(read().dictation).toBe(b)
+    expect(renamed).toHaveBeenCalledTimes(4)
+  })
+  it('publishes a new identity even when two snapshots have the same mapped state', () => {
+    file = new DictationStateFile(runtime, 'top', failure)
+    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, level: 0 }))
+    vi.advanceTimersByTime(50)
+    const a = read().dictation
+    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, level: 0 }))
+    vi.advanceTimersByTime(50)
+    expect(read().dictation).toEqual(expect.any(String))
+    expect(read().dictation).not.toBe(a)
+  })
+  it('publishes null without a dictation, including cancellation and a sessionless error', () => {
+    file = new DictationStateFile(runtime, 'top', failure)
+    expect(read().dictation).toBeNull()
+    file.publish(snapshot({ status: 'listening', startedAt: 1, level: 0 }))
+    vi.advanceTimersByTime(50)
+    expect(read().dictation).toEqual(expect.any(String))
+    for (const fields of [
+      { status: 'cancelled' }, { status: 'idle' },
+      { status: 'error', sessionId: undefined, code: 'SETTINGS_UNAVAILABLE' },
+    ]) {
+      file.publish(snapshot(fields))
+      vi.advanceTimersByTime(50)
+      expect(read().dictation).toBeNull()
+    }
+  })
+  it('keeps dictation identity and since through edge-only placement', () => {
+    file = new DictationStateFile(runtime, 'top', failure)
+    file.publish(snapshot({ status: 'listening', startedAt: 1, level: 0 }))
+    vi.advanceTimersByTime(50)
+    const { dictation, since } = read()
+    file.place('left')
+    vi.advanceTimersByTime(50)
+    expect(read()).toMatchObject({ dictation, since, state: 'listening', edge: 'left' })
   })
   it('writes only reviewed failure copy and kept status for every controller error', () => {
     file = new DictationStateFile(runtime, 'left', failure)
