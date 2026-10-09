@@ -57,6 +57,17 @@ describe('first-run onboarding', () => {
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
   })
 
+  it('says on Linux that dictation copies for pasting and the shortcut is only saved', async () => {
+    const user = userEvent.setup()
+    render(<Onboarding {...keyProps} microphoneState="ready" shortcut="CommandOrControl+Shift+Space" platform="linux" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
+    expect(screen.getByText(/Start dictation in Sotto, speak, then stop, and your words are copied for you to paste/)).toBeVisible()
+    expect(screen.queryByText(/wherever you were typing/)).toBeNull()
+    await goToStep(user, 5)
+    expect(screen.getByRole('heading', { name: 'Copy your words, then paste' })).toBeVisible()
+    expect(screen.getByText(/On Wayland, use the dictation button to start and stop/)).toBeVisible()
+    expect(screen.getByText('Saved shortcut')).toBeVisible()
+  })
+
   it('states the hosted transcription privacy boundary', () => {
     render(
       <Onboarding {...keyProps}

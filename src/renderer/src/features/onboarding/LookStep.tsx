@@ -46,7 +46,7 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
     appearancePreview.settle(sequence, saved, settingsRef.current)
   }
 
-  const system = platform === 'darwin' ? 'macOS' : 'Windows'
+  const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
   const modes = [['light', 'Light'], ['system', `Match ${system}`], ['dark', 'Dark']] as const
   const shownTheme = resolved === 'dark' ? shown.darkTheme : shown.lightTheme
 

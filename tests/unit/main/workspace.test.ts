@@ -183,6 +183,16 @@ describe('durable project/thread organization', () => {
     expect(retained.threads.every(thread => thread.nativeSessionStarted)).toBe(true)
   })
 
+  it('names a saved Claude Code model Claude Code after restart, though it was saved under the provider id', async () => {
+    const f = await fixture()
+    f.adapters.claude.state.models[0]!.provider = 'claude'
+    await f.host.connect(); await f.stop()
+    const reopened = await workspaceFixture(f.root); cleanup.push(reopened.stop)
+    const retained = await reopened.host.snapshot()
+    expect(retained.models.find(model => model.providerId === 'claude')).toMatchObject({ provider: 'Claude Code', ready: false })
+    expect(retained.models.filter(model => model.providerId !== 'claude').map(model => model.provider)).toEqual(['Fake', 'Fake'])
+  })
+
   it("keeps a provider's own permission mode on a thread that has not sent, and creates the thread under it", async () => {
     const f = await fixture()
     f.adapters.codex.state.models[0]!.providerModes = [{ id: 'ask-first', name: 'Ask first' }, { id: 'bypass', name: 'Bypass Permissions' }]

@@ -25,6 +25,10 @@
 .thread-followup { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 27px; border-radius: 10px; }
 .thread-followup:hover, .thread-followup:focus-within { background: var(--threads-hover); }
 .thread-followup + .thread-followup { margin-top: 2px; }
+/* Sotto's wake-up waiting in the queue (ADR-0061): named Sotto's, its words run together on one or two lines. */
+.thread-followup[data-wake-up] .thread-followup__text { white-space: normal; }
+.thread-followup__sotto { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; color: var(--tt-text); font-weight: 500; vertical-align: -3px; }
+.thread-followup__mark { flex: none; width: 16px; height: 16px; }
 .thread-followup__text { display: -webkit-box; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .thread-followup__extra { color: var(--tt-text-muted); }
 .thread-followup__state { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }

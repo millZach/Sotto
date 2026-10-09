@@ -215,7 +215,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
       if (path) onUse({ hostId: host.hostId, path, name: path.replace(/[\\/]+$/u, '').split(/[\\/]/u).at(-1) || path })
     } catch { setError('Could not open the folder dialog. Nothing was changed. Try again.') }
   }
-  const explorerLabel = mac ? 'Browse with Finder' : 'Browse with File Explorer'
+  const explorerLabel = mac ? 'Browse with Finder' : platform === 'linux' ? 'Browse with file manager' : 'Browse with File Explorer'
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (isCompositionKey(event.nativeEvent)) return

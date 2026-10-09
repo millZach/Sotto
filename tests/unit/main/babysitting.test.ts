@@ -4,7 +4,7 @@ import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } 
 import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
-import { pullRequestKey } from '../../../src/main/agents/gitPullRequests'
+import { pullRequestKey } from '../../../src/shared/gitPullRequests'
 import { scriptedGitHub, type ScriptedPull } from '../../fixtures/babysitGitHub'
 
 /**

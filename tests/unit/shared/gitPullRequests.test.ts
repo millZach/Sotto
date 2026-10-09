@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { gitPullRequestRequestSchema, gitPullRequestResultSchema } from '../../../src/shared/gitPullRequests'
+import { gitPullRequestRequestSchema, gitPullRequestResultSchema, pullRequestAddress, pullRequestKey } from '../../../src/shared/gitPullRequests'
 
 const answer = {
   number: 74, url: 'https://github.com/o/r/pull/74', title: 'Greet the reviewer', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'feat/greeting',
@@ -24,5 +24,20 @@ describe('reading a pull request from a host', () => {
   it('still refuses a field of the wrong kind, and keeps what a client sends strict', () => {
     expect(gitPullRequestResultSchema.safeParse({ ...answer, number: 'seventy-four' }).success).toBe(false)
     expect(gitPullRequestRequestSchema.safeParse({ threadId: 't', extra: true }).success).toBe(false)
+  })
+})
+
+// One key for both sides: the host keys babysitting, links and wake-ups by it, and the window matches them by it.
+describe('a pull request’s key', () => {
+  it('is owner/name#number, lowercased, whatever the case, the space around it or the trailing path', () => {
+    expect(pullRequestKey('https://github.com/O/R/pull/42/files')).toBe('o/r#42')
+    expect(pullRequestKey(' https://github.com/o/r/pull/042?tab=checks\n')).toBe('o/r#42')
+    expect(pullRequestAddress(' https://github.com/Octo/Greeter/pull/74 ')).toEqual({ owner: 'Octo', name: 'Greeter', number: 74 })
+  })
+
+  it('names nothing that is not a GitHub pull request', () => {
+    expect(pullRequestKey('https://gitlab.com/o/r/-/merge_requests/42')).toBeNull()
+    expect(pullRequestKey('https://github.com/o/r/issues/42')).toBeNull()
+    expect(pullRequestAddress('#42')).toBeNull()
   })
 })

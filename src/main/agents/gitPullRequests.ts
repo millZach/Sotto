@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  GITHUB_PULL_REQUEST_URL, parsePullRequestReference,
+  parsePullRequestReference, pullRequestAddress, pullRequestKey,
   type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestMergeMethod, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
 import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
@@ -186,17 +186,6 @@ function reviewsOf(nodes: ReadonlyArray<{ state?: string | null | undefined; url
 const methodOf = (value: string | null | undefined): GitPullRequestMergeMethod | null => {
   const upper = value?.trim().toUpperCase()
   return upper === 'MERGE' ? 'merge' : upper === 'SQUASH' ? 'squash' : upper === 'REBASE' ? 'rebase' : null
-}
-
-/** Where a GitHub pull request URL points: its owner, repository and number. */
-export function pullRequestAddress(url: string): { readonly owner: string; readonly name: string; readonly number: number } | null {
-  const match = GITHUB_PULL_REQUEST_URL.exec(url.trim())
-  return match ? { owner: match[1]!, name: match[2]!, number: Number(match[3]) } : null
-}
-/** The one spelling two URLs of the same pull request share, whatever their case or trailing path. */
-export function pullRequestKey(url: string): string | null {
-  const address = pullRequestAddress(url)
-  return address ? `${address.owner}/${address.name}#${address.number}`.toLowerCase() : null
 }
 
 /** `owner/name` of a GitHub remote URL (HTTPS, `git@github.com:` or `ssh://`), lowercased; null for any other remote. */
