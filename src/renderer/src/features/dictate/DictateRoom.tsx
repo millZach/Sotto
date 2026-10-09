@@ -263,7 +263,9 @@ export function DictateRoom({
             <span className="dictate__hint">
               {platform === 'linux'
                 ? listening
-                  ? 'Release F9, or press Super+Ctrl+X to stop. Sotto copies, then pastes into the focused window on Hyprland.'
+                  ? settings.autoPaste
+                    ? 'Release F9, or press Super+Ctrl+X to stop. Sotto copies, then pastes into the focused window on Hyprland.'
+                    : 'Release F9, or press Super+Ctrl+X to stop. Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.'
                   : 'With Sotto’s compositor bindings: hold F9 to talk, or press Super+Ctrl+X. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.'
                 : <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>}
             </span>

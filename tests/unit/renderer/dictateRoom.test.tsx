@@ -53,6 +53,16 @@ function barHeights(container: HTMLElement): number[] {
 }
 
 describe('DictateRoom', () => {
+  it.each([false, true])('matches the Linux recording hint to Automatic paste=%s', autoPaste => {
+    const { container } = render(<DictateRoom {...baseProps} platform="linux"
+      settings={{ ...baseProps.settings, autoPaste }}
+      dictation={{ status: 'listening', sessionId: 'hint', startedAt: Date.now(), level: 0 }} />)
+    expect(container).toHaveTextContent(autoPaste
+      ? 'Sotto copies, then pastes into the focused window on Hyprland.'
+      : 'Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.')
+    if (!autoPaste) expect(container).not.toHaveTextContent('then pastes')
+  })
+
   it('points at retained text without offering manual paste when the desktop clipboard is unavailable', () => {
     const { container } = render(<DictateRoom {...baseProps} platform="linux"
       dictation={{ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE', message: 'unused' }}
