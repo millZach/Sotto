@@ -1,14 +1,14 @@
 // Locked-screen clipboard proof: mise exec node@24.21.0 -- node scripts/verify-hyprland-paste.mjs
-/* global WebSocket, fetch */
 // Uses the built app's real preload/output path. All key dispatch goes to a recording stub.
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { execFileSync } from 'node:child_process'
-import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createOwnedProofProcesses } from './owned-proof-processes.mjs'
+import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const root = process.cwd()
 const scratch = join(root, '.cache/hyprland-paste-proof')
@@ -28,7 +28,11 @@ const writeClipboard = text => new Promise((resolve, reject) => {
   const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Clipboard deadline')) }, 5000)
   child.once('error', error => { clearTimeout(timeout); reject(error) })
   child.stdin.once('error', error => { clearTimeout(timeout); child.kill('SIGTERM'); reject(error) })
-  child.once('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error('Clipboard write failed')) })
+  child.once('exit', code => {
+    clearTimeout(timeout)
+    if (code === 0) resolve()
+    else reject(new Error('Clipboard write failed'))
+  })
   child.stdin.end(text, 'utf8')
 })
 const locked = execFileSync('/usr/bin/hyprctl', ['locked', '-j'], { env, encoding: 'utf8' }).trim()
@@ -44,8 +48,7 @@ Object.assign(env, {
 await writeFile(env.SOTTO_HYPRCTL_LOG, '')
 const bootLog = await open(join(scratch, 'electron-boot.log'), 'w')
 const child = owned.start('Electron and clipboard children', join(root, 'node_modules/electron/dist/electron'), ['--inspect=9345', root], { env, stdio: ['ignore', bootLog.fd, bootLog.fd] })
-let socket
-let id = 0
+let debuggerClient
 const lines = []
 const report = (name, value) => { const line = `${name}: ${JSON.stringify(value)}`; lines.push(line); console.log(line) }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -55,25 +58,12 @@ try {
   let target
   const deadline = Date.now() + 20000
   while (!target && Date.now() < deadline && !childExited) {
-    try { target = (await (await fetch('http://127.0.0.1:9345/json/list')).json())[0] } catch { await wait(100) }
+    try { target = (await fetchProofJson('http://127.0.0.1:9345/json/list'))[0] } catch { await wait(100) }
   }
   assert.ok(target, 'Main inspector did not start')
-  socket = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }) })
-  const evaluate = expression => new Promise((resolve, reject) => {
-    const mine = ++id
-    const timeout = setTimeout(() => { socket.removeEventListener('message', onMessage); reject(new Error('Inspector deadline')) }, 15000)
-    const onMessage = event => {
-      const message = JSON.parse(event.data)
-      if (message.id !== mine) return
-      clearTimeout(timeout)
-      socket.removeEventListener('message', onMessage)
-      if (message.error || message.result?.exceptionDetails) reject(new Error(message.error?.message ?? message.result?.exceptionDetails?.exception?.description ?? 'Inspector evaluation failed'))
-      else resolve(message.result?.result?.value)
-    }
-    socket.addEventListener('message', onMessage)
-    socket.send(JSON.stringify({ id: mine, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
-  })
+  debuggerClient = await openProofDebugger(target.webSocketDebuggerUrl)
+  const evaluate = debuggerClient.evaluate
+  assert.equal(await evaluate('process.pid'), child.pid, 'Only drive this proof’s Electron inspector')
   const windowExpression = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))"
   let ready = false
   while (!ready && Date.now() < deadline) {
@@ -110,12 +100,15 @@ try {
     report(`stubbed ${target} output result`, result)
     assert.equal(clipboard(), transcript)
   }
-  report('real key dispatch', 'NOT VERIFIED — screen locked; every dispatch used a recording stub')
+  report('live key dispatch', 'NONE — every dispatch used a recording stub')
   await writeFile(join(evidence, 'clipboard-proof.txt'), `${lines.join('\n')}\n`)
 } finally {
-  socket?.close()
+  debuggerClient?.close()
   // Forked wl-copy owners inherit these dedicated groups even after reparenting.
   await owned.stop()
   await bootLog.close()
   await rm(env.XDG_CONFIG_HOME, { recursive: true, force: true })
+  const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
+  console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
+  assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
 }
