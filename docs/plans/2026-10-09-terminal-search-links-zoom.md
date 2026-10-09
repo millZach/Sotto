@@ -33,5 +33,7 @@ The builder and design passes are committed. The finishing pass tracks the suppl
 - [x] Add keyboard activation for URLs and named OSC 8 links through the validated bridge; discard overwritten destinations.
 - [x] Reserve space for search, grow the shortest drawer temporarily, and use the top layer for link choices. Compared three temporary prototypes outside this branch; chose reserved space and a compact picker as a reversible assumption after the clarification prompt.
 - [x] Remeasure after font loading, preserve navigation across ConPTY repaint and soft-wrap reflow, and explain size failures and discarded input. Both finishing review axes' actionable findings are fixed.
-- [x] Run the final gates, real-PTY journeys and visual inspection, then record the current evidence. Full suite: 631 files and 9,280 tests passed; 51 files and 222 tests skipped. Five affected Playwright specs: 8 tests passed.
-- [x] Prepare the verified branch and PR body for the authorized push and pull request. Publishing follows the evidence commit; never merge.
+- [x] Run the final Windows gates, real-PTY journeys and visual inspection, then record the current evidence. After integrating main and fixing the Windows tar invocation, the ordinary full suite passed: 738 files and 9,394 tests passed; 53 files and 266 tests skipped. Five affected Playwright specs: 8 tests passed. All runs retained the two-worker cap.
+- [x] Prepare the branch and PR body with the current gate results, review dispositions and 36 visually inspected captures.
+- [ ] Verify the portable Linux archive helper on Forge. Tailscale SSH requires an additional authentication check; requests timed out while waiting. The temporary Node harness is prepared outside the repository, and no remote file was written.
+- [ ] Push the latest local revision to the existing PR #888 after the required Forge check. The remote head remains `606b5cfb1`; the PR stays open and unmerged.

@@ -122,3 +122,32 @@ The initial PR reported three conflicts with main's later test/evidence cleanup:
 The full-suite and native-app results above cover the final application code, before this test relocation. The relocated IPC case, test discovery and tracked-file encoding checks passed afterward: `npx vitest run tests/integration/terminalPreferencesIpc.test.ts tests/unit/release/testDiscovery.test.ts tests/unit/release/trackedFileEncoding.test.ts --maxWorkers=2`, exit 0, 3 files and 4 tests passed. Typecheck, lint and notices were repeated for the final revision. The full suite was not repeated for an unchanged application and assertion.
 
 Main then advanced again with #886's shared test fixtures. This changed the same terminal mocks and IPC fixture, so `cc732e398c95989497c0cb54787009ca467bf4b5` was integrated into the feature branch. Upstream factories and every terminal acceptance assertion were preserved; the shared terminal bridge gained the new `pasteImage` method. The new interaction spec now uses the upstream evidence helper, with publication explicitly enabled when refreshing the 36 cited images. The six affected IPC/terminal test files passed after reconciliation: 57 tests, exit 0, two workers. The required gates are repeated for this integrated revision; the earlier full-suite result above remains historical. PR #888 stays open and unmerged.
+
+### Windows archive tool correction
+
+The first integrated full-suite run exited 1: 737 files and 9,391 tests passed; one file and three tests failed; 53 files and 266 tests were skipped (791 files and 9,660 tests total), in 1,468.32 seconds. All three failures were `tests/unit/release/linuxTarball.test.mjs`, before archive verification could run. Git's `C:\Program Files\Git\usr\bin\tar.exe` was first on PATH; its GNU tar interprets an absolute Windows archive path's `C:` as a remote host and reports `Cannot connect to C: resolve failed`.
+
+A tiny archive reproduced exit 128 with the absolute path and exit 0 with a relative path. The original release test reproduced all three failures in 8.53 seconds. Windows's native `C:\Windows\System32\tar.exe` (bsdtar 3.8.8) accepted the absolute path, and the same unmodified release tests passed: three passed, seven skipped, exit 0, 0.733 seconds. A native-tool full rerun was stopped so the fix could support the ordinary command with either tar on PATH.
+
+Fixture packing and Linux distributable extraction now pass a relative archive name from its containing folder. Fixing packing alone reproduced the same drive-letter failure at extraction, confirming both call sites. The existing archive and platform tests passed after both fixes: two files, 11 tests passed, seven skipped, exit 0; 0.642 seconds with Git's GNU tar and 0.501 seconds with Windows's native BSD tar. Content and permission assertions remain intact. The required gates are repeated with the normal PATH; the user's PATH is unchanged. Forge verification is awaiting its Tailscale SSH authentication check.
+
+## Final Windows gates on the integrated branch
+
+These results cover `ba1257b09`, including main through `cc732e398c95989497c0cb54787009ca467bf4b5` and the portable archive invocation. The ordinary full-suite command used Git's GNU tar from the normal PATH, without an environment adjustment.
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` | Pass, exit 0; all three TypeScript projects checked |
+| `npm run lint` | Pass, exit 0; no lint errors |
+| `npm test -- --maxWorkers=2` | Pass, exit 0; 738 files passed, 53 skipped; 9,394 tests passed, 266 skipped (791 files and 9,660 tests total); 1,328.01 seconds |
+| `npm run notices:verify` | Pass, exit 0; 177 components verified |
+| `npm run build` | Pass, exit 0 |
+| Playwright with the five specs named above | Pass, exit 0; 8 tests passed, 0 failed, 0 skipped, one worker (1.5 minutes) |
+
+The final Playwright run refreshed all 36 cited images; all six paired contact sheets were inspected afterward. Search and link choices fit the required sizes in both appearances with reduced motion. Existing `review-384` and `terminal-display` baselines were restored. The delivery check verified the 36 cited files, UTF-8 without BOM in all 57 changed text files, and a clean whitespace diff. The final evidence commit changes documentation and cited captures only.
+
+### Remaining access requirement
+
+The Linux archive helper still needs its Forge check under ADR-0062. SSH reported `Tailscale SSH requires an additional check` and timed out; the prepared Node harness never executed remotely. It will check complete contents, missing resources, changed executable contents, relative paths and seven permission changes against the committed scripts. No file was copied to Forge. Browser authentication was not attempted: the computer-use skill's mandatory guidance forbids automating user authentication dialogs.
+
+The listed Windows gates are green. The latest local revision and prepared PR body are held for this required Linux verification. PR #888 remains open and unmerged; its remote head is still `606b5cfb1` until the final push.
