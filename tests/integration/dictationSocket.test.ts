@@ -222,7 +222,7 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     mkdirSync(target)
     symlinkSync(target, join(runtime, 'sotto'))
     await expect(service().start()).rejects.toThrow()
-    rmSync(join(runtime, 'sotto'))
+    unlinkSync(join(runtime, 'sotto'))
     mkdirSync(join(runtime, 'sotto'))
     writeFileSync(dictationSocketPath(runtime), 'keep')
     await expect(service().start()).rejects.toThrow()
