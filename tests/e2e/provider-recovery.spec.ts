@@ -19,7 +19,7 @@ async function seed(): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-recovery-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, speak: false, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
+    configuration: { ...defaultAgentConfiguration(), provider: 't3', enabled: true, endpoint: 'http://synthetic-previous-provider.invalid', defaultModelId: 'old-model' },
     assignments: [{ threadId: 'previous-thread', mode: 'managed', instruction: 'Synthetic previous assignment', followups: 1,
       paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: Date.now() }],
     queue: [{ id: 'previous-question', threadId: 'previous-thread', kind: 'question', requestId: 'previous-request',

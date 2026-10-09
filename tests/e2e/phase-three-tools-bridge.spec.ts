@@ -13,7 +13,7 @@ async function addThreads(page: Page, paths: string[]): Promise<string[]> {
   return page.evaluate(async paths => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     await agents.command({ type: 'connect' })
     const ids: string[] = []
     for (const [index, path] of paths.entries()) {

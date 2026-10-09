@@ -128,7 +128,7 @@ type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
 function designAgentsState(): Record<string, unknown> {
   return {
     configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
-      followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
+      followupLimit: 5,
       reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
     assignments: [],
     queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,

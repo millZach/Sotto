@@ -11,7 +11,7 @@ function stateFor(fields: Record<string, unknown> = {}) {
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: '', status: 'idle', messages: [], requests: [], ...fields }] },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
+
     credentials: { reasoning: false, secure: true },
   })
 }

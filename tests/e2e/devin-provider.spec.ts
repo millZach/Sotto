@@ -160,7 +160,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     expect((await state()).providerMode).toBe('bypass')
     const restored = JSON.parse(await readFile(join(profile, 'devin-threads.json'), 'utf8')) as Record<string, { devinSessionId: string }>
     expect(Object.values(restored).some(alias => alias.devinSessionId === nativeId)).toBe(true)
-    expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
+    expect(await page.evaluate(async () => window.sotto!.getSettings())).not.toHaveProperty('voiceCoordinatorEnabled')
     expect(await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
     await writeFile('artifacts/devin-local-provider/contrast.json', JSON.stringify(contrasts, null, 2))
   } finally {

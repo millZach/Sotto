@@ -19,7 +19,7 @@ test('opening a remote thread keeps a disabled voice coordinator dormant', async
     build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
       rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
-    localHostEnabled: true, voiceCoordinatorEnabled: false, reducedMotion: 'on' }))
+    localHostEnabled: true, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')
   const keys = ['SOTTO_E2E_SSH_SCRIPT', 'SOTTO_E2E_SSH_EXECUTABLE', 'FAKE_SSH_MODE_FILE', 'FAKE_SSH_ROOT', 'FAKE_SSH_RECORD']
@@ -33,7 +33,7 @@ test('opening a remote thread keeps a disabled voice coordinator dormant', async
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     const localThread = await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, wakeModelDirectory: 'C:/local/wake', wakeRuntimeDirectory: 'C:/local/runtime' } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       const state = await window.sotto!.agents!.get()
       return state.host.threads.find(thread => thread.title === 'Workshop')!.id

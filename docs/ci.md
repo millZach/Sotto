@@ -15,8 +15,8 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 
 | Step | Command | Why it exists |
 | --- | --- | --- |
-| Install dependencies | `npm ci` | Exact `package-lock.json` install, including the native modules (node-pty, sharp, sherpa-onnx). The npm cache is keyed on the lockfile by `actions/setup-node`. |
-| Prepare runtime assets | `npm run runtime:prepare` | Copies the hash-locked ONNX WASM files out of `node_modules/onnxruntime-web` into `resources/runtime`, which the checkout does not carry. No network access, about a second. |
+| Install dependencies | `npm ci` | Exact `package-lock.json` install, including the native modules (node-pty and sharp). The npm cache is keyed on the lockfile by `actions/setup-node`. |
+| Verify release assets | `npm run assets:verify` | Checks the installed Claude SDK history helper and terminal files used by desktop packaging. No network access. |
 | Typecheck | `npm run typecheck` | `tsc --noEmit` over the node, web and renderer-test projects. |
 | Lint | `npm run lint` | `eslint .`. |
 | Unit and integration tests | `npm test -- --maxWorkers=2` | `vitest run` — test files under `tests/` only, excluding `tests/e2e/`. Ignored cache and backup suites outside `tests/` are never collected. The worker cap keeps the jsdom and child-process heavy files inside a small runner's memory; unpinned parallelism has produced "Worker exited unexpectedly" crashes on a loaded machine. Main-process and integration files run under node rather than jsdom, declared by a `@vitest-environment node` header on each file; a file in those folders that needs a DOM says `jsdom` instead. |
@@ -280,7 +280,7 @@ is still releasing a just-exited child's handles.
    - *Lint* — eslint prints file, line and rule name.
    - *Unit and integration tests* — vitest prints the failing test file and name, then the diff. The summary line at the end counts passed/failed/skipped; skipped perf and live tests are expected.
    - *Third-party notices* — the verifier names the component that drifted; regenerate or update `THIRD_PARTY_NOTICES.md` to match the lockfile.
-3. Reproduce locally with the exact command from the table. The gates are the same ones in the guide's test matrix (`docs/guide.md`, under Development), so a clean local run means a clean CI run, with two exceptions worth checking first when CI fails and your machine passes: stale `node_modules` (run `npm ci`, not `npm install`) and a missing `resources/runtime` (run `npm run runtime:prepare`).
+3. Reproduce locally with the exact command from the table. The gates are the same ones in the guide's test matrix (`docs/guide.md`, under Development), so a clean local run means a clean CI run, with one common difference worth checking first when CI fails and your machine passes: stale `node_modules` (run `npm ci`, not `npm install`).
 4. Push a fix to the same branch. The previous run is cancelled automatically and a new one starts.
 
 ## Expected duration

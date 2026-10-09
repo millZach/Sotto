@@ -37,7 +37,7 @@ test('native terminal preserves truecolor, contiguous block glyphs and redraws a
   try {
     const folder = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
       const thread = state.host.threads.find(item => item.id === 'workshop' || item.id.endsWith(':workshop'))!
       return state.host.projects.find(project => project.id === thread.projectId)!.path

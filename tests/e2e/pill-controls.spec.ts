@@ -7,7 +7,7 @@ test('the idle pill starts dictation and keeps its controls inside the capsule',
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, theme: 'dark', reducedMotion: 'on', showWidgetWhenIdle: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

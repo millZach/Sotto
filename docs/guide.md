@@ -547,7 +547,7 @@ The README's [Privacy and cost](../README.md#privacy-and-cost) section names eve
 
 Dictation audio is uploaded to OpenRouter and transcribed by Microsoft MAI-Transcribe-2 only while you dictate. Your personal dictionary words travel with each request as spelling hints, and the text comes back. Nothing is transcribed on this computer, so Sotto needs your OpenRouter key and a network connection to dictate; when either is missing, Sotto says so instead of transcribing elsewhere. OpenRouter charges your balance at the model's published audio rate (about $0.10 per hour of audio at the time of writing). Read [OpenRouter's privacy policy](https://openrouter.ai/privacy) for what it and its providers retain.
 
-Optional AI cleanup is off by default. When you enable it, the finished transcript (never audio) is sent to OpenRouter with the same key for punctuation and self-correction cleanup. If the network is slow or offline, Sotto delivers the raw transcript instead. Optional agent control also sends the prompts you submit to the connected harness and, when configured, sends assignment text and relevant thread context to your selected reasoning provider: `openrouter.ai` for an OpenRouter account, `api.openai.com` for an OpenAI one. Agent replies default to Grok Altair, which sends reply text to xAI using a separately saved xAI API key. Kokoro Heart is a lower-cost choice that sends reply text through OpenRouter using the existing OpenRouter key. Voice previews incur the same provider usage charges; neither option silently falls back to another provider. The optional natural voice is generated on this computer after a one-time voice download. Provider usage is billed separately from Sotto access. Credentials are encrypted using the operating system credential store and are not returned to the UI.
+Optional AI cleanup is off by default. When you enable it, the finished transcript (never audio) is sent to OpenRouter with the same key for punctuation and self-correction cleanup. If the network is slow or offline, Sotto delivers the raw transcript instead. Optional agent control also sends the prompts you submit to the connected harness and, when configured, sends assignment text and relevant thread context to your selected reasoning provider: `openrouter.ai` for an OpenRouter account, `api.openai.com` for an OpenAI one. Provider usage is billed separately from Sotto access. Credentials are encrypted using the operating system credential store and are not returned to the UI.
 
 Sotto has no analytics or crash upload. Dictation audio is never persisted; after a failed transcription it stays in memory until you try again, discard it, start another dictation or close Sotto. Transcript history is local, optional, bounded, searchable, and clearable. Two small diagnostic files in Sotto's data folder help explain a lost dictation: `polish-diagnostics.jsonl` records word counts around AI cleanup, and `transcription-diagnostics.jsonl` records why a transcription request failed (reason, HTTP status, attempts, clip length and time taken, and for a rate limit whether OpenRouter's provider or OpenRouter itself set it) and which rate-limited requests went through on a retry. They hold no words, audio or keys, each starts over past 256 KB with one older copy kept, and neither leaves this computer.
 
@@ -573,9 +573,9 @@ With phone access on, your threads, and the replies, photos and answers you send
 
 A host's phone access works the same way on the host's machine: the host runs `tailscale` there, its tailnet listener binds that machine's loopback address, and your threads on that host travel to your paired phones over your tailnet. The same Tailscale Serve setting carries this computer's tailnet connection to the host, which Add host turns on with your consent. It has no administrative routes either. This computer changes it through the host's administrative routes on the port SSH forwards. The launch hands back the host's administrative token over SSH, and this computer keeps it in memory for that connection only, never on disk or in a log.
 
-### Themes and the natural voice
+### Themes
 
-Searching for or installing a theme from Open VSX contacts `open-vsx.org`, and its downloads come from `openvsxorg.blob.core.windows.net` or `openvsx.eclipsecontent.org`. Importing a T3 Code or VS Code theme file reads only that file. The natural voice (Supertonic, an ONNX model) is downloaded once from `huggingface.co` and its download servers, checked against a locked list of files and hashes, and then runs on this computer.
+Searching for or installing a theme from Open VSX contacts `open-vsx.org`, and its downloads come from `openvsxorg.blob.core.windows.net` or `openvsx.eclipsecontent.org`. Importing a T3 Code or VS Code theme file reads only that file.
 
 ### Devin
 
@@ -585,18 +585,11 @@ Devin CLI uses your native Devin account and its separate billing, data policies
 
 ```powershell
 npm ci
-npm run runtime:verify
+npm run assets:verify
 npm run dev
 ```
 
-The ONNX WASM runtime that powers the optional natural voice is represented by a hash-locked manifest. If a clean source checkout does not contain its large files, prepare them once with network access:
-
-```powershell
-npm run runtime:prepare
-npm run runtime:verify
-```
-
-Transcription itself needs no local assets: run the app, paste an OpenRouter key in Settings, and dictate.
+Release asset verification checks the Claude SDK history helper and terminal files installed by `npm ci`. Transcription needs no local assets: run the app, paste an OpenRouter key in Settings, and dictate.
 
 The same commands run in Terminal on macOS.
 
@@ -607,10 +600,10 @@ npm run lint
 npm run typecheck
 npm test
 npm run test:e2e
-npm run runtime:verify
+npm run assets:verify
 ```
 
-Unit and integration tests cover settings recovery, history privacy, audio math and lifecycle, the OpenRouter transcription request and its failure reasons, runtime integrity, IPC validation, hotkeys, clipboard-before-paste output, startup, tray, window security, transcription orchestration, and widget synchronization. Electron end-to-end tests use an admitted non-packaged boundary with deterministic in-memory microphone, shortcut, clipboard, paste, startup, tray, and transcription adapters. They cover onboarding, registered-hotkey dictation, in-app paste, history on/off, theme and settings reload, hotkey conflict, microphone denial recovery, silence, paste fallback, hide-to-tray, single-instance behavior, and transcription failure. Widget visual tests verify ten 420x92 light/dark state images and transparent corners.
+Unit and integration tests cover settings recovery, history privacy, audio math and lifecycle, the OpenRouter transcription request and its failure reasons, release asset integrity, IPC validation, hotkeys, clipboard-before-paste output, startup, tray, window security, transcription orchestration, and widget synchronization. Electron end-to-end tests use an admitted non-packaged boundary with deterministic in-memory microphone, shortcut, clipboard, paste, startup, tray, and transcription adapters. They cover onboarding, registered-hotkey dictation, in-app paste, history on/off, theme and settings reload, hotkey conflict, microphone denial recovery, silence, paste fallback, hide-to-tray, single-instance behavior, and transcription failure. Widget visual tests verify ten 420x92 light/dark state images and transparent corners.
 
 The deterministic boundary is rejected in packaged builds and accepts calls only from the trusted main renderer. It never logs transcript text or PCM.
 
@@ -630,7 +623,7 @@ Artifacts are written to:
 
 Brand assets (`build/icon.png`, `build/icon.ico`, `build/installer-sidebar.bmp`) are generated from the SVG masters in `build/` with `node scripts/generate-brand-assets.mjs`.
 
-The packaged `resources` directory contains `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source runtime before packaging and verifies the packaged runtime, notices, bridge and worklet afterward.
+The packaged `resources` directory contains the Claude SDK history helper, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source release assets before packaging and verifies the packaged SDK, terminal, notices, bridge and worklet afterward.
 
 ### macOS packages
 
@@ -644,7 +637,7 @@ Artifacts are written to:
 - `release/mac-arm64/Sotto.app` — unpacked arm64 application bundle
 - `release/Sotto-<version>-arm64.dmg` — arm64 disk image with an Applications shortcut
 
-Both commands verify the source runtime before packaging and the packaged runtime, notices, bridge and worklet afterward, exactly like the Windows commands. After `npm install`, a fresh clone must run `npm run runtime:prepare` once to copy the runtime files from the installed ONNX Runtime package; this preparation step needs no network access.
+Both commands verify the source release assets before packaging and the packaged SDK, terminal, notices, bridge and worklet afterward, exactly like the Windows commands.
 
 The macOS icon is derived automatically from `build/icon.png` at packaging time; no `.icns` file is committed. The menu-bar template images (`resources/tray/sottoTemplate.png` and its `@2x` companion) come from the same `node scripts/generate-brand-assets.mjs` run as the Windows brand assets.
 

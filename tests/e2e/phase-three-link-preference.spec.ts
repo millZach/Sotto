@@ -19,7 +19,7 @@ async function recordExternalLinks(app: ElectronApplication): Promise<void> {
 
 async function openThreadWithLink(page: Page, url: string): Promise<void> {
   await page.evaluate(async target => {
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
     await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'workshop', text: `[Preference preview](${target})` })
   }, url)

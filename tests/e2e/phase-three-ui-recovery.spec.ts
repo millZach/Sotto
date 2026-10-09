@@ -55,7 +55,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   const { page } = launched
   const folder = await page.evaluate(async () => {
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     const state = await agents.command({ type: 'connect' })
     const thread = state.host.threads.find(item => item.id.replace(/^host:[0-9a-f-]+:/iu, '') === 'workshop')!
     return state.host.projects.find(project => project.id === thread.projectId)!.path

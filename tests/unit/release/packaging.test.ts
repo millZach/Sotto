@@ -5,8 +5,6 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
-import { isPackagingExcluded } from '../../../scripts/release-provenance.mjs'
-
 const root = process.cwd()
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
 
@@ -69,10 +67,10 @@ const releaseContracts = [
 describe.each(releaseContracts)(
   '$platform release contract',
   ({ scripts, distributableScript, outDir, installer }) => {
-    it('verifies the runtime, builds, records provenance, and verifies the packaged output', () => {
+    it('verifies release assets, builds, records provenance, and verifies the packaged output', () => {
       for (const script of scripts) {
         const command = packageManifest.scripts[script]
-        expect(command).toMatch(/^npm run runtime:verify && npm run build && /)
+        expect(command).toMatch(/^npm run assets:verify && npm run build && /)
         expect(command).toContain('node scripts/write-build-provenance.mjs')
         expect(command).toContain(`node scripts/verify-packaged-resources.mjs ${outDir}`)
       }
@@ -97,10 +95,10 @@ describe('release contract', () => {
 
   it('packages only runtime-external dependencies and verifies source and packaged resources', () => {
     expect(packageManifest.dependencies).toEqual({ 'node-pty': '1.1.0', zod: '4.4.3' })
-    expect(builderConfig.extraResources).toContainEqual({ from: 'resources/runtime', to: 'runtime' })
+    expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/runtime')).toBe(false)
     expect(builderConfig.extraResources.some((resource) => resource.from === 'resources/models')).toBe(false)
     expect(packageManifest.devDependencies['@electron/asar']).toBe('3.4.1')
-    for (const bundled of ['@huggingface/transformers', '@xterm/addon-webgl', 'lucide-react', 'react', 'react-dom']) {
+    for (const bundled of ['@xterm/addon-webgl', 'lucide-react', 'react', 'react-dom']) {
       expect(packageManifest.devDependencies[bundled]).toBeTypeOf('string')
     }
     expect(packageManifest.devDependencies['yaml']).toBeTypeOf('string')
@@ -122,20 +120,13 @@ describe('release contract', () => {
     expect(verifier).not.toContain('.matchAll(')
   })
 
-  it('ships the ONNX runtime only under resources/runtime and rejects a copy inside the archive', () => {
-    // The renderer build emits the WASM because onnxruntime-web refers to it; the speech
-    // worker reads it solely through sotto-runtime://, so the archived copy is never read.
-    expect(builderConfig.files).toContain('!out/renderer/**/ort-wasm-simd-threaded*')
-    expect(read('scripts/verify-packaged-resources.mjs')).toContain(
-      "fail('ONNX runtime must ship only under resources/runtime, not inside app.asar')",
-    )
-    // Provenance still records the emitted file but expects it absent from the archive, wherever
-    // under renderer the build puts it, and nothing else.
-    for (const path of ['renderer/assets/ort-wasm-simd-threaded.asyncify-DMmc6YqF.wasm', 'renderer/ort-wasm-simd-threaded.wasm']) {
-      expect(isPackagingExcluded(path)).toBe(true)
-    }
-    for (const path of ['main/index.js', 'renderer/assets/main-abc.js', 'renderer/assets/ort-wasm-simd-threaded/nested.txt', 'preload/index.js']) {
-      expect(isPackagingExcluded(path)).toBe(false)
+  it('refuses retired voice assets in the package', () => {
+    expect(builderConfig.files).not.toContain('!out/renderer/**/ort-wasm-simd-threaded*')
+    const verifier = read('scripts/verify-packaged-resources.mjs')
+    expect(verifier).toContain("fail('retired voice runtime must not be bundled')")
+    expect(verifier).toContain("fail('retired voice assets must not be bundled')")
+    for (const dependency of ['@huggingface/transformers', 'sherpa-onnx']) {
+      expect(packageManifest.devDependencies[dependency]).toBeUndefined()
     }
   })
 
@@ -265,6 +256,6 @@ describe('Windows installer contract', () => {
     const readme = read('README.md')
     expect(readme).toContain('At least 1 GB of free space during installation')
     expect(readme).toContain('The desktop shortcut is optional and unchecked by default')
-    expect(readme).toContain('automatically verifies the source runtime before packaging')
+    expect(readme).toContain('automatically verifies the source release assets before packaging')
   })
 })

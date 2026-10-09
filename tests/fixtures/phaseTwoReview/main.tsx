@@ -119,8 +119,8 @@ function state(scenario: Scenario): AgentState {
     assignments: [], queue: [], activeThreadId: THREAD, activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],
     pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+
+    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }
 

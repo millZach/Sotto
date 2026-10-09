@@ -199,7 +199,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       }
       view.rerender(page(false))
       // Unrelated state can echo the in-memory draft while the page is absent.
-      await act(async () => { await controls.command({ type: 'voice-state', status: 'off', error: null }) })
+      await act(async () => { await controls.command({ type: 'observe-threads', threadIds: ['workshop'] }) })
       view.rerender(page(true))
       expect(controls.threadDrafts).toBe(store)
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep this unsaved draft')

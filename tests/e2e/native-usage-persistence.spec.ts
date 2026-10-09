@@ -65,7 +65,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1280, 800))
     await page.evaluate(async () => {
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabledProviders: ['claude'], enabled: true, speak: false, reasoning: 'none', followupLimit: 0,
+        provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none', followupLimit: 0,
       } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })

@@ -8,8 +8,8 @@ function threadsStateFixture(): AgentState {
     host: { ...EMPTY_AGENT_HOST, threads: [{ id: 'visual-gate', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
     composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],  }
+
+    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],  }
 }
 
 const HOST = '11111111-1111-4111-8111-111111111111'

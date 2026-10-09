@@ -122,10 +122,9 @@ describe('coordinator turn records', () => {
     } finally { pendingIntent.resolve(); await reasoning }
   })
 
-  it('timestamps the first confirmed-message publication before a delayed command completes', async () => {
+  it('records total time through a delayed manual-send acknowledgement', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    await f.control.command({ type: 'compose', text: 'A prompt whose acknowledgement is delayed.' })
+    await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     let now = 100_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     const acknowledged = gate(); const release = gate()
@@ -135,9 +134,7 @@ describe('coordinator turn records', () => {
       if (command.type === 'send') { acknowledged.resolve(); await release.promise }
       return result
     })
-    const sending = f.control.command({ type: 'utterance', text: 'send it', voiceTiming: {
-      speechEndedAt: new Date(99_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
-    } })
+    const sending = f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'A prompt whose acknowledgement is delayed.' })
     try {
       await acknowledged.promise
       expect(f.control.get().host.threads.find(thread => thread.id === 'workshop')?.messages.some(message => message.role === 'user')).toBe(true)
@@ -145,47 +142,16 @@ describe('coordinator turn records', () => {
     } finally { release.resolve() }
     await sending
     const [record] = await f.recorder.recent(1)
-    expect(record?.timings.speechToFirstFeedbackMs).toBe(1_000)
     expect(record?.timings.totalMs).toBe(5_000)
   })
 
   it('does not record a resolved intent when reasoning fails', async () => {
     const f = await fixture(); await f.account()
     f.service.offline = true
-    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
-      speechEndedAt: new Date(Date.now() - 800).toISOString(), phase: 'warm', basis: 'detector-frame-received',
-    } })
+    await f.control.command({ type: 'utterance', text: 'Choose a project' })
     const [record] = await f.recorder.recent(1)
     expect(record?.outcome).toBe('failed')
     expect(record?.timings.intentMs).toBeGreaterThanOrEqual(0)
-    expect(record?.timings.speechToIntentMs).toBeNull()
-  })
-
-  it('propagates voice timing and records useful state publication without inventing acoustic timing', async () => {
-    const f = await fixture()
-    await f.account()
-    const speechEndedAt = new Date(Date.now() - 800).toISOString()
-    await f.control.command({ type: 'utterance', text: 'Choose a project', voiceTiming: {
-      speechEndedAt, phase: 'cold', basis: 'detector-frame-received',
-    } })
-    const [record] = await f.recorder.recent(1)
-    expect(record?.timings).toMatchObject({ speechEndedAt, voicePhase: 'cold', speechEndBasis: 'detector-frame-received', feedbackBasis: 'main-state-published' })
-    expect(record?.timings.speechToIntentMs).toBeGreaterThanOrEqual(800)
-    expect(record?.timings.speechToFirstFeedbackMs).toBeGreaterThanOrEqual(record!.timings.speechToIntentMs!)
-    expect(record?.timings.retrievalCount).toBe(0)
-  })
-
-  it('keeps unavailable and invalid milestone durations null', async () => {
-    const f = await fixture()
-    const turn = f.recorder.begin({ source: 'utterance', commandType: 'utterance', text: '', voiceTiming: {
-      speechEndedAt: new Date(Date.now() + 60_000).toISOString(), phase: 'warm', basis: 'detector-frame-received',
-    } })!
-    turn.intentResolvedAtMs = Date.now()
-    turn.firstFeedbackAtMs = Date.now()
-    await f.recorder.finish(turn, 'completed')
-    const [record] = await f.recorder.recent(1)
-    expect(record!.timings.speechToIntentMs).toBeNull()
-    expect(record!.timings.speechToFirstFeedbackMs).toBeNull()
   })
 
   it('writes a completed utterance turn with Sotto thread ID and provider session ID', async () => {
@@ -491,12 +457,23 @@ describe('coordinator turn records', () => {
     expect(await lastRawRecord(f.root)).toMatchObject({ contextTokenEstimate: Math.ceil(('send it' + draft).length / 4) })
   })
 
-  it('leaves speech latencies null when the pipeline has no speech-end timestamp', async () => {
+  it('reads historical voice timings without adding them to new command records', async () => {
     const f = await fixture()
-    await f.control.command({ type: 'utterance', text: 'select Docs' })
-    expect((await lastRawRecord(f.root)).timings).toMatchObject({
-      speechEndedAt: null, speechToIntentMs: null, speechToFirstFeedbackMs: null,
-    })
+    await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    const current = await lastRawRecord(f.root)
+    for (const key of ['speechEndedAt', 'voicePhase', 'speechEndBasis', 'feedbackBasis', 'speechToIntentMs', 'speechToFirstFeedbackMs']) {
+      expect(current.timings).not.toHaveProperty(key)
+    }
+    const historical = ['utterance', 'supervision'].map(source => ({ ...current, source,
+      timings: { ...current.timings, speechEndedAt: current.startedAt, voicePhase: 'warm',
+        speechEndBasis: 'detector-frame-received', feedbackBasis: 'main-state-published',
+        speechToIntentMs: 10, speechToFirstFeedbackMs: 20 }, transcript: 'Private historical words' }))
+    await writeFile(f.recorder.path(), [...historical, current].map(record => JSON.stringify(record)).join('\n') + '\n', 'utf8')
+    const reader = new TurnRecorder({ directory: f.root, resolveSession: () => undefined })
+    const records = await reader.recent(3)
+    expect(records.map(record => record.source)).toEqual(['command', 'supervision', 'utterance'])
+    expect(records[1]?.timings).toMatchObject({ voicePhase: 'warm', speechToIntentMs: 10, speechToFirstFeedbackMs: 20 })
+    expect(await readFile(reader.path(), 'utf8')).not.toContain('Private historical words')
   })
 
   it.each([false, true])('records managed follow-ups, including failed sends (reject: %s)', async reject => {
@@ -647,8 +624,7 @@ describe('coordinator turn records', () => {
   })
 
   describe('send stages', () => {
-    const TIMING_FIELDS = ['speechEndedAt', 'voicePhase', 'speechEndBasis', 'feedbackBasis', 'retrievalCount',
-      'speechToIntentMs', 'speechToFirstFeedbackMs', 'intentMs', 'retrievalMs', 'delegationMs', 'totalMs']
+    const TIMING_FIELDS = ['retrievalCount', 'intentMs', 'retrievalMs', 'delegationMs', 'totalMs']
     const PROMPT = 'Synthetic prompt for stage timings'
     const REPLY = 'Synthetic first words'
     /** A host whose layers mark their steps as the workspace and the adapters do, and whose client confirms the prompt. */

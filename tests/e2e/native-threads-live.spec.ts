@@ -44,7 +44,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
     const configure = async (target: Page, chosen: ProviderId) => target.evaluate(async provider => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const result = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider, enabled: true, enabledProviders: [provider], speak: false, reasoning: 'none', followupLimit: 0,
+        provider, enabled: true, enabledProviders: [provider], reasoning: 'none', followupLimit: 0,
       } })
       if (result.error) throw new Error(result.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider })

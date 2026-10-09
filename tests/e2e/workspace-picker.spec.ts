@@ -27,7 +27,7 @@ test('keeps workspace choices and project actions reachable with many worktrees 
   const current = { id: 'draft', projectId: 'project', title: 'New thread', modelId: '', status: 'idle', messages: [], requests: [], nativeSessionStarted: false,
     worktree: { mode: 'shared', status: 'ready', path: repository, repositoryRoot: repository, branch: 'main', git: { isRepository: true, branch: 'main', upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-28T00:00:00Z' } } }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, activeProjectId: 'project', activeThreadId: 'draft' }))
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, }, activeProjectId: 'project', activeThreadId: 'draft' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot: { ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title, path: repository }], threads: [current, ...threads] }, creations: [{ threadId: 'draft', projectId: 'project', commandId: 'fixture-draft', phase: 'unstarted' }], projectAliases: [] }))
   const launched = await launchSotto('success', profile)
   try {

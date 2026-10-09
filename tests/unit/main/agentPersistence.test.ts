@@ -81,12 +81,12 @@ describe('coordinator persistence', () => {
     await settle(writes)
     const file = join(f.root, 'agents.json')
     const beforeConfigure = writes.count()
-    await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
+    await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Projects' } })
     expect(writes.count()).toBe(beforeConfigure + 1)
     await vi.waitFor(async () => {
-      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('amber')
+      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { projectsDirectory: string } }).configuration.projectsDirectory).toBe('D:/Projects')
     })
-    await f.control.command({ type: 'configure', patch: { orbColor: 'amber' } })
+    await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Projects' } })
     await settle(writes)
     expect(writes.count()).toBe(beforeConfigure + 1)
   })
@@ -104,22 +104,22 @@ describe('coordinator persistence', () => {
       }
       return real.call(this, value as never)
     })
-    const failed = await f.control.command({ type: 'configure', patch: { orbColor: 'violet' } })
+    const failed = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
     expect(failed.error).toBe('Could not save agent state. Pause management until storage is available.')
     const beforeRetry = writes.count()
-    const retried = await f.control.command({ type: 'configure', patch: { orbColor: 'violet' } })
+    const retried = await f.control.command({ type: 'configure', patch: { projectsDirectory: 'D:/Other Projects' } })
     expect(retried.error).toBeNull()
     expect(writes.count()).toBe(beforeRetry + 1)
     const file = join(f.root, 'agents.json')
     await vi.waitFor(async () => {
-      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { orbColor: string } }).configuration.orbColor).toBe('violet')
+      expect((JSON.parse(await readFile(file, 'utf8')) as { configuration: { projectsDirectory: string } }).configuration.projectsDirectory).toBe('D:/Other Projects')
     })
   })
   it('keeps the newest save when it returns to the last completed state', async () => {
     const f = await fixture()
     const writes = agentsWriteSpy()
     await settle(writes)
-    const initial = f.control.get().configuration.speak
+    const initial = f.control.get().configuration.checkClientUpdates
     let started!: () => void
     const writing = new Promise<void>(resolve => { started = resolve })
     let release!: () => void
@@ -136,10 +136,10 @@ describe('coordinator persistence', () => {
       }
       return realImmediate.call(this, value)
     })
-    const older = f.control.command({ type: 'configure', patch: { speak: !initial } })
+    const older = f.control.command({ type: 'configure', patch: { checkClientUpdates: !initial } })
     await writing
     let newerFinished = false
-    const newerCommand = f.control.command({ type: 'configure', patch: { speak: initial } })
+    const newerCommand = f.control.command({ type: 'configure', patch: { checkClientUpdates: initial } })
       .then(result => { newerFinished = true; return result })
     await new Promise(resolve => setImmediate(resolve))
     const finishedBeforeWrite = newerFinished
@@ -148,7 +148,7 @@ describe('coordinator persistence', () => {
     await settle(writes)
     expect(finishedBeforeWrite).toBe(false)
     expect(newer.error).toBeNull()
-    expect(f.control.get().configuration.speak).toBe(initial)
-    expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { speak: boolean } }).configuration.speak).toBe(initial)
+    expect(f.control.get().configuration.checkClientUpdates).toBe(initial)
+    expect((JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { configuration: { checkClientUpdates: boolean } }).configuration.checkClientUpdates).toBe(initial)
   })
 })

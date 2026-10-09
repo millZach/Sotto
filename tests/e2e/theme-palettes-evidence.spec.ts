@@ -29,7 +29,7 @@ async function withProfile(
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   if (threads) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
+      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
       assignments: [],
       queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')

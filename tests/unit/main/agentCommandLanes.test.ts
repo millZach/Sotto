@@ -203,7 +203,7 @@ describe('thread-scoped command lanes', () => {
     const held = f.control.command(options('workshop', 'full-access'))
     await vi.waitFor(() => expect(f.host.holding).toBe(1))
     // And a global command runs while a thread lane is blocked.
-    expect((await f.control.command({ type: 'configure', patch: { orbColor: 'ice' } })).configuration.orbColor).toBe('ice')
+    expect((await f.control.command({ type: 'configure', patch: { projectsDirectory: 'ice' } })).configuration.projectsDirectory).toBe('ice')
     f.host.release()
     expect((await held).error).toBeNull()
   })

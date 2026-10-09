@@ -87,7 +87,6 @@ export default tseslint.config(
       'out/**',
       'playwright-report/**',
       'release/**',
-      'resources/runtime/*.mjs',
       'test-results/**',
     ],
   },

@@ -10,7 +10,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await openThreads(page)

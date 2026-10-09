@@ -13,7 +13,7 @@ test.describe.configure({ retries: 0, timeout: 120_000 })
 test('installed Codex: recover owned Phase 2 evidence without replay', async () => {
   const requested = process.env.SOTTO_NATIVE_PHASE2_RECOVERY_ROOT
   test.skip(process.env.SOTTO_NATIVE_PHASE2_LIVE !== '1' || !requested, 'Explicit existing synthetic recovery opt-in required.')
-  await promisify(execFile)(process.execPath, [resolve('scripts/verify-runtime.mjs')], { windowsHide: true, timeout: 15_000 })
+  await promisify(execFile)(process.execPath, [resolve('scripts/verify-assets.mjs')], { windowsHide: true, timeout: 15_000 })
   const root = requireOwnedE2EProfile(await realpath(requested!))
   const profile = join(root, 'profile')
   const original = JSON.parse(await readFile(join(root, 'evidence.json'), 'utf8'))

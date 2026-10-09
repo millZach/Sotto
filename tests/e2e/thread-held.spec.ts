@@ -48,7 +48,7 @@ async function idle(page: Page): Promise<void> {
 async function start(launched: LaunchedSotto): Promise<void> {
   await launched.page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await launched.page.reload()

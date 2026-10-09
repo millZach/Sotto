@@ -41,7 +41,6 @@ export interface AgentRuntimeOptions {
   /** What the short-writing switches read (ADR-0026). No key is needed: each thread's own provider writes. */
   writingSettings: () => Promise<AppSettings>
   historyEnabled: () => boolean
-  coordinatorEnabled: () => boolean
   observeActiveThread?: boolean
   openExternal: (url: string) => Promise<unknown>
   openThreadFolder?: ControlDependencies['openThreadFolder']
@@ -148,7 +147,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     })
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns,
-    historyEnabled: options.historyEnabled, coordinatorEnabled: options.coordinatorEnabled, removalMode: true,
+    historyEnabled: options.historyEnabled, removalMode: true,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
     ...(options.preferences ? { preferences: options.preferences } : {}),

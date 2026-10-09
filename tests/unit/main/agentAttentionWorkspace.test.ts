@@ -54,24 +54,6 @@ describe('workspace manual prompt authority and durable dispatch', () => {
     expect(result.host.threads[0]?.status).toBe('idle')
   })
 
-  it('applies and persists spoken-reply mute while intent reasoning is still pending', async () => {
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
-    const intent = vi.fn(async () => { await gate; return { type: 'clarify', text: 'Clarification' } as const })
-    const f = await fixture({ ...e2eAgentReasoner, intent })
-    await f.control.command({ type: 'configure', patch: { speak: true } })
-    await f.control.command({ type: 'assign', threadId: 'workshop' })
-    const pending = f.control.command({ type: 'utterance', text: 'Long reasoning' })
-    let mute!: ReturnType<AgentControl['command']>
-    try {
-      await vi.waitFor(() => expect(intent).toHaveBeenCalled())
-      mute = f.control.command({ type: 'configure', patch: { speak: false } })
-      f.host.event({ type: 'manual', threadId: 'workshop', text: 'Direct takeover', status: 'idle' })
-      expect(f.control.get()).toMatchObject({ globalLaneBusy: true, configuration: { speak: false }, voice: { action: 'stop-speaking' } })
-      await mute
-      expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).configuration.speak).toBe(false)
-    } finally { release(); await pending; await mute }
-  })
   it('reconciles a retry without dispatching twice, then allows a fresh prompt', async () => {
     const f = await fixture()
     f.host.event({ type: 'uncertain', threadId: 'workshop', text: '' })
@@ -267,8 +249,9 @@ describe('attention snapshot lifecycle', () => {
     const result = await f.control.command({ type: 'refresh' })
     expect(result.queue).toEqual([])
     expect(result.host.threads[0]?.requests).toHaveLength(1)
-    expect(result.speech.text).toBe('')
-    expect(result.voice.action).toBe('stop-speaking')
+    expect(result.notice).toBe('')
+    expect(result).not.toHaveProperty('speech')
+    expect(result).not.toHaveProperty('voice')
     expect(f.host.attempts).toEqual([])
   })
 
@@ -278,10 +261,10 @@ describe('attention snapshot lifecycle', () => {
     f.host.event({ type: 'permission', threadId: 'workshop', requestId: 'allow', text: 'Allow this operation?' })
     await f.control.command({ type: 'refresh' })
     await f.restart()
-    const speech = f.control.get().speech.id
+    const notice = f.control.get().notice
     const result = await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     expect(result.queue).toHaveLength(1)
-    expect(result.speech.id).toBe(speech)
+    expect(result.notice).toBe(notice)
   })
 
   it.each(['closed', 'settled', 'missing', 'running'] as const)('prunes %s attention without replaying narration', async lifecycle => {
@@ -289,13 +272,12 @@ describe('attention snapshot lifecycle', () => {
     await f.control.command({ type: 'assign', threadId: 'workshop' })
     f.host.event({ type: 'failure', threadId: 'workshop', text: 'Please review', status: 'idle' })
     expect(f.control.get().queue).toHaveLength(1)
-    const speech = f.control.get().speech.id
     f.host.transform = snapshot => ({ ...snapshot, threads: snapshot.threads.flatMap(t => t.id !== 'workshop' ? [t] : lifecycle === 'missing' ? [] : [{ ...t,
       ...(lifecycle === 'closed' ? { archivedAt: new Date().toISOString() } : lifecycle === 'settled' ? { settledOverride: 'settled' as const } : { status: 'running' as const }),
     }]) })
     const state = await f.control.command({ type: 'refresh' })
     expect(state.queue).toEqual([])
-    expect(state.speech.id).toBe(speech)
+    expect(state.notice).toBe('')
   })
 
   it('keeps a live permission on an idle thread and does not renarrate it on repeated selection', async () => {
@@ -306,7 +288,7 @@ describe('attention snapshot lifecycle', () => {
     await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     const state = await f.control.command({ type: 'select-thread', threadId: 'workshop' })
     expect(state.queue).toEqual(before.queue)
-    expect(state.speech.id).toBe(before.speech.id)
+    expect(state.notice).toBe(before.notice)
     expect(f.host.attempts).toEqual([])
   })
 })

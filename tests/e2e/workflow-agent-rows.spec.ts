@@ -61,7 +61,7 @@ test('a workflow is one roster row with a strip, and its page lists each of its 
     const { page } = launched
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
     })

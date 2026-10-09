@@ -47,7 +47,7 @@ async function workshop(launched: LaunchedSotto): Promise<{ folder: string; pane
   const { page } = launched
   const folder = await page.evaluate(async () => {
     const agents = window.sotto!.agents!
-    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await agents.command({ type: 'configure', patch: { enabled: true, } })
     const state = await agents.command({ type: 'connect' })
     return { threads: state.host.threads.map(({ id, projectId }) => ({ id, projectId })), projects: state.host.projects.map(({ id, path }) => ({ id, path })) }
   }).then(({ threads, projects }) => {

@@ -48,7 +48,7 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     }
     await size(1280, 800)
     await page.evaluate(async () => {
-      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabledProviders: ['claude'], enabled: true, speak: false, reasoning: 'none', followupLimit: 0 } })
+      const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider: 'claude', enabledProviders: ['claude'], enabled: true, reasoning: 'none', followupLimit: 0 } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)

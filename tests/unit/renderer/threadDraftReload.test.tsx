@@ -71,7 +71,7 @@ describe('fresh renderer draft durability with a live main controller', () => {
       if (recovery !== 'original success') {
         await waitFor(() => expect(store.snapshot('workshop').save).toBe('unsaved'))
         // A non-writing unrelated state echo cannot prove durability.
-        await act(async () => { await fresh.result.current.command({ type: 'voice-state', status: 'off', error: null }) })
+        await act(async () => { await fresh.result.current.command({ type: 'observe-threads', threadIds: ['workshop'] }) })
         expect(store.snapshot('workshop').save).toBe('unsaved')
         expect((await f.disk()).threadDrafts).toEqual([])
         spy.mockRestore()

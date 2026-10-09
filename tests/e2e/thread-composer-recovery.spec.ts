@@ -7,7 +7,7 @@ test('permissions keep composer focus and failed answers remain on their own thr
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

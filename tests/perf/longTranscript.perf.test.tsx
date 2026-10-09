@@ -72,9 +72,8 @@ function stateAround(host: AgentHostSnapshot, activeThreadId: string): AgentStat
     assignments: [], queue: [], activeThreadId,
     activeProjectId: host.threads.find(thread => thread.id === activeThreadId)?.projectId ?? host.projects[0]?.id ?? null,
     draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }
 

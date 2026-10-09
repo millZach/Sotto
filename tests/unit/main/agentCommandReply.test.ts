@@ -58,8 +58,7 @@ async function fixture() {
   const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
   const url = 'file:///main.html'
   const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
-  disposables.push(registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
   const send = (command: AgentCommand) =>
     listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>
   return { control, send }
@@ -67,7 +66,6 @@ async function fixture() {
 
 describe('a command reply to the window', () => {
   it.each<[string, (draftId: string) => AgentCommand]>([
-    ['voice', () => ({ type: 'voice', action: 'mute' })],
     ['save-thread-draft', draftId => ({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Keep this draft' })],
     ['select-thread', () => ({ type: 'select-thread', threadId: 'workshop' })],
     ['refresh', () => ({ type: 'refresh' })],

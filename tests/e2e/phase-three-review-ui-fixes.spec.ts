@@ -79,7 +79,7 @@ test('a single row that goes compact keeps its arrangement switch, and the grid 
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-review-ui-fixes-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
     assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }))
@@ -213,7 +213,7 @@ test('threaded structured forms show the native explanation and tool context onc
     const { page } = threaded
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

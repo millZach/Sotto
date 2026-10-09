@@ -12,7 +12,7 @@ test('a thread on a long-context model its catalog lists only by the base takes 
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       const created = await window.sotto!.agents!.command({ type: 'create-thread', projectId: 'project', title: 'Long context', modelId: 'claude:test[1m]', managed: false })
       if (created.error) throw new Error(created.error)

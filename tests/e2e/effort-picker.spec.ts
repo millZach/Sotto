@@ -53,7 +53,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'ember' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
@@ -234,7 +234,7 @@ test('the card holds its height through the levels and keeps a gradient colourwa
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'rainbow' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
@@ -317,7 +317,7 @@ test('Settings → Appearance offers the effort colourways, paints the pick at o
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system', effortColor: 'ember' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'max' })
     })

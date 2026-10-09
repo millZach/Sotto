@@ -114,7 +114,7 @@ async function finish(launched: LaunchedSotto | undefined, root: string, profile
 }
 async function connectAgents(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()

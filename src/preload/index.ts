@@ -23,7 +23,7 @@ import { z } from 'zod'
 import { externalLinkSchema } from '../shared/externalLinks'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentSpeechVoicesSchema, agentVoiceModelStatusSchema, agentWakeDetectionSchema, agentSpeechSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -257,13 +257,6 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitChangedFiles: (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
-    synthesizeSpeech: (text: string) => invokeParsed(renderer, AGENT_SPEECH, agentSpeechSchema, text),
-    cancelSpeech: () => invokeParsed(renderer, AGENT_SPEECH_CANCEL, voidSchema),
-    grokVoices: () => invokeParsed(renderer, AGENT_GROK_VOICES, agentSpeechVoicesSchema),
-    voiceModel: (action: 'status' | 'download') => invokeParsed(renderer, AGENT_VOICE_MODEL, agentVoiceModelStatusSchema, action),
-    prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
-    detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
-    releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,

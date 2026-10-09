@@ -40,7 +40,7 @@ for (const provider of ['claude', 'codex'] as const) {
       const threadId = await page.evaluate(async ({ provider, project, prompt }) => {
         await window.sotto!.updateSettings({ onboardingComplete: true })
         const agents = window.sotto!.agents!
-        const configured = await agents.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], speak: false } })
+        const configured = await agents.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], } })
         if (configured.error) throw new Error(configured.error)
         const connected = await agents.command({ type: 'connect', provider })
         if (connected.error) throw new Error(connected.error)

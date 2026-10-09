@@ -18,6 +18,7 @@ import {
   type IpcMainAdapter,
 } from '../../src/main/ipc/registerIpc'
 import { platformProfile } from '../../src/main/platformProfile'
+import { registerAgentIpc } from '../../src/main/agents/ipc'
 import { createSystemSettingsOpener } from '../../src/main/app/systemSettings'
 import { NativeSettingsCoordinator } from '../../src/main/settings/nativeSettingsCoordinator'
 import { OutputService } from '../../src/main/output/outputService'
@@ -55,6 +56,7 @@ import {
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
   SETTINGS_CHANGED,
+  TRANSCRIPT_POLISH,
   TRANSCRIPTION_CANCEL,
   TRANSCRIPTION_CHECK_KEY,
   TRANSCRIPTION_TRANSCRIBE,
@@ -468,7 +470,23 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'cancelSpeech', 'chooseProjectDirectory', 'command', 'detectWake', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'grokVoices', 'hostFolders', 'onState', 'onThreadDetail', 'prepareWake', 'releaseWake', 'stageAttachment', 'synthesizeSpeech', 'threadDetail', 'voiceModel', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'threadDetail', 'workingCopyOptions'])
+  })
+
+  it('leaves retired voice channels unregistered while keeping dictation IPC available', async () => {
+    const harness = createIpcHarness()
+    const removeAgents = registerAgentIpc(harness.ipc, {
+      get: vi.fn(), shell: vi.fn(), threadDetail: () => null, attachmentPreview: () => null,
+    }, { command: vi.fn() }, () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }], { encodeReceipt: vi.fn() })
+    try {
+      for (const channel of ['sotto:agents:speech', 'sotto:agents:speech-cancel', 'sotto:agents:grok-voices', 'sotto:agents:voice-model', 'sotto:agents:wake']) {
+        expect(harness.ipc.handlers.has(channel)).toBe(false)
+        await expect(harness.ipc.invoke(channel)).rejects.toThrow(`missing handler: ${channel}`)
+      }
+      for (const channel of [DICTATION_REQUEST, TRANSCRIPTION_TRANSCRIBE, TRANSCRIPTION_CANCEL, TRANSCRIPTION_CHECK_KEY, MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, OUTPUT_DELIVER, WIDGET_PUBLISH, WIDGET_PRESENTATION, WIDGET_DRAG]) {
+        expect(harness.ipc.handlers.has(channel)).toBe(true)
+      }
+    } finally { removeAgents(); harness.cleanup() }
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -1261,10 +1279,10 @@ describe('IPC validation and lifecycle', () => {
     delete fullPatch['launchAtStartup']
     // A headless host's own setting: its administrative route writes it, and nothing on a desktop sets it (ADR-0053).
     delete fullPatch['tailnetConnections']
-    delete fullPatch['voiceCoordinatorEnabled']
     await ipc.invoke(SETTINGS_UPDATE, fullPatch)
     expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
-    await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true })).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(SETTINGS_UPDATE, { voiceCoordinatorEnabled: true, microphoneId: 'rejected-microphone' })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenLastCalledWith(fullPatch)
 
     await expect(ipc.invoke(SETTINGS_UPDATE, { theme: 'ultraviolet' })).rejects.toThrow(
       'Invalid IPC payload',

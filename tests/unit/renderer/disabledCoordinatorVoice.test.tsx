@@ -31,8 +31,8 @@ it.each([
   const localState = emptyDesktopState(localId)
   localState.host.connected = true
   localState.connection = 'connected'
-  localState.configuration = { ...localState.configuration, enabled: true, wakeModelDirectory: 'C:/local/wake', wakeRuntimeDirectory: 'C:/local/runtime' }
-  state.configuration = { ...state.configuration, enabled: false, wakeModelDirectory: '', wakeRuntimeDirectory: '' }
+  localState.configuration = { ...localState.configuration, enabled: true, }
+  state.configuration = { ...state.configuration, enabled: false, }
   state.host.threads = [{ id: 'thread', projectId: 'project', title: 'Remote thread', modelId: '', status: 'idle', messages: [], requests: [] }]
   router.add({ hostId: localId, kind: 'local', name: 'This computer', detail: () => null, preview: () => null, service: {
     shell: () => localState, subscribe: () => () => undefined,
@@ -51,7 +51,7 @@ it.each([
   let agents!: ReturnType<typeof useAgents>
   function Room() { agents = useAgents(); return <div role="alert">{agents.state?.error}</div> }
   try {
-    render(<AgentProvider settings={settingsPending ? null : { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: false }}><Room /></AgentProvider>)
+    render(<AgentProvider settings={settingsPending ? null : { ...DEFAULT_SETTINGS, onboardingComplete: true, }}><Room /></AgentProvider>)
     await waitFor(() => expect(agents.state).not.toBeNull())
     expect(agents.state?.error).toBeNull()
     if (selected === 'remote') {

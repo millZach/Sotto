@@ -28,22 +28,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.`
 
-const guidIsc = `ISC License
-
-Copyright (c) NicolasDeveloper contributors
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
-
 const ofl = (copyrightLine) => `${copyrightLine}
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
@@ -378,12 +362,7 @@ ${await read('node_modules/node-addon-api/LICENSE.md')}`],
   ['Windows updater dependency MIT licenses', updaterMit],
   ['Windows updater dependency ISC licenses', updaterIsc],
   ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
-  ['Hugging Face Jinja MIT license', await read('node_modules/@huggingface/jinja/LICENSE')],
-  ['ONNX Runtime MIT license', microsoftMit],
-  ['Platform.js MIT license', await read('node_modules/platform/LICENSE')],
-  ['GUID TypeScript ISC license', guidIsc],
-  ['Protocol Buffers BSD 3-Clause license', await read('node_modules/protobufjs/LICENSE')],
-  ['Apache License 2.0', await read('node_modules/@huggingface/transformers/LICENSE')],
+  ['Apache License 2.0', await read('node_modules/dompurify/LICENSE')],
   ['Markdown rendering MIT licenses', markdownMit],
   ['Markdown rendering ISC license', `@ungap/structured-clone
 ${await read('node_modules/@ungap/structured-clone/LICENSE')}`],
@@ -432,27 +411,9 @@ const sections = licenseSections.map(([heading, text]) =>
   `## ${heading}\n\n\`\`\`text\n${text.trim()}\n\`\`\``,
 ).join('\n\n')
 
-const naturalVoiceNotice = `## Optional Supertonic natural voices
-
-AI-generated speech from Supertonic is available as an explicit optional download. Model weights and the ten preset voice styles are by Supertone Inc.; this Transformers.js conversion is by the Hugging Face ONNX community. The pinned conversion is \`onnx-community/Supertonic-TTS-ONNX\` revision \`cff123c84b0655d9d647641f1b532c3cbb8f7faa\`. The complete asset names, sizes, and SHA-256 hashes are in \`src/main/agents/speechModelManifest.json\`. No Supertonic weights are included in the installer.
-
-The model is licensed under **OpenRAIL-M**, not MIT. Downloading or using these voices is subject to the complete license below, including the use restrictions in Attachment A. Users of these voices must comply with those restrictions; redistributed model copies must retain this license, notices, and the required restrictions. Speech produced by these voices is machine-generated. No third-party subscription or paid API is used for local synthesis.
-
-Upstream model: https://huggingface.co/Supertone/supertonic
-
-Conversion: https://huggingface.co/onnx-community/Supertonic-TTS-ONNX/tree/cff123c84b0655d9d647641f1b532c3cbb8f7faa
-
-License source: https://huggingface.co/Supertone/supertonic/resolve/b6856d033f622c63ea29441795be266a1133e227/LICENSE
-
-The following is the unmodified upstream license (SHA-256 \`0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f\`).
-
-\`\`\`text
-${(await read('docs/notices/supertonic-LICENSE.txt')).trim()}
-\`\`\``
-
 const output = `# Third-Party Notices
 
-Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer and natural speech worker, the ONNX Web runtime used by Transformers.js for local natural speech, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal helpers. Versions are pinned by package-lock.json and the runtime lock manifest.
+Sotto sends dictated audio to Microsoft MAI-Transcribe-2 through OpenRouter using the user's API key. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal helpers. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -475,8 +436,6 @@ Every platform derivative descends from that same original artwork: the macOS \`
 Source and legibility proof are retained in \`artifacts/design/brand/\` in the source repository. Packaged users receive only the final application artwork.
 
 ${sections}
-
-${naturalVoiceNotice}
 `
 
 await writeFile(join(root, 'THIRD_PARTY_NOTICES.md'), output, 'utf8')

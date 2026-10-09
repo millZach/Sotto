@@ -31,7 +31,6 @@ const mainImports = [
   'node:timers/promises',
   'node:url',
   'node:util',
-  'node:worker_threads',
   'node:zlib',
   'os',
   'path',

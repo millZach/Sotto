@@ -15,7 +15,7 @@ test('the full workspace inserts provider-native skills and retains selections w
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'teal' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'grok-previews' })
     })

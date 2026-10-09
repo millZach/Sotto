@@ -25,7 +25,7 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
     await mkdir(legacyDirectory, { recursive: true })
     await writeFile(legacyFile, legacy, 'utf8')
     await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

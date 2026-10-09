@@ -3,7 +3,6 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:f
 import { setTimeout as delay } from 'node:timers/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { AgentVoiceTiming } from '../../shared/agents'
 import { SEND_STAGE_FIELDS, type SendStageClock, type SendStageField } from './sendStages'
 
 /** A send's stage durations (`SendStageTimings`): absent from older records and from every turn that sent nothing. */
@@ -20,13 +19,13 @@ export const turnRecordSchema = z.object({
   providerSessionId: z.string().nullable(),
   projectId: z.string().nullable(),
   timings: z.object({
-    speechEndedAt: z.string().datetime().nullable(),
-    voicePhase: z.enum(['cold', 'warm']).nullable().default(null),
-    speechEndBasis: z.literal('detector-frame-received').nullable().default(null),
-    feedbackBasis: z.literal('main-state-published').nullable().default(null),
+    speechEndedAt: z.string().datetime().nullable().optional(),
+    voicePhase: z.enum(['cold', 'warm']).nullable().optional(),
+    speechEndBasis: z.literal('detector-frame-received').nullable().optional(),
+    feedbackBasis: z.literal('main-state-published').nullable().optional(),
     retrievalCount: z.number().int().nonnegative().default(0),
-    speechToIntentMs: z.number().int().nonnegative().nullable().default(null),
-    speechToFirstFeedbackMs: z.number().int().nonnegative().nullable().default(null),
+    speechToIntentMs: z.number().int().nonnegative().nullable().optional(),
+    speechToFirstFeedbackMs: z.number().int().nonnegative().nullable().optional(),
     intentMs: z.number().int().nonnegative(),
     retrievalMs: z.number().int().nonnegative(),
     delegationMs: z.number().int().nonnegative(),
@@ -44,10 +43,6 @@ export interface ActiveTurn {
   commandType: string
   startedAt: string
   startedAtMs: number
-  speechEndedAt: string | null
-  voiceTiming?: AgentVoiceTiming
-  intentResolvedAtMs?: number
-  firstFeedbackAtMs?: number
   retrievalCount: number
   intentMs: number
   retrievalMs: number
@@ -71,13 +66,6 @@ export function addTurnContext(turn: ActiveTurn | undefined, text: string): void
   if (!turn) return
   turn.contextCharacters += text.length
   turn.contextTokenEstimate = Math.ceil(turn.contextCharacters / 4)
-}
-
-/** Clock reversal or a missing milestone is missing evidence, never a zero-ms pass. */
-function speechElapsed(speechEndedAt: string | null, milestone: number | undefined): number | null {
-  if (speechEndedAt === null || milestone === undefined) return null
-  const elapsed = milestone - Date.parse(speechEndedAt)
-  return Number.isFinite(elapsed) && elapsed >= 0 ? Math.round(elapsed) : null
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -117,8 +105,6 @@ export class TurnRecorder {
     text: string
     threadId?: string | null
     projectId?: string | null
-    voiceTiming?: AgentVoiceTiming
-    speechEndedAt?: string | null
   }): ActiveTurn | undefined {
     try {
       const startedAtMs = Date.now()
@@ -127,8 +113,6 @@ export class TurnRecorder {
         commandType: input.commandType,
         startedAt: new Date(startedAtMs).toISOString(),
         startedAtMs,
-        speechEndedAt: input.voiceTiming?.speechEndedAt ?? input.speechEndedAt ?? null,
-        ...(input.voiceTiming ? { voiceTiming: input.voiceTiming } : {}),
         retrievalCount: 0,
         intentMs: 0,
         retrievalMs: 0,
@@ -187,13 +171,7 @@ export class TurnRecorder {
       providerSessionId: (threadId ? this.resolveSession(threadId)?.sessionId : undefined) ?? null,
       projectId: turn.projectId ?? null,
       timings: {
-        speechEndedAt: turn.speechEndedAt,
-        voicePhase: turn.voiceTiming?.phase ?? null,
-        speechEndBasis: turn.voiceTiming?.basis ?? null,
-        feedbackBasis: turn.firstFeedbackAtMs === undefined ? null : 'main-state-published',
         retrievalCount: turn.retrievalCount,
-        speechToIntentMs: speechElapsed(turn.speechEndedAt, turn.intentResolvedAtMs),
-        speechToFirstFeedbackMs: speechElapsed(turn.speechEndedAt, turn.firstFeedbackAtMs),
         intentMs: turn.intentMs,
         retrievalMs: turn.retrievalMs,
         delegationMs: turn.delegationMs,

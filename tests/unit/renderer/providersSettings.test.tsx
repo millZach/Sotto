@@ -18,8 +18,8 @@ function fixture(): AgentState {
       models: providerIdSchema.options.map(id => ({ id: `${id}:same-native-model`, name: `${id} model`, provider: PROVIDER_LABELS[id], providerId: id, ready: true })),
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Codex work', modelId: 'codex:same-native-model', status: 'idle', messages: [], requests: [] }],
     }, assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }
 function provide(state = fixture()) {

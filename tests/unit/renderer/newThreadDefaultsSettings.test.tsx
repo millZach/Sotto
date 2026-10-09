@@ -22,8 +22,8 @@ function fixture(configuration: Partial<AgentState['configuration']> = {}): Agen
       threads: [],
     },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
 }
 function provide(state: AgentState) {

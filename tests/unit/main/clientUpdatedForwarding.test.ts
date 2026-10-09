@@ -30,7 +30,7 @@ it('hands a client update through the workspace, the provider switch and the thr
   const providers = { codex: provider(), claude: provider(), grok: provider(), devin: provider() }
   const runtime = await createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined,
+    historyEnabled: () => true, openExternal: async () => undefined,
     providers, reasoner: e2eAgentReasoner,
   })
   try {

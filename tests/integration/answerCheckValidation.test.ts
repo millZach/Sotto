@@ -202,7 +202,7 @@ it.each([false, true])('keeps queued targeted socket Compose feedback private (i
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    predecessor = f.command({ type: 'configure', patch: { speak: false, followupLimit: 3 } })
+    predecessor = f.command({ type: 'configure', patch: { followupLimit: 3 } })
     await started
     // This independent invalid save establishes another operation's shared error while Compose waits.
     await f.command({ type: 'save-thread-draft', threadId: 'missing-thread', draftId: '00000000-0000-4000-8000-000000000119', text: 'Unrelated', requestId: null })
@@ -216,7 +216,7 @@ it.each([false, true])('keeps queued targeted socket Compose feedback private (i
     }
     release(); await predecessor
     expect(await saving).toMatchObject({ error: lostImage ? expect.stringContaining('image') : null })
-    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, speech: before.speech })
+    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice })
     expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ text: 'Private composed edit', attachments: lostImage ? [] : [image] }))
     expect(f.attempts.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
   } finally { release(); await Promise.allSettled([predecessor, saving]); vi.restoreAllMocks(); await f.close() }
@@ -256,7 +256,7 @@ it.each(['replacement', 'clear', 'exact', 'idempotent'] as const)('enforces the 
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: recoveredId, text: 'Recovered' }))
     } else {
       expect(result.error).toContain('changed')
-      expect(f.control.get()).toMatchObject({ threadDrafts: before.threadDrafts, obsoleteDrafts: before.obsoleteDrafts, error: before.error, notice: before.notice, speech: before.speech })
+      expect(f.control.get()).toMatchObject({ threadDrafts: before.threadDrafts, obsoleteDrafts: before.obsoleteDrafts, error: before.error, notice: before.notice })
       expect((await f.disk()).threadDrafts).toEqual(scenario === 'clear' ? [] : [expect.objectContaining({ draftId: newerId, text: 'Other client' })])
     }
     expect(f.attempts.filter(command => command.type === 'send' || command.type === 'answer')).toEqual([])
@@ -276,7 +276,7 @@ it.each(['success', 'missing-image', 'obsolete'] as const)('keeps every socket d
     const attachments = scenario === 'missing-image' ? [{ ...handleOf(PIXEL_PNG), digest: 'f'.repeat(64) }] : undefined
     const result = await f.control.commandShell({ type: 'save-thread-draft', threadId: target.threadId, draftId: scenario === 'obsolete' ? priorId : nextId, text: 'Private edit', requestId: null, attachments }, client)
     expect(result.error).toEqual(scenario === 'success' ? null : expect.stringContaining(scenario === 'obsolete' ? 'cleared or replaced' : 'image'))
-    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, speech: before.speech })
+    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice })
     if (scenario !== 'obsolete') expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: nextId, text: 'Private edit', attachments: [] }))
   } finally { await f.close() }
 })
@@ -307,7 +307,7 @@ it.each([['local', 'changed'], ['socket', 'changed'], ['local', 'absent'], ['soc
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: nextId, requestId, text: 'Recovered latest edit' }))
     } else {
       expect(result.error).toContain('question changed')
-      expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, speech: before.speech,
+      expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice,
         threadDrafts: before.threadDrafts, obsoleteDrafts: before.obsoleteDrafts })
       expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ draftId: priorId, text: 'Prior durable edit' }))
     }
@@ -455,7 +455,7 @@ it.each([false, true])('publishes obsolete revisions only after a durable write 
       expect(f.control.get().obsoleteDrafts).toEqual([])
       expect((await f.disk()).obsoleteDrafts).toEqual([])
       vi.restoreAllMocks()
-      await f.command({ type: 'configure', patch: { speak: false } })
+      await f.command({ type: 'configure', patch: { } })
     }
     expect(f.control.get().obsoleteDrafts).toEqual([{ threadId: target.threadId, draftId }])
     expect(published).toContainEqual([{ threadId: target.threadId, draftId }])
@@ -547,7 +547,7 @@ it('checks current socket authority before a direct bound draft save mutates the
       draftId: '00000000-0000-4000-8000-000000000099', requestId: request.id, text: 'Unprivileged recovery' },
       { clientId: 'paired', user: 'User', transport: 'socket', selectedThreadId: target.threadId })
     expect(result.error).toContain('not allowed from this device')
-    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, speech: before.speech, threadDrafts: before.threadDrafts })
+    expect(f.control.get()).toMatchObject({ error: before.error, notice: before.notice, threadDrafts: before.threadDrafts })
     expect((await f.disk()).threadDrafts).toEqual(before.threadDrafts)
   } finally { await f.close() }
 })
@@ -559,7 +559,7 @@ it.each([false, true])('keeps a socket targeted Compose policy refusal private (
   let release: () => void = () => undefined, predecessor: Promise<unknown> | undefined, editing: Promise<unknown> | undefined
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
-    await f.command({ type: 'configure', patch: { speak: true } })
+    await f.command({ type: 'configure', patch: { } })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     if (revoked) {
       let entered: () => void = () => undefined
@@ -572,7 +572,7 @@ it.each([false, true])('keeps a socket targeted Compose policy refusal private (
     }
     const feedback = () => {
       const state = f.control.get()
-      return { error: state.error, notice: state.notice, speech: state.speech }
+      return { error: state.error, notice: state.notice }
     }
     const before = feedback()
     editing = f.control.commandShell({ type: 'compose', threadId: target.threadId, text: 'Refused edit' },
@@ -615,7 +615,7 @@ it.each(['local', 'socket'] as const)('ends a queued empty %s prompt intent for 
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+    pending.push(f.command({ type: 'configure', patch: { followupLimit: 4 } })); await started
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
     pending.push(f.control.commandShell({ type: 'compose', threadId: target.threadId, text: '' }, client))
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
@@ -684,7 +684,7 @@ it.each(['local', 'socket'] as const)('keeps a first queued %s prompt binding wh
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+    pending.push(f.command({ type: 'configure', patch: { followupLimit: 4 } })); await started
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
     pending.push(f.control.commandShell({ type: 'compose', threadId: target.threadId, text: 'First prompt', attachments: [image] }, client))
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
@@ -708,7 +708,7 @@ it.each(['local', 'socket'] as const)('retains a null prompt and refuses immutab
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+    pending.push(f.command({ type: 'configure', patch: { followupLimit: 4 } })); await started
     const client = route === 'socket' ? { clientId: 'paired', user: 'User', transport: 'socket' as const, selectedThreadId: target.threadId } : desktopWindowClient()
     const editing = f.control.commandShell({ type: 'compose', threadId: target.threadId, text: '' }, client)
     const sending = f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'Newest packet', attachments: [] } }, client)
@@ -758,7 +758,7 @@ it.each([['local', false], ['socket', false], ['local', true], ['socket', true]]
     const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { speak: false, followupLimit: 4 } })); await started
+    pending.push(f.command({ type: 'configure', patch: { followupLimit: 4 } })); await started
     pending.push(f.control.commandShell({ type: 'compose', threadId: target.threadId, text: empty ? '' : 'Earlier prompt' }, client))
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     const sending = f.control.commandShell({ type: 'send', draft: { threadId: target.threadId, text: 'Latest packet', attachments: [] } }, client)
@@ -1129,7 +1129,7 @@ it.each(['send', 'voice', 'socket', 'socket-legacy'] as const)(
     const gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
+    pending.push(f.command({ type: 'configure', patch: { projectsDirectory: 'ice' } }))
     await started
     expect(f.control.get().draftThreadId).toBeNull()
     pending.push(f.control.commandShell({ type: 'compose', text: 'Blue' }, client))
@@ -1171,7 +1171,7 @@ it.each(['send', 'voice'] as const)('keeps queued %s on its admitted owner when 
     const gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
+    pending.push(f.command({ type: 'configure', patch: { projectsDirectory: 'ice' } }))
     await started
     expect(f.control.get().draftThreadId).toBeNull()
     pending.push(f.command({ type: 'compose', text: 'Blue' }))
@@ -1209,7 +1209,7 @@ it.each(['send', 'voice', 'socket'] as const)('allows Compose then %s queued on 
     const gate = new Promise<void>(resolve => { release = resolve })
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
-    pending.push(f.command({ type: 'configure', patch: { orbColor: 'ice' } }))
+    pending.push(f.command({ type: 'configure', patch: { projectsDirectory: 'ice' } }))
     await started
     expect(f.control.get().draftThreadId).toBeNull()
     const client = route === 'socket'

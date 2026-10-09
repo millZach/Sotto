@@ -32,7 +32,7 @@ async function createProfile(settings: Partial<AppSettings> = {}): Promise<strin
   // Seeded before launch, so the first frame is the finished app, not onboarding.
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
     assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }), 'utf8')

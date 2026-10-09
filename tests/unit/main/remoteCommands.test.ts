@@ -5,7 +5,7 @@ import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agent
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'preview-voice', 'utterance', 'voice', 'voice-state', 'open-thread-folder',
+const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'utterance', 'open-thread-folder',
   'assign', 'unassign', 'pause', 'resume', 'pause-draft', 'resume-draft', 'cancel-request', 'select-attention', 'next', 'later']
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {

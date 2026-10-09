@@ -10,7 +10,7 @@ test('creates a project thread while the hidden coordinator retains another thre
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'compose', text: 'Keep the other thread draft' })
@@ -19,7 +19,7 @@ test('creates a project thread while the hidden coordinator retains another thre
     await page.reload()
     await openThreads(page)
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
-    expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
+    expect(await page.evaluate(async () => window.sotto!.getSettings())).not.toHaveProperty('voiceCoordinatorEnabled')
     // The pen opens the thread at once, on defaults, with no dialog to fill in (issue #347).
     await page.getByRole('button', { name: 'New thread in Sotto test', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toHaveCount(0)
@@ -55,7 +55,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

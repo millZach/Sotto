@@ -85,7 +85,7 @@ async function capture(launched: LaunchedSotto, name: string): Promise<void> {
 
 async function setUp(page: Page): Promise<string> {
   const id = await page.evaluate(async () => {
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
 
     await window.sotto!.agents!.command({ type: 'connect' })
     await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Newer composer text' })

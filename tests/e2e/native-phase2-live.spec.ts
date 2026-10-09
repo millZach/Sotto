@@ -20,7 +20,7 @@ const run = promisify(execFile)
 test('installed Codex: structured skill, worktree, queue, steer and restart without replay', async () => {
   test.skip(process.env.SOTTO_NATIVE_PHASE2_LIVE !== '1', 'Requires explicit bounded native subscription opt-in.')
   test.skip(!!process.env.SOTTO_NATIVE_PHASE2_RECOVERY_ROOT, 'Recovery mode must not create another native project or turn.')
-  await run(process.execPath, [resolve('scripts/verify-runtime.mjs')], { windowsHide: true, timeout: 15_000 })
+  await run(process.execPath, [resolve('scripts/verify-assets.mjs')], { windowsHide: true, timeout: 15_000 })
   const root = requireOwnedE2EProfile(await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))))
   const profile = join(root, 'profile'); const project = join(root, 'project')
   const skillName = `sotto-native-${randomUUID().slice(0, 8)}`
@@ -88,7 +88,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
   try {
     await launch()
     await command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'],
-      speak: false, reasoning: 'none', followupLimit: 0 } })
+      reasoning: 'none', followupLimit: 0 } })
     const connected = await command({ type: 'connect', provider: 'codex' })
     // A command answers with a receipt that names the model catalog by revision; the whole list is read here.
     const model = (await state()).host.models.find(value => value.providerId === 'codex' && value.ready && /luna|mini/i.test(value.name))

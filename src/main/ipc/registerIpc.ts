@@ -146,7 +146,7 @@ const settingKeys = [
 const looseSettingsPatchSchema = settingsSchema
   // `tailnetConnections` is a headless host's own, written by its administrative route; nothing on a desktop sets it,
   // so a payload naming it is refused rather than dropped (ADR-0053).
-  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, voiceCoordinatorEnabled: true })
+  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011).

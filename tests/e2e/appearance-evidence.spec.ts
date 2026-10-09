@@ -31,7 +31,7 @@ async function withProfile(
   // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
   if (options.threads === true) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
-      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
+      configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
       assignments: [],
       queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')
@@ -167,7 +167,7 @@ test.describe('appearance rendered evidence', () => {
 
   test('requests, the Workshop pane and the Threads page in the light room', async () => {
     await withProfile({ appearance: 'light' }, async ({ page }) => {
-      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
+      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } }); await window.sotto!.agents!.command({ type: 'connect' }) })
       await openThreads(page)
       await page.evaluate(async () => {
         const state = await window.sotto!.agents!.get()

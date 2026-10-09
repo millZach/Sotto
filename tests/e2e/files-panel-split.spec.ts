@@ -78,7 +78,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     const ids = await page.evaluate(async folders => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       await agents.command({ type: 'connect' })
       const created: Record<string, string> = {}
       for (const [title, path, thread, workingCopy] of [['repo-app', folders[0], 'Worktree checkout', 'independent'], ['field-notes', folders[1], 'Field notes', 'shared']] as const) {

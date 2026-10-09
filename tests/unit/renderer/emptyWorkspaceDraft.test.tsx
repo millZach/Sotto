@@ -33,8 +33,8 @@ function withDraft(draftThreadId: string | null, connection: AgentState['connect
     activeThreadId: null, activeProjectId: 'workshop',
     draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false,
     pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true },
+
+    credentials: { reasoning: false, secure: true },
     reasoningAccounts: [],
   }
 }

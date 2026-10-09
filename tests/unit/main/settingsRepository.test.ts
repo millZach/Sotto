@@ -30,10 +30,10 @@ describe('SettingsRepository', () => {
     const { filePath, repository } = await createRepository()
     const legacy = { ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false }
     await writeFile(filePath, JSON.stringify(legacy), 'utf8')
-    expect(await repository.get()).toEqual({ ...legacy, voiceCoordinatorEnabled: false })
+    expect(await repository.get()).toEqual({ ...DEFAULT_SETTINGS, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false })
     await repository.save(await repository.get())
     expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toHaveProperty('voiceCoordinatorEnabled')
-    expect(await repository.get()).toEqual({ ...legacy, voiceCoordinatorEnabled: false })
+    expect(await repository.get()).toEqual({ ...DEFAULT_SETTINGS, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false })
   })
   it('migrates only local host project defaults durably and preserves existing raw overrides', async () => {
     const local = '11111111-1111-4111-8111-111111111111'

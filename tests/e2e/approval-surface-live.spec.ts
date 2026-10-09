@@ -32,7 +32,7 @@ test('claude: a real approval and a real question both reach the user', async ()
     const connection = await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
       const configured = await window.sotto!.agents!.command({ type: 'configure', patch: {
-        provider: 'claude', enabled: true, enabledProviders: ['claude'], speak: false, reasoning: 'none', followupLimit: 0 } })
+        provider: 'claude', enabled: true, enabledProviders: ['claude'], reasoning: 'none', followupLimit: 0 } })
       if (configured.error) throw new Error(configured.error)
       const connected = await window.sotto!.agents!.command({ type: 'connect', provider: 'claude' })
       if (connected.error) throw new Error(connected.error)

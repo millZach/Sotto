@@ -1,5 +1,4 @@
 import { deserialize, serialize } from 'node:v8'
-import { vi } from 'vitest'
 import { AgentControl, type PublishScheduler } from '../../src/main/agents/control'
 import { AgentCredentials } from '../../src/main/agents/credentials'
 import { LocalHostService } from '../../src/main/agents/hostService'
@@ -76,8 +75,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const broadcaster = new AgentStateBroadcaster()
-  const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-    { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: control, encodeReceipt: broadcaster.encodeReceipt })
+  const unregister = registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: broadcaster.encodeReceipt })
   const handle = (channel: string, ...args: unknown[]): Promise<unknown> => Promise.resolve(handlers.get(channel)!(event, ...args))
 
   const wire: Array<{ channel: string; payload: unknown }> = []

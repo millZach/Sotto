@@ -103,7 +103,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, settings: () => startup, writingSettings: () => settings.get(),
-      historyEnabled: () => startup.historyEnabled, coordinatorEnabled: () => startup.voiceCoordinatorEnabled,
+      historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
       ...(memory && startup.memoryEnabled ? { preferences: new MemoryProfile(memory) } : {}),

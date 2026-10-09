@@ -29,10 +29,6 @@ artifacts/provider-recovery/
 artifacts/native-providers/
 artifacts/voice-journey/
 
-# Generated local inference payloads (locks remain versioned).
-resources/runtime/*.wasm
-!resources/runtime/manifest.lock.json
-
 # LLM formatting benchmark — never commit the key or raw results
 scripts/llm-bench/.openrouter-key
 scripts/llm-bench/results/

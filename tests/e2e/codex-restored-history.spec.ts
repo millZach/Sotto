@@ -21,7 +21,7 @@ test('Codex replies stay visible when saved user receipts replay after reconnect
     await page.evaluate(async project => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], speak: false, checkClientUpdates: false } })
+      await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
       await agents.command({ type: 'connect', provider: 'codex' })
       const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'History recovery', path: project, useExisting: true })
       const projectId = created.host.projects.find(p => p.title === 'History recovery')!.id

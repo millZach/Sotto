@@ -37,12 +37,6 @@ function externalDependencyInventory(scope: 'main' | 'preload'): Plugin {
   }
 }
 
-/**
- * Vite builds workers in their own rollup pass, so a library reachable only
- * from a worker never appears in the renderer's own inventory. The natural
- * speech worker is the only importer of transformers now, and app.asar still
- * redistributes it, so the worker pass writes an inventory of its own.
- */
 function bundledDependencyInventory(fileName = 'bundled-dependencies.json'): Plugin {
   return {
     name: `sotto-bundled-dependency-inventory-${fileName}`,
@@ -95,7 +89,6 @@ export default defineConfig({
   main: {
     build: { rollupOptions: { external: ['node-pty'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
-      wakeWorker: resolve(__dirname, 'src/main/agents/wakeWorker.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
@@ -123,9 +116,6 @@ export default defineConfig({
   },
   renderer: {
     plugins: [bundledDependencyInventory()],
-    worker: {
-      plugins: () => [bundledDependencyInventory('bundled-dependencies.worker.json')],
-    },
     define: {
       'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },

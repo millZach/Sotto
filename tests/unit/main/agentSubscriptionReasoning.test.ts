@@ -45,7 +45,7 @@ describe('Sotto subscription reasoning integration', () => {
   it('migrates old configuration without resetting effort in unrelated settings patches', () => {
     const legacy = Object.fromEntries(Object.entries(defaultAgentConfiguration()).filter(([key]) => key !== 'reasoningEffort'))
     expect(agentConfigurationSchema.parse(legacy).reasoningEffort).toBe('')
-    expect(agentCommandSchema.parse({ type: 'configure', patch: { speak: false } })).toEqual({ type: 'configure', patch: { speak: false } })
+    expect(agentCommandSchema.parse({ type: 'configure', patch: { } })).toEqual({ type: 'configure', patch: { } })
   })
   it.each(['claude', 'codex', 'grok'] as const)('uses the selected %s model and effort for both intent and supervision with no Sotto API credential', async provider => {
     const f = await fixture()

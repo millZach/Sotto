@@ -88,9 +88,7 @@ export class SettingsRepository {
     return parseSettings(await this.store.read(), this.defaults)
   }
   private writeSettings(settings: AppSettings): Promise<void> {
-    const { voiceCoordinatorEnabled, ...current } = settings
-    void voiceCoordinatorEnabled
-    return this.store.writeSerialized(JSON.stringify(current, null, 2))
+    return this.store.writeSerialized(JSON.stringify(settings, null, 2))
   }
 
   private enqueueMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

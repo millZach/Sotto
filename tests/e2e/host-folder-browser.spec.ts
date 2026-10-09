@@ -20,7 +20,7 @@ test('adds a project from this computer\'s folders, by mouse and by keyboard', a
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()

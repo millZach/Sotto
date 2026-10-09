@@ -98,27 +98,23 @@ describe.skipIf(!PERF_BENCH)('command reply cost', () => {
     const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
     const url = 'file:///main.html'
     const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
-    const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
-      { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: live, encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
+    const unregister = registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
     dispose = () => { unregister(); router.dispose() }
     const send = (command: AgentCommand) =>
       listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>
 
-    let flip = false
-    const voice = () => { flip = !flip; return send({ type: 'voice', action: flip ? 'mute' : 'unmute' }) }
     let selected = 0
     const select = () => send({ type: 'select-thread', threadId: `thread-${selected++ % THREADS}` })
     let typed = 0
     const draft = () => send({ type: 'save-thread-draft', threadId: 'thread-0', draftId: randomUUID(), text: `Draft ${typed++}` })
 
-    const replies = [await voice(), await select(), await draft()]
+    const replies = [await select(), await draft()]
     const report = {
       threads: THREADS, messagesPerThread: MESSAGES_PER_THREAD, textLength: TEXT_LENGTH, iterations: ITERATIONS,
       replyCarriesMessages: replies.map(reply => reply.host.threads.some(thread => thread.messages.length > 0)),
       ms: {
         get: await time(() => live.get()),
         shell: await time(() => live.shell()),
-        voice: await time(voice),
         selectThread: await time(select),
         saveThreadDraft: await time(draft),
       },

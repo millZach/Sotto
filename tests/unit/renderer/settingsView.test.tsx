@@ -14,7 +14,7 @@ import {
   type HotkeyChangeResult,
   type TranscriptionKeyCheck,
 } from '../../../src/shared/contracts'
-import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
+import { parseSettings, DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import { beginNewThread } from '../../../src/renderer/src/agents/newThread'
@@ -1274,9 +1274,8 @@ describe('SettingsView', () => {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
     }
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container } = render(<SettingsView {...baseProps()} />)
@@ -1297,9 +1296,8 @@ describe('SettingsView', () => {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
       host: { connected: false, name: 'Providers', version: '', capabilities, projects: [], models: [], threads: [] },
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+      draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
     }
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
@@ -1312,7 +1310,7 @@ describe('SettingsView', () => {
     expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
     expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
     // A legacy flag cannot restore the removed controls.
-      rerender(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true } })} />)
+    rerender(<SettingsView {...baseProps({ settings: parseSettings({ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true }) })} />)
     expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
   })
@@ -1327,9 +1325,8 @@ function withProjects(hostId?: string): AgentState {
       projects: [{ id: 'one', title: 'One', path: 'C:/One' }, { id: 'two', title: 'Two', path: 'C:/Two' }],
     },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
+    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: true }, reasoningAccounts: [],
   }
   const clientState = hostId ? clientAgentState({ ...state, hostId }) : state
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(clientState, vi.fn(async () => clientState)))

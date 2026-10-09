@@ -107,7 +107,7 @@ test('a pull request is checked out from the branch picker, opened from its badg
     await page.evaluate(async path => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
       const agents = window.sotto!.agents!
-      await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await agents.command({ type: 'configure', patch: { enabled: true, } })
       await agents.command({ type: 'connect' })
       await agents.command({ type: 'create-project', title: 'Review app', path, useExisting: true })
     }, repository)

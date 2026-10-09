@@ -15,24 +15,11 @@ import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
 import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
-/** Clock origin is the last voiced PCM frame received by the renderer, not hardware acoustic capture. */
-export const agentVoiceTimingSchema = z.object({
-  speechEndedAt: z.string().datetime(),
-  phase: z.enum(['cold', 'warm']),
-  basis: z.literal('detector-frame-received'),
-}).strict()
-export type AgentVoiceTiming = z.infer<typeof agentVoiceTimingSchema>
-
 export const AGENT_GET = 'sotto:agents:get'
 export const AGENT_CHOOSE_PROJECT_DIRECTORY = 'sotto:agents:choose-project-directory'
 export const AGENT_COMMAND = 'sotto:agents:command'
 export const AGENT_STATE = 'sotto:agents:state'
 export const AGENT_E2E = 'sotto:e2e:agents'
-export const AGENT_SPEECH = 'sotto:agents:speech'
-export const AGENT_SPEECH_CANCEL = 'sotto:agents:speech-cancel'
-export const AGENT_GROK_VOICES = 'sotto:agents:grok-voices'
-export const AGENT_VOICE_MODEL = 'sotto:agents:voice-model'
-export const AGENT_WAKE = 'sotto:agents:wake'
 export const AGENT_ATTACHMENT_PREVIEW = 'sotto:agents:attachment-preview'
 /** The window stages an image's bytes once and gets its handle back, or reads a staged image back for a chip (ADR-0031). */
 export const AGENT_ATTACHMENT_STAGE = 'sotto:agents:stage-attachment'
@@ -41,16 +28,6 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
-export const agentWakeDetectionSchema = z.object({ detected: z.boolean(), endSeconds: z.number().min(0).max(8.25) })
-export type AgentWakeDetection = z.infer<typeof agentWakeDetectionSchema>
-export const agentSpeechSchema = z.object({ audioBase64: z.string().max(20_000_000), mimeType: z.literal('audio/wav') })
-export const agentVoiceModelStatusSchema = z.object({ ready: z.boolean(), completedBytes: z.number().nonnegative(), totalBytes: z.number().nonnegative() })
-export type AgentVoiceModelStatus = z.infer<typeof agentVoiceModelStatusSchema>
-export const NATURAL_VOICES = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'] as const
-const grokSpeechVoiceSchema = z.string().trim().min(1).max(256).refine(value => !/\p{Cc}/u.test(value), 'Choose a valid Grok voice ID.')
-export const agentSpeechVoicesSchema = z.array(z.object({ id: grokSpeechVoiceSchema, name: z.string().min(1).max(300) })).max(5_000)
-export type AgentSpeechVoice = z.infer<typeof agentSpeechVoicesSchema>[number]
-
 export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 /**
@@ -555,10 +532,6 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
-const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
-const orbColorSchema = z.enum(ORB_COLORS)
-export type OrbColor = z.infer<typeof orbColorSchema>
-const speechProviderSchema = z.enum(['grok', 'kokoro', 'natural', 'system'])
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
   enabledProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
@@ -569,17 +542,10 @@ export const agentConfigurationSchema = z.object({
    * "never asked" from "turned off" (ADR-0036). Absent until the user turns one off.
    */
   disconnectedProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
-  orbColor: orbColorSchema.default('teal'),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(6_144),
   followupLimit: z.number().int().min(0).max(100),
-  speak: z.boolean(),
-  speechProvider: speechProviderSchema.default('grok'),
-  speechVoice: z.enum(NATURAL_VOICES).default('F1'),
-  grokSpeechVoice: grokSpeechVoiceSchema.default('altair'),
-  wakeModelDirectory: z.string().max(4_096),
-  wakeRuntimeDirectory: z.string().max(4_096),
   reasoning: z.enum(['none', 'codex', 'claude', 'grok', 'openrouter', 'openai']),
   reasoningModel: z.string().max(512),
   reasoningEffort: z.string().max(64).default(''),
@@ -600,9 +566,8 @@ export const agentConfigurationSchema = z.object({
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
-  orbColor: 'teal',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  followupLimit: 5, speak: true, speechProvider: 'grok', speechVoice: 'F1', grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
+  followupLimit: 5, reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -711,9 +676,7 @@ export const agentStateSchema = z.object({
    * it or the provider says otherwise, and takes no other action on the thread meanwhile. Absent when there are none.
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
-  speech: z.object({ id: z.number(), text: z.string(), preview: z.boolean().optional() }),
-  voice: z.object({ status: z.string(), error: z.string().nullable(), action: z.enum(['none', 'mute', 'unmute', 'stop-speaking', 'sleep']), revision: z.number() }),
-  credentials: z.object({ reasoning: z.boolean(), grokSpeech: z.boolean().default(false), secure: z.boolean() }),
+  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
@@ -894,8 +857,8 @@ export function agentShell(state: AgentState): AgentState {
 }
 export const agentCommandSchema = z.discriminatedUnion('type', [
   // Re-extend defaulted fields: Zod 4 applies defaults through partial(), resetting omitted settings.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), orbColor: orbColorSchema.optional(), reasoningEffort: z.string().max(64).optional(), speechProvider: speechProviderSchema.optional(), speechVoice: z.enum(NATURAL_VOICES).optional(), grokSpeechVoice: grokSpeechVoiceSchema.optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'grokSpeech']), value: z.string().max(16_384) }).strict(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional() }) }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   z.object({ type: z.literal('connect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
   z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
@@ -908,10 +871,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
   z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),
-  z.object({ type: z.literal('preview-voice') }).strict(),
-  z.object({ type: z.literal('utterance'), text, voiceTiming: agentVoiceTimingSchema.optional() }).strict(),
-  z.object({ type: z.literal('voice'), action: z.enum(['mute', 'unmute', 'stop-speaking', 'sleep']) }).strict(),
-  z.object({ type: z.literal('voice-state'), status: z.string().max(32), error: z.string().max(2000).nullable() }).strict(),
+  z.object({ type: z.literal('utterance'), text }).strict(),
   z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
     attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), requestId: id.nullable().optional(),
@@ -1026,13 +986,6 @@ export interface AgentBridge {
   /** One folder's subfolders on a named host, for the Add project dialog's folder browser. */
   hostFolders?(request: HostFoldersClientRequest): Promise<HostFoldersResult>
   chooseProjectDirectory?(): Promise<string | null>
-  prepareWake?(): Promise<AgentWakeDetection>
-  detectWake?(audio: Float32Array): Promise<AgentWakeDetection>
-  releaseWake?(): Promise<AgentWakeDetection>
-  synthesizeSpeech?(text: string): Promise<{ audioBase64: string; mimeType: 'audio/wav' }>
-  cancelSpeech?(): Promise<void>
-  grokVoices?(): Promise<AgentSpeechVoice[]>
-  voiceModel?(action: 'status' | 'download'): Promise<AgentVoiceModelStatus>
   get(): Promise<AgentState>
   /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>

@@ -23,7 +23,7 @@ const permission: AgentRequest = {
 async function prepare(page: Page, appearance: 'dark' | 'light'): Promise<void> {
   await page.evaluate(async appearance => {
     await window.sotto!.updateSettings({ onboardingComplete: true, appearance })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   }, appearance)
   await page.reload()

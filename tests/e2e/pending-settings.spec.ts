@@ -76,7 +76,7 @@ test('a permission choice shows at once, marked pending with what is in force; a
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'approval-required' })

@@ -255,7 +255,7 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
   const { app, page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     // The renderer's state keys threads and projects by the host that owns them.
@@ -394,7 +394,7 @@ test('the composer beside a pending permission says to allow or deny once, throu
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-final-visual-fixes-requests-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
     assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }))

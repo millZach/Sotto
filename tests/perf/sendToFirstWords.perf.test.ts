@@ -110,7 +110,7 @@ async function bench(provider: typeof PROVIDERS[number], repository: string): Pr
   await credentials.load()
   const runtime = await createAgentRuntime({
     directory: f.root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
-    historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: e2eAgentReasoner,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: f.adapter },
     gitStatus: { fetchIntervalMs: () => DEFAULT_SETTINGS.gitFetchIntervalSeconds * 1000, foreground: () => true },
   })

@@ -69,7 +69,7 @@ describe('voice control upgrade', () => {
     const state = f.control.get()
     expect(state).toMatchObject({ assignments: [], queue: [], pendingRequest: '', composing: false,
       draft: 'Unsent answer', draftThreadId: 'workshop', draftRequestId: 'native-question',
-      configuration: { reasoning: 'claude', reasoningModel: 'claude:test', newThreadModelId: 'claude:test', newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'approval-required', speak: false } })
+      configuration: { reasoning: 'claude', reasoningModel: 'claude:test', newThreadModelId: 'claude:test', newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'approval-required' } })
     expect(state.draftAttachments).toHaveLength(1)
     expect(state.threadDrafts).toEqual(expect.arrayContaining([expect.objectContaining({ threadId: 'workshop', draftId, text: 'Unsent answer', requestId: 'native-question', attachments: state.draftAttachments })]))
     expect(state.followups).toEqual(expect.arrayContaining([expect.objectContaining({ id: queuedId, text: 'Queued by the user', status: 'paused' })]))
@@ -111,13 +111,18 @@ describe('voice control upgrade', () => {
     const f = await fixture(); await f.control.start()
     const commands = [
       { type: 'assign', threadId: 'workshop' }, { type: 'unassign', threadId: 'workshop' }, { type: 'pause', threadId: 'workshop' }, { type: 'resume', threadId: 'workshop' },
-      { type: 'utterance', text: 'Manage workshop' }, { type: 'voice', action: 'mute' }, { type: 'voice-state', status: 'idle', error: null }, { type: 'preview-voice' },
+      { type: 'utterance', text: 'Manage workshop' },
       { type: 'create-thread', projectId: 'project', title: 'Managed', modelId: 'claude:test', managed: true },
-      { type: 'configure', patch: { speak: true } }, { type: 'credential', slot: 'grokSpeech', value: 'fixture' },
     ] as AgentCommand[]
     for (const command of commands) expect((await f.control.command(command)).error, command.type).toBe(MANAGEMENT_REMOVED)
+    for (const retired of [
+      { type: 'voice', action: 'mute' }, { type: 'voice-state', status: 'idle', error: null }, { type: 'preview-voice' },
+      { type: 'utterance', text: 'Old capture', voiceTiming: { speechEndedAt: new Date().toISOString(), phase: 'warm', basis: 'detector-frame-received' } },
+      { type: 'credential', slot: 'grokSpeech', value: 'fixture' },
+      ...Object.entries(LEGACY_VOICE_CONFIGURATION).filter(([key]) => key !== 'followupLimit').map(([key, value]) => ({ type: 'configure', patch: { [key]: value } })),
+    ]) expect(agentCommandSchema.safeParse(retired).success).toBe(false)
     const manual = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'Explicit prompt' })
-    expect(manual.error).toBeNull(); expect(manual.assignments).toEqual([]); expect(manual.speech.text).toBe('')
+    expect(manual.error).toBeNull(); expect(manual.assignments).toEqual([]); expect(manual).not.toHaveProperty('speech'); expect(manual).not.toHaveProperty('voice')
     expect(f.reasoner.intent).not.toHaveBeenCalled(); expect(f.reasoner.decide).not.toHaveBeenCalled()
     for (const managed of [undefined, false]) {
       const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Manual thread', modelId: 'claude:test', ...(managed === undefined ? {} : { managed }) })
@@ -132,7 +137,10 @@ describe('voice control upgrade', () => {
     expect(wire).toMatchObject({ assignments: [], queue: [], pendingRequest: '', credentials: { grokSpeech: false }, configuration: LEGACY_VOICE_CONFIGURATION })
     const legacy = { ...wire, assignments: [{ threadId: 'workshop', mode: 'managed' }], configuration: { ...wire.configuration, speak: true } }
     const read = protocolAgentStateSchema.parse(legacy)
-    expect(read).toMatchObject({ legacyManagement: true, assignments: [], queue: [], configuration: { speak: false } })
+    expect(read).toMatchObject({ legacyManagement: true, assignments: [], queue: [] })
+    expect(read).not.toHaveProperty('speech'); expect(read).not.toHaveProperty('voice')
+    expect(read.credentials).not.toHaveProperty('grokSpeech')
+    for (const key of Object.keys(LEGACY_VOICE_CONFIGURATION).filter(key => key !== 'followupLimit')) expect(read.configuration).not.toHaveProperty(key)
     expect(protocolAgentStateSchema.parse(read).legacyManagement).toBe(true)
     expect(protocolAgentStateSchema.parse(wire).legacyManagement).toBe(false)
     expect(protocolAgentStateSchema.safeParse({ ...legacy, configuration: { ...legacy.configuration, unknownGrant: true } }).success).toBe(false)

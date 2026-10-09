@@ -314,7 +314,6 @@ export class AgentControl {
   private attentionNarration: string | null = null
   private queueSelectionPinned = false
   private coordinatorConversation = false
-  private speechPreferenceRevision = 0
   private selectionRevision = 0
   private manualDraftId: string | null = null
   private readonly promptAdmissions = new Map<string, { digest: string; task: Promise<AgentState> }>()
@@ -330,8 +329,6 @@ export class AgentControl {
   private viewedThreadIds: readonly string[] = []
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private finishedUnread = new FinishedUnread()
-  private readonly dispatchTurns = new Map<string, ActiveTurn>()
-  private readonly feedbackReady = new Set<ActiveTurn>()
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   private broadcastCancel: (() => void) | null = null
@@ -410,12 +407,10 @@ export class AgentControl {
       assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
       draftRequestId: null, draftAttachments: [], deliveredDrafts: [], obsoleteDrafts: [], threadDrafts: [], deliveries: [],
       pendingRequest: '',
-      globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: false },
+      globalLaneBusy: false, notice: '', error: null,
+      credentials: { reasoning: false, secure: false },
       reasoningAccounts: [],
     }
-    if (dependencies.removalMode) this.state.configuration.speak = false
     // Compact: it is rewritten before every send.
     this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
@@ -987,7 +982,7 @@ export class AgentControl {
    * Records this moment's feedback evidence, then asks for a broadcast. A provider emits dozens of
    * frames a second and every one of them publishes, so listener notifications coalesce onto
    * one run per window. Commands
-   * still return the state their action produced. Draft saves and voice-status reports return the
+   * still return the state their action produced. Draft saves return the
    * shell directly so a routine reply never copies histories the desktop router will discard.
    */
   private publish(feedback?: { receivedAt: number; threadId: string; draftId: string }): void {
@@ -999,8 +994,6 @@ export class AgentControl {
       const delivery = this.state.deliveries?.find(item => item.threadId === feedback.threadId && item.draftId === feedback.draftId)
       if (delivery) delivery.localFeedbackMs = localFeedbackMs
     }
-    for (const turn of this.feedbackReady) turn.firstFeedbackAtMs ??= Date.now()
-    this.feedbackReady.clear()
     // The first publish of a burst is never held back; anything during the window rides the trailing run.
     // So is a thread a window is looking at starting a message or an activity record: the first words of a
     // reply must not wait behind the echo of the prompt that asked for it.
@@ -1085,15 +1078,13 @@ export class AgentControl {
     if (messages.length > 0) this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
     return { ...delta, messageDeltas }
   }
-  private say(text: string, preview = false): void {
+  private say(text: string): void {
     this.attentionNarration = null
     this.state.notice = text
-    if (this.dependencies.removalMode) return
-    this.state.speech = { id: this.state.speech.id + 1, text, preview }
   }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { reasoning: vault.has('reasoning'), grokSpeech: !this.dependencies.removalMode && vault.has('grokSpeech'), secure: vault.available() }
+    this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available() }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)
@@ -2131,24 +2122,6 @@ export class AgentControl {
     const selectionRevision = this.selectionRevision
     const manualRetryId = (command.type === 'manual-send' || command.type === 'steer') ? this.outbox.find(item => item.threadId === command.threadId)?.id
       : command.type === 'send' ? this.outbox.find(item => item.threadId === this.state.draftThreadId)?.id : undefined
-    if (command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1) {
-      this.state.configuration.speak = command.patch.speak
-      this.speechPreferenceRevision += 1
-      if (!command.patch.speak) { this.state.voice.action = 'stop-speaking'; this.state.voice.revision += 1 }
-      this.publish()
-      return this.persist().then(() => this.shell(), () => {
-        this.state.error = 'Could not save the spoken reply setting. Retry when storage is available.'
-        this.publish(); return this.shell()
-      })
-    }
-    if (command.type === 'voice-state') {
-      this.state.voice.status = command.status; this.state.voice.error = command.error; this.publish()
-      return Promise.resolve(this.shell())
-    }
-    if (command.type === 'voice') {
-      this.state.voice.action = command.action; this.state.voice.revision += 1; this.publish()
-      return Promise.resolve(this.shell())
-    }
     // Host observations bypass this lane: a direct provider send must revoke authority even during model reasoning.
     const laneThreadId = actionThreadId && THREAD_SCOPED_COMMAND_TYPES.has(command.type) ? actionThreadId : ''
     const independent = laneThreadId !== ''
@@ -2162,7 +2135,6 @@ export class AgentControl {
         ? this.beginTurn({
           source: command.type === 'utterance' ? 'utterance' : 'command',
           commandType: command.type,
-          ...(command.type === 'utterance' && command.voiceTiming ? { voiceTiming: command.voiceTiming } : {}),
           text: command.type === 'utterance' ? command.text
             : (command.type === 'manual-send' || command.type === 'steer') ? command.text : command.type === 'send' ? command.draft?.text ?? this.state.draft : command.type === 'answer' ? command.answer : '',
         }) : undefined
@@ -2206,7 +2178,6 @@ export class AgentControl {
         if (turn.projectId === undefined) turn.projectId = this.state.activeProjectId
       }
       this.publish()
-      if (turn) turn.firstFeedbackAtMs ??= Date.now()
       await this.finishTurn(turn, unconfirmedAnswer?.delivered ? undefined : failure)
       // Completion can settle during persistence or diagnostics, after the catch observed uncertainty.
       if (unconfirmedAnswer?.delivered) failure = undefined
@@ -2605,12 +2576,8 @@ export class AgentControl {
     }
     if (['utterance', 'compose', 'assign', 'send', 'manual-send', 'answer'].includes(command.type)) this.contextActivityAt = Date.now()
     switch (command.type) {
-      case 'preview-voice': this.say('Hi, I’m Sotto. Your agents are ready when you are.', true); return
       case 'cancel-request': this.state.pendingRequest = ''; this.say('Pending request cleared.'); return
-      case 'voice': this.state.voice.action = command.action; this.state.voice.revision += 1; return
-      case 'voice-state': this.state.voice.status = command.status; this.state.voice.error = command.error; return
       case 'configure': {
-        const speechRevision = this.speechPreferenceRevision
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...command.patch })
         const before = this.state.configuration
         // Coordinator account selection has no authority over native thread connections.
@@ -2624,7 +2591,6 @@ export class AgentControl {
           // What the new set leaves out is turned off, and what it puts back is on again (ADR-0036).
           if (command.patch.disconnectedProviders === undefined) next = withTurnedOff(next, turnedOff(before, removed, next.enabledProviders ?? []))
         }
-        if (speechRevision !== this.speechPreferenceRevision) next.speak = this.state.configuration.speak
         this.state.configuration = next
         // The newly chosen account's models and efforts fill Settings; check it without holding up the save.
         if (next.reasoning !== before.reasoning && isSubscriptionReasoning(next.reasoning)) void this.checkReasoning(next.reasoning).then(() => this.publish())
@@ -3190,10 +3156,9 @@ export class AgentControl {
   }
   private async dispatch(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
     client: ClientIdentity = this.localClient, atomicDigest?: string): Promise<void> {
-    if (turn) this.dispatchTurns.set(command.commandId, turn)
     const releaseAnswer = command.type === 'answer' ? this.holdAnswer(command.threadId, command.commandId) : () => undefined
     try { await this.dispatchPending(command, turn, validate, draftId, client, atomicDigest) }
-    finally { releaseAnswer(); this.dispatchTurns.delete(command.commandId); this.settingsDispatching.delete(command.commandId) }
+    finally { releaseAnswer(); this.settingsDispatching.delete(command.commandId) }
   }
   private async dispatchPending(command: DispatchCommand, turn?: ActiveTurn, validate?: () => void, draftId?: string,
     client: ClientIdentity = this.localClient, atomicDigest?: string): Promise<void> {
@@ -3641,7 +3606,6 @@ export class AgentControl {
     let intent
     try {
       intent = await this.dependencies.reasoner.intent(request, this.state.host, this.state.activeProjectId, defaultNewThreadModelId(this.state.configuration, this.state.host.models, this.state.reasoningAccounts), this.state.activeThreadId, preferences)
-      if (turn) turn.intentResolvedAtMs = Date.now()
     } catch (error) {
       if (turn) turn.failureCode = 'reasoning-failed'
       throw error
@@ -3721,8 +3685,7 @@ export class AgentControl {
     this.state.queue = this.state.queue.filter(item => this.keepPendingAttention(item, snapshot))
     if (this.attentionNarration && !this.state.queue.some(item => attentionItemKey(item) === this.attentionNarration)) {
       this.attentionNarration = null
-      this.state.notice = ''; this.state.speech.text = ''
-      this.state.voice.action = 'stop-speaking'; this.state.voice.revision += 1
+      this.state.notice = ''
     }
     for (const item of [...this.outbox]) {
       const thread = snapshot.threads.find(t => t.id === item.threadId)
@@ -3740,8 +3703,6 @@ export class AgentControl {
       if (item.type === 'configure-thread' && this.settingsDispatching.has(item.id)) this.settledSettings.add(item.id)
       // A disappeared question does not prove that our answer was accepted.
       // Only the exact adapter acknowledgement above can retire retained content.
-      const turn = this.dispatchTurns.get(item.id)
-      if (turn) this.feedbackReady.add(turn)
       // Match both representations while the selected skills, files and revision owner still exist.
       const savedDraft = this.state.threadDrafts?.find(d => d.threadId === this.state.draftThreadId && d.draftId === this.manualDraftId)
       const clearsLegacyDraft = message && !item.wakeUp && (!item.draftId || item.draftId === this.manualDraftId) && this.state.draftThreadId === thread?.id && (item.draftDigest

@@ -19,7 +19,7 @@ test('legacy activity remains readable after migration and a full app restart', 
         title: 'Saved inspection', command: 'echo saved', output }] }],
   }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+  await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabled: true, },
     activeProjectId: 'project', activeThreadId: 'workshop' }))
   await writeFile(join(profile, 'workspace.json'), JSON.stringify({ snapshot, creations: [], projectAliases: [] }))
   await mkdir(resolve('artifacts/activity-performance'), { recursive: true })

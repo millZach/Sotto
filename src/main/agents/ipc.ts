@@ -1,7 +1,7 @@
 import { mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsRequestSchema, agentWorkingCopyOptionsSchema, type AgentWorkingCopyOptions, type AgentCommand, type AgentCommandReceipt, type AgentState } from '../../shared/agents'
 import { AGENT_GIT_REFS, gitRefsRequestSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -9,21 +9,12 @@ import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, type GitChangedF
 import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
 import { AGENT_HOST_FOLDERS, hostFoldersClientRequestSchema, type HostFoldersClientRequest, type HostFoldersResult } from '../../shared/hostFolders'
 import { resolveE2EConfiguration } from '../e2e/e2eBoundary'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentStageRequestSchema, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAttachmentHandle, type AgentAttachmentStageRequest, AGENT_COMMAND, AGENT_GET, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_GROK_VOICES, AGENT_VOICE_MODEL, AGENT_WAKE, AGENT_THREAD_DETAIL_GET, agentAttachmentPreviewRequestSchema, agentCommandSchema, agentThreadDetailRequestSchema } from '../../shared/agents'
-import type { SottoPlatform } from '../../shared/platform'
-import { synthesizeAgentSpeech } from './speech'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentStageRequestSchema, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentAttachmentHandle, type AgentAttachmentStageRequest, AGENT_COMMAND, AGENT_GET, AGENT_THREAD_DETAIL_GET, agentAttachmentPreviewRequestSchema, agentCommandSchema, agentThreadDetailRequestSchema } from '../../shared/agents'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { AgentControl } from './control'
 import { desktopWindowClient, type HostService } from './hostService'
-import { AgentWakeService } from './wake'
-import type { NaturalSpeechModels } from './speechModels'
-import type { GrokSpeechService } from './grokSpeech'
-import type { KokoroSpeechService } from './kokoroSpeech'
 
 export interface AgentIpcOptions {
-  readonly removalMode?: boolean
-  readonly voiceCoordinatorEnabled: boolean
-  readonly wakeControl: Pick<AgentControl, 'configuration'>
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
    * so the receipt names each catalog by the revision the broadcast uses. */
   readonly encodeReceipt: (state: AgentState) => AgentCommandReceipt
@@ -36,7 +27,7 @@ export interface AgentIpcOptions {
  * window is in the same process; every command goes through the host service with the identity of
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
-export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], platform: SottoPlatform, speechModels: Pick<NaturalSpeechModels, 'status' | 'download'>, grokSpeech: Pick<GrokSpeechService, 'synthesize' | 'voices' | 'cancel'>, kokoroSpeech: Pick<KokoroSpeechService, 'synthesize' | 'cancel'>, options: AgentIpcOptions): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
   const { workingCopyOptions, encodeReceipt } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
@@ -58,60 +49,8 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     const result = await dialog.showOpenDialog(parent, { properties: ['openDirectory'] })
     return result.canceled ? null : result.filePaths[0] || null
   })
-  ipc.handle(AGENT_GROK_VOICES, async (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    z.undefined().parse(payload)
-    if (options.removalMode) throw new Error('Reply voices are no longer available.')
-    return grokSpeech.voices()
-  })
-  ipc.handle(AGENT_VOICE_MODEL, async (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    const action = z.enum(['status', 'download']).parse(payload)
-    if (options.removalMode) throw new Error('Reply voices are no longer available.')
-    return action === 'download' ? speechModels.download() : speechModels.status()
-  })
   /** The one client there is: this app's own window, over IPC, as this machine's user. */
   const windowClient = desktopWindowClient()
-  const wake = new AgentWakeService(app.isPackaged ? join(process.resourcesPath, 'runtime', 'kws') : join(app.getAppPath(), 'node_modules', 'sherpa-onnx'), join(__dirname, 'wakeWorker.js'))
-  ipc.handle(AGENT_WAKE, async (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    const request = z.discriminatedUnion('type', [
-      z.object({ type: z.literal('prepare') }).strict(),
-      z.object({ type: z.literal('detect'), audio: z.instanceof(Float32Array) }).strict(),
-      z.object({ type: z.literal('release') }).strict(),
-    ]).parse(payload)
-    if (request.type === 'release') { wake.dispose(); return { detected: false, endSeconds: 0 } }
-    if (options.removalMode) throw new Error('Voice control is no longer available. Dictation is still available.')
-    const configuration = options.wakeControl.configuration()
-    if (!options.voiceCoordinatorEnabled || !configuration.enabled) throw new Error('Agent voice control is not enabled.')
-    await wake.prepare(configuration.wakeModelDirectory, configuration.wakeRuntimeDirectory || undefined)
-    return request.type === 'detect' ? wake.detect(request.audio) : { detected: false, endSeconds: 0 }
-  })
-  let speechOperation: symbol | null = null
-  let remoteSpeech = false
-  ipc.handle(AGENT_SPEECH_CANCEL, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    z.undefined().parse(payload)
-    grokSpeech.cancel()
-    kokoroSpeech.cancel()
-    if (remoteSpeech) speechOperation = null
-  })
-  ipc.handle(AGENT_SPEECH, async (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    if (options.removalMode) throw new Error('Reply voices are no longer available.')
-    if (speechOperation !== null) throw new Error('Speech is already being prepared.')
-    const text = z.string().min(1).max(2000).parse(payload)
-    const configuration = control.get().configuration
-    if (configuration.speechProvider === 'natural') throw new Error('Natural speech uses the local voice worker. Reopen Sotto and retry.')
-    const operation = Symbol('speech')
-    speechOperation = operation
-    remoteSpeech = configuration.speechProvider === 'grok' || configuration.speechProvider === 'kokoro'
-    try {
-      if (configuration.speechProvider === 'grok') return await grokSpeech.synthesize(text, configuration.grokSpeechVoice)
-      if (configuration.speechProvider === 'kokoro') return await kokoroSpeech.synthesize(text)
-      return await synthesizeAgentSpeech(text, platform)
-    } finally { if (speechOperation === operation) speechOperation = null }
-  })
   // The window assembles its own full state from the shell and the detail of the threads it is looking at,
   // so neither the first state nor a command's answer carries every thread's history across the bridge.
   ipc.handle(AGENT_GET, event => {
@@ -169,5 +108,5 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.
     return host.command(payload as AgentCommand, windowClient).then(encodeReceipt)
   })
-  return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
+  return () => { ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_COMMAND) }
 }

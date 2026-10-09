@@ -210,11 +210,11 @@ describe('authenticated host socket', () => {
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
     const sharedFeedback = () => {
       const state = host.service.shell()
-      return structuredClone({ error: state.error, notice: state.notice, speech: state.speech })
+      return structuredClone({ error: state.error, notice: state.notice })
     }
     const otherFeedback = () => {
       const state = second.shell()
-      return structuredClone({ error: state.error, notice: state.notice, speech: state.speech })
+      return structuredClone({ error: state.error, notice: state.notice })
     }
     await second.readShell()
     const initialShared = sharedFeedback(), initialOther = otherFeedback()

@@ -61,7 +61,7 @@ test('an agent tests a web build on the test iPhone while the user watches it fl
     await page.evaluate(async () => {
       // The ADR-0029 default stays on: the phone runs without asking, the way a user first meets it.
       await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload(); await resize(launched, 1280, 800); await openThreads(page)

@@ -26,9 +26,8 @@ function state(models: AgentModel[], clientHosts?: AgentClientHost[]): AgentStat
     host: { ...structuredClone(EMPTY_AGENT_HOST), hostId: 'aaaaaaaa-0000-4000-8000-000000000000', models, ...(clientHosts ? { clientHosts } : {}) },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
     draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false },
+    globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: false },
     reasoningAccounts: [],
   }
 }

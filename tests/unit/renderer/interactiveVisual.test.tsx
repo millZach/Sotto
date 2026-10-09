@@ -193,8 +193,8 @@ describe('a card whose page cannot run', () => {
   const ON_ANOTHER_COMPUTER = 'This page belongs to a thread on another computer, so it is not shown here.'
   const routedState = (): AgentState => ({ configuration: defaultAgentConfiguration(), connection: 'connected', host: { ...EMPTY_AGENT_HOST, hostId: HERE },
     assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [], hostId: HERE, clientScoped: true,
+    globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: false }, reasoningAccounts: [], hostId: HERE, clientScoped: true,
     connections: [{ hostId: HERE, name: 'This computer', kind: 'local', connected: true }, { hostId: THERE, name: 'Forge', kind: 'remote', connected: true }] })
 
   it('keeps the transcript, and says a paired host\'s page is on another computer, through the window\'s real bridge', async () => {

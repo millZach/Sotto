@@ -245,7 +245,7 @@ for (const provider of ['claude', 'codex'] as const) {
         const { page } = launched
         await page.evaluate(async provider => {
           await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], speak: false } })
+          const configured = await window.sotto!.agents!.command({ type: 'configure', patch: { provider, enabled: true, enabledProviders: [provider], } })
           if (configured.error) throw new Error(configured.error)
           const connected = await window.sotto!.agents!.command({ type: 'connect', provider })
           if (connected.error) throw new Error(connected.error)

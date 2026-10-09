@@ -11,7 +11,7 @@ import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, PROVIDER_LABELS, type AgentCommand, type AgentConfiguration } from '../../../src/shared/agents'
 import { olderDesktopAccountSchema } from '../../fixtures/olderDesktopAccountSchema'
-import { hostHelloSchema, hostPushSchema, LEGACY_VOICE_CONFIGURATION, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
+import { hostHelloSchema, hostPushSchema, shellForProtocolV1 } from '../../../src/shared/hostProtocol'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
@@ -157,24 +157,17 @@ it('does not reconnect again after a native adapter replaces its process while c
 })
 
 describe('reasoning account route isolation', () => {
-  it('defaults to Grok Altair and preserves an explicit Kokoro selection across restart', async () => {
-    const f = await fixture()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'altair' })
-    await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' } }))
-    await f.restart()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'kokoro', grokSpeechVoice: 'my-custom-voice' })
-  })
   it('clears the retired speech key on reload while preserving reasoning credentials', async () => {
     const f = await fixture()
     await f.account()
     const key = 'fixture-dedicated-grok-speech-key'
-    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: key })
-    await f.control.command({ type: 'configure', patch: { speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3' } })
+    await f.credentials.set('grokSpeech', key)
     await f.control.command(agentCommandSchema.parse({ type: 'configure', patch: { followupLimit: 4 } }))
     await f.credentials.load()
     await f.restart()
-    expect(f.control.get().configuration).toMatchObject({ speechProvider: 'grok', grokSpeechVoice: 'my-custom-voice', speechVoice: 'M3', reasoning: 'openrouter' })
-    expect(f.control.get().credentials).toMatchObject({ grokSpeech: false, reasoning: true })
+    expect(f.control.get().configuration).toMatchObject({ reasoning: 'openrouter', followupLimit: 4 })
+    expect(f.control.get().credentials).toMatchObject({ reasoning: true })
+    expect(f.control.get().credentials).not.toHaveProperty('grokSpeech')
     expect(JSON.stringify(f.control.get())).not.toContain(key)
     expect(await readFile(join(f.credentialsDirectory, 'credentials.json'), 'utf8')).not.toContain(key)
     expect(await readFile(join(f.root, 'agents.json'), 'utf8')).not.toContain(key)
@@ -182,10 +175,9 @@ describe('reasoning account route isolation', () => {
     await reloaded.load()
     expect(reloaded.get('grokSpeech')).toBe('')
     expect(reloaded.get('reasoning')).toBe(ROUTER_KEY)
-    await f.control.command({ type: 'configure', patch: { reasoning: 'openai', speechProvider: 'natural' } })
+    await f.control.command({ type: 'configure', patch: { reasoning: 'openai' } })
     expect(f.credentials.get('grokSpeech')).toBe('')
-    await f.control.command({ type: 'credential', slot: 'grokSpeech', value: '' })
-    expect(f.control.get().credentials.grokSpeech).toBe(false)
+    expect(f.control.get().credentials).not.toHaveProperty('grokSpeech')
   })
 
   it.each([
@@ -268,7 +260,7 @@ describe('reasoning account route isolation', () => {
     expect(current).not.toHaveProperty('membership')
     expect(current.configuration).not.toHaveProperty('membershipEndpoint')
     const wire = shellForProtocolV1(current)
-    const compatibility = { ...current, legacyManagement: false, speech: { id: 0, text: '' }, configuration: { ...current.configuration, ...LEGACY_VOICE_CONFIGURATION } }
+    const compatibility = { ...current, legacyManagement: false }
     const hello = hostHelloSchema.parse({ hostId: randomUUID(), clientId: 'older-host', shell: wire,
       capabilities: { mayAnswer: false }, sottoVersion: '0.1.21', features: [], events: [], latestSeq: 0, hasMore: false })
     expect(hello.shell).toEqual(compatibility)
@@ -341,17 +333,6 @@ describe('reasoning account route isolation', () => {
 })
 
 describe('composition navigation and explicit spoken controls', () => {
-  it('previews the configured voice while agents are disabled without inference or host work', async () => {
-    const f = await fixture()
-    await f.control.command({ type: 'disconnect' })
-    const before = f.control.get()
-    const previewed = await f.control.command({ type: 'preview-voice' })
-    expect(previewed).toMatchObject({ error: null, configuration: { enabled: false },
-      speech: { id: before.speech.id + 1, text: 'Hi, I’m Sotto. Your agents are ready when you are.', preview: true } })
-    expect(previewed.host).toEqual(before.host)
-    expect(previewed.assignments).toEqual(before.assignments)
-    expect(f.requests).toEqual([])
-  })
 
   it.each(['button', 'spoken', 'pending question'] as const)('returns from hidden prompt dictation to conversation through the %s without losing the draft', async source => {
     const f = await fixture()
@@ -369,7 +350,7 @@ describe('composition navigation and explicit spoken controls', () => {
     f.service.intent = { type: 'clarify', text: 'What would you like to review?' }
     const answered = await f.control.command({ type: 'utterance', text: 'How are you doing today?' })
     expect(f.requests.at(-1)?.utterance).toBe('How are you doing today?')
-    expect(answered.speech.text).toBe('What would you like to review?')
+    expect(answered.notice).toBe('What would you like to review?')
     expect(answered.threadDrafts).toMatchObject([{ threadId: 'workshop', text: 'Keep the existing colors.' }])
     expect(answered.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
     const resumed = await f.control.command({ type: 'resume-draft', threadId: 'workshop' })
@@ -399,8 +380,8 @@ describe('composition navigation and explicit spoken controls', () => {
     for (const text of ['What needs my attention?', 'What needs my attention?']) {
       const result = await f.control.command({ type: 'utterance', text })
       expect(result.error).toBeNull()
-      expect(result.speech.text).toBe(kind === 'empty' ? 'Nothing is queued for your attention.' : '1 item in your attention queue. Workshop: Publish the project?')
-      expect(result.speech.id).toBeGreaterThan(before.speech.id)
+      expect(result.notice).toBe(kind === 'empty' ? 'Nothing is queued for your attention.' : '1 item in your attention queue. Workshop: Publish the project?')
+      expect(result).not.toHaveProperty('speech')
       expect(result.host.threads).toEqual(before.host.threads)
       expect(result.queue).toEqual(before.queue)
       expect(result.composing).toBe(false)
@@ -699,12 +680,12 @@ describe('supervision event ordering', () => {
     const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
     expect(saved.assignments[0].seenMessageIds.length).toBeLessThanOrEqual(2000)
     expect(after.queue).toEqual(before.queue)
-    expect(after.speech).toEqual(before.speech)
+    expect(after.notice).toBe(before.notice)
     for (let refresh = 0; refresh < 2; refresh += 1) {
       const refreshed = await f.control.command({ type: 'refresh' })
       expect(refreshed.assignments[0]).toMatchObject({ mode: 'managed', contextUpdatedAt: before.assignments[0]!.contextUpdatedAt })
       expect(refreshed.queue).toEqual(before.queue)
-      expect(refreshed.speech).toEqual(before.speech)
+      expect(refreshed.notice).toBe(before.notice)
     }
     f.host.event({ type: 'manual', threadId: 'workshop', text: 'A new prompt' })
     expect(f.control.get().assignments[0]?.mode).toBe('manual')

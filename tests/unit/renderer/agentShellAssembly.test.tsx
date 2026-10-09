@@ -27,9 +27,8 @@ function fullState(threads: AgentThread[], activeThreadId: string | null = null)
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
     assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
     draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
+    globalLaneBusy: false, notice: '', error: null,
+    credentials: { reasoning: false, secure: false }, reasoningAccounts: [],
      historyEnabled: true,
   }
 }
@@ -400,7 +399,7 @@ describe('a shell held for its frame', () => {
     act(() => { wire.publish({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the shell' }) })
     expect(result.current.state?.notice).not.toBe('from the shell')
     vi.mocked(wire.bridge.command).mockResolvedValueOnce({ ...fullState([thread('workshop', [])], 'workshop'), notice: 'from the command' })
-    await act(async () => { await result.current.command({ type: 'configure', patch: { orbColor: 'amber' } }) })
+    await act(async () => { await result.current.command({ type: 'configure', patch: { projectsDirectory: 'C:/projects' } }) })
     expect(result.current.state?.notice).toBe('from the command')
     await new Promise(resolve => requestAnimationFrame(resolve))
     await act(async () => undefined)
@@ -409,15 +408,15 @@ describe('a shell held for its frame', () => {
 })
 
 describe('shell updates while the main window is hidden', () => {
-  it('delivers a widget mute without waiting for a suspended animation frame', async () => {
+  it('delivers a saved-draft notice without waiting for a suspended animation frame', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
     const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
     const initial = fullState([])
     const wire = shellBridge(initial)
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
-    act(() => wire.publish({ ...initial, voice: { ...initial.voice, action: 'mute', revision: 1 } }))
-    expect(result.current.state?.voice.action).toBe('mute')
+    act(() => wire.publish({ ...initial, notice: 'Draft saved' }))
+    expect(result.current.state?.notice).toBe('Draft saved')
     expect(frame).not.toHaveBeenCalled()
   })
 
@@ -534,4 +533,12 @@ it('keeps an open provider session on the live shell but never caches or restore
   localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(agentShell(live)))
   expect(readShellCache()!.host.threads[0]!.providerSessionOpen).toBeUndefined()
   expect(open.providerSessionOpen).toBe(true)
+})
+
+it('refetches an older shell instead of restoring its retired voice state', () => {
+  const current = cacheableShell(fullState([thread('workshop', [])], 'workshop'))
+  localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify({ ...current, speech: { id: 1, text: 'Old reply' },
+    voice: { status: 'listening', action: 'none', revision: 1, error: null } }))
+  expect(readShellCache()).toBeNull()
+  expect(current.host.threads[0]?.id).toBe('workshop')
 })

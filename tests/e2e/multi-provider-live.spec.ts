@@ -127,7 +127,7 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     if (!restoreRoot) {
       // Keep speech and automatic supervision out of this manual three-turn check.
       await page.evaluate(async () => {
-        const result = await window.sotto!.agents!.command({ type: 'configure', patch: { speak: false, followupLimit: 0, reasoning: 'none' } })
+        const result = await window.sotto!.agents!.command({ type: 'configure', patch: { followupLimit: 0, reasoning: 'none' } })
         if (result.error) throw new Error(result.error)
       })
       await openProviders(page)

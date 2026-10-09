@@ -15,7 +15,7 @@ test('a saved draft elsewhere does not close the manual composer, including whil
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'compose', text: 'Keep this saved draft in Workshop.' })
@@ -69,7 +69,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'select-thread', threadId: 'docs' })
     })
@@ -144,7 +144,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
   try {
     await page.evaluate(async () => {
       await window.sotto!.updateSettings({ onboardingComplete: true })
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -183,7 +183,7 @@ test('settled work stays off the active shelf, with real timestamps and an expan
   const fixture = designThreadsFixture()
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+    configuration: { ...defaultAgentConfiguration(), enabled: true, },
     assignments: [],
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],
     activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],

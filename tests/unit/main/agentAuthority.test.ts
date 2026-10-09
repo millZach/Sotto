@@ -159,7 +159,7 @@ describe('authority at dispatch', () => {
     const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: () => ({ allowed: true, reason: 'paired-client' }) })
     f.permission()
-    const before = f.control.get().speech
+    const before = f.control.get().notice
     const publishedErrors: Array<string | null> = []
     const off = f.control.subscribe(state => { publishedErrors.push(state.error) })
     const execute = f.host.execute.bind(f.host)
@@ -173,7 +173,7 @@ describe('authority at dispatch', () => {
       expect(result.error).toBeTruthy()
       expect(f.control.get().error).toBeNull()
       expect(publishedErrors.every(error => error === null)).toBe(true)
-      expect(f.control.get().speech.id).toBe(before.id)
+      expect(f.control.get().notice).toBe(requestLeaves ? '' : before)
     } finally { off() }
   })
 

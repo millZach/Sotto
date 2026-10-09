@@ -20,7 +20,7 @@ async function ownedProfile(prefix: string): Promise<string> {
 async function connectAndOpenThreads(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await window.sotto!.updateSettings({ onboardingComplete: true })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
   await page.reload()
@@ -298,7 +298,7 @@ async function designProfile(prefix: string, settings: Record<string, unknown> =
   const profile = await mkdtemp(join(tmpdir(), prefix))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
+    configuration: { ...defaultAgentConfiguration(), enabled: true, }, assignments: [], queue: [],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }))
   return profile

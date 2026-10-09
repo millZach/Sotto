@@ -36,10 +36,16 @@ export function withoutLegacyManagement(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
   const state = { ...value } as Record<string, unknown>
   if (state.configuration && typeof state.configuration === 'object' && !Array.isArray(state.configuration)) {
-    state.configuration = { ...withoutVoiceConfiguration(state.configuration), ...LEGACY_VOICE_CONFIGURATION }
+    state.configuration = { ...withoutVoiceConfiguration(state.configuration), followupLimit: 5 }
   }
-  return { ...state, assignments: [], queue: [], pendingRequest: '', coordinatorConversation: false, composing: false,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 } }
+  delete state.speech
+  delete state.voice
+  if (state.credentials && typeof state.credentials === 'object') {
+    const credentials = { ...state.credentials } as Record<string, unknown>
+    delete credentials.grokSpeech
+    state.credentials = credentials
+  }
+  return { ...state, assignments: [], queue: [], pendingRequest: '', coordinatorConversation: false, composing: false }
 }
 
 export function managementCommandRefusal(command: z.infer<typeof agentCommandSchema>): string | null {
@@ -47,7 +53,6 @@ export function managementCommandRefusal(command: z.infer<typeof agentCommandSch
     'select-attention', 'next', 'later', 'pause-draft', 'resume-draft', 'cancel-request'].includes(command.type)) return MANAGEMENT_REMOVED
   if (command.type === 'create-thread' && command.managed === true) return MANAGEMENT_REMOVED
   if (command.type === 'configure' && Object.keys(command.patch).some(key => key in LEGACY_VOICE_CONFIGURATION)) return MANAGEMENT_REMOVED
-  if (command.type === 'credential' && command.slot === 'grokSpeech') return MANAGEMENT_REMOVED
   return null
 }
 /** Retired account fields stay on v1's wire for desktops that still require them. */
@@ -72,7 +77,6 @@ export const protocolAgentStateSchema = z.preprocess(value => {
   const assignments = (value as Record<string, unknown>).assignments
   state.legacyManagement = (value as Record<string, unknown>).legacyManagement === true || Array.isArray(assignments) && assignments.length > 0
   state.composing = (value as Record<string, unknown>).composing
-  if (state.credentials && typeof state.credentials === 'object') state.credentials = { ...state.credentials, grokSpeech: false }
   delete state.membership
   const configuration = state.configuration
   if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) return state
