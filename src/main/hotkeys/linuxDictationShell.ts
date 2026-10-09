@@ -41,11 +41,18 @@ export class LinuxDictationShell {
     if (this.stopped) return
     // Runtime validation belongs to the controller's guarded command startup,
     // so an unavailable compositor endpoint cannot prevent Sotto from opening.
-    this.socket = new DictationSocket(this.runtimeDirectory, this.dispatch)
-    await this.socket.start()
-    if (this.stopped) return
-    this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(),
-      () => this.log('native-dictation-state-write-failed'), this.pidStart)
+    try {
+      this.socket = new DictationSocket(this.runtimeDirectory, this.dispatch)
+      await this.socket.start()
+      if (this.stopped) return
+      this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(),
+        () => this.log('native-dictation-state-write-failed'), this.pidStart,
+        live => this.monitor.setStateFileLive(live))
+    } catch (error) {
+      this.removeStateFile()
+      this.socket?.dispose()
+      throw error
+    }
   }
 
   publish(state: WidgetSnapshot): void { this.stateFile?.publish(state) }
@@ -66,5 +73,6 @@ export class LinuxDictationShell {
     // teardown belongs to runtime disposal, before Electron starts exiting.
     this.stateFile?.dispose()
     this.stateFile = null
+    this.monitor.setStateFileLive(false)
   }
 }

@@ -176,4 +176,5 @@ artifacts/linux-hyprland-paste/*
 artifacts/linux-shell-plumbing/*
 !artifacts/linux-shell-plumbing/real-check.txt
 !artifacts/linux-shell-plumbing/plugin-present.png
+!artifacts/linux-shell-plumbing/plugin-socket-held.png
 !artifacts/linux-shell-plumbing/widget-returned.png

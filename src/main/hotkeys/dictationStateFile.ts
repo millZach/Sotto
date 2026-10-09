@@ -111,12 +111,21 @@ export class DictationStateFile {
   private ownedFile: Stats | null = null
   private disposed = false
 
-  constructor(runtimeDirectory: string | undefined, edge: WidgetEdge, private readonly onFailure: () => void, pidStart?: number) {
+  constructor(runtimeDirectory: string | undefined, edge: WidgetEdge, private readonly onFailure: () => void, pidStart?: number,
+    private readonly onLiveChanged: (live: boolean) => void = () => undefined) {
     this.path = join(dirname(dictationSocketPath(runtimeDirectory)), 'dictation-state.json')
     this.directories = [...validateDictationRuntime(runtimeDirectory), validateDictationFolder(dirname(this.path))]
     const now = Date.now()
     this.state = { version: 1, pid: process.pid, ...(pidStart === undefined ? {} : { pidStart }), dictation: null, state: 'idle', since: now, updatedAt: now, detail: null, kept: false, edge }
     this.flush()
+  }
+
+  private isLive(): boolean {
+    try {
+      assertDictationDirectories(this.directories)
+      const current = lstatSync(this.path)
+      return current.isFile() && current.dev === this.ownedFile?.dev && current.ino === this.ownedFile.ino
+    } catch { return false }
   }
 
   publish(snapshot: WidgetSnapshot): void {
@@ -161,6 +170,9 @@ export class DictationStateFile {
         try { assertDictationDirectories(this.directories); unlinkSync(temp) } catch { /* No published temp remains. */ }
       }
     }
+    // An atomic write failure can leave the previous publication usable. Only
+    // hand dictation back to Electron when our live file is actually gone.
+    this.onLiveChanged(this.isLive())
     this.timer = setTimeout(() => {
       this.timer = null
       if (this.state !== published) this.flush()
@@ -177,5 +189,6 @@ export class DictationStateFile {
       const current = lstatSync(this.path)
       if (current.dev === this.ownedFile?.dev && current.ino === this.ownedFile.ino) unlinkSync(this.path)
     } catch { /* Quitting still works after runtime removal or replacement. */ }
+    this.onLiveChanged(false)
   }
 }

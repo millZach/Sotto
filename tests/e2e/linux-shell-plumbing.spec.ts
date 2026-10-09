@@ -1,6 +1,7 @@
 // Built-app proof, with microphone and provider effects scripted; commands use the real sotto client and socket.
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -11,6 +12,65 @@ import { closeSotto, e2eEnvironment, firstSottoWindow, launchSotto, openPage, ty
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
 const run = promisify(execFile)
+
+test('keeps the Electron widget with the plugin installed when another listener holds the dictation socket', async () => {
+  test.skip(process.platform !== 'linux', 'Omarchy shell plumbing')
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const home = join(profile, 'home')
+  const plugin = join(home, '.config/omarchy/plugins/sotto.dictation')
+  const socketPath = join(profile, 'sotto/dictation.sock')
+  const statePath = join(profile, 'sotto/dictation-state.json')
+  const holder = createServer(socket => socket.destroy())
+  let launched: LaunchedSotto | undefined
+  try {
+    await mkdir(plugin, { recursive: true })
+    await mkdir(join(profile, 'sotto'), { mode: 0o700 })
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+    await new Promise<void>((resolve, reject) => { holder.once('error', reject); holder.listen(socketPath, resolve) })
+    await chmod(socketPath, 0o600)
+    launched = await launchSotto('transcription-failure', profile, {
+      createProfile: async () => { throw new Error('Use the owned profile') },
+      launch: options => electron.launch({ ...options, env: { ...options?.env, HOME: home } }),
+      firstWindow: firstSottoWindow,
+      removeProfile: path => rm(requireOwnedE2EProfile(path), { recursive: true, force: true }),
+    })
+    await openPage(launched.page, 'Dictate')
+    await expect.poll(() => launched!.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))?.isVisible() ?? false)).toBe(true)
+    expect(await stat(statePath).then(() => true, () => false)).toBe(false)
+    expect((await stat(socketPath)).isSocket()).toBe(true)
+    // The compositor endpoint is unavailable, but the main button and native
+    // widget must still carry listening and kept-failure feedback.
+    await launched.page.getByRole('button', { name: 'Start dictation', exact: true }).click()
+    await launched.page.getByRole('button', { name: 'Stop', exact: true }).click()
+    const widget = launched.app.windows().find(page => page.url().endsWith('/widget.html'))!
+    await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()
+    await expect(widget.getByRole('button', { name: 'Discard recording' })).toBeVisible()
+    expect(await stat(statePath).then(() => true, () => false)).toBe(false)
+    const output = process.env.SOTTO_PROOF_CAPTURE_DIR
+    if (output) {
+      expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).toBeTruthy()
+      expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).not.toBe(process.env.SOTTO_PROOF_LIVE_SIGNATURE)
+      await launched.app.evaluate(async ({ BrowserWindow }) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          await window.webContents.capturePage(undefined, { stayAwake: true })
+        }
+      })
+      await expect.poll(async () => {
+        const { stdout } = await run('hyprctl', ['clients', '-j'])
+        return (JSON.parse(stdout) as Array<{ pid: number; title: string; mapped: boolean }>).some(client =>
+          client.pid === launched!.app.process().pid && client.title === 'Sotto Widget' && client.mapped)
+      }).toBe(true)
+      await run('grim', [join(output, 'plugin-socket-held.png')])
+    }
+    console.log(`plugin present, socket held; built app PID ${launched.app.process().pid}: dictation-state.json absent; Electron widget visible=true, mapped=true`)
+    console.log('socket held: main-button dictation kept its failed recording; widget Try again and Discard recording visible')
+  } finally {
+    if (launched) await closeSotto(launched)
+    if (holder.listening) await new Promise<void>((resolve, reject) => holder.close(error => error ? reject(error) : resolve()))
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})
 
 test('publishes private shell state, retries and discards, remembers placement and steps aside for the plugin', async () => {
   test.skip(process.platform !== 'linux', 'Omarchy shell plumbing')

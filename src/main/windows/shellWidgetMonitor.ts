@@ -9,6 +9,8 @@ export class ShellWidgetMonitor {
   private watched: { path: string; identity: Stats } | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private present: boolean | null = null
+  private stateFileLive = false
+  private suppressed: boolean | null = null
   private running = false
 
   constructor(private readonly platform: SottoPlatform, home: string, private readonly changed: (present: boolean) => void) {
@@ -25,10 +27,25 @@ export class ShellWidgetMonitor {
     this.timer.unref()
   }
 
+  setStateFileLive(live: boolean): void {
+    this.stateFileLive = live
+    if (this.running) this.refresh()
+  }
+
+  private updateSuppression(): void {
+    if (this.platform !== 'linux') return
+    const suppressed = this.running && this.present === true && this.stateFileLive
+    if (suppressed !== this.suppressed) {
+      this.suppressed = suppressed
+      this.changed(suppressed)
+    }
+  }
+
   private refresh(): void {
     if (!this.running) return
     const present = this.isDirectory(this.path)
-    if (present !== this.present) { this.present = present; this.changed(present) }
+    this.present = present
+    this.updateSuppression()
     if (!this.running) return
     let parent = dirname(this.path)
     while (!this.isDirectory(parent) && dirname(parent) !== parent) parent = dirname(parent)
@@ -55,6 +72,8 @@ export class ShellWidgetMonitor {
 
   dispose(): void {
     this.running = false
+    this.stateFileLive = false
+    this.updateSuppression()
     this.watcher?.close()
     this.watcher = null
     this.watched = null

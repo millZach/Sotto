@@ -670,7 +670,7 @@ export class WindowManager {
     this.mainWindow?.minimize()
   }
 
-  /** The shell plugin owns the Linux pill while installed. Keep the reveal intent for its removal. */
+  /** The live shell plugin owns the Linux pill. Keep the reveal intent for its removal. */
   async setWidgetSuppressed(suppressed: boolean): Promise<void> {
     if (this.dependencies.platform !== 'linux' || this.widgetSuppressed === suppressed) return
     this.widgetSuppressed = suppressed

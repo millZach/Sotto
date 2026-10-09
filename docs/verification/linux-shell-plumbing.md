@@ -6,8 +6,9 @@ October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), So
 
 ## Evidence
 
-- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON with its actual main-process `pid`, `pidStart` and opaque `dictation` identifier or null, folder mode `700`, file mode `600`, five shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
+- [Real-check output](../../artifacts/linux-shell-plumbing/real-check.txt), verbatim, includes every state JSON with its actual main-process `pid`, `pidStart` and opaque `dictation` identifier or null, folder mode `700`, file mode `600`, seven shell-journey app PIDs, the absent state file after graceful and forced exits, the nested compositor PID and process and temporary-folder cleanup results.
 - [Plugin folder present](../../artifacts/linux-shell-plumbing/plugin-present.png): the main window remains and the Electron widget is absent. Both Electron visibility and Hyprland’s mapped client list were checked before capture. The proof requests a native main-window frame first because the locked parent can suspend frame callbacks; compositor tiling and frame timing still control these captures.
+- [Plugin folder present with the socket held](../../artifacts/linux-shell-plumbing/plugin-socket-held.png): the built app opens with no state file and the Electron widget remains visible and mapped. The isolated plugin folder exists before launch, and an owned listener holds the socket.
 - [Plugin folder removed](../../artifacts/linux-shell-plumbing/widget-returned.png): the Electron widget returns during dictation. Its placement here is controlled by the nested compositor; the shell pill’s layer-shell placement belongs to the other half of #850.
 
 The proof creates an owned nested Hyprland through `systemd-run --user --scope`. It discovers that compositor by its PID, exports its own Wayland socket and Hyprland signature, and refuses the live signature before compositor observations. No key events reach the locked live session. Animations are disabled only in the nested config so captures show the final mapped state rather than unmap fade-out. Cleanup stops owned PIDs and scopes, removes only the owned instance folder, preserves pre-existing Hyprland instances and reports no remaining processes.
@@ -35,10 +36,10 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,390 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,400 tests; 50 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
-| Three Linux Playwright specs in the nested session | PASS, 5 tests in 26.5 s |
+| Three Linux Playwright specs in the nested session | PASS, 7 tests in 28.2 s |
 | Built main/preload external dependency inventories | `allowlist check: PASS` |
 
 ## Review
@@ -194,3 +195,10 @@ The integration fixture was cherry-picked unchanged from `e941ef89` as `d33384e1
 All gates were rerun after the third-review fixes, the fixture cherry-pick and the merge: typecheck, lint, build and built main/preload allowlist PASS; the full CI-form suite passed 629 files and 9,390 tests with 50 files and 182 tests skipped (504.49 s); notices verified 174 components. The focused controller/copy/schema run passed 201 tests in three files. The three Linux specs passed all five built-app journeys in 26.5 s. The refreshed real-check output records those journeys and cleanup. Fresh plugin-present and widget-returned captures were inspected; the look was unchanged, so the retained captures and incidental Linux output captures were restored.
 
 The nested proof stopped Hyprland PID `1668966`, Playwright PID `1669069` and its proof slice. Recorded PIDs, cgroup processes and owned processes remaining were all `[]`; the live Hyprland instances were preserved, and `/tmp/sp-AyOXjL` was removed. The empty generated `test-results` folder was removed; the checkout root has no proof debris. Standards review and review against this brief found no remaining findings. No runtime import, dependency, host, permission, Windows/macOS copy or widget behavior changed.
+
+
+## Bot review: keep the widget until shell publication is live
+
+The plugin folder alone no longer suppresses the Electron widget. The monitor requires both the installed folder and a live state file published after the socket starts. The publisher reports whether its owned file is still present after every write. A failed atomic update can leave the preceding file live, in which case the shell retains the widget; a failed update with no live file brings the Electron widget back. A later successful write suppresses it again. Failed startup, startup that never runs, disposal and forced exit clear suppression. A late socket startup after disposal cannot publish or suppress.
+
+Lifecycle regressions exercise these transitions with the plugin already installed, including unset and relative runtime paths, an occupied socket, an initial publication failure, later failure with and without a surviving file, recovery, and plugin removal and reinstall. The real socket test preserves the other listener's endpoint. The monitor and window tests retain Windows and macOS behavior and the ordinary widget visibility policy. The new built-app proof installs the plugin before launch and holds the socket with an owned listener; Sotto opens, the state file is absent, and both Electron visibility and the nested compositor's mapped client list show the widget present. The proof also starts and stops dictation with the main button while the socket is held, then checks the native widget’s Try again pill and Discard recording control after a kept transcription failure. The retained socket-held capture records that feedback; both main and widget frames are painted before capturing the nested output.
