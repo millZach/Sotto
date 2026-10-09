@@ -9,6 +9,7 @@ import type { AgentCommand, AgentState, AgentThread } from '../../../../src/shar
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../src/shared/settings'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { usePullRequestMergeMethod } from '../../../../src/renderer/src/tools/usePullRequestMergeMethod'
+import { BABYSIT_ENDINGS_DISMISSED_KEY } from '../../../../src/renderer/src/tools/babysitEndingsDismissed'
 import { gitPullRequestDetailSchema, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestRead, type GitPullRequestReview } from '../../../../src/shared/gitPullRequests'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -588,5 +589,32 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(screen.getByRole('group', { name: 'Babysitting ended' })).toHaveTextContent(/Ended at .+, after #74 merged\./u)
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
+  })
+
+  it('puts a read ending away with Dismiss, for good in this window, until a later ending replaces it', async () => {
+    localStorage.removeItem(BABYSIT_ENDINGS_DISMISSED_KEY)
+    const ending = (endedAt: string) => thread({ babysitEnded: [{ url: URL, number: 74, reason: 'comment-limit', endedAt }] })
+    const first = new Date(Date.now() - 3_600_000).toISOString()
+    const view = mount({ babysit: { agent: 'Claude Code' }, thread: ending(first) })
+    await opened()
+    const line = screen.getByRole('group', { name: 'Not babysitting' })
+    expect(line).toHaveTextContent('Babysit pull request is under More pull request actions.')
+    expect(line).not.toHaveTextContent('···')
+    const dismiss = within(line).getByRole('button', { name: 'Dismiss why babysitting #74 ended' })
+    dismiss.focus()
+    fireEvent.click(dismiss)
+    expect(screen.queryByRole('group', { name: 'Not babysitting' })).toBeNull()
+    // Focus waits on ···, where Babysit pull request is; nothing was sent to the host.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'More pull request actions' })).toHaveFocus())
+    expect(view.command).not.toHaveBeenCalled()
+    // Opened again, the ending stays put away; a later ending of the same pull request is shown.
+    view.unmount()
+    mount({ babysit: { agent: 'Claude Code' }, thread: ending(first) })
+    await opened()
+    expect(screen.queryByRole('group', { name: 'Not babysitting' })).toBeNull()
+    cleanup()
+    mount({ babysit: { agent: 'Claude Code' }, thread: ending(new Date().toISOString()) })
+    await opened()
+    expect(screen.getByRole('group', { name: 'Not babysitting' })).toBeInTheDocument()
   })
 })

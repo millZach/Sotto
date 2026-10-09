@@ -87,11 +87,12 @@ export function endedWords(ended: Pick<AgentBabysitEnded, 'number' | 'reason' | 
 
 /**
  * The line docked under the merge checklist, above Merge (variant C): while it babysits, since when, who started it and
- * what Sotto does, with Stop; once it ended on its own, that it did and why. Null when there is nothing to say.
+ * what Sotto does, with Stop; once it ended on its own, that it did and why, with Dismiss. Null when there is nothing
+ * to say. `stop` and `dismiss` are the buttons' accessible names, each saying which pull request a press is about.
  */
 export type BabysitLine =
   | { readonly kind: 'babysitting'; readonly title: string; readonly detail: string; readonly stop: string }
-  | { readonly kind: 'ended'; readonly title: string; readonly detail: string }
+  | { readonly kind: 'ended'; readonly title: string; readonly detail: string; readonly dismiss: string }
   | null
 export function babysitLine(options: {
   readonly thread: Pick<AgentThread, 'babysitting' | 'babysitEnded'>
@@ -116,9 +117,10 @@ export function babysitLine(options: {
   const ended = babysitEndedOf(thread, pullRequest.url)
   if (!ended) return null
   const words = endedWords(ended, now)
+  const dismiss = `Dismiss why babysitting #${pullRequest.number} ended`
   return pullRequest.state === 'open'
-    ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is under More pull request actions.` : words }
-    : { kind: 'ended', title: 'Babysitting ended', detail: words }
+    ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is under More pull request actions.` : words, dismiss }
+    : { kind: 'ended', title: 'Babysitting ended', detail: words, dismiss }
 }
 
 /**

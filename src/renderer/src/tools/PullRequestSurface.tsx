@@ -11,7 +11,8 @@ import { menuEntries } from '../agents/gitActionButton.logic'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
-import { babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
+import { babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
+import { useBabysitEndingsDismissed } from './babysitEndingsDismissed'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, limitedWords, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
@@ -63,6 +64,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const [descriptionOpen, setDescriptionOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   const [preferred, choosePreferred] = usePullRequestMergeMethod()
+  const endings = useBabysitEndingsDismissed()
   const generation = useRef(0)
   const surface = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)
@@ -183,11 +185,21 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   // Babysitting is offered on an open pull request this thread knows, where its host can and nothing babysits it yet.
   const babysat = babysittingOf(thread, detail.url) !== undefined
   const offerBabysit = Boolean(babysit && command && open && (detail.linked || detail.branch) && !babysat)
-  const line = babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? 'the agent', offered: offerBabysit })
+  // An ending the user dismissed here stays on the record, and away from this surface, until a later one replaces it.
+  const ending = babysitEndedOf(thread, detail.url)
+  const endingShown = ending ? { threadId: thread.id, url: ending.url, endedAt: ending.endedAt } : null
+  const line = endingShown && endings.dismissed(endingShown) ? null
+    : babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? 'the agent', offered: offerBabysit })
+  /** Dismiss takes its own line away; focus waits on ··· beside an open pull request, where Babysit pull request is, else on the pull request. */
+  const dismissEnding = (): void => {
+    if (!endingShown) return
+    endings.dismiss(endingShown)
+    requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) ((open ? surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') : null) ?? top.current)?.focus() })
+  }
   // A refused Stop is said in the line it answers, while that line is still there to say it.
   const stopRefused = notice?.at === 'babysit' && line?.kind === 'babysitting' ? notice.text : null
   const dock = <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} refused={stopRefused}
-    onStop={() => void babysitting(detail.url, detail.number, false)} />
+    onStop={() => void babysitting(detail.url, detail.number, false)} onDismiss={dismissEnding} />
   const menu: PaneMenuItem[][] = [[
     ...(open ? [detail.draft ? { id: 'ready', label: 'Ready for review', disabled: running, run: () => void act('ready') }
       : { id: 'draft', label: 'Convert to draft', disabled: running, run: () => void act('draft') }] : []),
@@ -281,12 +293,14 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
 
 /**
  * The line docked above Merge (variant C): babysitting since when, who started it and what Sotto does, with Stop; or
- * that it ended, and why. Stop is named for the pull request it stops, so a reader hears what a press does. It is held
+ * that it ended, and why, with Dismiss once it has been read. Each is named for its pull request, so a reader hears
+ * what a press does. Stop is held
  * with aria-disabled rather than disabled, so a press keeps focus on it: a refused Stop says why under it (`refused`),
  * and a Stop that worked takes the line away and focus moves on.
  */
-function BabysitDock({ line, busy, disabled, refused, onStop }: {
-  readonly line: BabysitLine; readonly busy: boolean; readonly disabled: boolean; readonly refused: string | null; readonly onStop: () => void
+function BabysitDock({ line, busy, disabled, refused, onStop, onDismiss }: {
+  readonly line: BabysitLine; readonly busy: boolean; readonly disabled: boolean; readonly refused: string | null
+  readonly onStop: () => void; readonly onDismiss: () => void
 }): ReactNode {
   if (line === null) return null
   const Icon = line.kind === 'babysitting' ? AlarmClock : AlarmClockOff
@@ -294,7 +308,8 @@ function BabysitDock({ line, busy, disabled, refused, onStop }: {
     <Icon size={18} aria-hidden="true" />
     <div className="pr-surface__babysit-text"><strong>{line.title}</strong><span>{line.detail}</span></div>
     {line.kind === 'babysitting' ? <Button variant="secondary" aria-label={line.stop} title={line.stop} aria-disabled={disabled || undefined}
-      onClick={() => { if (!disabled) onStop() }}>{busy ? BUSY_LABEL.babysit : 'Stop'}</Button> : null}
+      onClick={() => { if (!disabled) onStop() }}>{busy ? BUSY_LABEL.babysit : 'Stop'}</Button>
+      : <Button variant="secondary" aria-label={line.dismiss} title={line.dismiss} onClick={onDismiss}>Dismiss</Button>}
     {refused ? <p className="pr-surface__babysit-refused" role="alert">{refused}</p> : null}
   </div>
 }

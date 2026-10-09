@@ -307,6 +307,13 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     // The passing word from starting again has gone by the time anyone reads why it ended.
     await expect(passing).toBeEmpty()
     await capture(page, 'c-ended-1280x800-dark')
+    // Once read, Dismiss puts the ending away and focus goes back to the pull request; Refresh does not bring it back.
+    await ended.getByRole('button', { name: 'Dismiss why babysitting #74 ended', exact: true }).click()
+    await expect(ended).toHaveCount(0)
+    await expect(panel.getByRole('heading', { name: '#74 Greet the reviewer' })).toBeFocused()
+    await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
+    await expect(panel.locator('.pr-surface__finished[data-state="merged"]')).toBeVisible()
+    await expect(ended).toHaveCount(0)
 
     // Settings → Application: the switch beside the other agent switches, saying what each value does.
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
