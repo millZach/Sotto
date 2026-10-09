@@ -49,7 +49,7 @@ export async function openProofDebugger(url, timeoutMs = 5000) {
     throw error
   }
   return {
-    evaluate(expression, deadlineMs = 15000) {
+    evaluate(expression, deadlineMs = 15000, awaitPromise = true) {
       return new Promise((resolve, reject) => {
         if (socket.readyState !== WebSocket.OPEN) { reject(new Error('Debugger is closed')); return }
         const mine = ++id
@@ -62,7 +62,7 @@ export async function openProofDebugger(url, timeoutMs = 5000) {
         const timeout = setTimeout(() => finish(new Error('Debugger evaluation deadline')), deadlineMs)
         pending.set(mine, { resolve: value => finish(undefined, value), reject: error => finish(error) })
         try {
-          socket.send(JSON.stringify({ id: mine, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+          socket.send(JSON.stringify({ id: mine, method: 'Runtime.evaluate', params: { expression, awaitPromise, returnByValue: true } }))
         } catch (error) { finish(error) }
       })
     },

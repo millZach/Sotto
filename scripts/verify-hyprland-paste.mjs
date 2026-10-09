@@ -63,12 +63,12 @@ try {
   assert.ok(target, 'Main inspector did not start')
   debuggerClient = await openProofDebugger(target.webSocketDebuggerUrl)
   const evaluate = debuggerClient.evaluate
-  assert.equal(await evaluate('process.pid'), child.pid, 'Only drive this proof’s Electron inspector')
+  assert.equal(await evaluate('process.pid', 5000, false), child.pid, 'Only drive this proof’s Electron inspector')
   const windowExpression = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))"
   let ready = false
   while (!ready && Date.now() < deadline) {
     try {
-      ready = await evaluate(`(() => { if (!process.mainModule) return false; const w = ${windowExpression}; return Boolean(w && !w.webContents.isLoading()); })()`)
+      ready = await evaluate(`(() => { if (!process.mainModule) return false; const w = ${windowExpression}; return Boolean(w && !w.webContents.isLoading()); })()`, 2000, false)
     } catch (error) {
       if (!/Promise was collected|Execution context was destroyed/u.test(error.message)) throw error
     }
