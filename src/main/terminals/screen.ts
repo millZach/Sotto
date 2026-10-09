@@ -213,7 +213,7 @@ export class TerminalScreenRules {
       // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
       const work = /^(?:•\s+)?[\p{L}\p{N}][^()>\r\n]*\((?:\d+h \d{2}m \d{2}s|\d+m \d{2}s|\d+s) • esc to interrupt\)(?: • \S.*)?$/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
-      if (bottom.slice(-4).some(line => /^›\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
+      if (bottom.slice(-4).some(line => /^›\s*(?:Ask Codex to do anything)?$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
       const choices = /^›\s*1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^\s*[2-9]\.\s+No, and tell Codex .+/mu.test(text)
       const controls = /^Press enter to confirm or esc to cancel$/iu.test(footer)

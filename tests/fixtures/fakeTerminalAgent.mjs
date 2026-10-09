@@ -89,7 +89,7 @@ function screen(state) {
   else if (state === 'permission') body = provider === 'claude'
     ? 'Do you want to make this edit to marker.txt?\r\n❯ 1. Yes\r\n  2. No\r\nEsc to cancel · Tab to amend'
     : 'Would you like to run the following command?\r\n› 1. Yes, proceed (y)\r\n  2. No, and tell Codex what to do differently (esc)\r\nPress enter to confirm or esc to cancel'
-  else body = provider === 'claude' ? '❯ \r\n? for shortcuts' : '› \r\n? for shortcuts'
+  else body = provider === 'claude' ? '❯ \r\n? for shortcuts' : '› Ask Codex to do anything\r\n? for shortcuts'
   process.stdout.write(`\x1b[2J\x1b[H${title}\r\n${body}`)
 }
 await claudeHook('SessionStart')

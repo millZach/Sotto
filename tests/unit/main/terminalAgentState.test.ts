@@ -11,7 +11,7 @@ const idle = redraw('❯ \r\n? for shortcuts')
 const work = redraw('✻ Working… (esc to interrupt)')
 const request = redraw('Do you want to make this edit to marker.txt?\r\n❯ 1. Yes\r\n  2. No\r\nEsc to cancel · Tab to amend')
 const codexTitle = 'OpenAI Codex (v0.162.0)'
-const codexIdle = redraw('› \r\n? for shortcuts', codexTitle)
+const codexIdle = redraw('› Ask Codex to do anything\r\n? for shortcuts', codexTitle)
 const codexWork = redraw('• Working (0s • esc to interrupt)', codexTitle)
 const grokTitle = 'Grok Build  1.0.50'
 const grokIdle = redraw('│>\r\n└─ Grok 4.7 (xhigh) ─┘\r\nGrok 4.7 (xhigh) · auto-review', grokTitle)
@@ -20,6 +20,17 @@ const event = (kind: TerminalAgentHookEvent['kind'], values: Partial<TerminalAge
 const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude', 100, 30, 'session'); state.started(); state.output(idle); return state }
 
 describe('terminal agent run state', () => {
+  it('recognises the native empty Codex composer at startup and after visible or hidden completion', () => {
+    for (const visible of [false, true]) {
+      const state = new TerminalAgentStateMachine('run', 'codex', 120, 30); state.started(); state.output(codexIdle)
+      expect(state.state).toBe('idle')
+      state.setVisible(visible); state.output(codexWork)
+      state.hook(event('completed', { turnId: 'turn' })); state.output(codexIdle)
+      expect(state.state).toBe(visible ? 'idle' : 'just-finished')
+      state.output(redraw('› Ask Codex to do anything else\r\n? for shortcuts', codexTitle))
+      expect(state.detection).toBe('unavailable')
+    }
+  })
   it('keeps empty/supported startup Starting until ready, while admitting unknown/unversioned activity fallback', () => {
     const state = new TerminalAgentStateMachine('run', 'claude', 100, 30)
     state.started(); state.quiet(); expect(state.state).toBe('starting')
