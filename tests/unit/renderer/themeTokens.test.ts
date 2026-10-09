@@ -157,6 +157,8 @@ describe('main-window theme tokens', () => {
 
   it('keeps raw colours out of the main-window stylesheets', () => {
     const owned = [
+      'src/renderer/src/features/onboarding/onboarding.css',
+      'src/renderer/src/features/onboarding/threadsTour.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',
       'src/renderer/src/features/settings/gitSettings.css',

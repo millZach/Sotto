@@ -6,7 +6,7 @@ import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, completeFirstRunSetup, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
@@ -28,15 +28,11 @@ async function event(page: Page, value: Parameters<NonNullable<SottoE2EBridge['a
   await page.evaluate(async data => { await (globalThis as unknown as BrowserGlobals).sottoE2E.agentEvent?.(data) }, value)
 }
 async function onboard(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
+  // First-run setup's own Coding agents step already connects every provider this computer has, the way Connect
+  // providers does, so the real Agents room opens already connected.
+  await completeFirstRunSetup(page, { microphone: 'test' })
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Not now', exact: true }).click()
-  await page.getByRole('button', { name: 'Connect providers' }).click()
   await openThreads(page)
 }
 

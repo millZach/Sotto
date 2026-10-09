@@ -13,27 +13,11 @@ import {
 import type { SottoBridge } from '../../src/shared/contracts'
 import { TRANSCRIPTION_KEPT_DETAIL } from '../../src/shared/dictation'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
-import { closeSotto, e2eEnvironment, launchSotto, openPage } from './support/sottoLaunch'
-
-async function reachFinalOnboardingStep(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-}
-
-/** Finishing onboarding hands the window over to Threads, which is where Sotto opens from now on. */
-async function finishOnboarding(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /finish setup/i }).click()
-  await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
-}
+import { closeSotto, e2eEnvironment, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
 
 /** Onboarding, and then the Dictate page the dictation tests work on. */
 async function completeOnboarding(page: Page): Promise<void> {
-  await reachFinalOnboardingStep(page)
-  await finishOnboarding(page)
+  await finishFirstRunSetupFrom(page, 'welcome', { microphone: 'test' })
   await openPage(page, 'Dictate')
   await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
 }
@@ -115,7 +99,7 @@ async function triggerShortcut(page: Page): Promise<void> {
 test('onboards, dictates through the registered shortcut, pastes, and records local history', async () => {
   const launched = await launchSotto()
   try {
-    await reachFinalOnboardingStep(launched.page)
+    await reachFirstRunStep(launched.page, 'shortcut', { microphone: 'test' })
     const pasteTarget = launched.page.getByLabel('Paste test')
     await pasteTarget.focus()
 
@@ -132,7 +116,7 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
       pasteAttempts: 1,
     })
 
-    await finishOnboarding(launched.page)
+    await finishFirstRunSetupFrom(launched.page, 'shortcut', { microphone: 'test' })
     await launched.page.getByRole('link', { name: 'History' }).click()
     await expect(launched.page.getByText(DETERMINISTIC_TRANSCRIPT).first()).toBeVisible()
   } finally {
@@ -261,7 +245,7 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
 test('recovers after microphone permission is denied once', async () => {
   const launched = await launchSotto('microphone-denied-once')
   try {
-    await launched.page.getByRole('button', { name: 'Continue' }).click()
+    await reachFirstRunStep(launched.page, 'microphone')
     await launched.page.getByRole('button', { name: /test microphone/i }).click()
     await expect(launched.page.getByText('Microphone access is blocked.')).toBeVisible()
     await expect(launched.page.getByText(/privacy & security.*microphone/i)).toBeVisible()
@@ -345,8 +329,7 @@ test('keeps the real main window frameless, with a strip while onboarding and th
     expect(geometry?.contentBounds).toEqual(geometry?.bounds)
     await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
 
-    await reachFinalOnboardingStep(launched.page)
-    await finishOnboarding(launched.page)
+    await finishFirstRunSetupFrom(launched.page)
 
     // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
     // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours.
@@ -362,7 +345,7 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
   const launched = await launchSotto()
   try {
     await expect(
-      launched.page.getByRole('heading', { name: /dictation, ready when you are/i }),
+      launched.page.getByRole('heading', { name: /talk to your computer and your coding agents/i }),
     ).toBeVisible()
     await launched.app.evaluate(({ BrowserWindow }) => {
       const main = BrowserWindow.getAllWindows().find((candidate) =>
@@ -381,7 +364,7 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
       return main?.getMinimumSize() ?? null
     })).toEqual([820, 560])
 
-    const continueButton = launched.page.getByRole('button', { name: 'Continue' })
+    const continueButton = launched.page.getByRole('button', { name: 'Get started' })
     const access = await continueButton.evaluate((button) => {
       const shell = button.closest('.onboarding-shell')
       if (shell === null) return null
@@ -414,7 +397,7 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
 
     await continueButton.click()
     await expect(
-      launched.page.getByRole('heading', { name: /check your microphone/i }),
+      launched.page.getByRole('heading', { name: /choose how sotto looks/i }),
     ).toBeVisible()
   } finally {
     await closeSotto(launched)
@@ -573,7 +556,7 @@ test('quitting retains native windows during the drain and releases the lock for
     expect(state?.windows).toBeGreaterThan(0)
     expect(await exited).toBe(0)
     relaunched = await launchSotto('success', launched.userData)
-    await expect(relaunched.page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible()
+    await expect(relaunched.page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
   } finally {
     if (relaunched) await closeSotto(relaunched)
     await closeSotto(launched)

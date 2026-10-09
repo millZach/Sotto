@@ -7,6 +7,7 @@ import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
 import { Onboarding } from './features/onboarding/Onboarding'
+import { ThreadsTour } from './features/onboarding/ThreadsTour'
 import { UpdateControl } from './features/updates/UpdateControl'
 import { installConfirmation } from './features/updates/updateControlLogic'
 import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFlow'
@@ -124,6 +125,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
   const [agentSheet, setAgentSheet] = useState<'session' | 'new' | 'settings' | null>(null)
+  // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
+  const [threadsTour, setThreadsTour] = useState(false)
   const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
@@ -345,7 +348,10 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
-            if (saved) app.actions.navigate('threads')
+            if (saved) {
+              setThreadsTour(true)
+              app.actions.navigate('threads')
+            }
             return saved
           }}
         />
@@ -483,6 +489,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         ) : null}
         {/* A saved host reconnecting on its own can need an answer from SSH on any page. */}
         <HostQuestionDialog />
+        {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
         <ThemeEditorHost
           settings={app.settings}
           onSave={app.actions.updateSettings}

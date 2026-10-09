@@ -8,6 +8,8 @@ Before cutting the Windows release, run `npm ci` and `npm run test:desktop-smoke
 
 The first desktop release whose Add host turns on a host's tailnet connections (ADR-0053, October 6 amendment) waits for the iPhone build that reads a host's 403 `forbidden` as a reason to keep trying. Check that build is on TestFlight before step 4, or publish both together. An older iPhone paired with that host reads the refusal as unpaired while the host's phone access is off.
 
+First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, which is a placeholder until the iPhone app's external TestFlight testing has a public link (ADR-0063). Before a release, set it to that link, or ship knowing the button opens a TestFlight page that says the link is not valid.
+
 1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the two `package:*` installer paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
 2. On each machine, move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
 3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.

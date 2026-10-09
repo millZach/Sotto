@@ -11,9 +11,21 @@ afterEach(cleanup)
 
 const keyProps = { settings: DEFAULT_SETTINGS, onUpdateSettings: vi.fn(async () => true), onCheckTranscriptionKey: vi.fn(async () => ({ ok: true as const })) }
 
+/** Steps forward from wherever setup starts to the 1-indexed step named, clicking whichever forward
+ * button each step shows: "Get started" on Welcome, else "Continue" or "Skip for now". */
 async function goToStep(user: ReturnType<typeof userEvent.setup>, step: number): Promise<void> {
   for (let current = 1; current < step; current += 1) {
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    const button = current === 1
+      ? screen.getByRole('button', { name: 'Get started' })
+      : screen.getByRole('button', { name: /^(continue|skip for now)$/i })
+    await user.click(button)
+  }
+}
+
+/** Steps forward, from wherever setup is, until Finish setup is on screen (the last, iPhone step). */
+async function advanceToFinish(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  while (screen.queryByRole('button', { name: /finish setup/i }) === null) {
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
   }
 }
 
@@ -29,18 +41,18 @@ describe('first-run onboarding', () => {
     const complete = vi.fn()
     const user = userEvent.setup()
     render(<Onboarding {...keyProps} microphoneState={microphoneState} shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={complete} />)
-    await goToStep(user, 2)
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    await goToStep(user, 3)
+    expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
     expect(screen.getByText(/Test your microphone or choose Skip for now to continue/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByRole('heading', { name: 'Check your microphone' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Skip for now' }))
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeVisible()
+    await advanceToFinish(user)
     await user.click(screen.getByRole('button', { name: 'Finish setup' }))
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
   })
@@ -60,6 +72,21 @@ describe('first-run onboarding', () => {
     expect(screen.getByText(/Audio leaves this computer only while you dictate/i)).toBeVisible()
     expect(screen.getByText(/no Sotto account/i)).toBeVisible()
     expect(screen.getByText(/no telemetry/i)).toBeVisible()
+  })
+
+  it('has no Back button on Welcome and advances with Get started', () => {
+    render(
+      <Onboarding {...keyProps}
+        microphoneState="idle"
+        shortcut="Ctrl+Shift+Space"
+        platform="win32"
+        onRequestMicrophone={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Get started' })).toBeVisible()
   })
 
   it('lists detected inputs on the microphone step and saves the chosen device', async () => {
@@ -85,7 +112,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     const picker = await screen.findByRole('combobox', { name: 'Microphone' })
     expect(screen.getByRole('option', { name: 'System default' })).toBeVisible()
@@ -117,7 +144,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     const picker = await screen.findByRole('combobox', { name: 'Microphone' })
     await user.selectOptions(picker, 'mic-builtin')
@@ -152,7 +179,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
     expect(reset).toHaveBeenCalledOnce()
@@ -182,7 +209,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     const picker = await screen.findByRole('combobox', { name: 'Microphone' })
     await user.selectOptions(picker, 'mic-c922')
@@ -216,7 +243,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Microphone' }), 'mic-c922')
     await user.click(screen.getByRole('button', { name: /retest microphone/i }))
@@ -238,7 +265,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     expect(screen.getByRole('button', { name: /retest microphone/i })).toBeVisible()
     expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
@@ -257,7 +284,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     expect(screen.getByTestId('listening-bars')).not.toHaveAttribute('data-speaking')
   })
@@ -275,7 +302,7 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     await user.click(screen.getByRole('button', { name: /try microphone again/i }))
     expect(request).toHaveBeenCalledOnce()
@@ -303,12 +330,14 @@ describe('first-run onboarding', () => {
     const user = userEvent.setup()
     const complete = vi.fn()
     render(<Onboarding {...keyProps} microphoneState="ready" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={complete} />)
-    await goToStep(user, 3)
+    await goToStep(user, 4)
     expect(screen.getByRole('heading', { name: 'Connect your OpenRouter key' })).toBeVisible()
     expect(screen.getByLabelText('OpenRouter API key')).toHaveValue('')
     await user.click(screen.getByRole('button', { name: 'Verify key' }))
     expect(await screen.findByText('Key verified.')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    // The key is still empty, so the step is not done: the forward button offers to skip it, not continue.
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }))
+    await advanceToFinish(user)
     await user.click(screen.getByRole('button', { name: 'Finish setup' }))
     expect(complete).toHaveBeenCalledOnce()
   })
@@ -324,12 +353,12 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 4)
+    await goToStep(user, 5)
 
     const field = screen.getByRole('textbox', { name: /paste test/i })
     await user.type(field, 'kept locally')
     await user.click(screen.getByRole('button', { name: /back/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
     expect(screen.getByRole('textbox', { name: /paste test/i })).toHaveValue('kept locally')
     expect(screen.getByLabelText('Ctrl+Shift+Space')).toBeVisible()
   })
@@ -346,7 +375,7 @@ describe('first-run onboarding', () => {
         onComplete={complete}
       />,
     )
-    await goToStep(user, 4)
+    await goToStep(user, 9)
     rerender(<Onboarding {...keyProps} microphoneState="denied" shortcut="Ctrl+Shift+Space" platform="win32" onRequestMicrophone={vi.fn()} onComplete={complete} />)
     expect(screen.getByRole('button', { name: /finish setup/i })).toBeDisabled()
 
@@ -375,13 +404,14 @@ describe('first-run onboarding', () => {
         onComplete={complete}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
 
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
+    // Pressing Skip for now records the skip and advances; the reminder follows onto the shortcut step.
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
     expect(screen.getByText(/microphone test skipped/i)).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await advanceToFinish(user)
     await user.click(screen.getByRole('button', { name: /finish setup/i }))
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
   })
@@ -398,7 +428,7 @@ describe('first-run onboarding', () => {
         onComplete={complete}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
 
     rerender(
@@ -411,8 +441,7 @@ describe('first-run onboarding', () => {
       />,
     )
     expect(screen.queryByText(/microphone test skipped/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await advanceToFinish(user)
     await user.click(screen.getByRole('button', { name: /finish setup/i }))
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: false })
   })
@@ -432,8 +461,8 @@ describe('first-run onboarding', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveFocus()
     await user.tab()
     await user.keyboard('{Enter}')
-    expect(screen.getByRole('heading', { name: /check your microphone/i })).toHaveFocus()
-    expect(screen.getByText('Step 2 of 4')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toHaveFocus()
+    expect(screen.getByText('Step 2 of 9 · Look')).toHaveAttribute('aria-live', 'polite')
   })
 
   it('awaits completion persistence and preserves the setup when saving fails', async () => {
@@ -449,12 +478,12 @@ describe('first-run onboarding', () => {
         onComplete={complete}
       />,
     )
-    await goToStep(user, 4)
+    await goToStep(user, 9)
     await user.click(screen.getByRole('button', { name: /finish setup/i }))
     expect(screen.getByRole('button', { name: /saving setup/i })).toBeDisabled()
     save.resolve(false)
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i))
-    expect(screen.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
+    expect(screen.getByRole('heading', { name: /answer your threads/i })).toBeVisible()
   })
 
   it.each(['denied', 'missing'] as const)('gives macOS %s recovery guidance and the darwin shortcut form', async (microphoneState) => {
@@ -469,14 +498,13 @@ describe('first-run onboarding', () => {
         onComplete={vi.fn()}
       />,
     )
-    await goToStep(user, 2)
+    await goToStep(user, 3)
     expect(screen.getByText(
       microphoneState === 'denied' ? copy.onboardingMicrophoneDenied : copy.onboardingMicrophoneMissing,
     )).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
     expect(screen.getByLabelText('Control+Shift+Space')).toBeVisible()
   })
 
@@ -494,7 +522,7 @@ describe('first-run onboarding', () => {
           onComplete={vi.fn()}
         />,
       )
-      await goToStep(user, 2)
+      await goToStep(user, 3)
       const open = screen.getByRole('button', { name: 'Open System Settings at Privacy & Security, Microphone' })
       expect(open).toHaveTextContent('Open System Settings')
       open.focus()

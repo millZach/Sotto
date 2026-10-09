@@ -1,0 +1,27 @@
+# First-run setup covers the agents and ends in the Threads tour
+
+## Status
+
+Accepted October 8, 2026, by the owner's choices in `docs/prototypes/first-run-setup-prototype.html`. Setup should cover dictation, the coding agents, other computers and the iPhone beta. It includes checking the agents, adding a first project, choosing a look and a quick tour at the end. Of the three variants the owner picked A, "Guided steps", with variant B's tour over the real Threads page, and kept dictation first. The iPhone step opens a public TestFlight link, and only new users see setup.
+
+## Context
+
+Setup had four steps, all about dictation: welcome, microphone, OpenRouter key, shortcut. It then opened Threads, where a new user met an empty page. A fresh install connects no agent client by itself (`connect` runs at start only once a provider is enabled, `src/main/agents/control.ts`), so nothing told the user that Threads need one, which clients Sotto found, or that projects, other computers and the iPhone exist. Each of those has a home already: Settings › Providers, the sidebar's Add project, Settings › Hosts and Settings › Phones.
+
+## Decision
+
+**1. Nine steps in four groups, dictation first.** Start: welcome, look. Dictation: microphone, OpenRouter key, shortcut. Agents: coding agents, first project. Elsewhere: other computers, iPhone. The bar at the top shows each group's steps. Every step after the welcome can be skipped. Its button says what a press does: **Continue** once the step's task is done, **Skip for now** until then. The microphone keeps its rule that moving on needs a test or an explicit skip, which is now that button.
+
+**2. Each step reuses the surface that owns it.** Look writes `appearance` and sets both halves to one built-in theme through the appearance preview, as Settings › Appearance does. First project runs Add project. Other computers opens Settings › Hosts' Add host dialog, with its device list, Tailscale prompt and host setup checklist. The iPhone step's **Let phones connect** is the `phoneAccess` setting, with a pairing code once phone access is on (ADR-0033, ADR-0050); the paired phones and the name they show stay in Settings › Phones.
+
+**3. The coding agents step connects what is installed and signs in to nothing.** Arriving sends `connect` with no provider: Connect providers. It enables and connects the clients found on this computer, and that choice persists as it does from the Threads page. Each row says Ready, Not installed, Not signed in, Too old to use or Can't be started, with the client's own sentence. **Install guide** opens the maker's install page (`PROVIDER_INSTALL_GUIDES`). **Check again** sends `connect` again. A client's sign-in stays the client's own.
+
+**4. Setup's links open the user's browser, on a press.** Install guide and **Get the iPhone beta** go through `openExternalLink`, as the update notes and Tailscale's guide do. Sotto itself contacts no new host, and the README's privacy section now says so. Get the iPhone beta opens `IPHONE_BETA_URL`, the iPhone app's public TestFlight link. The app is in internal testing (ADR-0032), so the constant is a placeholder until external testing has a public link, and the release procedure says to set it.
+
+**5. The Threads tour replaces a closing card.** When setup saves, the Threads page opens with four notes on the real page: the sidebar, New thread, the thread area and Settings. The prototype's composer and widget stops are gone. A first run has no thread open, so it has no composer, and the widget is a window of its own. A spotlight is not possible across windows. The tour is a modal note: focus stays in it, `Escape` or **Skip tour** ends it, and a part that is not on the page is passed over. It is not remembered: it runs once in the session that finished setup, and a restart part-way through does not bring it back.
+
+**6. Only new users see setup.** A profile with `onboardingComplete` never sees the new steps. Reset settings reopens setup as before.
+
+## Consequences
+
+The end-to-end specs walk setup through one helper that also ends the tour, and the design captures cover each new step and the tour's first stop. Setup says nothing about the voice coordinator or memory, which stay behind their gates (ADR-0012, ADR-0013). Setting the TestFlight link, or changing an install page, is a one-line change in `src/shared`.

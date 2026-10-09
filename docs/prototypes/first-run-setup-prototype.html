@@ -1,0 +1,900 @@
+<!doctype html>
+<!--
+  VERDICT (October 8, 2026): the owner picked A, "Guided steps", with B's tour over the real Threads page instead of
+  A's closing diagram card, dictation first, the wordmark "Sotto" as it is, and the iPhone step kept with a
+  placeholder TestFlight link. Built as Onboarding.tsx and its step files, and ThreadsTour.tsx (ADR-0063, with the owl
+  in ADR-0062). Changes from the drawing: Other computers opens Settings › Hosts' own Add host dialog rather than
+  listing devices inline; the agents step names main's own sentence for each problem and has no Sign in, because Sotto
+  signs in to no local client; the iPhone step's switch is Settings › Phones' "Let phones connect"; and the tour's
+  stops are the sidebar, New thread, the thread area and Settings, because a first run has no composer and the widget
+  is a window of its own. B and C are kept here as the record of what was weighed.
+
+  PROTOTYPE — throwaway. Question: what should Sotto's first-run setup look like now that it covers dictation, the
+  coding agents, a first project, the look, other computers, the iPhone beta and a closing tour, wearing the new owl?
+  Owner's answers so far (October 8, 2026): setup covers dictation, agents, remote machines and the iPhone beta; it
+  includes checking coding agents, adding a first project, choosing a look and a quick tour at the end; the owl
+  replaces the mark everywhere and stays theme-coloured inside the app; the iPhone step opens a public TestFlight link,
+  so its button reads "Get the iPhone beta"; only new users see setup (Reset settings still reopens it).
+  Variants via ?variant=A|B|C. Window ?size=min (820x560) or ?size=max (1600x1000); appearance ?theme=light;
+  wordmark ?wordmark=lower (the brand sheet's lowercase "sotto"); ?tailscale=off for a computer without Tailscale;
+  ?motion=reduced; ?step=<id> to jump (welcome, look, mic, key, shortcut, agents, project, computers, phone, tour).
+  The owl is a vector trace of the brand sheet (98% overlap with its tile). Theme colours are the built-in palettes'
+  canvas, surface, raised, text, muted, border, accent and accent foreground roles. Provider marks are placeholders.
+  No IPC, no network, no persistence: every check is a timer.
+  Run: node docs/prototypes/composer-selectors-serve.mjs, then open
+  http://127.0.0.1:4173/docs/prototypes/first-run-setup-prototype.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto first-run setup — prototype</title>
+<link rel="icon" href="data:,">
+<style>
+@font-face{font-family:Figtree;src:url('../../src/shared/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900}
+@font-face{font-family:'Spline Sans Mono';src:url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2');font-weight:300 700}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:#161618;color:#e8e8ea;font:14px/1.5 Figtree,system-ui,sans-serif;overflow:hidden}
+#scaler{position:absolute;left:50%;top:calc(50% - 34px);transform-origin:center center}
+
+/* ---------- window and theme roles ---------- */
+.win{
+  --tt-canvas:var(--b-canvas);--tt-surface:var(--b-surface);--tt-raised:var(--b-raised);
+  --tt-sunken:color-mix(in oklab,var(--b-canvas) 55%,var(--b-surface));
+  --tt-text:var(--b-text);--tt-muted:color-mix(in oklab,var(--b-muted) 88%,var(--b-text));
+  --tt-hairline:var(--b-border);--tt-border:color-mix(in oklab,var(--b-border) 55%,var(--b-muted));
+  --tt-accent:var(--b-accent);--tt-on-accent:var(--b-on-accent);
+  --tt-accent-soft:color-mix(in oklab,var(--b-accent) 16%,var(--b-surface));
+  --tt-accent-text:color-mix(in oklab,var(--b-accent) 82%,var(--b-text));
+  position:relative;display:grid;grid-template-rows:60px minmax(0,1fr);overflow:hidden;border-radius:10px;
+  border:1px solid var(--win-edge);background:var(--tt-canvas);color:var(--tt-text);
+  font:14px/1.5 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased;box-shadow:0 30px 60px -30px #0009
+}
+.win[data-appearance=dark]{--tt-success:oklch(0.79 0.13 165);--tt-warning:oklch(0.829 0.171 81);--tt-error:oklch(0.702 0.189 22.2);--win-edge:#2a2a30;--tt-shadow:0 24px 60px rgb(0 0 0 / 55%)}
+.win[data-appearance=light]{--tt-success:oklch(0.5 0.11 158);--tt-warning:oklch(0.547 0.156 45.4);--tt-error:oklch(0.509 0.209 28.5);--win-edge:#c9c9cf;--tt-shadow:0 24px 60px rgb(20 24 22 / 16%)}
+.win[data-size=default]{width:1280px;height:800px}
+.win[data-size=min]{width:820px;height:560px}
+.win[data-size=max]{width:1600px;height:1000px}
+.win button,.win select,.win input,.win textarea{font:inherit;color:inherit}
+.win :focus-visible{outline:3px solid var(--tt-accent);outline-offset:2px}
+.win [data-heading]:focus{outline:none}
+.win[data-motion=reduced] *{transition:none!important;animation:none!important}
+
+/* ---------- strip ---------- */
+.strip{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 6px 0 18px;border-bottom:1px solid color-mix(in oklab,var(--tt-hairline) 55%,transparent)}
+.mark{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;letter-spacing:-.1px}
+.wordmark[data-style=lower]{font-weight:800;font-size:16.5px;letter-spacing:-.2px}
+.strip-center{color:var(--tt-muted);font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.winctl{justify-self:end;display:flex;color:var(--tt-muted)}
+.winctl span{width:42px;height:32px;display:grid;place-items:center}
+.room{position:relative;min-height:0;overflow:auto;background:radial-gradient(circle at 50% 118%,color-mix(in srgb,var(--tt-accent) 10%,transparent),transparent 46%),var(--tt-canvas)}
+
+/* ---------- shared controls ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:9px;border:1px solid transparent;cursor:pointer;font-weight:600;font-size:13.5px;white-space:nowrap;background:none}
+.btn.primary{background:var(--tt-accent);color:var(--tt-on-accent)}
+.btn.primary:hover{background:color-mix(in oklab,var(--tt-accent) 88%,var(--tt-text))}
+.btn.secondary{background:var(--tt-raised);border-color:var(--tt-hairline)}
+.btn.secondary:hover{background:color-mix(in oklab,var(--tt-raised) 90%,var(--tt-text))}
+.btn.ghost{color:var(--tt-muted)}
+.btn.ghost:hover{background:color-mix(in oklab,var(--tt-raised) 80%,transparent);color:var(--tt-text)}
+.btn:disabled{opacity:.55;cursor:default}
+.eyebrow{margin:0 0 8px;color:var(--tt-muted);font-size:12px;font-weight:500;letter-spacing:.02em;text-transform:uppercase}
+.h1{margin:0;font-size:30px;font-weight:500;letter-spacing:-.6px;line-height:1.15}
+.lead{margin:12px 0 22px;color:var(--tt-muted);font-size:14.5px;max-width:570px}
+.aside{margin:18px 0 0;color:var(--tt-muted);font-size:13px}
+.hint{color:var(--tt-muted);font-size:12.5px;margin:0}
+.muted{color:var(--tt-muted)}
+.mono{font-family:'Spline Sans Mono',ui-monospace,monospace;font-size:12.5px}
+.link{color:var(--tt-accent-text);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.field{display:grid;gap:6px;margin-bottom:16px}
+.label{font-size:13px;font-weight:600}
+.input{width:100%;height:38px;padding:0 12px;border-radius:9px;border:1px solid var(--tt-border);background:var(--tt-sunken)}
+textarea.input{height:auto;padding:10px 12px;resize:vertical}
+.input-row{display:flex;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;background:var(--tt-raised);color:var(--tt-muted);white-space:nowrap}
+.pill.ok{color:var(--tt-success);background:color-mix(in srgb,var(--tt-success) 12%,transparent)}
+.pill.warn{color:var(--tt-warning);background:color-mix(in srgb,var(--tt-warning) 12%,transparent)}
+.group-label{margin:14px 0 6px;color:var(--tt-muted);font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.okline{display:flex;align-items:center;gap:6px;color:var(--tt-success);font-size:13px;font-weight:600}
+.spin{animation:spin 0.9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- step content ---------- */
+.hero-owl{margin-bottom:22px}
+.hero-owl .owl{display:block;filter:drop-shadow(0 12px 26px color-mix(in srgb,var(--tt-accent) 28%,transparent))}
+.assure{list-style:none;margin:24px 0 0;padding:0;display:grid;gap:10px}
+.assure li{display:flex;gap:10px;align-items:center;color:var(--tt-muted);font-size:13.5px}
+.assure svg{color:var(--tt-success);flex:none}
+
+.seg{display:inline-flex;padding:3px;border-radius:10px;background:var(--tt-sunken);border:1px solid var(--tt-hairline);gap:2px;margin-bottom:16px}
+.seg-btn{border:0;background:transparent;height:30px;padding:0 14px;border-radius:7px;cursor:pointer;color:var(--tt-muted);font-weight:600;font-size:13px}
+.seg-btn[aria-checked=true]{background:var(--tt-raised);color:var(--tt-text);box-shadow:0 1px 2px #0003}
+.themes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.theme-card{display:grid;gap:7px;padding:7px;border-radius:12px;border:1px solid var(--tt-hairline);background:transparent;cursor:pointer;text-align:left}
+.theme-card[aria-checked=true]{border-color:var(--tt-accent);box-shadow:0 0 0 1px var(--tt-accent)}
+.theme-prev{position:relative;height:64px;border-radius:8px;border:1px solid;overflow:hidden;display:block}
+.tp-side{position:absolute;left:0;top:0;bottom:0;width:28%}
+.tp-owl{position:absolute;left:6px;top:6px;line-height:0}
+.tp-line{position:absolute;left:36%;top:16px;width:44%;height:5px;border-radius:3px;opacity:.85}
+.tp-line.short{top:28px;width:30%;opacity:.55}
+.tp-btn{position:absolute;right:8px;bottom:8px;width:34px;height:12px;border-radius:4px}
+.theme-name{font-size:13px;font-weight:600;padding:0 2px}
+
+.mic-test{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px 14px;padding:16px;border-radius:12px;border:1px solid var(--tt-hairline);background:var(--tt-sunken)}
+.wave{grid-column:1/-1;display:flex;align-items:center;gap:4px;height:56px}
+.wave i{flex:1;height:calc(var(--h,0.1) * 100%);min-height:3px;border-radius:9px;background:color-mix(in srgb,var(--tt-accent) 78%,transparent)}
+.mic-test[data-state=idle] .wave i{background:color-mix(in srgb,var(--tt-muted) 35%,transparent)}
+.mic-status{margin:0;color:var(--tt-muted);font-size:13px}
+.mic-test[data-state=ready] .mic-status{color:var(--tt-success);font-weight:600}
+
+.okrow{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid color-mix(in srgb,var(--tt-success) 40%,var(--tt-hairline));background:color-mix(in srgb,var(--tt-success) 8%,var(--tt-surface))}
+.okrow > svg{color:var(--tt-success);flex:none}
+.okrow > div{flex:1;display:grid}
+.okrow > div span{color:var(--tt-muted);font-size:13px}
+
+.shortcut{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:0 0 18px;padding:14px 16px;border-radius:12px;border:1px solid var(--tt-hairline);background:var(--tt-sunken);color:var(--tt-muted);font-size:13px}
+.keys{display:flex;gap:6px}
+kbd{font:600 12.5px Figtree,system-ui,sans-serif;padding:3px 9px;border-radius:7px;border:1px solid var(--tt-border);border-bottom-width:2px;background:var(--tt-raised);color:var(--tt-text)}
+
+.agents{list-style:none;margin:0;padding:0;border:1px solid var(--tt-hairline);border-radius:12px;overflow:hidden;background:var(--tt-sunken)}
+.agent{display:grid;grid-template-columns:32px 1fr auto auto;align-items:center;gap:8px 12px;padding:11px 14px;border-top:1px solid var(--tt-hairline)}
+.agent:first-child{border-top:0}
+.pmark{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--tt-raised);color:var(--tt-text)}
+.agent-name{display:grid;line-height:1.35}
+.agent-name strong{font-weight:600}
+.agent-name span{color:var(--tt-muted);font-size:12.5px}
+.install{grid-column:2/-1;display:grid;gap:8px;padding:12px;border-radius:10px;background:var(--tt-surface);border:1px solid var(--tt-hairline)}
+.install p{margin:0;font-size:13px;color:var(--tt-muted)}
+.cmd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 4px 4px 12px;border-radius:8px;background:var(--tt-canvas);border:1px solid var(--tt-hairline)}
+.cmd .btn{height:30px;padding:0 10px}
+.agents-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px}
+
+.dropzone{width:100%;display:grid;justify-items:center;gap:6px;padding:30px;border-radius:14px;border:1.5px dashed var(--tt-border);background:var(--tt-sunken);cursor:pointer}
+.dropzone svg{color:var(--tt-accent-text)}
+.dropzone strong{font-size:15px}
+.dropzone span{color:var(--tt-muted);font-size:13px}
+.dropzone:hover{border-color:var(--tt-accent)}
+.project{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;border:1px solid var(--tt-hairline);background:var(--tt-sunken)}
+.project > svg{color:var(--tt-accent-text);flex:none}
+.project > div{flex:1;display:grid;gap:2px;min-width:0}
+.project .muted{display:flex;align-items:center;gap:5px;font-size:12.5px}
+
+.devices .group-label:first-child{margin-top:0}
+.device{display:grid;grid-template-columns:32px 1fr auto;align-items:center;gap:6px 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--tt-hairline);background:var(--tt-sunken);margin-bottom:8px}
+.device[aria-disabled=true]{opacity:.62}
+.device > svg{justify-self:center;color:var(--tt-muted)}
+.device-name{display:grid;line-height:1.35}
+.device-name strong{font-weight:600}
+.device-name span{color:var(--tt-muted);font-size:12.5px}
+.checklist{grid-column:2/-1;list-style:none;margin:2px 0 2px;padding:0;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px}
+.checklist li{display:flex;align-items:center;gap:6px;color:var(--tt-muted)}
+.checklist li[data-s=done] svg{color:var(--tt-success)}
+.checklist li[data-s=current]{color:var(--tt-text);font-weight:600}
+.link-row{border:0;background:none;color:var(--tt-accent-text);font-weight:600;cursor:pointer;padding:6px 2px}
+.note{display:flex;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid color-mix(in srgb,var(--tt-warning) 35%,var(--tt-hairline));background:color-mix(in srgb,var(--tt-warning) 7%,var(--tt-surface));margin-bottom:8px}
+.note > svg{color:var(--tt-warning);flex:none;margin-top:2px}
+.note > div{display:grid;gap:2px}
+.note span{color:var(--tt-muted);font-size:13px}
+
+.phone-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.phone-steps li{display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:start;padding:14px 16px;border-radius:12px;border:1px solid var(--tt-hairline);background:var(--tt-sunken)}
+.num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--tt-raised);font-weight:700;font-size:12.5px}
+.phone-steps li > div{display:grid;gap:3px}
+.phone-steps li > div > span{color:var(--tt-muted);font-size:13px}
+.code{margin-top:8px;display:grid;gap:1px;padding:10px 12px;border-radius:10px;background:var(--tt-canvas);border:1px solid var(--tt-hairline)}
+.code b{font-size:20px;letter-spacing:.14em;font-weight:500}
+.switch{width:42px;height:24px;border-radius:999px;border:1px solid var(--tt-border);background:var(--tt-raised);position:relative;cursor:pointer;padding:0;flex:none}
+.switch i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--tt-muted);transition:transform .15s}
+.switch[aria-checked=true]{background:var(--tt-accent);border-color:var(--tt-accent)}
+.switch[aria-checked=true] i{transform:translateX(18px);background:var(--tt-on-accent)}
+
+.tour-map{position:relative;height:150px;border-radius:12px;border:1px solid var(--tt-hairline);background:var(--tt-canvas);overflow:hidden;margin-bottom:16px}
+.tm-side{position:absolute;left:0;top:0;bottom:0;width:26%;background:var(--tt-surface);border-right:1px solid var(--tt-hairline)}
+.tm-side i,.tm-pane i{display:block;height:6px;border-radius:3px;background:color-mix(in srgb,var(--tt-muted) 30%,transparent);margin:10px 12px 0}
+.tm-side i:first-child{margin-top:34px}
+.tm-pane{position:absolute;left:30%;right:5%;top:12px;bottom:58px}
+.tm-pane i:nth-child(2){width:60%}
+.tm-comp{position:absolute;left:30%;right:5%;bottom:12px;height:36px;border-radius:9px;border:1px solid var(--tt-border);background:var(--tt-surface)}
+.tm-widget{position:absolute;right:16px;top:-1px;height:22px;width:96px;border-radius:0 0 11px 11px;background:var(--tt-raised);border:1px solid var(--tt-hairline);border-top:0}
+.tm-num,.tour-keys b{width:20px;height:20px;border-radius:50%;background:var(--tt-accent);color:var(--tt-on-accent);font-size:11px;font-weight:700;display:grid;place-items:center;flex:none}
+.tm-num{position:absolute}
+.tour-keys{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.tour-keys li{display:flex;gap:10px;align-items:flex-start}
+.tour-keys li > div{display:grid;line-height:1.35}
+.tour-keys span{color:var(--tt-muted);font-size:12.5px}
+.summary{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 0;padding:0;list-style:none}
+
+/* ---------- A: guided steps ---------- */
+.a-shell{min-height:100%;display:grid;justify-items:center;align-content:start;gap:14px;padding:44px 24px 28px}
+.a-progress{width:min(680px,100%)}
+.a-progress-text{margin:0 0 8px;text-align:center;color:var(--tt-muted);font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.a-progress ol{display:grid;grid-template-columns:2fr 3fr 2fr 2fr 1fr;gap:10px;margin:0;padding:0;list-style:none}
+.a-progress li{display:grid;gap:6px}
+.a-progress .bar{display:flex;gap:3px}
+.a-progress .bar i{flex:1;height:3px;border-radius:9px;background:color-mix(in srgb,var(--tt-border) 45%,transparent)}
+.a-progress .bar i[data-on=true]{background:var(--tt-accent)}
+.a-progress .g{font-size:11.5px;color:var(--tt-muted);text-align:center}
+.a-progress li[data-current=true] .g{color:var(--tt-text);font-weight:600}
+.card{background:var(--tt-surface);border:1px solid var(--tt-hairline);border-radius:16px;box-shadow:var(--tt-shadow)}
+.a-card{width:min(680px,100%);padding:34px 40px 22px;display:flex;flex-direction:column;min-height:540px}
+.a-card .content{flex:1}
+.step-icon{width:40px;height:40px;display:grid;place-items:center;margin-bottom:20px;border-radius:12px;border:1px solid color-mix(in srgb,var(--tt-accent) 40%,transparent);background:color-mix(in srgb,var(--tt-accent) 10%,transparent);color:var(--tt-accent-text)}
+.a-actions{position:sticky;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--tt-hairline);padding:16px 0 22px;margin:24px 0 -22px;background:var(--tt-surface);border-radius:0 0 16px 16px}
+.win[data-size=min] .a-shell{padding:14px 16px;align-content:start}
+.win[data-size=min] .a-card{padding:20px 24px 16px;min-height:0}
+.win[data-size=min] .a-actions{padding:12px 0 16px;margin:16px 0 -16px}
+.win[data-size=min] .h1{font-size:23px}
+.win[data-size=min] .lead{margin:8px 0 14px;font-size:13.5px}
+.win[data-size=min] .step-icon{display:none}
+.win[data-size=min] .hero-owl{margin-bottom:14px}
+.win[data-size=min] .theme-prev{height:46px}
+
+/* ---------- B: setup checklist ---------- */
+.b-hero{min-height:100%;display:grid;justify-items:center;align-content:center;text-align:center;padding:32px}
+.b-hero .lead{margin-inline:auto}
+.b-hero .assure{grid-auto-flow:column;justify-content:center;gap:22px;margin:0 0 30px}
+.b-hero .hero-owl{margin-bottom:26px}
+.b-hero .h1{font-size:36px}
+.b-shell{display:grid;grid-template-columns:300px minmax(0,1fr);height:100%}
+.b-list{border-right:1px solid var(--tt-hairline);background:var(--tt-surface);padding:22px 14px 18px;overflow:auto;display:flex;flex-direction:column}
+.b-title{font-size:19px;font-weight:600;margin:0 8px;letter-spacing:-.2px}
+.b-count{margin:2px 8px 10px;font-size:13px;color:var(--tt-muted)}
+.b-meter{height:4px;border-radius:9px;background:var(--tt-sunken);margin:0 8px 4px;overflow:hidden}
+.b-meter i{display:block;height:100%;background:var(--tt-accent);transition:width .3s}
+.b-list ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.b-list .group-label{margin:10px 8px 2px}
+.b-item{width:100%;display:flex;gap:10px;align-items:flex-start;padding:6px 8px;border:0;border-radius:9px;background:transparent;cursor:pointer;text-align:left;line-height:1.35}
+.b-item:hover{background:var(--tt-raised)}
+.b-item[aria-current=step]{background:var(--tt-accent-soft)}
+.b-item > span{display:grid}
+.b-item strong{font-weight:600;font-size:13.5px}
+.b-item .muted{font-size:12.5px}
+.st{width:20px;height:20px;flex:none;display:grid;place-items:center;margin-top:0}
+.st.done{color:var(--tt-success)}
+.st.skip{color:var(--tt-muted)}
+.st.todo{color:var(--tt-border)}
+.b-start{margin-top:auto;padding:16px 8px 0;display:grid;gap:8px}
+.b-panel{overflow:auto;padding:40px 52px 28px;display:flex;flex-direction:column}
+.b-panel > .content{max-width:640px;flex:1}
+.b-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:26px;padding-top:18px;border-top:1px solid var(--tt-hairline);max-width:640px}
+.win[data-size=min] .b-shell{grid-template-columns:232px minmax(0,1fr)}
+.win[data-size=min] .b-panel{padding:20px 24px}
+.win[data-size=min] .b-hero .assure{grid-auto-flow:row;justify-content:center}
+.win[data-size=min] .b-hero .h1{font-size:26px}
+
+.fake{display:grid;grid-template-columns:260px minmax(0,1fr);height:100%}
+.fake-side{background:var(--tt-surface);border-right:1px solid var(--tt-hairline);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+.fake-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:13px}
+.fake-row.sel{background:var(--tt-accent-soft)}
+.fake-row.muted{padding-left:26px}
+.fake-pane{display:grid;grid-template-rows:1fr auto;padding:20px 28px;min-height:0}
+.fake-empty{place-self:center;text-align:center;color:var(--tt-muted);display:grid;gap:6px;justify-items:center}
+.fake-comp{border:1px solid var(--tt-border);border-radius:14px;background:var(--tt-surface);padding:12px 14px;color:var(--tt-muted);display:flex;justify-content:space-between;align-items:center}
+.fake-widget{position:absolute;left:50%;top:10px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:var(--tt-raised);border:1px solid var(--tt-hairline);font-size:12.5px;color:var(--tt-muted);box-shadow:var(--tt-shadow)}
+.spot{position:absolute;border-radius:12px;box-shadow:0 0 0 9999px rgb(0 0 0 / 55%);outline:2px solid var(--tt-accent);pointer-events:none;transition:all .25s}
+.bubble{position:absolute;width:300px;padding:16px;border-radius:12px;background:var(--tt-raised);border:1px solid var(--tt-hairline);box-shadow:var(--tt-shadow);display:grid;gap:8px}
+.bubble h2{margin:0;font-size:15px}
+.bubble p{margin:0;color:var(--tt-muted);font-size:13px}
+.bubble footer{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+
+/* ---------- C: conversation ---------- */
+.c-shell{display:grid;grid-template-rows:minmax(0,1fr) auto;height:100%}
+.c-feed{overflow:auto;padding:28px 24px 12px}
+.c-feed > *{max-width:720px;margin-inline:auto}
+.c-msg{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;margin-bottom:12px}
+.c-avatar{padding-top:3px;line-height:0}
+.c-bubble{padding:18px 20px;border-radius:14px;background:var(--tt-surface);border:1px solid var(--tt-hairline)}
+.c-bubble .eyebrow,.c-bubble .step-icon{display:none}
+.c-bubble .h1{font-size:19px;font-weight:600;letter-spacing:-.2px}
+.c-bubble .lead{font-size:14px;margin:6px 0 16px}
+.c-bubble .hero-owl{display:none}
+.c-past{padding:6px 2px;color:var(--tt-muted)}
+.c-me{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:14px}
+.c-answer{padding:7px 14px;border-radius:14px 14px 4px 14px;background:var(--tt-accent-soft);font-weight:500}
+.c-me .btn{height:28px;padding:0 8px;font-size:12.5px}
+.c-composer{padding:10px 24px 16px}
+.c-composer-inner{max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:14px;border:1px solid var(--tt-border);background:var(--tt-surface)}
+.c-composer-inner .muted{font-size:13px}
+.c-replies{display:flex;gap:8px}
+
+.end-screen{height:100%;display:grid;place-items:center;text-align:center;padding:24px}
+.end-screen .lead{margin-inline:auto}
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:#000;color:#fff;border-radius:999px;padding:6px;box-shadow:0 10px 30px #0006;z-index:1000;font:600 13px/1 system-ui,sans-serif;outline:2px solid #ffffff2a;white-space:nowrap}
+.proto-bar button,.proto-bar select{background:none;border:0;color:#fff;min-width:36px;height:34px;border-radius:17px;cursor:pointer;font:inherit;padding:0 10px}
+.proto-bar select option{color:#000}
+.proto-bar button:hover,.proto-bar select:hover{background:#ffffff1a}
+.proto-bar button:focus-visible,.proto-bar select:focus-visible{outline:2px solid #6ee7d8}
+.proto-bar .lab{min-width:200px;text-align:center}
+.proto-bar .sep{width:1px;height:22px;background:#ffffff33;margin:0 4px}
+</style>
+</head>
+<body>
+<div id="scaler"><div class="win" id="win"></div></div>
+<nav class="proto-bar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+  <span class="sep"></span>
+  <button id="themeBtn" aria-label="Switch light or dark"></button>
+  <select id="sizeSel" aria-label="Window size"><option value="default">1280×800</option><option value="min">820×560</option><option value="max">1600×1000</option></select>
+  <button id="wordBtn" aria-label="Switch wordmark"></button>
+  <select id="stepSel" aria-label="Jump to step"></select>
+</nav>
+<script>
+/* ---------- the owl, traced from the brand sheet in an 800 x 800 tile ---------- */
+const OWL = {
+  head: 'M152 282C136 250 132 190 160 150C165 140 176 130 181 150C183 180 205 212 250 212C320 186 480 170 582 228C610 226 636 205 638 172C640 163 648 163 652 178C670 200 678 262 656 310C672 330 684 380 684 460C686 552 669 598 620 630C575 665 480 667 400 667C319 667 224 665 179 630C130 598 113 552 115 460C114 370 124 320 152 282Z',
+  eyes: 'M173 435C172 365 188 329 240 329C302 327 354 334 353 420C353 490 330 522 265 522C200 523 172 495 173 435Z M449 445C449 405 460 388 490 380L588 360C614 355 626 380 626 430C627 500 610 523 535 523C480 523 449 500 449 445Z',
+  beak: 'M380 499C392 496 408 496 420 499C430 501 431 509 426 515L405 547C402 552 398 552 395 547L374 515C369 509 370 501 380 499Z',
+  pupils: [[300, 408, 26], [503, 432, 26]],
+}
+function owl({ tile, glyph, size = 24, label = '' }) {
+  return `<svg class="owl" viewBox="0 0 800 800" width="${size}" height="${size}" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>`
+    + `<rect width="800" height="800" rx="183" fill="${tile}"/>`
+    + `<path fill="${glyph}" fill-rule="evenodd" d="${OWL.head}${OWL.eyes}${OWL.beak}"/>`
+    + OWL.pupils.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${glyph}"/>`).join('') + '</svg>'
+}
+
+/* ---------- built-in themes: canvas, surface, raised, text, muted, border, accent, accent foreground ---------- */
+const P = (canvas, surface, raised, text, muted, border, accent, onAccent) => ({ canvas, surface, raised, text, muted, border, accent, onAccent })
+const THEMES = [
+  { id: 'sotto', label: 'Sotto', appIcon: true,
+    light: P('oklch(0.978 0.004 85)', 'oklch(0.99 0.003 85)', 'oklch(0.955 0.006 85)', 'oklch(0.235 0.014 75)', 'oklch(0.5 0.014 75)', 'oklch(0.86 0.012 80)', 'oklch(0.53 0.095 186)', 'oklch(0.99 0.003 85)'),
+    dark: P('oklch(0.115 0.008 265)', 'oklch(0.145 0.008 265)', 'oklch(0.185 0.008 265)', 'oklch(0.985 0.005 280)', 'oklch(0.72 0.014 265)', 'oklch(0.305 0.02 265)', 'oklch(0.714403 0.104089 183.092)', 'oklch(0.16 0.012 190)') },
+  { id: 'hush', label: 'Hush',
+    light: P('oklch(0.963318 0.003976 106.474)', 'oklch(0.948318 0.0048 162.302)', 'oklch(0.913318 0.0048 162.302)', 'oklch(0.199531 0.007316 164.145)', 'oklch(0.526634 0.00473 146.055)', 'oklch(0.843318 0.005838 162.302)', 'oklch(0.501932 0.0278 162.302)', 'oklch(0.990339 0.008411 325.64)'),
+    dark: P('oklch(0.219569 0.003601 164.707)', 'oklch(0.234569 0.0048 162.94)', 'oklch(0.269569 0.0048 162.94)', 'oklch(0.949753 0.007515 164.935)', 'oklch(0.636174 0.005706 164.907)', 'oklch(0.379569 0.006419 162.94)', 'oklch(0.748851 0.030565 162.94)', 'oklch(0.222003 0.03479 328.979)') },
+  { id: 'linen', label: 'Linen',
+    light: P('oklch(0.956283 0.014327 84.583)', 'oklch(0.941283 0.009703 71.67)', 'oklch(0.906283 0.009703 71.67)', 'oklch(0.199045 0.010119 67.19)', 'oklch(0.522279 0.011199 77.299)', 'oklch(0.836283 0.015437 71.67)', 'oklch(0.509263 0.044106 71.67)', 'oklch(0.990339 0.008411 325.64)'),
+    dark: P('oklch(0.219746 0.008934 75.148)', 'oklch(0.234746 0.010846 77.118)', 'oklch(0.269746 0.010846 77.118)', 'oklch(0.949363 0.013095 71.328)', 'oklch(0.636839 0.010914 72.491)', 'oklch(0.379746 0.017254 77.118)', 'oklch(0.784819 0.054776 77.118)', 'oklch(0.222003 0.03479 328.979)') },
+  { id: 'nocturne', label: 'Nocturne',
+    light: P('oklch(0.957005 0.006256 255.475)', 'oklch(0.942005 0.01091 253.266)', 'oklch(0.907005 0.01091 253.266)', 'oklch(0.201308 0.015141 248.584)', 'oklch(0.522352 0.010129 250.106)', 'oklch(0.837005 0.017358 253.266)', 'oklch(0.452985 0.061992 253.266)', 'oklch(0.990339 0.008411 325.64)'),
+    dark: P('oklch(0.199462 0.019758 262.023)', 'oklch(0.214462 0.010547 253.974)', 'oklch(0.249462 0.010547 253.974)', 'oklch(0.950198 0.013719 258.345)', 'oklch(0.625127 0.015 260.22)', 'oklch(0.359462 0.01678 253.974)', 'oklch(0.720135 0.053267 253.974)', 'oklch(0.222003 0.03479 328.979)') },
+  { id: 'tropic', label: 'Tropic',
+    light: P('oklch(0.962189 0.012534 149.249)', 'oklch(0.947189 0.025 155)', 'oklch(0.912189 0.025 155)', 'oklch(0.200115 0.03454 4.639)', 'oklch(0.528612 0.011192 15.656)', 'oklch(0.842189 0.025 155)', 'oklch(0.531301 0.201531 5.62)', 'oklch(0.990339 0.008411 325.64)'),
+    dark: P('oklch(0.194797 0.030909 156.372)', 'oklch(0.209797 0.04 158)', 'oklch(0.244797 0.04 158)', 'oklch(0.950595 0.02561 5.652)', 'oklch(0.625297 0.006353 54.03)', 'oklch(0.354797 0.04 158)', 'oklch(0.72778 0.176858 5.966)', 'oklch(0.222003 0.03479 328.979)') },
+  { id: 'citrine', label: 'Citrine',
+    light: P('oklch(0.972257 0.008005 98.878)', 'oklch(0.957257 0.00621 91.871)', 'oklch(0.922257 0.00621 91.871)', 'oklch(0.201559 0.029562 92.844)', 'oklch(0.53302 0.018782 93.873)', 'oklch(0.852257 0.009879 91.871)', 'oklch(0.552021 0.112909 91.871)', 'oklch(0.990339 0.008411 325.64)'),
+    dark: P('oklch(0.181787 0.002007 106.597)', 'oklch(0.196787 0 0)', 'oklch(0.231787 0 0)', 'oklch(0.95 0.034764 96.302)', 'oklch(0.616495 0.020933 96.634)', 'oklch(0.341787 0 0)', 'oklch(0.861207 0.170546 96.512)', 'oklch(0.222003 0.03479 328.979)') },
+]
+// The default theme wears the app icon's own colours; every other theme paints the tile with its accent.
+const brandFor = (t, app) => t.appIcon ? { tile: '#47b8a9', glyph: '#000' } : { tile: t[app].accent, glyph: t[app].onAccent }
+
+/* ---------- icons (lucide-style strokes) ---------- */
+const ICON = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/>',
+  key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
+  keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h.01M12 13h.01M16 13h.01M7 16h10"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a6 6 0 0 0 6-6c0-4.9-4.5-8.6-10-8.6Z"/>',
+  terminal: '<path d="m4 17 6-6-6-6M12 19h8"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.3 2.6a1 1 0 0 1-.9 1.4H3.6a1 1 0 0 1-.9-1.4L4 16"/>',
+  phone: '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/>',
+  flag: '<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.2-.8 1 1 0 0 1 1.8.6v10.4a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.5"/>',
+  copy: '<rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  circle: '<circle cx="12" cy="12" r="8.5"/>',
+  doneCircle: '<circle cx="12" cy="12" r="9.5"/><path d="m8 12.5 2.8 2.7L16.5 9.5"/>',
+  skip: '<circle cx="12" cy="12" r="9.5"/><path d="M8 12h8"/>',
+  branch: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M6 8.5v7M18 9.5c0 4-4 4.5-9.5 7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.2-8.56"/>',
+  min: '<path d="M5 12h14"/>', max: '<rect x="5" y="5" width="14" height="14" rx="1"/>', close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  arrowUp: '<path d="m5 12 7-7 7 7M12 19V5"/>',
+}
+const icon = (name, size = 18, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`
+// Placeholders: the app draws these with ProviderMark.
+const PMARK = {
+  codex: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="m8.5 10 2.5 2-2.5 2M12.5 14.5h3" stroke-linecap="round"/></svg>',
+  claude: '<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/></svg>',
+  grok: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="12" r="6.5"/><path d="M5 20 19 4"/></svg>',
+  devin: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h5a8 8 0 0 1 0 16H7z"/></svg>',
+}
+
+/* ---------- state ---------- */
+const params = new URLSearchParams(location.search)
+const VARIANTS = { A: 'Guided steps', B: 'Setup checklist', C: 'Conversation' }
+const KEYS = Object.keys(VARIANTS)
+let VAR = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+let SIZE = ['min', 'max'].includes(params.get('size')) ? params.get('size') : 'default'
+let WORD = params.get('wordmark') === 'lower' ? 'lower' : 'title'
+const TAILSCALE = params.get('tailscale') !== 'off'
+const REDUCED = params.get('motion') === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)').matches
+let SYSTEM = params.get('theme') === 'light' ? 'light' : 'dark'
+let SCALE = 1
+
+const STEPS = [
+  { id: 'welcome', group: 'Start', title: 'Welcome' },
+  { id: 'look', group: 'Start', title: 'Look', icon: 'palette' },
+  { id: 'mic', group: 'Dictation', title: 'Microphone', icon: 'mic' },
+  { id: 'key', group: 'Dictation', title: 'OpenRouter key', icon: 'key' },
+  { id: 'shortcut', group: 'Dictation', title: 'Shortcut', icon: 'keyboard' },
+  { id: 'agents', group: 'Agents', title: 'Coding agents', icon: 'terminal' },
+  { id: 'project', group: 'Agents', title: 'First project', icon: 'folder' },
+  { id: 'computers', group: 'Elsewhere', title: 'Other computers', icon: 'server' },
+  { id: 'phone', group: 'Elsewhere', title: 'iPhone', icon: 'phone' },
+  { id: 'tour', group: 'Ready', title: 'Tour', icon: 'flag' },
+]
+const B_GROUPS = [['Basics', ['look']], ['Dictation', ['mic', 'key', 'shortcut']], ['Agents', ['agents', 'project']], ['Elsewhere', ['computers', 'phone']]]
+const B_ITEMS = B_GROUPS.flatMap(([, ids]) => ids)
+const AGENTS = [['codex', 'Codex'], ['claude', 'Claude Code'], ['grok', 'Grok Build'], ['devin', 'Devin']]
+const HOST_STEPS = ['Reached', 'Signed in', 'Host installed', 'Host started', 'Paired']
+const FOLDERS = [
+  { name: 'sotto', path: 'C:\\Users\\you\\code\\sotto', branch: 'main' },
+  { name: 'website', path: 'C:\\Users\\you\\code\\website', branch: 'develop' },
+]
+
+function fresh() {
+  return {
+    step: 0, appearance: 'system', theme: 'sotto',
+    mic: 'idle', micId: 'default', key: 'empty', keyValue: '', paste: '',
+    agents: { codex: 'ready', claude: 'ready', grok: 'missing', devin: 'signedout' },
+    installHelp: false, copied: false, checking: false,
+    project: null, folderIndex: 0,
+    hosts: { forge: 'idle', studio: 'idle' }, hostStep: 0, ssh: false,
+    phone: { beta: false, access: false },
+    visited: new Set(['welcome']), bStarted: false, tour: -1, finished: false,
+  }
+}
+let S = fresh()
+const stepParam = STEPS.findIndex(s => s.id === params.get('step'))
+if (stepParam > 0) { S.step = stepParam; S.bStarted = true; STEPS.slice(0, stepParam + 1).forEach(s => S.visited.add(s.id)) }
+
+const appearanceOf = () => S.appearance === 'system' ? SYSTEM : S.appearance
+const theme = () => THEMES.find(t => t.id === S.theme)
+const brand = () => brandFor(theme(), appearanceOf())
+const cur = () => STEPS[S.step].id
+const readyAgents = () => AGENTS.filter(([id]) => S.agents[id] === 'ready')
+const connectedHosts = () => Object.entries(S.hosts).filter(([, v]) => v === 'connected').map(([k]) => k)
+function done(id) {
+  switch (id) {
+    case 'welcome': case 'tour': return true
+    case 'look': case 'shortcut': return S.visited.has(id)
+    case 'mic': return S.mic === 'ready'
+    case 'key': return S.key === 'verified'
+    case 'agents': return readyAgents().length > 0
+    case 'project': return !!S.project
+    case 'computers': return connectedHosts().length > 0
+    case 'phone': return S.phone.beta || S.phone.access
+  }
+}
+const skipped = id => !done(id) && S.visited.has(id) && cur() !== id
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const btn = (label, act, kind = 'secondary', o = {}) =>
+  `<button type="button" class="btn ${kind}" data-act="${act}"${o.arg ? ` data-arg="${o.arg}"` : ''} data-key="${o.key || act + (o.arg || '')}"${o.disabled ? ' disabled' : ''}${o.label ? ` aria-label="${o.label}"` : ''}>${o.icon ? icon(o.icon, 16, o.spin ? 'spin' : '') : ''}${label}</button>`
+const head = (eyebrow, title, lead) =>
+  `<p class="eyebrow">${eyebrow}</p><h1 class="h1" tabindex="-1" data-heading>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}`
+
+/* ---------- step content, shared by every variant ---------- */
+const CONTENT = {
+  welcome: () => `
+    <div class="hero-owl">${owl({ ...brand(), size: SIZE === 'min' ? 64 : 96, label: 'Sotto' })}</div>
+    ${head('Welcome to Sotto', 'Talk to your computer and your coding agents',
+      'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs your Codex, Claude Code and Grok Build threads in one window, on this computer or another.')}
+    <ul class="assure">
+      <li>${icon('check')} No Sotto account, no telemetry</li>
+      <li>${icon('check')} Audio leaves this computer only while you dictate</li>
+      <li>${icon('check')} Your threads go only to each agent's own provider</li>
+    </ul>
+    <p class="aside">Every step after this one can be skipped and finished later in Settings.</p>`,
+
+  look: () => {
+    const app = appearanceOf()
+    return `${head('Look', 'Choose how Sotto looks', 'Pick light or dark and a theme. The owl and the whole window follow your choice.')}
+    <div class="seg" role="radiogroup" aria-label="Appearance">
+      ${[['system', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) =>
+        `<button type="button" role="radio" class="seg-btn" aria-checked="${S.appearance === v}" tabindex="${S.appearance === v ? 0 : -1}" data-act="appearance" data-arg="${v}" data-key="app-${v}">${l}</button>`).join('')}
+    </div>
+    <div class="themes" role="radiogroup" aria-label="Theme">
+      ${THEMES.map(t => {
+        const p = t[app]
+        return `<button type="button" class="theme-card" role="radio" aria-checked="${S.theme === t.id}" tabindex="${S.theme === t.id ? 0 : -1}" data-act="theme" data-arg="${t.id}" data-key="theme-${t.id}">
+          <span class="theme-prev" style="background:${p.canvas};border-color:${p.border}">
+            <span class="tp-side" style="background:${p.surface}"></span>
+            <span class="tp-owl">${owl({ ...brandFor(t, app), size: SIZE === 'min' ? 16 : 20 })}</span>
+            <span class="tp-line" style="background:${p.text}"></span><span class="tp-line short" style="background:${p.muted}"></span>
+            <span class="tp-btn" style="background:${p.accent}"></span>
+          </span>
+          <span class="theme-name">${t.label}</span></button>`
+      }).join('')}
+    </div>
+    <p class="aside">Change it any time, or make your own theme, in Settings › Appearance.</p>`
+  },
+
+  mic: () => `${head('Microphone', 'Check your microphone', 'Sotto opens the microphone only while you dictate or run this test. Choose the input you speak into, then test it.')}
+    <label class="field"><span class="label">Microphone</span>
+      <select class="input" data-change="mic" data-key="mic-select">
+        ${['Default microphone', 'Microphone (Realtek Audio)', 'C922 Pro Stream Webcam'].map((m, i) => `<option value="${i}"${String(i) === S.micId ? ' selected' : ''}>${m}</option>`).join('')}
+      </select></label>
+    <div class="mic-test" data-state="${S.mic}">
+      <div class="wave" aria-hidden="true">${Array.from({ length: 30 }, (_, i) => `<i style="--h:${S.mic === 'ready' ? (0.3 + 0.35 * Math.abs(Math.sin(i * 1.7))).toFixed(2) : 0.1}"></i>`).join('')}</div>
+      <p role="status" class="mic-status">${{ idle: 'Run a quick input-level test.', testing: 'Listening. Say a few words.', ready: 'Microphone ready.' }[S.mic]}</p>
+      ${btn(S.mic === 'ready' ? 'Retest microphone' : S.mic === 'testing' ? 'Listening…' : 'Test microphone', 'mic-test', S.mic === 'ready' ? 'secondary' : 'primary', { icon: 'mic', disabled: S.mic === 'testing' })}
+    </div>`,
+
+  key: () => `${head('Transcription', 'Connect your OpenRouter key', 'Sotto transcribes with Microsoft MAI-Transcribe-2 through OpenRouter, on your own key. It costs about $0.10 per hour of audio.')}
+    ${S.key === 'verified'
+      ? `<div class="okrow">${icon('check', 20)}<div><strong>Key verified</strong><span>Saved in your system's credential store.</span></div>${btn('Replace key', 'key-replace', 'ghost')}</div>`
+      : `<label class="field"><span class="label">OpenRouter API key</span>
+          <span class="input-row"><input class="input mono" type="password" autocomplete="off" placeholder="sk-or-v1-…" data-input="key" data-key="key-input" value="${esc(S.keyValue)}">
+          ${btn(S.key === 'checking' ? 'Verifying…' : 'Verify key', 'key-verify', 'secondary', { disabled: S.key === 'checking' || !S.keyValue })}</span></label>
+         <p class="hint">Create a key at <a class="link" data-act="noop" data-key="orkeys">openrouter.ai/keys</a>. It opens in your browser.</p>`}`,
+
+  shortcut: () => `${head('Shortcut & paste', 'One shortcut from speech to text', 'Press the shortcut to start dictating and press it again to finish. Your text is copied first, then pasted where you were typing.')}
+    <div class="shortcut"><span>Dictation shortcut</span><span class="keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></span></div>
+    <label class="field"><span class="label">Paste test</span><span class="hint">A safe place to try the shortcut or a paste.</span>
+      <textarea class="input" rows="3" placeholder="Paste or type here" data-input="paste" data-key="paste">${esc(S.paste)}</textarea></label>`,
+
+  agents: () => {
+    const n = readyAgents().length
+    return `${head('Coding agents', 'Check your coding agents', 'Sotto drives the agents installed on this computer, each signed in with your own account. Threads need at least one.')}
+    <ul class="agents">${AGENTS.map(([id, label]) => agentRow(id, label)).join('')}</ul>
+    <div class="agents-foot"><span class="muted">${n} of ${AGENTS.length} ready</span>${btn(S.checking ? 'Checking…' : 'Check again', 'agents-check', 'secondary', { icon: S.checking ? 'loader' : 'refresh', spin: S.checking, disabled: S.checking })}</div>`
+  },
+
+  project: () => `${head('First project', 'Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it, and the sidebar lists them under its name.')}
+    ${S.project
+      ? `<div class="project">${icon('folder', 22)}<div><strong>${S.project.name}</strong><span class="mono muted">${esc(S.project.path)}</span><span class="muted">${icon('branch', 14)} Git · ${S.project.branch}</span></div>${btn('Change', 'project-choose', 'ghost', { label: 'Change project folder' })}</div>
+         <p class="aside">New threads share this folder. Choose New worktree when you start a thread to give it a checkout of its own.</p>`
+      : `<button type="button" class="dropzone" data-act="project-choose" data-key="choose">${icon('folder', 24)}<strong>Choose folder…</strong><span>Opens your system's folder picker.</span></button>
+         <p class="aside">You can add more projects from the sidebar at any time.</p>`}`,
+
+  computers: () => `${head('Other computers', 'Run agents on another computer', "If you have another PC, a Mac or a Linux box, Sotto can run threads there and show them here beside this computer's. It reaches them over Tailscale or SSH.")}
+    <div class="devices">
+      ${TAILSCALE ? `
+        <p class="group-label">Can connect</p>
+        ${deviceRow('forge', 'server', 'Linux · online · Tailscale SSH')}
+        ${deviceRow('studio', 'laptop', 'macOS · online')}
+        <p class="group-label">Can't use now</p>
+        <div class="device" aria-disabled="true">${icon('phone', 18)}<div class="device-name"><strong>pocket</strong><span>iOS · phones can't be hosts</span></div></div>`
+      : `<div class="note">${icon('alert', 18)}<div><strong>Tailscale isn't on this computer</strong><span>Sotto finds your other computers through Tailscale. Install it from tailscale.com, or type an SSH host instead.</span></div></div>`}
+      ${S.ssh
+        ? `<label class="field" style="margin-top:6px"><span class="label">SSH host</span><span class="input-row"><input class="input mono" placeholder="user@host or an alias" data-key="ssh-input">${btn('Add', 'noop', 'secondary', { key: 'ssh-add' })}</span></label>`
+        : `<button type="button" class="link-row" data-act="ssh" data-key="ssh">Another SSH host…</button>`}
+    </div>`,
+
+  phone: () => `${head('iPhone', 'Answer your threads from your iPhone', 'The iPhone app is in beta. It reads and answers threads on your computers, including questions and permissions that are waiting for you. It needs Tailscale on the iPhone and on this computer.')}
+    <ol class="phone-steps">
+      <li><span class="num">1</span><div><strong>Install the beta</strong><span>Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first.</span>${S.phone.beta ? `<span class="okline">${icon('check', 14)} Opened in your browser</span>` : ''}</div>
+        ${btn('Get the iPhone beta', 'beta', S.phone.beta ? 'secondary' : 'primary', { icon: 'external' })}</li>
+      <li><span class="num">2</span><div><strong>Turn on phone access</strong><span>Lets your iPhone reach this computer over your tailnet.</span>
+        ${S.phone.access ? `<div class="code"><span class="hint">Pairing code</span><b class="mono">K7Q2 M9XD</b><span class="hint">Type it in the app's Add computer step.</span></div>` : ''}</div>
+        <button type="button" class="switch" role="switch" aria-checked="${S.phone.access}" aria-label="Phone access" data-act="access" data-key="access"><i></i></button></li>
+    </ol>`,
+
+  tour: () => `${head('Ready', 'Sotto is ready', 'Here is where things are. Anything you skipped waits in Settings.')}
+    <div class="tour-map" aria-hidden="true">
+      <div class="tm-side"><i></i><i></i><i></i></div><div class="tm-pane"><i></i><i></i><i></i></div><div class="tm-comp"></div><div class="tm-widget"></div>
+      <span class="tm-num" style="left:10px;top:8px">1</span><span class="tm-num" style="left:31%;top:14px">2</span><span class="tm-num" style="left:31%;bottom:20px">3</span><span class="tm-num" style="right:120px;top:2px">4</span>
+    </div>
+    <ol class="tour-keys">
+      <li><b>1</b><div><strong>Sidebar</strong><span>Projects and their threads. New thread starts one.</span></div></li>
+      <li><b>2</b><div><strong>Thread</strong><span>The agent's work, and the questions and permissions it asks you.</span></div></li>
+      <li><b>3</b><div><strong>Composer</strong><span>Type, or press Ctrl Shift Space and speak.</span></div></li>
+      <li><b>4</b><div><strong>Widget</strong><span>Shows over other apps while you dictate.</span></div></li>
+    </ol>
+    <ul class="summary">${B_ITEMS.map(id => `<li class="pill ${done(id) ? 'ok' : ''}">${done(id) ? icon('check', 13) : ''}${title(id)}${done(id) ? '' : ' · skipped'}</li>`).join('')}</ul>`,
+}
+const title = id => STEPS.find(s => s.id === id).title
+
+function agentRow(id, label) {
+  const st = S.agents[id]
+  const pill = { ready: `<span class="pill ok">${icon('check', 13)} Ready</span>`, missing: '<span class="pill">Not installed</span>', signedout: '<span class="pill warn">Signed out</span>', signingin: `<span class="pill">${icon('loader', 13, 'spin')} Waiting for sign-in</span>` }[st]
+  const detail = { ready: 'Signed in', missing: 'Not found on this computer', signedout: 'Installed. Sign in to use it.', signingin: 'Finish signing in in the window that opened.' }[st]
+  const action = st === 'missing' ? btn(S.installHelp ? 'Hide steps' : 'How to install', 'install-help', 'ghost', { label: `How to install ${label}` })
+    : st === 'signedout' ? btn('Sign in', 'sign-in', 'secondary', { arg: id, label: `Sign in to ${label}` }) : '<span></span>'
+  const help = st === 'missing' && S.installHelp ? `<div class="install"><p>Run this in a terminal, then press Check again.</p>
+      <div class="cmd"><span class="mono">npm install -g @xai-official/grok</span>${btn(S.copied ? 'Copied' : 'Copy', 'copy', 'ghost', { icon: S.copied ? 'check' : 'copy', label: 'Copy install command' })}</div>
+      <p class="hint">Or follow xAI's guide at docs.x.ai.</p></div>` : ''
+  return `<li class="agent"><span class="pmark">${PMARK[id]}</span><span class="agent-name"><strong>${label}</strong><span>${detail}</span></span>${pill}${action}${help}</li>`
+}
+
+function deviceRow(name, ic, meta) {
+  const st = S.hosts[name]
+  const right = st === 'idle' ? btn('Add', 'host-add', 'secondary', { arg: name, label: `Add ${name} as a host` })
+    : st === 'connected' ? `<span class="pill ok">${icon('check', 13)} Connected</span>` : btn('Cancel', 'host-cancel', 'ghost', { arg: name })
+  const list = st === 'adding' ? `<ol class="checklist">${HOST_STEPS.map((s, i) => {
+      const k = i < S.hostStep ? 'done' : i === S.hostStep ? 'current' : 'pending'
+      return `<li data-s="${k}">${k === 'done' ? icon('check', 13) : k === 'current' ? icon('loader', 13, 'spin') : icon('circle', 13)}${s}</li>`
+    }).join('')}</ol>` : ''
+  const sub = st === 'connected' ? `${meta} · its threads show under ${name} in the sidebar` : meta
+  return `<div class="device">${icon(ic, 18)}<div class="device-name"><strong>${name}</strong><span>${sub}</span></div>${right}${list}</div>`
+}
+
+/* ---------- A: guided steps ---------- */
+function forwardButton() {
+  const id = cur()
+  if (id === 'welcome') return btn('Get started', 'next', 'primary')
+  if (id === 'tour') return btn('Open Threads', 'finish', 'primary')
+  return done(id) ? btn('Continue', 'next', 'primary') : btn('Skip for now', 'next', 'secondary')
+}
+function variantA() {
+  if (S.finished) return doneScreen()
+  const step = STEPS[S.step]
+  const groups = ['Start', 'Dictation', 'Agents', 'Elsewhere', 'Ready']
+  const progress = `<nav class="a-progress" aria-label="Setup progress"><p class="a-progress-text" aria-live="polite">Step ${S.step + 1} of ${STEPS.length} · ${step.title}</p>
+    <ol>${groups.map(g => {
+      const idx = STEPS.map((s, i) => s.group === g ? i : -1).filter(i => i >= 0)
+      return `<li data-current="${idx.includes(S.step)}"><span class="bar">${idx.map(i => `<i data-on="${i <= S.step}"></i>`).join('')}</span><span class="g">${g}</span></li>`
+    }).join('')}</ol></nav>`
+  return `<div class="a-shell">${progress}
+    <section class="card a-card" aria-labelledby="h">${step.icon ? `<div class="step-icon">${icon(step.icon, 22)}</div>` : ''}
+      <div class="content">${CONTENT[step.id]()}</div>
+      <footer class="a-actions">${S.step > 0 ? btn('Back', 'back', 'ghost') : '<span></span>'}${forwardButton()}</footer>
+    </section></div>`
+}
+
+/* ---------- B: setup checklist ---------- */
+function statusText(id) {
+  if (id === 'agents') return `${readyAgents().length} of ${AGENTS.length} ready`
+  if (done(id)) return { look: `${theme().label} · ${{ system: 'match system', light: 'light', dark: 'dark' }[S.appearance]}`, mic: 'Ready', key: 'Verified', shortcut: 'Ctrl Shift Space', project: S.project?.name, computers: `${connectedHosts().join(', ')} connected`, phone: [S.phone.beta && 'Beta opened', S.phone.access && 'phone access on'].filter(Boolean).join(', ') }[id]
+  if (skipped(id)) return { mic: 'Skipped. Dictation waits for a test.', key: 'Skipped. Dictation needs a key.' }[id] ?? 'Skipped'
+  return { look: 'Sotto', mic: 'Not tested', key: 'No key yet', shortcut: 'Ctrl Shift Space', project: 'None yet', computers: 'Optional', phone: 'Optional' }[id]
+}
+function statusIcon(id) {
+  if (done(id)) return `<span class="st done">${icon('doneCircle', 18)}</span>`
+  if (skipped(id)) return `<span class="st skip">${icon('skip', 18)}</span>`
+  return `<span class="st todo">${icon('circle', 18)}</span>`
+}
+function variantB() {
+  if (S.tour >= 0) return coachTour()
+  if (S.finished) return doneScreen()
+  if (!S.bStarted) return `<div class="b-hero">
+      <div class="hero-owl">${owl({ ...brand(), size: SIZE === 'min' ? 72 : 120, label: 'Sotto' })}</div>
+      <p class="eyebrow">Welcome to Sotto</p>
+      <h1 class="h1" tabindex="-1" data-heading>Talk to your computer and your coding agents</h1>
+      <p class="lead">Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs your Codex, Claude Code and Grok Build threads in one window, on this computer or another.</p>
+      <ul class="assure"><li>${icon('check')} No Sotto account, no telemetry</li><li>${icon('check')} Audio leaves only while you dictate</li><li>${icon('check')} Threads go only to each agent's provider</li></ul>
+      ${btn('Set up Sotto', 'b-start', 'primary')}
+      <p class="aside">About three minutes. Do the steps in any order and skip what you don't need.</p></div>`
+  const id = cur()
+  const n = B_ITEMS.filter(done).length
+  return `<div class="b-shell">
+    <aside class="b-list" aria-label="Setup steps">
+      <p class="b-title">Set up Sotto</p><p class="b-count">${n} of ${B_ITEMS.length} done</p><div class="b-meter"><i style="width:${n / B_ITEMS.length * 100}%"></i></div>
+      ${B_GROUPS.map(([g, ids]) => `<p class="group-label">${g}</p><ul>${ids.map(i => `<li><button type="button" class="b-item" aria-current="${i === id ? 'step' : 'false'}" data-act="goto" data-arg="${i}" data-key="b-${i}">${statusIcon(i)}<span><strong>${title(i)}</strong><span class="muted">${statusText(i)}</span></span></button></li>`).join('')}</ul>`).join('')}
+      <div class="b-start">${btn('Start using Sotto', 'finish', n >= 4 ? 'primary' : 'secondary')}<p class="hint">Skipped steps wait in Settings.</p></div>
+    </aside>
+    <section class="b-panel"><div class="content">${CONTENT[id]()}</div>
+      <footer class="b-actions">${done(id) ? btn('Next step', 'b-next', 'primary') : btn('Skip', 'b-next', 'ghost')}</footer></section>
+  </div>`
+}
+const TOUR = [
+  ['Sidebar', 'Your projects and their threads. New thread starts one in the selected project.'],
+  ['Thread', "A thread shows the agent's work. Questions and permission requests wait here for your answer."],
+  ['Composer', 'Type here, or press Ctrl Shift Space and speak. Your words land in the composer.'],
+  ['Widget', 'While you dictate in other apps, this shows over them so you know Sotto is listening.'],
+]
+function coachTour() {
+  const [h, p] = TOUR[S.tour]
+  const proj = S.project?.name ?? 'Add a project'
+  return `<div class="fake" aria-hidden="false">
+      <aside class="fake-side" data-tour="1">
+        <div class="fake-row">${icon('plus', 15)} New thread</div>
+        <div class="fake-row sel">${icon('folder', 15)} ${proj}</div>
+        <div class="fake-row muted">No threads yet</div>
+        ${connectedHosts().map(hn => `<div class="fake-row">${icon('server', 15)} ${hn}</div>`).join('')}
+      </aside>
+      <div class="fake-pane">
+        <div class="fake-empty" data-tour="2">${icon('message', 26)}<strong>Start a thread${S.project ? ` in ${S.project.name}` : ''}</strong><span>Pick an agent in the composer and describe the work.</span></div>
+        <div class="fake-comp" data-tour="3"><span>Ask ${readyAgents()[0]?.[1] ?? 'an agent'} to…</span><span style="display:flex;gap:8px">${icon('mic', 18)}${icon('arrowUp', 18)}</span></div>
+      </div>
+    </div>
+    <div class="fake-widget" data-tour="4">${icon('mic', 14)} Listening</div>
+    <div class="spot"></div>
+    <div class="bubble" role="dialog" aria-label="Tour: ${h}"><h2 tabindex="-1" data-heading>${h}</h2><p>${p}</p>
+      <footer><span class="hint">${S.tour + 1} of ${TOUR.length}</span><span>${S.tour > 0 ? btn('Back', 'tour-back', 'ghost') : ''}${S.tour < TOUR.length - 1 ? btn('Next', 'tour-next', 'primary') : btn('Done', 'tour-done', 'primary')}</span></footer></div>`
+}
+function placeSpot() {
+  const room = document.querySelector('.room'), t = room?.querySelector(`[data-tour="${S.tour + 1}"]`)
+  const spot = room?.querySelector('.spot'), bub = room?.querySelector('.bubble')
+  if (!t || !spot || !bub) return
+  const rr = room.getBoundingClientRect(), tr = t.getBoundingClientRect()
+  const x = (tr.left - rr.left) / SCALE, y = (tr.top - rr.top) / SCALE, w = tr.width / SCALE, h = tr.height / SCALE
+  const sx = Math.max(2, x - 6), sy = Math.max(2, y - 6)
+  Object.assign(spot.style, { left: `${sx}px`, top: `${sy}px`, width: `${Math.min(room.clientWidth - 2, x + w + 6) - sx}px`, height: `${Math.min(room.clientHeight - 2, y + h + 6) - sy}px` })
+  const W = room.clientWidth, H = room.clientHeight, bh = bub.offsetHeight
+  let bx, by
+  if (w > W * 0.45) { bx = x + w / 2 - 150; by = y > H / 2 ? y - bh - 22 : y + h + 22 }
+  else if (x + w + 330 < W) { bx = x + w + 22; by = y + Math.min(h / 2, 80) - 40 }
+  else { bx = x - 322; by = y }
+  bx = Math.max(12, Math.min(W - 312, bx)); by = Math.max(12, Math.min(H - bh - 12, by))
+  Object.assign(bub.style, { left: `${bx}px`, top: `${by}px` })
+}
+
+/* ---------- C: conversation ---------- */
+function answer(id) {
+  switch (id) {
+    case 'welcome': return 'Get started'
+    case 'look': return `${theme().label}, ${{ system: 'matching the system', light: 'light', dark: 'dark' }[S.appearance]}`
+    case 'mic': return done(id) ? 'Microphone ready' : 'Skip for now'
+    case 'key': return done(id) ? 'Key verified' : 'Skip for now'
+    case 'shortcut': return 'Got it'
+    case 'agents': return `${readyAgents().map(a => a[1]).join(' and ') || 'None'} ready`
+    case 'project': return S.project ? `${S.project.name} · ${S.project.branch}` : 'Skip for now'
+    case 'computers': return connectedHosts().length ? `Added ${connectedHosts().join(' and ')}` : 'Only this computer'
+    case 'phone': return done(id) ? [S.phone.beta && 'Opened the beta', S.phone.access && 'phone access on'].filter(Boolean).join(', ') : 'Not now'
+  }
+}
+const QUESTION = { welcome: 'Welcome to Sotto.', look: 'How should Sotto look?', mic: 'Check your microphone.', key: 'Connect your OpenRouter key.', shortcut: 'One shortcut from speech to text.', agents: 'Check your coding agents.', project: 'Choose a project folder.', computers: 'Run agents on another computer?', phone: 'Answer threads from your iPhone?' }
+function variantC() {
+  if (S.finished) return doneScreen()
+  const av = `<span class="c-avatar">${owl({ ...brand(), size: 28 })}</span>`
+  const past = STEPS.slice(0, S.step).map(s => `<div class="c-msg">${av}<div class="c-past">${QUESTION[s.id]}</div></div>
+      <div class="c-me"><button type="button" class="btn ghost" data-act="goto" data-arg="${s.id}" data-key="c-change-${s.id}" aria-label="Change: ${QUESTION[s.id]}">Change</button><span class="c-answer">${answer(s.id)}</span></div>`).join('')
+  const step = STEPS[S.step]
+  const now = `<div class="c-msg">${av}<div class="c-bubble">${CONTENT[step.id]()}</div></div>`
+  return `<div class="c-shell"><div class="c-feed" id="feed">${past}${now}</div>
+    <div class="c-composer"><div class="c-composer-inner"><span class="muted">${step.id === 'tour' ? 'Setup is done.' : done(step.id) ? 'Ready for the next step.' : 'Answer above, or skip it.'}</span>
+      <span class="c-replies">${S.step > 0 ? btn('Back', 'back', 'ghost') : ''}${forwardButton()}</span></div></div></div>`
+}
+
+function doneScreen() {
+  return `<div class="end-screen"><div>${owl({ ...brand(), size: 64 })}
+    <h1 class="h1" tabindex="-1" data-heading style="margin-top:18px">Threads opens here</h1>
+    <p class="lead">The prototype ends where setup hands over to the Threads page${S.project ? `, with ${S.project.name} in the sidebar` : ''}.</p>
+    ${btn('Start setup again', 'restart', 'secondary')}</div></div>`
+}
+
+/* ---------- render ---------- */
+let lastStep = -1, lastVar = '', waveRaf = 0
+function render(focusHeading = false) {
+  const win = document.getElementById('win')
+  const keyed = document.activeElement?.closest?.('[data-key]')?.dataset.key
+  // Re-rendering replaces the scrollers, so keep where each one was unless the step changed.
+  const scrolled = Object.fromEntries(['.room', '#feed', '.b-panel', '.b-list'].map(sel => [sel, win.querySelector(sel)?.scrollTop]))
+  const sameView = lastStep === S.step && lastVar === VAR
+  const app = appearanceOf(), p = theme()[app], b = brand()
+  win.dataset.appearance = app; win.dataset.size = SIZE; win.dataset.motion = REDUCED ? 'reduced' : 'full'
+  for (const [k, v] of Object.entries({ canvas: p.canvas, surface: p.surface, raised: p.raised, text: p.text, muted: p.muted, border: p.border, accent: p.accent, 'on-accent': p.onAccent })) win.style.setProperty(`--b-${k}`, v)
+  const center = VAR === 'C' && !S.finished ? `Step ${S.step + 1} of ${STEPS.length}` : ''
+  win.innerHTML = `<header class="strip"><div class="mark" aria-label="Sotto application">${owl({ ...b, size: 24 })}<span class="wordmark" data-style="${WORD}">${WORD === 'lower' ? 'sotto' : 'Sotto'}</span></div>
+      <div class="strip-center">${center}</div>
+      <div class="winctl" aria-hidden="true"><span>${icon('min', 15)}</span><span>${icon('max', 13)}</span><span>${icon('close', 15)}</span></div></header>
+    <main class="room">${VAR === 'A' ? variantA() : VAR === 'B' ? variantB() : variantC()}</main>`
+  fit()
+  if (VAR === 'B' && S.tour >= 0) placeSpot()
+  if (sameView && !focusHeading) for (const [sel, top] of Object.entries(scrolled)) { const el = win.querySelector(sel); if (el && top != null) el.scrollTop = top }
+  else { const feed = document.getElementById('feed'); if (feed) feed.scrollTop = feed.scrollHeight }
+  if (focusHeading) win.querySelector('[data-heading]')?.focus({ preventScroll: VAR === 'C' })
+  else if (keyed) win.querySelector(`[data-key="${keyed}"]`)?.focus()
+  lastStep = S.step; lastVar = VAR
+  if (S.mic === 'testing' && !REDUCED && !waveRaf) waveRaf = requestAnimationFrame(tickWave)
+  syncBar()
+}
+function tickWave() {
+  const bars = document.querySelectorAll('.mic-test[data-state=testing] .wave i')
+  if (!bars.length) { waveRaf = 0; return }
+  const t = performance.now() / 1000
+  bars.forEach((el, i) => el.style.setProperty('--h', (0.12 + 0.8 * Math.abs(Math.sin(t * 3.1 + i * 0.55) * Math.sin(t * 1.3 + i * 0.21))).toFixed(3)))
+  waveRaf = requestAnimationFrame(tickWave)
+}
+function fit() {
+  const win = document.getElementById('win')
+  SCALE = Math.min(1, (innerWidth - 24) / win.offsetWidth, (innerHeight - 92) / win.offsetHeight)
+  document.getElementById('scaler').style.transform = `translate(-50%, -50%) scale(${SCALE})`
+}
+addEventListener('resize', () => { fit(); if (VAR === 'B' && S.tour >= 0) placeSpot() })
+
+/* ---------- actions ---------- */
+function gotoIndex(i) { S.step = Math.max(0, Math.min(STEPS.length - 1, i)); S.visited.add(cur()); render(true) }
+const gotoId = id => gotoIndex(STEPS.findIndex(s => s.id === id))
+const later = (ms, fn) => setTimeout(() => { fn(); render() }, ms)
+function act(name, arg) {
+  switch (name) {
+    case 'next': return gotoIndex(S.step + 1)
+    case 'back': return gotoIndex(S.step - 1)
+    case 'goto': return gotoId(arg)
+    case 'appearance': S.appearance = arg; break
+    case 'theme': S.theme = arg; break
+    case 'mic-test': S.mic = 'testing'; later(1800, () => { S.mic = 'ready' }); break
+    case 'key-verify': S.key = 'checking'; later(900, () => { S.key = 'verified' }); break
+    case 'key-replace': S.key = 'empty'; S.keyValue = ''; break
+    case 'install-help': S.installHelp = !S.installHelp; break
+    case 'copy': S.copied = true; break
+    case 'sign-in': S.agents[arg] = 'signingin'; later(1600, () => { S.agents[arg] = 'ready' }); break
+    case 'agents-check': S.checking = true; later(1000, () => { S.checking = false; if (S.copied) S.agents.grok = 'ready' }); break
+    case 'project-choose': S.project = FOLDERS[S.folderIndex++ % FOLDERS.length]; break
+    case 'host-add': S.hosts[arg] = 'adding'; S.hostStep = 0; advanceHost(arg); break
+    case 'host-cancel': S.hosts[arg] = 'idle'; break
+    case 'ssh': S.ssh = true; render(); document.querySelector('[data-key="ssh-input"]')?.focus(); return
+    case 'beta': S.phone.beta = true; break
+    case 'access': S.phone.access = !S.phone.access; break
+    case 'b-start': S.bStarted = true; return gotoId('look')
+    case 'b-next': {
+      S.visited.add(cur())
+      const i = B_ITEMS.indexOf(cur())
+      const next = [...B_ITEMS.slice(i + 1), ...B_ITEMS.slice(0, i)].find(id => !done(id) && !S.visited.has(id))
+      if (next) return gotoId(next)
+      render(); document.querySelector('[data-act=finish]')?.focus(); return
+    }
+    case 'finish': if (VAR === 'B') { S.tour = 0; render(true) } else { S.finished = true; render(true) } return
+    case 'tour-next': S.tour++; render(true); return
+    case 'tour-back': S.tour--; render(true); return
+    case 'tour-done': S.tour = -1; S.finished = true; render(true); return
+    case 'restart': S = fresh(); render(true); return
+    case 'noop': return
+  }
+  render()
+}
+function advanceHost(name) {
+  setTimeout(() => {
+    if (S.hosts[name] !== 'adding') return
+    S.hostStep++
+    if (S.hostStep >= HOST_STEPS.length) S.hosts[name] = 'connected'; else advanceHost(name)
+    render()
+  }, 650)
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]')
+  if (!el || el.disabled || !el.closest('#win')) return
+  act(el.dataset.act, el.dataset.arg)
+})
+document.addEventListener('input', e => {
+  const k = e.target.dataset?.input
+  if (k === 'key') { S.keyValue = e.target.value; const b = document.querySelector('[data-act=key-verify]'); if (b) b.disabled = !S.keyValue }
+  if (k === 'paste') S.paste = e.target.value
+})
+document.addEventListener('change', e => {
+  if (e.target.dataset?.change === 'mic') { S.micId = e.target.value; S.mic = 'idle'; render() }
+})
+document.addEventListener('keydown', e => {
+  const t = e.target
+  if (t.dataset?.input === 'key' && e.key === 'Enter' && S.keyValue) { act('key-verify'); return }
+  // Radio groups move with the arrows and choose as they go, the way the app's segmented controls do.
+  const group = t.closest?.('#win [role=radiogroup]')
+  if (group && ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
+    e.preventDefault()
+    const items = [...group.querySelectorAll('[role=radio]')], i = items.indexOf(t.closest('[role=radio]'))
+    const n = items[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]
+    act(n.dataset.act, n.dataset.arg); document.querySelector(`[data-key="${n.dataset.key}"]`)?.focus()
+    return
+  }
+  if (e.key === 'Escape' && VAR === 'B' && S.tour >= 0) { act('tour-done'); return }
+  if (t === document.body || t.closest?.('.proto-bar')) {
+    if (e.key === 'ArrowLeft') cycle(-1)
+    if (e.key === 'ArrowRight') cycle(1)
+  }
+})
+
+/* ---------- prototype switcher ---------- */
+function syncUrl() {
+  const q = new URLSearchParams({ variant: VAR })
+  if (SIZE !== 'default') q.set('size', SIZE)
+  if (SYSTEM === 'light') q.set('theme', 'light')
+  if (WORD === 'lower') q.set('wordmark', 'lower')
+  if (!TAILSCALE) q.set('tailscale', 'off')
+  if (params.get('motion') === 'reduced') q.set('motion', 'reduced')
+  if (S.step > 0) q.set('step', cur())
+  history.replaceState(null, '', `?${q}`)
+}
+function syncBar() {
+  document.getElementById('lab').textContent = `${VAR} — ${VARIANTS[VAR]}`
+  document.getElementById('themeBtn').textContent = appearanceOf() === 'light' ? 'Light' : 'Dark'
+  document.getElementById('sizeSel').value = SIZE
+  document.getElementById('wordBtn').textContent = WORD === 'lower' ? 'sotto' : 'Sotto'
+  const sel = document.getElementById('stepSel')
+  if (!sel.options.length) sel.innerHTML = STEPS.map(s => `<option value="${s.id}">${s.title}</option>`).join('')
+  sel.value = cur()
+  syncUrl()
+}
+function cycle(d) { VAR = KEYS[(KEYS.indexOf(VAR) + d + KEYS.length) % KEYS.length]; S.tour = -1; S.finished = false; if (VAR === 'B' && S.step > 0) S.bStarted = true; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.getElementById('themeBtn').onclick = () => { const next = appearanceOf() === 'light' ? 'dark' : 'light'; SYSTEM = next; if (S.appearance !== 'system') S.appearance = next; render() }
+document.getElementById('sizeSel').onchange = e => { SIZE = e.target.value; render() }
+document.getElementById('wordBtn').onclick = () => { WORD = WORD === 'lower' ? 'title' : 'lower'; render() }
+document.getElementById('stepSel').onchange = e => { S.finished = false; S.tour = -1; S.bStarted = true; gotoId(e.target.value) }
+document.fonts?.ready.then(() => { const feed = document.getElementById('feed'); render(); if (feed) document.getElementById('feed').scrollTop = 1e6 })
+render()
+</script>
+</body>
+</html>
