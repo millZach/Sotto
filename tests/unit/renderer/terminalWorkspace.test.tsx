@@ -228,7 +228,8 @@ describe('Terminal mode', () => {
     expect(finished.querySelector('.thread-nav__ring')).toHaveAttribute('data-unseen')
 
     fireEvent.click(within(needs).getByRole('button', { name: 'Needs approval' }))
-    const pane = await screen.findByRole('region', { name: 'Needs approval' })
+    // The pane's name carries the state its edge shows.
+    const pane = await screen.findByRole('region', { name: 'Needs approval, needs you' })
     expect(pane.querySelector('.terminal-pane')).toHaveAttribute('data-needs-you')
     expect(pane.querySelector('header')).not.toHaveTextContent('Needs you')
     expect(within(pane).queryByRole('button', { name: 'Yes' })).toBeNull()

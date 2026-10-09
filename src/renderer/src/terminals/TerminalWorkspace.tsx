@@ -71,7 +71,7 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const now = useClock(fixedNow, 2_000, openTerminals.length > 0)
   const rows = useMemo(() => describeTerminals(state, workspace.terminals, now), [state, workspace.terminals, now])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.terminal.id, row] as const)), [rows])
-  const labels = useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.terminal.id, { title: row.title, providerId: row.providerId, provider: row.provider }] as const)), [rows])
+  const labels = useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.terminal.id, { title: row.title, providerId: row.providerId, provider: row.provider, attention: row.terminal.status === 'running' && row.terminal.agentState === 'needs-you' ? 'needs you' : undefined }] as const)), [rows])
   const organization = useMemo(() => organizeTerminals(state, rows, query), [state, rows, query])
   const stored = useSplitLayout(layoutStore)
   const isOpen = useCallback((id: string): boolean => { const row = rowsById.get(id); return row !== undefined && isOpenTerminal(row.terminal) }, [rowsById])

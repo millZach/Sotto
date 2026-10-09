@@ -71,6 +71,8 @@ test('native fake agents report state and only unseen successful turns earn Just
     await input.pressSequentially('n'); await input.press('Enter')
     await expect.poll(() => state(page, initial)).toBe('needs-you')
     await expect(page.locator('.terminal-pane[data-needs-you]')).toHaveCount(1)
+    // The edge belongs to the whole pane, under its layout controls too, and the pane's name says what it shows.
+    await expect(page.getByRole('region', { name: 'Claude approval, needs you', exact: true })).toHaveCSS('box-shadow', /inset/)
     await expect(sidebar.locator('.terminal-nav__row[data-terminal-state="needs-you"]')).toHaveCount(1)
     // Cancellation cannot look like a successful completion.
     await input.pressSequentially('i'); await input.press('Enter')
@@ -131,7 +133,7 @@ test('native fake agents report state and only unseen successful turns earn Just
     const geometry: unknown[] = []
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
-      if (width === 820) await page.getByRole('tab', { name: 'Claude approval', exact: true }).click()
+      if (width === 820) await page.getByRole('tab', { name: 'Claude approval, needs you', exact: true }).click()
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)

@@ -30,7 +30,10 @@
 .terminal-pane__body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .terminal-pane .terminal-view { flex: 1; min-height: 0; }
 .terminal-pane .thread-workspace__crumb > svg { flex: none; color: var(--tt-text-muted); }
-.terminal-pane[data-needs-you] > .thread-workspace__head { box-shadow: inset 0 2px var(--tt-attention); }
+/* The edge runs along the whole pane top, under the layout controls too, and takes the focus edge's place:
+   the dimmed title still says which pane is focused. */
+.threads-view .thread-pane:has(> .terminal-pane[data-needs-you]),
+.threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused]:has(> .terminal-pane[data-needs-you]) { box-shadow: inset 0 2px 0 var(--tt-attention); }
 .terminal-detection-note { flex: none; margin: 0; padding: 7px 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12px; line-height: 1.5; }
 .terminal-pane__chip { position: absolute; right: 16px; bottom: 12px; margin: 0; padding: 6px 11px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-panel); color: var(--tt-text-2); font-size: 12px; box-shadow: 0 6px 20px var(--tt-shadow-color, rgb(0 0 0 / 25%)); }
 .terminal-status { display: flex; flex: none; align-items: center; gap: 14px; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
