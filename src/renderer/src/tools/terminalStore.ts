@@ -23,8 +23,8 @@ export interface TerminalViewHandlers {
   readonly onInterrupt: () => void
   /** Copy feedback, shown by the surface that owns this terminal. */
   readonly onNotice?: ((message: string | null) => void) | undefined
-  /** An image was pasted: its PNG as a data URL. Left out where images have nowhere to go. */
-  readonly onPasteImage?: ((dataUrl: string) => void) | undefined
+  /** Reserve a paste's input order immediately, while its PNG conversion may still be pending. */
+  readonly onPasteImage?: ((dataUrl: string | Promise<string | null>) => void) | undefined
   /** A key the page acts on: the terminal leaves it to the page instead of sending it to the shell. */
   readonly isPageShortcut?: ((event: KeyboardEvent) => boolean) | undefined
   /** Whether the terminal turns see-through while the room is frosted (ADR-0048), as a pane's drawer does. */
@@ -223,8 +223,16 @@ export class TerminalStore {
         onPasteImage: dataUrl => {
           const target = this.target(threadId)
           if (!bridge || !target || record.replaying || record.closing || !this.running(threadId, sessionId)) return
-          void settle(bridge.pasteImage({ ...target, sessionId, dataUrl })).then(result => {
-            if (!result.ok) this.fail(bridge, threadId, result.error, 'The image could not be pasted. Try again.')
+          const version = record.inputVersion
+          record.inputTail = record.inputTail.then(async () => {
+            const image = await Promise.resolve(dataUrl).catch(() => null)
+            if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
+            const result = image ? await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image }))) : { ok: false as const, error: { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' } }
+            if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
+            if (!result.ok) {
+              record.inputVersion++
+              this.fail(bridge, threadId, result.error, 'The image could not be pasted. Check the command before trying again.')
+            }
           })
         },
         onNotice: notice => {

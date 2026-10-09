@@ -12,7 +12,7 @@ The issue and the supplied `terminal-agent-state-prototype.html` settle the look
 - Exact renderer addon devDependencies compatible with xterm 6.0.0. Keep production dependencies at zod and node-pty; ship addon notices.
 - Update user-facing documentation and the drawer's older claim that every other key goes to the shell.
 - Prove the three real-PTY paths, retain cited screenshots, run the four CI gates and the five affected Playwright specs, then review standards and issue coverage separately.
-- Commit locally on this branch. No push or pull request.
+- Commit review fixes on this branch. After every required gate passes, push and open a pull request closing #881. Never merge.
 
 ## Implementation choices
 
@@ -22,4 +22,13 @@ The search bar follows the existing xterm view's lifetime, retaining its query w
 
 ## State
 
-The acceptance criteria are complete: implementation, user documentation, the two independent reviews and all six fixes, the full two-worker suite, the five real-PTY Playwright specs and visual inspection of the 18 light/dark captures. Final counts and platform limits are recorded in `docs/verification/2026-10-09-terminal-search-links-zoom.md`. Delivery is a local commit on this branch; pushing and opening a pull request remain with the lead.
+The builder and design passes are committed. The finishing pass tracks the supplied reviews:
+
+- [x] Install this worktree's dependencies with `npm ci`.
+- [x] Keep image conversion, staging and insertion ordered with keys and later pastes, in renderer and main. Targeted tests: 4 files, 69 tests passed.
+- [ ] Quote image paths as literal shell arguments, including expansion characters and apostrophes.
+- [ ] Let app and pane shortcuts propagate from every search control.
+- [ ] Add keyboard activation for URLs and named OSC 8 links through the validated bridge.
+- [ ] Resolve the search overlay hiding matches in narrow panes; assess all remaining design notes with evidence.
+- [ ] Run the final gates, real-PTY journeys and visual inspection, then record the current evidence.
+- [ ] Push this branch and open the PR without merging.

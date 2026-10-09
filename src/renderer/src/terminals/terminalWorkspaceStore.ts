@@ -171,13 +171,24 @@ export class TerminalWorkspaceStore {
   }
 
   /** Saves the clipboard image under the terminal's folder; main types the path. The path shows in the pane briefly. */
-  async pasteImage(bridge: TerminalWorkspaceBridge | undefined, id: string, dataUrl: string): Promise<void> {
+  async pasteImage(bridge: TerminalWorkspaceBridge | undefined, id: string, dataUrl: string | Promise<string | null>): Promise<void> {
     const record = this.records.get(id)
-    if (!bridge || !record) return
-    const result = await settle(bridge.pasteImage({ id, dataUrl }))
-    if (!result.ok) { this.set({ ...this.state, notice: this.words(result.error, 'Could not paste the image.') }); return }
-    record.pasted = { path: result.value.path, at: Date.now() }
-    this.emit()
+    if (!bridge || !record || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
+    const version = record.inputVersion
+    record.inputTail = record.inputTail.then(async () => {
+      const image = await Promise.resolve(dataUrl).catch(() => null)
+      if (this.records.get(id) !== record || record.inputVersion !== version || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
+      const result = image ? await settle(Promise.resolve().then(() => bridge.pasteImage({ id, dataUrl: image }))) : { ok: false as const, error: { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' } }
+      if (this.records.get(id) !== record || record.inputVersion !== version) return
+      if (!result.ok) {
+        record.inputVersion++
+        this.set({ ...this.state, notice: this.words(result.error, 'Could not paste the image. Check the command before trying again.') })
+        return
+      }
+      record.pasted = { path: result.value.path, at: Date.now() }
+      this.emit()
+    })
+    await record.inputTail
   }
   clearPasted(id: string): void {
     const record = this.records.get(id)

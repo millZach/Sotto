@@ -209,7 +209,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     if (!file || !inputEnabled) return
     event.preventDefault()
     event.stopPropagation()
-    void pngDataUrl(file).then(dataUrl => { if (dataUrl) handlers.onPasteImage?.(dataUrl) })
+    handlers.onPasteImage?.(pngDataUrl(file))
   }, true)
   const handleShortcut = (event: KeyboardEvent): boolean => {
     const shortcut = terminalShortcut(event, platform)

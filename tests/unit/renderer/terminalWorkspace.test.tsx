@@ -61,6 +61,24 @@ it('keeps terminal workspace paste chunks and later events ordered while another
   expect(vi.mocked(bridge.write).mock.calls.filter(([request]) => request.id === ID_1).map(([request]) => request.data)).toEqual(['a'.repeat(16_384), 'a'.repeat(3_616), 'later event'])
 })
 
+it('keeps workspace image conversion and staging ahead of Enter', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  const conversion = Promise.withResolvers<string | null>(), staging = Promise.withResolvers<ToolsResult<{ path: string }>>()
+  vi.mocked(bridge.pasteImage).mockImplementationOnce(() => staging.promise)
+  const paste = store.pasteImage(bridge, ID_1, conversion.promise)
+  store.write(bridge, ID_1, '\r')
+  await Promise.resolve(); await Promise.resolve()
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(bridge.write).not.toHaveBeenCalled()
+  conversion.resolve('image')
+  await waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledWith({ id: ID_1, dataUrl: 'image' }))
+  expect(bridge.write).not.toHaveBeenCalled()
+  staging.resolve(ok({ path: 'first.png' })); await paste
+  await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: '\r' }))
+})
+
 it('drops failed workspace input and its remainder, then accepts a fresh attempt', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
   const store = new TerminalWorkspaceStore()

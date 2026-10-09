@@ -132,14 +132,17 @@ export class TerminalService extends ToolOperations {
     if (!parsed.success) return this.run(async () => { parse(terminalWriteSchema, payload) })
     const request = parsed.data
     // Reserve order before ownership validation yields. Queued keys do not consume the active-operation cap.
-    const previous = this.inputLanes.get(request.sessionId) ?? Promise.resolve()
-    const pending = previous.then(() => this.run(async () => {
+    return this.input(request.sessionId, async () => {
       const record = await this.owned(request)
       if (!record.pty) return fail('not-running', 'This terminal has exited. Reopen it to start a new shell.')
       record.pty.write(request.data)
-    }))
-    this.inputLanes.set(request.sessionId, pending)
-    void pending.then(() => { if (this.inputLanes.get(request.sessionId) === pending) this.inputLanes.delete(request.sessionId) })
+    })
+  }
+  private input(sessionId: string, action: () => Promise<void>): Promise<ToolsResult<void>> {
+    const previous = this.inputLanes.get(sessionId) ?? Promise.resolve()
+    const pending = previous.then(() => this.run(action))
+    this.inputLanes.set(sessionId, pending)
+    void pending.then(() => { if (this.inputLanes.get(sessionId) === pending) this.inputLanes.delete(sessionId) })
     return pending
   }
   resize(payload: unknown) { return this.run(async () => {
@@ -150,8 +153,11 @@ export class TerminalService extends ToolOperations {
     record.session.cols = request.cols; record.session.rows = request.rows
     this.publish(record)
   }) }
-  pasteImage(payload: unknown) { return this.run(async () => {
-    const request = parse(terminalImageSchema, payload)
+  pasteImage(payload: unknown) {
+    const parsed = terminalImageSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(terminalImageSchema, payload) })
+    const request = parsed.data
+    return this.input(request.sessionId, async () => {
     const record = await this.owned(request)
     if (!record.pty) return fail('not-running', 'This terminal has exited. Reopen it before pasting an image.')
     const path = await saveTerminalImage(record.session.workspace.workingDirectory, request.dataUrl)
@@ -159,7 +165,8 @@ export class TerminalService extends ToolOperations {
     await this.owned(request)
     if (!record.pty) return fail('not-running', 'The image was saved, but this terminal has exited. Reopen it before pasting again.')
     record.pty.write(terminalImageInput(path))
-  }) }
+    })
+  }
   interrupt(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(terminalRequestSchema, payload), false)
     if (!record.pty) return fail('not-running', 'This terminal has exited.')

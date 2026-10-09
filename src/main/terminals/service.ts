@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises'
 import { basename, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentProject, AgentWorktree } from '../../shared/agents'
+import type { ToolsResult } from '../../shared/tools'
 import { TERMINAL_MAX_OUTPUT } from '../../shared/terminal'
 import { commandLine, nativeModelName, providerCommand } from '../../shared/terminalCommands'
 import {
@@ -62,6 +63,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   private cachedShell: ResolvedShell | null = null
   private shellLookup: Promise<ResolvedShell> | null = null
   private spawnLoad: Promise<SpawnProcess> | null = null
+  private readonly inputLanes = new Map<string, Promise<unknown>>()
   constructor(private readonly dependencies: TerminalWorkspaceDependencies) {
     super()
     this.warm()
@@ -285,12 +287,23 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   read(payload: unknown) { return this.run(async () => this.snapshot(await this.owned(parse(workspaceTerminalRequestSchema, payload).id))) }
-  write(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalWriteSchema, payload)
+  private input<T>(id: string, action: () => Promise<T>): Promise<ToolsResult<T>> {
+    const previous = this.inputLanes.get(id) ?? Promise.resolve()
+    const pending = previous.then(() => this.run(action))
+    this.inputLanes.set(id, pending)
+    void pending.then(() => { if (this.inputLanes.get(id) === pending) this.inputLanes.delete(id) })
+    return pending
+  }
+  write(payload: unknown) {
+    const parsed = workspaceTerminalWriteSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalWriteSchema, payload) })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited. Restart it to run the command again.')
     record.pty.write(request.data)
-  }) }
+    })
+  }
   resize(payload: unknown) { return this.run(async () => {
     const request = parse(workspaceTerminalResizeSchema, payload)
     // A size never waits for the process: a terminal still starting spawns at the size its pane already measured.
@@ -349,16 +362,21 @@ export class TerminalWorkspaceService extends ToolOperations {
     record.output = ''
     this.publish(record)
   }) }
-  pasteImage(payload: unknown) { return this.run(async () => {
-    const request = parse(workspaceTerminalImageSchema, payload)
+  pasteImage(payload: unknown) {
+    const parsed = workspaceTerminalImageSchema.safeParse(payload)
+    if (!parsed.success) return this.run(async () => { parse(workspaceTerminalImageSchema, payload); return { path: '' } })
+    const request = parsed.data
+    return this.input(request.id, async () => {
     const record = await this.owned(request.id)
     if (!record.pty) return fail('not-running', 'This terminal has exited.')
+    const pty = record.pty
     const path = await saveTerminalImage(record.terminal.workingDirectory, request.dataUrl, this.now())
     await this.owned(request.id)
-    if (!record.pty) return fail('not-running', 'The image was saved, but this terminal has exited. Restart it before pasting again.')
+    if (record.pty !== pty) return fail('not-running', 'The image was saved, but this terminal has exited. Paste it again in the restarted terminal.')
     record.pty.write(terminalImageInput(path))
     return { path }
-  }) }
+    })
+  }
 
   /** Ends the process; the record and its output stay. A process ended here has no exit code of its own. */
   private end(record: LiveTerminal): void {

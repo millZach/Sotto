@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
 import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
+import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 
@@ -37,6 +38,19 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform'> =
   return { service, createService, target, files, processes, spawn, events, directory, change: () => { cwd = other } }
 }
 describe('persistent terminal service', () => {
+  it('keeps Enter and a second paste behind image staging in main', async () => {
+    const f = await fixture(), first = unwrap(await f.service.create(f.target))
+    const request = { ...f.target, sessionId: first.session.id }
+    const staging = Promise.withResolvers<string>(), entered = Promise.withResolvers<void>()
+    const save = vi.spyOn(clipboard, 'saveTerminalImage').mockImplementationOnce(() => { entered.resolve(); return staging.promise }).mockResolvedValue('second.png')
+    const pending = f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,AAAA' })
+    await entered.promise
+    const next = f.service.pasteImage({ ...request, dataUrl: 'data:image/png;base64,BBBB' })
+    const enter = f.service.write({ ...request, data: '\r' })
+    try { expect(f.processes[0]!.pty.write).not.toHaveBeenCalled() }
+    finally { staging.resolve('first.png'); await Promise.all([pending, next, enter]); save.mockRestore() }
+    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls.map(args => args[0])).toEqual(['first.png', 'second.png', '\r'])
+  })
   it.each(['tools', 'drawer'] as const)('saves a pasted PNG and types its quoted path in %s, refusing invalid images and other owners', async place => {
     const f = await fixture()
     const snapshot = unwrap(await f.service.create({ ...f.target, place }))

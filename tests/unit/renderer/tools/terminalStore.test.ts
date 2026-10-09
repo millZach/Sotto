@@ -29,6 +29,38 @@ function fakeBridge(sessions: TerminalSession[]) {
 }
 
 describe('a terminal store filters by place', () => {
+  it.each(['tools', 'drawer'] as const)('keeps conversion, staging, later pastes and Enter ordered in %s', async place => {
+    const { bridge } = fakeBridge([session(ID_TOOLS, place)])
+    const store = new TerminalStore(place)
+    await store.activate(bridge, 'thread-a')
+    let handlers!: TerminalViewHandlers
+    store.attach(bridge, 'thread-a', ID_TOOLS, document.createElement('div'), callbacks => {
+      handlers = callbacks
+      return { mount() {}, unmount() {}, write(_data, done) { done?.() }, reset() {}, setInputEnabled() {}, fit: () => null, focus() {}, dispose() {} }
+    })
+    await vi.waitFor(() => expect(store.replaying(ID_TOOLS)).toBe(false))
+    const conversion = Promise.withResolvers<string | null>(), staging = Promise.withResolvers<ToolsResult<void>>()
+    const calls: string[] = []
+    vi.mocked(bridge.pasteImage).mockImplementationOnce(request => { calls.push(request.dataUrl); return staging.promise })
+      .mockImplementation(async request => { calls.push(request.dataUrl); return ok(undefined) })
+    vi.mocked(bridge.write).mockImplementation(async request => { calls.push(request.data); return ok(undefined) })
+    handlers.onPasteImage!(conversion.promise)
+    handlers.onPasteImage!('second image')
+    handlers.onInput('\r')
+    await Promise.resolve(); await Promise.resolve()
+    expect(calls).toEqual([])
+    conversion.resolve('first image')
+    await vi.waitFor(() => expect(calls).toEqual(['first image']))
+    staging.resolve(ok(undefined))
+    await vi.waitFor(() => expect(calls).toEqual(['first image', 'second image', '\r']))
+    const failed = Promise.withResolvers<string | null>()
+    handlers.onPasteImage!(failed.promise); handlers.onInput('\r')
+    failed.resolve(null)
+    await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('clipboard image could not be read'))
+    expect(calls).toEqual(['first image', 'second image', '\r'])
+    handlers.onInput('fresh')
+    await vi.waitFor(() => expect(calls.at(-1)).toBe('fresh'))
+  })
   it.each(['tools', 'drawer'] as const)('routes pasted images from %s to its running session, and reports a save failure', async place => {
     const { bridge, emit } = fakeBridge([session(ID_TOOLS, place)])
     const store = new TerminalStore(place)
@@ -40,7 +72,7 @@ describe('a terminal store filters by place', () => {
     })
     await vi.waitFor(() => expect(store.replaying(ID_TOOLS)).toBe(false))
     handlers!.onPasteImage!('data:image/png;base64,AAAA')
-    expect(bridge.pasteImage).toHaveBeenCalledWith({ threadId: 'thread-a', workspaceId: workspace.workspaceId, sessionId: ID_TOOLS, dataUrl: 'data:image/png;base64,AAAA' })
+    await vi.waitFor(() => expect(bridge.pasteImage).toHaveBeenCalledWith({ threadId: 'thread-a', workspaceId: workspace.workspaceId, sessionId: ID_TOOLS, dataUrl: 'data:image/png;base64,AAAA' }))
     vi.mocked(bridge.pasteImage).mockResolvedValueOnce({ ok: false, error: { code: 'path-unavailable', message: 'The image could not be saved under this folder.' } })
     handlers!.onPasteImage!('data:image/png;base64,BBBB')
     await vi.waitFor(() => expect(store.thread('thread-a')!.notice).toContain('The image could not be saved under this folder.'))
