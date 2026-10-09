@@ -1,0 +1,1113 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not part of the app and not built.
+
+  Question: what should agent state for terminals look like? Sotto will learn, from Claude Code and Codex
+  hooks plus screen rules, what a provider CLI in a Terminal-mode terminal is doing: Starting, Working, Idle,
+  Needs you (an approval or a question), Done (finished, held until the user views that terminal) and Exited.
+  Plain shells keep today's Running and Idle. Also: a search bar inside a terminal pane (Ctrl+F), and the
+  iPhone's Threads page showing terminals beside threads, with an approval card the phone can answer only
+  while it has Can answer.
+
+  Variants: ?variant=A|B|C, the floating bar at the bottom, or the left and right arrow keys (not while
+  typing in a field).
+    A  Quiet row status: today's sidebar order; each row says its state with a shape-coded marker; the
+       project heading names its most urgent state; you answer in the CLI; the phone lists terminals in
+       their own section and its card offers the CLI's own choices.
+    B  Needs-you shelf on top: the sidebar mirrors the phone (Needs you, then Working, then the rest by
+       project); Done wears Just finished; the pane that needs you gets a thin edge; the phone mixes
+       terminals into its sections and its card shows the end of the terminal's screen.
+    C  Approval bar in the pane: a Sotto bar above the terminal says the request in plain words with
+       Allow and Deny; the sidebar keeps a marker only; the phone's card is a thread permission card.
+
+  Simulated, in memory only: hook events (an approval arriving, an agent finishing), viewing a Done
+  terminal, the phone's Can answer switch, Ctrl+F. Answers relay nothing anywhere; the CLI text is fake.
+  Colours are copied from src/renderer/src/styles/tokens.css (the Sotto theme, both halves). The terminal's
+  ANSI colours are prototype-only: tokens.css has no ANSI palette.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROTOTYPE · Agent state for terminals</title>
+<style>
+/* ---------- Theme roles, copied from tokens.css (Sotto theme, first-paint values) ---------- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-toolbar-foreground: oklch(0.985 0.005 280);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-secondary: oklch(0.155 0.008 265);
+  --theme-secondary-foreground: oklch(0.985 0.005 280);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-warning-surface: oklch(0.315 0.032 80);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-action: oklch(0.714403 0.104089 183.092);
+  --theme-message-action-foreground: oklch(0.16 0.012 190);
+  --theme-message-action-hover: oklch(0.77 0.1 183);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+  --theme-sidebar-row-hover: oklch(0.28 0.003 265);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-terminal-background: oklch(0.115 0.008 265);
+  --theme-terminal-foreground: oklch(0.985 0.005 280);
+  --theme-terminal-cursor: oklch(0.714403 0.104089 183.092);
+  --theme-terminal-selection: oklch(0.32 0.05 185);
+  --theme-glass-opacity: 80%;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-toolbar-foreground: oklch(0.235 0.014 75);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-secondary: oklch(0.93 0.01 85);
+  --theme-secondary-foreground: oklch(0.235 0.014 75);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.535 0.015 78);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.546927 0.155556 45.359);
+  --theme-warning-surface: oklch(0.955 0.018 80);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-action: oklch(0.53 0.095 186);
+  --theme-message-action-foreground: oklch(0.99 0.003 85);
+  --theme-message-action-hover: oklch(0.47 0.09 186);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+  --theme-sidebar-row-hover: oklch(0.93 0.01 85);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-terminal-background: oklch(0.978 0.004 85);
+  --theme-terminal-foreground: oklch(0.235 0.014 75);
+  --theme-terminal-cursor: oklch(0.53 0.095 186);
+  --theme-terminal-selection: oklch(0.92 0.03 186);
+}
+
+/* ---------- The --tt-* tokens features read (tokens.css, at Contrast 100%, where the mixes resolve to these) ---------- */
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-warning-surface: var(--theme-warning-surface);
+  --tt-attention: var(--tt-warning);
+  --tt-error: var(--theme-error-foreground);
+  --tt-error-contrast: var(--theme-canvas);
+  --tt-code-bg: var(--theme-code-background);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-hover: var(--theme-message-action-hover);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-sidebar-text: var(--theme-sidebar-foreground);
+  --tt-sidebar-text-muted: var(--theme-sidebar-muted-foreground);
+  --tt-sidebar-row-hover: var(--theme-sidebar-row-hover);
+  --tt-secondary: var(--theme-secondary);
+  --tt-secondary-text: var(--theme-secondary-foreground);
+  --tt-terminal-background: var(--theme-terminal-background);
+  --tt-terminal-foreground: var(--theme-terminal-foreground);
+  --tt-terminal-cursor: var(--theme-terminal-cursor);
+  --tt-terminal-selection: var(--theme-terminal-selection);
+  --tt-glass: color-mix(in srgb, var(--theme-surface-overlay) var(--theme-glass-opacity), transparent);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-ink: #080b0a;
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-font-ui: Figtree, system-ui, sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Prototype-only: an ANSI palette for the fake CLI text (tokens.css has none). Each reads 4.5:1 or more on the terminal background. */
+  --term-dim: var(--tt-text-muted);
+  --term-green: oklch(0.78 0.14 150);
+  --term-red: oklch(0.72 0.15 25);
+  --term-blue: oklch(0.76 0.1 240);
+  --term-claude: var(--tt-provider-claude);
+  --mark-claude: var(--tt-provider-claude);
+  --mark-codex: var(--tt-provider-codex);
+}
+:root[data-theme='light'] {
+  --tt-success: oklch(0.5 0.11 158);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-ink: #0b0d0c;
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --term-green: oklch(0.48 0.13 150);
+  --term-red: oklch(0.5 0.17 25);
+  --term-blue: oklch(0.47 0.12 250);
+  --term-claude: oklch(0.5 0.12 50);
+  --mark-claude: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text));
+  --mark-codex: color-mix(in srgb, var(--tt-provider-codex) 50%, var(--tt-text));
+}
+
+/* ---------- The page around the frames (not part of the design) ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-height: 100vh; padding: 18px 22px 96px; background: var(--tt-surface-sunken); color: var(--tt-text); font: 14px/1.45 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+svg.i { flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.lab-head h1 { margin: 0 0 2px; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.lab-head p { margin: 0 0 12px; color: var(--tt-text-muted); max-width: 980px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-bottom: 8px; }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ctl > span { color: var(--tt-text-muted); font-size: 12.5px; margin-right: 2px; }
+.lab-btn { min-height: 30px; padding: 0 11px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13px; cursor: pointer; }
+.lab-btn:hover { border-color: var(--tt-border); }
+.lab-btn[aria-pressed='true'] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.readout { margin: 6px 0 14px; max-height: 150px; overflow: auto; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface); color: var(--tt-text-muted); font: 11.5px/1.45 var(--tt-font-mono); white-space: pre; }
+.stage { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame-cap { margin: 0 0 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.scaler { position: relative; }
+.scaler > .scaled { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.notes { max-width: 1100px; margin-top: 18px; color: var(--tt-text-muted); font-size: 13.5px; }
+.notes b { color: var(--tt-text); font-weight: 600; }
+.notes p { margin: 0 0 6px; }
+
+.vbar { position: fixed; left: 50%; bottom: 18px; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 6px; translate: -50% 0; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-glass); backdrop-filter: blur(16px) saturate(1.08); box-shadow: var(--tt-shadow-overlay); }
+.vbar button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--tt-surface-elevated); cursor: pointer; }
+.vbar output { min-width: 260px; padding: 0 8px; text-align: center; font-size: 13.5px; font-weight: 600; }
+
+/* ---------- The desktop window ---------- */
+.win { position: relative; display: grid; grid-template-columns: 264px minmax(0, 1fr); width: 1280px; height: 800px; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-canvas); color: var(--tt-text); font: 13px/1.45 var(--tt-font-ui); box-shadow: 0 30px 70px -30px var(--tt-shadow-color); }
+.win[data-w='820'] { grid-template-columns: 224px minmax(0, 1fr); width: 820px; height: 560px; }
+.win button { border: 0; background: transparent; cursor: pointer; }
+
+.sb { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.sb-top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; font-size: 14px; font-weight: 600; }
+.brand b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.brand svg { flex: none; }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 7px; border-radius: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.seg button[aria-checked='true'], .seg button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.seg--wide { display: flex; }
+.seg--wide button { flex: 1; height: 30px; padding: 0 10px; font-size: 13px; }
+.ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 7px; color: var(--tt-text-muted); }
+.ib:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-text); }
+.sb-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.sb-search svg { position: absolute; left: 9px; }
+.sb-search span { display: flex; align-items: center; width: 100%; height: 100%; padding: 0 10px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text-faint); }
+.sb-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; }
+.sb-foot { flex: none; display: grid; gap: 8px; padding: 8px 8px 10px; border-top: 1px solid var(--tt-hairline); }
+.sb-links { display: flex; align-items: center; gap: 2px; }
+.sb-links .ib:last-child { margin-left: auto; }
+
+.fold { margin: 0 0 12px; }
+.fold-head { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.fold-head:hover { background: var(--tt-sidebar-row-hover); }
+.fold-toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 26px; padding: 0 8px 0 6px; border-radius: 7px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; text-align: left; }
+.fold-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-actions { display: flex; padding-right: 2px; opacity: 0; }
+.fold-head:hover .fold-actions, .fold-head:focus-within .fold-actions { opacity: 1; }
+.fold-actions .ib { width: 22px; height: 22px; }
+.fold-sub { display: flex; align-items: center; gap: 6px; margin: -2px 0 2px; padding: 0 8px 0 6px; font-size: 12px; }
+.group-label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 8px 4px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+.group-label b { color: var(--tt-text-2); font-weight: 600; font-size: 12.5px; }
+.group-label i { font-style: normal; font-variant-numeric: tabular-nums; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { position: relative; display: flex; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--tt-sidebar-row-hover); }
+.row[data-current] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.row[data-open]:not([data-current]) .r-title { color: var(--tt-text); }
+.r-item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; width: 100%; min-height: 30px; padding: 0 8px 0 10px; border-radius: 7px; color: var(--tt-text-2); text-align: left; }
+.r-item:disabled { cursor: default; }
+.r-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.row[data-unseen] .r-title { color: var(--tt-text); font-weight: 650; }
+.row[data-current] .r-title { color: var(--tt-text); }
+.r-right { max-width: 122px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.win[data-w='820'] .r-right { max-width: 86px; }
+.r-right[data-s='needs'], .r-right[data-s='exited'] { color: var(--tt-attention); }
+.r-right[data-s='working'], .r-right[data-s='starting'] { color: var(--tt-activity); }
+.r-right[data-s='done'] { color: var(--tt-text-2); }
+.shelf { display: flex; align-items: center; gap: 6px; width: calc(100% - 8px); min-height: 30px; margin: 6px 4px 2px; padding: 0 8px 0 10px; border-radius: 7px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; text-align: left; }
+.shelf:hover { background: var(--tt-sidebar-row-hover); }
+.chev { transition: transform .16s ease; }
+[aria-expanded='true'] > .chev { transform: rotate(90deg); }
+.empty { margin: 2px 10px 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* State markers. A draws shapes; B and C keep today's ring (threadSidebar.css). */
+.mk { display: inline-grid; place-items: center; flex: none; width: 10px; height: 10px; }
+.mk svg { display: block; overflow: visible; }
+.mk[data-s='idle'], .mk[data-s='running-idle'] { color: var(--tt-text-muted); }
+.mk[data-s='starting'], .mk[data-s='working'], .mk[data-s='running'], .mk[data-s='done'] { color: var(--tt-activity); }
+.mk[data-s='needs'], .mk[data-s='exited'] { color: var(--tt-attention); }
+.ring { display: block; width: 10px; height: 10px; border: 1.5px solid var(--tt-border); border-radius: 50%; }
+.ring[data-s='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); animation: ring 1.5s linear infinite; }
+.ring[data-s='needs'] { border: 2px solid var(--tt-attention); }
+.ring[data-s='done'] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
+@keyframes ring { to { rotate: 360deg; } }
+
+/* The room: two terminal panes side by side, the window controls at the top right. */
+.room { position: relative; display: flex; min-width: 0; min-height: 0; }
+.wctl { position: absolute; top: 0; right: 0; z-index: 3; display: flex; height: 44px; }
+.wctl span { display: grid; place-items: center; width: 42px; color: var(--tt-text-muted); }
+.panes { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 0; min-height: 0; }
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane + .pane { border-left: 1px solid var(--tt-hairline); }
+.pane:last-child .p-head { padding-right: 134px; }
+.p-head { display: flex; flex: none; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 14px; }
+.p-title { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.p-title h2 { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.crumb { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12.5px; }
+.win[data-w='820'] .crumb { display: none; }
+.ptag { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; height: 22px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.ptag span { overflow: hidden; text-overflow: ellipsis; }
+.ptag[data-s='needs'] { color: var(--tt-attention); border-color: color-mix(in oklab, var(--tt-attention) 40%, var(--tt-hairline)); }
+.ptag[data-s='working'], .ptag[data-s='starting'] { color: var(--tt-activity); }
+.ptag[data-s='done'] { color: var(--tt-text-2); }
+.ptag[data-s='idle'] { color: var(--tt-text-muted); }
+.pane[data-edge] .p-head { box-shadow: inset 0 2px 0 var(--tt-attention); }
+.p-body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--tt-terminal-background); }
+.pane[data-focused] .p-body::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; z-index: 1; width: 2px; background: var(--tt-accent); }
+.term { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 12px; color: var(--tt-terminal-foreground); font: 12.5px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
+.win[data-w='820'] .term { font-size: 11.5px; padding: 8px 10px 10px; }
+.term:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.ln { min-height: 1.5em; }
+.c-dim { color: var(--term-dim); } .c-green { color: var(--term-green); } .c-red { color: var(--term-red); } .c-blue { color: var(--term-blue); }
+.c-claude { color: var(--term-claude); } .c-bold { font-weight: 700; } .c-accent { color: var(--tt-accent-text); }
+.cursor { display: inline-block; width: .6em; height: 1.2em; vertical-align: -.2em; background: var(--tt-terminal-cursor); }
+.tbox { margin: 4px 0; padding: 6px 10px; border: 1px solid var(--tt-border); border-radius: 6px; }
+.trule { height: 0; margin: 5px 0; border-top: 1px solid var(--tt-border); }
+.cli-opt { display: block; width: 100%; padding: 0; color: inherit; font: inherit; text-align: left; white-space: pre-wrap; }
+.cli-opt:hover { color: var(--tt-accent-text); }
+.cli-opt[data-sel] { color: var(--term-blue); }
+.hit { border-radius: 2px; background: var(--tt-terminal-selection); color: inherit; box-shadow: 0 0 0 1px var(--tt-accent-border); }
+.hit.cur { background: var(--tt-accent); color: var(--tt-on-accent); }
+.ended { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); font-size: 13px; }
+.ended p { margin: 0; color: var(--tt-text-2); }
+.ended strong { color: var(--tt-text); }
+.link-btn { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; }
+.t-status { display: flex; flex: none; align-items: center; gap: 14px; margin: 0; padding: 5px 14px 7px; border-top: 1px solid var(--tt-hairline); background: var(--tt-canvas); color: var(--tt-text-muted); font-size: 12px; }
+.t-status span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* C: the approval bar. */
+.abar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid color-mix(in oklab, var(--tt-attention) 35%, var(--tt-hairline)); background: var(--tt-warning-surface); color: var(--tt-text); }
+.abar-text { display: grid; flex: 1 1 220px; gap: 2px; min-width: 0; }
+.abar-text strong { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.abar-text code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text); font: 12px var(--tt-font-mono); }
+.abar-text small { color: var(--tt-text-2); font-size: 12px; }
+.abar-actions { display: flex; flex: none; gap: 6px; margin-left: auto; }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 12px; border-radius: 7px; font-size: 12.5px; font-weight: 600; }
+.win .btn--primary { background: var(--tt-primary); color: var(--tt-primary-contrast); }
+.win .btn--primary:hover { background: var(--tt-primary-hover); }
+.win .btn--plain { border: 1px solid var(--tt-border); background: var(--tt-secondary); color: var(--tt-secondary-text); }
+
+/* The terminal search bar: the same in every variant. */
+.find { position: absolute; top: 8px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 20px); padding: 4px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-glass); backdrop-filter: blur(16px) saturate(1.08); box-shadow: var(--tt-shadow-overlay); }
+.find input { flex: 1 1 150px; width: 150px; min-width: 56px; height: 26px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: 12.5px var(--tt-font-ui); }
+.find input:focus { outline: none; border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
+.find output { flex: none; min-width: 50px; padding: 0 6px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
+.find .ib { width: 26px; height: 26px; }
+.find .ib:disabled { opacity: .45; cursor: default; }
+
+/* ---------- The iPhone (Glow look, ADR-0051) ---------- */
+.bezel { width: 414px; height: 868px; padding: 12px; border-radius: 62px; background: var(--tt-provider-ink); box-shadow: 0 30px 60px -30px var(--tt-shadow-color); }
+.phone { position: relative; display: flex; flex-direction: column; width: 390px; height: 844px; overflow: hidden; border-radius: 50px; background: var(--tt-canvas); color: var(--tt-text); font: 17px/1.4 var(--tt-font-ui); -webkit-font-smoothing: antialiased; }
+.phone button { border: 0; background: none; cursor: pointer; padding: 0; text-align: left; }
+.p-scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 120px; scrollbar-width: none; }
+.wash { position: absolute; inset: 0 0 auto; height: 360px; pointer-events: none; background: radial-gradient(120% 75% at 15% 0%, color-mix(in oklab, var(--tt-accent) 22%, transparent), transparent 72%); }
+.wash[data-warm] { background: radial-gradient(90% 60% at 85% 0%, color-mix(in oklab, var(--theme-warning) 20%, transparent), transparent 70%), radial-gradient(120% 75% at 15% 0%, color-mix(in oklab, var(--tt-accent) 18%, transparent), transparent 72%); }
+.sbar { position: relative; z-index: 2; display: flex; flex: none; align-items: center; justify-content: space-between; height: 50px; padding: 6px 30px 0 40px; font-size: 16px; font-weight: 600; }
+.sbar .island { position: absolute; top: 11px; left: 50%; width: 120px; height: 34px; translate: -50% 0; border-radius: 20px; background: var(--tt-provider-ink); }
+.sbar .icons { display: flex; align-items: center; gap: 6px; }
+.ph-top { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 8px 20px 0 22px; }
+.ph-top h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
+.ph-plus { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--tt-hairline) !important; border-radius: 50%; background: var(--tt-surface-elevated) !important; color: var(--tt-accent-text); box-shadow: 0 0 26px -4px color-mix(in srgb, var(--tt-accent) 45%, transparent); }
+.ph-pill { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 40px; margin: 14px 0 0 20px; padding: 0 14px; border: 1px solid var(--tt-hairline); border-radius: 20px; background: var(--tt-surface-elevated); font-size: 16px; font-weight: 600; }
+.ph-sum { position: relative; display: flex; gap: 18px; margin: 12px 22px 0; font-size: 15px; color: var(--tt-text-muted); }
+.ph-sum b { color: var(--tt-text); font-weight: 650; }
+.ph-sum span { display: inline-flex; align-items: center; gap: 7px; }
+.ph-search { position: relative; display: flex; align-items: center; gap: 10px; height: 44px; margin: 14px 20px 0; padding: 0 16px; border: 1px solid var(--tt-hairline); border-radius: 22px; background: var(--tt-surface); color: var(--tt-text-faint); font-size: 16px; }
+.dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; }
+.dot[data-s='needs'] { background: var(--theme-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-warning) 25%, transparent); }
+.dot[data-s='working'], .dot[data-s='running'], .dot[data-s='starting'] { background: var(--tt-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-accent) 25%, transparent); animation: breathe 2.2s ease-in-out infinite; }
+.dot[data-s='done'] { background: var(--tt-accent); }
+.dot[data-s='idle'] { box-shadow: inset 0 0 0 1.5px var(--tt-text-muted); }
+.dot[data-s='exited'] { border-radius: 2px; box-shadow: inset 0 0 0 1.5px var(--tt-attention); }
+@keyframes breathe { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--tt-accent) 10%, transparent); } }
+.ph-sec { position: relative; display: flex; align-items: center; gap: 9px; margin: 22px 22px 10px; font-size: 17px; font-weight: 600; }
+.ph-sec i { color: var(--tt-text-muted); font-style: normal; font-weight: 400; }
+.ph-sec button { display: flex; flex: 1; align-items: center; gap: 9px; font-weight: 600; }
+.ph-sec button svg { margin-left: auto; color: var(--tt-text-muted); }
+.pc { position: relative; margin: 0 16px 12px; padding: 16px 16px 12px; border: 1px solid var(--tt-hairline); border-radius: 22px; background: var(--tt-surface); }
+.pc[data-k='needs'] { border-color: color-mix(in oklab, var(--theme-warning) 45%, var(--tt-hairline)); background: linear-gradient(color-mix(in oklab, var(--theme-warning) 9%, var(--tt-surface)), var(--tt-surface) 70%); box-shadow: 0 0 30px -8px color-mix(in srgb, var(--theme-warning) 40%, transparent); }
+.pc[data-k='work'] { box-shadow: 0 0 26px -10px color-mix(in srgb, var(--tt-accent) 45%, transparent); }
+.pc-tag { display: flex; align-items: center; gap: 8px; min-height: 18px; font-size: 13px; font-weight: 600; }
+.pc-tag .w { color: var(--tt-warning); }
+.pc-tag .a { color: var(--tt-accent-text); }
+.pc-tag time { margin-left: auto; color: var(--tt-text-muted); font-weight: 400; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text-2); font-size: 12px; font-weight: 500; }
+.pc h3 { margin: 8px 0 0; font-size: 19px; font-weight: 600; line-height: 1.3; }
+.pc .sub { margin: 3px 0 0; color: var(--tt-text-muted); font-size: 14px; }
+.pc .ask { margin: 10px 0 0; font-size: 16px; }
+.pc .cmd { margin: 8px 0 0; padding: 8px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-code-bg); color: var(--tt-text); font: 13px/1.45 var(--tt-font-mono); overflow-wrap: anywhere; }
+.pc .screen { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-terminal-background); color: var(--tt-terminal-foreground); font: 12px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pc .note { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+.pc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.pc-actions--stack { display: grid; }
+.pbtn { display: flex !important; align-items: center; justify-content: center; flex: 1; gap: 8px; min-height: 46px; padding: 0 16px !important; border-radius: 14px; font-size: 16px; font-weight: 600; text-align: center !important; }
+.pbtn--accent { background: var(--tt-accent) !important; color: var(--tt-on-accent); }
+.pbtn--plain { background: var(--tt-surface-elevated) !important; color: var(--tt-text); }
+.pbtn--choice { justify-content: flex-start; background: var(--tt-surface-elevated) !important; color: var(--tt-text); font-weight: 500; text-align: left !important; }
+.pbtn--choice b { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 13px; }
+.pbtn--choice:first-child { background: var(--tt-accent) !important; color: var(--tt-on-accent); }
+.pbtn--choice:first-child b { background: color-mix(in srgb, var(--tt-on-accent) 18%, transparent); color: var(--tt-on-accent); }
+.pc-cant { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--tt-text-muted); font-size: 15px; }
+.pc-cant span { flex: 1; }
+.pc-cant button { color: var(--tt-accent-text); font-size: 15px; font-weight: 600; text-align: right !important; }
+.pc-phase { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 44px; color: var(--tt-text-muted); font-size: 15px; font-weight: 600; }
+.pc-phase[data-p='answered'] { color: var(--tt-accent-text); }
+.pc-more { display: block; margin: 10px auto 0 !important; color: var(--tt-accent-text); font-size: 14px; font-weight: 600; text-align: center !important; }
+.pr { position: relative; display: flex !important; gap: 12px; width: 100%; padding: 11px 22px !important; align-items: flex-start; }
+.pr .dot { margin-top: 8px; }
+.pr-main { flex: 1; min-width: 0; }
+.pr-title { display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 500; line-height: 1.3; }
+.pr-title svg { color: var(--tt-text-muted); }
+.pr[data-unseen] .pr-title { font-weight: 700; }
+.pr-sub { margin-top: 2px; color: var(--tt-text-muted); font-size: 14px; }
+.pr-sub[data-s='needs'] { color: var(--tt-warning); }
+.pr-sub[data-s='working'] { color: var(--tt-accent-text); }
+.pr time { flex: none; color: var(--tt-text-muted); font-size: 14px; }
+.pr + .pr::before { content: ''; position: absolute; top: 0; right: 22px; left: 43px; border-top: 1px solid var(--tt-hairline); }
+.tabbar { position: absolute; bottom: 22px; left: 50%; z-index: 4; display: flex; gap: 4px; width: 320px; padding: 6px; translate: -50% 0; border: 1px solid var(--tt-hairline); border-radius: 34px; background: var(--tt-glass); backdrop-filter: blur(16px) saturate(1.08); box-shadow: 0 12px 30px -12px var(--tt-shadow-color); }
+.tab { position: relative; display: grid; flex: 1; justify-items: center; gap: 2px; padding: 7px 0 5px; border-radius: 28px; color: var(--tt-text); font-size: 12px; font-weight: 600; }
+.tab[aria-current] { background: var(--tt-hover); color: var(--tt-accent-text); }
+.badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--tt-error); color: var(--tt-error-contrast); font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+.home { position: absolute; bottom: 8px; left: 50%; z-index: 5; width: 134px; height: 5px; translate: -50% 0; border-radius: 3px; background: var(--tt-text); opacity: .85; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="lab-head">
+  <h1>Agent state for terminals</h1>
+  <p>Prototype. The desktop's Terminal mode on the left and the iPhone's Threads page on the right, with the same terminals in both. Switch variants with the bar at the bottom or the arrow keys. Everything here is simulated in this page.</p>
+</header>
+
+<div class="controls" role="group" aria-label="Prototype controls">
+  <div class="ctl" role="group" aria-label="Theme"><span>Theme</span>
+    <button type="button" class="lab-btn" data-act="theme" data-v="dark">Dark</button>
+    <button type="button" class="lab-btn" data-act="theme" data-v="light">Light</button>
+  </div>
+  <div class="ctl" role="group" aria-label="Desktop window size"><span>Desktop window</span>
+    <button type="button" class="lab-btn" data-act="width" data-v="1280">1280 × 800</button>
+    <button type="button" class="lab-btn" data-act="width" data-v="820">820 × 560</button>
+  </div>
+  <div class="ctl" role="group" aria-label="Simulate"><span>Simulate</span>
+    <button type="button" class="lab-btn" data-act="sim-approval">Approval arrives</button>
+    <button type="button" class="lab-btn" data-act="sim-finish">Agent finishes</button>
+    <button type="button" class="lab-btn" data-act="sim-view">View the Done terminal</button>
+    <button type="button" class="lab-btn" data-act="sim-answer" id="can-answer-btn">Toggle Can answer on phone</button>
+    <button type="button" class="lab-btn" data-act="sim-find">Ctrl+F in pane</button>
+    <button type="button" class="lab-btn" data-act="sim-reset">Start over</button>
+  </div>
+</div>
+<pre class="readout" id="readout" aria-label="Prototype state"></pre>
+
+<div class="stage" id="stage">
+  <section aria-label="Desktop window">
+    <p class="frame-cap" id="desk-cap"></p>
+    <div class="scaler" id="desk-scaler"><div class="scaled" id="desk-scaled"><div class="win" id="win"></div></div></div>
+  </section>
+  <section aria-label="iPhone">
+    <p class="frame-cap">iPhone · 390 × 844 · Threads</p>
+    <div class="scaler" id="phone-scaler"><div class="scaled" id="phone-scaled"><div class="bezel"><div class="phone" id="phone"></div></div></div></div>
+  </section>
+</div>
+<div class="notes" id="notes"></div>
+
+<nav class="vbar" aria-label="Variant">
+  <button type="button" data-act="vprev" aria-label="Previous variant">←</button>
+  <output id="vlabel" aria-live="polite"></output>
+  <button type="button" data-act="vnext" aria-label="Next variant">→</button>
+</nav>
+
+<script>
+'use strict';
+/* ---------- Icons (lucide shapes) ---------- */
+const ICON = {
+  threads: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  terminal: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  squarePlus: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8"/><path d="M12 8v8"/>',
+  panel: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  up: '<path d="m18 15-6-6-6 6"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  restart: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  min: '<path d="M5 12h14"/>',
+  max: '<rect x="5" y="5" width="14" height="14" rx="1"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  claude: '<path d="M12 2.5v6M12 15.5v6M2.5 12h6M15.5 12h6M5.3 5.3l4.2 4.2M14.5 14.5l4.2 4.2M18.7 5.3l-4.2 4.2M9.5 14.5l-4.2 4.2"/>',
+  codex: '<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="m8.5 10 2.5 2-2.5 2"/><path d="M12.5 14.5h3"/>',
+};
+const icon = (name, size = 16, extra = '') => '<svg class="i" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" aria-hidden="true"' + extra + '>' + ICON[name] + '</svg>';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const mark = (provider, size = 16) => provider === 'claude' ? '<span style="color:var(--mark-claude);display:inline-flex">' + icon('claude', size) + '</span>'
+  : provider === 'codex' ? '<span style="color:var(--mark-codex);display:inline-flex">' + icon('codex', size) + '</span>'
+  : '<span style="color:var(--tt-text-muted);display:inline-flex">' + icon('terminal', size) + '</span>';
+const sottoMark = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect width="18" height="18" rx="4.5" fill="var(--tt-accent)"/><path d="M4.5 10.5 6.6 6l2.2 7 2.1-5.2 1 2.2h1.6" fill="none" stroke="var(--tt-on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/* ---------- Variants ---------- */
+const VARIANTS = {
+  A: 'A — Quiet row status',
+  B: 'B — Needs-you shelf on top',
+  C: 'C — Approval bar in the pane',
+};
+const NOTES = {
+  A: '<p><b>A — Quiet row status.</b> The sidebar keeps today\'s order. Each row\'s right side says the state, and the marker\'s shape carries it without colour: a hollow circle is Idle, a short bar is Working, a triangle is Needs you, a filled dot is Done (held until you view it), a hollow square is Exited. A project\'s heading names its most urgent state under it. The pane header carries the state as a label. You answer where the CLI asks, in the terminal itself (click a numbered choice, or focus the terminal and press 1, 2 or 3).</p><p><b>Phone:</b> terminals get their own Terminals section under the threads, as quiet rows. A terminal that needs you gets a card on top that offers the CLI\'s own numbered choices; a press types that choice into the terminal.</p>',
+  B: '<p><b>B — Needs-you shelf on top.</b> The sidebar takes the phone\'s order: a Needs you group across projects, then Working, then the rest under their projects, then Closed. A Done terminal wears threads\' Just finished treatment (ADR-0046): the green ring with a filled centre, a bold title and the words Just finished. Pane headers carry no state; the pane that needs you gets a thin attention edge along its header.</p><p><b>Phone:</b> terminals sit in the same Needs you, Working and Recent sections as threads, marked with a terminal glyph. The card shows the last lines of the terminal\'s screen, so you read what the CLI asked in its own words, with Yes and No under it and the CLI\'s other choices one press away.</p>',
+  C: '<p><b>C — Approval bar in the pane.</b> When a hook reports an approval, Sotto puts a bar above the terminal that says the request in plain words, with Allow and Deny. The press is your answer: Sotto types the matching choice into the CLI for you, and the CLI\'s own prompt still works. The sidebar keeps today\'s rows and changes only the ring.</p><p><b>Phone:</b> the card is the same Permission card a thread gets, with Deny and Allow. Threads keep their sections; terminals wait behind one collapsed Terminals on Laptop row, with markers only, unless one needs you.</p>',
+};
+
+/* ---------- State ---------- */
+const PROJECTS = [{ id: 'sotto', title: 'Sotto', path: 'C:\\code\\Sotto' }, { id: 'forge', title: 'forge-site', path: 'C:\\code\\forge-site' }];
+function freshTerminals() {
+  return [
+    { id: 't1', project: 'sotto', provider: 'claude', title: 'Claude · fix drawer copy', state: 'needs', after: null, since: '14 min', branch: 'fix/drawer-copy', copy: 'Worktree', askedAt: 'now' },
+    { id: 't2', project: 'sotto', provider: 'codex', title: 'Codex · search addon', state: 'working', after: null, since: '9 min', branch: 'feat/terminal-search', copy: 'Worktree' },
+    { id: 't3', project: 'sotto', provider: 'claude', title: 'Claude · ADR draft', state: 'done', after: 'finished', since: '32 min', branch: 'main', copy: 'Project folder' },
+    { id: 't4', project: 'forge', provider: null, title: 'Shell · dev server', state: 'running', after: null, since: '1 h', branch: 'main', copy: 'Project folder' },
+    { id: 't5', project: 'forge', provider: 'codex', title: 'Codex · image sizes', state: 'exited', after: null, since: '2 h', branch: 'main', copy: 'Project folder' },
+    { id: 't6', project: 'forge', provider: 'claude', title: 'Claude · deploy notes', state: 'idle', after: null, since: '3 h', branch: 'main', copy: 'Project folder' },
+  ];
+}
+const CLOSED = [{ id: 'c1', project: 'sotto', title: 'Codex · lint pass' }, { id: 'c2', project: 'forge', title: 'Shell · git log' }];
+const THREADS = [
+  { id: 'h1', title: 'Refine the iPhone thread view', provider: 'Codex', state: 'working', time: '12m 07s' },
+  { id: 'h2', title: 'Release notes for 0.9', provider: 'Claude Code', state: 'idle', time: '1h ago' },
+  { id: 'h3', title: 'Fix the tray icon on Omarchy', provider: 'Claude Code', state: 'idle', time: 'Yesterday' },
+];
+const params = new URLSearchParams(location.search);
+const S = {
+  variant: VARIANTS[(params.get('variant') || 'A').toUpperCase()] ? (params.get('variant') || 'A').toUpperCase() : 'A',
+  theme: 'dark', width: 1280, canAnswer: true,
+  focus: 0, panes: ['t1', 't2'],
+  search: { open: false, query: 'test', index: 0, count: 0 },
+  closedOpen: false, phoneTermsOpen: false,
+  cards: {}, terms: freshTerminals(), nextId: 7, last: 'Opened the prototype.',
+};
+const byId = id => S.terms.find(t => t.id === id);
+const PROVIDER = { claude: 'Claude Code', codex: 'Codex' };
+
+/* What each state is called. Shells keep today's Running and Idle. */
+function word(t, v = S.variant, short = false) {
+  switch (t.state) {
+    case 'starting': return 'Starting';
+    case 'working': return 'Working';
+    case 'running': return 'Running';
+    case 'idle': return 'Idle';
+    case 'needs': return short ? 'Needs you' : 'Needs your approval';
+    case 'done': return v === 'A' ? 'Done' : 'Just finished';
+    case 'exited': return 'Exited';
+    default: return t.state;
+  }
+}
+const URGENCY = ['needs', 'done', 'starting', 'working', 'running', 'exited', 'idle'];
+const isAgentBusy = s => s === 'working' || s === 'starting';
+
+/* ---------- Markers ---------- */
+function shape(state) {
+  const s = state === 'running' ? 'running' : state;
+  let svg;
+  switch (s) {
+    case 'starting': svg = '<circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 1.6"/>'; break;
+    case 'working': case 'running': svg = '<rect x="0.5" y="3.5" width="9" height="3" rx="1.5" fill="currentColor"/>'; break;
+    case 'needs': svg = '<path d="M5 0.6 9.6 9.2H0.4Z" fill="currentColor"/>'; break;
+    case 'done': svg = '<circle cx="5" cy="5" r="3.6" fill="currentColor"/>'; break;
+    case 'exited': svg = '<rect x="1.25" y="1.25" width="7.5" height="7.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>'; break;
+    default: svg = '<circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>';
+  }
+  return '<span class="mk" data-s="' + s + '" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10">' + svg + '</svg></span>';
+}
+function ring(state) {
+  const s = state === 'starting' || state === 'working' || state === 'running' ? 'working' : state === 'needs' ? 'needs' : state === 'done' ? 'done' : 'idle';
+  return '<span class="ring" data-s="' + s + '" aria-hidden="true"></span>';
+}
+const marker = state => S.variant === 'A' ? shape(state) : ring(state);
+
+/* ---------- Fake terminal screens ---------- */
+const L = (...segs) => ({ segs });
+const BLANK = L();
+const RULE = { rule: true };
+const CURSOR = ['cursor', ' '];
+function claudeInput() { return [BLANK, RULE, L(['c-dim', '> '], CURSOR), RULE, L(['c-dim', '  ? for shortcuts'])]; }
+function codexInput() { return [BLANK, L(['c-dim', '› '], CURSOR), L(['c-dim', '  100% context left · ? for shortcuts'])]; }
+function firstLine(t) {
+  const project = PROJECTS.find(p => p.id === t.project);
+  const cmd = t.provider === 'claude' ? 'claude' : t.provider === 'codex' ? 'codex' : 'pwsh';
+  return L(['c-dim', 'Sotto · ' + project.path + (t.copy === 'Worktree' ? '\\.worktrees\\' + t.branch.split('/').pop() : '') + ' · ' + cmd]);
+}
+function screen(t) {
+  const out = [firstLine(t), BLANK];
+  if (t.id === 't1') {
+    out.push(
+      L(['c-dim', '> '], ['', 'Fix the drawer copy so the Escape hint says what it does']), BLANK,
+      L(['', '● I’ll change the drawer’s hint line and the test that checks it.']), BLANK,
+      L(['c-green', '● '], ['c-bold', 'Read'], ['', '(src/renderer/src/agents/TerminalDrawer.tsx)']),
+      L(['c-dim', '  ⎿  Read 142 lines']), BLANK,
+      L(['c-green', '● '], ['c-bold', 'Update'], ['', '(src/renderer/src/agents/TerminalDrawer.tsx)']),
+      L(['c-dim', '  ⎿  Updated with 1 addition and 1 removal']),
+      L(['c-dim', '     88 '], ['c-red', "-   hint: 'Escape returns to the composer',"]),
+      L(['c-dim', '     88 '], ['c-green', "+   hint: 'Esc closes the drawer',"]), BLANK,
+      L(['c-green', '● '], ['c-bold', 'Update'], ['', '(tests/unit/renderer/terminalDrawer.test.ts)']),
+      L(['c-dim', '  ⎿  Updated with 1 addition and 1 removal']), BLANK,
+      L(['', '● Now I’ll run the drawer tests to check the new copy.']));
+    if (t.state === 'needs') {
+      out.push({ box: [
+        L(['c-bold', 'Bash command']), BLANK,
+        L(['', '  npm test -- tests/unit/renderer/terminalDrawer.test.ts']),
+        L(['c-dim', '  Run the drawer’s unit tests']), BLANK,
+        L(['', 'Do you want to proceed?']),
+        { choices: ['Yes', 'Yes, and don’t ask again for npm test commands in C:\\code\\Sotto', 'No, and tell Claude what to do differently (esc)'], tid: t.id },
+      ] });
+      return out;
+    }
+    if (t.after === 'declined') {
+      out.push(L(['c-green', '● '], ['c-bold', 'Bash'], ['', '(npm test -- tests/unit/renderer/terminalDrawer.test.ts)']),
+        L(['c-dim', '  ⎿  '], ['c-red', 'You declined. Tell Claude what to do differently.']));
+      return out.concat(claudeInput());
+    }
+    out.push(L(['c-green', '● '], ['c-bold', 'Bash'], ['', '(npm test -- tests/unit/renderer/terminalDrawer.test.ts)']));
+    if (t.state === 'working') {
+      out.push(L(['c-dim', '  ⎿  Running…']), BLANK, L(['c-claude', '✻ Running the drawer tests… '], ['c-dim', '(38s · esc to interrupt)']));
+      return out.concat(claudeInput());
+    }
+    out.push(L(['c-dim', '  ⎿  '], ['c-green', 'PASS'], ['', ' tests/unit/renderer/terminalDrawer.test.ts (14 tests)']), BLANK,
+      L(['', '● All 14 drawer tests pass. The hint now reads “Esc closes the drawer”.']));
+    return out.concat(claudeInput());
+  }
+  if (t.id === 't2') {
+    out.push(
+      L(['c-dim', '>_ '], ['c-bold', 'OpenAI Codex'], ['c-dim', ' (v0.61.0)']),
+      L(['c-dim', 'model: '], ['', 'gpt-5.4-codex high'], ['c-dim', '   directory: '], ['', '~\\Sotto']), BLANK,
+      L(['c-dim', '› '], ['', 'Add a search bar to terminal panes with the xterm search addon']), BLANK,
+      L(['', '• '], ['c-bold', 'Explored']),
+      L(['c-dim', '  └ Read TerminalPane.tsx, terminalStore.ts, terminals.css']),
+      L(['', '• '], ['c-bold', 'Ran '], ['c-blue', 'rg -n "SearchAddon" src']),
+      L(['c-dim', '  └ (no output)']),
+      L(['', '• '], ['c-bold', 'Edited '], ['', 'src/renderer/src/tools/terminalStore.ts '], ['c-green', '(+38'], ['c-red', ' -2'], ['c-green', ')']),
+      L(['', '• '], ['c-bold', 'Edited '], ['', 'src/renderer/src/terminals/TerminalPane.tsx '], ['c-green', '(+61'], ['c-red', ' -4'], ['c-green', ')']),
+      L(['', '• '], ['c-bold', 'Added '], ['', 'tests/unit/renderer/terminalSearch.test.ts '], ['c-green', '(+74)']));
+    if (t.state === 'needs') {
+      out.push(BLANK, { box: [
+        L(['c-bold', 'Would you like to run the following command?']), BLANK,
+        L(['c-dim', '  $ '], ['', 'npm test -- tests/unit/renderer/terminalSearch.test.ts']), BLANK,
+        { choices: ['Yes, proceed', 'Yes, and don’t ask again for this command', 'No, and tell Codex what to do differently (esc)'], tid: t.id },
+      ] });
+      return out;
+    }
+    if (t.after === 'ran' || t.after === 'finished') {
+      out.push(L(['', '• '], ['c-bold', 'Ran '], ['c-blue', 'npm test -- tests/unit/renderer/terminalSearch.test.ts']), L(['c-dim', '  └ '], ['c-green', '6 passed'], ['c-dim', ' (6)']));
+    }
+    if (t.after === 'declined') out.push(L(['c-dim', '  └ '], ['c-red', 'You declined the command.']));
+    if (t.state === 'working') return out.concat([BLANK, L(['c-dim', '◦ '], ['c-bold', 'Working'], ['c-dim', ' (1m 12s • esc to interrupt)'])], codexInput());
+    if (t.state === 'done' || t.after === 'finished') out.push(BLANK, L(['c-dim', '─ Worked for 4m 12s ─']), BLANK,
+      L(['', '• Terminal panes have a search bar now: Ctrl+F opens it, Enter and Shift+Enter move between matches, Escape closes it. The new test file passes.']));
+    return out.concat(codexInput());
+  }
+  if (t.id === 't3') {
+    out.push(L(['c-dim', '> '], ['', 'Draft an ADR for terminals that know what their agent is doing']), BLANK,
+      L(['c-green', '● '], ['c-bold', 'Read'], ['', '(docs/adr/0046-the-host-keeps-a-finished-thread-unread-until-a-client-shows-it.md)']),
+      L(['c-dim', '  ⎿  Read 61 lines']),
+      L(['c-green', '● '], ['c-bold', 'Write'], ['', '(docs/adr/0065-terminals-know-what-their-agent-is-doing.md)']),
+      L(['c-dim', '  ⎿  Wrote 84 lines']), BLANK,
+      L(['', '● The draft covers the hooks, the screen rules and the two states you chose, Needs you and Done. It leaves the phone’s answer for review.']));
+    return out.concat(claudeInput());
+  }
+  if (t.id === 't4') {
+    return out.concat([L(['c-dim', 'PS C:\\code\\forge-site> '], ['', 'npm run dev']), BLANK, L(['c-dim', '> forge-site@0.4.0 dev']), L(['c-dim', '> astro dev']), BLANK,
+      L(['c-green', '  astro  v5.4.1 '], ['', 'ready in 412 ms']), BLANK, L(['', '  ┃ Local    '], ['c-blue', 'http://localhost:4321/']), L(['c-dim', '  ┃ Network  use --host to expose']), BLANK,
+      L(['c-dim', '12:41:07 '], ['c-blue', '[watch] '], ['', 'src/pages/index.astro']), L(['c-dim', '12:41:07 '], ['c-green', '[200] '], ['', '/ 18ms'])]);
+  }
+  if (t.id === 't5') {
+    if (t.state !== 'exited') return out.concat([L(['c-dim', '>_ '], ['c-bold', 'OpenAI Codex'], ['c-dim', ' (v0.61.0)'])], codexInput());
+    return out.concat([L(['c-dim', '>_ '], ['c-bold', 'OpenAI Codex'], ['c-dim', ' (v0.61.0)']), BLANK, L(['c-dim', '› '], ['', 'Resize the hero images to 1600 wide']), BLANK,
+      L(['', '• '], ['c-bold', 'Ran '], ['c-blue', 'npm run images']), L(['c-dim', '  └ 12 images written to public/hero']), BLANK, L(['', '• Done. The hero images are 1600 wide now.']), BLANK, L(['c-dim', '[Process exited with code 0]'])]);
+  }
+  if (t.id === 't6') {
+    return out.concat([L(['c-claude', '✻ '], ['c-bold', 'Claude Code'], ['c-dim', ' v2.1.270']), L(['c-dim', '  Opus 5 · Claude Max']), L(['c-dim', '  C:\\code\\forge-site'])], claudeInput());
+  }
+  // New terminals: Sotto's first line, then the CLI starting.
+  if (t.state === 'starting') return out.concat([L(['c-dim', 'Starting claude…'])]);
+  return out.concat([L(['c-claude', '✻ '], ['c-bold', 'Claude Code'], ['c-dim', ' v2.1.270'])], claudeInput());
+}
+
+/* Render a screen with the search's matches marked; returns { html, count }. */
+function renderScreen(t, query, current) {
+  const q = query.toLowerCase();
+  let n = 0;
+  const hl = text => {
+    if (!q) return esc(text);
+    const lower = text.toLowerCase();
+    let out = '', i = 0;
+    for (;;) {
+      const j = lower.indexOf(q, i);
+      if (j < 0) { out += esc(text.slice(i)); break; }
+      out += esc(text.slice(i, j)) + '<mark class="hit' + (n === current ? ' cur' : '') + '" data-hit="' + n + '">' + esc(text.slice(j, j + q.length)) + '</mark>';
+      n++; i = j + q.length;
+    }
+    return out;
+  };
+  const line = item => {
+    if (item.rule) return '<div class="trule" aria-hidden="true"></div>';
+    if (item.box) return '<div class="tbox">' + item.box.map(line).join('') + '</div>';
+    if (item.choices) {
+      return item.choices.map((c, k) => '<button type="button" class="cli-opt" data-act="cli" data-id="' + item.tid + '" data-n="' + (k + 1) + '"' + (k === 0 ? ' data-sel' : '') + ' title="Types ' + (k + 1) + ' into the terminal">' + (k === 0 ? '❯ ' : '  ') + (k + 1) + '. ' + hl(c) + '</button>').join('');
+    }
+    return '<div class="ln">' + item.segs.map(([cls, text]) => cls === 'cursor' ? '<span class="cursor" aria-hidden="true"></span>' : '<span' + (cls ? ' class="' + cls + '"' : '') + '>' + hl(text) + '</span>').join('') + '</div>';
+  };
+  const html = screen(t).map(line).join('');
+  return { html, count: n };
+}
+
+/* ---------- Desktop ---------- */
+function rowHtml(t, opts = {}) {
+  const current = S.panes[S.focus] === t.id;
+  const open = S.panes.includes(t.id);
+  const v = S.variant;
+  let right;
+  if (opts.right !== undefined) right = '<span class="r-right">' + esc(opts.right) + '</span>';
+  else if (v === 'A') right = '<span class="r-right" data-s="' + t.state + '">' + esc(word(t, v, true)) + '</span>';
+  else if (v === 'B') right = t.state === 'done' || t.state === 'exited' || t.state === 'needs' ? '<span class="r-right" data-s="' + t.state + '">' + esc(word(t)) + '</span>' : '<span class="r-right">' + esc(t.since) + '</span>';
+  else right = t.state === 'exited' ? '<span class="r-right" data-s="exited">Exited</span>' : '<span class="r-right">' + esc(t.since) + '</span>';
+  const unseen = t.state === 'done' && v === 'B';
+  const statusText = (t.provider ? PROVIDER[t.provider] : 'Shell') + ', ' + word(t);
+  return '<li class="row"' + (current ? ' data-current' : '') + (open ? ' data-open' : '') + (unseen ? ' data-unseen' : '') + '>' +
+    '<button type="button" class="r-item" data-act="open" data-id="' + t.id + '" data-key="row-' + t.id + '" aria-label="' + esc(t.title) + ', ' + esc(statusText) + '"' + (current ? ' aria-current="page"' : '') + '>' +
+    marker(t.state) + '<span class="r-title">' + esc(t.title) + '</span>' + right + '</button></li>';
+}
+function folderHtml(p, rows, sub) {
+  const head = '<div class="fold-head"><button type="button" class="fold-toggle" aria-expanded="true" aria-label="' + esc(p.title) + ', ' + rows.length + ' terminal' + (rows.length === 1 ? '' : 's') + '" title="' + esc(p.path) + '"><span>' + esc(p.title) + '</span></button>' +
+    '<span class="fold-actions"><button type="button" class="ib" data-act="new" data-project="' + p.id + '" aria-label="New terminal in ' + esc(p.title) + '" title="New terminal here">' + icon('squarePlus', 16) + '</button></span></div>';
+  return '<div class="fold">' + head + (sub || '') + '<ul class="rows">' + rows.map(t => rowHtml(t)).join('') + '</ul>' + (rows.length ? '' : '<p class="empty">No other open terminals.</p>') + '</div>';
+}
+function urgentLine(rows) {
+  for (const s of URGENCY) {
+    const n = rows.filter(t => t.state === s).length;
+    if (!n || s === 'idle') continue;
+    const words = { needs: 'needs you', done: 'done', starting: 'starting', working: 'working', running: 'running', exited: 'exited' };
+    const tone = s === 'needs' || s === 'exited' ? 'var(--tt-attention)' : s === 'done' ? 'var(--tt-text-2)' : 'var(--tt-activity)';
+    return '<p class="fold-sub" style="color:' + tone + '">' + shape(s) + '<span>' + n + ' ' + words[s] + '</span></p>';
+  }
+  return '';
+}
+function sidebarHtml() {
+  const v = S.variant;
+  let body = '';
+  if (v === 'B') {
+    const needs = S.terms.filter(t => t.state === 'needs');
+    const working = S.terms.filter(t => t.provider && isAgentBusy(t.state));
+    const projectTitle = t => PROJECTS.find(p => p.id === t.project).title;
+    if (needs.length) body += '<section aria-label="Needs you"><p class="group-label"><b>Needs you</b><i>' + needs.length + '</i></p><ul class="rows">' + needs.map(t => rowHtml(t, { right: projectTitle(t) })).join('') + '</ul></section>';
+    if (working.length) body += '<section aria-label="Working"><p class="group-label"><b>Working</b><i>' + working.length + '</i></p><ul class="rows">' + working.map(t => rowHtml(t, { right: projectTitle(t) })).join('') + '</ul></section>';
+    body += '<section aria-label="Projects" style="margin-top:6px">' + PROJECTS.map(p => folderHtml(p, S.terms.filter(t => t.project === p.id && !needs.includes(t) && !working.includes(t)))).join('') + '</section>';
+  } else {
+    body += '<section aria-label="Projects">' + PROJECTS.map(p => {
+      const rows = S.terms.filter(t => t.project === p.id);
+      return folderHtml(p, rows, v === 'A' ? urgentLine(rows) : '');
+    }).join('').replace(/<p class="empty">No other open terminals.<\/p>/g, '<p class="empty">No open terminals.</p>') + '</section>';
+  }
+  const closedRows = S.closedOpen ? '<ul class="rows">' + CLOSED.map(c => '<li class="row"><button type="button" class="r-item" disabled aria-label="' + esc(c.title) + ', closed"><span class="ring" aria-hidden="true"></span><span class="r-title">' + esc(c.title) + '</span><span class="r-right">Closed</span></button></li>').join('') + '</ul>' : '';
+  body += '<section aria-label="Closed"><button type="button" class="shelf" data-act="closed" aria-expanded="' + S.closedOpen + '" aria-label="Closed, ' + CLOSED.length + ' terminals">' + icon('chevR', 13, ' class="i chev"').replace('class="i" ', '') + '<span>Closed</span></button>' + closedRows + '</section>';
+  return '<aside class="sb" aria-label="Terminal sidebar">' +
+    '<div class="sb-top"><span class="brand">' + sottoMark + '<b>Sotto</b></span>' +
+    '<span class="seg" role="radiogroup" aria-label="Sidebar shows"><button type="button" role="radio" aria-checked="false" aria-label="Threads" title="Threads">' + icon('threads', 16) + '</button><button type="button" role="radio" aria-checked="true" aria-label="Terminal" title="Terminal">' + icon('terminal', 16) + '</button></span>' +
+    '<button type="button" class="ib" aria-label="Add project" title="Add project">' + icon('folderPlus', 16) + '</button>' +
+    '<button type="button" class="ib" data-act="new" data-project="sotto" aria-label="New terminal" title="New terminal">' + icon('squarePlus', 16) + '</button></div>' +
+    '<div class="sb-search">' + icon('search', 15) + '<span>Search terminals</span></div>' +
+    '<div class="sb-scroll">' + body + '</div>' +
+    '<div class="sb-foot"><span class="seg seg--wide" role="tablist" aria-label="Room"><button type="button" role="tab" aria-selected="false">Dictate</button><button type="button" role="tab" aria-selected="true">Threads</button></span>' +
+    '<div class="sb-links"><button type="button" class="ib" aria-label="Send feedback" title="Send feedback">' + icon('chat', 17) + '</button><button type="button" class="ib" aria-label="History" title="History">' + icon('clock', 17) + '</button><button type="button" class="ib" aria-label="Settings" title="Settings">' + icon('gear', 17) + '</button><button type="button" class="ib" aria-label="Help" title="Help">' + icon('help', 17) + '</button><button type="button" class="ib" aria-label="Check for updates" title="Check for updates">' + icon('refresh', 17) + '</button></div></div>' +
+    '</aside>';
+}
+function approvalWords(t) {
+  return t.id === 't1'
+    ? { who: 'Claude Code', head: 'Claude Code wants to run a command', cmd: 'npm test -- tests/unit/renderer/terminalDrawer.test.ts', why: 'Run the drawer’s unit tests', always: 'Yes, and don’t ask again for npm test commands' }
+    : { who: 'Codex', head: 'Codex wants to run a command', cmd: 'npm test -- tests/unit/renderer/terminalSearch.test.ts', why: 'Run the terminal search tests', always: 'Yes, and don’t ask again for this command' };
+}
+function paneHtml(id, index) {
+  const t = byId(id);
+  const v = S.variant;
+  const focused = S.focus === index;
+  const project = PROJECTS.find(p => p.id === t.project);
+  const searching = S.search.open && focused;
+  let screenHtml;
+  if (searching) {
+    const first = renderScreen(t, S.search.query, -1);
+    S.search.count = first.count;
+    if (S.search.count) S.search.index = ((S.search.index % S.search.count) + S.search.count) % S.search.count; else S.search.index = 0;
+    screenHtml = renderScreen(t, S.search.query, S.search.count ? S.search.index : -1).html;
+  } else screenHtml = renderScreen(t, '', -1).html;
+  const tag = v === 'A' && t.provider ? '<span class="ptag" data-s="' + t.state + '">' + shape(t.state) + '<span>' + esc(word(t)) + '</span></span>' : '';
+  const endedTag = t.state === 'exited' && !tag ? '<span class="ptag">Exited</span>' : '';
+  let bar = '';
+  if (v === 'C' && t.state === 'needs') {
+    const w = approvalWords(t);
+    bar = '<div class="abar" role="region" aria-label="Approval for ' + esc(t.title) + '"><div class="abar-text"><strong>' + shape('needs') + esc(w.head) + '</strong><code title="' + esc(w.cmd) + '">' + esc(w.cmd) + '</code><small>Your press is typed into the terminal as your answer.</small></div>' +
+      '<div class="abar-actions"><button type="button" class="btn btn--plain" data-act="answer" data-id="' + t.id + '" data-how="deny" data-from="desktop" data-key="deny-' + t.id + '">Deny</button><button type="button" class="btn btn--primary" data-act="answer" data-id="' + t.id + '" data-how="allow" data-from="desktop" data-key="allow-' + t.id + '">Allow</button></div></div>';
+  }
+  const ended = t.state === 'exited' ? '<div class="ended" role="status"><p><strong>Exited.</strong> Its output stays here until you close or restart it.</p><button type="button" class="link-btn" data-act="restart" data-id="' + t.id + '">' + icon('restart', 14) + 'Restart</button></div>' : '';
+  const find = searching ? '<div class="find" role="search" aria-label="Find in ' + esc(t.title) + '">' +
+    '<input type="text" data-key="find-input" aria-label="Find in terminal" placeholder="Find" value="' + esc(S.search.query) + '" spellcheck="false">' +
+    '<output aria-live="polite">' + (S.search.query ? (S.search.count ? (S.search.index + 1) + ' of ' + S.search.count : 'No matches') : '') + '</output>' +
+    '<button type="button" class="ib" data-act="find-prev" aria-label="Previous match" title="Previous match (Shift+Enter)"' + (S.search.count ? '' : ' disabled') + '>' + icon('up', 15) + '</button>' +
+    '<button type="button" class="ib" data-act="find-next" aria-label="Next match" title="Next match (Enter)"' + (S.search.count ? '' : ' disabled') + '>' + icon('down', 15) + '</button>' +
+    '<button type="button" class="ib" data-act="find-close" aria-label="Close search" title="Close search (Escape)">' + icon('x', 15) + '</button></div>' : '';
+  const edge = v === 'B' && t.state === 'needs';
+  return '<section class="pane" data-pane="' + index + '"' + (focused ? ' data-focused' : '') + (edge ? ' data-edge' : '') + ' aria-label="' + esc(t.title) + (edge ? ', needs your approval' : '') + '">' +
+    '<header class="p-head"><div class="p-title">' + mark(t.provider) + '<h2>' + esc(t.title) + '</h2><span class="crumb">' + esc(project.title) + ' · ' + esc(t.copy) + '</span>' + tag + endedTag + '</div>' +
+    '<button type="button" class="ib" aria-label="More for ' + esc(t.title) + '" title="More">' + icon('more', 16) + '</button></header>' +
+    bar + '<div class="p-body">' + ended + find +
+    '<div class="term" tabindex="0" data-key="term-' + index + '" data-term="' + t.id + '" aria-label="' + esc(t.title) + ', terminal">' + screenHtml + '</div></div>' +
+    '<p class="t-status"><span title="' + esc(project.path) + '">' + icon('branch', 13) + esc(t.branch) + '</span></p></section>';
+}
+function renderDesktop() {
+  const win = document.getElementById('win');
+  win.dataset.w = String(S.width);
+  win.innerHTML = sidebarHtml() + '<div class="room"><div class="wctl" aria-hidden="true"><span>' + icon('min', 16) + '</span><span>' + icon('max', 14) + '</span><span>' + icon('x', 16) + '</span></div>' +
+    '<div class="panes">' + S.panes.map(paneHtml).join('') + '</div></div>';
+  const cur = win.querySelector('.hit.cur');
+  if (cur) { const term = cur.closest('.term'); term.scrollTop = Math.max(0, cur.offsetTop - term.clientHeight / 2); }
+  else win.querySelectorAll('.term').forEach(term => { term.scrollTop = term.scrollHeight; });
+  document.getElementById('desk-cap').textContent = 'Desktop · ' + (S.width === 1280 ? '1280 × 800' : '820 × 560') + ' · Terminal mode, two panes';
+}
+
+/* ---------- Phone ---------- */
+const phoneTitle = t => esc(t.title);
+function cardHtml(t) {
+  const v = S.variant;
+  const w = approvalWords(t);
+  const phase = S.cards[t.id];
+  let actions;
+  if (phase === 'sending') actions = '<div class="pc-phase" role="status">Sending…</div>';
+  else if (phase === 'answered') actions = '<div class="pc-phase" data-p="answered" role="status">' + icon('check', 16) + 'Answered</div>';
+  else if (phase === 'gone') actions = '<div class="pc-phase" role="status">No longer waiting</div>';
+  else if (!S.canAnswer) actions = '<div class="pc-cant"><span>This iPhone can’t answer on Laptop yet.</span><button type="button" data-act="phone-review" data-id="' + t.id + '">Review permission</button></div>';
+  else if (v === 'A') actions = '<div class="pc-actions pc-actions--stack">' +
+      '<button type="button" class="pbtn pbtn--choice" data-act="answer" data-id="' + t.id + '" data-how="allow" data-from="phone"><b>1</b>Yes</button>' +
+      '<button type="button" class="pbtn pbtn--choice" data-act="answer" data-id="' + t.id + '" data-how="always" data-from="phone"><b>2</b>' + esc(w.always) + '</button>' +
+      '<button type="button" class="pbtn pbtn--choice" data-act="answer" data-id="' + t.id + '" data-how="deny" data-from="phone"><b>3</b>No</button></div>' +
+      '<p class="note">Your choice is typed into the terminal.</p>';
+  else if (v === 'B') actions = '<div class="pc-actions"><button type="button" class="pbtn pbtn--plain" data-act="answer" data-id="' + t.id + '" data-how="deny" data-from="phone">No</button><button type="button" class="pbtn pbtn--accent" data-act="answer" data-id="' + t.id + '" data-how="allow" data-from="phone">Yes</button></div>' +
+      '<button type="button" class="pc-more" data-act="phone-review" data-id="' + t.id + '">More choices</button>';
+  else actions = '<div class="pc-actions"><button type="button" class="pbtn pbtn--plain" data-act="answer" data-id="' + t.id + '" data-how="deny" data-from="phone">Deny</button><button type="button" class="pbtn pbtn--accent" data-act="answer" data-id="' + t.id + '" data-how="allow" data-from="phone">Allow</button></div>' +
+      '<p class="note">Sotto types your answer into the terminal.</p>';
+  let ask;
+  if (v === 'A') ask = '<p class="ask">Waiting in the terminal: ' + esc(w.why.toLowerCase()) + '?</p><p class="cmd">' + esc(w.cmd) + '</p>';
+  else if (v === 'B') {
+    const tail = t.id === 't1'
+      ? 'Bash command\n  ' + w.cmd + '\n\nDo you want to proceed?\n❯ 1. Yes\n  2. ' + w.always + '\n  3. No, and tell Claude what to do differently'
+      : 'Would you like to run the following command?\n  $ ' + w.cmd + '\n\n› 1. Yes, proceed\n  2. ' + w.always + '\n  3. No, and tell Codex what to do differently';
+    ask = '<div class="screen" aria-label="The end of the terminal’s screen">' + esc(tail) + '</div>';
+  } else ask = '<p class="ask">Run this command?</p><p class="cmd">' + esc(w.cmd) + '</p>';
+  return '<article class="pc" data-k="needs" aria-label="Permission for ' + esc(w.who) + ' in ' + esc(t.title) + '">' +
+    '<div class="pc-tag"><span class="dot" data-s="needs"></span><span class="w">Permission</span>' + (v !== 'C' ? '<span class="chip">' + icon('terminal', 12) + 'Terminal</span>' : '') + '<time>' + (t.askedAt || 'now') + '</time></div>' +
+    '<h3>' + phoneTitle(t) + '</h3><p class="sub">' + esc(w.who) + (v === 'C' ? ' in a terminal on Laptop' : ' on Laptop') + '</p>' + ask + actions + '</article>';
+}
+function threadWorkCard(h) {
+  return '<article class="pc" data-k="work"><div class="pc-tag"><span class="dot" data-s="working"></span><span class="a">Working</span><time>' + h.time + '</time></div><h3>' + esc(h.title) + '</h3><p class="sub">' + esc(h.provider) + ' on Laptop</p></article>';
+}
+function termWorkCard(t) {
+  return '<article class="pc" data-k="work"><div class="pc-tag"><span class="dot" data-s="working"></span><span class="a">Working</span><span class="chip">' + icon('terminal', 12) + 'Terminal</span><time>' + t.since + '</time></div><h3>' + phoneTitle(t) + '</h3><p class="sub">' + esc(PROVIDER[t.provider]) + ' on Laptop</p></article>';
+}
+function threadRow(h) {
+  return '<button type="button" class="pr"><span class="dot" data-s="idle"></span><span class="pr-main"><span class="pr-title">' + esc(h.title) + '</span><span class="pr-sub" style="display:block">' + esc(h.provider) + ' on Laptop</span></span><time>' + h.time + '</time></button>';
+}
+function termRow(t, mode) {
+  const v = S.variant;
+  const sub = mode === 'quiet' ? '' : '<span class="pr-sub" data-s="' + (t.state === 'needs' ? 'needs' : isAgentBusy(t.state) || t.state === 'running' ? 'working' : '') + '" style="display:block">' + esc(word(t)) + ' · ' + esc(t.provider ? PROVIDER[t.provider] : 'Shell') + ' on Laptop</span>';
+  const glyph = v === 'A' ? '' : icon('terminal', 15);
+  return '<button type="button" class="pr" data-act="phone-view" data-id="' + t.id + '"' + (t.state === 'done' ? ' data-unseen' : '') + ' aria-label="' + esc(t.title) + ', ' + esc(word(t)) + '">' +
+    '<span class="dot" data-s="' + (t.state === 'running' ? 'running' : t.state) + '"></span><span class="pr-main"><span class="pr-title">' + glyph + esc(t.title) + '</span>' + sub + '</span><time>' + (mode === 'quiet' ? '' : esc(t.since)) + '</time></button>';
+}
+function renderPhone() {
+  const v = S.variant;
+  const needs = S.terms.filter(t => t.state === 'needs' || S.cards[t.id]);
+  const busyTerms = S.terms.filter(t => t.provider && isAgentBusy(t.state) && !S.cards[t.id]);
+  const working = THREADS.filter(h => h.state === 'working').length + busyTerms.length;
+  const needCount = S.terms.filter(t => t.state === 'needs').length;
+  const doneCount = S.terms.filter(t => t.state === 'done').length;
+  let body = '';
+  if (needs.length) body += '<div class="ph-sec"><span class="dot" data-s="needs"></span>Needs you <i>' + needCount + '</i></div>' + needs.map(cardHtml).join('');
+  if (v === 'A') {
+    body += '<div class="ph-sec"><span class="dot" data-s="working"></span>Working <i>1</i></div>' + THREADS.filter(h => h.state === 'working').map(threadWorkCard).join('');
+    body += '<div class="ph-sec">Recent</div>' + THREADS.filter(h => h.state !== 'working').map(threadRow).join('');
+    const listed = S.terms.filter(t => t.state !== 'needs');
+    body += '<div class="ph-sec">' + icon('terminal', 17) + 'Terminals <i>' + S.terms.length + '</i></div>' + listed.map(t => termRow(t)).join('');
+  } else if (v === 'B') {
+    body += '<div class="ph-sec"><span class="dot" data-s="working"></span>Working <i>' + working + '</i></div>' + busyTerms.map(termWorkCard).join('') + THREADS.filter(h => h.state === 'working').map(threadWorkCard).join('');
+    const recentTerms = S.terms.filter(t => !isAgentBusy(t.state) && t.state !== 'needs' && !S.cards[t.id]);
+    recentTerms.sort((a, b) => (b.state === 'done') - (a.state === 'done'));
+    body += '<div class="ph-sec">Recent</div>' + recentTerms.map(t => termRow(t)).join('') + THREADS.filter(h => h.state !== 'working').map(threadRow).join('');
+  } else {
+    body += '<div class="ph-sec"><span class="dot" data-s="working"></span>Working <i>1</i></div>' + THREADS.filter(h => h.state === 'working').map(threadWorkCard).join('');
+    body += '<div class="ph-sec">Recent</div>' + THREADS.filter(h => h.state !== 'working').map(threadRow).join('');
+    const listed = S.terms.filter(t => t.state !== 'needs');
+    body += '<div class="ph-sec"><button type="button" data-act="phone-terms" aria-expanded="' + S.phoneTermsOpen + '">' + icon('terminal', 17) + 'Terminals on Laptop <i style="color:var(--tt-text-muted);font-style:normal;font-weight:400">' + S.terms.length + '</i>' +
+      '<span style="display:inline-flex;gap:5px;margin-left:auto">' + listed.slice(0, 6).map(t => '<span class="dot" data-s="' + t.state + '"></span>').join('') + '</span>' + icon(S.phoneTermsOpen ? 'chevD' : 'chevR', 18) + '</button></div>';
+    if (S.phoneTermsOpen) body += listed.map(t => termRow(t, 'quiet')).join('');
+  }
+  const warm = needCount > 0;
+  document.getElementById('phone').innerHTML =
+    '<div class="sbar"><span>9:41</span><span class="island"></span><span class="icons" aria-hidden="true"><svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="currentColor"/><rect x="5" y="5" width="3" height="7" rx="1" fill="currentColor"/><rect x="10" y="2" width="3" height="10" rx="1" fill="currentColor"/><rect x="15" y="0" width="3" height="12" rx="1" fill="currentColor"/></svg><svg width="26" height="12" viewBox="0 0 26 12"><rect x="0.5" y="0.5" width="22" height="11" rx="3" fill="none" stroke="currentColor"/><rect x="2" y="2" width="17" height="8" rx="2" fill="currentColor"/><rect x="24" y="4" width="2" height="4" rx="1" fill="currentColor"/></svg></span></div>' +
+    '<div class="p-scroll"><div class="wash"' + (warm ? ' data-warm' : '') + '></div>' +
+    '<div class="ph-top"><h1>Threads</h1><button type="button" class="ph-plus" aria-label="New thread">' + icon('plus', 24) + '</button></div>' +
+    '<span class="ph-pill"><span class="dot" data-s="done"></span>All computers' + icon('chevD', 18) + '</span>' +
+    '<div class="ph-sum"><span><span class="dot" data-s="working"></span><b>' + working + '</b> working</span>' + (needCount ? '<span><span class="dot" data-s="needs"></span><b>' + needCount + '</b> needs you</span>' : '') + '</div>' +
+    '<div class="ph-search">' + icon('search', 20) + 'Search threads and terminals</div>' + body + '</div>' +
+    '<nav class="tabbar" aria-label="Tabs"><button type="button" class="tab" aria-current="page">' + icon('chat', 24) + 'Threads' + (needCount + doneCount ? '<span class="badge">' + (needCount + doneCount) + '</span>' : '') + '</button><button type="button" class="tab">' + icon('monitor', 24) + 'Computers</button><button type="button" class="tab">' + icon('sliders', 24) + 'Settings</button></nav><div class="home"></div>';
+}
+
+/* ---------- Readout, scale, render ---------- */
+function renderReadout() {
+  const view = {
+    variant: S.variant, theme: S.theme, desktop: S.width === 1280 ? '1280x800' : '820x560',
+    focusedPane: S.focus, panes: S.panes.map(id => byId(id).title),
+    search: S.search.open ? { query: S.search.query, match: S.search.count ? (S.search.index + 1) + ' of ' + S.search.count : 'none' } : 'closed',
+    phone: { canAnswer: S.canAnswer, cards: Object.fromEntries(Object.entries(S.cards).map(([id, p]) => [byId(id).title, p])) },
+    terminals: Object.fromEntries(S.terms.map(t => [t.title, t.state])),
+    last: S.last,
+  };
+  document.getElementById('readout').textContent = JSON.stringify(view, null, 2);
+}
+function fit() {
+  const stage = document.getElementById('stage');
+  const dw = S.width === 1280 ? 1280 : 820, dh = S.width === 1280 ? 800 : 560;
+  const avail = stage.clientWidth - 28 - 6;
+  const s = Math.max(0.3, Math.min(1, avail / (dw + 2 + 414)));
+  const set = (scaler, scaled, w, h) => { scaler.style.width = (w * s) + 'px'; scaler.style.height = (h * s) + 'px'; scaled.style.transform = 'scale(' + s + ')'; };
+  set(document.getElementById('desk-scaler'), document.getElementById('desk-scaled'), dw + 2, dh + 2);
+  set(document.getElementById('phone-scaler'), document.getElementById('phone-scaled'), 414, 868);
+}
+function render() {
+  const active = document.activeElement;
+  const key = active && active.dataset ? active.dataset.key : undefined;
+  const sel = key && active.tagName === 'INPUT' ? [active.selectionStart, active.selectionEnd] : null;
+  document.documentElement.dataset.theme = S.theme;
+  document.querySelectorAll('[data-act="theme"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.theme)));
+  document.querySelectorAll('[data-act="width"]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === S.width)));
+  document.getElementById('can-answer-btn').setAttribute('aria-pressed', String(S.canAnswer));
+  document.getElementById('vlabel').textContent = VARIANTS[S.variant];
+  document.getElementById('notes').innerHTML = NOTES[S.variant];
+  renderDesktop(); renderPhone(); renderReadout(); fit();
+  if (key) {
+    const again = document.querySelector('[data-key="' + key + '"]');
+    if (again) { again.focus({ preventScroll: true }); if (sel && again.setSelectionRange) again.setSelectionRange(sel[0], sel[1]); }
+  }
+}
+
+/* ---------- Actions ---------- */
+const timers = [];
+const later = (ms, fn) => { timers.push(setTimeout(() => { fn(); render(); }, ms)); };
+function answer(id, how, from) {
+  const t = byId(id);
+  if (!t || t.state !== 'needs') return;
+  const denied = how === 'deny';
+  const finishAnswer = () => {
+    t.state = denied ? 'idle' : 'working';
+    t.after = denied ? 'declined' : (t.id === 't2' ? 'ran' : 'running');
+  };
+  if (from === 'phone') {
+    S.cards[id] = 'sending';
+    S.last = 'The phone sent ' + (denied ? 'No' : how === 'always' ? 'the always choice' : 'Yes') + ' to ' + t.title + '; Sotto types it into the CLI.';
+    later(700, () => { finishAnswer(); S.cards[id] = 'answered'; });
+    later(2100, () => { delete S.cards[id]; });
+  } else {
+    finishAnswer();
+    S.last = 'Answered ' + t.title + ' on the desktop (' + (denied ? 'no' : how === 'always' ? 'always' : 'yes') + ').';
+    S.cards[id] = 'gone';
+    later(1400, () => { delete S.cards[id]; });
+  }
+}
+function view(id) {
+  const t = byId(id);
+  if (t && t.state === 'done') { t.state = 'idle'; S.last = 'Viewed ' + t.title + ': Done clears to Idle.'; }
+}
+function openInPane(id) {
+  const other = S.panes.indexOf(id);
+  if (other >= 0) S.focus = other; else S.panes[S.focus] = id;
+  view(id);
+}
+function simApproval() {
+  const order = ['t1', 't2'].map(byId);
+  const target = order.find(t => t.state === 'working') || order.find(t => t.state === 'idle' || t.state === 'done');
+  if (!target) { S.last = 'Both agents already need you.'; return; }
+  target.state = 'needs'; target.after = null; target.askedAt = 'now'; delete S.cards[target.id];
+  S.last = 'A hook reported an approval in ' + target.title + '.';
+}
+function simFinish() {
+  const target = ['t2', 't1'].map(byId).find(t => t.state === 'working');
+  if (!target) { S.last = 'No agent is working, so none can finish. Answer an approval first.'; return; }
+  target.after = 'finished';
+  const focusedHere = S.panes[S.focus] === target.id;
+  target.state = focusedHere ? 'idle' : 'done';
+  S.last = focusedHere ? target.title + ' finished in the focused pane, so you saw it: Idle, not Done.' : target.title + ' finished while you were elsewhere: Done until you view it.';
+}
+function simView() {
+  const target = S.terms.find(t => t.state === 'done');
+  if (!target) { S.last = 'No terminal is Done.'; return; }
+  openInPane(target.id);
+}
+function openFind() {
+  S.search.open = true;
+  S.last = 'Ctrl+F opened the search in the focused pane.';
+  render();
+  const input = document.querySelector('[data-key="find-input"]');
+  if (input) { input.focus(); input.select(); }
+}
+function closeFind() {
+  S.search.open = false;
+  render();
+  const term = document.querySelector('[data-key="term-' + S.focus + '"]');
+  if (term) term.focus({ preventScroll: true });
+}
+function setVariant(v) {
+  S.variant = v;
+  const url = new URL(location.href); url.searchParams.set('variant', v); history.replaceState(null, '', url);
+  render();
+}
+function step(dir) { const keys = Object.keys(VARIANTS); setVariant(keys[(keys.indexOf(S.variant) + dir + keys.length) % keys.length]); }
+
+document.addEventListener('click', event => {
+  const el = event.target.closest('[data-act]');
+  const pane = event.target.closest('.pane');
+  if (pane && !el) {
+    const index = Number(pane.dataset.pane);
+    if (S.focus !== index) { S.focus = index; view(S.panes[index]); render(); }
+    return;
+  }
+  if (!el) return;
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  if (pane) { S.focus = Number(pane.dataset.pane); view(S.panes[S.focus]); }
+  switch (act) {
+    case 'theme': S.theme = el.dataset.v; break;
+    case 'width': S.width = Number(el.dataset.v); break;
+    case 'vprev': step(-1); return;
+    case 'vnext': step(1); return;
+    case 'sim-approval': simApproval(); break;
+    case 'sim-finish': simFinish(); break;
+    case 'sim-view': simView(); break;
+    case 'sim-answer': S.canAnswer = !S.canAnswer; S.last = S.canAnswer ? 'Can answer is on for this iPhone.' : 'Can answer is off: the phone can read the request but not answer it.'; break;
+    case 'sim-find': openFind(); return;
+    case 'sim-reset': timers.forEach(clearTimeout); Object.assign(S, { focus: 0, panes: ['t1', 't2'], cards: {}, terms: freshTerminals(), closedOpen: false, phoneTermsOpen: false, canAnswer: true, last: 'Started over.' }); S.search.open = false; break;
+    case 'open': openInPane(id); break;
+    case 'closed': S.closedOpen = !S.closedOpen; break;
+    case 'new': {
+      const t = { id: 't' + S.nextId++, project: el.dataset.project, provider: 'claude', title: 'Claude · new terminal', state: 'starting', after: null, since: 'now', branch: 'main', copy: 'Project folder' };
+      S.terms.push(t); S.panes[S.focus] = t.id; S.last = 'Started a terminal: Starting until the CLI answers its first hook.';
+      later(1600, () => { t.state = 'idle'; });
+      break;
+    }
+    case 'cli': answer(id, el.dataset.n === '3' ? 'deny' : el.dataset.n === '2' ? 'always' : 'allow', 'desktop'); break;
+    case 'answer': answer(id, el.dataset.how, el.dataset.from); break;
+    case 'restart': { const t = byId(id); t.state = 'starting'; S.last = 'Restarted ' + t.title + '.'; later(1400, () => { t.state = 'idle'; }); break; }
+    case 'find-next': S.search.index++; break;
+    case 'find-prev': S.search.index--; break;
+    case 'find-close': closeFind(); return;
+    case 'phone-view': { const wasDone = byId(id).state === 'done'; view(id); S.last = 'Opened ' + byId(id).title + ' on the phone' + (wasDone ? ': showing it on any client clears Done.' : '.'); break; }
+    case 'phone-review': S.last = 'Review opens the terminal’s screen on the phone (not drawn here).'; break;
+    case 'phone-terms': S.phoneTermsOpen = !S.phoneTermsOpen; break;
+    default: return;
+  }
+  render();
+});
+document.addEventListener('input', event => {
+  if (event.target.dataset && event.target.dataset.key === 'find-input') { S.search.query = event.target.value; S.search.index = 0; render(); }
+});
+document.addEventListener('keydown', event => {
+  const target = event.target;
+  const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && !event.altKey) {
+    if (!target.closest || !target.closest('.controls, .readout')) { event.preventDefault(); openFind(); return; }
+  }
+  if (target.dataset && target.dataset.key === 'find-input') {
+    if (event.key === 'Enter') { event.preventDefault(); S.search.index += event.shiftKey ? -1 : 1; render(); return; }
+    if (event.key === 'Escape') { event.preventDefault(); closeFind(); return; }
+    return;
+  }
+  if (event.key === 'Escape' && S.search.open && target.closest && target.closest('.win')) { event.preventDefault(); closeFind(); return; }
+  if (target.dataset && target.dataset.term && /^[123]$/.test(event.key)) {
+    const t = byId(target.dataset.term);
+    if (t.state === 'needs') { answer(t.id, event.key === '3' ? 'deny' : event.key === '2' ? 'always' : 'allow', 'desktop'); render(); return; }
+  }
+  if (typing) return;
+  if (event.key === 'ArrowLeft') { event.preventDefault(); step(-1); }
+  if (event.key === 'ArrowRight') { event.preventDefault(); step(1); }
+});
+window.addEventListener('resize', fit);
+if (matchMedia('(prefers-color-scheme: light)').matches) S.theme = 'light';
+render();
+</script>
+</body>
+</html>

@@ -2,6 +2,14 @@
 
 Sotto creates and manages coding threads through the installed Codex, Claude Code, Grok Build and Devin clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. Reading or sending a manual prompt does not grant Sotto permission to supervise a thread.
 
+## Terminal mode
+
+Terminal mode starts an installed provider CLI in its own terminal, apart from the thread adapters described below. Today its sidebar reads recent output as Running and silence as Idle; approvals and questions stay in the CLI.
+
+[ADR-0066](adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md) proposes Starting, Working, Idle, Needs you, Just finished and Exited for those agents. Just finished means a turn completed out of sight, and viewing it clears the mark; an on-screen pane earns nothing, focused or not. Plain shells keep Running and Idle. These states and phone terminal controls are not implemented by that ADR.
+
+The proposal uses hooks for each Claude Code run to report state and return the user's one-time Yes or No for a live approval. Codex notify supplies completion and its provider session ID; Codex and Grok approvals and questions still need the native desktop CLI. A phone answer would require its current Can answer policy and a request-bound preview; no phone terminal input or persistent approval choice is proposed. The prototype records the chosen look, not working approval controls. Thread permission handling below is unchanged.
+
 ## Set up
 
 1. Install and sign in to your chosen native coding client. Codex uses App Server, Claude Code uses stream-json and Grok Build uses ACP. Grok connection requires CLI 1.0.5 or newer and ACP 1; an older client produces an error before creating a session. Devin requires 3000.10.31 or newer. Sotto reports each connected client's version in Settings → Providers, with what its channel publishes (ADR-0042). Sotto finds a client on PATH, on your login shell's PATH, in `~/.local/bin`, where a version manager (mise, asdf, nvm, fnm, Volta, Homebrew) installed it, or in npm's global folder; the [guide](guide.md#providers-and-models) has the order (ADR-0036).
