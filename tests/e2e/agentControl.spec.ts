@@ -34,6 +34,7 @@ async function onboard(page: Page): Promise<void> {
   await page.getByRole('button', { name: /finish setup/i }).click()
   await openThreads(page)
   await page.getByRole('button', { name: 'Connect providers' }).click()
+  await expect.poll(async () => (await state(page)).connection).toBe('connected')
   await openThreads(page)
 }
 
@@ -104,9 +105,10 @@ test('retains a rejected prompt and allows a deliberate retry after refreshing t
     await command(page, { type: 'refresh' })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Prompt', { exact: true })).toHaveValue('')
+    // The manual composer clears on submission; wait for the provider to confirm the retry.
+    await expect.poll(() => userMessageTexts(page, 'workshop')).toEqual(['Retry this only after I ask.'])
     const snapshot = await state(page)
     expect(snapshot.error).toBeNull()
-    expect(await userMessageTexts(page, 'workshop')).toEqual(['Retry this only after I ask.'])
   } finally { await closeSotto(launched) }
 })
 

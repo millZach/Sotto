@@ -164,7 +164,7 @@
 .thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 /* At a model's highest level the composer wears a thin outline in the effort colourway, with a brighter run
-   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). Both composers read
+   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). The composer reads
    the effort chip's own mark, so no prop has to travel; the card's arrival state drives the tide. The ring angle
    property and the effort-ring keyframes are declared once in global.css. */
 .thread-prompt { position: relative; --effort-tint: 0%; }
@@ -182,14 +182,14 @@
   background: var(--tt-effort-wash-image); background-size: 100% 220%; background-position: 0 -320%; background-repeat: no-repeat; opacity: 0;
   -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) :is(.thread-prompt { animation: effort-ring 4200ms linear infinite; }
-  :root:not([data-reduced-motion='on']) :is(.thread-prompt { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
+  :root:not([data-reduced-motion='on']) .thread-prompt:has(.thread-chip[data-effort-top='true'])::after { animation: effort-ring 4200ms linear infinite; }
+  :root:not([data-reduced-motion='on']) .thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true'])::before { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
 }
 @keyframes effort-tide { from { opacity: .5; background-position: 0 100%; } to { opacity: .5; background-position: 0 -320%; } }
 /* Reduced motion keeps the outline as a still ring at half strength. */
-:root[data-reduced-motion='on'] :is(.thread-prompt { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+:root[data-reduced-motion='on'] .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 @media (prefers-reduced-motion: reduce) {
-  :is(.thread-prompt { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
+  .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 }
 
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */

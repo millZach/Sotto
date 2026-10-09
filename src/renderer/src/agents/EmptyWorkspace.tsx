@@ -97,6 +97,7 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
     <MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" />
     <h2 ref={headingRef} tabIndex={-1}>{page.heading}</h2>
     <p>{page.detail}</p>
+    {state.notice && state.notice !== error ? <p className="agent-notice" role="status">{state.notice}</p> : null}
     {page.showDraft ? <div className="thread-prompt thread-prompt--saved">
       <label className="tt-visually-hidden" htmlFor="saved-thread-prompt">Saved draft</label>
       <textarea id="saved-thread-prompt" rows={4} value={state.draft} readOnly />

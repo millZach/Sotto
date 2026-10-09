@@ -211,6 +211,7 @@ describe('Threads manual composer', () => {
     const draftId = live.sentDraftId('grok-previews')
     act(() => live.deliver('grok-previews', 'failed'))
     await waitFor(() => expect(screen.getByLabelText('Pending message')).toHaveTextContent('Not sent'))
+    expect(screen.getByRole('alert')).toHaveTextContent('It is back in the composer.')
     // The refusal put the prompt back in the composer, and retrying takes it out again.
     expect(prompt()).toHaveValue('Try this')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
@@ -225,6 +226,22 @@ describe('Threads manual composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument()
     expect(prompt()).toHaveValue('Try this instead')
+  })
+
+  it('announces a rejected send once when delivery status arrives before its command receipt', async () => {
+    const { live, prompt } = mount(manualState())
+    fireEvent.change(prompt(), { target: { value: 'Keep this rejected prompt' } })
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    act(() => { live.publish({
+      error: 'The provider rejected this action.',
+      deliveries: live.state.deliveries!.map(item => ({ ...item, status: 'failed' })),
+    }) })
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('The provider rejected this action.')
+    act(() => live.deliver('grok-previews', 'failed'))
+    await waitFor(() => expect(within(screen.getByLabelText('Pending message')).getByRole('alert')).toHaveTextContent('The provider rejected this action.'))
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(prompt()).toHaveValue('Keep this rejected prompt')
   })
 
   it('never resends an unconfirmed prompt: it offers Check again, or Reconnect when disconnected', async () => {

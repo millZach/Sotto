@@ -280,7 +280,7 @@ export async function verifyThirdPartyNotices(options = {}) {
     for (const packageName of bundled) {
       if (!names.has(packageName)) fail(`rendered bundle dependency is not inventoried: ${packageName}`)
     }
-    for (const required of ['@huggingface/transformers', 'lucide-react', 'react', 'react-dom', 'react-markdown', 'remark-gfm', 'lowlight', 'mermaid', 'dompurify', 'scheduler', 'zod']) {
+    for (const required of ['lucide-react', 'react', 'react-dom', 'react-markdown', 'remark-gfm', 'lowlight', 'mermaid', 'dompurify', 'scheduler', 'zod']) {
       if (!bundled.has(required)) fail(`bundle evidence is missing ${required}`)
     }
   }

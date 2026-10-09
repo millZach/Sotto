@@ -423,6 +423,15 @@ describe('ThreadsView workspace', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('announces a successful provider connection on the empty workspace', () => {
+    const state = stateFixture()
+    state.activeThreadId = null
+    state.notice = 'Codex connected'
+    vi.mocked(useAgents).mockReturnValue(connection(state))
+    render(<ThreadsView now={E2E_THREADS_NOW} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Codex connected')
+  })
+
   it('searches settled history while preserving live attention in the sidebar', () => {
     renderThreads(stateFixture())
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads' }), { target: { value: 'codex' } })

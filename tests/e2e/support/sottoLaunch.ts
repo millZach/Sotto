@@ -58,6 +58,14 @@ export async function firstSottoWindow(application: ElectronApplication): Promis
   } })
 }
 
+/** The widget is created after onboarding; wait for its page and navigation to arrive. */
+export async function sottoWidget(application: ElectronApplication): Promise<Page> {
+  await expect.poll(() => application.windows().some(page => page.url().endsWith('/widget.html'))).toBe(true)
+  const widget = application.windows().find(page => page.url().endsWith('/widget.html'))!
+  await widget.waitForLoadState('domcontentloaded')
+  return widget
+}
+
 const defaultDependencies: LaunchDependencies = {
   createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
   launch: (options) => electron.launch(options),
@@ -124,14 +132,18 @@ function threadSidebar(page: Page): Locator {
 
 /**
  * Opens the Threads page from wherever the window happens to be. Sotto now
- * opens on Threads, so the common case is that the sidebar is already there and
- * nothing is clicked. Otherwise the page is reached through the footer link on
+ * opens on Threads, so the common case is that the workspace is already there and
+ * nothing is clicked. The sidebar alone also appears beside Dictate, History and Help.
+ * Otherwise the page is reached through the footer link on
  * the pages that still have a footer, and through the Dictate/Threads switch on
  * the pages that do not.
  */
 export async function openThreads(page: Page): Promise<void> {
   const sidebar = threadSidebar(page)
-  if (await sidebar.isVisible()) return
+  if (await page.locator('.threads-view').isVisible()) {
+    await expect(sidebar).toBeVisible()
+    return
+  }
   const link = page.getByRole('link', { name: 'Threads', exact: true })
   if ((await link.count()) > 0) await link.click()
   else await page.getByRole('tab', { name: 'Threads', exact: true }).click()
