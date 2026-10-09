@@ -1,3 +1,6 @@
+import { deferred } from '../../fixtures/deferred'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { randomUUID } from 'node:crypto'
@@ -5,8 +8,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AgentProvider, useAgentConnection, useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
@@ -17,17 +19,17 @@ import type { AgentBridge, AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { agentBridgeFor, agentWireBridge } from '../../fixtures/agentBridge'
 import { handleOf, PIXEL_PNG, stageInto } from '../../fixtures/stagedImages'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 async function draftFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-drafts-'))
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
-  await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
+  await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
   const bridge: AgentBridge = agentBridgeFor(control)
   return { control, host, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
     followupsOnDisk: async () => JSON.parse(await readFile(join(root, 'followups.json'), 'utf8')),
@@ -42,8 +44,7 @@ async function draftFixture() {
 describe('thread draft recovery through the real connection and disk', () => {
   it('admits a direct send on its own thread lane while the coordinator is busy with other work', async () => {
     const f = await draftFixture()
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     let refreshing: Promise<AgentState | null> | undefined, sending: Promise<void> | undefined
     const execute = vi.spyOn(f.host, 'execute')
     const snapshot = f.control.get().host
@@ -102,8 +103,7 @@ describe('thread draft recovery through the real connection and disk', () => {
   })
 
   it('sends queue, steer, skills and open-pane commands without waiting behind a held coordinator reply', async () => {
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     const seen: string[] = []
     const snapshot = threadsStateFixture()
     const bridge: AgentBridge = { get: async () => snapshot, onState: () => () => undefined, command: async request => {
@@ -133,8 +133,7 @@ describe('thread draft recovery through the real connection and disk', () => {
 
   it('admits a send before newer edits while an earlier renderer IPC reply is still held', async () => {
     const f = await draftFixture()
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     let waiting = false, previous: Promise<AgentState | null> | undefined, sending: Promise<void> | undefined
     const execute = vi.spyOn(f.host, 'execute')
     const bridge: AgentBridge = { ...f.bridge, command: async request => {
@@ -168,8 +167,7 @@ describe('thread draft recovery through the real connection and disk', () => {
 
   it.each(['pending', 'failed'] as const)('retains %s save durability through actual Threads unmount/remount and retries to disk', async stage => {
     const f = await draftFixture()
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     let writing = false
     const image = handleOf(PIXEL_PNG, 'retained-image', 'pixel.png')
     let controls!: ReturnType<typeof useAgents>
@@ -224,7 +222,7 @@ describe('thread draft recovery through the real connection and disk', () => {
   it('isolates draft state and late IPC completions when the connection changes profiles', async () => {
     const f = await draftFixture()
     let finish!: (state: AgentState) => void
-    const oldBridge: AgentBridge = { ...f.bridge, command: () => new Promise(done => { finish = done }) }
+    const oldBridge: AgentBridge = { ...f.bridge, command: () => { const pending = deferred<AgentState>(); finish = pending.resolve; return pending.promise } }
     const { result, rerender } = renderHook(({ bridge }) => useAgentConnection(bridge), { initialProps: { bridge: oldBridge } })
     try {
       await waitFor(() => expect(result.current.state).not.toBeNull())
@@ -252,15 +250,14 @@ describe('thread navigation through the real renderer connection and controller'
     const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-connection-'))
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-navigation-connection-')) throw new Error('Unexpected fixture directory')
     const host = new E2EAgentHost()
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     })
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     let sending: Promise<AgentState | null> | undefined
     let saving: Promise<AgentState | null> | undefined
     try {
-      await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
+      await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
       const execute = host.execute.bind(host)
       vi.spyOn(host, 'execute').mockImplementation(async command => { if (command.type === 'send') await gate; return execute(command) })
       const bridge: AgentBridge = agentBridgeFor(control)
@@ -291,15 +288,15 @@ describe('thread navigation through the real renderer connection and controller'
     const observeThreads = vi.fn<(ids: string[]) => void>()
     const execute = vi.spyOn(host, 'execute')
     const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host: Object.assign(host, { observeThreads }), credentials, reasoner,
     })
     let release!: () => void
     let operation: Promise<AgentState | null> | undefined
     let selection: Promise<AgentState | null> | undefined
-    const gate = new Promise<void>(done => { release = done })
+    const gate = (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
     try {
-      await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
+      await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
       await control.command({ type: 'select-thread', threadId: 'workshop' })
       if (pending === 'refresh') await control.command({ type: 'compose', text: 'Bound to A' })
       const cached = control.get()
@@ -369,7 +366,7 @@ describe('thread navigation through the real renderer connection and controller'
       await within(queue).findByText('Paused')
       expect(sends()).toEqual([])
       // Hold the provider while the follow-up is on its way: a newer revision still lines up behind it.
-      const provider = new Promise<void>(done => { deliver = done })
+      const provider = (() => { const pending = deferred<void>(); deliver = pending.resolve; return pending.promise })()
       executeSpy.mockImplementation(async request => { if (request.type === 'send') await provider; return E2EAgentHost.prototype.execute.call(f.host, request) })
       fireEvent.click(within(queue).getByRole('button', { name: 'Resume queue' }))
       await waitFor(() => expect(sends()).toEqual([[expect.objectContaining({ threadId: 'workshop', text: 'Then run $deploy', skills: [skill] })]]))

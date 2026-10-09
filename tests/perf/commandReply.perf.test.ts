@@ -12,18 +12,19 @@
  * timed alone beside them. Nothing here reaches a renderer, so the structured clone Electron makes
  * to send the answer is not counted.
  */
+import { ipcRegistry } from '../fixtures/ipcHarness'
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { AgentControl, type PublishScheduler } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../src/main/ipc/registerIpc'
 import { AGENT_COMMAND, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentState, type AgentThread } from '../../src/shared/agents'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
@@ -83,10 +84,8 @@ describe.skipIf(!PERF_BENCH)('command reply cost', () => {
 
   it('reports the median time to answer one command from the window', async () => {
     root = await mkdtemp(join(tmpdir(), 'sotto-perf-command-reply-'))
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-    await credentials.load()
-    control = new AgentControl({ schedule: neverPublish, directory: root, host: new LongHistoryHost(), credentials, reasoner: e2eAgentReasoner,
-    })
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    control = createAgentControl({ schedule: neverPublish, directory: root, host: new LongHistoryHost(), credentials, reasoner: e2eAgentReasoner })
     await control.start(); await control.command({ type: 'connect' })
     const live = control
     expect(live.get().host.threads.reduce((count, thread) => count + thread.messages.length, 0)).toBe(THREADS * MESSAGES_PER_THREAD)
@@ -94,15 +93,12 @@ describe.skipIf(!PERF_BENCH)('command reply cost', () => {
     const router = new DesktopHostRouter(() => emptyDesktopState(HOST_ID))
     router.add({ hostId: HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control: live }),
       detail: threadId => live.threadDetail(threadId), preview: () => null })
-    const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-    const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
-    const url = 'file:///main.html'
-    const main: TrustedIpcSender = { role: 'main', url, webContents: { mainFrame: { parent: null, url }, isDestroyed: () => false, getURL: () => url } }
-    const unregister = registerAgentIpc(ipc, router, router, () => [main], 'win32', { status: vi.fn(), download: vi.fn() },
+    const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
+    const unregister = registerAgentIpc(registry.ipc, router, router, () => [registry.main], 'win32', { status: vi.fn(), download: vi.fn() },
       { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: live, encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
-    dispose = () => { unregister(); router.dispose() }
+    dispose = () => { unregister(); registry.dispose(); router.dispose() }
     const send = (command: AgentCommand) =>
-      listeners.get(AGENT_COMMAND)!({ sender: main.webContents, senderFrame: main.webContents.mainFrame }, command) as Promise<AgentState>
+      registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
 
     let flip = false
     const voice = () => { flip = !flip; return send({ type: 'voice', action: flip ? 'mute' : 'unmute' }) }

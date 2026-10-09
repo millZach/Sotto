@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 afterEach(cleanup)
 
@@ -63,7 +64,7 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
     const answer = screen.getByRole('textbox', { name: 'Your answer' })
     fireEvent.change(answer, { target: { value: 'Go left' } })
@@ -89,7 +90,7 @@ describe('thread composer recovery', () => {
     const f = questionFixture()
     const { thread } = f
     let finish!: (result: AgentState | null) => void
-    f.command.mockImplementation(async request => request.type === 'answer' ? new Promise(done => { finish = done }) : f.state)
+    f.command.mockImplementation(async request => request.type === 'answer' ? (() => { const pending = deferred<AgentState | null>(); finish = pending.resolve; return pending.promise })() : f.state)
     const view = render(f.composer(thread.id))
     fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), { target: { value: 'Go left' } })
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Your answer' }), { key: 'Enter' })

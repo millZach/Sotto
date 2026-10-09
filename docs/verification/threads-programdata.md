@@ -15,9 +15,9 @@ On September 27, while working out why forge could not be added as a host, every
 
 ## Automated checks
 
-- `tests/unit/main/subscriptionClaude.test.ts`: a Claude client's environment keeps `ProgramData` and `ALLUSERSPROFILE` and still drops `ANTHROPIC_API_KEY`.
+- `tests/integration/subscriptionClaude.test.ts`: a Claude client's environment keeps `ProgramData` and `ALLUSERSPROFILE` and still drops `ANTHROPIC_API_KEY`.
 - `tests/unit/main/grokRpc.test.ts` (new): `grokEnvironment` keeps both and still drops `XAI_API_KEY`.
-- `tests/unit/main/subscriptionGrok.test.ts`: the fake Grok CLI records both variables in the environment it was started with, set to fixture values so an inherited value cannot pass the test.
+- `tests/integration/subscriptionGrok.test.ts`: the fake Grok CLI records both variables in the environment it was started with, set to fixture values so an inherited value cannot pass the test.
 - `tests/unit/main/devinRpc.test.ts`: `devinEnvironment` keeps both and still drops `DEVIN_API_KEY`.
 
 Without the change to `src/`, all four fail.

@@ -1,13 +1,13 @@
+import { resizeContentWindow } from './support/sottoWindow'
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
+const evidence = evidenceDirectory('artifacts/thread-sidebar')
+
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function prepare(launched: LaunchedSotto): Promise<void> {
@@ -156,12 +156,12 @@ test('expanded and collapsed sidebars fit desktop sizes in both appearances and 
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expectNoOverflow(page)
         await expect(sidebar(page).getByRole('link', { name: 'Settings', exact: true }).locator('svg.lucide-settings')).toBeVisible()
-        await page.screenshot({ path: `artifacts/thread-sidebar/expanded-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `expanded-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
         await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
         await expectNoOverflow(page)
         await expectCollapsedNavigation(page)
-        await page.screenshot({ path: `artifacts/thread-sidebar/collapsed-${width}-${appearance}.png`, animations: 'disabled' })
+        await page.screenshot({ path: join(evidence, `collapsed-${width}-${appearance}.png`), animations: 'disabled' })
         await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
         await expectWidth(page, Math.min(480, width - 470))
       }

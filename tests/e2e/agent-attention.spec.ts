@@ -1,16 +1,18 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 import { hostKeys } from './support/hostKeys'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/crossing')
 
 test('saved attention does not cover the room while its provider is disconnected', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-attention-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-attention-' })).directory
   const savedQueue = [{ id: 'old-update', threadId: 'missing-thread', kind: 'ready', text: 'Saved update from a previous connection.', createdAt: new Date().toISOString(), deferred: false }]
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await enableVoiceCoordinator(profile)
@@ -22,10 +24,10 @@ test('saved attention does not cover the room while its provider is disconnected
     await expect(launched.page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     const key = await hostKeys(launched.page)
     expect(await launched.page.evaluate(async () => (await window.sotto!.agents!.get()).queue)).toEqual(savedQueue.map(item => ({ ...item, id: key(item.id), threadId: key(item.threadId) })))
-    await launched.page.screenshot({ path: 'artifacts/crossing/attention-disconnected.png' })
+    await launched.page.screenshot({ path: join(evidence, 'attention-disconnected.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -55,13 +57,13 @@ test('Later returns to the orb without answering a pending permission', async ()
     await page.getByRole('tablist', { name: /^(Mode|Page)$/ }).getByRole('tab', { name: 'Agents', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await workshopRequests()).toEqual(pending)
-    await page.screenshot({ path: 'artifacts/crossing/attention-later.png' })
+    await page.screenshot({ path: join(evidence, 'attention-later.png') })
     await page.getByRole('button', { name: /Review attention/ }).click()
     await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
     const panel = await page.locator('.agent-room__attention').boundingBox()
     const caption = await page.locator('.agent-room__caption').boundingBox()
     expect(panel!.y + panel!.height).toBeLessThanOrEqual(caption!.y)
-    await page.screenshot({ path: 'artifacts/crossing/attention-review.png' })
+    await page.screenshot({ path: join(evidence, 'attention-review.png') })
     await page.getByRole('button', { name: 'Later', exact: true }).click()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'assign', threadId: 'docs' }); await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'docs', text: 'A new request needs review.' }) })
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toBeVisible()
@@ -92,7 +94,7 @@ test('Next finishes a review instead of cycling through the same requests', asyn
     await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
     expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).queue.length)).toBe(2)
     await expect(page.getByRole('heading', { name: 'Sotto is speaking', exact: true })).toHaveCount(0)
-    await page.screenshot({ path: 'artifacts/crossing/attention-review-finished.png' })
+    await page.screenshot({ path: join(evidence, 'attention-review-finished.png') })
     await page.getByRole('button', { name: /Review attention/ }).click()
     await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
     await page.reload()

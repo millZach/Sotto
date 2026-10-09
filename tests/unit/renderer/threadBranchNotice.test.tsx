@@ -8,7 +8,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadBranchNotice, resetBranchNoticeDismissals, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -18,7 +18,10 @@ const moved: AgentWorktree = { mode: 'shared', status: 'ready', path: worktreePa
   branch: 'feat/agent-chose', sentBranch: 'sotto/thread-7f1c', dirty: false }
 const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, workingDirectory: worktreePath, worktree: moved }
 function snapshot(): AgentState {
-  return { configuration: defaultAgentConfiguration(), connection: 'connected', error: null } as unknown as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })
 }
 afterEach(() => { cleanup(); resetBranchNoticeDismissals() })
 

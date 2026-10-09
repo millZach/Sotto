@@ -1,0 +1,508 @@
+// @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
+import { randomUUID } from 'node:crypto'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { AgentControl } from '../../src/main/agents/control'
+
+import { codexFixture, nativeRequestId, rolloutLine } from '../fixtures/codexFixture'
+import type { CodexProcess } from '../../src/main/agents/codexProcess'
+import { immediatePublishScheduler } from '../fixtures/publishScheduler'
+import { promptImageOf } from '../fixtures/stagedImages'
+
+const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
+const controls: AgentControl[] = []
+afterEach(async () => {
+  for (const control of controls.splice(0)) control.dispose()
+  for (const fixture of fixtures.splice(0).reverse()) await fixture.cleanup()
+})
+async function fixture(wrapped = false) {
+  const f = await codexFixture(undefined, wrapped); fixtures.push(f)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+  return f
+}
+async function create(f: Awaited<ReturnType<typeof fixture>>, threadId = randomUUID()) {
+  const result = await f.host.execute({ type: 'create-thread', threadId, commandId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Implementation' })
+  return { threadId, result }
+}
+/** The thread's own app-server process, for a test that holds its pipes. */
+function threadChild(f: Awaited<ReturnType<typeof codexFixture>>, threadId: string) {
+  return (f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess }> }).runtimes.get(threadId)!.server['child']
+}
+async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' });
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+    reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
+  })
+  controls.push(control); await control.start(); await control.command({ type: 'connect' })
+  return control
+}
+describe('Codex App Server provider adapter', () => {
+  it('allows a screenshot on a Codex model and sends its image content', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH1sAAAAASUVORK5CYII='
+    await expect(f.host.execute({ type: 'send', commandId: 'screenshot', threadId, messageId: 'screenshot-message', text: 'Inspect this screenshot',
+      attachments: [promptImageOf(Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'), 'shot', 'shot.png')] })).resolves.toEqual({ accepted: true })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')?.params?.input).toContainEqual({ type: 'image', url: dataUrl })
+  })
+  it('routes manual compaction through the public control, rejecting concurrent requests and preserving uncertain restart state', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    const control = await startControl(f)
+    await control.command({ type: 'compact-thread', threadId })
+    expect((await control.command({ type: 'compact-thread', threadId })).error).toMatch(/finish|compaction|working/i)
+    expect((await f.driver.requests()).filter(row => row.method === 'thread/compact/start')).toHaveLength(1)
+    control.dispose()
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    expect((await f.host.snapshot()).threads[0]?.compaction?.status).toBe('uncertain')
+    await expect(f.host.execute({ type: 'compact-thread', commandId: 'retry', threadId })).rejects.toThrow(/unconfirmed/i)
+    expect((await f.driver.requests()).filter(row => row.method === 'thread/compact/start')).toHaveLength(1)
+  })
+  it('reads a newly created unmaterialized thread without turns, then reads its first message normally', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    expect((await f.adapter.refreshThread(threadId)).threads[0]).toMatchObject({ id: threadId, status: 'idle', messages: [] })
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read').map(request => request.params?.includeTurns)).toEqual([true, false])
+    await f.host.execute({ type: 'send', commandId: 'first', threadId, messageId: 'first-message', text: 'First prompt' })
+    expect((await f.adapter.refreshThread(threadId)).threads[0]?.messages).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'First prompt', commandId: 'first' })]))
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read').at(-1)?.params?.includeTurns).toBe(true)
+  })
+  it('does not treat unrelated thread read rejections as an empty transcript', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    await f.script({ reject: 'thread/read' })
+    await expect(f.adapter.refreshThread(threadId)).rejects.toThrow('Codex rejected the operation')
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/read')).toHaveLength(1)
+  })
+  it('resumes no saved thread and reads no turn at connect, then opens one thread once', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    await create(f)
+    await f.host.execute({ type: 'send', commandId: 'send', threadId, messageId: 'message', text: 'Synthetic prompt' })
+    f.host.disconnect(); await f.adapter.closed()
+    const before = (await f.driver.requests()).length
+    const connected = await f.host.connect()
+    const onConnect = (await f.driver.requests()).slice(before)
+    expect(onConnect.filter(request => request.method === 'thread/read')).toEqual([])
+    expect(onConnect.filter(request => request.method === 'thread/resume')).toEqual([])
+    expect(connected.threads.every(thread => thread.messages.length === 0)).toBe(true)
+    f.host.observeThreads?.([threadId])
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === threadId)!.messages.length).toBe(1)
+    const onOpen = (await f.driver.requests()).slice(before)
+    expect(onOpen.filter(request => request.method === 'thread/resume').map(request => request.params?.excludeTurns)).toEqual([true])
+    expect(onOpen.filter(request => request.method === 'thread/read')).toHaveLength(1)
+    // A thread nobody opened still costs nothing, however long its history is.
+    const opened = await f.realId(threadId)
+    expect(onOpen.filter(request => request.params?.threadId !== undefined && request.params.threadId !== opened)).toEqual([])
+  })
+  it('keeps a missing saved session unavailable without blocking connection or creating a replacement', async () => {
+    const f = await fixture()
+    const { threadId } = await create(f)
+    const nativeId = await f.realId(threadId)
+    f.host.disconnect(); await f.adapter.closed()
+    await f.script({ reject: 'thread/resume', rejection: { code: -32600, message: `no rollout found for thread id ${nativeId}` } })
+    f.host.observeThreads?.([threadId])
+    const connected = await f.host.connect()
+    expect(connected.connected).toBe(true)
+    expect(connected.threads[0]).toMatchObject({ id: threadId, status: 'error', historyStatus: 'error', historyError: expect.stringContaining('saved session') })
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/start')).toHaveLength(1)
+    const fresh = await create(f)
+    expect((await f.adapter.refreshThread(fresh.threadId)).connected).toBe(true)
+  })
+  it('reads supported reasoning levels and preserves selected thread settings through real RPCs and restart', async () => {
+    const f = await fixture()
+    expect((await f.host.snapshot()).models[0]).toMatchObject({ reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', supportsImages: true })
+    const threadId = randomUUID()
+    expect(await f.host.execute({ type: 'create-thread', commandId: 'create', threadId, projectId: f.projectId, title: 'Configured', modelId: f.modelId,
+      reasoningEffort: 'high', runtimeMode: 'approval-required' })).toEqual({ accepted: true })
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'approval-required' })
+    await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, reasoningEffort: 'low', runtimeMode: 'full-access' })
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
+    const rpc = (await f.driver.requests()).findLast(request => request.method === 'thread/settings/update')!
+    expect(rpc.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' }, effort: 'low' })
+    f.host.disconnect(); await f.adapter.closed()
+    await f.host.connect()
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'full-access' })
+    await f.host.execute({ type: 'send', commandId: 'send', threadId, messageId: 'message', text: 'Fixture prompt' })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')!.params).toMatchObject({ approvalPolicy: 'never', approvalsReviewer: 'user', effort: 'low' })
+  })
+  it('reconciles uncertain settings after reconnect without replaying an override or restoring the old policy', async () => {
+    // The settings acknowledgement arrives after the deadline; child initialization keeps its full headroom.
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'thread/settings/update', ms: 3000 }, dropSettingsNotification: true })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'config', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
+    f.host.disconnect(); await f.adapter.closed()
+    await f.host.connect()
+    expect((await f.host.snapshot()).threads[0]).toMatchObject({ runtimeMode: 'full-access' })
+    const resumes = (await f.driver.requests()).filter(request => request.method === 'thread/resume')
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/settings/update')).toHaveLength(1)
+    expect(resumes.filter(request => request.params?.sandbox !== undefined)).toHaveLength(0)
+    expect(resumes.at(-1)?.params).not.toHaveProperty('approvalPolicy')
+  })
+  it.each([0, 25])('changes a loaded native thread from high to ultra with settings notification delay %s', async notificationDelay => {
+    const f = await fixture()
+    await f.script({ models: [{ model: f.modelId, displayName: 'Fixture Codex', defaultReasoningEffort: 'high',
+      supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'ultra' }] }], settingsNotificationDelay: notificationDelay })
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    const threadId = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: 'create-ultra', threadId, projectId: f.projectId, title: 'Ultra settings', modelId: f.modelId,
+      reasoningEffort: 'high', runtimeMode: 'approval-required' })
+    // The snapshot Codex's confirmation produced comes back with the result, carrying the effective settings (#318).
+    const changed = await f.host.execute({ type: 'configure-thread', commandId: 'ultra', threadId, reasoningEffort: 'ultra' })
+    expect(changed.accepted).toBe(true)
+    expect(changed.snapshot?.threads.find(thread => thread.id === threadId)).toMatchObject({ reasoningEffort: 'ultra', runtimeMode: 'approval-required' })
+    const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
+    expect(aliases[threadId]).toMatchObject({ reasoningEffort: 'ultra', runtimeMode: 'approval-required' })
+    expect(aliases[threadId].pendingSettings).toBeUndefined()
+    const requests = await f.driver.requests()
+    expect(requests.filter(request => request.method === 'thread/settings/update')).toEqual([expect.objectContaining({ params: expect.objectContaining({
+      effort: 'ultra', approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: { type: 'readOnly' },
+    }) })])
+    expect(requests.filter(request => request.method === 'thread/resume')).toHaveLength(0)
+    expect((await f.host.snapshot()).connected).toBe(true)
+  })
+  it('retains unconfirmed settings when only the update acknowledgement arrives without replaying them', async () => {
+    const f = await fixture(); const { threadId } = await create(f); const other = await create(f)
+    await f.script({ dropSettingsNotification: true })
+    expect(await f.host.execute({ type: 'configure-thread', commandId: 'no-event', threadId, reasoningEffort: 'high' })).toEqual({ accepted: false, uncertain: true })
+    const aliases = JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))
+    expect(aliases[threadId].pendingSettings).toMatchObject({ reasoningEffort: 'high' })
+    await expect(f.host.execute({ type: 'send', commandId: 'blocked-no-event', threadId, messageId: 'blocked-no-event', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
+    expect(await f.host.execute({ type: 'send', commandId: 'other-no-event', threadId: other.threadId, messageId: 'other-no-event', text: 'Other thread' })).toEqual({ accepted: true })
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/settings/update')).toHaveLength(1)
+  })
+  it.each([false, true])('keeps Codex connected when saved settings are not confirmed (watched: %s)', async watched => {
+    const f = await fixture(); const { threadId } = await create(f)
+    const other = await create(f)
+    f.host.disconnect(); await f.adapter.closed()
+    const path = join(f.root, 'codex-threads.json')
+    const aliases = JSON.parse(await readFile(path, 'utf8'))
+    aliases[threadId].pendingSettings = { modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'full-access' }
+    await writeFile(path, JSON.stringify(aliases))
+    if (watched) f.adapter.observeThreads([threadId])
+    const before = (await f.driver.requests()).length
+    expect((await f.host.connect()).connected).toBe(true)
+    const resumes = (await f.driver.requests()).slice(before).filter(request => request.method === 'thread/resume')
+    expect(resumes.length).toBeGreaterThan(0)
+    for (const resume of resumes) {
+      expect(resume.params).not.toHaveProperty('approvalPolicy')
+      expect(resume.params).not.toHaveProperty('approvalsReviewer')
+      expect(resume.params).not.toHaveProperty('sandbox')
+      expect(resume.params).not.toHaveProperty('model')
+      expect(resume.params).not.toHaveProperty('modelProvider')
+      if (resume.params?.config) {
+        expect(resume.params.config).toMatchObject({ 'features.default_mode_request_user_input': true })
+        expect(resume.params.config).not.toHaveProperty('model_reasoning_effort')
+      }
+    }
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toEqual(aliases[threadId].pendingSettings)
+    await expect(f.host.execute({ type: 'send', commandId: 'blocked', threadId, messageId: 'blocked', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
+    await f.script({ reject: 'thread/settings/update' })
+    await expect(f.host.execute({ type: 'configure-thread', commandId: 'rejected-recovery', threadId, reasoningEffort: 'low' })).rejects.toThrow(/rejected/)
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toEqual(aliases[threadId].pendingSettings)
+    expect((await f.host.snapshot()).connected).toBe(true)
+    expect(await f.host.execute({ type: 'send', commandId: 'other', threadId: other.threadId, messageId: 'other', text: 'Other thread' })).toEqual({ accepted: true })
+    const control = await startControl(f)
+    expect((await control.command({ type: 'configure-thread', threadId, reasoningEffort: 'high', runtimeMode: 'approval-required' })).error).toBeNull()
+    expect(JSON.parse(await readFile(path, 'utf8'))[threadId].pendingSettings).toBeUndefined()
+    expect(await f.host.execute({ type: 'send', commandId: 'resolved', threadId, messageId: 'resolved', text: 'Confirmed settings' })).toEqual({ accepted: true })
+    expect((await f.driver.requests()).findLast(request => request.method === 'turn/start')?.params).toMatchObject({ approvalPolicy: 'untrusted', approvalsReviewer: 'user', effort: 'high' })
+  })
+  it('rejects unsupported images and model reasoning without silently sending text or falling back', async () => {
+    const f = await fixture()
+    await f.script({ models: [{ model: f.modelId, displayName: 'Text only', inputModalities: ['text'] }] })
+    f.host.disconnect(); await f.adapter.closed(); await f.host.connect()
+    const { threadId } = await create(f)
+    await expect(f.host.execute({ type: 'configure-thread', commandId: 'bad', threadId, reasoningEffort: 'invented' })).rejects.toThrow(/reasoning/)
+    await expect(f.host.execute({ type: 'send', commandId: 'image', threadId, messageId: 'image-message', text: 'Do not drop this image',
+      attachments: [promptImageOf(Buffer.from('abc'), 'shot', 'shot.png')] })).rejects.toThrow(/image support/)
+    expect((await f.driver.requests()).filter(request => request.method === 'turn/start')).toEqual([])
+  })
+  it('reports model listing failure without inventing an available model', async () => {
+    const f = await codexFixture(); fixtures.push(f)
+    await f.script({ reject: 'model/list' })
+    const snapshot = await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
+    expect(snapshot.models).toEqual([])
+    expect(snapshot).toMatchObject({ error: expect.stringMatching(/models.*list|list.*models/iu) })
+    await expect(create(f)).rejects.toThrow('Choose an available Codex model.')
+    expect((await f.host.connect())).not.toHaveProperty('error')
+    expect((await create(f)).result).toEqual({ accepted: true })
+  })
+  it.each(['answer again', 'interrupt', 'disconnect'] as const)('writes only one accept when its write callback times out before %s', async next => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.driver.raisePermission(threadId, 'Synthetic permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const requestId = (await f.host.snapshot()).threads[0]!.requests[0]!.id
+    const rpcId = nativeRequestId(requestId)
+    const command = { type: 'answer' as const, commandId: 'answer', threadId, requestId, answer: '', approved: true }
+    const child = threadChild(f, threadId)
+    const originalWrite = child.stdin.write.bind(child.stdin)
+    const callbacks: (() => void)[] = []
+    // Keep the provider's resolved notification from hiding the write-timeout race.
+    child.stdout.pause()
+    child.stdin.write = ((chunk: string, callback?: (error?: Error | null) => void) => originalWrite(chunk, error => {
+      if (callback) callbacks.push(() => callback(error))
+    })) as typeof child.stdin.write
+    try {
+      expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+      let secondError: unknown
+      if (next === 'answer again') { try { await f.host.execute(command) } catch (error) { secondError = error } }
+      else if (next === 'interrupt') await f.host.execute({ type: 'interrupt', commandId: 'stop', threadId })
+      else { f.host.disconnect(); await f.adapter.closed() }
+      await expect.poll(async () => (await f.driver.requests()).filter(r => r.id === rpcId && r.result).length).toBeGreaterThan(0)
+      expect((await f.driver.requests()).filter(r => r.id === rpcId && r.result)).toEqual([{ id: rpcId, result: { decision: 'accept' } }])
+      if (next === 'answer again') expect(secondError).toMatchObject({ message: 'This Codex request is no longer pending.' })
+      expect((await f.host.snapshot()).threads[0]!.requests).toEqual([])
+    } finally {
+      child.stdin.write = originalWrite
+      for (const callback of callbacks) callback()
+      child.stdout.resume()
+    }
+  })
+  it('does not decline an already answered request captured before another decline finishes', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.driver.raisePermission(threadId, 'First permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    await f.driver.raisePermission(threadId, 'Second permission')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(2)
+    const [first, second] = (await f.host.snapshot()).threads[0]!.requests
+    const child = threadChild(f, threadId)
+    const originalWrite = child.stdin.write.bind(child.stdin)
+    let release: (() => void) | undefined
+    child.stdin.write = ((chunk: string, callback?: (error?: Error | null) => void) => originalWrite(chunk, error => {
+      if (JSON.parse(chunk).id === nativeRequestId(first!.id)) release = () => callback?.(error)
+      else callback?.(error)
+    })) as typeof child.stdin.write
+    const interrupt = f.host.execute({ type: 'interrupt', commandId: 'stop', threadId })
+    try {
+      await expect.poll(() => !!release).toBe(true)
+      await f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId: second!.id, answer: '', approved: true })
+      release!(); await interrupt
+      // The write callback confirms the pipe accepted bytes, not that the child has recorded them.
+      await expect.poll(async () => (await f.driver.requests()).some(r => r.id === nativeRequestId(second!.id) && r.result)).toBe(true)
+      f.host.disconnect(); await f.adapter.closed()
+      expect((await f.driver.requests()).filter(r => r.id === nativeRequestId(second!.id) && r.result)).toEqual([
+        { id: nativeRequestId(second!.id), result: { decision: 'accept' } },
+      ])
+    } finally { release?.(); child.stdin.write = originalWrite; await interrupt }
+  })
+  it('rejects an MCP form answer that omits a required second field', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Choose color', method: 'mcpServer/elicitation/request', params: { requestedSchema: {
+      type: 'object', properties: { choice: { type: 'string' }, explanation: { type: 'string' } }, required: ['choice', 'explanation'],
+    } } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const requestId = (await f.host.snapshot()).threads[0]!.requests[0]!.id
+    await expect(f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId, answer: '{"choice":"Blue"}' })).rejects.toThrow('Answer the required field')
+    expect((await f.host.snapshot()).threads[0]!.requests).toHaveLength(1)
+  })
+  it.each([
+    ['item/commandExecution/requestApproval', {}],
+    ['item/commandExecution/requestApproval', { decision: 'allow' }],
+    ['item/fileChange/requestApproval', {}],
+    ['item/fileChange/requestApproval', { decision: 'allow' }],
+    ['item/permissions/requestApproval', { decision: 'decline' }],
+    ['item/permissions/requestApproval', { permissions: [] }],
+    ['item/permissions/requestApproval', { permissions: {}, scope: 'forever' }],
+    ['item/tool/requestUserInput', {}],
+    ['item/tool/requestUserInput', { answers: { choice: { answers: [true] } } }],
+    ['item/tool/requestUserInput', { answers: { choice: 'Blue' } }],
+    ['mcpServer/elicitation/request', {}],
+    ['mcpServer/elicitation/request', { action: 'allow' }],
+  ])('makes malformed %s replies fail fixture inspection and cleanup (%j)', async (method, result) => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Synthetic question', method })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const pending = (await f.host.snapshot()).threads[0]!.requests[0]!
+    threadChild(f, threadId).stdin.write(JSON.stringify({ id: nativeRequestId(pending.id), result }) + '\n')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(0)
+    try {
+      await expect(f.driver.requests()).rejects.toThrow(`Invalid Codex reply for ${method}:`)
+      await expect(f.cleanup()).rejects.toThrow(`Invalid Codex reply for ${method}:`)
+    } finally {
+      fixtures.splice(fixtures.indexOf(f), 1)
+      await f.cleanup().catch(() => undefined)
+    }
+  })
+  it('performs the handshake and isolates provider IDs and working directories', async () => {
+    const f = await fixture(true); const { threadId } = await create(f)
+    const real = await f.realId(threadId)
+    expect(real).not.toBe(threadId); expect(real).not.toBe(f.registry.byThread(threadId)!.sessionId)
+    expect(JSON.stringify(await f.host.snapshot())).not.toContain(real)
+    const requests = await f.driver.requests()
+    expect(requests.slice(0, 3).map(r => r.method)).toEqual(['initialize', 'initialized', 'model/list'])
+    expect(requests.find(r => r.method === 'thread/start')!.params).toMatchObject({ cwd: f.root, approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', ephemeral: false })
+    await expect(f.host.execute({ type: 'create-project', commandId: 'bad', projectId: 'bad', title: 'Bad', path: 'relative' })).rejects.toThrow('absolute')
+  })
+  it('persists a late creation acknowledgement and never repeats thread/start', async () => {
+    const f = await fixture(); await f.driver.delayNextAck('thread/start')
+    const { threadId, result } = await create(f)
+    expect(result).toEqual({ accepted: false, uncertain: true })
+    expect((await create(f, threadId)).result).toEqual({ accepted: false, uncertain: true })
+    await expect.poll(async () => (await f.host.snapshot()).threads.some(t => t.id === threadId)).toBe(true)
+    expect(await f.realId(threadId)).not.toBe(threadId)
+    expect((await f.driver.requests()).filter(r => r.method === 'thread/start')).toHaveLength(1)
+  })
+  it.each([false, true])('reconciles delayed send acknowledgements with item notifications suppressed=%s', async suppressNotifications => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'turn/start', ms: 3000 }, suppressNotifications })
+    const command = { type: 'send' as const, commandId: 'send', messageId: 'own-message', threadId, text: 'Synthetic input' }
+    expect(await f.host.execute(command)).toEqual({ accepted: false, uncertain: true })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.messages.filter(m => m.id === command.messageId).length).toBe(1)
+    expect((await f.host.snapshot()).threads[0]!.messages[0]).toMatchObject({ commandId: 'send', role: 'user' })
+    await f.host.execute(command)
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+  })
+  it('clears the durable coordinator outbox and draft after a late send acknowledgement without retrying', async () => {
+    const f = await fixture(true); const { threadId } = await create(f); const control = await startControl(f)
+    await control.command({ type: 'assign', threadId }); await control.command({ type: 'select-thread', threadId })
+    await control.command({ type: 'compose', text: 'Retained draft' })
+    await f.driver.delayNextAck('turn/start')
+    const uncertain = await control.command({ type: 'send' })
+    expect(uncertain.error).toContain('did not confirm'); expect(uncertain.draft).toBe('Retained draft')
+    expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox).toHaveLength(1)
+    await expect.poll(() => control.get().draft).toBe('')
+    await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).outbox.length).toBe(0)
+    expect(control.get().assignments[0]!.mode).toBe('managed')
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+  })
+  it('keeps a completed turn idle after its delayed start response and preserves the reply across restart', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ delay: { method: 'turn/start', ms: 3000 }, reply: 'Finished already' })
+    expect(await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Synthetic input' })).toEqual({ accepted: false, uncertain: true })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.status).toBe('idle')
+    await f.script({})
+    const before = (await f.host.snapshot()).threads[0]!
+    const restarted = await f.driver.restart(); fixtures.push(restarted)
+    restarted.host.observeThreads?.([threadId]); await restarted.host.connect()
+    const restored = (await restarted.host.snapshot()).threads[0]!
+    // Live observation times belong to WorkspaceHost's privacy-aware cache;
+    // this bare native adapter can restore only timing present in native history.
+    const { activities: beforeActivities, ...beforeThread } = before
+    const { activities: restoredActivities, ...restoredThread } = restored
+    expect(restoredThread).toEqual(beforeThread)
+    expect(restoredActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
+      .toEqual(beforeActivities?.map(({ id, kind, status }) => ({ id, kind, status })))
+  })
+  it('rejects a definitive send failure and permits a corrected dispatch', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ reject: 'turn/start' })
+    const command = { type: 'send' as const, threadId, commandId: 'send', messageId: 'message', text: 'Synthetic input' }
+    await expect(f.host.execute(command)).rejects.toThrow('rejected')
+    expect((await f.host.snapshot()).threads[0]!.messages).toEqual([])
+    expect(await f.host.execute(command)).toEqual({ accepted: true })
+  })
+  it('removes a rejected origin even when the rejection arrives after the deadline', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ reject: 'turn/start', delay: { method: 'turn/start', ms: 3000 } })
+    expect(await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Rejected input' })).toEqual({ accepted: false, uncertain: true })
+    await expect.poll(async () => JSON.parse(await readFile(join(f.root, 'codex-threads.json'), 'utf8'))[threadId].origins.length).toBe(0)
+    const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`), JSON.stringify({
+      timestamp: new Date().toISOString(), ordinal: 1, type: 'event_msg', payload: { type: 'user_message', message: 'Rejected input' },
+    }) + '\n')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.messages.length).toBe(1)
+    expect((await f.host.snapshot()).threads[0]!.messages[0]!.commandId).toBeUndefined()
+    expect((await f.driver.requests()).filter(r => r.method === 'turn/start')).toHaveLength(1)
+  })
+  it('answers numbered questions and removes requests resolved directly by the provider', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Questions', params: { questions: [
+      { id: 'color', question: 'Which color?', options: [{ label: 'Blue', description: '' }] },
+      { id: 'size', question: 'Which size?', options: null },
+    ] } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const request = (await f.host.snapshot()).threads[0]!.requests[0]!
+    expect(request.text).toBe('1. Which color? (Blue)\n2. Which size?')
+    const command = { type: 'answer' as const, threadId, commandId: 'answer', requestId: request.id, answer: '1: Blue\n2: Large' }
+    await f.host.execute(command)
+    await expect.poll(async () => (await f.driver.requests()).some(r => JSON.stringify(r.result?.answers) === '{"color":{"answers":["Blue"]},"size":{"answers":["Large"]}}')).toBe(true)
+    await f.driver.raiseQuestion(threadId, 'Resolved in Codex')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const pending = (await f.host.snapshot()).threads[0]!.requests[0]!
+    await f.action(threadId, { type: 'notify', method: 'serverRequest/resolved', params: { requestId: nativeRequestId(pending.id) } })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(0)
+    await expect(f.host.execute({ ...command, requestId: pending.id })).rejects.toThrow('no longer pending')
+  })
+  it('ignores unknown observed provider sessions and closes unanswered questions with an empty answer', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    f.host.observeThreads?.(['unknown', threadId]); await f.driver.raiseQuestion(threadId, 'Unanswered')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    f.host.disconnect(); await f.adapter.closed()
+    expect((await f.driver.requests()).filter(r => r.method === 'thread/resume')).toHaveLength(0)
+    expect((await f.driver.requests()).some(r => JSON.stringify(r.result?.answers) === '{}')).toBe(true)
+    expect((await f.host.snapshot()).connected).toBe(false)
+  })
+  it('recovers the binding, title, running status and message origin with a new process', async () => {
+    const f = await fixture(true); const { threadId } = await create(f)
+    await f.host.execute({ type: 'send', commandId: 'send', messageId: 'message', threadId, text: 'Synthetic prompt' })
+    const before = (await f.host.snapshot()).threads[0]!
+    const restarted = await f.driver.restart(); fixtures.push(restarted)
+    restarted.host.observeThreads?.([threadId]); await restarted.host.connect()
+    expect((await restarted.host.snapshot()).threads[0]).toEqual(before)
+    expect((await restarted.driver.requests()).filter(r => r.method === 'thread/resume').at(-1)!.params!.threadId).toBe(await restarted.realId(threadId))
+  })
+  it.each(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'])('requires explicit decisions for %s', async method => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'permission', text: 'Synthetic permission', method })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const command = { type: 'answer' as const, commandId: 'answer', threadId, requestId: (await f.host.snapshot()).threads[0]!.requests[0]!.id, answer: '' }
+    await expect(f.host.execute(command)).rejects.toThrow('Explicitly')
+    if (method === 'item/permissions/requestApproval') await expect(f.host.execute({ ...command, approved: true })).rejects.toThrow('Codex')
+    await f.host.execute({ ...command, approved: false })
+    await expect.poll(async () => (await f.driver.requests()).some(r => r.id !== undefined && r.result !== undefined)).toBe(true)
+    expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
+  })
+  it.each(['item/tool/requestUserInput', 'mcpServer/elicitation/request'])('delivers question answers for %s', async method => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.action(threadId, { type: 'question', text: 'Choose color', method })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.requests.length).toBe(1)
+    const request = (await f.host.snapshot()).threads[0]!.requests[0]!
+    expect(request).toMatchObject({ kind: 'question', text: 'Choose color' })
+    await f.host.execute({ type: 'answer', commandId: 'answer', threadId, requestId: request.id, answer: 'Blue' })
+    await expect.poll(async () => (await f.driver.requests()).some(r => method === 'mcpServer/elicitation/request'
+      ? r.result?.action === 'accept' && JSON.stringify(r.result.content) === '{"choice":"Blue"}'
+      : JSON.stringify(r.result?.answers) === '{"choice":{"answers":["Blue"]}}')).toBe(true)
+  })
+  it('reports failed turns, and a thread app-server exit as that thread’s alone', async () => {
+    const f = await fixture(); const { threadId } = await create(f)
+    await f.script({ fail: true }); await f.host.execute({ type: 'send', threadId, commandId: 'send', messageId: 'message', text: 'Synthetic prompt' })
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]!.status).toBe('error')
+    const connected: boolean[] = []; f.host.subscribe(s => connected.push(s.connected))
+    await f.action(threadId, { type: 'exit' })
+    await expect.poll(() => f.adapter.resumedThreads().includes(threadId)).toBe(false)
+    expect(connected.includes(false)).toBe(false)
+    expect((await f.host.snapshot()).connected).toBe(true)
+  })
+  it('routes attention requests and detects CLI takeover through AgentControl without mistaking its own prompt', async () => {
+    const f = await fixture(true); const { threadId } = await create(f)
+    const control = await startControl(f)
+    await control.command({ type: 'assign', threadId }); await control.command({ type: 'select-thread', threadId })
+    await control.command({ type: 'compose', text: 'Own prompt' }); expect((await control.command({ type: 'send' })).error).toBeNull()
+    const directory = join(f.root, 'home', 'sessions', '2026', '09', '10'); await mkdir(directory, { recursive: true })
+    const path = join(directory, `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
+    await writeFile(path, rolloutLine(1, { id: await f.realId(threadId), cwd: f.root }, 'session_meta') +
+      rolloutLine(2, { type: 'user_message', client_id: control.get().host.threads.find(t => t.id === threadId)!.messages.find(m => m.role === 'user')!.id, message: 'Own prompt' }) +
+      rolloutLine(3, { type: 'message', role: 'assistant', content: [] }, 'response_item'))
+    await f.adapter.pollSessionLogs(); expect(control.get().assignments[0]!.mode).toBe('managed')
+    await f.driver.raisePermission(threadId, 'Allow build?')
+    await expect.poll(() => control.get().queue.some(q => q.kind === 'permission')).toBe(true)
+    await control.command({ type: 'later' })
+    expect((await f.driver.requests()).some(r => r.result?.decision === 'accept')).toBe(false)
+    const requestId = control.get().queue.find(q => q.kind === 'permission')!.requestId!
+    expect((await control.command({ type: 'answer', threadId, requestId, answer: '', approved: false })).error).toBeNull()
+    await f.driver.raiseQuestion(threadId, 'Choose color')
+    await expect.poll(() => control.get().queue.some(q => q.kind === 'question')).toBe(true)
+    const questionId = control.get().queue.find(q => q.kind === 'question')!.requestId!
+    await control.command({ type: 'answer', threadId, requestId: questionId, answer: 'Blue' })
+    await appendFile(path, rolloutLine(4, { type: 'item_completed', item: { type: 'UserMessage', id: 'cli-user', content: [{ type: 'text', text: 'I am controlling this' }] } }))
+    await expect.poll(() => control.get().assignments[0]!.mode).toBe('manual')
+    expect(control.get().host.threads[0]!.messages.find(m => m.id === 'cli-user')!.commandId).toBeUndefined()
+    expect(await readFile(join(f.root, 'codex-threads.json'), 'utf8')).not.toContain('Own prompt')
+  })
+})

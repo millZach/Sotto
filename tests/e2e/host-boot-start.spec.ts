@@ -1,13 +1,14 @@
-import { isBuiltin } from 'node:module'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { buildSshHost } from './support/sshHost'
+import { captureHostMatrix as capture, insideWindow } from './support/hostCapture'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { fakeSystemd } from '../fixtures/fakeSystemd'
-import { closeSotto, launchSotto, openPage, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
  * Start at boot from Settings > Hosts (ADR-0054) in the built app, over a scripted ssh that runs the real launch script and
@@ -15,38 +16,18 @@ import { closeSotto, launchSotto, openPage, resizeWindow, type LaunchedSotto } f
  * host's connected card offers it; linger needing an administrator changes nothing and shows the command; the More menu
  * stops it after the busy-host question, and starts it again; Stop host and Forget say what the unit means for them.
  */
-async function capture(launched: LaunchedSotto, name: string, check: () => Promise<void>): Promise<void> {
-  const { page } = launched
-  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
-    await resizeWindow(launched, width, height)
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await check()
-      // The linger command names the account the test runs as on this machine, which is not the fixture host's.
-      await page.screenshot({ path: test.info().outputPath(`${name}-${width}x${height}-${appearance}.png`), animations: 'disabled', mask: [page.locator('.host-setup__command code')], maskColor: '#808080' })
-    }
-  }
-  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-  await resizeWindow(launched, 1280, 800)
-}
+
 /** Whether an element sits wholly inside the window, and does not scroll sideways, so nothing is clipped at the minimum size. */
-const inside = (locator: Locator) => locator.evaluate(element => {
-  const box = element.getBoundingClientRect()
-  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5 && element.scrollWidth <= element.clientWidth + 1
-})
+const inside = (locator: Locator) => insideWindow(locator, true)
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false)
 
 test('starts a host at boot from Add host’s card once linger is on, stops it after the busy-host question, and Forget takes it away', async () => {
   test.setTimeout(420_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-host-boot-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-host-boot-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code'), { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')
@@ -130,7 +111,7 @@ test('starts a host at boot from Add host’s card once linger is on, stops it a
       await agents.command({ type: 'manual-send', threadId, text: 'Bake the lighting for the hero shot.' })
       return threadId
     }, join(root, '~', 'code'))
-    const status = async (): Promise<string | undefined> => (await page.evaluate(() => window.sotto!.agents!.get())).host.threads.find(item => item.id === thread)?.status
+    const status = async (): Promise<string | undefined> => (await agentState(page)).host.threads.find(item => item.id === thread)?.status
     await expect.poll(status, { timeout: 30_000 }).toBe('running')
     const items = (await menu()).getByRole('menuitem')
     await expect(items.first()).toHaveText('Stop starting at boot…')

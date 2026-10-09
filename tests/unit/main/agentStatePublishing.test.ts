@@ -4,19 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_BROADCAST_INTERVAL_MS, AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentStatePublishes, type PublishScheduler } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { threadsStateFixture } from '../../fixtures/agentState'
 
 /** A streamed frame only changes the notice here; identity is all these tests compare. */
-const state = (notice: string): AgentState => ({
-  configuration: defaultAgentConfiguration(), connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST),
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-  draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-  globalLaneBusy: false, notice, error: null, speech: { id: 0, text: '' },
-  voice: { status: 'off', error: null, action: 'none', revision: 0 },
-  credentials: { reasoning: false, grokSpeech: false, secure: false },
-  reasoningAccounts: [],
+const state = (notice: string): AgentState => threadsStateFixture({
+  configuration: defaultAgentConfiguration(), host: structuredClone(EMPTY_AGENT_HOST),
+  topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draftAttachments: [], notice,
+    credentials: { reasoning: false, grokSpeech: false, secure: false } },
 })
 class TestClock {
   private armed: { run: () => void } | null = null
@@ -116,9 +115,9 @@ describe('coalesced coordinator broadcasts', () => {
   async function control(clock: TestClock): Promise<AgentControl> {
     const root = await mkdtemp(join(tmpdir(), 'sotto-broadcast-'))
     roots.push(root)
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-    await credentials.load()
-    const created = new AgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+    const created = createAgentControl({ schedule: clock.schedule, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
     })
     controls.push(created)
     await created.start()

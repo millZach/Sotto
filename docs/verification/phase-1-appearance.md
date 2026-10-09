@@ -1,5 +1,7 @@
 # Phase 1 appearance (#73): verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Lane `appearance`, branch `work/phase1-appearance`, based on 0598d48. The work was implemented by the authorized Opus 5 fallback for Fable. The ticket is `docs/plans/threads-workspace/tickets/30.md`. The decision is recorded in [ADR-0009](../adr/0009-main-window-appearance-apart-from-widget-theme.md).
 
 ## What shipped
@@ -35,7 +37,7 @@ Lane `appearance`, branch `work/phase1-appearance`, based on 0598d48. The work w
 
 ## Overlapping saves (parent review item)
 
-`tests/unit/renderer/app.test.tsx` renders the real App against a bridge whose saves resolve only when the test says so.
+`tests/unit/renderer/appAppearance.test.tsx` renders the real App against a bridge whose saves resolve only when the test says so.
 
 - **Light, then Violet, with the Light save still pending.** The root is light and violet immediately, and both controls show those choices.
 - **Resolving the saves.** The settings queue sends `{ appearance: 'light' }` and then `{ accent: 'violet' }`. Resolving each in turn never repaints Dark or Teal.
@@ -177,4 +179,4 @@ Target: Windows Electron desktop, pointer and keyboard. Review widths are 1080 a
 
 ## Parent integration closure
 
-The lane-era Threads light gap above is resolved in the integration branch: project folders, composer and rich messages use the shared tokens. Current `artifacts/crossing/phase-one-*-light.png` and the five new light Threads matrix states supersede the old dark-remnant screenshot. Parent inspection also verifies the light model picker/new-thread dialog and integrated keyboard focus. The window still ships at 820px minimum; 760px captures are additional stress tests with an explicit test-only minimum override. The corrected 150% zoom capture asserts its actual viewport.
+The lane-era Threads light gap above is resolved in the integration branch: project folders, composer and rich messages use the shared tokens. Current `artifacts/crossing/workspace-journey-*-light.png` and the five new light Threads matrix states supersede the old dark-remnant screenshot. Parent inspection also verifies the light model picker/new-thread dialog and integrated keyboard focus. The window still ships at 820px minimum; 760px captures are additional stress tests with an explicit test-only minimum override. The corrected 150% zoom capture asserts its actual viewport.

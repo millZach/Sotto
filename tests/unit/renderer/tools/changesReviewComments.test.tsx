@@ -6,7 +6,7 @@ import type { GitChangesBridge, GitReviewFile } from '../../../../src/shared/git
 import { ReviewCommentStore } from '../../../../src/renderer/src/agents/reviewComments'
 import { ChangesSurface } from '../../../../src/renderer/src/tools/ChangesSurface'
 import { ChangesStore } from '../../../../src/renderer/src/tools/changesStore'
-import { TOKEN_A } from './fakeFilesBridge'
+import { TOKEN_A } from '../../../fixtures/renderer/fakeFilesBridge'
 
 const THREAD = 'visual-gate'
 const PATCH = 'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -3,4 +3,4 @@ export\n keep\n-export const ready = false\n+export const ready = true\n tail\n end\n'

@@ -1,15 +1,17 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Review comments (#270) in the real window: lines picked in Changes, a comment written under them, the chip on
 // the composer, and the prompt that carries it. Git and the working folder belong to the launch helper's
 // disposable profile; the coding provider is the E2E fixture, which records the text it was sent.
 const run = promisify(execFile)
-const SHOTS = resolve(process.cwd(), 'artifacts/review-comments-run')
+const SHOTS = evidenceDirectory('artifacts/review-comments-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 const BEFORE = [
@@ -23,12 +25,7 @@ const AFTER = [
 ].join('\n')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 /** Every layout box that runs past the window's right edge, so a capture is also a clipping check. */

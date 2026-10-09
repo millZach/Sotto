@@ -1,12 +1,12 @@
+import { terminalWorkspaceBridgeFixture } from '../../fixtures/renderer/terminalWorkspaceBridge'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type AgentCommand, type AgentState, type SubscriptionAccount } from '../../../src/shared/agents'
-import type { TerminalWorkspaceBridge } from '../../../src/shared/terminalWorkspace'
 import { useAddProject } from '../../../src/renderer/src/agents/addProject'
 import { NewTerminalDialog } from '../../../src/renderer/src/terminals/NewTerminalDialog'
 import { TerminalWorkspaceStore } from '../../../src/renderer/src/terminals/terminalWorkspaceStore'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const grok = { id: 'native:grok:model:grok-4.6', name: 'Grok 4.6', provider: 'Grok Build', providerId: 'grok' as const, ready: true }
 const opus = { id: 'native:claude:model:opus', name: 'Opus', provider: 'Claude Code', providerId: 'claude' as const, ready: true }
@@ -21,7 +21,7 @@ function fixture(): AgentState {
 function terminal(state = fixture()) {
   const store = new TerminalWorkspaceStore()
   const open = vi.spyOn(store, 'open').mockResolvedValue({ id: 'opened-terminal' })
-  const props = { command: vi.fn(async () => state), store, bridge: {} as TerminalWorkspaceBridge, shell: 'pwsh', onClose: vi.fn(), onCreated: vi.fn(), initialProjectId: state.host.projects[0]!.id }
+  const props = { command: vi.fn(async () => state), store, bridge: terminalWorkspaceBridgeFixture().bridge, shell: 'pwsh', onClose: vi.fn(), onCreated: vi.fn(), initialProjectId: state.host.projects[0]!.id }
   const view = render(<NewTerminalDialog {...props} state={state} />)
   return { open, props, update: (next: AgentState) => view.rerender(<NewTerminalDialog {...props} state={next} />) }
 }

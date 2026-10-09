@@ -1,10 +1,10 @@
+import { parseProviderRecords } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DevinAcpHost } from '../../src/main/agents/devin'
-import type { RecordedRpc } from './codexFixture'
-import type { AdapterSessionOptions } from '../integration/adapterContract'
+import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 /** What a test of the send path changes about how the adapter waits. */
 export interface DevinPaceOptions {
@@ -31,7 +31,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
   }
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   }
   const realId = async (id: string): Promise<string> => {
     const native = JSON.parse(await readFile(join(root, 'devin-threads.json'), 'utf8'))[id].devinSessionId as string

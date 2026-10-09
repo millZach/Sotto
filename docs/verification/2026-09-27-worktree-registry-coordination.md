@@ -1,5 +1,7 @@
 # Worktree registry coordination (#441)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Concurrent worktree creation can expose a peer checkout's partially written `commondir`. Sotto now coordinates registry commands across its thread and terminal services by the canonical common Git directory. Linked project roots share a queue; unrelated repositories and ordinary status/ref reads continue independently. Registry reads, add, prune and removal, plus branch rename and switch, wait for the preceding command to finish.
 
 The queue preserves each command's result or rejection, removes completed entries, and does not retry. Existing path ownership, exact registration, branch collision, reuse, user-edit and permission checks are unchanged. Coordination is within one host process; unrelated Git processes are still governed by Git's own behavior, and corrupt metadata remains an error.
@@ -18,7 +20,7 @@ A second real-Git probe confirmed branch rename, branch switch and worktree list
 
 The new regression uses two service instances and different linked project roots, with an unrelated repository completing while the first registration is held. Before the fix, one setup was rejected; the rejected-add queue-release control passed. The baseline/probe run took 7.98 seconds. Every fixture is synthetic and owned; diagnostic test copies were removed from discovery.
 
-Corrected focused verification passed all 53 tests across `threadWorktrees.test.ts`, `terminalWorkspace.test.ts` and `threadWorktreesNative.test.ts` (three files, 60.85 seconds, two workers). This includes the formerly red linked-root regression, ordinary concurrent dirty-source setup, real native provider working-copy isolation, restore/reuse and rejection handling. Three-project typecheck, lint and notices verification (174 components) passed sequentially. Independent native Astra Standards and Spec reviews reported zero findings at `f2261786`; the coordinating source review also found no correctness issue. Composed full/desktop verification remains pending. No visual surface or design baseline changed.
+Corrected focused verification passed all 53 tests across `tests/integration/threadWorktreeAllocation.test.ts`, `tests/integration/threadWorktreeRecovery.test.ts`, `tests/integration/threadWorktreeReclaim.test.ts`, `tests/integration/threadWorktreeSubmodules.test.ts`, `tests/integration/threadWorktreeIdentity.test.ts`, `tests/unit/main/threadWorkingDirectory.test.ts`, `terminalWorkspace.test.ts` and `threadWorktreesNative.test.ts` (three original files, 60.85 seconds, two workers). This includes the formerly red linked-root regression, ordinary concurrent dirty-source setup, real native provider working-copy isolation, restore/reuse and rejection handling. Three-project typecheck, lint and notices verification (174 components) passed sequentially. Independent native Astra Standards and Spec reviews reported zero findings at `f2261786`; the coordinating source review also found no correctness issue. Composed full/desktop verification remains pending. No visual surface or design baseline changed.
 
 ## Rejected first cost and optimized candidate
 

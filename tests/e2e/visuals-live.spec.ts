@@ -1,9 +1,12 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { captureWindow, firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidenceRoot = evidenceDirectory('artifacts/visuals-live')
 
 // A real Claude Code, Codex or Grok Build thread asked to draw a visual through `visualize`, in the production app
 // over an isolated profile (tests/fixtures/nativeThreadsMain.cjs). Each run sends real subscription turns, so it is
@@ -28,13 +31,13 @@ const ask = (title: string) => [
 for (const provider of ['claude', 'codex', 'grok'] as const) {
   test(`${provider}: a real thread draws a visual between its words`, async () => {
     test.skip(!enabled || (!!selected && selected !== provider), 'Explicit live visuals opt-in required.')
-    const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+    const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
     const profile = join(root, 'profile')
     const project = join(root, 'project')
     await mkdir(profile); await mkdir(project)
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     // Outside test-results, which Playwright clears at every run, so each provider's run keeps its captures.
-    const artifacts = resolve('artifacts/visuals-live', provider)
+    const artifacts = join(evidenceRoot, provider)
     await mkdir(artifacts, { recursive: true })
     let app: ElectronApplication | undefined
     let current: Page | undefined

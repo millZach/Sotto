@@ -1,3 +1,4 @@
+import { deferred as gate } from '../../../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { RequestAnswerStore } from '../../../../src/renderer/src/agents/requests/requestAnswers'
 import { requestDraftKey, type RequestDraft, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../src/shared/requestDrafts'
@@ -9,8 +10,7 @@ const selection = (text: string) => ({ text, optionIds: [], other: false })
 const draft = (revision = 3, held = true, owner = target): RequestDraft => ({ target: owner, revision, held,
   selections: { notes: selection('Original answer') } })
 const accepted = (revision = 3): RequestDraftStatus & { status: 'accepted' } => ({ status: 'accepted', revision, decisionId: `attempt-${revision}` })
-function gate<T>() { let resolve!: (value: T) => void, reject!: (error: Error) => void
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
+
 
 function fixture(initial: RequestDraftStatus = { status: 'draft', draft: draft() }) {
   const values = new Map<string, RequestDraftStatus>([[requestDraftKey(target), initial]])

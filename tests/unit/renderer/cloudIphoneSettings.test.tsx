@@ -1,22 +1,21 @@
+import { cloudIphoneBridgeFixture, cloudStatus } from '../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudIphoneSettings } from '../../../src/renderer/src/features/settings/CloudIphoneSettings'
 import { CloudIphoneStore } from '../../../src/renderer/src/tools/cloudIphoneStore'
-import type { CloudIphoneBridge, CloudIphoneStatus } from '../../../src/shared/cloudIphone'
+import type { CloudIphoneStatus } from '../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
-const status = (patch: Partial<CloudIphoneStatus> = {}): CloudIphoneStatus => ({
-  keySaved: false, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [], ...patch,
-})
+const status = (patch: Partial<CloudIphoneStatus> = {}): CloudIphoneStatus => cloudStatus({ keySaved: false, ...patch })
 
 function fakeBridge(initial: CloudIphoneStatus) {
   let current = initial
-  const bridge: CloudIphoneBridge = {
+  const published = cloudIphoneBridgeFixture({ commands: {
     status: vi.fn(async () => ok(current)),
     setKey: vi.fn(async ({ value }) => {
       if (value === 'bad-key') return ok({ saved: false, problem: 'run.cloud rejected this key.' })
@@ -27,9 +26,8 @@ function fakeBridge(initial: CloudIphoneStatus) {
     answer: vi.fn(),
     end: vi.fn(),
     mount: vi.fn(async () => ok(undefined)),
-    onEvent: vi.fn(() => () => undefined),
-  }
-  return bridge
+  } })
+  return published.bridge
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

@@ -13,7 +13,7 @@ import { ShortcutKey } from '../../../src/renderer/src/components/ShortcutKey'
 import { ToastRegion } from '../../../src/renderer/src/components/ToastRegion'
 import { Toggle } from '../../../src/renderer/src/components/Toggle'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
-import { MODES, THEME_IDS, contrast, over, resolveColor, rootDeclarations } from './themeTokenResolver'
+import { MODES, THEME_IDS, contrast, over, resolveColor, rootDeclarations } from '../../fixtures/renderer/themeTokenResolver'
 
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')

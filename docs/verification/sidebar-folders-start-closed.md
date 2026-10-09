@@ -13,7 +13,7 @@ Two changes to the Threads sidebar, asked for together. The right edge drew a sm
 
 - `tests/unit/renderer/threadSidebarFolders.test.tsx` (new): every folder starts closed, the open thread's included and the settled ones once Settled is opened; a folder opened before a remount is still open after it; a folder opened while `sessionStorage.setItem` throws stays open, and the next accepted write is read back.
 - `tests/e2e/sidebar-folders.spec.ts` (new), against the built app: a folder closed in one launch stays closed after going to Dictate and back, and is open again after quitting and launching on the same profile. That second launch is the proof that Electron does not carry session storage across launches; if it did, the last assertion would fail.
-- The suites that are about the rows inside folders open them through `openSidebarFolders` in `tests/unit/renderer/liveAgentState.tsx`, which builds keys with the sidebar's own `folderKey`.
+- The suites that are about the rows inside folders open them through `openSidebarFolders` in `tests/fixtures/renderer/liveAgentState.tsx`, which builds keys with the sidebar's own `folderKey`.
 - Against the built app, `settled-folder-new-thread`, `split-workspace`, `daily-workspace`, `pane-layouts`, `host-identity`, `agents`, `app`, `thread-sidebar-question`, `thread-sidebar-resize` and `sidebar-folders` pass: 34 tests.
 
 ## Design baselines

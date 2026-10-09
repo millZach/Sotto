@@ -28,7 +28,7 @@ These were decided while building A. None contradicts ADR-0011; they are recorde
 because they are the rail's own geometry and tone, not a rule for the rest of the app.
 
 - **The rail is 58px, its tiles 50px, its words 12px.** The mock-up's words are 10.5px; 12px is the floor
-  `phase-three-ui` holds every label in the panel to, and "Changes" and "Terminal" still fit.
+  `tools-workspace.spec.ts` holds every label in the panel to, and "Changes" and "Terminal" still fit.
 - **Wide means 640px of content**, the panel minus the rail. Files and Changes stack the list above the detail
   below that and sit side by side from it. With the app's default of 56% of the workspace, that is stacked at
   1280 and 820 and side by side at 1600.

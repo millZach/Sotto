@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { GitHubRateLimit, GitHubRateLimited, type GitHubRateLimitEvent } from '../../../src/main/agents/github'
 import { PullRequestHeads } from '../../../src/main/agents/githubPullRequestHeads'
 import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { deferred } from '../../fixtures/deferred'
 
 const repository = { host: 'github.com', owner: 'sotto-fixture', name: 'owned' }
 const gather = { user: 1, background: 1 }
@@ -32,10 +33,12 @@ describe('a pause and the answers around it', () => {
   const answer = JSON.stringify({ data: { rateLimit: { limit: 5000, remaining: 4000, resetAt: new Date(Date.now() + 3_600_000).toISOString() }, viewer: { login: 'me' }, repository: { h0: { nodes: [] } } } })
   it('holds the pause when a query sent before the refusal is answered after it', async () => {
     const rateLimit = new GitHubRateLimit()
-    let sent!: () => void, answerEarly!: (text: string) => void
-    const earlySent = new Promise<void>(resolve => { sent = resolve })
+    let answerEarly!: (text: string) => void
+    const { promise: earlySent, resolve: sent } = deferred<void>()
     const run: RunGitCommand = async (_cwd, _command, args) => {
-      if (args.includes('name=early')) { sent(); return await new Promise<string>(resolve => { answerEarly = resolve }) }
+      if (args.includes('name=early')) { sent(); const pending1 = deferred<string>();
+answerEarly = pending1.resolve;
+return await pending1.promise }
       throw new Error('gh: You have exceeded a secondary rate limit. (HTTP 403)')
     }
     const heads = new PullRequestHeads({ run, rateLimit, gatherMs: gather })

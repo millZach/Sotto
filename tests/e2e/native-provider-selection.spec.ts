@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
 
@@ -38,7 +39,7 @@ test('provider configuration and coordinator choices have separate settings', as
     await expect(coordinator.getByRole('button', { name: 'Configure agents', exact: true })).toHaveCount(0)
     await expect(coordinator.getByRole('combobox', { name: 'Thread provider', exact: true })).toHaveCount(0)
     await coordinator.getByRole('combobox', { name: 'Reasoning account', exact: true }).selectOption('claude')
-    await expect.poll(async () => (await page.evaluate(async () => window.sotto!.agents!.get())).configuration.reasoning).toBe('claude')
+    await expect.poll(async () => (await agentState(page)).configuration.reasoning).toBe('claude')
     const after = await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration)
     expect(after.provider).toBe(before.provider)
     expect(after.enabledProviders).toEqual(before.enabledProviders)

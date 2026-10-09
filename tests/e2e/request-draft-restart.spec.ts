@@ -1,5 +1,5 @@
-import { mkdtemp, mkdir, readFile, readdir, rmdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, rmdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -7,6 +7,10 @@ import type { AgentRequest } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/request-drafts')
+const questionChoicesEvidence = evidenceDirectory('artifacts/question-choices')
 
 const form: AgentRequest = { id: 'durable-form', kind: 'question', text: 'Native restart fixture', options: [], questions: [
   { id: 'place', question: 'Where should we go?', multiSelect: false, allowFreeText: true, options: [{ id: 'coast', label: 'Coast' }, { id: 'hills', label: 'Hills' }] },
@@ -47,241 +51,255 @@ async function open(page: Page): Promise<void> {
 
 test(`thread structured text and selections survive a full app restart with history disabled and independent composer/request drafts`, async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-request-draft-thread-`))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
-  let launched = await launchSotto('success', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: `sotto-e2e-request-draft-thread-` })
   try {
-    let page = launched.page
-    const id = await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+    let launched = await launchSotto('success', profile)
+    try {
+      let page = launched.page
+      const id = await page.evaluate(async () => {
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
 
-      await window.sotto!.agents!.command({ type: 'connect' })
-      await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent threaded composer' })
-      return 'workshop'
-    })
-    await record(launched)
-    await emit(page, id); await open(page)
-    const first = card(page)
-    await first.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
-    await first.getByRole('textbox', { name: 'Other answer to: Where should we go?' }).fill('A quiet shore')
-    await first.getByRole('checkbox', { name: 'Unit checks' }).click()
-    await first.getByRole('checkbox', { name: 'Type checks' }).click()
-    await first.getByRole('textbox', { name: 'Travel notes' }).fill('Unsent notes survive restart')
-    await page.getByRole('radio', { name: 'Separate hills' }).click()
-    await expect.poll(async () => (await drafts(profile)).filter(draft => draft.target.ownerId === id).length).toBe(2)
-    await expect(first).toHaveAttribute('data-save', 'saved')
-    const before = await drafts(profile)
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    await closeSotto(launched)
+        await window.sotto!.agents!.command({ type: 'connect' })
+        await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent threaded composer' })
+        return 'workshop'
+      })
+      await record(launched)
+      await emit(page, id); await open(page)
+      const first = card(page)
+      await first.getByRole('radio', { name: 'Write my own answer', exact: true }).click()
+      await first.getByRole('textbox', { name: 'Other answer to: Where should we go?' }).fill('A quiet shore')
+      await first.getByRole('checkbox', { name: 'Unit checks' }).click()
+      await first.getByRole('checkbox', { name: 'Type checks' }).click()
+      await first.getByRole('textbox', { name: 'Travel notes' }).fill('Unsent notes survive restart')
+      await page.getByRole('radio', { name: 'Separate hills' }).click()
+      await expect.poll(async () => (await drafts(profile)).filter(draft => draft.target.ownerId === id).length).toBe(2)
+      await expect(first).toHaveAttribute('data-save', 'saved')
+      const before = await drafts(profile)
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+      await closeSotto(launched)
 
-    launched = await launchSotto('success', profile); page = launched.page
-    await record(launched)
-    await open(page)
-    // Startup intentionally supplies no native request. The service must keep the original file intact.
-    expect(await drafts(profile)).toEqual(before)
-    {
-      await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
+      launched = await launchSotto('success', profile); page = launched.page
+      await record(launched)
+      await open(page)
+      // Startup intentionally supplies no native request. The service must keep the original file intact.
       expect(await drafts(profile)).toEqual(before)
-      // Thread fixture effects are in memory; simulate the provider returning the exact requests on reconnect.
-      await emit(page, id)
-    }
-    await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Unsent notes survive restart')
-    await expect(card(page).getByRole('radio', { name: 'Write my own answer', exact: true })).toBeChecked()
-    await expect(card(page).getByRole('textbox', { name: 'Other answer to: Where should we go?' })).toHaveValue('A quiet shore')
-    await expect(card(page).getByRole('checkbox', { name: 'Unit checks' })).toBeChecked()
-    await expect(card(page).getByRole('checkbox', { name: 'Type checks' })).toBeChecked()
-    await expect(page.getByRole('radio', { name: 'Separate hills' })).toBeChecked()
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, id))
-    expect(composer).toBe('Independent threaded composer')
-    await mkdir('artifacts/request-drafts', { recursive: true })
-    await card(page).getByRole('textbox', { name: 'Travel notes' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `artifacts/request-drafts/thread-restarted.png` })
-    // Only this explicit click delivers. Accepted content is removed without touching the other request or composer.
-    await card(page).getByRole('button', { name: 'Send answers' }).click()
-    await expect(card(page)).toHaveCount(0)
-    await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['separate-form'])
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(1)
-  } finally { await closeSotto(launched) }
+      {
+        await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
+        expect(await drafts(profile)).toEqual(before)
+        // Thread fixture effects are in memory; simulate the provider returning the exact requests on reconnect.
+        await emit(page, id)
+      }
+      await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Unsent notes survive restart')
+      await expect(card(page).getByRole('radio', { name: 'Write my own answer', exact: true })).toBeChecked()
+      await expect(card(page).getByRole('textbox', { name: 'Other answer to: Where should we go?' })).toHaveValue('A quiet shore')
+      await expect(card(page).getByRole('checkbox', { name: 'Unit checks' })).toBeChecked()
+      await expect(card(page).getByRole('checkbox', { name: 'Type checks' })).toBeChecked()
+      await expect(page.getByRole('radio', { name: 'Separate hills' })).toBeChecked()
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+      const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, id))
+      expect(composer).toBe('Independent threaded composer')
+      await mkdir(evidence, { recursive: true })
+      await card(page).getByRole('textbox', { name: 'Travel notes' }).scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(evidence, 'thread-restarted.png') })
+      // Only this explicit click delivers. Accepted content is removed without touching the other request or composer.
+      await card(page).getByRole('button', { name: 'Send answers' }).click()
+      await expect(card(page)).toHaveCount(0)
+      await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['separate-form'])
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(1)
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })
 
 test(`thread full-process restart restores an interrupted answer as held and never replays it`, async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), `sotto-e2e-held-draft-thread-`))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
-  let launched = await launchSotto('success', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: `sotto-e2e-held-draft-thread-` })
   try {
-    let page = launched.page
-    const id = await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
-      await window.sotto!.agents!.command({ type: 'connect' }); return 'workshop'
-    })
-    await emit(page, id); await open(page)
-    await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
-    await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
-    await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Held through restart')
-    await record(launched, true)
-    await card(page).getByRole('button', { name: 'Send answers' }).click()
-    await expect.poll(() => launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(1)
-    expect((await drafts(profile))[0]?.held).toBe(true)
-    await closeSotto(launched)
-    launched = await launchSotto('success', profile); page = launched.page; await record(launched)
-    { await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' })); await emit(page, id) }
-    await open(page)
-    await expect(card(page)).toHaveAttribute('data-phase', 'unconfirmed')
-    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
-    await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Held through restart')
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    await mkdir('artifacts/request-drafts', { recursive: true })
-    await card(page).getByRole('button', { name: 'Check again' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `artifacts/request-drafts/thread-held-restarted.png` })
-    await card(page).getByRole('button', { name: 'Check again' }).click()
-    await expect(card(page)).toHaveAttribute('data-phase', 'idle')
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-  } finally { await closeSotto(launched) }
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+    let launched = await launchSotto('success', profile)
+    try {
+      let page = launched.page
+      const id = await page.evaluate(async () => {
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false, reasoning: 'codex', reasoningModel: 'codex:test', reasoningEffort: 'low' } })
+        await window.sotto!.agents!.command({ type: 'connect' }); return 'workshop'
+      })
+      await emit(page, id); await open(page)
+      await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
+      await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
+      await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Held through restart')
+      await record(launched, true)
+      await card(page).getByRole('button', { name: 'Send answers' }).click()
+      await expect.poll(() => launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(1)
+      expect((await drafts(profile))[0]?.held).toBe(true)
+      await closeSotto(launched)
+      launched = await launchSotto('success', profile); page = launched.page; await record(launched)
+      { await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' })); await emit(page, id) }
+      await open(page)
+      await expect(card(page)).toHaveAttribute('data-phase', 'unconfirmed')
+      await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
+      await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Held through restart')
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+      await mkdir(evidence, { recursive: true })
+      await card(page).getByRole('button', { name: 'Check again' }).scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(evidence, 'thread-held-restarted.png') })
+      await card(page).getByRole('button', { name: 'Check again' }).click()
+      await expect(card(page)).toHaveAttribute('data-phase', 'idle')
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })
 
 test('a real atomic save failure retains the visible answer, blocks sending and recovers through Save again', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-draft-save-failure-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
-  const launched = await launchSotto('success', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-draft-save-failure-' })
   try {
-    const { page } = launched
-    await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
-      await window.sotto!.agents!.command({ type: 'connect' })
-    })
-    await emit(page, 'workshop'); await open(page); await record(launched)
-    // An empty directory at the exact owned fixture file path forces the real atomic rename to fail.
-    await mkdir(join(profile, 'request-drafts.json'))
-    await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
-    await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
-    await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Recover this answer after the disk failure')
-    await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
-    await expect(card(page).getByRole('alert')).toContainText('Could not save this answer draft')
-    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
-    await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Recover this answer after the disk failure')
-    await mkdir('artifacts/request-drafts', { recursive: true })
-    await card(page).getByRole('button', { name: 'Save again' }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/request-drafts/save-failure.png' })
-    await rmdir(join(profile, 'request-drafts.json'))
-    await card(page).getByRole('button', { name: 'Save again' }).click()
-    await expect(card(page)).toHaveAttribute('data-save', 'saved')
-    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeEnabled()
-    expect((await drafts(profile))[0]?.selections.notes?.text).toBe('Recover this answer after the disk failure')
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-  } finally { await closeSotto(launched) }
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+    const launched = await launchSotto('success', profile)
+    try {
+      const { page } = launched
+      await page.evaluate(async () => {
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'connect' })
+      })
+      await emit(page, 'workshop'); await open(page); await record(launched)
+      // An empty directory at the exact owned fixture file path forces the real atomic rename to fail.
+      await mkdir(join(profile, 'request-drafts.json'))
+      await card(page).getByRole('radio', { name: 'Coast', exact: true }).click()
+      await card(page).getByRole('checkbox', { name: 'Unit checks' }).click()
+      await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Recover this answer after the disk failure')
+      await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
+      await expect(card(page).getByRole('alert')).toContainText('Could not save this answer draft')
+      await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
+      await expect(card(page).getByRole('textbox', { name: 'Travel notes' })).toHaveValue('Recover this answer after the disk failure')
+      await mkdir(evidence, { recursive: true })
+      await card(page).getByRole('button', { name: 'Save again' }).scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(evidence, 'save-failure.png') })
+      await rmdir(join(profile, 'request-drafts.json'))
+      await card(page).getByRole('button', { name: 'Save again' }).click()
+      await expect(card(page)).toHaveAttribute('data-save', 'saved')
+      await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeEnabled()
+      expect((await drafts(profile))[0]?.selections.notes?.text).toBe('Recover this answer after the disk failure')
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })
 
 test('invalid request draft storage remains unchanged and is honestly shown as unsaved in the complete app', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-draft-corrupt-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
-  const invalid = '{ invalid storage containing an unsent private answer'
-  await writeFile(join(profile, 'request-drafts.json'), invalid)
-  const launched = await launchSotto('success', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-draft-corrupt-' })
   try {
-    const { page } = launched
-    await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
-      await window.sotto!.agents!.command({ type: 'connect' })
-    })
-    await emit(page, 'workshop'); await open(page); await record(launched)
-    await expect(card(page).getByRole('alert')).toContainText('original request-drafts.json is unchanged')
-    await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Preserve newer local text too')
-    await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
-    await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
-    expect(await readFile(join(profile, 'request-drafts.json'), 'utf8')).toBe(invalid)
-    expect((await readdir(profile)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
-    await mkdir('artifacts/request-drafts', { recursive: true })
-    await card(page).getByRole('alert').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/request-drafts/invalid-storage.png' })
-  } finally { await closeSotto(launched) }
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+    const invalid = '{ invalid storage containing an unsent private answer'
+    await writeFile(join(profile, 'request-drafts.json'), invalid)
+    const launched = await launchSotto('success', profile)
+    try {
+      const { page } = launched
+      await page.evaluate(async () => {
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'connect' })
+      })
+      await emit(page, 'workshop'); await open(page); await record(launched)
+      await expect(card(page).getByRole('alert')).toContainText('original request-drafts.json is unchanged')
+      await card(page).getByRole('textbox', { name: 'Travel notes' }).fill('Preserve newer local text too')
+      await expect(card(page)).toHaveAttribute('data-save', 'unsaved')
+      await expect(card(page).getByRole('button', { name: 'Send answers' })).toBeDisabled()
+      expect(await readFile(join(profile, 'request-drafts.json'), 'utf8')).toBe(invalid)
+      expect((await readdir(profile)).filter(name => name.startsWith('request-drafts.json'))).toEqual(['request-drafts.json'])
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerCalls)).toBe(0)
+      await mkdir(evidence, { recursive: true })
+      await card(page).getByRole('alert').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(evidence, 'invalid-storage.png') })
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })
-
 
 test('legacy option choices survive a full restart, stay bound to the original question and send only its exact native ID', async () => {
   test.setTimeout(90_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-legacy-request-draft-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
-  const original: AgentRequest = { id: 'legacy-original', kind: 'question', text: 'Which route should we take?',
-    options: [{ id: 'native:coast (Recommended)', label: 'Coast (Recommended)' }, { id: 'native:hills', label: 'Hills' }] }
-  const reused: AgentRequest = { ...original, id: 'legacy-reused', text: 'Which route should the docs describe?' }
-  const changed: AgentRequest = { ...reused, text: 'Which route should the release describe?' }
-  const showRequest = (page: Page, request: AgentRequest) => page.evaluate(async request => {
-    await window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'workshop', text: request.text, request })
-  }, request)
-  const live = (page: Page, request: AgentRequest) => page.locator('.thread-questions .agent-request').filter({
-    has: page.getByText(request.text, { exact: true }),
-  })
-  let launched = await launchSotto('success', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-legacy-request-draft-' })
   try {
-    let page = launched.page
-    await page.evaluate(async () => {
-      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
-      await window.sotto!.agents!.command({ type: 'connect' })
-      await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent legacy follow-up draft' })
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, historyEnabled: false }))
+    const original: AgentRequest = { id: 'legacy-original', kind: 'question', text: 'Which route should we take?',
+      options: [{ id: 'native:coast (Recommended)', label: 'Coast (Recommended)' }, { id: 'native:hills', label: 'Hills' }] }
+    const reused: AgentRequest = { ...original, id: 'legacy-reused', text: 'Which route should the docs describe?' }
+    const changed: AgentRequest = { ...reused, text: 'Which route should the release describe?' }
+    const showRequest = (page: Page, request: AgentRequest) => page.evaluate(async request => {
+      await window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'workshop', text: request.text, request })
+    }, request)
+    const live = (page: Page, request: AgentRequest) => page.locator('.thread-questions .agent-request').filter({
+      has: page.getByText(request.text, { exact: true }),
     })
-    await record(launched)
-    await showRequest(page, original)
-    await showRequest(page, reused)
-    await open(page)
-    await live(page, original).getByRole('radio', { name: /Coast/u }).click()
-    await live(page, reused).getByRole('radio', { name: 'Hills', exact: true }).click()
-    await expect(live(page, original)).toHaveAttribute('data-save', 'saved')
-    await expect(live(page, reused)).toHaveAttribute('data-save', 'saved')
-    await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId).sort()).toEqual(['legacy-original', 'legacy-reused'])
-    const before = await drafts(profile)
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([])
-    await closeSotto(launched)
+    let launched = await launchSotto('success', profile)
+    try {
+      let page = launched.page
+      await page.evaluate(async () => {
+        await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
+        await window.sotto!.agents!.command({ type: 'connect' })
+        await window.sotto!.agents!.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: crypto.randomUUID(), text: 'Independent legacy follow-up draft' })
+      })
+      await record(launched)
+      await showRequest(page, original)
+      await showRequest(page, reused)
+      await open(page)
+      await live(page, original).getByRole('radio', { name: /Coast/u }).click()
+      await live(page, reused).getByRole('radio', { name: 'Hills', exact: true }).click()
+      await expect(live(page, original)).toHaveAttribute('data-save', 'saved')
+      await expect(live(page, reused)).toHaveAttribute('data-save', 'saved')
+      await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId).sort()).toEqual(['legacy-original', 'legacy-reused'])
+      const before = await drafts(profile)
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([])
+      await closeSotto(launched)
 
-    launched = await launchSotto('success', profile)
-    page = launched.page
-    await record(launched)
-    expect(await drafts(profile)).toEqual(before)
-    await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
-    await showRequest(page, original)
-    // Reusing both request and option IDs does not authorize a saved choice for different question text.
-    await showRequest(page, changed)
-    await open(page)
-    await expect(live(page, original).getByRole('radio', { name: /Coast/u })).toBeChecked()
-    await expect(live(page, original).getByRole('button', { name: 'Send answer', exact: true })).toBeEnabled()
-    await expect(live(page, changed).getByRole('radio', { name: 'Hills', exact: true })).toBeEnabled()
-    await expect(live(page, changed).getByRole('radio', { name: 'Hills', exact: true })).not.toBeChecked()
-    await expect(live(page, changed).getByRole('radio', { name: /Coast/u })).not.toBeChecked()
-    await expect(live(page, changed).getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
-    const recovery = page.getByRole('region', { name: 'Saved answer', exact: true })
-    await expect(recovery).toHaveCount(1)
-    await expect(recovery).toContainText(reused.text)
-    await expect(recovery).toContainText('Hills')
-    await expect(recovery).toContainText('changed this question. This answer was not sent.')
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([])
-    await live(page, original).getByRole('radio', { name: /Coast/u }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'artifacts/question-choices/legacy-choice-restarted.png', animations: 'disabled' })
-    for (const [width, height] of [[1280, 800], [820, 560]] as const) {
-      await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-        BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
-      }, [width, height] as const)
-      await expect.poll(() => page.evaluate(([width, height]) => innerWidth === width && Math.abs(innerHeight - height) <= 2, [width, height] as const)).toBe(true)
-      expect(await page.locator('.thread-questions').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
-      // Hidden native legends retain their 1px accessible-only geometry instead of inheriting visible question widths.
-      const legends = await live(page, original).locator('legend').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width))
-      expect(legends).toEqual([1])
-      await page.screenshot({ path: `artifacts/question-choices/legacy-choice-restarted-${width}.png`, animations: 'disabled' })
-    }
+      launched = await launchSotto('success', profile)
+      page = launched.page
+      await record(launched)
+      expect(await drafts(profile)).toEqual(before)
+      await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect' }))
+      await showRequest(page, original)
+      // Reusing both request and option IDs does not authorize a saved choice for different question text.
+      await showRequest(page, changed)
+      await open(page)
+      await expect(live(page, original).getByRole('radio', { name: /Coast/u })).toBeChecked()
+      await expect(live(page, original).getByRole('button', { name: 'Send answer', exact: true })).toBeEnabled()
+      await expect(live(page, changed).getByRole('radio', { name: 'Hills', exact: true })).toBeEnabled()
+      await expect(live(page, changed).getByRole('radio', { name: 'Hills', exact: true })).not.toBeChecked()
+      await expect(live(page, changed).getByRole('radio', { name: /Coast/u })).not.toBeChecked()
+      await expect(live(page, changed).getByRole('button', { name: 'Send answer', exact: true })).toBeDisabled()
+      const recovery = page.getByRole('region', { name: 'Saved answer', exact: true })
+      await expect(recovery).toHaveCount(1)
+      await expect(recovery).toContainText(reused.text)
+      await expect(recovery).toContainText('Hills')
+      await expect(recovery).toContainText('changed this question. This answer was not sent.')
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([])
+      await live(page, original).getByRole('radio', { name: /Coast/u }).scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(questionChoicesEvidence, 'legacy-choice-restarted.png'), animations: 'disabled' })
+      for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+        await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
+          BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
+        }, [width, height] as const)
+        await expect.poll(() => page.evaluate(([width, height]) => innerWidth === width && Math.abs(innerHeight - height) <= 2, [width, height] as const)).toBe(true)
+        expect(await page.locator('.thread-questions').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
+        // Hidden native legends retain their 1px accessible-only geometry instead of inheriting visible question widths.
+        const legends = await live(page, original).locator('legend').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width))
+        expect(legends).toEqual([1])
+        await page.screenshot({ path: join(questionChoicesEvidence, `legacy-choice-restarted-${width}.png`), animations: 'disabled' })
+      }
 
-    await live(page, original).getByRole('button', { name: 'Send answer', exact: true }).click()
-    await expect(live(page, original)).toHaveCount(0)
-    expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([
-      { type: 'answer', threadId: await clientThreadId(page, 'workshop'), requestId: original.id, answer: original.options[0]!.id },
-    ])
-    await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['legacy-reused'])
-    // Successful delivery leaves no orphaned saved answer; the unrelated changed question remains recoverable.
-    await expect(recovery).toHaveCount(1)
-    await expect(recovery).not.toContainText(original.text)
-    await expect(recovery).toContainText(reused.text)
-    const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, 'workshop'))
-    expect(composer).toBe('Independent legacy follow-up draft')
-  } finally { await closeSotto(launched) }
+      await live(page, original).getByRole('button', { name: 'Send answer', exact: true }).click()
+      await expect(live(page, original)).toHaveCount(0)
+      expect(await launched.app.evaluate(() => globalThis.draftAnswerPayloads)).toEqual([
+        { type: 'answer', threadId: await clientThreadId(page, 'workshop'), requestId: original.id, answer: original.options[0]!.id },
+      ])
+      await expect.poll(async () => (await drafts(profile)).map(draft => draft.target.requestId)).toEqual(['legacy-reused'])
+      // Successful delivery leaves no orphaned saved answer; the unrelated changed question remains recoverable.
+      await expect(recovery).toHaveCount(1)
+      await expect(recovery).not.toContainText(original.text)
+      await expect(recovery).toContainText(reused.text)
+      const composer = await page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts!.find(draft => draft.threadId === id)!.text, await clientThreadId(page, 'workshop'))
+      expect(composer).toBe('Independent legacy follow-up draft')
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })

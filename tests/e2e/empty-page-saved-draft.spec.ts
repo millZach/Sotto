@@ -1,14 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const LEFTOVER = 'The release notes page still links the old download host. Change every link in docs/release and the README to the new releases repository, keep the anchors as they are, and run the docs link check.'
-const ARTIFACTS = 'artifacts/empty-page-saved-draft'
+const ARTIFACTS = evidenceDirectory('artifacts/empty-page-saved-draft')
 
 /**
  * A profile whose coordinator saved state holds LEFTOVER, written for `draftThreadId`, beside the design fixture's
@@ -16,7 +16,7 @@ const ARTIFACTS = 'artifacts/empty-page-saved-draft'
  * current project is workshop, so a new thread opens there without asking. Voice stays off, as in the beta.
  */
 async function launchWithDraft(draftThreadId: string, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-leftover-draft-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-leftover-draft-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), assignments: [], queue: [], activeThreadId: null, activeProjectId: 'workshop',
     draft: LEFTOVER, draftThreadId, draftRequestId: null, composing: false, pendingRequest: '', outbox: [] }))
@@ -27,7 +27,7 @@ async function launchWithDraft(draftThreadId: string, run: (launched: LaunchedSo
     await run(launched)
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

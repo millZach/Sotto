@@ -10,6 +10,7 @@
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/gitOffSendPath.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
+import { deferred } from '../fixtures/deferred'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { GitStatusReader, runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
@@ -51,15 +52,15 @@ describe.skipIf(!PERF_BENCH)('Git on a send\'s path', () => {
   it('a worktree thread whose refresh left the remote half of its status read in a two-second fetch', async () => {
     const f = await repository()
     await startedThread(f, 'bench', 'independent')
-    let fetching: (() => void) | undefined, fetched: (() => void) | undefined
+    let fetching: ReturnType<typeof deferred<void>> | undefined, fetched: ReturnType<typeof deferred<void>> | undefined
     let clock = 0
     const run: RunGitCommand = async (cwd, command, args, options) => {
       // Each status read begins with this lookup, and begins a minute after the last on the reader's clock.
       if (command === 'git' && args.includes('--git-common-dir')) clock += FETCH_STALE_MS
       if (command === 'git' && args[0] === 'fetch') {
-        fetching?.()
+        fetching?.resolve()
         await new Promise(resolve => setTimeout(resolve, SLOW_FETCH_MS))
-        fetched?.()
+        fetched?.resolve()
         return ''
       }
       // Nothing here asks GitHub; the branch's pull request lookup fails quietly, as it does signed out.
@@ -71,8 +72,8 @@ describe.skipIf(!PERF_BENCH)('Git on a send\'s path', () => {
     const fetchedAt = () => f.host.workspaceSnapshot().threads.find(item => item.id === 'bench')?.worktree?.git?.fetchedAt
     for (let index = 1; index <= 5; index++) {
       await idle(f, 'bench')
-      const fetchStarted = new Promise<void>(resolve => { fetching = resolve })
-      const fetchDone = new Promise<void>(resolve => { fetched = resolve })
+      const fetchStarted = (fetching = deferred<void>()).promise
+      const fetchDone = (fetched = deferred<void>()).promise
       const fetchedBefore = fetchedAt()
       // The refresh a draft starts, which reads the remote and so fetches. It is not awaited before the send: on
       // origin/main a refresh answered only once its fetch had, and the send is pressed while the fetch runs.

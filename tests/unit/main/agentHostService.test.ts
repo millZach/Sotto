@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mayGrantLocally, UNPAIRED_CLIENT_ERROR, type Authority } from '../../../src/main/agents/authority'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import {
   desktopWindowClient, LocalHostService, supervisionClient, DESKTOP_WINDOW_CLIENT_ID, SUPERVISION_CLIENT_ID,
@@ -16,15 +16,12 @@ import { PolicyStore } from '../../../src/main/memory/policies'
 import { MemoryStore } from '../../../src/main/memory/store'
 import type { AnswerGivenEvent, StoredThreadEvent } from '../../../src/shared/threadEvents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
 const stores: MemoryStore[] = []
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
 
 /** Records answers the way `WorkspaceHost` does, without a SQLite file behind it. */
 class RecordingHost extends E2EAgentHost {
@@ -41,11 +38,11 @@ async function fixture(authority?: Authority) {
   const logFailure = vi.fn<(code: string, detail: string) => void>()
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-service-'))
   roots.push(root)
-  const credentials = new AgentCredentials(join(root, 'vault'), encryption)
-  await credentials.load()
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
+
   const host = new RecordingHost()
   const reasoner = { ...e2eAgentReasoner, decide: vi.fn(e2eAgentReasoner.decide) }
-  const control = new AgentControl({
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner, logFailure,
     ...(authority === undefined ? {} : { authority }),

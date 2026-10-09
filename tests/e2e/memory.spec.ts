@@ -1,5 +1,9 @@
+import { join } from 'node:path'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, launchSottoWithVoice, openPage } from './support/sottoLaunch'
+
+const evidence = evidenceDirectory('artifacts/memory')
 
 async function snapshot(page: Page) { return page.evaluate(() => window.sotto!.memory!.get()) }
 
@@ -20,7 +24,7 @@ test('remembers working preferences across restart, retains supersession history
     await expect(page.locator('.memory-progress')).toHaveAttribute('aria-hidden', 'true')
     await expect(page.getByRole('region', { name: 'Working preferences' }).locator('[role="status"], [aria-live]')).toHaveCount(0)
     await page.getByRole('textbox').fill('Give concise replies and interrupt only when I need to decide.')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/questionnaire.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'questionnaire.png') })
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
     await page.getByRole('link', { name: 'Memory', exact: true }).click()
     await expect(page.getByText('Sotto has no saved memories yet.')).toBeVisible()
@@ -34,10 +38,10 @@ test('remembers working preferences across restart, retains supersession history
     }
     await page.getByRole('checkbox', { name: 'Starting new spending' }).check()
     await page.getByRole('checkbox', { name: 'Publishing or sending work outside Sotto' }).check()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/boundaries.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'boundaries.png') })
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Here’s what Sotto will remember' })).toBeVisible()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/review.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'review.png') })
     expect((await snapshot(page)).memories).toHaveLength(0)
     await page.getByRole('button', { name: 'Save preferences', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'What Sotto remembers' })).toBeVisible()
@@ -54,7 +58,7 @@ test('remembers working preferences across restart, retains supersession history
     await expect(row).toContainText('Superseded')
     await row.getByText('Why Sotto remembers this', { exact: true }).click()
     await expect(row).toContainText('Working preferences')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/history.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'history.png') })
     await launched.app.close()
     launched = await launchSotto('success', original.userData)
     page = launched.page
@@ -64,11 +68,11 @@ test('remembers working preferences across restart, retains supersession history
     const edited = page.getByRole('article', { name: 'Give detailed replies with the reasoning behind each decision.', exact: true })
     await expect(edited).toBeVisible()
     expect((await snapshot(page)).policies).toEqual(saved.policies)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/inspector.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'inspector.png') })
     await launched.app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!; window.setMinimumSize(320, 400); window.setSize(420, 740) })
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(420)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/inspector-narrow.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'inspector-narrow.png') })
     await edited.getByRole('button', { name: 'Supersede', exact: true }).click()
     await edited.getByRole('textbox', { name: 'Replacement memory' }).fill('Keep spoken answers brief; put the detail in writing.')
     await edited.getByRole('button', { name: 'Save memory', exact: true }).click()
@@ -108,7 +112,7 @@ test('keeps an unsaved correction when another edit supersedes its memory', asyn
     await expect(row.getByRole('button', { name: 'Review current replacement' })).toBeVisible()
     await launched.app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!; window.setMinimumSize(320, 400); window.setSize(720, 760) })
     await row.scrollIntoViewIfNeeded()
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/memory/stale-edit.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'stale-edit.png') })
     await row.getByRole('button', { name: 'Review current replacement' }).click()
     const current = page.getByRole('article', { name: 'Include a summary with every reply.', exact: true })
     await expect(current).toContainText('Include a summary with every reply.')

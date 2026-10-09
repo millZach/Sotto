@@ -1,10 +1,14 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const shots = resolve('artifacts/agents-view')
+const questionEvidence = evidenceDirectory('artifacts/codex-questions-thread-agents')
+
+const shots = evidenceDirectory('artifacts/agents-view')
 async function activity(page: Page, children: ObservedAgent[]): Promise<void> {
   await page.evaluate(async agents => {
     const observedAt = new Date().toISOString()
@@ -13,13 +17,7 @@ async function activity(page: Page, children: ObservedAgent[]): Promise<void> {
   }, children)
 }
 async function size(app: LaunchedSotto, width: number, height: number): Promise<void> {
-  await app.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    // Match the sidecar fixture: leave room for Windows chrome while testing exact content sizes.
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => app.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(app, width, height, [800, 540])
 }
 const first: ObservedAgent = { id: 'claude:storage', assignmentId: 'task-storage', title: 'Retain agent history', description: 'Keep assignments through restarts and long threads.', prompt: 'Store agent tasks and results independently of ordinary activity history.', model: 'Claude Sonnet 4.6', status: 'running' }
 const second: ObservedAgent = { id: 'claude:ui', assignmentId: 'task-ui', title: 'Build the Agents view', description: 'Connect the roster to the existing Tools panel.', prompt: 'Use the approved roomier rows, nested children and theme tokens.', model: 'Claude Sonnet 4.6', status: 'running' }
@@ -101,7 +99,7 @@ test('Agents follows the approved roomier view, keeps history, and reports live 
     await page.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(page.getByText('No agents spawned in this thread yet.')).toBeVisible()
     await expect(roster.locator('.subagent-item')).toHaveCount(0)
-    await page.screenshot({ path: resolve('artifacts/codex-questions-thread-agents/agents-selected-docs-pinned-workshop.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(questionEvidence, 'agents-selected-docs-pinned-workshop.png'), animations: 'disabled' })
     await page.getByRole('tab', { name: 'Files', exact: true }).click()
     await expect(page.locator('.tools-panel__thread-title')).toHaveText('Workshop')
     await page.getByRole('button', { name: 'Unpin from Workshop', exact: true }).click()

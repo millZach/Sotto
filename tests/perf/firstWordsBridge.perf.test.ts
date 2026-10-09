@@ -13,13 +13,13 @@
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/firstWordsBridge.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import { adapterItemCount, ProviderSnapshotPublisher } from '../../src/main/agents/providerSnapshotPublisher'
 import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -59,8 +59,7 @@ describe.skipIf(!PERF_BENCH)('first streamed chunk to the window’s bridge', ()
     const root = await mkdtemp(join(tmpdir(), 'sotto-first-words-')); roots.push(root)
     const provider = new StreamingProvider()
     const workspace = new WorkspaceHost(provider, root)
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
     const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner })
     await control.start(); await control.command({ type: 'connect' })
     const threadId = provider.state.threads[0]!.id

@@ -10,6 +10,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
+import { deferred } from '../../fixtures/deferred'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -187,8 +188,8 @@ it('reads a provider whole when a subscriber that reads messages arrives while a
   host.subscribeActivitySnapshots(() => undefined, { historyFromEvents: true })
   await host.connect()
   const threadId = (await host.snapshot()).threads.find(thread => thread.title === 'Workshop')!.id
-  let release!: () => void
-  claude.gate = new Promise(resolve => { release = resolve })
+  const { promise: heldRelease, resolve: release } = deferred<void>()
+  claude.gate = heldRelease
   const reading = host.refreshThread(threadId, { historyFromEvents: true })
   const plain: AgentHostSnapshot[] = []
   host.subscribe(snapshot => plain.push(snapshot))

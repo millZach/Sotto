@@ -1,25 +1,21 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Three, four and five thread panes across projects on the real app: snapping, row arrangement, dividers by pointer
 // and keyboard, moving panes, zoom, compact windows, and restoring the arrangement after a restart. Providers are fixtures.
-const SHOTS = 'artifacts/phase-three-layout'
+const SHOTS = evidenceDirectory('artifacts/phase-three-layout')
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    // The shipped minimum is an outer size; relax it slightly so the content area can be exactly 820x560.
-    window.setMinimumSize(800, 540)
-    window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function capture(page: Page, name: string): Promise<void> {
@@ -42,7 +38,7 @@ const boxes = (page: Page): Promise<Box[]> => page.evaluate(() => {
   })
 })
 
-const agents = (page: Page) => page.evaluate(async () => window.sotto!.agents!.get())
+const agents = (page: Page) => agentState(page)
 
 async function openBeside(page: Page, title: string): Promise<void> {
   const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
@@ -65,7 +61,7 @@ async function dragDivider(page: Page, divider: Locator, to: number): Promise<vo
 test('three, four and five panes snap, resize, move, zoom and come back after a restart', async () => {
   test.setTimeout(300_000)
   await mkdir(SHOTS, { recursive: true })
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-pane-layouts-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-pane-layouts-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
@@ -321,6 +317,6 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await capture(page, 'four-restored-1600')
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

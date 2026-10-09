@@ -1,25 +1,25 @@
+import { parseProviderRecords, writeProviderAction, providerArgument as flag } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AgentHost } from '../../src/main/agents/host'
-import type { AdapterSessionOptions } from '../integration/adapterContract'
+import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
 }
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
 async function oneShots(root: string): Promise<Record<string, unknown>[]> {
-  return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+  return parseProviderRecords<Record<string, unknown>>(await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => ''))
 }
-const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 /** The fake's own number for a request Sotto holds: Sotto's key also names the app-server that asked it. */
 export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:[^:]+:/u, '')) as string | number
 /** What the fake recorded of the app-servers Sotto started: each one's introduction, and each thread start or resume on it. */
 export interface ServedRecord { pid: number; method: 'initialize' | 'thread/start' | 'thread/resume'; threadId?: string }
-export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
+export type { RecordedRpc } from './adapterFixture'
 /** The thread history requests among `requests`, in order: `turns` for the newest-turn check, `read` for a whole-transcript read. */
 export function historyReads(requests: readonly RecordedRpc[]): ('turns' | 'read')[] {
   return requests.flatMap(request => request.method === 'thread/turns/list' ? ['turns' as const]
@@ -48,7 +48,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   }
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   }
   const realId = async (sessionId: string): Promise<string> => {
     const aliases = JSON.parse(await readFile(join(root, 'codex-threads.json'), 'utf8'))
@@ -57,7 +57,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   /** Hand the fake an action and answer the ID it acknowledges it by. */
   const action = async (sessionId: string, value: Record<string, unknown>): Promise<string> => {
     const id = randomUUID()
-    await writeFile(join(root, 'control.json'), JSON.stringify({ id, threadId: await realId(sessionId), ...value }))
+    await writeProviderAction(join(root, 'control.json'), value, { threadId: await realId(sessionId) }, id)
     return id
   }
   /** Whether the fake has carried out the action `action` answered with this ID. */
@@ -90,7 +90,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       restart: async () => { host.disconnect(); await adapter.closed(); return codexFixture(root, wrapped, requestTimeoutMs, session) },
     },
     /** Every app-server the fake saw start, and what each was asked to start or resume. */
-    servers: async (): Promise<ServedRecord[]> => (await readFile(join(root, 'servers.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as ServedRecord),
+    servers: async (): Promise<ServedRecord[]> => parseProviderRecords<ServedRecord>(await readFile(join(root, 'servers.jsonl'), 'utf8').catch(() => '')),
     /** The process id of the app-server that last started or resumed this thread. */
     serverOf: async (sessionId: string): Promise<number | undefined> => {
       const codexThreadId = await realId(sessionId)
