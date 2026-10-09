@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,7 +50,7 @@ test('desktop migration keeps raw host IDs and restores scoped panes and drafts 
         const draft = await page.evaluate(async () => (await window.sotto!.agents!.get()).threadDrafts)
         expect(draft).toContainEqual(expect.objectContaining({ threadId: first, text: 'Draft retained across host migration' }))
         await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'first identity task', exact: true }).click()
-        await expect(page.locator(`section.thread-pane[data-thread-id="${first}"]`).getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Draft retained across host migration')
+        await expectPromptText(promptField(page.locator(`section.thread-pane[data-thread-id="${first}"]`)), 'Draft retained across host migration')
         await page.screenshot({ path: testInfo.outputPath(`${phase}.png`), animations: 'disabled' })
       } finally { await closeSotto(launched) }
     }

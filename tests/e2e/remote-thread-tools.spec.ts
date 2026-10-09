@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { execFileSync } from 'node:child_process'
 import { isBuiltin } from 'node:module'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -122,10 +123,10 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
     await expect(panel.getByText('README.md', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
 
     // A file mention in the thread's composer offers the host's files too.
-    const prompt = page.locator('section.thread-pane form.thread-prompt textarea').first()
-    await prompt.fill('Read @READ')
+    const prompt = promptField(page).first()
+    await fillPrompt(prompt, 'Read @READ')
     await expect(page.locator('section.thread-pane').first().getByRole('listbox', { name: 'Files' }).getByRole('option')).toContainText('README.md')
-    await prompt.fill('')
+    await fillPrompt(prompt, '')
 
     // Agents: the host's roster for this thread, which has spawned none.
     await panel.getByRole('tab', { name: 'Agents', exact: true }).click()

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -82,8 +83,8 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await expect(separator(page)).toHaveAttribute('aria-valuemax', '480')
     const preview = row(page, 'Grok voice previews')
     // Row actions temporarily occupy the narrow metadata line on hover or keyboard focus.
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).hover()
+    await promptField(page).focus()
+    await promptField(page).hover()
     await expect(preview.locator('.thread-nav__provider')).toBeVisible()
     // The provider is its mark; its name is the hover text.
     await expect(preview.locator('.thread-nav__provider svg.provider-mark[data-provider="claude"]')).toBeVisible()
@@ -94,8 +95,8 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     // This fixture has no worktree metadata. A wide row must not invent a branch.
     await expect(preview.locator('.thread-nav__branch svg.lucide-git-branch')).toHaveCount(0)
     await expect(preview.locator('.thread-nav__branch-name')).toHaveText('Project folder')
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Keep this original draft through every sidebar change.')
+    const prompt = promptField(page)
+    await fillPrompt(prompt, 'Keep this original draft through every sidebar change.')
     const settings = sidebar(page).getByRole('link', { name: 'Settings', exact: true })
     await expect(settings.locator('svg.lucide-settings')).toBeVisible()
     const settingsSymbol = await settings.locator('svg').innerHTML()
@@ -115,13 +116,13 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     const remembered = Number(await separator(page).getAttribute('aria-valuenow'))
     expect(remembered).toBeLessThan(480)
     expect(remembered).toBeGreaterThan(420)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await expect(settings.locator('svg')).toHaveJSProperty('innerHTML', settingsSymbol)
 
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await expect(separator(page)).toBeHidden()
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await page.reload()
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await openPage(page, 'Settings')
@@ -129,7 +130,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await expectWidth(page, remembered)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
     await openPage(page, 'Settings')
     await page.getByRole('tab', { name: 'Threads', exact: true }).click()
     await expectWidth(page, remembered)
@@ -137,7 +138,7 @@ test('project rows resize by pointer and keyboard, retain drafts, and remember c
     await page.reload()
     await openThreads(page)
     await expectWidth(page, remembered)
-    await expect(prompt).toHaveValue('Keep this original draft through every sidebar change.')
+    await expectPromptText(prompt, 'Keep this original draft through every sidebar change.')
   } finally { await closeSotto(launched) }
 })
 

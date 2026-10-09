@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -91,8 +92,8 @@ test('the empty Threads page offers a leftover draft without asking to reconnect
 
     // New thread with this draft opens a thread in the current project with the draft in its composer, and the leftover copy goes.
     await move.click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt' })
-    await expect(prompt).toHaveValue(LEFTOVER)
+    const prompt = promptField(page)
+    await expectPromptText(prompt, LEFTOVER)
     await expect(prompt).toBeFocused()
     await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).draft)).toBe('')
     await expect.poll(() => page.evaluate(async () => {
@@ -115,6 +116,6 @@ test('the empty Threads page offers to open the thread a saved draft is still li
     await checkSizes(launched, [heading, open, page.getByRole('button', { name: 'Discard draft' })], (width, appearance) =>
       width === 820 && appearance === 'dark' ? 'listed-820-dark' : null)
     await open.click()
-    await expect(page.getByRole('textbox', { name: 'Prompt' })).toBeFocused()
+    await expect(promptField(page)).toBeFocused()
   })
 })

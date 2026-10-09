@@ -1,3 +1,4 @@
+import { expectPromptText, promptField } from './support/prompt'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -113,7 +114,7 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     await closeSotto(launched)
     launched = await launchSotto('success', directory)
     await openThreads(launched.page)
-    await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A draft that must survive a restart.')
+    await expectPromptText(promptField(launched.page), 'A draft that must survive a restart.')
     const snapshot = await state(launched.page)
     expect(snapshot.assignments[0]?.mode).toBe('manual')
     expect(snapshot.draftThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))

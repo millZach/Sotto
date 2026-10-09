@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -471,7 +472,7 @@ test('themes: a minimized editor is one row that leaves Send and the page links 
     await page.locator('#settings-appearance').getByRole('button', { name: 'Create theme' }).click()
     const editor = page.getByRole('dialog', { name: 'Create theme' })
     await openThreads(page)
-    await page.locator('.thread-prompt textarea').first().fill('Checking the theme editor stays clear')
+    await fillPrompt(promptField(page).first(), 'Checking the theme editor stays clear')
     await editor.getByRole('button', { name: 'Minimize the theme editor' }).click()
     await expect(editor).toHaveAttribute('data-minimized', 'true')
     await expect(editor.getByRole('button', { name: 'Inspect app colors' })).toHaveCount(0)

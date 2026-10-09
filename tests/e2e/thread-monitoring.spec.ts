@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -132,20 +133,20 @@ test('confirmed monitoring appears without a buffer and never follows ordinary c
   const { page } = launched
   try {
     await start(launched)
-    const prompt = pane(page).locator('form.thread-prompt textarea')
+    const prompt = promptField(pane(page))
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Running a command.', status: 'running' })
     await expect(indicator(page)).toHaveCount(0)
     await event(page, { type: 'ready', threadId: 'workshop', text: 'The development server is running in the background.', status: 'idle' })
     await expect(indicator(page)).toHaveCount(0)
     await monitoring(page, [])
     await expect(indicator(page)).toHaveCount(0)
-    await prompt.fill('Keep this draft while watching.')
+    await fillPrompt(prompt, 'Keep this draft while watching.')
     await monitoring(page)
     // Shorter than the rejected ten-second buffer; this is a UI response deadline, not a timed sleep.
     await expect(indicator(page)).toBeVisible({ timeout: 3_000 })
     await expect(indicator(page)).toHaveAttribute('role', 'status')
     await expect(indicator(page).locator('.thread-monitor__task')).toContainText(monitorTask.label)
-    await expect(prompt).toHaveValue('Keep this draft while watching.')
+    await expectPromptText(prompt, 'Keep this draft while watching.')
     await expect(prompt).toBeFocused()
     const creature = await indicator(page).locator('.thread-monitor__creature').elementHandle()
     await monitoring(page, [{ ...monitorTask, label: 'Watching the next build check' }])
@@ -299,14 +300,14 @@ test('background work sends agents out from the readout, yields to a watch, and 
   try {
     await start(launched)
     await page.emulateMedia({ reducedMotion: 'no-preference' })
-    const prompt = pane(page).locator('form.thread-prompt textarea')
-    await prompt.fill('Keep this draft while the agents work.')
+    const prompt = promptField(pane(page))
+    await fillPrompt(prompt, 'Keep this draft while the agents work.')
     await working(page, agents.slice(0, 1))
     await expect(indicator(page)).toHaveAttribute('data-ornament', 'working')
     await expect(indicator(page)).toHaveAttribute('role', 'status')
     await expect(indicator(page).locator('.thread-monitor__label')).toHaveText(agents[0]!.label)
     await expect(indicator(page).locator('.thread-monitor__status')).toHaveText('Working')
-    await expect(prompt).toHaveValue('Keep this draft while the agents work.')
+    await expectPromptText(prompt, 'Keep this draft while the agents work.')
     await working(page, agents.slice(0, 3))
     await expect(indicator(page).locator('.thread-monitor__status')).toHaveText('Working · 3 agents')
     await expect(indicator(page).locator('.thread-monitor__task')).toHaveAttribute('title', agents.slice(0, 3).map(agent => agent.label).join('\n'))

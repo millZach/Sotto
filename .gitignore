@@ -11,6 +11,8 @@ artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/queued-editor.png
 !artifacts/skill-pill-composer/compact-grid.png
 !artifacts/skill-pill-composer/compact-question.png
+!artifacts/skill-pill-composer/permission-recovery-dark-820.png
+!artifacts/skill-pill-composer/permission-recovery-light-820.png
 artifacts/linux-no-window-controls/*
 !artifacts/linux-no-window-controls/checks.json
 !artifacts/linux-no-window-controls/threads-1600x1000-dark.png

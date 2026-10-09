@@ -1,3 +1,4 @@
+import { promptField } from './support/prompt'
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -112,7 +113,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     const panes = page.getByRole('group', { name: 'Thread panes' })
     const left = page.locator(`section.thread-pane[data-thread-id="${worktreeThread}"]`)
     const right = page.locator(`section.thread-pane[data-thread-id="${notesThread}"]`)
-    await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(left).click()
     await expect(left).toHaveAttribute('data-focused')
 
     // Sidecar keeps a generous dock; the remaining pane area uses focus tabs at 1600.
@@ -132,7 +133,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     // Pinned to the worktree thread while the other pane holds focus: the panel says so, and that pane's toggle is not pressed-looking.
     await panel.getByRole('button', { name: 'Pin to Worktree checkout' }).click()
     await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
-    await right.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(right).click()
     await expect(right).toHaveAttribute('data-focused')
     const rightToggle = right.getByRole('button', { name: 'Tools', exact: true })
     await expect(rightToggle).toHaveAttribute('data-pinned-elsewhere', 'true')
@@ -203,7 +204,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await resize(launched, 1280, 800)
     await page.getByRole('button', { name: 'Close Field notes pane' }).click()
     await expect(panes).not.toHaveAttribute('data-split')
-    await left.getByRole('textbox', { name: 'Prompt', exact: true }).click()
+    await promptField(left).click()
     await left.getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panel.getByRole('tree').getByRole('treeitem', { name: 'README.md' })).toHaveAttribute('aria-selected', 'true')

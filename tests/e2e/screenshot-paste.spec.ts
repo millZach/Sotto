@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { readFile } from 'node:fs/promises'
@@ -19,7 +20,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     })
     await page.reload(); await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
-    const prompt = page.getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(page)
     const paste = async (name: string) => {
       await prompt.evaluate((element, data) => {
         const transfer = new DataTransfer()
@@ -30,7 +31,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     }
     await expect(page.getByRole('button', { name: 'Attach screenshots', exact: true })).toBeEnabled()
     await paste('Screenshot.png')
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     await page.emulateMedia({ reducedMotion: 'reduce' })
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await launched.app.evaluate(({ BrowserWindow }, size) => {
@@ -49,7 +50,7 @@ test('pasting screenshots previews, sends image-only input, and queues another s
     await expect(transcript.getByAltText('Screenshot.png')).toBeVisible()
     await expect(page.getByLabel('Attached screenshots')).toHaveCount(0)
     await paste('Next screenshot.png')
-    await prompt.fill('Check this next.')
+    await fillPrompt(prompt, 'Check this next.')
     await prompt.press('Enter')
     const queue = page.getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Check this next.')

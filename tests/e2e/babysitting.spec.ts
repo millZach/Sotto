@@ -1,3 +1,4 @@
+import { fillPrompt, promptField } from './support/prompt'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -281,8 +282,8 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
 
     // A later failure while the thread is busy waits in the follow-up queue after the user's own, as Sotto's.
     await event(page, { type: 'manual', threadId: 'workshop', text: 'Also mention the greeting in the README.' })
-    const prompt = pane(page).getByRole('textbox', { name: 'Prompt', exact: true })
-    await prompt.fill('Then add a changelog entry.')
+    const prompt = promptField(pane(page))
+    await fillPrompt(prompt, 'Then add a changelog entry.')
     await prompt.press('Enter')
     const queue = pane(page).getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Then add a changelog entry.')

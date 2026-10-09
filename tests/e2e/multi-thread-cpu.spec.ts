@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
@@ -149,18 +150,18 @@ test('synthetic thread histories keep streaming and permission available across 
     await expect(permission.getByRole('button', { name: 'Deny' })).toBeEnabled()
     await expect(pane(page, key(STREAM_THREAD)).getByLabel('Thread transcript')).toContainText('Synthetic work is in progress.')
 
-    const prompt = pane(page, key(STREAM_THREAD)).getByRole('textbox', { name: 'Prompt', exact: true })
+    const prompt = promptField(pane(page, key(STREAM_THREAD)))
     let started = performance.now()
     await prompt.click()
     await expect(pane(page, key(STREAM_THREAD))).toHaveAttribute('data-focused')
     interactions.focusMs = performance.now() - started
     started = performance.now()
-    await prompt.fill('Synthetic CPU verification prompt.')
-    await expect(prompt).toHaveValue('Synthetic CPU verification prompt.')
+    await fillPrompt(prompt, 'Synthetic CPU verification prompt.')
+    await expectPromptText(prompt, 'Synthetic CPU verification prompt.')
     interactions.typeMs = performance.now() - started
     started = performance.now()
     await prompt.press('Enter')
-    await expect(prompt).toHaveValue('')
+    await expectPromptText(prompt, '')
     interactions.sendAcknowledgedMs = performance.now() - started
 
     async function emitStream(phase: string) {

@@ -1,3 +1,4 @@
+import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
@@ -24,13 +25,13 @@ test('creates a project thread while the hidden coordinator retains another thre
     })
     await page.reload()
     await openThreads(page)
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     expect(await page.evaluate(async () => (await window.sotto!.getSettings()).voiceCoordinatorEnabled)).toBe(false)
     // The pen opens the thread at once, on defaults, with no dialog to fill in (issue #347).
     await page.getByRole('button', { name: 'New thread in Sotto test', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
+    await expect(promptField(page)).toBeEnabled()
     // The optimistic pane shows and focuses the thread before main confirms creation; wait for that confirmation.
     // (The exact `activeThreadId` this build reports can be bare or host-qualified depending on when host
     // scoping takes effect during startup, so the check that matters is that the new thread exists and is
@@ -44,10 +45,10 @@ test('creates a project thread while the hidden coordinator retains another thre
     expect(state.host.threads).toContainEqual(expect.objectContaining({ id: state.activeThreadId, title: 'New thread' }))
     const key = await hostKeys(page)
     expect(state).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop'), assignments: [] })
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Only send this new prompt')
+    await fillPrompt(promptField(page), 'Only send this new prompt')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Only send this new prompt')
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     expect(await page.evaluate(async () => window.sotto!.agents!.get())).toMatchObject({ draft: 'Keep the other thread draft', draftThreadId: key('workshop') })
     await page.screenshot({ animations: 'disabled', path: join(savedDraftEvidence, 'created-and-sent.png') })
   } finally { await closeSotto(launched) }
@@ -105,18 +106,18 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
     await expect(page.getByRole('combobox', { name: 'Thread permissions' })).toHaveText('Allow edits')
     await page.getByLabel('Screenshot files').setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: screenshot })
     await expect(page.getByRole('img', { name: 'screen.png' })).toBeVisible()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Review this screenshot.')
+    await fillPrompt(promptField(page), 'Review this screenshot.')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-screenshot-draft.png') })
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('screen.png')
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
+    await expectPromptText(promptField(page), '')
     await expect(page.getByLabel('Attached screenshots').getByRole('img', { name: 'screen.png' })).toHaveCount(0)
     await expect(page.getByLabel('Thread transcript').getByRole('img', { name: 'screen.png' })).toBeVisible()
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Stop agent', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Attach screenshots' })).toBeEnabled()
-    await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toBeEnabled()
-    await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((node, base64) => {
+    await expect(promptField(page)).toBeEnabled()
+    await promptField(page).evaluate((node, base64) => {
       const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0))
       const data = new DataTransfer()
       data.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }))
