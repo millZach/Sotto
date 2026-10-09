@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 
@@ -133,7 +133,11 @@ function linuxProfile() {
     openDistributable: async (distributablePath, open) => {
       const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-tarball-'))
       try {
-        await execFileAsync('tar', ['-xzpf', distributablePath, '-C', extractionRoot], { maxBuffer: 4 * 1024 * 1024 })
+        const archive = resolve(distributablePath)
+        // A relative archive name works with BSD tar and avoids GNU tar reading a Windows drive as a host.
+        await execFileAsync('tar', ['-xzpf', `./${basename(archive)}`, '-C', extractionRoot], {
+          cwd: dirname(archive), maxBuffer: 4 * 1024 * 1024,
+        })
         // electron-builder prefixes tar archives with the artifact name, without .tar.gz.
         const root = join(extractionRoot, distributablePath.split(/[\\/]/u).at(-1).replace(/\.tar\.gz$/u, ''))
         return await open(join(root, 'resources', 'app.asar'), root)

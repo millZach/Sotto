@@ -21,7 +21,7 @@ async function fixture() {
   await writeFile(join(packaged, 'resources/app.asar'), 'asar')
   await writeFile(join(packaged, 'resources/runtime/ort-wasm-simd-threaded.wasm'), 'wasm')
   const archive = join(root, `${name}.tar.gz`)
-  const pack = () => execFileSync('tar', ['-czf', archive, '-C', root, name])
+  const pack = () => execFileSync('tar', ['-czf', `./${name}.tar.gz`, name], { cwd: root })
   return { root, packaged, archive, pack }
 }
 
