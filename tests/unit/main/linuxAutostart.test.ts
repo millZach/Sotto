@@ -17,6 +17,48 @@ const temporary = () => { const root = mkdtempSync(join(tmpdir(), 'sotto-autosta
 afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('Linux XDG autostart', () => {
+  it('refreshes an owned stale executable when the remembered setting is already on', () => {
+    const configHome = temporary()
+    const file = join(configHome, 'autostart/sotto.desktop')
+    const old = new StartupService(linuxAutostart({ isPackaged: true, executable: '/downloads/sotto', configHome }))
+    old.set(true)
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome }))
+    expect(startup.get()).toEqual({ enabled: true, supported: true })
+    expect(startup.set(true)).toEqual({ enabled: true, supported: true })
+    const saved = readFileSync(file, 'utf8')
+    expect(saved).toContain('X-Sotto-Autostart=true\n')
+    expect(saved).toContain('Exec="/opt/sotto/sotto"\n')
+    expect(saved).not.toContain('/downloads/sotto')
+  })
+
+  it('removes an owned stale executable when startup is off', () => {
+    const configHome = temporary()
+    const old = new StartupService(linuxAutostart({ isPackaged: true, executable: '/downloads/sotto', configHome }))
+    old.set(true)
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome }))
+    expect(startup.set(false)).toEqual({ enabled: false, supported: true })
+    expect(existsSync(join(configHome, 'autostart/sotto.desktop'))).toBe(false)
+  })
+
+  it.each([
+    'Name=Sotto\n',
+    'Name=Other app\nX-Sotto-Autostart=true\n',
+    'Name=Sotto\nX-Sotto-Autostart=true\nHidden=true\n',
+    'Name=Sotto\nX-Sotto-Autostart=true\nX-GNOME-Autostart-enabled=false\n',
+  ])('preserves an unmanaged or externally disabled entry (%s)', fields => {
+    const configHome = temporary()
+    const file = join(configHome, 'autostart/sotto.desktop')
+    mkdirSync(join(configHome, 'autostart'))
+    const contents = `[Desktop Entry]\nType=Application\n${fields}Exec="/other/sotto"\n`
+    fs.writeFileSync(file, contents)
+    for (const enabled of [true, false]) {
+      const adapter = linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome })
+      adapter.setLoginItemSettings({ openAtLogin: enabled })
+      expect(new StartupService(adapter).set(enabled)).toEqual({ enabled: false, supported: false })
+      expect(readFileSync(file, 'utf8')).toBe(contents)
+    }
+  })
+
   it.each([false, true])('keeps startup running with remembered startup=%s when the entry is unreadable', enabled => {
     const log = vi.fn()
     const configHome = temporary()

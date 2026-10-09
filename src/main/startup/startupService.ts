@@ -2,6 +2,8 @@ import type { StartupState } from '../../shared/contracts'
 
 export interface LoginItemAdapter {
   readonly supported?: boolean
+  /** Packaged Linux also reconciles an unchanged setting after its executable moves. */
+  readonly reconcileOnSet?: boolean
   /** `status` is macOS only. On macOS 13 and later it can say the login item waits for the user's approval. */
   getLoginItemSettings(): { readonly openAtLogin: boolean; readonly status?: string }
   setLoginItemSettings(settings: { readonly openAtLogin: boolean }): void
@@ -32,7 +34,7 @@ export class StartupService {
   }
 
   set(enabled: boolean): StartupState {
-    if (this.get().enabled !== enabled) {
+    if (this.get().enabled !== enabled || this.loginItems.reconcileOnSet === true) {
       this.loginItems.setLoginItemSettings({ openAtLogin: enabled })
     }
     return this.get()

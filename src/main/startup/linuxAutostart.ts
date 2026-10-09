@@ -23,27 +23,38 @@ export function linuxAutostart(options: {
   const config = options.configHome && isAbsolute(options.configHome) ? options.configHome : join(options.home ?? homedir(), '.config')
   const folder = join(config, 'autostart')
   const file = join(folder, 'sotto.desktop')
-  const contents = `[Desktop Entry]\nType=Application\nName=Sotto\nExec=${desktopExec(options.executable)}\nIcon=sotto\nTerminal=false\nCategories=Utility;\n`
+  const command = desktopExec(options.executable)
+  const contents = `[Desktop Entry]\nType=Application\nName=Sotto\nX-Sotto-Autostart=true\nExec=${command}\nIcon=sotto\nTerminal=false\nCategories=Utility;\n`
   let supported = true
   const unavailable = (event: LinuxAutostartEvent) => {
     supported = false
     options.log?.(event)
   }
+  const readEntry = (): string | null => {
+    if (!supported) return null
+    try {
+      const saved = readFileSync(file, 'utf8')
+      // Another app or desktop tool owns its own entry and any explicit disable.
+      if (!/^Name=Sotto\s*$/mu.test(saved) || !/^X-Sotto-Autostart=true\s*$/mu.test(saved)
+        || /^Hidden=true\s*$/mu.test(saved) || /^X-GNOME-Autostart-enabled=false\s*$/mu.test(saved)) supported = false
+      return saved
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unavailable('linux-autostart-read-failed')
+      return null
+    }
+  }
   return {
     get supported() { return supported },
+    reconcileOnSet: true,
     getLoginItemSettings: () => {
-      if (!supported) return { openAtLogin: false }
-      try {
-        const saved = readFileSync(file, 'utf8')
-        return { openAtLogin: /^Exec=.+$/mu.test(saved) && !/^Hidden=true\s*$/mu.test(saved) }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { openAtLogin: false }
-        unavailable('linux-autostart-read-failed')
-        return { openAtLogin: false }
-      }
+      const saved = readEntry()
+      return { openAtLogin: supported && saved !== null && /^Exec=.+$/mu.test(saved) }
     },
     setLoginItemSettings: ({ openAtLogin }) => {
+      // Recheck ownership before a mutation, including direct adapter calls.
+      const saved = readEntry()
       if (!supported) return
+      if (openAtLogin && saved === contents) return
       try {
         if (!openAtLogin) { rmSync(file, { force: true }); return }
         mkdirSync(folder, { recursive: true })
