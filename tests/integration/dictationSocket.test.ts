@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createConnection, createServer } from 'node:net'
@@ -121,8 +122,8 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     expect(dispatch).toHaveBeenCalledTimes(3)
   })
   it('ignores an older start while delivery of the release is pending', async () => {
-    const held = Promise.withResolvers<void>()
-    const entered = Promise.withResolvers<void>()
+    const held = deferred<void>()
+    const entered = deferred<void>()
     const dispatch = vi.fn(async () => { entered.resolve(); await held.promise; return true })
     await service(dispatch).start()
     const at = BigInt(Date.now()) * 1_000_000n

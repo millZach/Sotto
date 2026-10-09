@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { DevinRpc, DevinUncertain, readDevinVersion } from '../../src/main/agents/devinRpc'
 
@@ -36,9 +37,8 @@ describe("Devin stdio boundary", () => {
   })
 
   it('retains a timed-out mutation for late reconciliation without retrying it', async () => {
-    let ready!: () => void; let applied!: () => void
-    const sent = new Promise<void>(resolve => { ready = resolve })
-    const application = new Promise<void>(resolve => { applied = resolve })
+    const { promise: sent, resolve: ready } = deferred<void>()
+    const { promise: application, resolve: applied } = deferred<void>()
     const peer = rpc("let pending;process.stdin.on('data',b=>{for(const l of b.toString().trim().split('\\n')){const f=JSON.parse(l);if(f.method==='session/new'){pending=f;process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'ready'})+'\\n')}else if(f.method==='release'){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:pending.id,result:'created'})+'\\n')}}})", frame => { if (frame.method === 'ready') ready() })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {

@@ -1,10 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Page } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
@@ -23,7 +20,7 @@ async function withTurnedAwayDictation(
   run: (launched: LaunchedSotto, widget: Page) => Promise<void>,
   settings: Partial<AppSettings> = {},
 ): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-dictation-retry-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-dictation-retry-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   let launched: LaunchedSotto | undefined
   try {
@@ -35,7 +32,7 @@ async function withTurnedAwayDictation(
     await run(launched, widget)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

@@ -4,13 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { providerIdSchema, type AgentHostSnapshot, type ProviderId } from '../../../src/shared/agents'
 import type { AgentHost } from '../../../src/main/agents/host'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 class TargetHost extends E2EAgentHost {
   blocked: Promise<void> | undefined
@@ -22,9 +25,9 @@ class TargetHost extends E2EAgentHost {
 it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting for unrelated background history', async mode => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-target-read-'))
   const host = new TargetHost()
-  const credentials = new AgentCredentials(join(root, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'plain' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
   })
   let release!: () => void
@@ -36,7 +39,9 @@ it.each(['manual', 'managed'] as const)('confirms a %s prompt without waiting fo
       await control.command({ type: 'compose', text: 'Selected thread prompt' })
     }
     host.reads.length = 0
-    host.blocked = new Promise<void>(resolve => { release = resolve })
+    const pending1 = deferred<void>();
+    release = pending1.resolve;
+    host.blocked = pending1.promise
     const background = host.snapshot()
     sending = control.command(mode === 'manual' ? { type: 'manual-send', threadId: 'workshop', text: 'Selected thread prompt', draftId: 'selected-draft' } : { type: 'send' })
     const result = await Promise.race([sending, new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 200))])
@@ -63,7 +68,9 @@ it('maps a targeted read through provider selection and durable Sotto identity w
     const connected = await host.connect()
     const id = connected.threads.find(thread => thread.title === 'Workshop')!.id
     expect(id).not.toBe('workshop')
-    adapter.blocked = new Promise<void>(resolve => { release = resolve })
+    const pending2 = deferred<void>();
+    release = pending2.resolve;
+    adapter.blocked = pending2.promise
     const result = await host.refreshThread(id)
     expect(adapter.reads).toEqual(['workshop'])
     expect(result.threads.map(thread => thread.id)).toEqual(connected.threads.map(thread => thread.id))

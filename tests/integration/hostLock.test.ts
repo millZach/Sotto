@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { spawn } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -57,9 +58,8 @@ describe('the host lock', () => {
   it('lets exactly one of two hosts own the folder when both judged the same crashed lock stale', async () => {
     await writeFile(path, JSON.stringify({ pid: await deadPid(), nonce: 'crashed' }))
     // A has judged the crashed lock stale and is about to move it aside; B starts, reclaims and owns the folder first.
-    let judged!: () => void, resume!: () => void
-    const aJudged = new Promise<void>(resolve => { judged = resolve })
-    const aResumes = new Promise<void>(resolve => { resume = resolve })
+    const { promise: aJudged, resolve: judged } = deferred<void>()
+    const { promise: aResumes, resolve: resume } = deferred<void>()
     const a = acquireHostLock(path, lease('a'), { log, beforeReclaim: async () => { judged(); await aResumes } })
     const aOutcome = a.then(() => 'owner', (error: unknown) => error)
     await aJudged
@@ -92,9 +92,8 @@ describe('the host lock', () => {
   it('never moves the winner\'s lock when a third host starts while a late host finishes its reclaim', async () => {
     await writeFile(path, JSON.stringify({ pid: await deadPid(), nonce: 'crashed' }))
     // A has judged the crashed lock stale; B reclaims and owns the folder; then A goes on while C starts.
-    let judged!: () => void, resume!: () => void
-    const aJudged = new Promise<void>(resolve => { judged = resolve })
-    const aResumes = new Promise<void>(resolve => { resume = resolve })
+    const { promise: aJudged, resolve: judged } = deferred<void>()
+    const { promise: aResumes, resolve: resume } = deferred<void>()
     const a = acquireHostLock(path, lease('a'), { log, beforeReclaim: async () => { judged(); await aResumes } })
     const aOutcome = a.then(() => 'owner', (error: unknown) => error)
     await aJudged

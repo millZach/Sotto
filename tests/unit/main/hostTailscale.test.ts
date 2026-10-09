@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { HostTailscale, mergeDevices, readTailscaleStatus } from '../../../src/main/hosts/tailscale'
-import type { TailscaleInvoke, TailscaleRunOptions } from '../../../src/main/phones/tailscale'
+import type { TailscaleInvoke, TailscaleRunOptions, TailscaleRunResult } from '../../../src/main/phones/tailscale'
 import type { SshHostSuggestion } from '../../../src/shared/hosts'
 import { TAILSCALE_NEEDS_LOGIN, TAILSCALE_NO_PEERS, TAILSCALE_NOT_ANSWERING, TAILSCALE_RUNNING, TAILSCALE_STOPPED } from '../../fixtures/tailscaleStatus'
+import { deferred } from '../../fixtures/deferred'
 
 const SSH: SshHostSuggestion[] = [
   { alias: 'forge', source: 'config', detail: 'zach@forge.tail5728ca.ts.net', hostname: 'forge.tail5728ca.ts.net' },
@@ -197,11 +198,13 @@ describe('Tailscale on this computer', () => {
   it('opens the sign-in page tailscale up prints, once the whole URL is printed, and answers while the sign-in goes on', async () => {
     let finish: (() => void) | undefined
     const openExternal = vi.fn(async () => undefined)
-    const invoke = cli({ up: options => new Promise(resolve => {
+    const invoke = cli({ up: options => {
+      const pending = deferred<TailscaleRunResult>()
       options.watch?.('\nTo authenticate, visit:\n\n\thttps://login.tailscale.com/a/1a2')
       options.watch?.('\nTo authenticate, visit:\n\n\thttps://login.tailscale.com/a/1a2b3c\n\n')
-      finish = () => resolve({ code: 0, stdout: 'Success.\n', stderr: '' })
-    }) })
+      finish = () => pending.resolve({ code: 0, stdout: 'Success.\n', stderr: '' })
+      return pending.promise
+    } })
     const tailscale = new HostTailscale({ invoke, suggestions: async () => [], openExternal })
     expect(await tailscale.connect()).toBe('sign-in-opened')
     expect(openExternal.mock.calls).toEqual([['https://login.tailscale.com/a/1a2b3c']])
@@ -229,10 +232,12 @@ describe('Tailscale on this computer', () => {
   it('keeps one tailscale up while the sign-in goes on: a second press opens the same page again', async () => {
     let finish: (() => void) | undefined
     const openExternal = vi.fn(async () => undefined)
-    const invoke = cli({ up: options => new Promise(resolve => {
+    const invoke = cli({ up: options => {
+      const pending = deferred<TailscaleRunResult>()
       options.watch?.('\nTo authenticate, visit:\n\n\thttps://login.tailscale.com/a/first\n\n')
-      finish = () => resolve({ code: 0, stdout: 'Success.\n', stderr: '' })
-    }) })
+      finish = () => pending.resolve({ code: 0, stdout: 'Success.\n', stderr: '' })
+      return pending.promise
+    } })
     const tailscale = new HostTailscale({ invoke, suggestions: async () => [], openExternal })
     expect(await tailscale.connect()).toBe('sign-in-opened')
     expect(await tailscale.connect()).toBe('sign-in-opened')

@@ -1,10 +1,11 @@
 // @vitest-environment node
+import { launchScriptChild } from '../fixtures/launchScriptRunner'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { HOST_STOP_DRAIN_MS, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { bootStatusSchema } from '../../src/shared/bootStart'
 import { fakeSystemd, type FakeSystemd, type FakeSystemdState } from '../fixtures/fakeSystemd'
 
@@ -40,9 +41,7 @@ interface Outcome { readonly messages: Record<string, unknown>[]; readonly resul
 /** One operation the way the desktop sends it, under the fakes. */
 async function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>, env: NodeJS.ProcessEnv = {}): Promise<Outcome> {
   const { systemd: fake, ...settings } = configuration
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...settings, ...operation })], { shell: false, windowsHide: true, env: { ...fake.env, ...env } })
-  children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
+  const child = launchScriptChild({ ...settings, ...operation }, { ...fake.env, ...env }, child => children.push(child))
   let output = ''
   child.stdout.on('data', chunk => { output += String(chunk) })
   await new Promise(resolve => child.once('close', resolve))

@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { resolveFilesBinding } from '../../../src/main/files/binding'
 import { FilesService } from '../../../src/main/files/service'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const host = (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST,
   projects: [{ id: 'project', title: 'Project', path: 'D:/project' }],
@@ -57,12 +59,12 @@ describe('the coordinator answering Files without copying its state', () => {
   })
   async function connected(): Promise<AgentControl> {
     const root = await mkdtemp(join(tmpdir(), 'sotto-files-binding-')); roots.push(root)
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() })
-    await credentials.load()
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+
     const host = new E2EAgentHost()
     // The fixture project points at a real folder, so a listing goes all the way through verification.
     ;(host as unknown as { state: AgentHostSnapshot }).state.projects[0]!.path = root
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     })
     controls.push(control)
     await control.start(); await control.command({ type: 'connect' })

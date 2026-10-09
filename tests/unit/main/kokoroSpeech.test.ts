@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KokoroSpeechService } from '../../../src/main/agents/kokoroSpeech'
+import { deferred } from '../../fixtures/deferred'
 
 const samples = Buffer.from([0xe8, 0x03, 0x18, 0xfc])
 
@@ -162,7 +163,7 @@ describe('KokoroSpeechService', () => {
   it('cancels promptly even when fetch ignores abort and discards its late response', async () => {
     let release!: (response: Response) => void
     const fetchFn = vi.fn<typeof fetch>()
-      .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockImplementationOnce(() => { const pending = deferred<Response>(); release = pending.resolve; return pending.promise })
       .mockImplementationOnce(async () => audioResponse())
     const { service } = setup(fetchFn)
     const rejected = expect(service.synthesize('Old')).rejects.toThrow('cancelled')

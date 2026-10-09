@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,7 +33,7 @@ function mount(options: { readonly width?: number; readonly height?: number; rea
       return live.publish({ activeThreadId: thread.id, activeProjectId: thread.projectId })
     }
     if (!holdSelection) return apply()
-    return new Promise(resolve => { held.push({ threadId: request.threadId, release: () => resolve(apply()) }) })
+    const pending = deferred<AgentState | null>(); held.push({ threadId: request.threadId, release: () => pending.resolve(apply()) }); return pending.promise
   })
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
   const store = options.store ?? new SplitLayoutStore()

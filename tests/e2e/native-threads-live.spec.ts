@@ -1,5 +1,6 @@
-import { mkdtemp, mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
@@ -19,7 +20,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
   test(`${provider}: actual native Threads create, send, reply and restart`, async () => {
     test.skip(!enabled || (!!selected && selected !== provider), 'Explicit native subscription smoke opt-in required.')
     if (restoreRoot && selected !== provider) throw new Error('Restore mode requires one explicitly selected provider.')
-    const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+    const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
     const profile = join(root, 'profile')
     const project = join(root, 'project')
     if (!restoreRoot) {
@@ -72,12 +73,12 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       const restoreBinding = restoreRoot ? JSON.parse(await readFile(join(profile, 'threads.json'), 'utf8')) : undefined
       page = await launch()
       if (restoreRoot) {
-        await expect.poll(async () => (await page!.evaluate(async () => window.sotto!.agents!.get())).connection, { timeout: 30_000 }).toBe('connected')
+        await expect.poll(async () => (await agentState(page!)).connection, { timeout: 30_000 }).toBe('connected')
         await openThreads(page)
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
         await expect(page.getByLabel('Thread transcript').locator('[data-role="assistant"]')).toContainText('READY', { timeout: 30_000 })
         await waitForIdle(page)
-        const state = await page.evaluate(async () => window.sotto!.agents!.get())
+        const state = await agentState(page)
         expect(state.configuration.provider).toBe(provider)
         expect(state.activeThreadId).toBe(restoreBinding.bindings[0].threadId)
         expect(state.host.threads).toHaveLength(1)

@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,16 +24,10 @@ function thread(id: string, messages: AgentMessage[]): AgentThread {
 const model = (id: string): AgentModel => ({ id, provider: 'Claude Code', providerId: 'claude', name: id, ready: true })
 
 function fullState(threads: AgentThread[], activeThreadId: string | null = null): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    assignments: [], queue: [], activeThreadId, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: { assignments: [], queue: [], activeThreadId, activeProjectId: null, draftAttachments: [], credentials: { reasoning: false, grokSpeech: false, secure: false }, historyEnabled: true } })
 }
 
 /** A bridge that carries only the shell, with the detail of each thread on request or on push. */
@@ -479,7 +475,7 @@ describe('a sync command reply racing a low-priority broadcast', () => {
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
     let resolveCommand!: (state: AgentState) => void
-    vi.mocked(wire.bridge.command).mockImplementationOnce(() => new Promise(resolve => { resolveCommand = resolve }))
+    vi.mocked(wire.bridge.command).mockImplementationOnce(() => { const pending = deferred<AgentState>(); resolveCommand = pending.resolve; return pending.promise })
     wire.publish({ ...initial, notice: 'from the broadcast' })
     // `refresh` is a provider operation and runs at once rather than waiting behind the command lane,
     // so `bridge.command` (and `resolveCommand`) is called synchronously here.

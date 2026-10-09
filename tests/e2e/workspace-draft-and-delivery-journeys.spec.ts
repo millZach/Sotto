@@ -1,9 +1,8 @@
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -51,7 +50,7 @@ async function captureModes(launched: LaunchedSotto, name: string, width = 820):
 
 test('independent text and image drafts survive navigation, renderer reload and a full Electron restart', async () => {
   test.setTimeout(60_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-workspace-journey-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-workspace-journey-' })).directory
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('success', profile)
@@ -90,7 +89,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
       const img = image.getBoundingClientRect(); const frame = image.parentElement!.getBoundingClientRect()
       return img.top >= frame.top && img.bottom <= frame.bottom + 1 && img.left >= frame.left && img.right <= frame.right + 1
     })).toBe(true)
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.assignments).toEqual([])
     expect(await userMessageTexts(page, 'workshop')).toHaveLength(1)
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('Docs draft is independently owned.')
@@ -98,7 +97,7 @@ test('independent text and image drafts survive navigation, renderer reload and 
     await expect(prompt).toHaveValue('Docs draft is independently owned.')
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -207,14 +206,14 @@ test('project settlement preserves individual choices, drafts and running work i
     await sidebar.getByRole('button', { name: 'Settle project Sotto test', exact: true }).click()
     await expect(sidebar.getByRole('button', { name: 'Restore project Sotto test', exact: true })).toBeVisible()
     await captureModes(launched, 'settled-project', 820)
-    let state = await page.evaluate(async () => window.sotto!.agents!.get())
+    let state = await agentState(page)
     const individuallySettled = state.host.threads.find(thread => thread.id === 'docs')!.workspaceSettledAt
     expect(individuallySettled).toBeTruthy()
     expect(state.host.projects.find(project => project.id === 'project')!.workspaceSettledAt).toBeTruthy()
     expect(state.host.threads.find(thread => thread.id === 'workshop')!.status).toBe('running')
     await sidebar.getByRole('button', { name: 'Restore project Sotto test', exact: true }).click()
     await expect(sidebar.getByRole('button', { name: 'Settle project Sotto test', exact: true })).toBeVisible()
-    state = await page.evaluate(async () => window.sotto!.agents!.get())
+    state = await agentState(page)
     expect(state.host.projects.find(project => project.id === 'project')!.workspaceSettledAt).toBeFalsy()
     expect(state.host.threads.find(thread => thread.id === 'docs')!.workspaceSettledAt).toBe(individuallySettled)
     expect(state.host.threads.find(thread => thread.id === 'workshop')!).toMatchObject({ status: 'running', projectId: 'project' })
@@ -292,7 +291,7 @@ test('light provider controls remain readable and uncertain delivery can be chec
     await captureModes(launched, 'uncertain-recovery-focus', 760)
     await page.getByRole('button', { name: 'Check again', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Check again', exact: true })).toHaveCount(0)
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(await userMessageTexts(page, 'docs')).toEqual(['A prompt with an uncertain acknowledgement.'])
     expect(state.threadDrafts!.find(draft => draft.threadId === 'docs')!.text).toBe('A newer draft while confirmation is pending.')
     expect(state.assignments).toEqual([])

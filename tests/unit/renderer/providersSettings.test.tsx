@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,16 +13,14 @@ import { agentContextFixture } from '../../fixtures/agentContext'
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function fixture(): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'], reasoning: 'claude', reasoningModel: 'coordinator-model' }, connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'], reasoning: 'claude', reasoningModel: 'coordinator-model' },
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [],
       providers: providerIdSchema.options.map(id => ({ id, name: PROVIDER_LABELS[id], version: '1.2.3', connection: 'connected', capabilities: caps })),
       models: providerIdSchema.options.map(id => ({ id: `${id}:same-native-model`, name: `${id} model`, provider: PROVIDER_LABELS[id], providerId: id, ready: true })),
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Codex work', modelId: 'codex:same-native-model', status: 'idle', messages: [], requests: [] }],
-    }, assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+    },
+    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: null } })
 }
 function provide(state = fixture()) {
   const command = vi.fn(async () => state)
@@ -132,8 +132,7 @@ describe('independent provider settings', () => {
   })
   it.each([undefined, 'grok'] as const)('does not queue a healthy send behind provider connection %s in the renderer', async provider => {
     const state = fixture()
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
     const bridge: AgentBridge = { get: async () => state, onState: () => () => undefined,
       command: vi.fn(async command => { if (command.type === 'connect') await gate; return state }) }
     const { result } = renderHook(() => useAgentConnection(bridge))

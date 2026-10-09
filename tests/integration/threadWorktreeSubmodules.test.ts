@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
@@ -102,16 +103,12 @@ describe("independent working-copy allocation", () => {
     const recursive = mode === 'recursive'
     const f = await fixture()
     const module = join(f.root, 'module'); await mkdir(module)
-    await git(module, ['init'])
     await writeFile(join(module, 'module.txt'), 'committed')
-    await git(module, ['add', '.'])
-    await git(module, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Module'])
+    await initializeGitRepository(module, { files: {}, message: "Module", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     if (recursive) {
       const childModule = join(f.root, 'child-module'); await mkdir(childModule)
-      await git(childModule, ['init'])
       await writeFile(join(childModule, 'child.txt'), 'committed child')
-      await git(childModule, ['add', '.'])
-      await git(childModule, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Child'])
+      await initializeGitRepository(childModule, { files: {}, message: "Child", identity: { name: "Fixture", email: "fixture@example.invalid" } })
       await git(module, ['-c', 'protocol.file.allow=always', 'submodule', 'add', childModule, 'child'])
       await git(module, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', 'Add child module'])
     }

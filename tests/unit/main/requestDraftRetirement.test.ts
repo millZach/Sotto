@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerState } from '../../../src/main/agents/requestDrafts'
 import { questions, target, submittedAnswers, owner, request, draft, directory, disk, registerRequestDraftFixture } from '../../fixtures/requestDrafts'
+import { deferred } from '../../fixtures/deferred'
 
 registerRequestDraftFixture()
 
@@ -170,9 +171,9 @@ it('preserves retired floor and unconfirmed status when saving the fresh blank f
 
 it('preserves a newer saved edit while a retired re-offer Check awaits its fresh read', async () => {
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
-  let begin!: () => void, finish!: () => void
-  const started = new Promise<void>(resolve => { begin = resolve })
-  const gate = new Promise<void>(resolve => { finish = resolve })
+
+  const { promise: started, resolve: begin } = deferred<void>()
+  const { promise: gate, resolve: finish } = deferred<void>()
   const service = new RequestDraftService(directory, () => state, async () => {
     begin(); await gate
     state = { ...state, requests: [{ ...request, answerRetryReady: true }] }

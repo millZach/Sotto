@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -138,10 +139,9 @@ describe('resolved thread permissions through the real socket and coordinator', 
     const safe = await client.command({ ...create, runtimeMode: 'approval-required' })
     const thread = safe.host.threads.find(item => item.title === create.title)!
     await allowAnswers(true)
-    let held!: () => void
-    let release!: () => void
-    const waiting = new Promise<void>(resolve => { held = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: waiting, resolve: held } = deferred<void>()
+    const { promise: gate, resolve: release } = deferred<void>()
     const write = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
       const written = write.call(this, value)

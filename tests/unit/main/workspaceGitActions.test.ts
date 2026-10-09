@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 import { GitActions } from '../../../src/main/agents/gitActions'
 import type { GitStatus } from '../../../src/shared/gitStatus'
-import { fixture, send, deferred } from '../../fixtures/workspaceTestFixture'
+import { fixture, send } from '../../fixtures/workspaceTestFixture'
+import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
   it('keeps the sent branch in step with a switch made here, so the branch notice is for changes made elsewhere', async () => {
@@ -52,7 +53,7 @@ describe("durable project/thread organization", () => {
     let head = 'aaa'
     const run = vi.fn(async (_cwd: string, _command: 'git' | 'gh', args: readonly string[]) => {
       if (args[0] === 'rev-parse') return `${head}\n`
-      if (args[0] === 'pull') { started.release(); await pulling.promise; head = 'bbb'; behind = 0; return '' }
+      if (args[0] === 'pull') { started.resolve(); await pulling.promise; head = 'bbb'; behind = 0; return '' }
       return ''
     })
     f.host.setGitStatus(source, { pollIntervalMs: () => 0, autoPull: () => true })
@@ -71,7 +72,7 @@ describe("durable project/thread organization", () => {
     await expect(f.host.runGitAction({ threadId: 'second', actionId: 'press', action: 'commit_push' })).rejects.toThrow('Sotto is pulling this folder. Try again in a moment.')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'second')?.gitAction).toBeUndefined()
     expect(run.mock.calls.filter(call => call[2][0] === 'commit')).toHaveLength(0)
-    pulling.release()
+    pulling.resolve()
     await refresh
     // The pull shows only as the status changing.
     await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git?.behind).toBe(0))

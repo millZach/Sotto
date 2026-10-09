@@ -1,3 +1,4 @@
+import { deferred } from '../fixtures/deferred'
 import React from 'react'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -65,8 +66,9 @@ async function remoteDraftFixture() {
 
 it('does not recover a delivered prompt after both its Compose and Send replies are lost', async () => {
   const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
-  let release!: () => void, sent!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve }), delivered = new Promise<void>(resolve => { sent = resolve })
+  const { promise: gate, resolve: release } = deferred<void>()
+
+  const { promise: delivered, resolve: sent } = deferred<void>()
   const original = f.host.service.command.bind(f.host.service)
   const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
     const result = await original(...args)
@@ -96,8 +98,7 @@ it('keeps an offline laptop edit local when another client has saved a newer hos
     await f.client.close(); await f.store.close()
     await f.host.service.command({ type: 'save-thread-draft', threadId: f.a.id, draftId: randomUUID(), text: 'Newer host text', attachments: [], requestId: null }, desktopWindowClient())
     const original = f.host.service.command.bind(f.host.service)
-    let completed!: () => void
-    const recovery = new Promise<void>(resolve => { completed = resolve })
+    const { promise: recovery, resolve: completed } = deferred<void>()
     const observed = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
       const result = await original(...args)
       if (args[0].type === 'save-thread-draft') completed()
@@ -149,8 +150,7 @@ it('retires a saved laptop copy from fresh host state after its exact obsolete p
 
 it('recovers the full latest edit and explicit image removal through a fresh desktop store without replaying Send', async () => {
   const f = await remoteDraftFixture()
-  let release!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve })
+  const { promise: gate, resolve: release } = deferred<void>()
   const original = f.host.service.command.bind(f.host.service), writes = vi.spyOn(f.native, 'execute')
   const commands: AgentCommand[] = []
   const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
@@ -233,8 +233,9 @@ it('expires a confirmed empty managed revision before a new native question and 
 
 it('binds a fresh edit to the visible question while an already saved empty Compose acknowledgement is held', async () => {
   const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
-  let release!: () => void, entered!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+  const { promise: gate, resolve: release } = deferred<void>()
+
+  const { promise: started, resolve: entered } = deferred<void>()
   const original = f.host.service.command.bind(f.host.service)
   const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
     const state = await original(...args)
@@ -263,8 +264,9 @@ it('binds a fresh edit to the visible question while an already saved empty Comp
 
 it.each(['revocation', 'same-id form change'] as const)('checks current recovery-save intent after interposed %s without changing the bound host draft', async boundary => {
   const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
-  let release!: () => void, entered!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+  const { promise: gate, resolve: release } = deferred<void>()
+
+  const { promise: started, resolve: entered } = deferred<void>()
   const original = f.host.service.command.bind(f.host.service)
   const held = vi.spyOn(f.host.service, 'command').mockImplementation(async (...args) => {
     if (args[0].type === 'save-thread-draft') { entered(); await gate }
@@ -349,8 +351,8 @@ it('retains the latest managed edit when a held autosave loses its connection', 
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
   const host = await startHeadlessHost({ dataDirectory: root, port: 0,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
-  let client: SocketHostService | undefined, release!: () => void
-  const held = new Promise<void>(resolve => { release = resolve })
+  let client: SocketHostService | undefined
+  const { promise: held, resolve: release } = deferred<void>()
   try {
     const url = 'http://127.0.0.1:' + host.descriptor!.port
     const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Composer client')

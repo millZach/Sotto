@@ -7,7 +7,8 @@ import { type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
-import { cleanup, fixture, local, send, deferred } from '../../fixtures/workspaceTestFixture'
+import { cleanup, fixture, local, send } from '../../fixtures/workspaceTestFixture'
+import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
   it('switches an empty local thread to a ready provider, retaining project scope and native ID on first send', async () => {
@@ -152,7 +153,7 @@ describe("durable project/thread organization", () => {
     const sent = f.host.execute(send())
     await Promise.resolve()
     expect(f.adapters.codex.commands).toEqual([])
-    gate.release()
+    gate.resolve()
     await sent
     expect(spy).toHaveBeenCalledTimes(1) // the send joined the preparation instead of starting a second one
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('ready')

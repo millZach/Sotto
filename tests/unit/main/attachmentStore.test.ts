@@ -7,6 +7,7 @@ import { AttachmentStore, inlineStager, MISMATCHED_ATTACHMENT, MISSING_ATTACHMEN
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE } from '../../../src/shared/agents'
 import { handleOf, PIXEL_PNG, pngOfSize } from '../../fixtures/stagedImages'
+import { deferred } from '../../fixtures/deferred'
 
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>()
@@ -100,7 +101,7 @@ describe('the attachment store (ADR-0031)', () => {
     if (condition === 'missing') await rm(file)
     else await writeFile(file, Buffer.from('damaged'))
     // One read observed the bad file but finishes after another read invalidates it and staging repairs it.
-    const stale = Promise.withResolvers<Buffer<ArrayBuffer>>()
+    const stale = deferred<Buffer<ArrayBuffer>>()
     vi.mocked(readFile).mockReturnValueOnce(stale.promise)
     const reading = store.read(handle.digest)
     try {

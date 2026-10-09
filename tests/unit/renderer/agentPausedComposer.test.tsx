@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,23 +9,17 @@ import { AgentComposer } from '../../../src/renderer/src/agents/AgentView'
 afterEach(cleanup)
 
 function pausedState(): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [{ id: 'model', name: 'Model', provider: 'codex', ready: true, supportsImages: true }],
       projects: [{ id: 'project', title: 'Workshop', path: 'D:\\Workshop' }],
       threads: [{ id: 'thread', projectId: 'project', title: 'Build game', modelId: 'model', status: 'idle', messages: [], requests: [] }],
     },
-    assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: 'project',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    threadDrafts: [{ threadId: 'thread', draftId: 'efc0d780-9ffd-4a0a-9497-09cdc9f3bdc8', text: 'Keep the existing colors.',
+    topLevel: { assignments: [], queue: [], activeThreadId: 'thread', activeProjectId: 'project', threadDrafts: [{ threadId: 'thread', draftId: 'efc0d780-9ffd-4a0a-9497-09cdc9f3bdc8', text: 'Keep the existing colors.',
       attachments: [{ id: 'reference', name: 'Reference.png', mimeType: 'image/png', sizeBytes: 1, digest: 'b'.repeat(64) }],
-      requestId: null, updatedAt: '2026-09-14T16:00:00.000Z' }],
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'listening', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+      requestId: null, updatedAt: '2026-09-14T16:00:00.000Z' }], voice: { status: 'listening', error: null, action: 'none', revision: 0 } } })
 }
 
 describe('paused saved draft in the home composer', () => {

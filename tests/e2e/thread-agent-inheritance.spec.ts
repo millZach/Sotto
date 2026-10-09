@@ -1,15 +1,14 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
 test('new threads inherit Agents despite a saved Grok override and wait if that agent disconnects', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-agent-default-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-agent-default-' })).directory
   const root = join(profile, 'fixture'), projectPath = join(root, 'project')
   await mkdir(projectPath, { recursive: true })
   const previousRoot = process.env.SOTTO_E2E_DEVIN_ROOT
@@ -75,6 +74,6 @@ test('new threads inherit Agents despite a saved Grok override and wait if that 
     if (launched) await closeSotto(launched)
     if (previousRoot === undefined) delete process.env.SOTTO_E2E_DEVIN_ROOT; else process.env.SOTTO_E2E_DEVIN_ROOT = previousRoot
     if (previousExecutable === undefined) delete process.env.SOTTO_E2E_DEVIN_EXECUTABLE; else process.env.SOTTO_E2E_DEVIN_EXECUTABLE = previousExecutable
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

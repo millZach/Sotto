@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -93,7 +94,7 @@ describe('a pending setting', () => {
   it('shows a permission choice at once, marked as pending with what is still in force, until the window draws it', async () => {
     let release!: () => void
     render(<LiveThread answer={async (request, current) => {
-      await new Promise<void>(resolve => { release = resolve })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return withThread(current, { runtimeMode: (request as { runtimeMode: AgentThread['runtimeMode'] }).runtimeMode })
     }} start={fixture({ runtimeMode: 'approval-required' })} />)
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
@@ -207,7 +208,7 @@ describe('a pending setting', () => {
     const start = fixture()
     const sending = { ...start, deliveries: [{ threadId: 'thread', draftId: '00000000-0000-4000-8000-000000000001', status: 'submitting' as const,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] }
-    const command = vi.fn(() => new Promise<AgentState>(() => undefined))
+    const command = vi.fn(() => deferred<AgentState>().promise)
     const { rerender } = render(<ThreadOptions thread={sending.host.threads[0]!} state={sending} command={command} />)
     for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeDisabled()
     // The coordinator's busy mark for this thread's own save fixes nothing.
@@ -222,7 +223,7 @@ describe('a pending setting', () => {
     render(<LiveThread start={fixture({ runtimeMode: 'approval-required' })} answer={async (request, current) => {
       const mode = (request as { runtimeMode: NonNullable<AgentThread['runtimeMode']> }).runtimeMode
       asked.push(mode)
-      await new Promise<void>(resolve => { releases.push(resolve) })
+      await (() => { const pending = deferred<void>(); releases.push(pending.resolve); return pending.promise })()
       return withThread(current, { runtimeMode: mode })
     }} />)
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
@@ -251,7 +252,7 @@ describe('a pending setting', () => {
     const claude = start.host.models.find(model => model.providerId === 'claude')!
     start.host.models.push({ ...claude, id: 'claude:next', name: 'Claude Code next', defaultReasoningEffort: 'low' })
     render(<LiveThread start={start} answer={async (request, current) => {
-      await new Promise<void>(resolve => { release = resolve })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return withThread(current, { modelId: (request as { modelId: string }).modelId, reasoningEffort: 'low' })
     }} />)
     const model = screen.getByRole('combobox', { name: 'Thread model' })
@@ -273,7 +274,7 @@ describe('a pending setting', () => {
     const claude = start.host.models.find(model => model.providerId === 'claude')!
     start.host.models.push({ ...claude, id: 'claude:next', name: 'Claude Code next', defaultReasoningEffort: 'low' })
     const asked: AgentCommand[] = []
-    const command = vi.fn(async (request: AgentCommand) => { asked.push(request); return new Promise<AgentState>(() => undefined) })
+    const command = vi.fn(async (request: AgentCommand) => { asked.push(request); return deferred<AgentState>().promise })
     render(<ThreadOptions thread={start.host.threads[0]!} state={start} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose model' })).getByRole('option', { name: 'Claude Code next' }))
@@ -294,7 +295,7 @@ describe('a pending setting', () => {
     Object.assign(state.host.models.find(model => model.id === 'devin:model')!, { runtimeModes: [], providerModes: [
       { id: 'ask-first', name: 'Ask first' }, { id: 'bypass', name: 'Bypass permissions' },
     ] })
-    const command = vi.fn(() => new Promise<AgentState>(() => undefined))
+    const command = vi.fn(() => deferred<AgentState>().promise)
     render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     const chip = screen.getByRole('combobox', { name: 'Thread permissions' })
     fireEvent.click(chip)

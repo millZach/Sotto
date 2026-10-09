@@ -1,55 +1,38 @@
+import { terminalBridgeFixture, terminalSession, fakeTerminalViews } from '../../../fixtures/renderer/terminalBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TerminalBridge, TerminalEvent, TerminalSession, TerminalSnapshot } from '../../../../src/shared/terminal'
+import type { TerminalSession } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
 import { PaneTerminalToggle } from '../../../../src/renderer/src/tools/PaneTerminalToggle'
 import { PaneTerminalChromeStore } from '../../../../src/renderer/src/tools/paneTerminalStore'
 import { setDrawerShortcut } from '../../../../src/renderer/src/tools/paneTerminalShortcut'
-import { TerminalStore, type TerminalViewFactory, type TerminalViewHandlers } from '../../../../src/renderer/src/tools/terminalStore'
+import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 
 const workspace = { threadId: 'thread-a', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 const ID_1 = '11111111-1111-4111-8111-111111111111'
 const ID_2 = '22222222-2222-4222-8222-222222222222'
 const session = (id: string, patch: Partial<TerminalSession> = {}): TerminalSession =>
-  ({ id, workspace, title: 'PowerShell', shell: 'pwsh.exe', status: 'running', cols: 80, rows: 24, exitCode: null, createdAt: 1, place: 'drawer', ...patch })
+  terminalSession(id, workspace, { place: 'drawer', ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeTerminal(initial: TerminalSession[] = []) {
-  let sessions = initial
-  const listeners = new Set<(event: TerminalEvent) => void>()
-  const bridge: TerminalBridge = {
-    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: sessions.filter(item => item.workspace.threadId === threadId) })),
+  const published: ReturnType<typeof terminalBridgeFixture> = terminalBridgeFixture({ workspace, sessions: initial, commands: {
+    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: published.sessions().filter(item => item.workspace.threadId === threadId) })),
     create: vi.fn(async ({ threadId }) => {
       const created = session(threadId === workspace.threadId ? ID_1 : ID_2, { workspace: { ...workspace, threadId } })
-      sessions = [...sessions, created]
-      return ok({ session: created, output: 'PS D:\\work\\workshop> ', sequence: 1 } as TerminalSnapshot)
+      published.setSessions([...published.sessions(), created])
+      return ok({ session: created, output: 'PS D:\\work\\workshop> ', sequence: 1 })
     }),
-    read: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    write: vi.fn(async () => ok(undefined)),
-    resize: vi.fn(async () => ok(undefined)),
-    interrupt: vi.fn(async () => ok(undefined)),
-    close: vi.fn(async ({ sessionId }) => { sessions = sessions.filter(item => item.id !== sessionId); return ok(undefined) }),
-    reopen: vi.fn(async ({ sessionId }) => ok({ session: sessions.find(item => item.id === sessionId)!, output: '', sequence: 0 })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: TerminalEvent) => { for (const listener of [...listeners]) listener(event) } }
+    reopen: vi.fn(async ({ sessionId }) => ok({ session: published.sessions().find(item => item.id === sessionId)!, output: '', sequence: 0 })),
+  } })
+  return { ...published, emit: published.publish }
 }
 
 function fakeViews() {
-  const views: { handlers: TerminalViewHandlers; focused: number }[] = []
-  const factory: TerminalViewFactory = handlers => {
-    const record = { handlers, focused: 0 }
-    views.push(record)
-    return {
-      mount: container => { container.replaceChildren(document.createElement('pre')) },
-      unmount: () => {}, write: (_data, done) => done?.(), reset: () => {}, setInputEnabled: () => {},
-      fit: () => ({ cols: 80, rows: 24 }), focus: () => { record.focused += 1 }, dispose: () => {},
-    }
-  }
-  return { views, factory }
+  return fakeTerminalViews({ fit: { cols: 80, rows: 24 }, className: '' })
 }
 
 const thread = { id: 'thread-a', nativeSessionStarted: true as const, workingDirectory: 'D:\\work\\workshop', worktree: { status: 'ready' as const, mode: 'independent' as const, branch: 'feature/drawer', path: 'D:\\work\\workshop', repositoryRoot: 'D:\\work', dirty: false } }

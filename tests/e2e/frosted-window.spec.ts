@@ -1,10 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test } from '@playwright/test'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -22,7 +19,7 @@ const evidence = process.env.SOTTO_FROST_EVIDENCE === '1'
 const evidenceRoot = evidenceDirectory('artifacts/frosted-window')
 
 async function withProfile(settings: Partial<AppSettings>, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-frost-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-frost-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   const fixture = designThreadsFixture()
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -37,7 +34,7 @@ async function withProfile(settings: Partial<AppSettings>, run: (launched: Launc
     await run(launched)
   } finally {
     if (launched !== undefined) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 }
 

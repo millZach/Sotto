@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React, { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -215,7 +216,7 @@ describe('reading several screenshots at once', () => {
     const decodes: (() => void)[] = []
     vi.stubGlobal('createImageBitmap', async () => {
       alive += 1; most = Math.max(most, alive)
-      await new Promise<void>(resolve => { decodes.push(resolve) })
+      await (() => { const pending = deferred<void>(); decodes.push(pending.resolve); return pending.promise })()
       return { width: 3840, height: 2160, close: () => { alive -= 1 } }
     })
     vi.stubGlobal('OffscreenCanvas', class {

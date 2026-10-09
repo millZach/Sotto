@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { scrollToCard as scrollTo, withClipboard, horizontalOverflow } from './support/visualCards'
+import { launchRichMessageFixture, buildRichMessageFixture, type LaunchedRichMessages as Launched } from './support/richMessages'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Windows Electron renders of Mermaid diagrams inside answers, using the rich message fixture
@@ -10,7 +11,6 @@ const shots = evidenceDirectory('artifacts/rich-diagrams')
 
 interface FixtureRecord { opened: string[]; navigations: string[]; popups: string[]; requests: string[] }
 declare global { interface Window { richFixture?: { stream: (text: string, streaming: boolean) => void }; pwned?: unknown } }
-interface Launched { app: ElectronApplication; page: Page }
 
 const fence = (source: string): string => ['```mermaid', source, '```'].join('\n')
 
@@ -96,24 +96,12 @@ const ANSWER = [
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  execFileSync(process.execPath, [resolve('node_modules/vite/bin/vite.js'), 'build', '--config', 'tests/fixtures/richMessages/vite.config.mjs'], { stdio: 'inherit' })
+  buildRichMessageFixture()
   await mkdir(shots, { recursive: true })
 })
 
 async function launch(options: { width?: number; height?: number; scale?: string } = {}): Promise<Launched> {
-  const env = Object.fromEntries(Object.entries({
-    ...process.env,
-    SOTTO_RICH_FIXTURE: '1',
-    SOTTO_RICH_FIXTURE_WIDTH: String(options.width ?? 1080),
-    SOTTO_RICH_FIXTURE_HEIGHT: String(options.height ?? 760),
-    SOTTO_RICH_FIXTURE_SCALE: options.scale,
-  }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE'))
-  const app = await electron.launch({ args: [resolve('tests/fixtures/richMessages/electronMain.cjs')], env })
-  const page = await app.firstWindow()
-  await page.waitForLoadState('load')
-  await page.evaluate(() => document.fonts.ready)
-  await expect(page.getByRole('img', { name: 'help-page-404.png' })).toBeVisible()
-  return { app, page }
+  return launchRichMessageFixture({ ...options, height: options.height ?? 760 })
 }
 
 const record = (app: ElectronApplication) => app.evaluate(() => (globalThis as unknown as { richFixture: FixtureRecord }).richFixture)
@@ -127,25 +115,9 @@ async function drawn(block: Locator): Promise<Locator> {
   return image
 }
 
-async function scrollTo(locator: Locator, offset = 80): Promise<void> {
-  await locator.evaluate((element, gap) => {
-    const transcript = element.closest('.thread-workspace__transcript')!
-    transcript.scrollTop += element.getBoundingClientRect().top - transcript.getBoundingClientRect().top - gap
-  }, offset)
-}
-
-async function withClipboard<T>(app: ElectronApplication, run: () => Promise<T>): Promise<T> {
-  const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
-  try { return await run() } finally { await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved) }
-}
-
 /** The Windows clipboard stores CRLF; the copied source is compared line for line. */
 async function clipboardText(app: ElectronApplication): Promise<string> {
   return (await app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/gu, '\n')
-}
-
-async function horizontalOverflow(page: Page) {
-  return page.getByLabel('Thread transcript').evaluate(element => element.scrollWidth - element.clientWidth)
 }
 
 /** Visible label text of a drawing: word tspans joined, styles removed. */

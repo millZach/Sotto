@@ -10,13 +10,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_STATE_PUBLISH_INTERVAL_MS, AgentControl, coalesceAgentThreadDetailPublishes, type PublishScheduler } from '../../../src/main/agents/control'
 import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import * as detailMath from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentCommand, AgentState, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /** The whole detail an update must be for the assertion that follows to mean anything. */
 function whole(update: AgentThreadDetailUpdate | undefined): AgentThreadDetail {
@@ -43,9 +45,9 @@ afterEach(async () => {
 async function fixture(schedule: PublishScheduler = immediatePublishScheduler) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-shell-detail-')); roots.push(root)
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
   controls.add(control)
   await control.start(); await control.command({ type: 'connect' })

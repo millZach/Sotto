@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { initializeGitRepository, initializeBareGitRepository } from '../fixtures/gitRepository'
+import { e2eGit as git } from './support/git'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -11,22 +13,9 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // the checklist in Tools, Ready for review as a line's own press, an approval read on Refresh, the merge method chosen
 // from the keyboard, the merge only after its confirmation, and the linked pull requests folded below.
 const SHOTS = evidenceDirectory('artifacts/pull-request-surface')
-const git = (cwd: string, ...args: string[]): string => {
-  for (let attempt = 0; ; attempt += 1) {
-    try { return execFileSync('git', ['-c', 'user.name=Sotto E2E', '-c', 'user.email=e2e@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', '-c', 'commit.gpgSign=false', ...args], { cwd, encoding: 'utf8', windowsHide: true }).trim() }
-    catch (error) {
-      if (attempt >= 30 || !/index\.lock/u.test(error instanceof Error ? error.message : '')) throw error
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    }
-  }
-}
+
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 async function capture(page: Page, name: string): Promise<void> {
   await mkdir(SHOTS, { recursive: true })
@@ -74,15 +63,13 @@ async function expectReadable(page: Page): Promise<void> {
 
 test('a pull request is checked out from the branch picker, opened from its badge, and merged from its checklist only after its confirmation', async () => {
   test.setTimeout(240_000)
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-pull-request-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-pull-request-' })).directory
   const repository = join(directory, 'project'), remote = join(directory, 'owned-remote.git'), author = join(directory, 'author')
   const ghState = join(directory, 'gh-state.json')
   await mkdir(repository)
-  git(repository, 'init', '-q', '-b', 'main')
+  await initializeGitRepository(repository, { files: { 'greeting.txt': 'Hello\n' }, message: 'Owned baseline', identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } })
   git(repository, 'config', 'core.hooksPath', join(directory, 'no-hooks'))
-  await writeFile(join(repository, 'greeting.txt'), 'Hello\n')
-  git(repository, 'add', '.'); git(repository, 'commit', '-qm', 'Owned baseline')
-  git(directory, 'init', '--bare', '-q', '-b', 'main', remote); git(repository, 'remote', 'add', 'origin', remote)
+  await initializeBareGitRepository(remote, { identity: { name: 'Sotto E2E', email: 'e2e@sotto.invalid' } }); git(repository, 'remote', 'add', 'origin', remote)
   git(repository, 'push', '-q', '-u', 'origin', 'main'); git(repository, 'remote', 'set-head', 'origin', 'main')
   // Origin is written as the pull request's GitHub repository, and Git rewrites it to the owned remote, so a checkout
   // takes the pull request from the repository it belongs to without leaving this machine.
