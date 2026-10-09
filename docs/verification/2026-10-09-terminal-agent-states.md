@@ -32,9 +32,9 @@ Bundled rules admit Claude Code **2.1.295**, Codex **0.162.0** and Grok Build **
 
 These are source inspection, synthetic provider-boundary tests and built-app desktop evidence. No paid native turn, installed package, macOS or Linux desktop was exercised. The iPhone Host feature and approval preview remain proposed in ADR-0066 and outside #883. ADR-0066 now explicitly admits a closed, normalised hook work-phase enum to distinguish fresh or continuing work from late tool callbacks, and records the implemented desktop scope. That metadata refinement changes no content, authority or approved state/visibility rule.
 
-## Gates and review
+## Earlier implementation gates and review
 
-Source and tests are at `6ad14d666`; the terminal implementation is unchanged from `a4d837045`. Final results:
+The earlier lane recorded source and tests at `6ad14d666`, with the terminal implementation unchanged from `a4d837045`. These results are historical; the final remediation below supersedes that handoff:
 
 | Gate | Result |
 | --- | --- |
@@ -56,7 +56,7 @@ The new terminal-state journey passed in 24.5 seconds. `terminal-loading.spec.ts
 
 The full suite's sole failure was `threadTitles.test.ts`, "names a thread whose reply streamed in while the turn was still running, once the turn ends": its fixture published the reply as Idle before immediately switching to Running. The coordinator could legitimately request a title from the first frame before the test asserted no request. The unchanged file passed once here and 21 times in a freshly installed, clean `origin/main` checkout at `cc732e398`; those ordinary runs did not reproduce the intermittent failure. A temporary controlled refresh between the fixture's Idle and Running frames forced the same premature call on main. The single-case reproduction failed one test with 17 skipped; the whole file failed that one test with 17 passed. This is scheduling evidence, not a claim that an unmodified main run failed.
 
-Commit `6ad14d666` publishes reply and Running together, preserving the later Idle transition and exact single-title assertion. The isolated regression passed (one passed, 17 skipped), and the full title file passed all 18 tests. No production title code changed. The diagnostic refresh was removed and its owned baseline worktree deleted. The original full-suite failure is retained above; a further full run is awaiting the owner's answer because the instructions limit it to one run. No fresh full-suite pass is claimed.
+Commit `6ad14d666` publishes reply and Running together, preserving the later Idle transition and exact single-title assertion. The isolated regression passed (one passed, 17 skipped), and the full title file passed all 18 tests. No production title code changed. The diagnostic refresh was removed and its owned baseline worktree deleted. The original full-suite failure is retained above. That earlier handoff ended without a fresh full-suite pass; the final remediation below records the newly authorized run.
 
 Independent read-only `gpt-6.1-sol` reviews at maximum reasoning checked Standards and Spec separately over the feature and follow-up diffs through `207377665`.
 
@@ -65,3 +65,36 @@ Independent read-only `gpt-6.1-sol` reviews at maximum reasoning checked Standar
 **Spec.** Findings about completion delivery order and current-turn binding have fixes and regressions. Both axes confirmed rejection of one interpretation that viewing known ongoing continuation should suppress its later hidden finish: it remains Working, and paired tests distinguish that from viewing after an admitted successful Stop. No accepted Spec finding remains unresolved.
 
 The last reported mixed-ID and late-submission findings were fixed in `71d18425e` and `a4d837045`; the final state file passes all 84 regressions. The lead inspected those final fixes and the title-fixture correction; the independent reviews do not claim a new review of the final evidence commit.
+
+## Final review remediation and gates
+
+The owner authorized the final fresh full run, push and pull request on October 9. Dependencies were installed with `npm ci` in this worktree; no dependency junction was used. Final source is `2fe9391cf`. Every one of the eight supplied Standards/Spec findings was reproduced and fixed in its own commit. No supplied finding was rejected.
+
+- Historical approval/question examples require current footer controls, including while typing beneath them.
+- Native Codex empty composers use their versioned placeholder. Claude and Codex approvals remain Needs you at every selection position.
+- Cancellation and permission hooks reject older turns. Cancellation closes only that turn's permission sockets; an unbound session end closes the run.
+- Earlier Codex notify callbacks cannot settle a new reservation or consume visibility during newer native work. Consistent session candidates still bind only on readiness.
+- Successful Stop with unavailable screen rules settles conservatively to Idle, without an unread mark. Silence alone keeps known work Working.
+- Fenced work examples are excluded. Current failures are read at the result row, so historical interruption text cannot cancel a later successful turn.
+- Keyboard focus follows the terminal and row action across groups, including returning to a collapsed project, and respects focus moved elsewhere. A throwaway copy of the approved B prototype verified the focused row through Working, Needs you and Idle; the historical prototype stayed unchanged.
+- The app run found Grok stuck Working when ConPTY coalesced work and ready screens. Full clears and home/erase redraws now observe intermediate frames written in that event, without resurrecting a previous frame invalidated by input. Claude, Codex and Grok regressions cover this boundary.
+- The affected pane-layout run exposed a saved draft being cleared by a queued older empty publication. A save reply confirms durability without marking the revision observed; publication supplies that separately. The draft/reload checks pass 60 tests and the Electron journey checks all three drafts after setup.
+- The recurring Claude finish failure was reproduced as a delayed submitted hook arriving after native work and readiness. The awaited hook now binds its turn without restarting work or losing viewed readiness. The fixture scripts that ordering for the minimized-window journey; no timeout was increased.
+- The final Spec follow-up found the neighboring order where successful Stop precedes that submitted hook. Completion is now retained as bounded opaque turn candidates until a matching submitted/tool hook corroborates it. New submission, request, failure, cancellation and continuation revoke those candidates; stale/unbound Stop still cannot settle work.
+
+The fresh independent Sol (`gpt-6.1-sol`, maximum reasoning) reviews returned two Standards and two Spec findings: stale permission, historical failure, partial redraw and late-notify visibility. All were accepted, reproduced and fixed. The follow-up Standards review identified the invalidated pre-clear frame; that was also reproduced for all three providers and fixed. The follow-up Spec attempt initially failed because its shell helper could not refresh setup, then succeeded on its one retry with no unresolved Spec finding. Final bounded follow-ups found no Standards or draft-correction defect; the Spec reviewer found early Stop before late submitted evidence. That final finding was accepted, reproduced and fixed with both delivery orders and revocation regressions. The state file passes 116 regressions. No current review finding was rejected. The final corroboration fix was checked by the lead and the final gates, not a further independent review.
+
+| Final gate | Result |
+| --- | --- |
+| `npm run typecheck` | PASS, exit 0; all three TypeScript projects |
+| `npm run lint` | PASS, exit 0; no errors or warnings |
+| `npm test -- --maxWorkers=2` | PASS, exit 0; 9,399 tests passed, 222 skipped (9,621); 628 files passed, 51 skipped (679) |
+| `npm run notices:verify` | PASS, exit 0; 174 components |
+| `npm run build` | PASS, exit 0; main, host, preload and renderer |
+| Five affected Playwright specs with `--workers=1` | PASS, exit 0; six cases |
+
+Full-suite duration: 1283.34s (transform 24.15s, setup 94.20s, import 171.82s, tests 2007.50s, environment 158.87s). It ran once in this finishing pass, after the corrections and app verification. Earlier affected app runs returned 5 passed/1 failed (Grok completion), 5 passed/1 failed (pane draft), and 4 passed/2 failed (pane draft and Claude completion). The pane spec passed in isolation between the latter runs, which did not resolve its cause. Each failure was reproduced and fixed at its cause before the final combined run. The final native journey scripts delayed Claude submission admission rather than relying on machine load. No deadline was changed.
+
+The five specs are `terminal-agent-states.spec.ts`, `terminal-loading.spec.ts`, `terminal-closed-output.spec.ts`, `pane-layouts.spec.ts` and `split-workspace.spec.ts`. The final built Electron journey covers first use, native requests/questions, cancellation, keyboard regrouping and Enter, hidden finishes, visible unfocused splits, minimising/restoring, light/dark, reduced motion, contrast and bounds at all three specified sizes. All seven retained final images were opened and inspected. The six geometry/contrast combinations passed with no clipping or overflow. Terminal captures were regenerated for the final journey; adjacent capture changes were restored to their approved baselines. The approved design manifest still verifies all 152 tuples.
+
+VERIFIED: the final built Windows Electron app over native ConPTY and synthetic provider CLIs. Installed packaging, paid native provider turns, macOS and Linux remain NOT VERIFIED in this pass. The existing xterm scrollbar appearance is outside #883. Compact tabs retain their accessible Needs you name; the sidebar supplies visible state, preserving the issue's quiet pane chrome. No phone feature or Sotto approval controls were added.
