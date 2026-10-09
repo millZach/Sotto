@@ -19,7 +19,7 @@ fi
 
 echo
 echo 'Sotto has been installed. Open it from the application menu.'
-read -r -p 'Show the dictation bindings setup? [y/N] ' answer
+read -r -p 'Show the dictation bindings setup? [y/N] ' answer || answer=
 if [[ $answer =~ ^[Yy]$ ]]; then
   cat <<'BINDINGS'
 Copy /usr/share/sotto/bindings.lua to ~/.config/hypr/sotto-bindings.lua.
@@ -28,7 +28,7 @@ This gives Sotto F9 and Super+Ctrl+X, replacing Voxtype's bindings.
 Check with luac -p ~/.config/hypr/sotto-bindings.lua.
 BINDINGS
 fi
-read -r -p 'Show the shell plugin setup? [y/N] ' answer
+read -r -p 'Show the shell plugin setup? [y/N] ' answer || answer=
 if [[ $answer =~ ^[Yy]$ ]]; then
   echo 'The shell plugin is separate. Follow apps/omarchy/shell-plugin/README.md in the Sotto source checkout.'
   echo 'Install it in ~/.config/omarchy/plugins/ using that guide.'
