@@ -100,7 +100,7 @@ export XDG_RUNTIME_DIR=$run DBUS_SESSION_BUS_ADDRESS=unix:path=$run/bus
 # The live shell is the quickshell running Omarchy's config in the real
 # runtime folder and outside any proof slice; its environment names the live
 # compositor. Never inferred from the newest instance folder.
-live_sig="" live_wl=""
+live_sig="" live_wl="" live_shell=""
 for pid in $(pgrep -x quickshell || true); do
   grep -q proof "/proc/$pid/cgroup" 2>/dev/null && continue
   env_of() { tr '\0' '\n' <"/proc/$pid/environ" | sed -n "s/^$1=//p"; }
@@ -108,6 +108,7 @@ for pid in $(pgrep -x quickshell || true); do
   [[ -n $live_sig ]] && fail "more than one live Omarchy shell; cannot tell which is live"
   live_sig=$(env_of HYPRLAND_INSTANCE_SIGNATURE)
   live_wl=$(env_of WAYLAND_DISPLAY)
+  live_shell=$pid
 done
 [[ -n $live_sig && -n $live_wl ]] || fail "the live Omarchy shell was not found"
 snapshot_instances() { (cd "$run/hypr" && for d in */; do stat -c '%n %i' "${d%/}"; done) | sort; }
@@ -115,6 +116,35 @@ instances_before=$(snapshot_instances)
 grep -q "^$live_sig " <<<"$instances_before" || fail "the live instance folder is missing"
 say "live: $live_sig on $live_wl (untouched)"
 live_config_stamp=$(stat -c '%Y %s' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo none)
+start_of() { # pid -> field 22 of its stat, read after the last parenthesis
+  local stat
+  local -a fields
+  stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+  stat=${stat##*) }
+  read -ra fields <<<"$stat"
+  echo "${fields[19]}"
+}
+# The live shell's long-running processes, such as its clipboard watchers, by
+# PID and start time. Omarchy's clipboard service once killed those from a
+# nested shell, and the live shell started them again; one that is gone or
+# restarted at the end fails the run. A minute's age leaves out the short
+# jobs the shell runs now and then.
+live_processes() {
+  local pid start
+  ps -e -o pid=,ppid=,etimes= | awk -v root="$live_shell" '
+    { parent[$1] = $2; age[$1] = $3 }
+    END {
+      for (pid in parent) {
+        for (p = pid; p != "" && p != 0 && p != 1; p = parent[p]) if (p == root) { if (age[pid] >= 60) print pid; break }
+      }
+    }' | sort -n | while read -r pid; do
+    start=$(start_of "$pid") || continue
+    printf '%s %s %s\n' "$pid" "$start" "$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | cut -c1-120)"
+  done
+}
+live_before=$(live_processes)
+[[ -n $live_before ]] || fail "the live shell's processes were not found"
+say "live shell: PID $live_shell, $(wc -l <<<"$live_before") long-running processes recorded"
 live_plugins=$(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true)
 
 # ------------------------------------------------------------- ownership
@@ -158,7 +188,7 @@ recover_folders() {
 }
 
 cleanup() {
-  local status=$? left="" pid entry sig ino dir lock_pid after
+  local status=$? left="" pid start cmd entry sig ino dir lock_pid after
   set +e
   exec 7>&- 2>/dev/null
   recover_folders
@@ -218,6 +248,16 @@ cleanup() {
   else
     say "FAIL: live plugins folder changed"; status=1
   fi
+  left=""
+  while read -r pid start cmd; do
+    [[ -n $pid ]] || continue
+    [[ $(start_of "$pid") == "$start" ]] || left+=$'\n'"  $pid $cmd"
+  done <<<"$live_before"
+  if [[ -z $left ]]; then
+    say "the live shell's $(wc -l <<<"$live_before") long-running processes are the ones it had at the start"
+  else
+    say "FAIL: live shell processes gone or restarted during the proof:$left"; status=1
+  fi
   mkdir -p "$evidence/logs"
   cp "$work"/*.log "$evidence/logs/" 2>/dev/null
   deliver || status=1
@@ -255,6 +295,13 @@ scoped() { # name env-file command... (its output goes to <work>/<name>.log)
     -- /usr/bin/env -i $(cat "$envfile") "$@" <"${scoped_stdin:-/dev/null}" >>"$work/$name.log" 2>&1 &
   last_pid=$!
   owned_pids+=("$last_pid")
+}
+
+# Kills only a process in this run's slice, so a PID that has meanwhile gone
+# to another process is refused rather than killed.
+kill_owned() { # pid
+  grep -qF "/$slice/" "/proc/$1/cgroup" 2>/dev/null || fail "refusing to kill PID $1, which is not in this proof's slice"
+  kill -KILL "$1"
 }
 
 wait_for() { # seconds condition
@@ -346,8 +393,10 @@ mkdir -p "$home/.config/omarchy/plugins"
 config=$home/.config/omarchy/shell.json
 [[ -s $config ]] || cp "$omarchy_path/config/omarchy/shell.json" "$config"
 # Clipboard.qml starts by killing every matching clipboard watcher, including
-# the live shell's. Never load that unrelated service in a nested proof.
-jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight", "omarchy.clipboard"] | unique)' \
+# the live shell's. Never load that unrelated service in a nested proof. The
+# battery service sets the system's power profile when the power source
+# changes, which the live shell does already.
+jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight", "omarchy.clipboard", "omarchy.battery"] | unique)' \
   "$config" >"$config.tmp" && mv "$config.tmp" "$config"
 
 make_theme() {
@@ -386,14 +435,6 @@ checkout_sotto=$work/checkout/apps/omarchy/sotto
 # while a dictation shows. Start times are read when a stand-in starts, so
 # a file can still name one after it is killed.
 declare -A starts=()
-start_of() { # pid -> field 22 of its stat, read after the last parenthesis
-  local stat
-  local -a fields
-  stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
-  stat=${stat##*) }
-  read -ra fields <<<"$stat"
-  echo "${fields[19]}"
-}
 stand_in() { # name
   scoped "$1" "$work/env-sotto" sleep infinity
   starts[$last_pid]=$(start_of "$last_pid") || fail "the $1 stand-in did not start"
@@ -717,7 +758,7 @@ sleep 1
 pcapture crash-before
 read -r w h x y <<<"$(pill crash-before)"
 check '[[ -n $w ]] && ((w < 400))' "a dictation shows while the Sotto it names runs (PID $crash_pid)"
-kill -KILL "$crash_pid"
+kill_owned "$crash_pid"
 wait_for 3 '! kill -0 "$crash_pid" 2>/dev/null' || fail "the crash stand-in did not stop"
 sleep 3.5
 pcapture crash-listening
@@ -786,7 +827,7 @@ state_pid=$gone_pid write_state listening false "" top 8000
 sleep 1
 state_pid=$gone_pid state_mode=000 write_state listening false "" top 8000
 sleep 1.5
-kill -KILL "$gone_pid"
+kill_owned "$gone_pid"
 wait_for 3 '! kill -0 "$gone_pid" 2>/dev/null' || fail "the stand-in did not stop"
 sleep 3.5
 pcapture unreadable-quit
@@ -883,7 +924,7 @@ state_pid=$crash_pid write_state listening false "" top 2000
 sleep 0.6
 move_to 2240 420
 sleep 1.2
-kill -KILL "$crash_pid"
+kill_owned "$crash_pid"
 wait_for 3 '! kill -0 "$crash_pid" 2>/dev/null' || fail "the crash stand-in did not stop"
 sleep 3.5
 capture quit-elsewhere-1 WAYLAND-1
