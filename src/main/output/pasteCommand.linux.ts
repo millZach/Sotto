@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { performance } from 'node:perf_hooks'
 import type { PasteInvocation } from './pasteCommand'
 import type { PasteProcessAdapter } from './outputService'
 import { PASTE_PROCESS_TIMEOUT_MS } from './outputService'
