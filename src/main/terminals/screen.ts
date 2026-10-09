@@ -110,7 +110,7 @@ export class TerminalAgentScreen {
           const match = /^\x1b\[([\x20-\x3f]*)([\x40-\x7e])/u.exec(data.slice(index))
           if (!match) { this.pending = data.slice(index, index + 256); if (data.length - index > 256) { this.pending = ''; this.valid = false }; break }
           // ConPTY can coalesce several full redraws into one output event. Observe the prior frame before erasing it.
-          if (match[2] === 'J' && /^(?:2|3)$/u.test(match[1]!)) beforeRedraw?.()
+          if (match[2] === 'J' && (/^(?:2|3)$/u.test(match[1]!) || /^(?:0)?$/u.test(match[1]!) && this.x === 0 && this.y === 0)) beforeRedraw?.()
           this.csi(match[1]!, match[2]!); index += match[0].length; continue
         }
         if ([']', 'P', '_', '^', 'X'].includes(next)) {

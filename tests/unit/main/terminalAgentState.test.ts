@@ -27,7 +27,7 @@ describe('terminal agent run state', () => {
     const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started(); state.output(ready)
     state.input('work\r')
     if (provider === 'claude') state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
-    state.output(working + ready)
+    state.output((working + ready).replaceAll('\x1b[2J\x1b[H', '\x1b[H\x1b[J'))
     if (provider !== 'grok') state.hook(event('completed', { turnId: 'turn' }))
     expect(state.state).toBe('just-finished')
   })
