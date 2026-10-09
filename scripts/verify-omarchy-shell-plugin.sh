@@ -321,7 +321,8 @@ ln -s "$run/$b_wl" "$rt/$b_wl"
 (($(printf '%s' "$rt/hypr/$b_sig/.socket.sock" | wc -c) < 108)) || fail "the runtime folder path is too long for Hyprland's socket"
 
 # Stand-ins for the sotto launcher. They record what the plugin runs; the
-# failing one answers as Sotto does when it is not running.
+# failing one answers as Sotto does when it is not running. They change no
+# state: the proof writes the state files itself.
 mkdir -p "$work/bin" "$work/checkout/apps/omarchy" "$work/failing"
 : >"$work/verbs.log"
 for stub in "$work/bin/sotto" "$work/checkout/apps/omarchy/sotto"; do
@@ -330,6 +331,12 @@ done
 printf '#!/bin/bash\nprintf "%%s\\t%%s\\n" "$0" "$*" >>%q\necho "Sotto could not receive the dictation command." >&2\nexit 1\n' "$work/verbs.log" >"$work/failing/sotto"
 chmod +x "$work/bin/sotto" "$work/checkout/apps/omarchy/sotto" "$work/failing/sotto"
 checkout_sotto=$work/checkout/apps/omarchy/sotto
+
+# A stand-in for Sotto's main process, which every state file names in
+# `pid`; the plugin checks it is alive while a dictation shows.
+printf '%s\n' "PATH=/usr/bin:/bin" >"$work/env-sotto"
+scoped sotto-main "$work/env-sotto" sleep infinity
+sotto_pid=$last_pid
 
 printf '%s\n' "HOME=$home" "USER=$USER" "LANG=en_US.UTF-8" "PATH=$work/bin:$omarchy_path/bin:/usr/local/bin:/usr/bin:/bin" \
   "XDG_CONFIG_HOME=$home/.config" "XDG_STATE_HOME=$home/.local/state" "XDG_CACHE_HOME=$home/.cache" \
@@ -389,12 +396,16 @@ park() {
 # ------------------------------------------------------------- scenes
 
 state_file=$rt/sotto/dictation-state.json
+# The process the state files name: Sotto's stand-in unless a scene sets
+# `state_pid`, to a stand-in it kills or to none, as an older Sotto writes.
+state_pid=""
 write_state() { # state kept detail edge since-ago-ms
-  local now detail=null
+  local now detail=null pid=${state_pid:-$sotto_pid} pid_field=""
   now=$(date +%s%3N)
   [[ -n ${3:-} ]] && detail=$(jq -Rn --arg d "$3" '$d')
-  printf '{"version":1,"state":"%s","since":%s,"updatedAt":%s,"detail":%s,"kept":%s,"edge":"%s"}\n' \
-    "$1" $((now - ${5:-0})) "$now" "$detail" "${2:-false}" "${4:-top}" >"$rt/sotto/.state.tmp"
+  [[ $pid == none ]] || pid_field=",\"pid\":$pid"
+  printf '{"version":1,"state":"%s","since":%s,"updatedAt":%s,"detail":%s,"kept":%s,"edge":"%s"%s}\n' \
+    "$1" $((now - ${5:-0})) "$now" "$detail" "${2:-false}" "${4:-top}" "$pid_field" >"$rt/sotto/.state.tmp"
   mv "$rt/sotto/.state.tmp" "$state_file"
 }
 go_idle() { rm -f "$state_file"; sleep 1.5; }
@@ -439,12 +450,18 @@ stop_terminals() {
 }
 
 say "--- install"
-in_shell bash "$omarchy_dir/install-shell-plugin.sh" --command "$checkout_sotto" >"$work/install.out" 2>&1 || {
+# XDG_CONFIG_HOME points away from ~/.config and holds a stray copy, which
+# the shell never loads; the script installs where the shell looks.
+elsewhere=$home/xdg-elsewhere
+mkdir -p "$elsewhere/omarchy/plugins/sotto.dictation"
+cp "$omarchy_dir/shell-plugin/sotto.dictation/manifest.json" "$elsewhere/omarchy/plugins/sotto.dictation/"
+in_shell env XDG_CONFIG_HOME="$elsewhere" bash "$omarchy_dir/install-shell-plugin.sh" --command "$checkout_sotto" >"$work/install.out" 2>&1 || {
   cat "$work/install.out"
   fail "install-shell-plugin.sh failed"
 }
 sed 's/^/  install: /' "$work/install.out" | tee -a "$out/proof.txt"
-check '[[ -f $home/.config/omarchy/plugins/sotto.dictation/manifest.json ]]' "the plugin was copied to the isolated plugins folder"
+check '[[ -f $home/.config/omarchy/plugins/sotto.dictation/manifest.json && ! -e $home/.config/omarchy/plugins/sotto.dictation/Model.d.mts ]]' "the plugin was copied to \$HOME/.config/omarchy/plugins whatever XDG_CONFIG_HOME says, without the tests' types"
+check 'grep -q "^There is another copy of the plugin in $elsewhere/" "$work/install.out"' "the script says a copy under XDG_CONFIG_HOME is not loaded"
 check '[[ $(find "$home/.config/omarchy/plugins" -mindepth 1 -maxdepth 1 | wc -l) == 1 ]]' "no staging folder was left behind"
 check '[[ $(jq -r ".bar.layout.center | map(.id) | index(\"sotto.dictation\") - index(\"omarchy.indicators\")" "$config") == 1 ]]' "the glyph sits right after Omarchy's indicators"
 check '[[ $(jq -r ".bar.layout.center[] | select(.id == \"sotto.dictation\") | .command" "$config") == "$checkout_sotto" ]]' "the command setting names the checkout launcher"
@@ -455,7 +472,7 @@ say "--- states, Tokyo Night"
 baseline
 capture idle
 for scene in "starting false - top 0" "listening false - top 12000" "transcribing false - top 0" "copied false - top 0" \
-  "failed true OpenRouter_has_no_credit_left._Add_credit,_then_try_again. top 0" "failed false - top 0"; do
+  "failed true The_transcription_service_is_busy._Recording_kept. top 0" "failed false - top 0"; do
   read -r st kept detail edge ago <<<"$scene"
   [[ $detail == - ]] && detail="" || detail=${detail//_/ }
   write_state "$st" "$kept" "$detail" "$edge" "$ago"
@@ -506,7 +523,7 @@ check '[[ $(focused) == "$terminal" ]]' "the focused terminal keeps keyboard foc
 check '[[ $(hypr_b layers -j | jq -r ".\"WAYLAND-1\".levels.\"3\" | map(.namespace) | index(\"sotto-dictation\")") != null ]]' "the pill is a layer-shell surface on the overlay layer"
 # Focus moved for that check, so measure against a fresh baseline.
 baseline
-write_state failed true "Sotto could not reach OpenRouter. Check your connection." top 0
+write_state failed true "Sotto could not reach OpenRouter. Recording kept." top 0
 sleep 1
 pcapture buttons-failed
 read -r w h x y <<<"$(pill buttons-failed)"
@@ -574,21 +591,66 @@ sleep 0.8
 pcapture notice-cleared
 read -r w h x y <<<"$(pill notice-cleared)"
 check '((w < 400))' "a new dictation replaces the notice at once"
+
+say "--- a Stop that does not get through"
 in_shell omarchy bar set sotto.dictation command "$work/failing/sotto" >/dev/null
 sleep 1
+baseline
 write_state listening false "" top 3000
 sleep 1
-pcapture notice-before
-read -r w h x y <<<"$(pill notice-before)"
+pcapture stop-before
+read -r w h x y <<<"$(pill stop-before)"
 click $((x + w - 103)) $((y + h / 2))
-pcapture notice-unanswered
+pcapture stop-failed
 check '[[ $(last_runner) == "$work/failing/sotto" && $(last_verb) == "dictation stop" ]]' "the failing stand-in received: dictation stop"
-read -r w h x y <<<"$(pill notice-unanswered)"
-check '((w > 400))' "an unanswered Stop shows a notice"
+read -r w h x y <<<"$(pill stop-failed)"
+check '((h > 44))' "a Stop that does not get through says so in the pill, on two lines (${w}x${h} at $x,$y)"
 sleep 5.5
-pcapture notice-after
-check '[[ -z $(pill notice-after) ]]' "after the notice the unanswered dictation is put away"
+pcapture stop-failed-later
+check '[[ $(pill stop-failed-later) == "$w $h $x $y" ]]' "six seconds later the pill, its words and its buttons are still there"
+click $((x + w - 44)) $((y + h / 2))
+pcapture cancel-failed
+check '[[ $(last_verb) == "dictation cancel" && -n $(pill cancel-failed) ]]' "its Cancel can still be pressed, and a Cancel that does not get through keeps the pill too"
 in_shell omarchy bar set sotto.dictation command "$checkout_sotto" >/dev/null
+sleep 1
+read -r w h x y <<<"$(pill cancel-failed)"
+click $((x + w - 103)) $((y + h / 2))
+check '[[ $(last_runner) == "$checkout_sotto" && $(last_verb) == "dictation stop" ]]' "once the command works again, Stop reaches Sotto"
+
+say "--- Sotto quits"
+# A second stand-in, which this scene kills as a crash would.
+scoped sotto-crash "$work/env-sotto" sleep infinity
+crash_pid=$last_pid
+baseline
+state_pid=$crash_pid write_state listening false "" top 8000
+sleep 1
+pcapture crash-before
+read -r w h x y <<<"$(pill crash-before)"
+check '[[ -n $w ]] && ((w < 400))' "a dictation shows while the Sotto it names runs (PID $crash_pid)"
+kill -KILL "$crash_pid"
+wait_for 3 '! kill -0 "$crash_pid" 2>/dev/null' || fail "the crash stand-in did not stop"
+sleep 3.5
+pcapture crash-listening
+read -r w h x y <<<"$(pill crash-listening)"
+check '((h > 44))' "within a few seconds of Sotto quitting, the pill says the dictation was lost (${w}x${h})"
+n=$(verbs)
+click $((x + w - 47)) $((y + h / 2))
+pcapture crash-dismissed
+check '[[ -z $(pill crash-dismissed) && $(verbs) == "$n" ]]' "its Dismiss puts the notice away and runs nothing"
+state_pid=$crash_pid write_state failed true "The transcription service is busy. Recording kept." top 0
+sleep 3.5
+pcapture crash-kept
+read -r w h x y <<<"$(pill crash-kept)"
+n=$(verbs)
+click $((x + w - 47)) $((y + h / 2))
+pcapture crash-kept-dismissed
+check '[[ -n $w && -z $(pill crash-kept-dismissed) && $(verbs) == "$n" ]]' "a kept recording whose Sotto has quit is shown as lost, with Dismiss rather than Discard (${w}x${h})"
+baseline
+state_pid=none write_state listening false "" top 8000
+sleep 4.5
+pcapture older-sotto
+read -r w h x y <<<"$(pill older-sotto)"
+check '[[ -n $w ]] && ((w < 400))' "a state file without pid, from an older Sotto, is taken at its word"
 
 say "--- rule A: the display focused when dictation starts"
 # Both baselines with the pointer on the second display, where a dictation
@@ -620,6 +682,75 @@ sleep 1.2
 capture rule-a-next-1 WAYLAND-1
 capture rule-a-next-2 WAYLAND-2
 check '[[ -n $(pill rule-a-next-1 WAYLAND-1) && -z $(pill rule-a-next-2 WAYLAND-2) ]]' "the next dictation opens on the newly focused first display"
+
+say "--- rule A: a new dictation while the last one's result shows"
+# Baselines with the pointer on the second display, where it is when the
+# captures are taken.
+hypr_b dismissnotify >/dev/null
+go_idle
+move_to 2240 420
+sleep 1.2
+capture base-WAYLAND-1 WAYLAND-1
+capture base-WAYLAND-2 WAYLAND-2
+for previous in copied kept; do
+  move_to 1300 600
+  sleep 1.2
+  write_state listening false "" top 2000
+  sleep 0.6
+  if [[ $previous == copied ]]; then
+    write_state copied false "" top 0
+  else
+    write_state failed true "The transcription service is busy. Recording kept." top 0
+  fi
+  sleep 0.3
+  move_to 2240 420
+  sleep 1.2
+  capture "$previous-shows-1" WAYLAND-1
+  capture "$previous-shows-2" WAYLAND-2
+  check '[[ -n $(pill "$previous-shows-1" WAYLAND-1) && -z $(pill "$previous-shows-2" WAYLAND-2) ]]' "$previous: the result shows on the first display, where its dictation started, with the pointer on the second"
+  write_state starting false "" top 0
+  sleep 0.8
+  capture "after-$previous-1" WAYLAND-1
+  capture "after-$previous-2" WAYLAND-2
+  check '[[ -z $(pill "after-$previous-1" WAYLAND-1) && -n $(pill "after-$previous-2" WAYLAND-2) ]]' "$previous: a new dictation started meanwhile opens on the focused second display"
+  go_idle
+done
+
+say "--- an upright failure on a small display, then a scaled one"
+# B's second display shrinks to the 820x560 minimum, then becomes a full-HD
+# display at 200%, 960x540 logical. Its window in A is resized to match.
+set_display_2() { # width height scale
+  local size=${1}x${2}
+  hypr_b eval "hl.monitor({ output = \"WAYLAND-2\", mode = \"$size@60\", position = \"1600x0\", scale = $3 })" >/dev/null
+  hypr_a dispatch "hl.dsp.window.resize({ x = $1, y = $2, window = \"address:$(b_window WAYLAND-2)\" })" >/dev/null
+  wait_for 10 '[[ $(displays) == "WAYLAND-1=1600x1000@0 WAYLAND-2=$size@1600" ]]' || fail "B's second display did not become $size: $(displays)"
+  layout_w=$((1600 + $1 / $3))
+  hypr_b dismissnotify >/dev/null
+}
+# Sotto's longest kept failure, from the plumbing branch's sentences.
+longest="Text could not be delivered. Recording kept. Open Sotto."
+for spec in small:820:560:1 scaled:1920:1080:2; do
+  IFS=: read -r name dw dh scale <<<"$spec"
+  set_display_2 "$dw" "$dh" "$scale"
+  go_idle
+  # Parked at the display's far corner, away from a left-edge pill.
+  move_to $((layout_w - 10)) $((dh / scale - 10))
+  sleep 1.2
+  check '[[ $(hypr_b monitors -j | jq -r ".[] | select(.focused) | .name") == WAYLAND-2 ]]' "$name: the pointer focuses the ${dw}x${dh} display at ${scale}x"
+  capture base-WAYLAND-2 WAYLAND-2
+  write_state failed true "$longest" left 0
+  sleep 1
+  capture "$name-upright" WAYLAND-2
+  strip_y=$((27 * scale))
+  read -r w h x y <<<"$(pill "$name-upright" WAYLAND-2)"
+  strip_y=27
+  bar=$((26 * scale)) gap=$((5 * scale))
+  check '[[ -n $w ]] && near "$x" "$gap" && ((h > w && y >= bar && y + h <= dh - gap + 1))' "$name: the upright failure pill fits the display beside the bar, buttons and all (${w}x${h} at $x,$y of ${dw}x${dh})"
+  click $((1600 + (x + w / 2) / scale)) $(((y + h) / scale - 47))
+  check '[[ $(last_verb) == "dictation discard" ]]' "$name: its Discard is on screen and runs: sotto dictation discard"
+  go_idle
+done
+set_display_2 1280 800 1
 
 say "--- a bar on the left edge"
 in_shell omarchy bar position left >/dev/null
@@ -666,7 +797,7 @@ stop_terminals
 start_terminals
 baseline
 capture light-idle
-for scene in "listening false - 12000" "transcribing false - 0" "failed true Sotto_could_not_reach_OpenRouter._Check_your_connection. 0"; do
+for scene in "listening false - 12000" "transcribing false - 0" "failed true Sotto_could_not_reach_OpenRouter._Recording_kept. 0"; do
   read -r st kept detail ago <<<"$scene"
   [[ $detail == - ]] && detail="" || detail=${detail//_/ }
   write_state "$st" "$kept" "$detail" top "$ago"
@@ -690,11 +821,26 @@ sleep 1
 pcapture verbs-received
 
 say "--- uninstall"
-in_shell bash "$omarchy_dir/install-shell-plugin.sh" --uninstall >"$work/uninstall.out" 2>&1 || fail "--uninstall failed"
-sed 's/^/  uninstall: /' "$work/uninstall.out" | tee -a "$out/proof.txt"
-check 'grep -q "^Its glyph is off the bar.$" "$work/uninstall.out"' "--uninstall says the glyph is off the bar"
-check '[[ ! -e $home/.config/omarchy/plugins/sotto.dictation ]]' "--uninstall removes the plugin folder"
-check '[[ $(jq -r ".bar.layout | [.left[], .center[], .right[]] | map(.id) | index(\"sotto.dictation\")" "$config") == null ]]' "--uninstall takes the glyph off the bar"
+plugin_dir=$home/.config/omarchy/plugins/sotto.dictation
+on_bar() { jq -e '[.bar.layout | .left[], .center[], .right[]] | map(.id) | index("sotto.dictation") != null' "$config" >/dev/null; }
+uninstall() { # name [env assignment]
+  local name=$1
+  shift
+  in_shell env "$@" bash "$omarchy_dir/install-shell-plugin.sh" --uninstall >"$work/$name.out" 2>&1
+  local status=$?
+  sed "s/^/  $name: /" "$work/$name.out" | tee -a "$out/proof.txt"
+  return "$status"
+}
+mkdir -m 700 "$work/no-shell"
+check '! uninstall uninstall-without-shell XDG_RUNTIME_DIR="$work/no-shell" && [[ -d $plugin_dir ]] && on_bar' "without a running shell --uninstall fails and removes nothing"
+check 'uninstall uninstall && [[ ! -e $plugin_dir ]] && ! on_bar && grep -q "glyph off the bar" "$work/uninstall.out"' "--uninstall takes the glyph off the bar, then removes the plugin folder"
+# A glyph left on the bar after its folder was deleted by hand.
+jq '.bar.layout.center += [{"id": "sotto.dictation"}]' "$config" >"$config.tmp" && mv "$config.tmp" "$config"
+in_shell omarchy-shell shell reloadConfig >/dev/null
+sleep 1
+check 'on_bar && [[ ! -e $plugin_dir ]]' "an orphaned glyph is on the bar with no plugin folder"
+check 'uninstall uninstall-orphan && ! on_bar && grep -q "already gone" "$work/uninstall-orphan.out"' "--uninstall takes the orphaned glyph off the bar"
+check 'uninstall uninstall-again && grep -q "is not installed" "$work/uninstall-again.out"' "a second --uninstall finds nothing left to remove"
 
 # ------------------------------------------------------------- composites
 
@@ -703,7 +849,9 @@ cd "$out/raw"
 crop_top() { magick "$1.png" -crop 1000x90+300+0 +repage "$out/curated/.$1.png"; echo "$out/curated/.$1.png"; }
 magick $(for s in idle starting listening transcribing delivered copied failed-kept failed-plain; do crop_top "$s"; done) -append "$out/curated/states-tokyo-night.png"
 magick $(for s in light-idle light-listening light-transcribing light-failed; do crop_top "$s"; done) -append "$out/curated/states-catppuccin-latte.png"
-magick $(for s in notice-missing notice-cleared notice-unanswered notice-after; do crop_top "$s"; done) -append "$out/curated/notices.png"
+magick $(for s in notice-missing notice-cleared; do crop_top "$s"; done) -append "$out/curated/notices.png"
+magick $(for s in stop-before stop-failed stop-failed-later cancel-failed; do crop_top "$s"; done) -append "$out/curated/failed-stop-keeps-pill.png"
+magick $(for s in crash-before crash-listening crash-kept older-sotto; do crop_top "$s"; done) -append "$out/curated/sotto-quit.png"
 magick $(for s in still-listening still-transcribing; do crop_top "$s"; done) -append "$out/curated/without-motion.png"
 magick \( drag-to-left.png snapped-left.png +append \) \( drag-to-bottom.png snapped-bottom.png +append \) \
   \( drag-to-right.png snapped-right.png +append \) \( drag-to-top.png snapped-top.png +append \) -append -resize 35% "$out/curated/drag-and-snap.png"
@@ -712,10 +860,16 @@ for frame in start moved next; do
   magick "rule-a-$frame-1.png" "rule-a-$frame-2.png" -background black -gravity north +append "$out/curated/.rule-a-$frame.png"
 done
 magick "$out/curated/.rule-a-start.png" "$out/curated/.rule-a-moved.png" "$out/curated/.rule-a-next.png" -append -resize 35% "$out/curated/rule-a-two-displays.png"
+for frame in copied-shows after-copied; do
+  magick "$frame-1.png" "$frame-2.png" -background black -gravity north +append "$out/curated/.$frame.png"
+done
+magick "$out/curated/.copied-shows.png" "$out/curated/.after-copied.png" -append -resize 35% "$out/curated/rule-a-after-copied.png"
+magick \( small-upright.png -crop 300x560+0+0 +repage \) \( -size 20x560 xc:black \) \
+  \( scaled-upright.png -crop 600x1080+0+0 +repage -resize 50% \) -background black -gravity north +append "$out/curated/upright-small-displays.png"
 cp listening.png "$out/curated/desktop-tokyo-night.png"
 magick drag-to-left.png -crop 560x440+0+290 +repage "$out/curated/drag-ghost-left.png"
 magick \( bar-left-top.png -crop 1000x140+300+0 +repage \) \( bar-left-left.png -crop 240x420+0+290 +repage -background black -gravity west -extent 1000x420 \) -append "$out/curated/bar-on-the-left.png"
-magick verbs-received.png -crop 800x320+0+0 +repage "$out/curated/verbs-received.png"
+magick verbs-received.png -crop 800x440+0+0 +repage "$out/curated/verbs-received.png"
 cp light-listening.png "$out/curated/desktop-catppuccin-latte.png"
 rm -f "$out"/curated/.*.png
 cp "$work/verbs.log" "$out/verbs.log"
