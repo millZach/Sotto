@@ -238,6 +238,8 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
           expect(box!.x).toBeGreaterThanOrEqual(bounds!.x)
           expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
           expect(box!.y + box!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height)
+          const screen = await scope.locator('.xterm-screen').boundingBox()
+          expect(box!.y + box!.height, 'search stays above every output row and match').toBeLessThanOrEqual(screen!.y)
           for (const button of await search.getByRole('button').all()) await expect(button).toBeInViewport()
           await page.screenshot({ path: join(SHOTS, `${surface}-search-${width}x${height}-${appearance}.png`) })
         }

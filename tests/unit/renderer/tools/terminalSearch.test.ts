@@ -14,11 +14,13 @@ afterEach(() => { document.body.replaceChildren(); document.documentElement.styl
 it('searches incrementally, shows results, navigates both ways and closes from any control with terminal focus restored', () => {
   const element = document.createElement('div'); document.body.append(element)
   const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn() }
-  const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456')
+  const visibility = vi.fn()
+  const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456', visibility)
   view.mount(); view.open()
   const input = element.querySelector('input')!, count = element.querySelector('output')!
   const [previous, next, close] = element.querySelectorAll('button')
   expect(document.activeElement).toBe(input)
+  expect(visibility).toHaveBeenLastCalledWith(true)
   const pageKey = vi.fn()
   element.addEventListener('keydown', pageKey)
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true }))
@@ -58,6 +60,7 @@ it('searches incrementally, shows results, navigates both ways and closes from a
   expect(count.textContent).toBe('')
   close!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   expect(element.querySelector<HTMLElement>('[role="search"]')!.hidden).toBe(true)
+  expect(visibility).toHaveBeenLastCalledWith(false)
   expect(terminal.focus).toHaveBeenCalledOnce()
   expect(search.clear).toHaveBeenCalled()
   view.open(); close!.click()

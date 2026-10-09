@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 const HIGHLIGHT_LIMIT = 1_000
 
 /** The approved inline search bar, owned by the view so hiding a pane keeps its query and scrollback. */
-export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null) {
+export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null, onVisibilityChange?: (open: boolean) => void) {
   const addon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT })
   terminal.loadAddon(addon)
   const bar = document.createElement('div')
@@ -60,7 +60,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     if (backwards) addon.findPrevious(input.value, options)
     else addon.findNext(input.value, options)
   }
-  const hide = (): void => { bar.hidden = true; addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
+  const hide = (): void => { bar.hidden = true; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
   input.addEventListener('input', () => find(false, true))
   previous.addEventListener('click', () => find(true))
   next.addEventListener('click', () => find())
@@ -77,7 +77,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   previous.disabled = next.disabled = true
   return {
     mount(): void { element.append(bar) },
-    open(): void { if (bar.hidden) { bar.hidden = false; find(false, true) } input.focus(); input.select() },
+    open(): void { if (bar.hidden) { bar.hidden = false; onVisibilityChange?.(true); find(false, true) } input.focus(); input.select() },
     close(): boolean { if (bar.hidden) return false; hide(); return true },
     // The addon caches by query, not decoration colours. Rebuild highlights when the theme or grid changes.
     refresh(): void { if (!bar.hidden) { addon.clearDecorations(); find(false, true) } },

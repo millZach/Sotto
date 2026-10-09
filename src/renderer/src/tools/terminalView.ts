@@ -154,13 +154,21 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   terminal.unicode.activeVersion = '11'
   const element = document.createElement('div')
   element.className = 'terminal-view__screen'
+  const output = document.createElement('div')
+  output.className = 'terminal-view__output'
+  element.append(output)
   const reportFocus = (focused: boolean): void => { void window.sotto?.terminal?.setFocused?.(focused).catch(() => undefined) }
   element.addEventListener('focusin', () => reportFocus(true))
   element.addEventListener('focusout', event => { if (!(event.relatedTarget instanceof Node) || !element.contains(event.relatedTarget)) reportFocus(false) })
   let opened = false
   let inputEnabled = false
   let disposed = false
-  const search = terminalSearch(terminal, element, resolveColor)
+  const search = terminalSearch(terminal, element, resolveColor, visible => {
+    element.toggleAttribute('data-search-open', visible)
+    const grid = view.fit()
+    if (grid) handlers.onResize?.(grid)
+    respace()
+  })
   let selectionRevision = 0
   const selectionChanges = terminal.onSelectionChange(() => { selectionRevision++ })
   // xterm reports a dragged selection on release. Protect it from queued copies from the first press.
@@ -289,7 +297,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const view: TerminalViewLike = {
     mount(container) {
       if (element.parentElement !== container) container.replaceChildren(element)
-      if (!opened) { terminal.open(element); search.mount(); opened = true }
+      if (!opened) { terminal.open(output); search.mount(); opened = true }
       // The GPU renderer draws box/block glyphs to cell edges, independent of font and line spacing.
       paintGrid()
     },
