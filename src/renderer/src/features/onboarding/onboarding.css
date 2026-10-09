@@ -1,0 +1,393 @@
+/* First-run setup's steps after the welcome: look, coding agents, first project,
+   other computers and the iPhone. The shell, the card, the progress and the
+   dictation steps are in global.css. Colour comes only from theme roles. */
+
+.onboarding-welcome__mark {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 24px;
+  border-radius: 17px;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--tt-accent) 24%, transparent);
+}
+
+.onboarding-spin {
+  animation: onboarding-spin 900ms linear infinite;
+}
+
+@keyframes onboarding-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- look ---- */
+
+.onboarding-look__modes {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-md);
+  background: var(--tt-surface-sunken);
+  padding: 3px;
+}
+
+.onboarding-card .onboarding-look__mode {
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0 14px;
+  color: var(--tt-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.onboarding-look__mode[aria-checked='true'] {
+  background: var(--tt-surface);
+  box-shadow: var(--tt-shadow-sm);
+  color: var(--tt-text);
+}
+
+.onboarding-look__themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.onboarding-card .onboarding-look__theme {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 12px;
+  background: transparent;
+  padding: 7px;
+  color: var(--tt-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.onboarding-look__theme:hover {
+  border-color: var(--tt-border);
+}
+
+.onboarding-look__theme[aria-checked='true'] {
+  border-color: var(--tt-accent);
+  box-shadow: 0 0 0 1px var(--tt-accent);
+}
+
+/* A theme's own colours paint its preview, set inline from its palette. */
+.onboarding-look__preview {
+  position: relative;
+  display: block;
+  height: 64px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.onboarding-look__side {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+}
+
+.onboarding-look__mark {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 20px;
+  height: 20px;
+}
+
+.onboarding-look__line {
+  position: absolute;
+  top: 16px;
+  left: 36%;
+  width: 44%;
+  height: 5px;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+
+.onboarding-look__line--short {
+  top: 28px;
+  width: 30%;
+  opacity: 0.55;
+}
+
+.onboarding-look__button {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 34px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.onboarding-look__name {
+  padding: 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- coding agents ---- */
+
+.onboarding-agents {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 12px;
+  background: var(--tt-surface-sunken);
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-agent {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  gap: 8px 12px;
+  align-items: center;
+  border-top: 1px solid var(--tt-hairline);
+  padding: 8px 14px;
+}
+
+.onboarding-agent:first-child {
+  border-top: 0;
+}
+
+.onboarding-agent__mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--tt-surface);
+  color: var(--tt-text);
+}
+
+.onboarding-agent__name {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.onboarding-agent__name strong {
+  font-weight: 600;
+}
+
+.onboarding-agent__name span {
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+}
+
+.onboarding-agent__name .onboarding-agent__failure {
+  color: var(--tt-error);
+}
+
+.onboarding-agent__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: var(--tt-surface);
+  padding: 3px 9px;
+  color: var(--tt-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The words keep the text colour, which reads at 4.5:1 on the tint; the icon beside them carries the state's colour. */
+.onboarding-agent[data-kind='ready'] .onboarding-agent__state {
+  background: color-mix(in srgb, var(--tt-success) 12%, transparent);
+  color: var(--tt-text);
+}
+
+.onboarding-agent[data-kind='ready'] .onboarding-agent__state svg {
+  color: var(--tt-success);
+}
+
+.onboarding-agent[data-kind='needs-you'] .onboarding-agent__state {
+  background: color-mix(in srgb, var(--tt-warning) 12%, transparent);
+  color: var(--tt-text);
+}
+
+.onboarding-agent[data-kind='needs-you'] .onboarding-agent__state svg {
+  color: var(--tt-warning);
+}
+
+.onboarding-agents__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+}
+
+/* ---- first project and other computers ---- */
+
+.onboarding-projects,
+.onboarding-hosts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-project,
+.onboarding-host {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 12px;
+  background: var(--tt-surface-sunken);
+  padding: 12px 14px;
+}
+
+.onboarding-project > svg,
+.onboarding-host > svg {
+  flex: 0 0 auto;
+  color: var(--tt-accent-text);
+}
+
+.onboarding-project > span,
+.onboarding-host > span {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.onboarding-project strong,
+.onboarding-host strong {
+  font-weight: 600;
+}
+
+.onboarding-project__path,
+.onboarding-host span span {
+  overflow: hidden;
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-project__path {
+  font-family: var(--tt-font-mono);
+}
+
+.onboarding-hosts__empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  border: 1px dashed var(--tt-border);
+  border-radius: 12px;
+  background: var(--tt-surface-sunken);
+  padding: 14px 16px;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+}
+
+.onboarding-hosts__empty svg {
+  flex: 0 0 auto;
+  color: var(--tt-accent-text);
+}
+
+.onboarding-hosts__empty p {
+  margin: 0;
+}
+
+/* ---- iPhone ---- */
+
+.onboarding-phone {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-phone > li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 12px;
+  background: var(--tt-surface-sunken);
+  padding: 14px 16px;
+}
+
+.onboarding-phone > li > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  grid-column: 2 / -1;
+}
+
+.onboarding-phone > li:first-child > div {
+  grid-column: 2;
+}
+
+.onboarding-phone > li > div > span {
+  color: var(--tt-text-muted);
+  font-size: 13px;
+}
+
+.onboarding-phone > li > div .tt-button {
+  justify-self: start;
+}
+
+.onboarding-phone__number {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--tt-surface);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.onboarding-phone__code {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 10px;
+  background: var(--tt-canvas);
+  padding: 10px 12px;
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+}
+
+.onboarding-phone__code b {
+  color: var(--tt-text);
+  font-family: var(--tt-font-mono);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+@media (max-width: 640px) {
+  .onboarding-look__themes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .onboarding-agent {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .onboarding-phone > li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .onboarding-phone > li:first-child > div {
+    grid-column: 2;
+  }
+}

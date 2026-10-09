@@ -16,7 +16,7 @@ export interface WindowControlsProps {
  * The frameless window's minimize, maximize/restore and close-to-tray buttons.
  * Rendered once per window, in whatever chrome the open page has: the strip on
  * most pages, the Threads page's own top edge. macOS paints its own traffic
- * lights, so callers skip this on darwin.
+ * lights, and Linux leaves closing to the compositor, so callers draw this only on Windows.
  */
 export function WindowControls({ maximized = false, onMaximize, onMinimize, onClose, className }: WindowControlsProps): ReactNode {
   return (
@@ -37,11 +37,11 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
 /**
  * The window's own controls, seated once at the top-right corner of a page that owns the window (Threads,
  * Settings) rather than in any pane's header: such a page has no app strip above it. macOS paints its
- * traffic lights itself and gets none.
+ * traffic lights itself; Linux leaves closing to the compositor. Both get none.
  */
 export function PageWindowControls(): ReactNode {
   const app = useOptionalApp()
-  if (app === null || app.platform === 'darwin') return null
+  if (app === null || app.platform !== 'win32') return null
   return <div className="threads-view__winctl">
     <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
   </div>

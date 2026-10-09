@@ -1,6 +1,6 @@
 Voice benchmark source check, 2026-09-11. Investigation only: no model downloads, synthesis calls, paid usage, or product changes. MAI transcription selection is complete and outside this review. This supplements [the candidate proposal](2026-09-10-voice-model-candidates.md); it does not report benchmark results.
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 The named hosted challengers are documented products: Flux TTS is not merely confusion with Deepgram's transcription model, and Cartesia explicitly lists Sonic 3.6. The material correction is promotional timing: Deepgram now advertises Flux TTS free through **September 14**, with standard pricing starting September 15, rather than September 12. Account access remains untested. [Deepgram pricing](https://deepgram.com/pricing)
 

@@ -1,6 +1,6 @@
 # Typing starts a thread's provider session
 
-October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, wake phrase and wake session used as vocabulary contrasts below are retired. Early start remains unchanged; a babysitting wake-up is a separate message under ADR-0061.
+October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator, wake phrase and wake session used as vocabulary contrasts below are retired. Early start remains unchanged; a babysitting wake-up is a separate message under ADR-0061.
 
 ## Status
 

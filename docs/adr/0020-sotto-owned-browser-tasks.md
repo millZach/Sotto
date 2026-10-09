@@ -1,6 +1,6 @@
 # Sotto owns browser tasks and their page access
 
-October 9, 2026 amendment: [ADR-0062](0062-remove-voice-control-and-thread-management.md) records the removal. Supervision described below has been removed and cannot answer browser requests. The browser grant and user-answer rules, as amended by ADR-0029, remain.
+October 9, 2026 amendment: [ADR-0065](0065-remove-voice-control-and-thread-management.md) records the removal. Supervision described below has been removed and cannot answer browser requests. The browser grant and user-answer rules, as amended by ADR-0029, remain.
 
 Accepted for implementation September 21, 2026, following Zach's approval of the shared browser workflow and corner-preview variant A. Browser pages remain in the Tools pane; a task's corner preview shows the same page and opens it there without changing the user's conversation. Sotto owns page and browser-task identity across providers, using Sotto thread IDs and the thread's current working copy.
 

@@ -1,6 +1,6 @@
 # Devin approval profile compatibility
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 September 19, 2026. Native Windows Devin CLI 3000.10.31 (b98cc431), ACP 1, truthful client identity `sotto`. This is evidence for the constrained approval profile, not a claim that the native Normal mode works or that every Devin configuration is compatible.
 

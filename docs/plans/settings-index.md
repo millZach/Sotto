@@ -1,6 +1,6 @@
 # Index Settings implementation
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Deliverable: replace the production settings stack with the user-selected Index design. The proving moment is changing a setting in one focused category without scrolling past unrelated controls.
 

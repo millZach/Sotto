@@ -105,7 +105,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     const prompt = (id: string) => pane(id).getByRole('textbox', { name: 'Prompt', exact: true })
     await prompt(first).fill('Make the greeting friendlier.'); await prompt(first).press('Enter')
     await prompt(second).fill('Review the greeting independently.'); await prompt(second).press('Enter')
-    await expect.poll(() => page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)).map(thread => thread.status), [first, second])).toEqual(['running', 'running'])
+    // Each first send makes its thread's worktree and starts its provider: three to six seconds on a loaded desktop, so the
+    // default five-second poll was a race. The deadline is generous on purpose; it ends as soon as both are running.
+    await expect.poll(() => page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)).map(thread => thread.status), [first, second]), { timeout: 30_000 }).toEqual(['running', 'running'])
     const readyThreads = await page.evaluate(async ids => (await window.sotto!.agents!.get()).host.threads.filter(thread => ids.includes(thread.id)), [first, second])
     Object.assign(implementation!, readyThreads.find(thread => thread.id === first))
     Object.assign(review!, readyThreads.find(thread => thread.id === second))

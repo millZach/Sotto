@@ -74,6 +74,18 @@ async function selectCategory(name: string): Promise<void> {
 }
 
 describe('SettingsView', () => {
+  it('disables Linux startup with the package explanation and never calls native startup or shows an error', async () => {
+    const props = baseProps({ platform: 'linux', onSetStartup: vi.fn(async () => { throw new Error('unsupported') }) })
+    render(<SettingsView {...props} />)
+    await selectCategory('Application')
+    const startup = screen.getByRole('switch', { name: platformCopy('linux').settingsLaunchAtStartupLabel })
+    expect(startup).toBeDisabled()
+    expect(screen.getByText('Starting at sign-in comes with the installed package.')).toBeVisible()
+    await userEvent.click(startup)
+    expect(props.onSetStartup).not.toHaveBeenCalled()
+    expect(screen.queryByText(platformCopy('linux').settingsStartupFailureNotice)).not.toBeInTheDocument()
+  })
+
   it('does not save or announce unchanged shortcut and numeric fields on blur', async () => {
     const props = baseProps()
     render(<SettingsView {...props} />)
@@ -377,6 +389,26 @@ describe('SettingsView', () => {
     await user.click(toggle)
 
     expect(update).toHaveBeenCalledWith({ visualsInThreads: false })
+  })
+
+  it('turns letting agents babysit pull requests off beside the other agent switches, saying what each value does (ADR-0061)', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    const view = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
+
+    const toggle = screen.getByRole('switch', { name: 'Let agents babysit pull requests' })
+    expect(toggle).toBeChecked()
+    expect(toggle).toHaveAccessibleDescription('An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.')
+    // It sits with the switches that let agents act on their own, after the visuals one.
+    const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
+    expect(switches.indexOf('Let agents babysit pull requests')).toBe(switches.indexOf('Let agents draw visuals in threads') + 1)
+    await user.click(toggle)
+    expect(update).toHaveBeenCalledWith({ babysitPullRequests: false })
+
+    view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, babysitPullRequests: false } })} />)
+    expect(screen.getByRole('switch', { name: 'Let agents babysit pull requests' })).toHaveAccessibleDescription(
+      'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.')
   })
 
   it("offers the off switches for generated text and no writing model, since each thread's own model writes", async () => {

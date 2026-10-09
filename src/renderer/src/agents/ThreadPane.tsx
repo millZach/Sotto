@@ -18,7 +18,8 @@ import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
-import { ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
+import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
+import { ornamentPose } from './threadActivityView'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 
 type Command = AgentConnection['command']
@@ -101,14 +102,18 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // One ornament, because the composer reserves room for exactly one, taken by the strongest claim. A watch
   // says the provider is looking at something; background agents say only that work it started still runs;
   // waiting says only that time is passing, so the two confirmed states keep the track ahead of the clock.
-  const confirmed = liveMonitors.length ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
-    : liveWork.length > liveCommands.length ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} /> : undefined
-  const held = useHeldAction(thread, ornamentAllowed && confirmed === undefined, now)
-  // A command left running in the background waits once the turn is over; while it is live, the turn's
-  // own held action already holds the glass.
-  const ornament = confirmed ?? (held !== undefined ? <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />
-    : liveCommands.length && thread.status !== 'running' ? <ThreadWaitingCommand key={`command:${thread.id}`} commands={liveCommands} now={now} />
-    : undefined)
+  // A command left running in the background waits once the turn is over; while it is live, the turn's own held
+  // action already holds the glass. Babysitting is Sotto's own claim, the weakest, and steps aside while a turn runs.
+  const confirmed = liveMonitors.length > 0 || liveWork.length > liveCommands.length
+  const held = useHeldAction(thread, ornamentAllowed && !confirmed, now)
+  const pose = ornamentPose({ monitoring: liveMonitors.length > 0, agents: liveWork.length > liveCommands.length, held: held !== undefined,
+    commands: liveCommands.length > 0, babysitting: ornamentAllowed && (thread.babysitting?.length ?? 0) > 0, running: thread.status === 'running' })
+  const ornament = pose === 'monitoring' ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
+    : pose === 'working' ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} />
+    : pose === 'held' && held !== undefined ? <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />
+    : pose === 'waiting' ? <ThreadWaitingCommand key={`command:${thread.id}`} commands={liveCommands} now={now} />
+    : pose === 'babysitting' ? <ThreadBabysitting key={`babysitting:${thread.id}`} thread={thread} now={now} />
+    : undefined
   const composing = paneHasDraft
   const capabilities = capabilitiesForThread(state.host, thread)
   /** This thread's own lane. Work on another thread leaves every control here live. */

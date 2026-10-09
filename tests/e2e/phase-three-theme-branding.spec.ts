@@ -46,14 +46,14 @@ async function settle(page: Page): Promise<void> {
   await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
 }
 
-/** The mark's tile, sampled left of the bar where only the tile shows. */
+/** The mark's tile, sampled above the owl's ears (its head sits lower, at mid-height) where only the tile shows. */
 async function sampleTile(mark: Locator, name: string, expected: string): Promise<void> {
   const png = await mark.screenshot({ animations: 'disabled', path: resolve(evidenceRoot, `${name}.png`) })
   const image = sharp(png)
   const { width, height } = await image.metadata()
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true })
-  const x = Math.round(width! * 0.16)
-  const y = Math.round(height! * 0.5)
+  const x = Math.round(width! * 0.5)
+  const y = Math.round(height! * 0.09)
   const offset = (y * info.width + x) * info.channels
   const measured = `#${[0, 1, 2].map(index => data[offset + index]!.toString(16).padStart(2, '0')).join('')}`
   const want = parseThemeRgb(expected, BLACK)
@@ -93,7 +93,7 @@ async function widgetOf(launched: LaunchedSotto): Promise<Page> {
 async function expectRoom(page: Page, settings: Settings, mode: ThemeAppearance, name: string): Promise<void> {
   const { brand } = brandFor(settings, mode)
   await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
-  const mark = page.locator('svg.app-mark__glyph')
+  const mark = page.getByRole('complementary', { name: 'Thread sidebar' }).locator('svg.thread-nav__glyph')
   await expect(mark).toHaveAttribute('data-tile', brand.tile)
   await expect(mark).toHaveAttribute('data-glyph', brand.glyph)
   await settle(page)
@@ -123,7 +123,7 @@ async function expectWidget(widget: Page, settings: Settings, scheme: ThemeAppea
   await sampleHue(widget.getByTestId('listening-bars'), `${name}-widget-voice-bars`, roles.accent)
 }
 
-/** Starts from the widget's own click-to-dictate sliver, so the Agents room stays in view. */
+/** Starts from the widget's own click-to-dictate sliver, so Threads stays in view. */
 async function startDictation(widget: Page): Promise<void> {
   await widget.getByTestId('widget-sliver').hover()
   await widget.getByTestId('widget-sliver').click({ position: { x: 40, y: 14 }, timeout: 5000 })
@@ -132,7 +132,7 @@ async function startDictation(widget: Page): Promise<void> {
 
 async function cancelDictation(widget: Page): Promise<void> {
   await widget.getByRole('button', { name: 'Cancel dictation' }).click()
-  await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
+  await expect(widget.getByTestId('widget-sliver')).toBeVisible({ timeout: 15_000 })
 }
 
 async function update(page: Page, patch: Settings): Promise<void> {

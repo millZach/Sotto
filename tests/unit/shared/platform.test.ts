@@ -16,7 +16,11 @@ describe('resolvePlatform', () => {
     expect(resolvePlatform('win32')).toBe('win32')
   })
 
-  it.each(['linux', 'freebsd', 'aix', 'Darwin', 'darwin ', '', 'not-a-platform'])(
+  it('maps linux to its own platform', () => {
+    expect(resolvePlatform('linux')).toBe('linux')
+  })
+
+  it.each(['freebsd', 'aix', 'Darwin', 'darwin ', 'Linux', 'linux ', '', 'not-a-platform'])(
     'falls back to win32 for %o',
     (raw) => {
       expect(resolvePlatform(raw)).toBe('win32')
@@ -31,6 +35,10 @@ describe('defaultHotkey', () => {
 
   it('binds the literal Control key on macOS', () => {
     expect(defaultHotkey('darwin')).toBe('Control+Shift+Space')
+  })
+
+  it('uses the Control shortcut on Linux', () => {
+    expect(defaultHotkey('linux')).toBe('CommandOrControl+Shift+Space')
   })
 })
 

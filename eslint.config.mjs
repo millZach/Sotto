@@ -4,7 +4,11 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/voice-control-removal/merged-setup/**',
+      'artifacts/linux-hyprland-paste/**',
+      'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
+      'artifacts/babysitting-surfaces-run/**',
       'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',
       'artifacts/show-thinking/**',

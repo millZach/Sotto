@@ -425,15 +425,9 @@ ${table}
 
 ## Sotto brand asset provenance
 
-The Sotto icon is original project artwork generated on 2026-07-15 with OpenAI's built-in image generation tool. No source image, third-party logo, trademark, wordmark, or font was supplied. The selected source was locally chroma-keyed, resized, and exported into the Windows PNG, multi-resolution ICO, and installer sidebar derivatives.
+The Sotto owl is original project artwork generated with OpenAI's Codex in October 2026 and supplied by the project owner as a brand sheet. No third-party logo, trademark, wordmark, or font was supplied to make it. The owl was redrawn by hand as the vector master \`build/icon.svg\` by tracing the sheet's app icon, and every platform derivative is rendered from that master by \`scripts/generate-brand-assets.mjs\`: the Windows PNG, multi-resolution ICO, and installer sidebar, the iPhone app icon, and the Android launcher icons. The macOS \`.icns\` is derived by electron-builder from \`build/icon.png\` at package time and is not committed, and the macOS menu-bar template images \`resources/tray/sottoTemplate.png\` and \`sottoTemplate@2x.png\` are rendered from \`build/tray-template.svg\`, the same owl simplified for 16 pixels.
 
-Final generation prompt:
-
-> Use case: logo-brand. Asset type: Windows desktop application icon source, 1024 x 1024 square. Create an original Sotto symbol: an indigo rounded-square tile containing a symmetric microphone capsule whose central negative-space stem transitions cleanly into a text insertion caret, with exactly two small cyan audio ticks, one on each side. Crisp flat vector-like bitmap, minimal geometric construction, strong silhouette, professional desktop utility branding. Centered with generous padding and optimized for 16 pixels. Deep indigo tile, near-white microphone/caret, restrained bright cyan ticks. Perfectly flat solid \`#00ff00\` chroma-key background. No text, letters, wordmark, watermark, mockup, 3D, bevel, gloss, photographic detail, or cast shadow.
-
-Every platform derivative descends from that same original artwork: the macOS \`.icns\` is derived by electron-builder from \`build/icon.png\` at package time and is not committed, and the macOS menu-bar template images \`resources/tray/sottoTemplate.png\` and \`sottoTemplate@2x.png\` are rendered from \`build/tray-template.svg\`.
-
-Source and legibility proof are retained in \`artifacts/design/brand/\` in the source repository. Packaged users receive only the final application artwork.
+The brand sheet is retained as \`artifacts/design/brand/owl-brand-sheet.png\` in the source repository. Packaged users receive only the final application artwork.
 
 ${sections}
 `

@@ -30,6 +30,32 @@ function createAdapter(registerResult: (accelerator: string) => boolean = () => 
 }
 
 describe('HotkeyManager primary shortcut', () => {
+  it.each(['win32', 'darwin'] as const)('keeps the %s global toggle and Escape registration', platform => {
+    const { active, adapter } = createAdapter()
+    const toggle = vi.fn()
+    const cancel = vi.fn()
+    const manager = new HotkeyManager(adapter, toggle, cancel, platform)
+    expect(manager.replace('Control+Shift+Space')).toEqual({ ok: true })
+    active.get('Control+Shift+Space')?.()
+    expect(toggle).toHaveBeenCalledOnce()
+    manager.beginListening()
+    active.get('Escape')?.()
+    expect(cancel).toHaveBeenCalledOnce()
+    manager.dispose()
+    expect(active.size).toBe(0)
+  })
+
+  it('keeps Linux settings without claiming a global shortcut or Escape', () => {
+    const { adapter } = createAdapter()
+    const manager = new HotkeyManager(adapter, vi.fn(), vi.fn(), 'linux')
+    expect(manager.replace('Control+Shift+Space')).toEqual({ ok: true })
+    expect(manager.current()).toBe('Control+Shift+Space')
+    syncEscapeForWidgetSnapshot(manager, { status: 'listening', cancellable: true })
+    expect(manager.beginListening()).toBe(false)
+    manager.dispose()
+    expect(adapter.register).not.toHaveBeenCalled()
+    expect(adapter.unregister).not.toHaveBeenCalled()
+  })
   it('keeps the prior shortcut when replacement registration conflicts', () => {
     const { active, adapter } = createAdapter((accelerator) => accelerator !== 'Taken')
     const manager = new HotkeyManager(adapter, vi.fn(), vi.fn())

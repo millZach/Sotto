@@ -1,6 +1,6 @@
 # Phase 5 implementation
 
-October 9, 2026: Voice control and thread management described below are historical under [ADR-0062](../adr/0062-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
+October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
 Baseline: `896c4e4bce223b616809adefdcd12fe9bfe42b7e` on `main`. Native foundation `52f1f42` is an ancestor. Current GitHub bodies for #61, #67 and #71 were read on 2026-09-13. Local implementation, controlled tests, review and commit are authorized; publishing a real branch or PR is not inferred from implementing its UI.
 

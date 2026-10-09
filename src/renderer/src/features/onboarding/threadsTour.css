@@ -1,0 +1,75 @@
+/* The Threads tour after first-run setup: a dimmed window with one part lit and
+   a note beside it. The layer covers the drag strip too, so it opts out of
+   dragging; colour comes only from theme roles. */
+
+.threads-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+}
+
+.threads-tour__scrim {
+  position: fixed;
+  border-radius: var(--tt-radius-lg);
+  box-shadow: 0 0 0 200vmax var(--tt-backdrop);
+  outline: 2px solid var(--tt-accent);
+  outline-offset: 0;
+  pointer-events: none;
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+}
+
+.threads-tour__scrim[data-hole='false'] {
+  inset: 0;
+  border-radius: 0;
+  background: var(--tt-backdrop);
+  box-shadow: none;
+  outline: none;
+}
+
+.threads-tour__note {
+  position: fixed;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-lg);
+  padding: 16px 16px 12px;
+  color: var(--tt-text);
+}
+
+.threads-tour__note h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.threads-tour__note h2:focus {
+  outline: none;
+}
+
+.threads-tour__note p {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.threads-tour__note footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.threads-tour__count {
+  color: var(--tt-text-muted);
+  font-size: 12px;
+}
+
+.threads-tour__actions {
+  display: flex;
+  gap: 4px;
+}

@@ -49,9 +49,9 @@ describe('SottoMark in the main window', () => {
     const expectBrand = async (colors: Parameters<typeof themeBrand>[0], mode: ThemeAppearance) => {
       const brand = themeBrand(colors, mode)
       await waitFor(() => expect(svg).toHaveAttribute('data-tile', brand.tile))
-      expect([...svg.querySelectorAll('stop')].map(stop => stop.getAttribute('stop-color'))).toEqual([brand.tile, brand.tile])
-      expect(svg.querySelector('rect[x="26"]')).toHaveAttribute('fill', brand.glyph)
-      expect(svg.querySelector('path')).toHaveAttribute('stroke', brand.glyph)
+      expect(svg.querySelector('rect')).toHaveAttribute('fill', brand.tile)
+      expect(svg.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.glyph)
+      expect([...svg.querySelectorAll('circle')].map(circle => circle.getAttribute('fill'))).toEqual([brand.glyph, brand.glyph])
     }
     await expectBrand(builtIn('nocturne', 'dark'), 'dark')
 
@@ -70,7 +70,24 @@ describe('SottoMark in the main window', () => {
     paint(choice(), draft)
     await expectBrand(draft.colors, 'dark')
     // Geometry is untouched.
-    expect(svg.querySelector('rect[x="26"]')).toHaveAttribute('height', '56')
+    expect(svg.querySelector('rect')).toHaveAttribute('rx', '22')
+  })
+
+  it('wears a brand override instead of the window theme when one is given', async () => {
+    paint(choice())
+    const override = { tile: '#112233', glyph: '#eeddcc' }
+    const { container } = render(<SottoMark brand={override} />)
+    const svg = container.querySelector('svg')!
+    expect(svg).toHaveAttribute('data-tile', override.tile)
+    expect(svg).toHaveAttribute('data-glyph', override.glyph)
+    expect(svg.querySelector('rect')).toHaveAttribute('fill', override.tile)
+    expect(svg.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', override.glyph)
+    expect([...svg.querySelectorAll('circle')].every(circle => circle.getAttribute('fill') === override.glyph)).toBe(true)
+
+    // The window's own theme changing afterward leaves the override painted.
+    paint(choice({ darkTheme: 'tropic' }))
+    await act(async () => undefined)
+    expect(svg).toHaveAttribute('data-tile', override.tile)
   })
 
   it('wears the app icon itself on the default theme, in both modes', async () => {

@@ -1,0 +1,23 @@
+#!/bin/sh
+# The same command in a checkout and in /opt/sotto. Resolve symlinks before finding the app.
+launcher=$(readlink -f "$0")
+launcher_dir=$(dirname "$launcher")
+checkout=$(realpath "$launcher_dir/../..")
+if [ -f "$checkout/package.json" ] && [ -d "$checkout/src" ]; then
+  runtime="$checkout/node_modules/electron/dist/electron"
+  client="$checkout/out/main/dictationClient.js"
+  application="$checkout"
+else
+  runtime="$launcher_dir/../sotto"
+  client="$launcher_dir/../resources/app.asar/out/main/dictationClient.js"
+  application=""
+fi
+
+if [ "$1" = "dictation" ]; then
+  exec env ELECTRON_RUN_AS_NODE=1 "$runtime" "$client" "$@"
+fi
+unset ELECTRON_RUN_AS_NODE
+if [ -n "$application" ]; then
+  exec "$runtime" "$application" "$@"
+fi
+exec "$runtime" "$@"

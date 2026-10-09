@@ -7,6 +7,7 @@ import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { HistoryView } from './features/history/HistoryView'
 import { Onboarding } from './features/onboarding/Onboarding'
+import { ThreadsTour } from './features/onboarding/ThreadsTour'
 import { UpdateControl } from './features/updates/UpdateControl'
 import { installConfirmation } from './features/updates/updateControlLogic'
 import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFlow'
@@ -38,6 +39,7 @@ import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
 const recoveryMessages = {
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.',
   RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.',
   ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
   REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
@@ -119,6 +121,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
+  // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
+  const [threadsTour, setThreadsTour] = useState(false)
   const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
@@ -340,10 +344,15 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
           onComplete={async ({ microphoneSkipped }) => {
             await stopMicrophone()
             const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
-            if (saved) app.actions.navigate('threads')
+            if (saved) {
+              setThreadsTour(true)
+              app.actions.navigate('threads')
+            }
             return saved
           }}
         />
+        {/* Setup can save a computer, and a saved host reconnecting on its own can need an answer from SSH here too. */}
+        <HostQuestionDialog />
         <ToastRegion messages={recoveryToasts} />
       </>
     )
@@ -447,9 +456,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
             maximized={app.windowMaximized}
             onClose={app.actions.hideApp}
           >
-            {/* The memory questionnaire greets you in the Agents room. With the coordinator off that
-                page is the Threads page, which must not be replaced by a questionnaire; Memory still
-                offers it on request. */}
+            {/* Threads stays the working page; Memory offers its questionnaire on request. */}
             {memoryEnabled ? <MemorySurface navigation={threadsPage ? 'threads' : navigation}>{view}</MemorySurface> : view}
           </AppShell>
         </SidebarChromeProvider>
@@ -466,6 +473,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
         ) : null}
         {/* A saved host reconnecting on its own can need an answer from SSH on any page. */}
         <HostQuestionDialog />
+        {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
         <ThemeEditorHost
           settings={app.settings}
           onSave={app.actions.updateSettings}
