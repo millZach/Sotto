@@ -83,6 +83,6 @@ To remove it:
 apps/omarchy/install-shell-plugin.sh --uninstall
 ```
 
-This takes the glyph off the bar, checks that `shell.json` no longer names it, and only then deletes the plugin folder; Sotto's own widget comes back. Taking the glyph off needs the Omarchy shell running, so without it the script removes nothing and says so. It also takes off a glyph left on the bar after the folder was deleted by hand. `omarchy plugin remove sotto.dictation` also takes the glyph off and keeps a hidden backup of the folder.
+This takes the glyph off the bar, checks that `shell.json` no longer names it, and only then deletes the plugin folder; Sotto's own widget comes back. Taking the glyph off needs the Omarchy shell running, so without it the script removes nothing and says so. If `shell.json` cannot be read, before or after the glyph comes off, the script keeps the plugin folder and says why, since it cannot tell whether the glyph is still on the bar. It also takes off a glyph left on the bar after the folder was deleted by hand. `omarchy plugin remove sotto.dictation` also takes the glyph off and keeps a hidden backup of the folder.
 
 `scripts/verify-omarchy-shell-plugin.sh <out-dir>`, from the checkout's root, checks all of this in an owned, nested copy of the Omarchy shell without touching the running desktop. `docs/verification/omarchy-shell-plugin.md` records a run.

@@ -73,12 +73,26 @@ shell_running() {
 }
 
 # Whether shell.json still names the plugin, on the bar or among plugins.
-on_bar() {
-  [[ -f $config ]] || return 1
-  jq -e --arg id "$id" '
+# Sets `entry` to present or absent, or to unknown when the file cannot be
+# read or is not the shell's settings, with the reason in `inspect_error`.
+# No file at all names nothing: the shell then runs on its defaults.
+inspect_bar() {
+  local result
+  entry=absent inspect_error=""
+  [[ -e $config || -L $config ]] || return 0
+  if result=$(jq --arg id "$id" '
     [(.bar.layout? // {} | objects | .[] | arrays | .[]), (.plugins? // [] | arrays | .[])]
     | any(.[]; (if type == "object" then .id else . end) == $id)
-  ' "$config" >/dev/null 2>&1
+  ' "$config" 2>&1); then
+    case $result in
+      true) entry=present ;;
+      false) entry=absent ;;
+      *) entry=unknown inspect_error="it holds no settings" ;;
+    esac
+  else
+    entry=unknown
+    inspect_error=$(head -n1 <<<"$result" | sed -E 's/^jq: //; s/^error: //')
+  fi
 }
 
 plugin_known() {
@@ -109,17 +123,22 @@ if (( uninstall )); then
     installed=1
   fi
   # The glyph comes off the bar first, and the folder goes only once
-  # shell.json no longer names it, so no entry is left behind that a second
-  # run could not see. The shell takes the entry off even when the folder
-  # has already gone.
-  if on_bar; then
+  # shell.json has been read and no longer names it, so no entry is left
+  # behind that a second run could not see. A file that cannot be read
+  # proves nothing, so the folder stays. The shell takes the entry off even
+  # when the folder has already gone.
+  inspect_bar
+  [[ $entry == unknown ]] && fail "Could not read $config to see whether Sotto's glyph is on the bar: $inspect_error. Nothing was removed. Fix or restore that file, then run this again."
+  if [[ $entry == present ]]; then
     shell_running || fail "Sotto's glyph is on the bar, and only a running Omarchy shell can take it off. Nothing was removed. Run this again in your desktop session."
     omarchy plugin disable "$id" >/dev/null || fail "'omarchy plugin disable $id' did not take Sotto's glyph off the bar. Nothing was removed."
     for (( attempt = 0; attempt < 50; attempt++ )); do
-      on_bar || break
+      inspect_bar
+      [[ $entry == absent ]] && break
       sleep 0.1
     done
-    on_bar && fail "Sotto's glyph is still in the bar's layout in $config. Nothing else was removed. Run this again in your desktop session."
+    [[ $entry == unknown ]] && fail "Asked the shell to take Sotto's glyph off the bar, but could not read $config to check that it did: $inspect_error. The plugin folder was kept. Run this again once that file can be read."
+    [[ $entry == present ]] && fail "Sotto's glyph is still in the bar's layout in $config. Nothing else was removed. Run this again in your desktop session."
     echo "Took Sotto's glyph off the bar."
   elif (( ! installed )); then
     echo "Sotto's shell plugin is not installed in $plugins_dir, and its glyph is not on the bar."
