@@ -95,7 +95,8 @@
 .settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
 .settings-view .settings-feedback { padding-right: 116px; }
-[data-platform='linux'] .settings-view .settings-feedback { padding-right: 0; }
+/* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
+[data-platform='linux'] .settings-view .settings-feedback { padding-right: 6vw; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
 .settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }
@@ -165,6 +166,7 @@
   .settings-sidebar { padding-left: 15px; }
   .settings-view .settings-scroll { padding: 32px 35px; }
   .settings-feedback { padding-inline: 35px; }
+  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 35px; }
 }
 @media (max-width: 900px) {
   .settings-view .settings-layout { grid-template-columns: 178px minmax(0, 1fr); }
@@ -176,6 +178,7 @@
   .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -14px; }
   .settings-view .settings-scroll { padding: 28px; }
   .settings-feedback { padding-inline: 28px; }
+  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 28px; }
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
   /* A chip group still needs its own wider room here, the same as at full width, or the 210px column above wins
      on equal specificity by coming later and squeezes all three chips into it. */
@@ -201,6 +204,7 @@
   .settings-view .settings-layout { grid-template-columns: 156px minmax(0, 1fr); }
   .settings-view .settings-scroll { padding-inline: 20px; }
   .settings-feedback { padding-inline: 20px; }
+  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 20px; }
   .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; }
   .settings-view .account-row__control { justify-content: flex-start; }
