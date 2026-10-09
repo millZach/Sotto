@@ -102,7 +102,7 @@ If a permission arrives while you type, the composer keeps focus and your draft.
 
 If a question answer fails, its text comes back to the composer unless you have written a newer draft. The error stays with that thread when you switch away and return, until you edit or retry the answer or close the window.
 
-While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery.
+While a thread is running, **Steer now** beside a queued message sends that message into the current turn when the provider supports steering, as Codex and Claude Code do; **Steer now** beside the composer does the same for the draft, and Enter still queues. The rest of the queue and any newer composer draft stay in place. An unconfirmed message cannot be steered again; use **Check again** to reconcile its delivery. Claude reads a steered message after its current step, such as the command it is running. If the turn ends first, Claude answers it as its next turn, and that includes a turn you stop: Claude Code already holds the message, so it still runs ([ADR-0065](adr/0065-claude-threads-steer-and-the-iphone-queues-steers-and-compacts.md)).
 
 Paste a screenshot into a thread's prompt, drag it in, or choose **Attach screenshots**. Codex models that accept images and Claude Code models support screenshots; text-only models keep the control unavailable. Send an image on its own or alongside text, with up to eight images, 10 MB per image and 20 MB total. Grok Build currently cannot receive screenshots through its native client.
 
