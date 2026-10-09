@@ -14,6 +14,7 @@ interface ExitSource {
 export class LinuxDictationShell {
   private readonly socket: DictationSocket
   private stateFile: DictationStateFile | null = null
+  private stopped = false
   private readonly onExit = (): void => this.dispose()
 
   constructor(
@@ -30,7 +31,9 @@ export class LinuxDictationShell {
   }
 
   async start(): Promise<void> {
+    if (this.stopped) return
     await this.socket.start()
+    if (this.stopped) return
     this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(), this.onFailure)
   }
 
@@ -38,6 +41,8 @@ export class LinuxDictationShell {
   place(edge: WidgetEdge): void { this.stateFile?.place(edge) }
 
   dispose(): void {
+    if (this.stopped) return
+    this.stopped = true
     // The state publisher unlinks synchronously, before any other teardown can fail.
     this.stateFile?.dispose()
     this.stateFile = null
