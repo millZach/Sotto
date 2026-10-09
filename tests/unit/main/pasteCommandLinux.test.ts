@@ -25,7 +25,7 @@ function harness(tags: unknown = []) {
 }
 
 const dispatched = (run: ReturnType<typeof harness>['run']) => run.mock.calls
-  .map(([invocation]) => invocation).filter(invocation => invocation.args[0] === 'dispatch')
+  .map(([invocation]) => invocation).filter(invocation => invocation.args[0] === 'eval')
 
 describe('Hyprland paste', () => {
   it.each([
@@ -38,7 +38,7 @@ describe('Hyprland paste', () => {
     expect(hyprlandPasteChord(window)).toEqual({ mods, key })
   })
 
-  it.each([[], ['terminal'], ['terminal*']])('constructs down/up Lua argument arrays for tags %j', async (...tags) => {
+  it.each([[], ['terminal'], ['terminal*']])('constructs a single Lua request with a compositor-owned release timer for tags %j', async (...tags) => {
     const h = harness(tags.flat())
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
     const chord = hyprlandPasteChord({ tags: tags.flat() })
@@ -46,18 +46,23 @@ describe('Hyprland paste', () => {
       ['locked', '-j'], ['repl', MODIFIERS_HELD_QUERY], ['activewindow', '-j'],
       ['locked', '-j'],
     ])
-    expect(dispatched(h.run)).toEqual(['down', 'up'].map(state => ({
+    expect(dispatched(h.run)).toEqual([{
       executable: 'hyprctl',
-      args: ['dispatch', `hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "${state}" })`],
-    })))
-    expect(h.delay.mock.calls).toEqual([[50]])
+      args: ['eval', [
+        `hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "down" }))`,
+        'hl.timer(function()',
+        `  hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "up" }))`,
+        'end, { timeout = 50, type = "oneshot" })',
+      ].join('\n')],
+    }])
+    expect(h.delay).not.toHaveBeenCalled()
   })
 
   it.each([[], ['terminal']])('prepares PRIMARY only for terminal tags %j before the final lock check', async (...tags) => {
     const h = harness(tags.flat())
     const base = h.run.getMockImplementation()!
     h.run.mockImplementation(async i => {
-      if (i.args[0] === 'dispatch') expect(h.copyToPrimary).toHaveBeenCalledTimes(tags.flat().length)
+      if (i.args[0] === 'eval') expect(h.copyToPrimary).toHaveBeenCalledTimes(tags.flat().length)
       return base(i)
     })
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
@@ -79,7 +84,7 @@ describe('Hyprland paste', () => {
     const base = h.run.getMockImplementation()!
     h.run.mockImplementation(i => i.args[0] === 'repl' ? Promise.resolve(++checks <= 2 ? 'true' : 'false') : base(i))
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
-    expect(h.delay.mock.calls).toEqual([[25], [25], [50]])
+    expect(h.delay.mock.calls).toEqual([[25], [25]])
     expect(h.run.mock.calls.findIndex(([i]) => i.args[0] === 'activewindow')).toBe(4)
   })
 
@@ -109,16 +114,26 @@ describe('Hyprland paste', () => {
     expect(dispatched(h.run)).toEqual([])
   })
 
-  it('still releases the key when the session locks between down and up', async () => {
-    const h = harness()
-    const base = h.run.getMockImplementation()!
-    let locked = false
-    h.run.mockImplementation(i => i.args[0] === 'locked' ? Promise.resolve(JSON.stringify({ locked })) : base(i))
-    h.delay.mockImplementation(async () => { locked = true })
-    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
-    expect(locked).toBe(true)
-    expect(dispatched(h.run)).toEqual(['down', 'up'].map(state =>
-      buildHyprlandKeyInvocation({ mods: 'CTRL', key: 'V' }, state as 'down' | 'up')))
+  it('needs no separate key-up when the compositor request stalls and loses its reply', async () => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      const base = h.run.getMockImplementation()!
+      h.run.mockImplementation(async i => {
+        if (i.args[0] !== 'eval') return base(i)
+        expect(i).toEqual(buildHyprlandKeyInvocation({ mods: 'CTRL', key: 'V' }))
+        return new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Lost reply')), 5000))
+      })
+      const result = h.adapter.run(buildLinuxPasteInvocation())
+      await vi.advanceTimersByTimeAsync(50)
+      expect(dispatched(h.run)).toHaveLength(1)
+      expect(h.run.mock.calls.at(-1)![0].args[1]).toContain('state = "up"')
+      await vi.advanceTimersByTimeAsync(4950)
+      await expect(result).resolves.toBe(false)
+      expect(dispatched(h.run)).toHaveLength(1)
+      expect(h.run.mock.calls.map(([i]) => i.args[0])).toEqual(['locked', 'repl', 'activewindow', 'locked', 'eval'])
+      expect(h.delay).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
   })
 
   it('leaves the result copied if a modifier stays held for 300 ms', async () => {
@@ -160,7 +175,7 @@ describe('Hyprland paste', () => {
     expect(h.delay).not.toHaveBeenCalled()
   })
 
-  it.each(['locked', 'repl', 'activewindow', 'dispatch'])('leaves the text copied on a %s failure', async command => {
+  it.each(['locked', 'repl', 'activewindow', 'eval'])('leaves the text copied on a %s failure', async command => {
     const h = harness()
     const base = h.run.getMockImplementation()!
     h.run.mockImplementation(i => i.args[0] === command ? Promise.reject(new Error('private')) : base(i))
@@ -171,26 +186,19 @@ describe('Hyprland paste', () => {
     })
     await expect(output.deliver('safe copied result', { autoPaste: true, pasteDelayMs: 80 })).resolves.toBe('copied')
     expect(clipboard.writeText).toHaveBeenCalledWith('safe copied result')
-    if (command !== 'dispatch') expect(dispatched(h.run)).toEqual([])
-    else expect(dispatched(h.run)).toHaveLength(2) // Still attempt release after a lost down acknowledgement.
+    if (command !== 'eval') expect(dispatched(h.run)).toEqual([])
+    else expect(dispatched(h.run)).toHaveLength(1) // Release already belongs to the compositor.
   })
 
   it.each([
     ['locked', '{"locked":true}'], ['locked', '{}'], ['repl', 'ok'],
-    ['activewindow', 'not json'], ['dispatch', 'Invalid dispatcher'],
+    ['activewindow', 'not json'], ['eval', 'Lua evaluation failed'],
   ])('rejects unsuccessful %s replies even if hyprctl exits successfully', async (command, reply) => {
     const h = harness()
     const base = h.run.getMockImplementation()!
     h.run.mockImplementation(i => i.args[0] === command ? Promise.resolve(reply) : base(i))
     await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
-    if (command !== 'dispatch') expect(dispatched(h.run)).toEqual([])
-  })
-
-  it('attempts key-up even if the inter-key delay fails', async () => {
-    const h = harness(['terminal'])
-    h.delay.mockRejectedValue(new Error('private'))
-    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
-    expect(dispatched(h.run).at(-1)).toEqual(buildHyprlandKeyInvocation({ mods: 'SHIFT', key: 'Insert' }, 'up'))
+    if (command !== 'eval') expect(dispatched(h.run)).toEqual([])
   })
 
   it('keeps the Windows and macOS invocations and warm-helper choices unchanged', () => {

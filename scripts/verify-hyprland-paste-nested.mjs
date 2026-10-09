@@ -126,7 +126,7 @@ try {
   runtimeIdentity = statSync(join(runtime, 'hypr', sig))
   const nested = { ...base, WAYLAND_DISPLAY: sock, HYPRLAND_INSTANCE_SIGNATURE: sig, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland' }
   const hyprctl = (...args) => {
-    if (args[0] === 'dispatch') assertNested()
+    if (args[0] === 'dispatch' || args[0] === 'eval') assertNested()
     return execFileSync('/usr/bin/hyprctl', args, { env: nested, encoding: 'utf8', timeout: 5000 })
   }
   console.log(`nested: ${sig} on ${sock}; live: ${liveSig} on ${live.WAYLAND_DISPLAY} (untouched)`)

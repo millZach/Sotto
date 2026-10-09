@@ -22,12 +22,15 @@ export function hyprlandPasteChord(activeWindow: unknown): { mods: 'CTRL' | 'SHI
   return terminal ? { mods: 'SHIFT', key: 'Insert' } : { mods: 'CTRL', key: 'V' }
 }
 
-export function buildHyprlandKeyInvocation(
-  chord: ReturnType<typeof hyprlandPasteChord>, state: 'down' | 'up',
-): PasteInvocation {
+export function buildHyprlandKeyInvocation(chord: ReturnType<typeof hyprlandPasteChord>): PasteInvocation {
   return {
     executable: 'hyprctl',
-    args: ['dispatch', `hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "${state}" })`],
+    args: ['eval', [
+      `hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "down" }))`,
+      'hl.timer(function()',
+      `  hl.dispatch(hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "up" }))`,
+      `end, { timeout = ${HYPRLAND_KEY_HOLD_MS}, type = "oneshot" })`,
+    ].join('\n')],
   }
 }
 
@@ -75,18 +78,10 @@ export function createHyprlandPasteAdapter(
         const chord = hyprlandPasteChord(JSON.parse(await run(invocation)))
         if (chord.mods === 'SHIFT') await copyToPrimary()
         // Modifier polling and target lookup can outlast the initial lock check.
-        // Fail closed immediately before down, but never gate its matching up.
+        // The compositor owns the release timer even if this request loses its reply.
+        // Keep the lock recheck immediately before the single down/up request.
         if (JSON.parse(await run({ executable: 'hyprctl', args: ['locked', '-j'] })).locked !== false) return false
-        let pressed = false
-        let released = false
-        try {
-          pressed = await run(buildHyprlandKeyInvocation(chord, 'down')) === 'ok'
-          await delay(HYPRLAND_KEY_HOLD_MS)
-        } finally {
-          // A lost down acknowledgement may still have sent the key. Always attempt its release.
-          released = await run(buildHyprlandKeyInvocation(chord, 'up')) === 'ok'
-        }
-        return pressed && released
+        return await run(buildHyprlandKeyInvocation(chord)) === 'ok'
       } catch {
         return false
       }
