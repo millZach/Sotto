@@ -31,7 +31,7 @@ export const GLYPH = {
 }
 
 export function idle(edge) {
-  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top", pid: 0, pidStart: null }
+  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top", pid: 0, pidStart: null, dictation: null }
 }
 
 export function validEdge(edge) {
@@ -47,6 +47,14 @@ export function finiteNumber(value) {
 // does not.
 export function processId(value) {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0
+}
+
+// The dictation the file is about: Sotto's identifier for it, "" when the
+// file says there is none, or null when the file does not say, as an older
+// Sotto's does not.
+export function dictationId(value) {
+  if (typeof value === "string") return value
+  return value === null ? "" : null
 }
 
 // When that process started, as field 22 of its `/proc/<pid>/stat` reads,
@@ -85,7 +93,8 @@ function fromData(data) {
     kept: data.kept === true,
     edge: validEdge(data.edge) ? data.edge : "top",
     pid: processId(data.pid),
-    pidStart: processStart(data.pidStart)
+    pidStart: processStart(data.pidStart),
+    dictation: dictationId(data.dictation)
   }
 }
 
@@ -112,12 +121,18 @@ export function key(record) {
   return record.state + "@" + record.since
 }
 
-// Whether `next` begins a dictation: Sotto starting or listening under a new
-// key, except listening after the same dictation's start. States written
-// within 50 ms of each other can arrive as one, so a new dictation is read
-// from the change of key rather than from an idle in between.
+// Whether `next` begins a dictation. States written within 50 ms of each
+// other can arrive as one, even two dictations' states, so a Sotto that
+// names its dictations decides: `dictation` changing to a new identifier.
+// Without one, from an older Sotto, it is worked out from the states:
+// starting or listening under a new key, except listening after the same
+// dictation's start.
 export function startsDictation(previous, next) {
-  if (!next || (next.state !== "starting" && next.state !== "listening")) return false
+  if (!next) return false
+  if (next.dictation !== null) {
+    return next.dictation !== "" && (!previous || previous.dictation !== next.dictation)
+  }
+  if (next.state !== "starting" && next.state !== "listening") return false
   if (!previous) return true
   if (key(previous) === key(next)) return false
   return !(previous.state === "starting" && next.state === "listening")
@@ -128,8 +143,8 @@ export function startsDictation(previous, next) {
 // up for the one before; a pill that appears without one, such as a notice,
 // takes the focused display too. "" while nothing shows.
 export function displayFor(current, previous, next, shown, focused) {
-  if (startsDictation(previous, next)) return focused
   if (!shown) return ""
+  if (startsDictation(previous, next)) return focused
   return current !== "" ? current : focused
 }
 

@@ -30,10 +30,10 @@ import {
 } from '../../../apps/omarchy/shell-plugin/sotto.dictation/Model.mjs'
 
 const file = (fields: Record<string, unknown>): string => JSON.stringify({
-  version: 1, state: 'listening', since: 1_000, updatedAt: 1_000, detail: null, kept: false, edge: 'top', pid: 4242, pidStart: 177_000, ...fields,
+  version: 1, state: 'listening', since: 1_000, updatedAt: 1_000, detail: null, kept: false, edge: 'top', pid: 4242, pidStart: 177_000, dictation: 'd1', ...fields,
 })
 const record = (state: DictationStatus, since: number, fields: Partial<DictationRecord> = {}): DictationRecord =>
-  ({ state, since, updatedAt: since, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: null, ...fields })
+  ({ state, since, updatedAt: since, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: null, dictation: null, ...fields })
 // A /proc/<pid>/stat line: fields 4 to 21 as Linux writes them, then field
 // 22, the start time, and a few after it.
 const stat = (pid: number, name: string, state: string, start: number | string): string =>
@@ -44,7 +44,7 @@ describe('reading the state file', () => {
     for (const text of ['', 'not json', '[]', 'null', '{"state":"listening"}', file({ version: 2 })]) {
       expect(parse(text)).toEqual(idle())
     }
-    expect(parse(undefined)).toEqual({ state: 'idle', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 0, pidStart: null })
+    expect(parse(undefined)).toEqual({ state: 'idle', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 0, pidStart: null, dictation: null })
   })
 
   it('keeps a valid edge from a state it does not know', () => {
@@ -53,13 +53,13 @@ describe('reading the state file', () => {
 
   it('ignores fields it does not know, a transcript among them', () => {
     const parsed = parse(file({ transcript: 'what the user said', level: 0.4, next: { version: 2 } }))
-    expect(parsed).toEqual({ state: 'listening', since: 1_000, updatedAt: 1_000, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000 })
+    expect(parsed).toEqual({ state: 'listening', since: 1_000, updatedAt: 1_000, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000, dictation: 'd1' })
     expect(JSON.stringify(parsed)).not.toContain('what the user said')
   })
 
   it('falls back field by field', () => {
     expect(parse(file({ state: 'failed', since: '1000', updatedAt: Infinity, detail: 7, kept: 'true', edge: 'middle' })))
-      .toEqual({ state: 'failed', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000 })
+      .toEqual({ state: 'failed', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000, dictation: 'd1' })
     expect(parse(file({ state: 'failed', detail: '  Sotto could not reach OpenRouter.\n Recording kept. ' })).detail)
       .toBe('Sotto could not reach OpenRouter. Recording kept.')
   })
@@ -80,6 +80,16 @@ describe('reading the state file', () => {
     for (const pidStart of [-1, 1.5, '177000', null, true, Number.NaN]) expect(parse(file({ pidStart })).pidStart).toBeNull()
     expect(parse(file({ pidStart: 0 })).pidStart).toBe(0)
     expect(parse(file({ pidStart: 9_007_199_254_740_991 })).pidStart).toBe(9_007_199_254_740_991)
+  })
+
+  it('reads dictation as an opaque identifier, "" when the file says there is none, and null when it does not say', () => {
+    expect(parse(file({ dictation: 'session-7f3a (2)' })).dictation).toBe('session-7f3a (2)')
+    expect(parse(file({ dictation: null })).dictation).toBe('')
+    expect(parse(file({ dictation: '' })).dictation).toBe('')
+    const older = JSON.parse(file({})) as Record<string, unknown>
+    delete older.dictation
+    expect(parse(JSON.stringify(older)).dictation).toBeNull()
+    for (const dictation of [7, true, {}, []]) expect(parse(file({ dictation })).dictation).toBeNull()
   })
 })
 
@@ -455,6 +465,54 @@ describe('the display for each dictation (rule A)', () => {
       [record('listening', 1), true, 'DP-1'],
       [record('listening', 9), true, 'DP-2'],
     ])).toEqual(['DP-1', 'DP-2'])
+  })
+
+  const named = (state: DictationStatus, since: number, dictation: string | null, fields: Partial<DictationRecord> = {}) =>
+    record(state, since, { dictation, ...fields })
+
+  it("starts a dictation when Sotto names a new one, whatever its state", () => {
+    expect(startsDictation(null, named('starting', 1, 'A'))).toBe(true)
+    expect(startsDictation(idle(), named('listening', 1, 'A'))).toBe(true)
+    expect(startsDictation(named('starting', 1, 'A'), named('listening', 2, 'B'))).toBe(true)
+    expect(startsDictation(named('copied', 1, 'A'), named('failed', 2, 'B'))).toBe(true)
+    expect(startsDictation(named('idle', 1, ''), named('transcribing', 2, 'B'))).toBe(true)
+    expect(startsDictation(record('listening', 1), named('listening', 1, 'A'))).toBe(true)
+  })
+
+  it('keeps one named dictation one, whatever its states and since', () => {
+    expect(startsDictation(named('starting', 1, 'A'), named('listening', 2, 'A'))).toBe(false)
+    expect(startsDictation(named('listening', 1, 'A'), named('listening', 9, 'A'))).toBe(false)
+    expect(startsDictation(named('failed', 1, 'A', { kept: true }), named('starting', 9, 'A'))).toBe(false)
+    expect(startsDictation(named('listening', 1, 'A'), named('idle', 2, ''))).toBe(false)
+    expect(startsDictation(null, named('idle', 0, ''))).toBe(false)
+  })
+
+  it("sends B to the new display when A's starting and B's listening arrive with nothing between", () => {
+    expect(run([
+      [named('starting', 1, 'A'), true, 'DP-1'],
+      [named('listening', 60, 'B'), true, 'DP-2'],
+      [named('transcribing', 90, 'B'), true, 'DP-1'],
+    ])).toEqual(['DP-1', 'DP-2', 'DP-2'])
+  })
+
+  it('keeps the same pair on the first display without dictation, as an older Sotto writes it', () => {
+    expect(run([
+      [record('starting', 1), true, 'DP-1'],
+      [record('listening', 60), true, 'DP-2'],
+    ])).toEqual(['DP-1', 'DP-1'])
+  })
+
+  it('keeps a named dictation on its display through every state, and moves the next one', () => {
+    expect(run([
+      [named('starting', 1, 'A'), true, 'DP-1'],
+      [named('listening', 2, 'A'), true, 'DP-2'],
+      [named('transcribing', 3, 'A'), true, 'DP-2'],
+      [named('copied', 4, 'A'), true, 'DP-2'],
+      [named('starting', 5, 'B'), true, 'DP-2'],
+      [named('failed', 6, 'B'), true, 'DP-1'],
+      [idle(), false, 'DP-1'],
+      [named('listening', 7, 'C'), true, 'DP-1'],
+    ])).toEqual(['DP-1', 'DP-1', 'DP-1', 'DP-1', 'DP-2', 'DP-2', '', 'DP-1'])
   })
 
   it('puts a pill without a dictation, such as a notice, on the focused display', () => {

@@ -13,6 +13,7 @@ export interface DictationRecord {
   edge: Edge
   pid: number
   pidStart: number | null
+  dictation: string | null
 }
 export interface Area { x: number; y: number; width: number; height: number }
 export interface Point { x: number; y: number }
@@ -37,6 +38,7 @@ export function validEdge(edge: unknown): boolean
 export function finiteNumber(value: unknown): number
 export function processId(value: unknown): number
 export function processStart(value: unknown): number | null
+export function dictationId(value: unknown): string | null
 export function parse(text: unknown): DictationRecord
 export function afterRead(previous: DictationRecord | null, text: string | null, missing: boolean): { record: DictationRecord; unreadable: boolean }
 export function key(record: Pick<DictationRecord, 'state' | 'since'>): string
