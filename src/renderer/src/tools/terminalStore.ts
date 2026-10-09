@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { FileWorkspace } from '../../../shared/files'
 import type { TerminalBridge, TerminalEvent, TerminalPlace, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
+import { terminalImageSizeError } from '../../../shared/terminal'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 
 /** What the store needs from a rendered terminal. The xterm implementation lives in terminalView.ts. */
@@ -229,7 +230,8 @@ export class TerminalStore {
           record.inputTail = record.inputTail.then(async () => {
             const image = await Promise.resolve(dataUrl).catch(() => null)
             if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
-            const result = image ? await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image }))) : { ok: false as const, error: { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' } }
+            const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+            const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image! })))
             if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
             if (!result.ok) {
               record.inputVersion++

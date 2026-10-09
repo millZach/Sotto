@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { TerminalOpenRequest, TerminalWorkspaceBridge, WorkspaceTerminal, WorkspaceTerminalEvent, WorkspaceTerminalSnapshot } from '../../../shared/terminalWorkspace'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
+import { terminalImageSizeError } from '../../../shared/terminal'
 import type { TerminalViewFactory, TerminalViewLike } from '../tools/terminalStore'
 import { lastNotableLine } from './terminalFacts'
 
@@ -178,7 +179,8 @@ export class TerminalWorkspaceStore {
     record.inputTail = record.inputTail.then(async () => {
       const image = await Promise.resolve(dataUrl).catch(() => null)
       if (this.records.get(id) !== record || record.inputVersion !== version || record.replaying || record.inputBlocked || this.terminal(id)?.status !== 'running') return
-      const result = image ? await settle(Promise.resolve().then(() => bridge.pasteImage({ id, dataUrl: image }))) : { ok: false as const, error: { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' } }
+      const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+      const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ id, dataUrl: image! })))
       if (this.records.get(id) !== record || record.inputVersion !== version) return
       if (!result.ok) {
         record.inputVersion++

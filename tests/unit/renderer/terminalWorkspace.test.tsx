@@ -79,6 +79,15 @@ it('keeps workspace image conversion and staging ahead of Enter', async () => {
   await waitFor(() => expect(bridge.write).toHaveBeenCalledWith({ id: ID_1, data: '\r' }))
 })
 
+it('reports oversized workspace images before preload validation can obscure the size failure', async () => {
+  const { bridge } = fakeBridge([terminal(ID_1)])
+  const store = new TerminalWorkspaceStore()
+  await store.activate(bridge)
+  await store.pasteImage(bridge, ID_1, 'data:image/png;base64,' + 'A'.repeat(Math.ceil(11 * 1024 * 1024 * 4 / 3)))
+  expect(bridge.pasteImage).not.toHaveBeenCalled()
+  expect(store.getSnapshot().notice).toContain('larger than 10 MiB. Paste a smaller image.')
+})
+
 it('drops failed workspace input and its remainder, then accepts a fresh attempt', async () => {
   const { bridge } = fakeBridge([terminal(ID_1)])
   const store = new TerminalWorkspaceStore()

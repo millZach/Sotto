@@ -6,6 +6,13 @@ export const TERMINAL_CHANNEL = 'sotto:terminal:'
 export const TERMINAL_EVENT = `${TERMINAL_CHANNEL}event`
 export const TERMINAL_MAX_OUTPUT = 512 * 1024
 export const TERMINAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+/** FileReader emits base64 PNGs; reject their actual byte size before preload's transport ceiling hides the reason. */
+export function terminalImageSizeError(dataUrl: string): { code: 'invalid-request'; message: string } | null {
+  const base64Length = dataUrl.length - 'data:image/png;base64,'.length
+  const padding = dataUrl.endsWith('==') ? 2 : dataUrl.endsWith('=') ? 1 : 0
+  return Math.floor(base64Length * 3 / 4) - padding > TERMINAL_IMAGE_MAX_BYTES
+    ? { code: 'invalid-request', message: 'The PNG is larger than 10 MiB. Paste a smaller image.' } : null
+}
 /** Where a shell lives: the shared Tools surface, or a pane's own drawer. The two never show each other's shells. */
 export const terminalPlaceSchema = z.enum(['tools', 'drawer'])
 export type TerminalPlace = z.infer<typeof terminalPlaceSchema>
