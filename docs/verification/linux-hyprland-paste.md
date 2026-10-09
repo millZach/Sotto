@@ -2,9 +2,9 @@
 
 October 9, 2026. Review fixes for [#838](https://github.com/millZach/Sotto/issues/838), based on `80053911` on `feat/linux-hyprland-paste`. Built on forge with Node 24.21.0 and Electron 43.1.0. Hyprland 0.56.2 (`efb50993780079460b0cbed1363e2166a2de1d9f`) and the installed Omarchy Lua clipboard and terminal-tag rules.
 
-The verification-script re-review against `968a15e0` is recorded at the end of this note. Its new runs establish Chromium debugger ownership, cgroup containment and cleanup after SIGINT/SIGTERM. They supersede the earlier process-group cleanup claims below. This follow-up changes only verification scripts, their tests and this note.
+The verification-script re-review against `968a15e0` below establishes Chromium debugger ownership, cgroup containment and cleanup after SIGINT/SIGTERM. The Bug Bot follow-up against `8e28ace7` at the end records seven application fixes and the new stock-foot and widget-on proofs. Those latest runs supersede the earlier three-target evidence; the earlier sections remain the record of those runs.
 
-**VERIFIED: real paste into foot, Alacritty and Chromium inside an owned nested Hyprland.** The focused window, process ownership, tags, `pasted` result and exact received text are assertions. Forge's live session stayed locked. No real key event went to it. The clipboard-only proof used the real output path while Sotto was unfocused and a recording hyprctl stub for every dispatch.
+**VERIFIED: real paste into foot, stock-config foot with a different seeded PRIMARY selection, Alacritty and Chromium inside an owned nested Hyprland; widget-on focus survives two deliveries.** The focused window, process ownership, tags, `pasted` result and exact received text are assertions. Forge's live session stayed locked. No real key event went to it. The clipboard-only proof used the real output path while Sotto was unfocused and a recording hyprctl stub for every dispatch.
 
 Physical modifier release on a keyboard remains unverified. Windows and macOS behavior was preserved; their packaging and physical paste were not exercised on forge. No installer or release target changed.
 
@@ -247,4 +247,133 @@ Proof cgroup processes after cleanup: []
 Owned processes still running: []
 Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
 Independent SIGTERM check: exit=143; runtime folders unchanged; 6 recorded PIDs exited; 5 scopes and slice inactive; cgroup empty
+```
+
+## Bug Bot follow-up on PR #868
+
+October 9, 2026, from `8e28ace7`. All seven findings are addressed. The code fixes are separate commits, each with the requested co-author trailer; three further commits strengthen Copy text recovery, the nested PRIMARY proof and the process-transport contract.
+
+| Finding | Result |
+| --- | --- |
+| Copy buttons without wl-clipboard | A successful Electron fallback returns `copied` for `autoPaste: false`, including Copy text, History, thread actions, host setup and sign-in. An automatic delivery still reports `clipboard-unavailable`. If both writes fail, copy-only output rejects with the existing finite clipboard error. The notice is published once per failure period and resets after a successful Wayland write. |
+| Stock terminal PRIMARY paste | Before Shift+Insert, `wl-copy --primary --type text/plain;charset=utf-8` receives the last successful desktop transcript on stdin, without a shell or stdout pipe. Failure sends no keys. Stock foot runs with `-c /dev/null`; the proof seeds a different PRIMARY value, checks it before delivery and checks the replacement afterwards, as well as the exact bytes received by raw-mode cat. |
+| Widget restoration takes focus | Reproduced before the fix: the Chromium target received the first paste, then the active address changed to Sotto's widget. Linux now keeps the widget mapped around paste. With Show widget when idle on, the proof checks widget visibility, target focus and two exact deliveries into the same textarea. The second delivery does not refocus the target. |
+| Slow dispatch holds the key | One `hyprctl eval` contains the press and Omarchy's 50 ms oneshot release timer. The compositor owns the release even when the client stalls or loses its reply. The lock recheck remains immediately before that request, after PRIMARY preparation. A fake-timer test stalls the reply for five seconds and requires one evaluation and no separate release process. |
+| No focused window | A missing, empty or malformed active-window address leaves the result copied. Tests require no keys and no PRIMARY write. |
+| Untagged terminals | Terminal tags still take precedence. An exact, case-insensitive class list covers foot, Alacritty, kitty, Ghostty, WezTerm, Konsole, Ptyxis and xterm, including their usual Flatpak IDs. Each supported class and uppercase variant is tested through chord choice and PRIMARY preparation; partial-name lookalikes keep Ctrl+V. |
+| Terminal control characters | Only Linux automatic output strips C0 controls except newline and tab before writing either selection. Tests include every C0 byte, ESC inside a bracketed-paste terminator, control-only output and unchanged manual-copy bytes. Shared `formatTranscript` and Windows/macOS delivery are unchanged. |
+
+The first stock-foot attempt revealed a proof setup problem: a compositor nested under the locked live session has no mouse (its seat advertised keyboard capability only). Hyprland requires a mouse to establish pointer focus and sends PRIMARY offers to that focus. The proof now compiles `scripts/nested-proof-pointer.c` with the installed C compiler and Wayland client headers, then starts it inside its owned nested display and systemd scope. It refuses the live instance or display and mismatched expected identities. The stock target receives pointer and keyboard focus before paste. No system package, live desktop config or application dependency was changed. The relevant Hyprland behavior is in the installed version's [seat manager](https://github.com/hyprwm/Hyprland/blob/efb50993780079460b0cbed1363e2166a2de1d9f/src/managers/SeatManager.cpp#L289) and [PRIMARY protocol](https://github.com/hyprwm/Hyprland/blob/efb50993780079460b0cbed1363e2166a2de1d9f/src/protocols/PrimarySelection.cpp#L271).
+
+Both the failing widget reproduction and the initial stock-foot attempts completed cleanup, left the live runtime folder intact and sent no live key events. The final proofs retain the owned debugger, slice, cgroup and runtime-identity assertions from the previous review. All spawned proof processes, including the virtual pointer and selection owners, are stopped.
+
+Reviewed the diff against AGENTS.md and the issue plus all seven review findings. No new network host, runtime dependency, domain term, provider permission or theme change. Windows/macOS paste files and shared transcript formatting have no diff. Their clipboard, widget order, invocations and control-character bytes are pinned by tests. The optional bot suggestion to refuse all multiline terminal paste was not taken: Codex chose to preserve the requested newlines and tabs. This was the coding agent’s implementation decision, not a decision attributed to the owner. No listed finding was declined.
+
+The first full gate exposed four old assertions in the process-transport integration test, which still expected separate dispatch processes and had no PRIMARY callback. Updated in `97782dbf`; its four cases passed in isolation. The final full rerun is recorded below.
+
+### Final gates and evidence
+
+All commands use `mise exec node@24.21.0 --`; suites run one at a time.
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed all three TypeScript projects. |
+| `npm run lint` | Passed with no errors or warnings. |
+| `npm test -- --maxWorkers=2` | 623 files passed, 50 skipped (673); 9,228 tests passed, 182 skipped (9,410). No failures. 477.31 seconds. |
+| `npm run notices:verify` | Verified 174 third-party notice components. |
+| `npm run build` | Passed main, host, preload and renderer builds. |
+| Linux Playwright specs with the Hyprland session environment exported, `--workers=1` | 4 passed, 12.6 seconds. Both Linux specs, including two Copy text clicks after fallback. |
+| External-dependency inventory verification on final build output | `allowlist check: PASS`; reviewed main/preload inventories and production dependency list unchanged. |
+| Nested v4 proof | All four targets and two widget-on deliveries passed, including stock foot with different seeded PRIMARY. |
+| Clipboard-only proof | Exact unfocused Wayland write and settling passed; app and terminal evaluations used only the recording stub. |
+
+The e2e specs checked light, dark and reduced motion at 1600×1000, 1280×800 and 820×560. No UI styling or design baseline changed. Opened and inspected the final [nested capture](../../artifacts/linux-hyprland-paste/nested-paste-real.png), whose textarea contains both widget-on transcripts and whose idle widget stays visible. [Results JSON](../../artifacts/linux-hyprland-paste/nested-paste-results.json) records the four paste targets and two widget-on deliveries. Terminal raw-mode cat files supplied exact-byte assertions; their echo is off in the capture. The retained proof logs and argument log now show this latest run; verbatim blocks above preserve the prior runs.
+
+Physical modifier release, live-session keyboard delivery and Windows/macOS physical paste remain unverified on forge. Linux packaging remains #841; these proofs use the freshly built, unpackaged Electron app. No live key event was sent.
+
+Final nested command:
+
+```sh
+SOTTO_ALACRITTY=$PWD/.cache/alacritty/usr/bin/alacritty mise exec node@24.21.0 -- node scripts/verify-hyprland-paste-nested.mjs /tmp/nested-paste-v4
+```
+
+Verbatim [nested output](../../artifacts/linux-hyprland-paste/nested-proof.txt):
+
+```text
+Hyprland instance folders before proof: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+Started Hyprland PID 4154983 in sotto-proof-b42fa2e8519e442ebe130454de80f821-0.scope
+nested: efb50993780079460b0cbed1363e2166a2de1d9f_1791545647_1840179248 on wayland-2; live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
+Started nested pointer PID 4155004 in sotto-proof-b42fa2e8519e442ebe130454de80f821-1.scope
+Started foot PID 4155008 in sotto-proof-b42fa2e8519e442ebe130454de80f821-2.scope
+Started stock foot PID 4155009 in sotto-proof-b42fa2e8519e442ebe130454de80f821-3.scope
+Started Alacritty PID 4155010 in sotto-proof-b42fa2e8519e442ebe130454de80f821-4.scope
+Started Chromium PID 4155011 in sotto-proof-b42fa2e8519e442ebe130454de80f821-5.scope
+Started Sotto PID 4155012 in sotto-proof-b42fa2e8519e442ebe130454de80f821-6.scope
+Chromium debugger: owned browser PID 4155011, assigned port 36891
+foot: focused=foot tags=["terminal*"] deliverOutput=pasted
+foot received: "Sotto pasted into foot — café 🚀"
+Started Primary sentinel PID 4155388 in sotto-proof-b42fa2e8519e442ebe130454de80f821-7.scope
+stock foot PRIMARY before: "Different PRIMARY selection: never paste this"
+stock foot: focused=foot tags=["terminal*"] deliverOutput=pasted
+stock foot received: "Sotto pasted into stock foot — café 🚀"
+Alacritty: focused=Alacritty tags=["terminal*"] deliverOutput=pasted
+Alacritty received: "Sotto pasted into Alacritty — café 🚀"
+Chromium: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+Chromium received: "Sotto pasted into Chromium — naïve façade ✓"
+widget on first: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+widget on first received: "Widget on: first dictation — café 🚀"
+widget on second: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+widget on second received: " + second dictation to the same target ✓"
+widget on: target focus retained; second dictation reached the same target without refocusing
+screenshot: /tmp/nested-paste-v4/nested.png
+PASS: exact paste into foot, stock foot with seeded PRIMARY, Alacritty and Chromium; widget-on focus and second dictation
+Stopped Hyprland PID 4154983
+Stopped nested pointer PID 4155004
+Stopped foot PID 4155008
+Stopped stock foot PID 4155009
+Stopped Alacritty PID 4155010
+Stopped Chromium PID 4155011
+Stopped Sotto PID 4155012
+Stopped Primary sentinel PID 4155388
+Stopped proof slice app-sottoproofb42fa2e8519e442ebe130454de80f821.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+```
+
+Then:
+
+```sh
+mise exec node@24.21.0 -- node scripts/verify-hyprland-paste.mjs
+```
+
+Verbatim [clipboard-only output](../../artifacts/linux-hyprland-paste/clipboard-proof.txt):
+
+```text
+Hyprland instance folders before proof: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+Started Electron and clipboard children PID 4155557 in sotto-proof-9daa04cb3b784b3ba942a96bf1261a72-0.scope
+session locked (read-only query): true
+Started wl-copy sentinel PID 4155669 in sotto-proof-9daa04cb3b784b3ba942a96bf1261a72-1.scope
+wl-paste before: "before-hyprland-paste-proof"
+Sotto focused: false
+real output result: "copied"
+wl-paste after real output: "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+wl-paste after settle (no automatic restore): "Sotto Wayland output while unfocused — café 🚀\nSecond line."
+stubbed app output result: "pasted"
+stubbed terminal output result: "pasted"
+live key dispatch: "NONE — every dispatch used a recording stub"
+Stopped Electron and clipboard children PID 4155557
+Stopped wl-copy sentinel PID 4155669
+Stopped proof slice app-sottoproof9daa04cb3b784b3ba942a96bf1261a72.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+```
+
+The independent post-run check compares the complete runtime-folder snapshot by name, device and inode; checks recorded PIDs via `/proc`; checks all scopes and slices via the user systemd manager; and requires each proof's cgroup assertion to be empty. It passed:
+
+```text
+Independent cleanup check: PASS; runtime folder names and identities unchanged; 10 recorded PIDs exited; 10 scopes and 2 slices inactive; both cgroups empty
 ```
