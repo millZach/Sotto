@@ -63,7 +63,7 @@ describe('platformProfile', () => {
     })
   })
 
-  it('keeps Linux frameless, with the colour app PNG tray and copy-only output', () => {
+  it('keeps Linux frameless, with the colour app PNG tray and Hyprland output', () => {
     const profile = platformProfile('linux')
     expect(profile).toEqual({
       platform: 'linux',
@@ -83,7 +83,7 @@ describe('platformProfile', () => {
     })
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
-    expect(createPasteCommands('linux').oneShot()).toBeNull()
+    expect(createPasteCommands('linux').oneShot()).toEqual({ executable: 'hyprctl', args: ['activewindow', '-j'] })
   })
 
   it.each(['win32', 'darwin', 'linux'] as const)(

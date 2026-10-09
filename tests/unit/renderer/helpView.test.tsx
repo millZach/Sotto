@@ -12,7 +12,7 @@ describe('HelpView', () => {
     const copy = platformCopy('linux')
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="linux" version="3.4.0" />)
     expect(screen.getByText(/Sotto 3.4.0, Linux/)).toBeVisible()
-    expect(screen.getByText(/Use the dictation button to begin, then press Stop to finish/)).toBeVisible()
+    expect(screen.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
     expect(screen.getByText(copy.settingsGlobalShortcutDescription)).toBeVisible()
     expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
     expect(screen.queryByLabelText('Ctrl+Shift+Space')).not.toBeInTheDocument()

@@ -64,7 +64,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     helpMicrophoneAccess:
       'If recording cannot start, check that your microphone is connected and not muted. Choose an available input in Sotto Settings, then test again.',
     helpPasteFallback:
-      'Sotto copies transcripts to the clipboard on Linux. Paste manually with Ctrl+V, or Shift+Insert in a terminal.',
+      'Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals. Release any held keys first.',
     accessibilityHelp: null,
     openRouterKeyUnreadable:
       'Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Transcription.',
@@ -79,8 +79,8 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
     settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
     settingsMicrophoneDefaultOption: 'System default',
-    settingsGlobalShortcutDescription: 'Wayland does not deliver this shortcut yet. Use the dictation button.',
-    settingsAutoPasteDescription: 'Transcripts are copied on Linux. Paste them manually.',
+    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland. Omarchy defaults: hold F9 to talk, or press Super+Ctrl+X to start and stop. Install Sotto’s bindings first.',
+    settingsAutoPasteDescription: 'Paste into the focused window on Hyprland, terminals included. If it does not get through, use Super+V, Omarchy’s universal paste.',
     settingsLaunchAtStartupLabel: 'Launch when you sign in',
     settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',
     settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',

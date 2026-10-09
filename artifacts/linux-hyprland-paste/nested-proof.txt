@@ -1,0 +1,40 @@
+Hyprland instance folders before proof: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+Started Hyprland PID 4154983 in sotto-proof-b42fa2e8519e442ebe130454de80f821-0.scope
+nested: efb50993780079460b0cbed1363e2166a2de1d9f_1791545647_1840179248 on wayland-2; live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
+Started nested pointer PID 4155004 in sotto-proof-b42fa2e8519e442ebe130454de80f821-1.scope
+Started foot PID 4155008 in sotto-proof-b42fa2e8519e442ebe130454de80f821-2.scope
+Started stock foot PID 4155009 in sotto-proof-b42fa2e8519e442ebe130454de80f821-3.scope
+Started Alacritty PID 4155010 in sotto-proof-b42fa2e8519e442ebe130454de80f821-4.scope
+Started Chromium PID 4155011 in sotto-proof-b42fa2e8519e442ebe130454de80f821-5.scope
+Started Sotto PID 4155012 in sotto-proof-b42fa2e8519e442ebe130454de80f821-6.scope
+Chromium debugger: owned browser PID 4155011, assigned port 36891
+foot: focused=foot tags=["terminal*"] deliverOutput=pasted
+foot received: "Sotto pasted into foot — café 🚀"
+Started Primary sentinel PID 4155388 in sotto-proof-b42fa2e8519e442ebe130454de80f821-7.scope
+stock foot PRIMARY before: "Different PRIMARY selection: never paste this"
+stock foot: focused=foot tags=["terminal*"] deliverOutput=pasted
+stock foot received: "Sotto pasted into stock foot — café 🚀"
+Alacritty: focused=Alacritty tags=["terminal*"] deliverOutput=pasted
+Alacritty received: "Sotto pasted into Alacritty — café 🚀"
+Chromium: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+Chromium received: "Sotto pasted into Chromium — naïve façade ✓"
+widget on first: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+widget on first received: "Widget on: first dictation — café 🚀"
+widget on second: focused=chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default tags=[] deliverOutput=pasted
+widget on second received: " + second dictation to the same target ✓"
+widget on: target focus retained; second dictation reached the same target without refocusing
+screenshot: /tmp/nested-paste-v4/nested.png
+PASS: exact paste into foot, stock foot with seeded PRIMARY, Alacritty and Chromium; widget-on focus and second dictation
+Stopped Hyprland PID 4154983
+Stopped nested pointer PID 4155004
+Stopped foot PID 4155008
+Stopped stock foot PID 4155009
+Stopped Alacritty PID 4155010
+Stopped Chromium PID 4155011
+Stopped Sotto PID 4155012
+Stopped Primary sentinel PID 4155388
+Stopped proof slice app-sottoproofb42fa2e8519e442ebe130454de80f821.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]

@@ -304,7 +304,7 @@ export interface StartupState {
   readonly approvalRequired?: boolean | undefined
 }
 
-export type OutputOutcome = 'pasted' | 'copied' | 'empty'
+export type OutputOutcome = 'pasted' | 'copied' | 'clipboard-unavailable' | 'empty'
 export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
 

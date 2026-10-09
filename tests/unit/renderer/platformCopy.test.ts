@@ -88,11 +88,13 @@ describe('platformCopy', () => {
     }
   })
 
-  it('tells Linux users to paste and use the button on Wayland', () => {
-    expect(platformCopy('linux').helpPasteFallback).toContain('Paste manually')
-    expect(platformCopy('linux').helpPasteFallback).toContain('Shift+Insert')
-    expect(platformCopy('linux').settingsAutoPasteDescription).toContain('copied on Linux')
-    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Use the dictation button')
+  it('tells Linux users to paste and set compositor bindings in Hyprland', () => {
+    expect(platformCopy('linux').helpPasteFallback).toContain('Super+V')
+    expect(platformCopy('linux').helpPasteFallback).toContain('apps and terminals')
+    expect(platformCopy('linux').settingsAutoPasteDescription).toContain('Hyprland, terminals included')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Compositor bindings live in Hyprland')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('hold F9')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Super+Ctrl+X')
   })
 
   it('returns the same frozen row on every call', () => {

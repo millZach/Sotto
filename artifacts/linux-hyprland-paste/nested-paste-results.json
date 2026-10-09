@@ -1,0 +1,56 @@
+{
+  "foot": {
+    "focused": "foot",
+    "pid": 4155008,
+    "address": "0x600d716c9d50",
+    "tags": [
+      "terminal*"
+    ],
+    "result": "pasted",
+    "receivedText": "Sotto pasted into foot — café 🚀"
+  },
+  "stock foot": {
+    "focused": "foot",
+    "pid": 4155009,
+    "address": "0x600d716dc6c0",
+    "tags": [
+      "terminal*"
+    ],
+    "result": "pasted",
+    "receivedText": "Sotto pasted into stock foot — café 🚀"
+  },
+  "Alacritty": {
+    "focused": "Alacritty",
+    "pid": 4155010,
+    "address": "0x600d717ada60",
+    "tags": [
+      "terminal*"
+    ],
+    "result": "pasted",
+    "receivedText": "Sotto pasted into Alacritty — café 🚀"
+  },
+  "Chromium": {
+    "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
+    "pid": 4155011,
+    "address": "0x600d717994f0",
+    "tags": [],
+    "result": "pasted",
+    "receivedText": "Sotto pasted into Chromium — naïve façade ✓"
+  },
+  "widget on first": {
+    "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
+    "pid": 4155011,
+    "address": "0x600d717994f0",
+    "tags": [],
+    "result": "pasted",
+    "receivedText": "Widget on: first dictation — café 🚀"
+  },
+  "widget on second": {
+    "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
+    "pid": 4155011,
+    "address": "0x600d717994f0",
+    "tags": [],
+    "result": "pasted",
+    "receivedText": " + second dictation to the same target ✓"
+  }
+}

@@ -57,15 +57,16 @@ describe('first-run onboarding', () => {
     expect(complete).toHaveBeenCalledWith({ microphoneSkipped: true })
   })
 
-  it('says on Linux that dictation copies for pasting and the shortcut is only saved', async () => {
+  it('explains Hyprland dictation and paste on Linux instead of the global shortcut', async () => {
     const user = userEvent.setup()
     render(<Onboarding {...keyProps} microphoneState="ready" shortcut="CommandOrControl+Shift+Space" platform="linux" onRequestMicrophone={vi.fn()} onComplete={vi.fn()} />)
-    expect(screen.getByText(/Start dictation in Sotto, speak, then stop, and your words are copied for you to paste/)).toBeVisible()
+    expect(screen.getByText(/Hold F9 to talk after installing Sotto’s compositor bindings in Hyprland/)).toBeVisible()
     expect(screen.queryByText(/wherever you were typing/)).toBeNull()
     await goToStep(user, 5)
-    expect(screen.getByRole('heading', { name: 'Copy your words, then paste' })).toBeVisible()
-    expect(screen.getByText(/On Wayland, use the dictation button to start and stop/)).toBeVisible()
-    expect(screen.getByText('Saved shortcut')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Speak, then paste into any window' })).toBeVisible()
+    expect(screen.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
+    expect(screen.getByText('Omarchy defaults')).toBeVisible()
+    expect(screen.getByText('F9 · Super+Ctrl+X')).toBeVisible()
   })
 
   it('states the hosted transcription privacy boundary', () => {
