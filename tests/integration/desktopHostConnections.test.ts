@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
@@ -58,7 +59,7 @@ describe('Add host, the switch and reconnect on launch', () => {
       const remote = connection()
       // Pairing succeeds, and the session is still opening when the add is ended.
       let refuse: ((error: Error) => void) | undefined
-      const opening = vi.spyOn(SocketHostService.prototype, 'connect').mockImplementationOnce(() => new Promise((_resolve, reject) => { refuse = reject }))
+      const opening = vi.spyOn(SocketHostService.prototype, 'connect').mockImplementationOnce(() => { const pending = deferred<Awaited<ReturnType<SocketHostService['connect']>>>(); refuse = pending.reject; return pending.promise })
       try {
         const pending = fixture.manager.command({ type: 'add', host: remote })
         await vi.waitFor(() => expect(refuse).toBeTypeOf('function'))
@@ -103,7 +104,7 @@ describe('Add host, the switch and reconnect on launch', () => {
   })
   it('reports each step and Tailscale\'s approval page, opens the page only while it waits, and saves the host once approved', async () => {
     const url = 'https://login.tailscale.com/a/l1a2b3c4'
-    const approved = Promise.withResolvers<void>()
+    const approved = deferred<void>()
     fixture.onConnect = async callbacks => {
       callbacks.onStep?.('reach'); callbacks.onStep?.('tailscale'); callbacks.onApproval?.({ url })
       await approved.promise
@@ -124,7 +125,7 @@ describe('Add host, the switch and reconnect on launch', () => {
     expect(JSON.stringify(await savedFile())).not.toContain('tailscale.com')
   })
   it('opens no page but Tailscale\'s own, whatever reached the state', async () => {
-    const held = Promise.withResolvers<void>()
+    const held = deferred<void>()
     fixture.onConnect = async callbacks => { callbacks.onApproval?.({ url: 'https://login.tailscale.com.example.net/a/l1' }); await held.promise }
     const remote = connection()
     const pending = fixture.manager.command({ type: 'add', host: remote })
@@ -195,7 +196,7 @@ describe('Add host, the switch and reconnect on launch', () => {
     fixture.retryDelay = () => 60_000
     // The dropped session's ssh takes its time to exit, as it does on a real network.
     let exited: (() => void) | undefined
-    vi.spyOn(launchers[0]!, 'disconnect').mockImplementationOnce(() => new Promise<void>(resolve => { exited = resolve }))
+    vi.spyOn(launchers[0]!, 'disconnect').mockImplementationOnce(() => { const pending = deferred<void>(); exited = pending.resolve; return pending.promise })
     launchers[0]!.callbacks!.onDisconnected!('dropped')
     expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connecting', reconnecting: true })
     // The retry fires and starts closing the old session; the user switches the host off in that moment.

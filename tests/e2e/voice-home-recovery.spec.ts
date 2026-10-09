@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { mkdir } from 'node:fs/promises'
@@ -44,7 +45,7 @@ test('reveals voice drafting, pauses without loss, answers conversation and expl
     await expect(page.getByText('Draft saved. What would you like to do?', { exact: true })).toBeVisible()
     await speak('What needs my attention?')
     await expect(page.getByText('Nothing is queued for your attention.', { exact: true }).first()).toBeVisible()
-    const saved = await page.evaluate(() => window.sotto!.agents!.get())
+    const saved = await agentState(page)
     expect(saved.threadDrafts?.find(draft => draft.threadId === 'workshop')?.text).toBe('Keep the existing colors.')
     expect(saved.host.threads.find(thread => thread.id === 'workshop')?.messages).toHaveLength(0)
     await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
@@ -55,7 +56,7 @@ test('reveals voice drafting, pauses without loss, answers conversation and expl
     await page.getByLabel('Prompt', { exact: true }).fill('Keep the existing colors. Add keyboard controls.')
     await page.getByRole('button', { name: 'Close Workshop', exact: true }).click()
     await speak('Talk to Sotto.')
-    await expect.poll(async () => (await page.evaluate(() => window.sotto!.agents!.get())).composing).toBe(false)
-    expect((await page.evaluate(() => window.sotto!.agents!.get())).threadDrafts?.find(draft => draft.threadId === 'workshop')?.text).toBe('Keep the existing colors. Add keyboard controls.')
+    await expect.poll(async () => (await agentState(page)).composing).toBe(false)
+    expect((await agentState(page)).threadDrafts?.find(draft => draft.threadId === 'workshop')?.text).toBe('Keep the existing colors. Add keyboard controls.')
   } finally { await closeSotto(launched) }
 })

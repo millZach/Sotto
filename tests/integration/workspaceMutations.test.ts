@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { deferred } from '../fixtures/deferred'
 import * as worktrees from '../../src/main/agents/threadWorktrees'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -42,19 +44,19 @@ async function fixture() {
   const snapshot = await f.host.connect()
   const project = snapshot.projects.find(item => item.providerId === 'codex')!
   const model = snapshot.models.find(item => item.providerId === 'codex')!
-  await git(project.path, ['init', '-b', 'main'])
+
   await writeFile(join(project.path, 'file.txt'), 'baseline')
-  await git(project.path, ['add', '.'])
-  await git(project.path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+
+  await initializeGitRepository(project.path, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
   for (const id of ['a', 'b']) await f.host.execute({ type: 'create-thread', commandId: id, threadId: id, projectId: project.id, modelId: model.id, title: id })
   return { ...f, project }
 }
 function barrier() {
-  let release!: () => void, enter!: () => void
-  const held = new Promise<void>(resolve => { release = resolve })
-  const entered = new Promise<void>(resolve => { enter = resolve })
+  const { promise: held, resolve: release } = deferred()
+  const { promise: entered, resolve: enter } = deferred()
   return { held, entered, release, enter }
 }
+
 const send = (id: string) => ({ type: 'send' as const, threadId: id, commandId: `send-${id}`, messageId: `message-${id}`, text: 'Work' })
 
 it('names a post-turn checkpoint read when a sibling tries to change Git', async () => {
@@ -236,7 +238,6 @@ it('restores a deleted owned worktree for a project subdirectory and holds its r
   } finally { pause.release(); await sending; await f.stop(); await f.remove() }
 })
 
-
 it.each(['reclaim', 'settle'] as const)('rechecks a merged commit inside the lane before %s after a queued commit action', async kind => {
   const f = await fixture(), pause = barrier(), queued = barrier()
   let action: Promise<unknown> | undefined, sweep: Promise<void> | undefined
@@ -338,7 +339,6 @@ it.each(['Git action', 'checkpoint recovery'] as const)('keeps a draft on its or
   } finally { pause.release(); await action; await f.stop(); await f.remove() }
 })
 
-
 it('never saves a destination binding while local PR eligibility is still being checked', async () => {
   const f = await fixture(), pause = barrier()
   let checking: Promise<unknown> | undefined
@@ -360,7 +360,6 @@ it('never saves a destination binding while local PR eligibility is still being 
     expect(checkoutLocal).not.toHaveBeenCalled()
   } finally { pause.release(); await checking?.catch(() => undefined); await f.stop(); await f.remove() }
 })
-
 
 it('refuses local PR checkout when an independent draft queues its first send on a headless host', async () => {
   const f = await fixture(), pause = barrier()

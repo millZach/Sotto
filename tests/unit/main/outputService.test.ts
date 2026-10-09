@@ -11,6 +11,7 @@ import {
 } from '../../../src/main/output/outputService'
 import { sanitizeLinuxPasteText } from '../../../src/main/output/pasteCommand.linux'
 import { createPasteCommands, type PasteInvocation } from '../../../src/main/output/pasteCommand'
+import { deferred } from '../../fixtures/deferred'
 
 const buildWindowsPasteInvocation = createPasteCommands('win32').oneShot
 
@@ -134,10 +135,9 @@ describe('OutputService', () => {
   })
 
   it.each(['hide', 'paste'] as const)('keeps a copy queued while dictation waits for %s', async stage => {
-    let release!: () => void
-    let reached!: () => void
-    const blocked = new Promise<void>(resolve => { release = resolve })
-    const entered = new Promise<void>(resolve => { reached = resolve })
+
+    const { promise: blocked, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: reached } = deferred<void>()
     let clipboard = ''
     const pasted: string[] = []
     const writes: string[] = []

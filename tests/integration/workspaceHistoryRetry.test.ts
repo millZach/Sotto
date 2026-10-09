@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { AgentControl } from '../../src/main/agents/control'
+import { testCredentials } from '../fixtures/testCredentials'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,14 +8,13 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { SubagentStore } from '../../src/main/agents/subagentStore'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
 import { threadEventSchema, type ThreadEvent } from '../../src/shared/threadEvents'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge } from '../../src/preload'
 
 class EventProvider extends FakeProviderHost {
@@ -183,8 +184,7 @@ it('retries a failed thread-store privacy switch and removes the retained words 
   const { directory, adapter, host } = await fixture(() => history)
   adapter.publish(added('reply', 'PRIVATE FAILED REDACTION'))
   host.workspaceSnapshot()
-  const credentials = new AgentCredentials(directory, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(directory, { mode: 'unavailable' })
   const control = new AgentControl({ directory, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history })
   vi.useFakeTimers()
   await control.start()
@@ -211,8 +211,7 @@ it('starts with history off and unavailable storage, then retries cleanup when s
   retained.replaceThreadMessages('session-workshop', [{ id: 'old-startup', role: 'user', text: 'OLD_STARTUP_MESSAGE', createdAt: at }])
   retained.close()
   const open = vi.spyOn(ThreadStore.prototype, 'open').mockImplementation(() => { throw new Error('Synthetic unavailable startup storage') })
-  const credentials = new AgentCredentials(directory, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(directory, { mode: 'unavailable' })
   const control = new AgentControl({ directory, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history })
   cleanup.push(async () => { control.dispose(); await control.closed() })
   vi.useFakeTimers()
@@ -243,8 +242,7 @@ it('starts with history off and unavailable storage, then retries cleanup when s
 it('keeps the restart warning and coordinator retry pending while durable history is unavailable', async () => {
   let history = true
   const { directory, adapter, host } = await fixture(() => history)
-  const credentials = new AgentCredentials(directory, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(directory, { mode: 'unavailable' })
   const control = new AgentControl({ directory, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => history })
   cleanup.push(async () => { control.dispose(); await control.closed() })
   vi.useFakeTimers()
@@ -312,7 +310,6 @@ it('discards private pending events if retention resumes after an interrupted pr
   try { expect(disk.readMessages('session-workshop').messages).toMatchObject([{ id: 'new', text: 'New retained reply' }]) }
   finally { disk.close() }
 })
-
 
 it('saves oversized additions, appends and replacements in full across replay', async () => {
   const { directory, adapter, host } = await fixture()

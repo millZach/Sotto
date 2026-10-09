@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { deferred } from '../fixtures/deferred'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -19,12 +21,8 @@ const factories = { codex: (requestTimeoutMs = 15_000) => codexFixture(undefined
 async function fixture(provider: keyof typeof factories, committed = true, nested = false, requestTimeoutMs?: number) {
   const f = await factories[provider](requestTimeoutMs)
   let project = join(f.root, 'project'); await mkdir(project)
-  await git(project, ['init'])
-  if (committed) {
-    await writeFile(join(project, 'tracked.txt'), 'baseline')
-    await git(project, ['add', '.'])
-    await git(project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
-  }
+  if (committed) await initializeGitRepository(project, { files: { 'tracked.txt': 'baseline' } })
+  else await git(project, ['init']) // This scenario deliberately has no initial commit.
   if (nested) {
     const app = join(project, 'packages', 'app'); await mkdir(app, { recursive: true })
     await writeFile(join(app, 'tracked.txt'), 'nested project baseline')
@@ -54,10 +52,11 @@ describe('native thread working copies', () => {
     const { workspace, create } = await fixture('grok', true, true)
     await create('changing', 'shared')
     const inspect = ThreadWorktrees.prototype.inspect
-    let started!: () => void
-    const inspecting = new Promise<void>(resolve => { started = resolve })
-    let finish!: () => void
-    const held = new Promise<void>(resolve => { finish = resolve })
+
+    const { promise: inspecting, resolve: started } = deferred<void>()
+
+    const { promise: held, resolve: finish } = deferred<void>()
+
     vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementationOnce(async function (this: ThreadWorktrees, metadata) {
       const result = await inspect.call(this, metadata)
       started()

@@ -1,8 +1,9 @@
+import { threadsStateFixture as stateFixture } from '../agentState'
 import React from 'react'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
-import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
-import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { type AgentState } from '../../../src/shared/agents'
+import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { openSidebarFolders } from './liveAgentState'
@@ -20,27 +21,6 @@ vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoo
 
 const NOW = E2E_THREADS_NOW
 
-/** The design fixture as the coordinator would publish it: the permission request already sits in the attention queue. */
-function stateFixture(): AgentState {
-  const fixture = designThreadsFixture()
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true, defaultModelId: 'claude:sonnet' },
-    connection: 'connected',
-    host: {
-      connected: true, name: 'Codex', version: 'test',
-      capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
-      models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
-    },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: NOW })),
-    queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(NOW).toISOString(), deferred: false }],
-    activeThreadId: 'visual-gate', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true },
-    reasoningAccounts: [],
-  }
-}
 
 let connectionStores = new WeakMap<ReturnType<typeof useAgents>['command'], ThreadDraftStore>()
 
@@ -48,7 +28,7 @@ function connection(state: AgentState | null, command = vi.fn(async () => state)
   let threadDrafts = connectionStores.get(command)
   if (!threadDrafts) { threadDrafts = new ThreadDraftStore(command); connectionStores.set(command, threadDrafts) }
   if (state) { threadDrafts.receive(state); openSidebarFolders(state) }
-  return { ...agentContextFixture(state, command), threadDrafts }
+  return { ...agentContextFixture(state, command, { threadDrafts }), threadDrafts }
 }
 
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
@@ -65,4 +45,6 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-export { voice, NOW, stateFixture, connectionStores, connection, renderThreads }
+export { voice, NOW, connectionStores, connection, renderThreads }
+
+export { threadsStateFixture as stateFixture } from '../agentState'

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { SessionReaper } from '../../../src/main/agents/sessionReaper'
+import { deferred } from '../../fixtures/deferred'
 
 /** A reaper with an injected clock, so every case names a time rather than waiting for one. */
 function reaper(overrides: Partial<{ busy: Set<string>; watched: Set<string>; reading: Set<string>; idleAfterMs: number }> = {}) {
@@ -23,8 +24,8 @@ function reaper(overrides: Partial<{ busy: Set<string>; watched: Set<string>; re
 describe('SessionReaper', () => {
   it.each(['activity', 'forgotten'] as const)('rechecks later session %s while another close is held', async change => {
     let now = 0
-    const entered = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const entered = deferred<void>()
+    const release = deferred<void>()
     const reading = new Set(['second'])
     const stopped: string[] = []
     const subject = new SessionReaper({
@@ -160,8 +161,7 @@ describe('SessionReaper', () => {
   })
 
   it('runs one sweep at a time, and stops sweeping when disposed', async () => {
-    let release = (): void => undefined
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: gate, resolve: release } = deferred()
     const stops: string[] = []
     const subject = new SessionReaper({
       sweepEveryMs: 1, idleAfterMs: 0, now: () => 1_000, isBusy: () => false, isWatched: () => false,

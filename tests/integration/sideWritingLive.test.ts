@@ -9,16 +9,18 @@
  * run (comma-separated: claude, codex, grok) and `SOTTO_SIDE_WRITING_MODEL_<PROVIDER>` picks a model by a
  * substring of its name; otherwise the cheapest-sounding model the client lists is used.
  */
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
+
 import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { GrokAcpHost } from '../../src/main/agents/grok'
 import type { AgentHost } from '../../src/main/agents/host'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
@@ -97,9 +99,8 @@ describe.skipIf(!live)('side writing against the installed clients', () => {
       const host = new WorkspaceHost(new ConfiguredProviderHost({ directory: data, provider: () => provider, enabledProviders: () => [provider],
         threadProvider: id => registry.byThread(id)?.provider, hosts }), data)
       const failures: string[] = []
-      const credentials = new AgentCredentials(data, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-      await credentials.load()
-      const control = new AgentControl({ schedule: immediatePublishScheduler, directory: data, host, credentials, reasoner: e2eAgentReasoner,
+      const credentials = await testCredentials(data, { mode: 'unavailable' })
+      const control = createAgentControl({ schedule: immediatePublishScheduler, directory: data, host, credentials, reasoner: e2eAgentReasoner,
 
         writeThreadTitle: threadTitleWriter(new ShortTextWriter({ write: (threadId, prompt) => host.writeShortText(threadId, prompt),
           onFailure: failure => failures.push(`${failure.purpose}:${failure.reason}`) }), () => DEFAULT_SETTINGS) })

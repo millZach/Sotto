@@ -1,7 +1,8 @@
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -21,7 +22,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
   test.skip(process.env.SOTTO_NATIVE_PHASE2_LIVE !== '1', 'Requires explicit bounded native subscription opt-in.')
   test.skip(!!process.env.SOTTO_NATIVE_PHASE2_RECOVERY_ROOT, 'Recovery mode must not create another native project or turn.')
   await run(process.execPath, [resolve('scripts/verify-runtime.mjs')], { windowsHide: true, timeout: 15_000 })
-  const root = requireOwnedE2EProfile(await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))))
+  const root = requireOwnedE2EProfile(await realpath((await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory))
   const profile = join(root, 'profile'); const project = join(root, 'project')
   const skillName = `sotto-native-${randomUUID().slice(0, 8)}`
   const proofName = `${skillName}-proof.json`
@@ -65,7 +66,7 @@ test('installed Codex: structured skill, worktree, queue, steer and restart with
     await writeFile(join(root, 'evidence.json'), JSON.stringify(evidence, null, 2))
     console.log(`Native Phase 2 checkpoint: ${name}`)
   }
-  const state = () => page!.evaluate(() => window.sotto!.agents!.get())
+  const state = () => agentState(page!)
   const thread = async (): Promise<AgentThread> => {
     const current = (await state()).host.threads.find(value => value.id === threadId)
     if (!current) throw new Error('Synthetic thread missing')

@@ -1,8 +1,9 @@
+import { browserBridgeFixture, browserPage } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent, BrowserPage } from '../../../../src/shared/browser'
+import type { BrowserBridge, BrowserPage } from '../../../../src/shared/browser'
 import { TEST_IPHONE } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { useOptionalAgents } from '../../../../src/renderer/src/agents/AgentContext'
@@ -19,13 +20,12 @@ vi.mock('../../../../src/renderer/src/agents/AgentContext', async importOriginal
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 const PHONE_PAGE = '11111111-1111-4111-8111-111111111111'
 const page = (patch: Partial<BrowserPage> = {}): BrowserPage =>
-  ({ id: PHONE_PAGE, workspace, url: 'http://localhost:8081/', title: '', status: 'ready', error: null, canGoBack: false, canGoForward: false, device: 'iphone', ...patch })
+  browserPage(workspace, { id: PHONE_PAGE, url: 'http://localhost:8081/', title: '', device: 'iphone', ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeBrowser(initial: BrowserPage[] = []) {
   let pages = initial
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
+  const published = browserBridgeFixture({ workspace, commands: {
     tasks: vi.fn(async () => ok([])),
     share: vi.fn(async ({ pageId, enabled }) => ok(page({ id: pageId, sharedOrigin: enabled ? 'http://localhost:8081' : null }))),
     viewport: vi.fn(async () => ok(page())),
@@ -40,9 +40,8 @@ function fakeBrowser(initial: BrowserPage[] = []) {
     close: vi.fn(async ({ pageId }) => { pages = pages.filter(item => item.id !== pageId); return ok(undefined) }),
     mount: vi.fn(async () => ok(undefined)),
     openLink: vi.fn(async () => ok({ destination: 'external' as const })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: BrowserEvent) => { for (const listener of [...listeners]) listener(event) } }
+  } })
+  return { ...published, emit: published.publish }
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

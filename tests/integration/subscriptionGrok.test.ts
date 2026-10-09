@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { parseProviderRecords } from '../fixtures/providerRecords'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -51,7 +52,7 @@ rl.createInterface({input:process.stdin}).on('line', line => {
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(programdata|allusersprofile)$/iu.test(key)))
   const environment = { ...inherited, ProgramData: 'fixture-program-data', ALLUSERSPROFILE: 'fixture-all-users', GROK_HOME: nativeHome, XAI_API_KEY: 'fixture-key', GROK_CONFIG: 'fixture-routing', GROK_AUTH: 'fixture-auth', GROK_XAI_API_BASE_URL: 'https://wrong.example', NODE_OPTIONS: '--fixture' }
   const client = new GrokSubscriptionClient(join(root, 'isolated'), { executable: process.execPath, prefixArgs: [script], environment, completionTimeoutMs: timeoutMs, statusTimeoutMs: timeoutMs, outputLimitBytes: 40_000 })
-  return { root, nativeHome, client, configure, async calls(): Promise<Call[]> { return (await readFile(log, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Call) } }
+  return { root, nativeHome, client, configure, async calls(): Promise<Call[]> { return parseProviderRecords<Call>(await readFile(log, 'utf8')) } }
 }
 afterEach(async () => { for (const root of roots.splice(0)) { if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-grok-route-')) throw new Error('Unexpected temporary Grok directory'); await rm(root, { recursive: true, force: true }) } })
 describe('Grok reasoning shutdown', () => {

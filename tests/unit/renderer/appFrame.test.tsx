@@ -1,4 +1,5 @@
-import { deferred, createBridge, shell, openPage, renderApp } from '../../fixtures/renderer/appHarness'
+import { deferred } from '../../fixtures/deferred'
+import { createBridge, shell, openPage, renderApp } from '../../fixtures/renderer/appHarness'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -12,7 +13,7 @@ describe('shared main-window frame', () => {
     {
       name: 'loading',
       createStateBridge: () => createBridge({
-        getSettings: vi.fn(() => new Promise<AppSettings>(() => undefined)),
+        getSettings: vi.fn(() => deferred<AppSettings>().promise),
       }),
       stateText: /preparing sotto/i,
     },

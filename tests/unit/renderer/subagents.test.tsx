@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -118,7 +119,7 @@ describe('Agents roster', () => {
   it('does not let a stale initial page overwrite a newer live row', async () => {
     const { bridge, emit } = fixture()
     let resolve!: (value: Awaited<ReturnType<SubagentsBridge['page']>>) => void
-    vi.mocked(bridge.page).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    vi.mocked(bridge.page).mockImplementationOnce(() => { const pending = deferred<SubagentChange>(); resolve = pending.resolve; return pending.promise })
     const cache = store()
     cache.activate(bridge, 'one')
     emit({ threadId: 'one', revision: 3, rows: [row('first', 1, { revision: 3, status: 'completed' })], summary })
@@ -131,7 +132,7 @@ describe('Agents roster', () => {
     const { bridge } = fixture()
     let resolveOld!: (value: Awaited<ReturnType<SubagentsBridge['page']>>) => void
     vi.mocked(bridge.page).mockImplementation(({ threadId }) => threadId === 'old'
-      ? new Promise(done => { resolveOld = done })
+      ? (() => { const pending = deferred<SubagentChange>(); resolveOld = pending.resolve; return pending.promise })()
       : Promise.resolve({ threadId, revision: 1, rows: [], summary: EMPTY_SUBAGENT_SUMMARY }))
     const cache = store()
     const view = render(<AgentsSurface threadId="old" store={cache} bridge={bridge} />)
@@ -182,7 +183,7 @@ describe('a workflow in the roster', () => {
     const { bridge } = fixture(rows())
     const loadAssignments = vi.mocked(bridge.assignments).getMockImplementation()!
     let resolveAssignments!: (value: Awaited<ReturnType<SubagentsBridge['assignments']>>) => void
-    vi.mocked(bridge.assignments).mockImplementationOnce(() => new Promise(resolve => { resolveAssignments = resolve }))
+    vi.mocked(bridge.assignments).mockImplementationOnce(() => { const pending = deferred<Parameters<typeof resolveAssignments>[0]>(); resolveAssignments = pending.resolve; return pending.promise })
     render(<AgentsSurface threadId="thread" store={store()} bridge={bridge} />)
     const open = await screen.findByRole('button', { name: 'Open the workflow Implement the phase 1 perf issues: 1 of 3 finished, 1 failed, Working' })
     const roster = screen.getByRole('list', { name: 'Spawned agents' })

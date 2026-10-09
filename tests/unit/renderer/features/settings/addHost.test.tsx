@@ -1,3 +1,4 @@
+import { deferred } from '../../../../fixtures/deferred'
 import { host, fixture, openAddHost, typeAHost, settings, addForge } from '../../../../fixtures/renderer/hostsSettingsHarness'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -31,7 +32,7 @@ it('says why Add host kept a host on SSH, and Try the tailnet again chooses the 
   const user = userEvent.setup()
   let release: (() => void) | undefined
   const { dialog, forge, steps, push, finish, command, state } = await addForge(user, (input, current) => input.type === 'set-connection'
-    ? new Promise<HostsState>(resolve => { release = () => resolve({ ...current, hosts: [{ ...current.hosts[0]!, via: 'tailnet', tailnetNote: undefined }] }) }) : current)
+    ? (() => { const pending = deferred<HostsState>(); release = () => pending.resolve({ ...current, hosts: [{ ...current.hosts[0]!, via: 'tailnet', tailnetNote: undefined }] }); return pending.promise })() : current)
   push({ hosts: [forge({ prefer: 'tailnet', via: 'ssh', tailnetNote: 'operator', addTailnet: { state: 'ssh', why: 'operator' } })] })
   finish()
   await waitFor(() => expect(screen.getByRole('dialog', { name: 'forge is connected over SSH' })).toBe(dialog))
@@ -92,7 +93,7 @@ it('follows the host once Add host has ended, so a 5-minute check that reaches t
 
 it('turns Add host into the setup checklist once pressed, asks SSH questions on their step, and says when the host is connected', async () => {
   let resolveAdd: ((state: HostsState) => void) | undefined
-  const { bridge, command, push, state } = fixture([], (input, current) => input.type === 'add' ? new Promise<HostsState>(resolve => { resolveAdd = resolve }) : current)
+  const { bridge, command, push, state } = fixture([], (input, current) => input.type === 'add' ? (() => { const pending = deferred<HostsState>(); resolveAdd = pending.resolve; return pending.promise })() : current)
   const user = userEvent.setup()
   settings(bridge)
   const { dialog } = await openAddHost(user)

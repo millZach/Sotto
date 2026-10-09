@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { scrollToCard as scrollTo } from './support/visualCards'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server } from 'node:net'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { captureWindow, closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -137,18 +137,11 @@ async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   return log
 }
 
-async function scrollTo(locator: Locator, offset = 80): Promise<void> {
-  await locator.evaluate((element, gap) => {
-    const transcript = element.closest('.thread-workspace__transcript')!
-    transcript.scrollTop += element.getBoundingClientRect().top - transcript.getBoundingClientRect().top - gap
-  }, offset)
-}
-
 test('an interactive visual runs sealed: it draws and follows Sotto, and ordinary loads reach nothing', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
   const listener = await listen()
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-visual-sandbox-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-visual-sandbox-' })).directory
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('success', profile)
@@ -383,12 +376,12 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
   } finally {
     if (launched) await closeSotto(launched)
     listener.server.close()
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
 test('an ordinary interactive page has the three protective settings, including in an empty frame', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-visual-settings-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-visual-settings-' })).directory
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('success', profile)
@@ -413,6 +406,6 @@ test('an ordinary interactive page has the three protective settings, including 
     expect(await inGuest(launched, 'document.execCommand("cut")')).toBe(false)
   } finally {
     if (launched) await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

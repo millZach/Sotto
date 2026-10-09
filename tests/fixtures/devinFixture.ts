@@ -1,3 +1,4 @@
+import { parseProviderRecords } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -30,7 +31,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
   }
   const requests = async (): Promise<RecordedRpc[]> => {
     await checkViolations()
-    return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    return parseProviderRecords(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => ''))
   }
   const realId = async (id: string): Promise<string> => {
     const native = JSON.parse(await readFile(join(root, 'devin-threads.json'), 'utf8'))[id].devinSessionId as string

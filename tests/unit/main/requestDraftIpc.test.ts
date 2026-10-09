@@ -2,13 +2,13 @@
 import { expect, it, vi } from 'vitest'
 import { registerRequestDraftIpc } from '../../../src/main/agents/requestDraftIpc'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 it('authorizes main-frame draft access only, validates identity/selections, and exposes no delivery command', async () => {
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => { const url = `file:///${role}.html`, mainFrame = { parent: null, url }; return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } } }
-  const main = sender('main'), widget = sender('widget'), event = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
+  const registry = ipcRegistry()
+  const { ipc, handlers } = registry
+  const { main, widget, mainEvent: event } = registry
   const service = { list: vi.fn(async () => []), discard: vi.fn(async () => false), get: vi.fn(), status: vi.fn(), save: vi.fn(), check: vi.fn() }
   const cleanup = registerRequestDraftIpc(ipc, service, () => [main, widget])
   for (const channel of [REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD]) {

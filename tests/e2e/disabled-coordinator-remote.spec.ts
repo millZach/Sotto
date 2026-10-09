@@ -1,9 +1,8 @@
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { buildSshHost } from './support/sshHost'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -11,13 +10,11 @@ import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } fr
 
 test('opening a remote thread keeps a disabled voice coordinator dormant', async () => {
   test.setTimeout(180_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-disabled-coordinator-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-disabled-coordinator-' })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(root, { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
     localHostEnabled: true, voiceCoordinatorEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')

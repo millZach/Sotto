@@ -1,29 +1,17 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { agentCommand as command, agentState as state } from './support/agentAccess'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
+import type { AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, completeFirstRunSetup, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
-async function command(page: Page, value: AgentCommand): Promise<AgentCommandReceipt> {
-  return page.evaluate(async request => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.command(request)
-  }, value)
-}
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.get()
-  })
-}
+
 async function event(page: Page, value: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]): Promise<void> {
   await page.evaluate(async data => { await (globalThis as unknown as BrowserGlobals).sottoE2E.agentEvent?.(data) }, value)
 }
@@ -97,7 +85,7 @@ test('limits automatic fixes, stops repeated failures, and never answers permiss
 })
 
 test('revokes an automatic reply while reasoning is in flight and retains manual ownership and drafts after restart', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
   await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
@@ -118,7 +106,7 @@ test('revokes an automatic reply while reasoning is in flight and retains manual
     expect(snapshot.assignments[0]?.mode).toBe('manual')
     expect(snapshot.draftThreadId).toBe(hostEntityKey(snapshot.hostId, 'workshop'))
     expect(JSON.parse(await readFile(join(directory, 'agents.json'), 'utf8')).draft).toBe(snapshot.draft)
-  } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
+  } finally { await closeSotto(launched); await removeOwnedE2EProfile(directory) }
 })
 
 test('reconciles a lost acknowledgement without resubmitting, and keeps skipped approvals pending', async () => {
@@ -260,7 +248,7 @@ test('redacts processed assignment context when local history is disabled while 
 })
 
 test('expires dormant context after seven days without forgetting manual ownership or follow-up counts', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
   await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   const oldInstruction = 'Seven-day-old private assignment.'
@@ -293,5 +281,5 @@ test('expires dormant context after seven days without forgetting manual ownersh
     expect(snapshot.assignments.find(assignment => assignment.threadId === hostEntityKey(snapshot.hostId, 'docs'))?.instruction).toBe(recentInstruction)
     await expect(launched.page.getByLabel('Prompt', { exact: true })).toHaveValue('A recoverable unsent draft.')
     await expect.poll(async () => (await readFile(path, 'utf8')).includes(oldInstruction)).toBe(false)
-  } finally { await closeSotto(launched); await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true }) }
+  } finally { await closeSotto(launched); await removeOwnedE2EProfile(directory) }
 })

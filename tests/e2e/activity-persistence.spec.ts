@@ -1,10 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { EMPTY_AGENT_HOST, defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -12,7 +11,7 @@ const evidence = evidenceDirectory('artifacts/activity-performance')
 
 test('legacy activity remains readable after migration and a full app restart', async () => {
   test.setTimeout(120_000)
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-activity-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-activity-' })).directory
   const output = 'Retained inspection output survives restart.'
   const snapshot = {
     ...EMPTY_AGENT_HOST, projects: [{ id: 'project', title: 'Test project', path: profile }],
@@ -45,5 +44,5 @@ test('legacy activity remains readable after migration and a full app restart', 
         await page.screenshot({ animations: 'disabled', path: join(evidence, `${phase}.png`) })
       } finally { await closeSotto(launched) }
     }
-  } finally { await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await removeOwnedE2EProfile(profile) }
 })

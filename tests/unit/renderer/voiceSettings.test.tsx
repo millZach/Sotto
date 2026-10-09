@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React, { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +12,9 @@ function harness(ready = false, options: { configuration?: Partial<AgentConfigur
   const grokVoices = vi.fn(async () => options.voices ?? [{ id: 'ara', name: 'Ara' }])
   const getSettings = vi.fn(async () => ({ llmApiKey: options.openRouterKeySaved ? 'saved-placeholder' : '' }))
   vi.stubGlobal('sotto', { agents: { voiceModel, grokVoices }, getSettings })
-  const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ error: null } as AgentState))
+  const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => (threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })))
   function View() {
     const [configuration, setConfiguration] = useState({ ...defaultAgentConfiguration(), speechProvider: 'natural' as const, ...options.configuration })
     const change = <K extends keyof AgentConfiguration>(key: K, value: AgentConfiguration[K]): void => { setConfiguration(current => ({ ...current, [key]: value })) }
@@ -160,7 +163,9 @@ describe('Grok speech API setup', () => {
   it('previews and keeps a voice picked just before the press, while the saved configuration still names the old one', async () => {
     // Where each pick is saved through main, the configuration comes back with it a moment later, not at once.
     vi.stubGlobal('sotto', { agents: { grokVoices: vi.fn(async () => [{ id: 'ara', name: 'Ara' }, { id: 'account-custom-voice', name: 'My custom voice' }]) } })
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ error: null } as AgentState))
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => (threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })))
     const change = vi.fn()
     const saved = { ...defaultAgentConfiguration(), speechProvider: 'grok' as const }
     const { rerender } = render(<VoiceSettings configuration={saved} change={change} command={command} grokKeySaved />)
@@ -182,7 +187,9 @@ describe('Grok speech API setup', () => {
 
   it('goes back to the saved voice when main refuses the pick', async () => {
     vi.stubGlobal('sotto', { agents: { grokVoices: vi.fn(async () => [{ id: 'ara', name: 'Ara' }]) } })
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ error: null } as AgentState))
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => (threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null,  } })))
     render(<VoiceSettings configuration={{ ...defaultAgentConfiguration(), speechProvider: 'grok' }} change={async () => false} command={command} grokKeySaved />)
     await screen.findByRole('option', { name: 'Ara' })
     fireEvent.change(screen.getByLabelText('Grok voice'), { target: { value: 'ara' } })
@@ -203,7 +210,9 @@ describe('Grok speech API setup', () => {
 
   it('retains an unsaved key on secure storage failure and does not enable preview', async () => {
     const h = harness(false, { configuration: { speechProvider: 'grok' } })
-    h.command.mockResolvedValueOnce({ error: 'Secure credential storage is unavailable.' } as AgentState)
+    h.command.mockResolvedValueOnce(threadsStateFixture({ cloneOverrides: false,
+    host: { projects: [], threads: [], models: [] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, error: 'Secure credential storage is unavailable.' } }))
     fireEvent.change(screen.getByLabelText('Grok speech API key'), { target: { value: 'test-key-not-saved' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save API key' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Secure credential storage is unavailable.')

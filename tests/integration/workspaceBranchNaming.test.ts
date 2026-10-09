@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,13 +15,11 @@ describe("durable project/thread organization", () => {
     const f = await workspaceFixture()
     cleanup.push(async () => { f.native.disconnect(); await f.registry.flush(); await f.remove() })
     const repository = f.adapters.codex.state.projects[0]!.path
-    await git(repository, ['init'])
     await writeFile(join(repository, 'tracked.txt'), 'baseline')
-    await git(repository, ['add', '.'])
-    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    await initializeGitRepository(repository, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     let finish!: (name: string) => void
-    const started = Promise.withResolvers<void>()
-    const writer = vi.fn(() => new Promise<string>(resolve => { finish = resolve; started.resolve() }))
+    const started = deferred<void>()
+    const writer = vi.fn(() => { const pending = deferred<string>(); finish = pending.resolve; started.resolve(); return pending.promise })
     f.host.setWorkingCopyDefaults(() => 'independent')
     f.host.setBranchNameWriter(writer)
     await local(f)
@@ -42,13 +42,11 @@ describe("durable project/thread organization", () => {
   it('leaves an agent branch alone when it changes while descriptive naming is pending', async () => {
     const f = await fixture()
     const repository = f.adapters.codex.state.projects[0]!.path
-    await git(repository, ['init'])
     await writeFile(join(repository, 'tracked.txt'), 'baseline')
-    await git(repository, ['add', '.'])
-    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    await initializeGitRepository(repository, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     let finish!: (name: string | null) => void
-    const started = Promise.withResolvers<void>()
-    const writer = vi.fn(() => new Promise<string | null>(resolve => { finish = resolve; started.resolve() }))
+    const started = deferred<void>()
+    const writer = vi.fn(() => { const pending = deferred<string | null>(); finish = pending.resolve; started.resolve(); return pending.promise })
     f.host.setWorkingCopyDefaults(() => 'independent')
     f.host.setBranchNameWriter(writer)
     await local(f)
@@ -75,10 +73,8 @@ describe("durable project/thread organization", () => {
   it.each(['legacy', 'shared-subdirectory'] as const)('never requests or applies branch naming when a %s thread uses the checkout', async kind => {
     const f = await fixture()
     const repository = f.adapters.codex.state.projects[0]!.path
-    await git(repository, ['init'])
     await writeFile(join(repository, 'tracked.txt'), 'baseline')
-    await git(repository, ['add', '.'])
-    await git(repository, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    await initializeGitRepository(repository, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     const writer = vi.fn(async () => 'sotto/do-not-rename')
     f.host.setWorkingCopyDefaults(() => 'independent')
     f.host.setBranchNameWriter(writer)
@@ -105,10 +101,8 @@ describe("durable project/thread organization", () => {
   it.each(['shared', 'independent'] as const)('discovers a legacy %s checkout without moving its provider session or history', async mode => {
     const f = await fixture()
     const project = f.adapters.codex.state.projects[0]!
-    await git(project.path, ['init'])
     await writeFile(join(project.path, 'tracked.txt'), 'baseline')
-    await git(project.path, ['add', '.'])
-    await git(project.path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    await initializeGitRepository(project.path, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
     const directory = mode === 'shared' ? project.path : join(f.root, 'legacy-checkout')
     if (mode === 'independent') await git(project.path, ['worktree', 'add', '-b', 'legacy-task', directory])
     const native = f.adapters.codex.state.threads[0]!

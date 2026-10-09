@@ -1,4 +1,5 @@
-import { deferred, baseProps, copy, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
+import { deferred } from '../../../../fixtures/deferred'
+import { baseProps, copy, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -133,7 +134,7 @@ describe('SettingsView', () => {
   it('rolls a delayed hotkey conflict back to the newest authoritative shortcut', async () => {
     const user = userEvent.setup()
     let resolve!: (result: HotkeyChangeResult) => void
-    const replace = vi.fn(() => new Promise<HotkeyChangeResult>((done) => { resolve = done }))
+    const replace = vi.fn(() => { const pending = deferred<HotkeyChangeResult>(); resolve = pending.resolve; return pending.promise })
     const props = baseProps({ onReplaceHotkey: replace })
     const rendered = render(<SettingsView {...props} />)
     const input = screen.getByRole('textbox', { name: 'Global shortcut' })

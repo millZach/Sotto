@@ -1,6 +1,7 @@
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -18,7 +19,7 @@ const persistenceWait = { timeout: 30_000 }
 
 test('native Claude usage survives replay and a graceful quit with its latest archive write held', async () => {
   test.setTimeout(120_000)
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-usage-')))
+  const root = await realpath((await ownedE2EProfile({ prefix: 'sotto-e2e-usage-' })).directory)
   const profile = join(root, 'profile'), project = join(root, 'project'), client = join(root, 'client'), home = join(root, 'home')
   let app: ElectronApplication | undefined
   let page: Page
@@ -61,7 +62,7 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
     await page.waitForFunction(() => !!window.sotto?.agents)
     // Preload exists before main finishes admitting the loaded renderer as an IPC sender.
     // Retry a read, never configuration or a native turn, until that boundary is ready.
-    await expect(async () => expect(await page.evaluate(() => window.sotto!.agents!.get())).toHaveProperty('host')).toPass(persistenceWait)
+    await expect(async () => expect(await agentState(page)).toHaveProperty('host')).toPass(persistenceWait)
     expect(await page.evaluate(() => typeof window.sottoE2E)).toBe('undefined')
     expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(1280, 800))

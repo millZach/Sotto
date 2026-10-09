@@ -1,4 +1,5 @@
-import { createMediaDevices, device, deferred, baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
+import { deferred } from '../../../../fixtures/deferred'
+import { createMediaDevices, device, baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -169,7 +170,7 @@ describe('SettingsView', () => {
   it('keeps the test wave still while access is still being asked for', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps({
-      createMicrophoneTest: () => ({ start: () => new Promise<never>(() => undefined), stop: vi.fn(async () => undefined) }),
+      createMicrophoneTest: () => ({ start: () => deferred<never>().promise, stop: vi.fn(async () => undefined) }),
     })} />)
 
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))

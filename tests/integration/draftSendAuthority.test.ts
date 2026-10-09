@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
@@ -105,8 +106,10 @@ it.each([false, true])('keeps a socket targeted Compose policy refusal private (
     await f.command({ type: 'configure', patch: { speak: true } })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
     if (revoked) {
-      let entered: () => void = () => undefined
-      const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+      const { promise: started, resolve: entered } = deferred<void>()
+
+      const { promise: gate, resolve: gateResolve } = deferred<void>()
+      release = gateResolve
       const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
       vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
       predecessor = f.command({ type: 'configure', patch: { followupLimit: 4 } }); await started

@@ -41,6 +41,7 @@ vi.mock('../../../src/main/agents/speechModelManifest.json', async () => {
 })
 
 import { NaturalSpeechModels } from '../../../src/main/agents/speechModels'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -187,10 +188,10 @@ describe('NaturalSpeechModels', () => {
   })
 
   it('deduplicates concurrent downloads and keeps incomplete assets out of the protocol', async () => {
-    let release!: () => void
-    const gate = new Promise<void>(r => { release = r })
-    let entered!: () => void
-    const started = new Promise<void>(r => { entered = r })
+
+    const { promise: gate, resolve: release } = deferred<void>()
+
+    const { promise: started, resolve: entered } = deferred<void>()
     const { manager, downloader } = await setup(async (url, target) => {
       entered()
       await gate

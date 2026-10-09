@@ -1,6 +1,7 @@
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
@@ -21,7 +22,7 @@ const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 test('a Claude thread shows its thinking as a row before the first reply text', async () => {
   test.setTimeout(180_000)
   // The scripted entry point accepts only a folder it can prove is its own, named this way.
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-usage-thinking-')))
+  const root = await realpath((await ownedE2EProfile({ prefix: 'sotto-e2e-usage-thinking-' })).directory)
   const profile = join(root, 'profile'), project = join(root, 'project'), client = join(root, 'client'), home = join(root, 'home')
   let app: ElectronApplication | undefined
   try {
@@ -38,7 +39,7 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     } })
     const page = await firstSottoWindow(app)
     await page.waitForFunction(() => !!window.sotto?.agents)
-    await expect(async () => expect(await page.evaluate(() => window.sotto!.agents!.get())).toHaveProperty('host')).toPass(wait)
+    await expect(async () => expect(await agentState(page)).toHaveProperty('host')).toPass(wait)
     const size = async (width: number, height: number) => {
       await app!.evaluate(({ BrowserWindow }, [width, height]) => {
         // The window's own minimum is its outer size, which rounds above 820x560 content at some display scales.

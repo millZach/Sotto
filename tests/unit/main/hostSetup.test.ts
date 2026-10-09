@@ -4,6 +4,7 @@ import { HostSetup, hostSetupRequests, type HostSetupHosts, type HostSetupThread
 import { hostSetupBrief } from '../../../src/main/hosts/hostSetupBrief'
 import { HOST_SETUP_MCP_SERVER, HostSetupToolServer, hostSetupToolDefinitions } from '../../../src/main/hosts/hostSetupTools'
 import type { HostSetupChoice, HostsCommand, HostStatus, RemoteHost } from '../../../src/shared/hosts'
+import { deferred } from '../../fixtures/deferred'
 
 // The host setup (ADR-0035): one device, one thread, a brief with no secret in it, a tool only that thread gets,
 // and an add that waits for the user's answer in the thread.
@@ -22,7 +23,8 @@ function fixture(busy?: () => string | undefined) {
   const hosts = {
     check: vi.fn(async (connection: Omit<RemoteHost, 'enabled'>) => {
       statuses.set(connection.id, status(connection.id, { phase: 'connecting', step: 'reach' }))
-      const result = await new Promise<Partial<HostStatus>>(resolve => checks.push(resolve))
+      const pending = deferred<Partial<HostStatus>>(); checks.push(pending.resolve)
+      const result = await pending.promise
       statuses.set(connection.id, status(connection.id, result))
       return statuses.get(connection.id)
     }),
@@ -190,7 +192,9 @@ describe('HostSetup', () => {
     // Past pairing: the host is saved, and the add is still writing it when the user presses Stop setup.
     f.hosts.add.mockImplementationOnce(async connection => {
       f.saved.push(connection.id); f.statuses.set(connection.id, { ...host, id: connection.id, enabled: true, phase: 'connected' })
-      await new Promise<void>(resolve => { release = resolve })
+      const pending1 = deferred<void>();
+      release = pending1.resolve;
+      await pending1.promise
     })
     await f.setup.command(start())
     const adding = f.setup.run('thread-1', 'host_add')
@@ -210,7 +214,9 @@ describe('HostSetup', () => {
   it('says the host is saved when a stop lands after the add saved it and forgetting it fails', async () => {
     const f = fixture()
     let release: () => void = () => undefined
-    f.hosts.add.mockImplementationOnce(async connection => { f.saved.push(connection.id); await new Promise<void>(resolve => { release = resolve }) })
+    f.hosts.add.mockImplementationOnce(async connection => { f.saved.push(connection.id); const pending2 = deferred<void>();
+release = pending2.resolve;
+await pending2.promise })
     f.hosts.forget.mockRejectedValueOnce(new Error('The host could not be reached.'))
     await f.setup.command(start())
     const adding = f.setup.run('thread-1', 'host_add')
@@ -270,7 +276,9 @@ describe('HostSetup', () => {
     // Stop lands after the thread exists but before its brief is sent: the stop has no turn to interrupt yet.
     f.threads.start.mockImplementationOnce(async request => {
       f.events.push('create'); request.created('thread-1')
-      await new Promise<void>(resolve => { release = resolve })
+      const pending3 = deferred<void>();
+      release = pending3.resolve;
+      await pending3.promise
       f.events.push('send')
     })
     const starting = f.setup.command(start())

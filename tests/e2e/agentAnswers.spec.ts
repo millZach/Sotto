@@ -1,12 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { agentCommand as command, agentState as state } from './support/agentAccess'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import type { AgentCommand, AgentCommandReceipt, AgentState } from '../../src/shared/agents'
+import type { AgentCommandReceipt, AgentState } from '../../src/shared/agents'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -17,22 +16,6 @@ type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0] & {
   requestId?: string
   status?: 'idle' | 'running' | 'error'
-}
-
-async function command(page: Page, value: AgentCommand): Promise<AgentCommandReceipt> {
-  return page.evaluate(async request => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.command(request)
-  }, value)
-}
-
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => {
-    const bridge = (globalThis as unknown as BrowserGlobals).sotto.agents
-    if (!bridge) throw new Error('Agent bridge unavailable')
-    return bridge.get()
-  })
 }
 
 function thread(snapshot: AgentState | AgentCommandReceipt, id: string) {
@@ -101,7 +84,7 @@ test('composes a spoken answer across pauses and advances only after explicit su
 })
 
 test('restores the pending question binding with its draft after an application restart', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
   await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
@@ -131,7 +114,7 @@ test('restores the pending question binding with its draft after an application 
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+    await removeOwnedE2EProfile(directory)
   }
 })
 
@@ -152,7 +135,7 @@ test('keeps permission decisions explicit while allowing an exact spoken denial 
 })
 
 test('retains a typed question answer across queue navigation, widget edits, and restart', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const directory = (await ownedE2EProfile({ prefix: 'sotto-e2e-' })).directory
   await enableVoiceCoordinator(directory)
   let launched = await launchSotto('success', directory)
   try {
@@ -194,6 +177,6 @@ test('retains a typed question answer across queue navigation, widget edits, and
     await expect(launched.page.locator('.agent-composer textarea')).toHaveValue('')
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(directory), { recursive: true, force: true })
+    await removeOwnedE2EProfile(directory)
   }
 })

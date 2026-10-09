@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { deferred, baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { act, render, screen } from '@testing-library/react'
@@ -12,18 +13,14 @@ import { clientAgentState, hostEntityKey } from '../../../../../src/shared/clien
 import { beginNewThread } from '../../../../../src/renderer/src/agents/newThread'
 
 function withProjects(hostId?: string): AgentState {
-  const state: AgentState = {
-    configuration: defaultAgentConfiguration(), connection: 'disconnected',
+  const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: {
       connected: false, name: 'Providers', version: '', models: [], threads: [],
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true },
       projects: [{ id: 'one', title: 'One', path: 'C:/One' }, { id: 'two', title: 'Two', path: 'C:/Two' }],
     },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
   const clientState = hostId ? clientAgentState({ ...state, hostId }) : state
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(clientState, vi.fn(async () => clientState)))
   return clientState

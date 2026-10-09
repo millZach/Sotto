@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -6,11 +7,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.cleanup() })
-function gate() {
-  let release!: () => void
-  const promise = new Promise<void>(resolve => { release = resolve })
-  return { promise, release }
-}
+
 async function selectedSkill(f: Awaited<ReturnType<typeof codexFixture>>) {
   const skill = { name: 'native-review', path: join(f.root, 'SKILL.md') }
   await f.script({ skills: [{ ...skill, description: 'Synthetic review', enabled: true, scope: 'repo' }] })
@@ -75,7 +72,7 @@ it('steers with the exact selected native skill without starting another turn', 
 it('reserves steering while asynchronous skill validation is pending', async () => {
   const { f, threadId } = await fixture()
   const skill = await selectedSkill(f)
-  const validation = gate()
+  const validation = deferred()
   const prepare = f.adapter.prepareSkillInput.bind(f.adapter)
   const pending = vi.spyOn(f.adapter, 'prepareSkillInput').mockImplementationOnce(async (...args) => { await validation.promise; return prepare(...args) })
   const command = { type: 'steer' as const, threadId, commandId: randomUUID(), messageId: randomUUID(), text: '$native-review First correction', skills: [skill] }
@@ -85,7 +82,7 @@ it('reserves steering while asynchronous skill validation is pending', async () 
     await vi.waitFor(() => expect(pending).toHaveBeenCalled())
     await expect(f.host.execute({ ...command, commandId: randomUUID(), messageId: randomUUID(), text: '$native-review Concurrent correction' })).rejects.toThrow('already being submitted')
   } finally {
-    validation.release()
+    validation.resolve()
     firstResult = await first.catch(error => error)
   }
   expect(firstResult).toEqual({ accepted: true })
@@ -95,7 +92,7 @@ it('reserves steering while asynchronous skill validation is pending', async () 
 it('rejects a catalog invalidated while the steering origin is being saved', async () => {
   const { f, threadId } = await fixture()
   const skill = await selectedSkill(f)
-  const save = gate()
+  const save = deferred()
   const persistence = f.adapter as unknown as { persist(): Promise<void> }
   const persist = persistence.persist.bind(f.adapter)
   const saving = vi.spyOn(persistence, 'persist').mockImplementationOnce(async () => { await save.promise; await persist() })
@@ -106,7 +103,7 @@ it('rejects a catalog invalidated while the steering origin is being saved', asy
     await f.script({ skillsChanged: true, skills: [{ ...skill, description: 'Synthetic review', enabled: false, scope: 'repo' }] })
     expect((await f.host.listThreadSkills!(threadId, true)).status).toBe('error')
   } finally {
-    save.release()
+    save.resolve()
     outcome = await result.catch(error => error)
   }
   expect(outcome).toBeInstanceOf(Error)

@@ -1,42 +1,36 @@
+import { agentControlFixture } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
 // @vitest-environment node
 import { mkdir, mkdtemp, readFile, rm, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import type { AgentReasoner } from '../../../src/main/agents/reasoning'
 import { TurnRecorder } from '../../../src/main/agents/turns'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import { defaultAgentConfiguration, type AgentMessage } from '../../../src/shared/agents'
 import { visualMessageId } from '../../../src/shared/visuals'
 import { designThreadsFixture } from '../../../src/shared/e2e'
-import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 const roots: string[] = []
-const controls: AgentControl[] = []
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
+const controls: Awaited<ReturnType<typeof agentControlFixture>>[] = []
 
 async function fixture(saved?: object) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-assignment-facts-'))
   roots.push(root)
   if (saved) await writeFile(join(root, 'agents.json'), JSON.stringify(saved), 'utf8')
-  const credentials = new AgentCredentials(join(root, 'vault'), encryption)
-  await credentials.load()
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
   const host = new E2EAgentHost()
   const decide = vi.fn<AgentReasoner['decide']>().mockResolvedValue({ decision: 'followup', text: 'Fix the failing test within the assigned scope.' })
   const reasoner: AgentReasoner = {
     intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
     decide,
   }
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner,
+  const stack = await agentControlFixture({ directory: root, host, credentials, reasoner, control: {
     turns: new TurnRecorder({ directory: root, resolveSession: () => undefined }),
-  })
-  controls.push(control)
+  } })
+  const { control } = stack
+  controls.push(stack)
   await control.start()
   return {
     root, host, control, decide,
@@ -60,8 +54,7 @@ function expectIso(value: string): void {
 
 afterEach(async () => {
   for (const control of controls.splice(0)) {
-    control.dispose()
-    await control.privacyChanged()
+    await control.dispose()
   }
   for (const root of roots.splice(0)) {
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-assignment-facts-')) throw new Error('Unexpected fixture directory')

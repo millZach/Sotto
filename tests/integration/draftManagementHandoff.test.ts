@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { draftHandoffFixture } from '../fixtures/draftHandoffFixture'
@@ -26,7 +27,6 @@ it('does not let a delayed manual autosave overwrite a newer managed revision', 
 
 const image = handleOf(PIXEL_PNG, 'image', 'pixel.png')
 const skills = [{ name: 'build', path: 'C:/synthetic/skills/build/SKILL.md' }]
-function gate() { let release!: () => void; return { promise: new Promise<void>(done => { release = done }), release: () => release() } }
 
 it.each(['assign', 'resume'] as const)('hands the exact latest text, image and skill revision to %s before managed edits/reload/privacy', async action => {
   const f = await fixture(); const threadId = 'workshop'
@@ -59,7 +59,7 @@ it.each(['assign', 'resume'] as const)('hands the exact latest text, image and s
 })
 
 it('waits for earlier in-flight saves and the latest typing despite reordered acknowledgements', async () => {
-  const f = await fixture(); const first = gate(); let oldSaveStarted = false
+  const f = await fixture(); const first = deferred(); let oldSaveStarted = false
   const store = f.store(async command => {
     const result = await f.command(command)
     if (command.type === 'save-thread-draft' && command.text === 'First edit') { oldSaveStarted = true; await first.promise }
@@ -78,7 +78,7 @@ it('waits for earlier in-flight saves and the latest typing despite reordered ac
     store.edit('docs', { text: 'Other thread remains usable' }); await f.flush(store, 'docs')
     expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ threadId: 'docs', text: 'Other thread remains usable' }))
     store.edit('workshop', { text: '$build Typed while the barrier waits' })
-  } finally { first.release(); await older }
+  } finally { first.resolve(); await older }
   expect((await handoff)?.error).toBeNull()
   expect(f.control.get().draft).toBe('$build Typed while the barrier waits')
   expect(f.control.get().threadDrafts?.find(d => d.threadId === 'workshop')?.draftId).not.toBe(newestId)
@@ -115,7 +115,7 @@ it('keeps unsaved content and authority unchanged when storage cannot confirm th
 })
 
 it('checks the expected revision after a delayed management command before changing authority', async () => {
-  const f = await fixture(); const hold = gate(); let entered = false
+  const f = await fixture(); const hold = deferred(); let entered = false
   const store = f.store(async command => {
     if (command.type === 'assign') { entered = true; await hold.promise }
     return f.command(command)
@@ -125,7 +125,7 @@ it('checks the expected revision after a delayed management command before chang
   try {
     await expect.poll(() => entered).toBe(true)
     store.edit('workshop', { text: '$build Newer revision', attachments: [image], skills }); await f.flush(store, 'workshop')
-  } finally { hold.release() }
+  } finally { hold.resolve() }
   expect(await pending).toBeNull()
   expect(f.control.get().assignments).toEqual([])
   expect(store.draft('workshop')).toMatchObject({ text: '$build Newer revision', skills, attachments: [image] })
@@ -148,7 +148,7 @@ it('retains uncertain delivery and a newer draft without granting management or 
 })
 
 it('waits for an actual pending disk write before transferring an image and skill draft', async () => {
-  const f = await fixture(); const store = f.store(); const hold = gate(); let entered = false
+  const f = await fixture(); const store = f.store(); const hold = deferred(); let entered = false
   const original = AtomicJsonStore.prototype.write
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
     if (!entered && (value as { threadDrafts?: unknown[] }).threadDrafts?.length) { entered = true; await hold.promise }
@@ -160,7 +160,7 @@ it('waits for an actual pending disk write before transferring an image and skil
     await expect.poll(() => entered).toBe(true)
     expect(f.control.get().assignments).toEqual([])
     expect(store.snapshot('workshop').save).toBe('saving')
-  } finally { hold.release() }
+  } finally { hold.resolve() }
   expect((await handoff)?.error).toBeNull()
   expect((await f.disk()).threadDrafts).toContainEqual(expect.objectContaining({ text: '$build Disk barrier', attachments: [image], skills }))
   expect(f.attempts).toEqual([])

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { collectLaunchScript as collect, launchScriptChild, type LaunchScriptOutcome as Outcome } from '../fixtures/launchScriptRunner'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
-import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 
 /**
@@ -37,18 +38,9 @@ async function fixture() {
     downloadTimeoutMs: HOST_DOWNLOAD_TIMEOUT_MS, archiveLimit: HOST_ARCHIVE_LIMIT_BYTES }
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
-interface Outcome { readonly messages: Record<string, unknown>[]; readonly code: number | null; readonly errors: string }
-function collect(child: ChildProcess): Promise<Outcome> {
-  let output = '', errors = ''
-  child.stdout!.on('data', chunk => { output += String(chunk) })
-  child.stderr!.on('data', chunk => { errors += String(chunk) })
-  return new Promise(resolve => child.once('close', code => resolve({ code, errors,
-    messages: output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>) })))
-}
+
 function run(configuration: Configuration, operation: LaunchOperation | Record<string, unknown>): Promise<Outcome> {
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...configuration, ...operation })], { shell: false, windowsHide: true })
-  children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
+  const child = launchScriptChild({ ...configuration, ...operation }, undefined, child => children.push(child))
   return collect(child)
 }
 /** The receive script as the probe runs it: `node -e`, with the archive on stdin. */

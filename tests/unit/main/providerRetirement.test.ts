@@ -12,6 +12,7 @@ import { agentCommandSchema } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG } from '../../fixtures/stagedImages'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 /** The recovered draft's inline image as the coordinator carries it once staged at start (ADR-0031). */
 const staged = handleOf(PIXEL_PNG, 'image', 'image.png')
@@ -29,7 +30,7 @@ async function fixture() {
   const host = new FakeProviderHost(); const connect = vi.spyOn(host, 'connect'); const execute = vi.spyOn(host, 'execute')
   let historyEnabled = true
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, historyEnabled: () => historyEnabled,
       reasoner: { intent: vi.fn(), decide: vi.fn() } as never,
     })
     controls.push(control); return control

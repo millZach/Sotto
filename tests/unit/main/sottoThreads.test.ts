@@ -5,13 +5,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand, ThreadHistorySource } from '../../../src/main/agents/host'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -31,11 +34,9 @@ function adapter(root: string, inner = new FakeProviderHost()) {
 async function fixture() { return adapter(await directory()) }
 
 async function startControl(root: string, host: SottoThreadHost): Promise<AgentControl> {
-  const credentials = new AgentCredentials(join(root, 'vault'), {
-    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
-  })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'plain' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread.' }),
       decide: async () => ({ decision: 'human', text: 'Review this.' }) },
   })
@@ -282,10 +283,10 @@ describe('ThreadRegistry durability', () => {
   it('flushes discoveries made while a previous disk write is still in progress', async () => {
     const f = await fixture()
     await f.registry.load()
-    let started!: () => void
-    const writing = new Promise<void>(resolve => { started = resolve })
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: writing, resolve: started } = deferred<void>()
+
+    const { promise: gate, resolve: release } = deferred<void>()
     const original = AtomicJsonStore.prototype.write
     vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementationOnce(async function (this: AtomicJsonStore<unknown>, value) {
       started()

@@ -1,3 +1,4 @@
+import { parseProviderRecords, writeProviderAction, providerArgument as flag } from './providerRecords'
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,9 +10,8 @@ export { storedClaudeOrigins } from './claudeOrigins'
 
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
 async function oneShots(root: string): Promise<Record<string, unknown>[]> {
-  return (await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+  return parseProviderRecords<Record<string, unknown>>(await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => ''))
 }
-const flag = (args: unknown, name: string): string | undefined => { const list = args as string[]; return list.includes(name) ? list[list.indexOf(name) + 1] : undefined }
 
 // The acknowledgement deadline also covers the fake CLI's process start, which a loaded two-core runner
 // stretches past a second. Tests that need a lost acknowledgement script one instead of shortening this.
@@ -26,10 +26,10 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
       if (Date.now() > deadline) throw new Error('The fake Claude CLI never read its previous scripted action.')
       await new Promise(done => setTimeout(done, 5))
     }
-    await writeFile(control, JSON.stringify({ id: randomUUID(), ...value }))
+    await writeProviderAction(control, value)
   }
   const check = async () => { const violations = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => ''); if (violations) throw new Error(violations) }
-  const records = async (): Promise<RecordedRpc[]> => { await check(); return (await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as RecordedRpc) }
+  const records = async (): Promise<RecordedRpc[]> => { await check(); return parseProviderRecords<RecordedRpc>(await readFile(join(root, 'requests.jsonl'), 'utf8').catch(() => '')) }
   const liveSettings: NonNullable<AdapterFixture['liveSettings']> = {
     refuse: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ refuse: true })),
     silence: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ silent: true })),
