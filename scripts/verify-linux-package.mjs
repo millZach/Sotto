@@ -43,6 +43,7 @@ try {
   }
   assert.ok(target, 'Main inspector must start on port 9348')
   inspector = await openProofDebugger(target.webSocketDebuggerUrl)
+  assert.equal(await inspector.evaluate('process.pid', 15000, false), child.pid, 'The inspector must belong to this launch')
   let storage
   while (Date.now() < deadline) {
     storage = await inspector.evaluate(`(() => { const { app, safeStorage } = process.mainModule.require('electron'); return { ready: app.isReady(), packaged: app.isPackaged, version: app.getVersion(), executable: process.execPath, passwordStore: app.commandLine.getSwitchValue('password-store'), available: app.isReady() && safeStorage.isEncryptionAvailable(), backend: app.isReady() ? safeStorage.getSelectedStorageBackend() : null }; })()`, 15000, false)

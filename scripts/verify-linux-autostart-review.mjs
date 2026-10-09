@@ -1,6 +1,6 @@
 // Usage: node scripts/with-nested-hyprland.mjs <scope-dir> node scripts/verify-linux-autostart-review.mjs <packaged-executable> <completed-profile> <evidence-dir>
 // First run verify-linux-package.mjs to complete real onboarding. This checks isolated startup failures and moved entries without compositor key events.
-/* global window, document */
+/* global window, document, requestAnimationFrame */
 import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
@@ -67,6 +67,7 @@ for (const scenario of cases) {
     }
     assert.ok(target)
     inspector = await openProofDebugger(target.webSocketDebuggerUrl)
+    assert.equal(await inspector.evaluate('process.pid', 15000, false), child.pid, 'The inspector must belong to this launch')
     let page
     while (!page && Date.now() < deadline) {
       try {
@@ -76,6 +77,8 @@ for (const scenario of cases) {
       if (!page) await wait(100)
     }
     assert.ok(page, 'The packaged renderer must open')
+    const rendererSession = await page.context().newCDPSession(page)
+    await rendererSession.send('Emulation.clearDeviceMetricsOverride')
     await page.getByRole('link', { name: 'Settings', exact: true }).waitFor()
     const tour = page.getByRole('button', { name: 'Skip tour', exact: true })
     if (await tour.isVisible()) await tour.click()
@@ -104,20 +107,17 @@ for (const scenario of cases) {
     }
     if (scenario.error) assert.ok(stderr.includes(scenario.error === 'write-EACCES' ? 'linux-autostart-write-failed' : 'linux-autostart-read-failed'), 'Only the expected stable autostart event is needed')
     if (scenario.name === 'EACCES-false') {
-      const clients = JSON.parse(execFileSync('hyprctl', ['clients', '-j'], { encoding: 'utf8' }))
-      const client = clients.find(item => item.pid === child.pid && item.title === 'Sotto')
-      assert.ok(client, 'The unavailable Settings row must be on the owned display')
-      if (!client.floating) execFileSync('hyprctl', ['dispatch', `hl.dsp.window.float({ window = "address:${client.address}", action = "toggle" })`])
-      await inspector.evaluate(`(() => { const { BrowserWindow } = process.mainModule.require('electron'); BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html')).setMinimumSize(800, 540); })()`, 15000, false)
+      // Use the same renderer viewport matrix as the Linux e2e specs. The normal
+      // packaged journey separately measures the real native window at these sizes.
       for (const appearance of ['dark', 'light']) {
         await page.evaluate(appearance => window.sotto.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
         for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
-          await inspector.evaluate(`(() => { const { BrowserWindow } = process.mainModule.require('electron'); BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html')).setSize(${width}, ${height}); })()`, 15000, false)
-          execFileSync('hyprctl', ['dispatch', `hl.dsp.window.resize({ window = "address:${client.address}", x = ${width}, y = ${height} })`])
+          await page.setViewportSize({ width, height })
           await page.waitForFunction(size => window.innerWidth === size.width && window.innerHeight === size.height, { width, height })
           await toggle.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }))
+          await page.evaluate(() => new Promise(resolveFrame => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))))
           const rect = await toggle.boundingBox()
-          assert.ok(rect && rect.y >= 0 && rect.y + rect.height <= height)
+          assert.ok(rect && rect.y >= 0 && rect.y + rect.height <= height, `Startup row must fit at ${appearance} ${width}x${height}: ${JSON.stringify(rect)}`)
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
           if (width === 820) await page.screenshot({ path: join('artifacts/linux-package', `settings-unavailable-${appearance}.png`) })
         }
