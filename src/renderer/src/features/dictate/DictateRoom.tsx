@@ -260,7 +260,9 @@ export function DictateRoom({
               recording that failed on the key still points at Settings. */}
           {kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
-              or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}
+              {platform === 'linux'
+                ? listening ? 'Press Stop, then paste your copied text.' : 'Paste with Ctrl+V, or Shift+Insert in a terminal.'
+                : <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>}
             </span>
           ) : (
             <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button>

@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 import { platformProfile, windowFrostFor } from '../../../src/main/platformProfile'
@@ -34,6 +36,7 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
+      inAppUpdates: true,
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
@@ -52,6 +55,7 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      inAppUpdates: false,
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
@@ -59,14 +63,37 @@ describe('platformProfile', () => {
     })
   })
 
-  it.each(['win32', 'darwin'] as const)(
+  it('keeps Linux frameless, with the colour app PNG tray and copy-only output', () => {
+    const profile = platformProfile('linux')
+    expect(profile).toEqual({
+      platform: 'linux',
+      mainWindowChrome: 'frameless',
+      trafficLightPosition: null,
+      applicationMenu: 'none',
+      widgetAlwaysOnTopLevel: 'normal',
+      widgetFocusable: false,
+      widgetVisibleOnAllWorkspaces: false,
+      widgetIsPanel: false,
+      trayIcon: { kind: 'image', relativePath: 'icon.png' },
+      inAppUpdates: false,
+      pasteRequiresAccessibilityTrust: false,
+      pasteUsesWarmHelper: false,
+      requiresMediaAccessGate: false,
+      defaultHotkey: 'CommandOrControl+Shift+Space',
+    })
+    if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
+    expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
+    expect(createPasteCommands('linux').oneShot()).toBeNull()
+  })
+
+  it.each(['win32', 'darwin', 'linux'] as const)(
     'takes the %s default hotkey from the shared platform table',
     (platform) => {
       expect(platformProfile(platform).defaultHotkey).toBe(defaultHotkey(platform))
     },
   )
 
-  it.each(['win32', 'darwin'] as const)(
+  it.each(['win32', 'darwin', 'linux'] as const)(
     'keeps the %s warm-helper flag in step with the paste command table',
     (platform) => {
       // index.ts guards the warm helper on the command table, so a row that
@@ -77,7 +104,7 @@ describe('platformProfile', () => {
     },
   )
 
-  it.each(['win32', 'darwin'] as const)(
+  it.each(['win32', 'darwin', 'linux'] as const)(
     'returns the same frozen %s row on every call',
     (platform) => {
       const profile = platformProfile(platform)
@@ -103,5 +130,9 @@ describe('windowFrostFor', () => {
 
   it('offers vibrancy on every macOS', () => {
     expect(windowFrostFor('darwin', '24.1.0')).toBe('vibrancy')
+  })
+
+  it.each(['6.19.9', '10.0.26200', 'unknown'])('never offers frost on Linux for %s', release => {
+    expect(windowFrostFor('linux', release)).toBeNull()
   })
 })

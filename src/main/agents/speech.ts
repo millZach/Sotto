@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import type { SottoPlatform } from '../../shared/platform'
 
 export interface AgentSpeechAudio { readonly audioBase64: string; readonly mimeType: 'audio/wav' }
 
@@ -68,8 +69,9 @@ function validateWave(audio: Buffer): AgentSpeechAudio {
 }
 
 /** Generates local audio only; playback stays in the renderer that owns microphone suppression. */
-export async function synthesizeAgentSpeech(text: string, platform: 'win32' | 'darwin'): Promise<AgentSpeechAudio> {
+export async function synthesizeAgentSpeech(text: string, platform: SottoPlatform): Promise<AgentSpeechAudio> {
   if (text.trim().length === 0 || text.length > 2_000) throw new Error('Spoken replies must contain between 1 and 2,000 characters.')
+  if (platform === 'linux') throw new Error('System speech is unavailable on Linux. Read the reply in the widget.')
   if (platform === 'win32') {
     const executable = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     const result = await runSpeechProcess(executable,

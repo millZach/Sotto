@@ -75,6 +75,16 @@ function createOptions(
 }
 
 describe('createTrayResource', () => {
+  it('loads the Linux colour image without marking it as a template', async () => {
+    const harness = createHarness()
+    const options = createOptions(harness, { kind: 'image', relativePath: 'icon.png' })
+    await expect(createTrayResource(options)).resolves.toBe(harness.tray)
+    expect(harness.loadImageIcon).toHaveBeenCalledExactlyOnceWith(options.resolveResourcePath('icon.png'))
+    expect(harness.getFileIcon).not.toHaveBeenCalled()
+    expect(harness.markTemplate).not.toHaveBeenCalled()
+    expect(harness.createTray).toHaveBeenCalledWith(harness.icon)
+  })
+
   it('loads and validates the executable icon before constructing the tray', async () => {
     const harness = createHarness()
 

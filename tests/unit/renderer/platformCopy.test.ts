@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { platformCopy, type PlatformCopy } from '../../../src/renderer/src/platformCopy'
 import type { SottoPlatform } from '../../../src/shared/platform'
 
-const platforms: readonly SottoPlatform[] = ['win32', 'darwin']
+const platforms: readonly SottoPlatform[] = ['win32', 'darwin', 'linux']
 
 // Every string the renderer used to hardcode, exactly as it shipped on Windows.
 const win32Strings: Omit<PlatformCopy, 'platform' | 'accessibilityHelp'> = {
@@ -54,6 +54,7 @@ describe('platformCopy', () => {
   })
 
   it('asks for accessibility permission only where auto-paste needs it', () => {
+    expect(platformCopy('linux').accessibilityHelp).toBeNull()
     expect(platformCopy('win32').accessibilityHelp).toBeNull()
     const help = platformCopy('darwin').accessibilityHelp ?? ''
     expect(help).toContain('Accessibility')
@@ -76,12 +77,22 @@ describe('platformCopy', () => {
   })
 
   it('never mentions the other platform in a row', () => {
+    for (const value of Object.values(platformCopy('linux'))) {
+      expect(String(value)).not.toMatch(/Windows|macOS|Keychain|⌘/u)
+    }
     for (const value of Object.values(platformCopy('darwin'))) {
       expect(String(value)).not.toMatch(/Windows|Ctrl\+/u)
     }
     for (const value of Object.values(platformCopy('win32'))) {
       expect(String(value)).not.toMatch(/macOS|System Settings|⌘/u)
     }
+  })
+
+  it('tells Linux users to paste and use the button on Wayland', () => {
+    expect(platformCopy('linux').helpPasteFallback).toContain('Paste manually')
+    expect(platformCopy('linux').helpPasteFallback).toContain('Shift+Insert')
+    expect(platformCopy('linux').settingsAutoPasteDescription).toContain('copied on Linux')
+    expect(platformCopy('linux').settingsGlobalShortcutDescription).toContain('Use the dictation button')
   })
 
   it('returns the same frozen row on every call', () => {

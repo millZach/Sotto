@@ -63,6 +63,21 @@ function createHarness(
 }
 
 describe('OutputService', () => {
+  it.each([
+    { autoPaste: false, restoreWidget: false },
+    { autoPaste: false, restoreWidget: true },
+    { autoPaste: true, restoreWidget: false },
+    { autoPaste: true, restoreWidget: true },
+  ])('copies Linux output without hiding or waiting with %j', async ({ autoPaste, restoreWidget }) => {
+    const harness = createHarness({ buildPasteInvocation: createPasteCommands('linux').oneShot })
+    const transcript = '  exact Linux transcript\r\n'
+
+    await expect(harness.service.deliver(transcript, { autoPaste, pasteDelayMs: 1000, restoreWidget })).resolves.toBe('copied')
+    expect(harness.clipboardText()).toBe(transcript)
+    expect(harness.processInput()).toBeUndefined()
+    expect(harness.events).toEqual(['clipboard'])
+  })
+
   it('holds the next clipboard write until a successful paste settles', async () => {
     vi.useFakeTimers()
     try {
