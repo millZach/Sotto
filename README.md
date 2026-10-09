@@ -146,7 +146,7 @@ npm run dev
 
 `npm run package:win` and `npm run package:mac` build the installers. Each packaging command automatically verifies the source runtime before packaging.
 
-An unpackaged Linux build can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one or use KDE, where Chromium chooses the store. Transcripts are copied for you to paste. On Wayland, use the dictation button; the global shortcut does not work yet. Linux has no installer, frosted window or in-app updater. Starting at sign-in comes with the installed package; the setting is disabled in development builds. See the [Linux development notes](docs/guide.md#linux-development-builds).
+An unpackaged Linux build can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one or use KDE, where Chromium chooses the store. Transcripts are copied for you to paste. On Wayland, use the dictation button; the global shortcut does not work yet. Linux keeps the title area without window controls. On Omarchy, Super+W closes Sotto to the tray; it keeps running. Linux has no installer, frosted window or in-app updater. Starting at sign-in comes with the installed package; the setting is disabled in development builds. See the [Linux development notes](docs/guide.md#linux-development-builds).
 
 ## More
 
