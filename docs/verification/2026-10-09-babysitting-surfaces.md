@@ -43,15 +43,25 @@ wake-up wording and the real send path through the follow-up queue.
    the user's own item no longer offers to move past it. The transcript echoes it where it will go as Sotto's, word for
    word ([queued](../../artifacts/babysitting-surfaces/queued-wake-up-1280x800-dark.png)). Remove takes it away and
    babysitting goes on; no wake-up is sent for it.
-5. **Stop.** The panel says "Stopped babysitting #74" in passing, the line goes, focus waits on ···, where Babysit pull request
-   is again, and the row and the pose go back to rest.
-6. **Ended on its own.** Started again from ···, then merged on GitHub: the next pass sends the last wake-up ("It
+5. **The pose beside a paused queue.** The scripted turn that follows reports no completion, so the queue pauses with
+   the user's follow-up in it while the thread rests and babysits: the queue and the pose stand above the composer
+   together. At 1280x800 and at 820x560 the queue sits whole above the pose, neither over the other, the pose's readout
+   stays inside its width, Resume queue is in view and the window does not scroll sideways
+   ([820x560](../../artifacts/babysitting-surfaces/pose-beside-queue-820x560-dark.png), where the queue folds to its
+   heading).
+6. **Stop.** Stop keeps focus through its press. The panel says "Stopped babysitting #74" in passing, focus moves to ···,
+   where Babysit pull request is again, the line goes, and the row and the pose go back to rest.
+7. **Ended on its own.** Started again from ···, then merged on GitHub: the next pass sends the last wake-up ("It
    merged, so Sotto has stopped babysitting it.") and ends babysitting. After Refresh the surface shows Merged into main
-   and under it "Babysitting ended. Ended when #74 merged at 3:13 pm."
-   ([ended](../../artifacts/babysitting-surfaces/ended-1280x800-dark.png)).
-7. **Settings.** Settings → Application has **Let agents babysit pull requests** right after "Let agents draw visuals in
-   threads", on by default, saying what Sotto does with the value shown, and its description changes when it is
-   turned off and back on.
+   and under it "Babysitting ended. Ended at 5:46 pm, after #74 merged.", with **Dismiss**
+   ([ended](../../artifacts/babysitting-surfaces/ended-1280x800-dark.png)). The time is when babysitting ended, which is
+   when the pass noticed the merge, so the sentence does not put it on the merge, which the card above dates. Dismiss,
+   named "Dismiss why babysitting #74 ended", puts the line away, focus goes back to the pull request's name, and
+   Refresh does not bring it back.
+8. **Settings.** Settings → Application has **Let agents babysit pull requests** right after "Let agents draw visuals in
+   threads", on by default, saying what Sotto does with the value shown. Turned off it says "Agents cannot start
+   babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request
+   surface.", and turned back on the first sentence returns.
 
 The existing `tests/e2e/pull-request-surface.spec.ts` passes unchanged over the same build.
 
@@ -60,7 +70,9 @@ The existing `tests/e2e/pull-request-surface.spec.ts` passes unchanged over the 
 `tests/unit/renderer/babysitting.test.ts` holds the line's states and words, where Babysit pull request is offered and
 the sidebar's state word; `threadSidebarStatus.test.tsx` the row's ranking; `babysittingPose.test.tsx` the pose's ranking
 and readout; `wakeUpMessage.test.tsx` that a wake-up is told by its mark and never its words, in the transcript, the
-queue and the queue's echo; `pullRequestSurface.test.tsx` the menu item, the line, Stop and refusals;
+queue and the queue's echo, and that the Agent room's short transcript names it Sotto; `pullRequestSurface.test.tsx` the
+menu item, the line, Stop and refusals, a refused Stop keeping focus and saying why in the line rather than above the
+checklist, and Dismiss keeping an ending put away in the window until a later ending of the same pull request;
 `settingsView.test.tsx` the switch; and `workspaceBabysitting.test.ts` and `agentRuntimeBabysitting.test.ts` that why
 babysitting ended is kept on the thread's record through a restart, and not for the user's own Stop.
 
