@@ -1,5 +1,7 @@
 # Reclaiming a thread's worktree (ADR-0041), 2026-09-22
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Proof that a thread's own worktree can be given back from the running app, that its branch survives, that the next send puts the folder back, and that the four cleanup rules appear in Settings and start off. Screenshots are in `artifacts/reclaim-worktrees/`; `index.html` there lays them out.
 
 ## What was found first
@@ -9,12 +11,12 @@ On September 21 `%APPDATA%\sotto` held 31.8 GB in 758,435 files. `thread-worktre
 ## Unit and integration
 
 ```powershell
-npx vitest run tests/unit/main/threadWorktrees.test.ts tests/integration/worktreeCleanup.test.ts tests/unit/main/workspace.test.ts tests/unit/renderer/threadWorktreeReclaim.test.tsx tests/unit/shared/settings.test.ts --maxWorkers=2
+npx vitest run tests/integration/threadWorktreeAllocation.test.ts tests/integration/threadWorktreeRecovery.test.ts tests/integration/threadWorktreeReclaim.test.ts tests/integration/threadWorktreeSubmodules.test.ts tests/integration/threadWorktreeIdentity.test.ts tests/unit/main/threadWorkingDirectory.test.ts tests/integration/worktreeCleanup.test.ts tests/unit/main/workspaceOrganization.test.ts tests/unit/main/workspaceThreadCreation.test.ts tests/integration/workspaceBranchNaming.test.ts tests/unit/main/workspaceGitRefresh.test.ts tests/unit/main/workspaceGitActions.test.ts tests/unit/main/workspaceWorktreeRecovery.test.ts tests/unit/renderer/threadWorktreeReclaim.test.tsx tests/unit/shared/settings.test.ts --maxWorkers=2
 ```
 
-- `threadWorktrees.test.ts` (3 new, real Git): a clean worktree is reclaimed and `restore` puts it back on its branch with its commits; uncommitted work goes only with the user's answer and never for a rule, even one told `withUncommittedChanges`; a rule leaves alone a folder with `out/` among its ignored files; a `node_modules` junction to a folder outside the worktree is refused and the folder behind it is untouched; a detached HEAD and a shared folder are refused.
+- `tests/integration/threadWorktreeReclaim.test.ts` (3 new, real Git): a clean worktree is reclaimed and `restore` puts it back on its branch with its commits; uncommitted work goes only with the user's answer and never for a rule, even one told `withUncommittedChanges`; a rule leaves alone a folder with `out/` among its ignored files; a `node_modules` junction to a folder outside the worktree is refused and the folder behind it is untouched; a detached HEAD and a shared folder are refused.
 - `worktreeCleanup.test.ts` (5 new, real Git): nothing happens with every rule off; the idle rule takes an old idle thread and leaves a recent or running one; `unchanged` takes a folder whose HEAD is in `main` and leaves one with its own commits; the merged rule asks the GitHub hook only when on and skips dirty and built folders; a settle triggers a sweep only with `onSettle`, and a rules change triggers one.
-- `workspace.test.ts` (1 new): a running thread, a thread with a terminal open and a rule's refusal all leave the record alone; a request reclaims and publishes `reclaimedAt`; a refresh does not put the folder back; the next send does and clears `reclaimedAt`.
+- `tests/unit/main/workspaceWorktreeRecovery.test.ts` (1 new): a running thread, a thread with a terminal open and a rule's refusal all leave the record alone; a request reclaims and publishes `reclaimedAt`; a refresh does not put the folder back; the next send does and clears `reclaimedAt`.
 - `threadWorktreeReclaim.test.tsx` (5 new): the panel offers Remove worktree only for the thread's own folder; Escape inside the question closes the question and not the panel; the dirty wording appears when main knows of work the record did not; Settle settles first and then asks; a shared folder or a refused settle asks nothing.
 
 The full suite: 340 files passed, 18 skipped. Typecheck, lint and `notices:verify` green.

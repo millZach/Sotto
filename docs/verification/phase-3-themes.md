@@ -23,11 +23,12 @@ Scope: branch `work/phase3-themes`. The built-ins were renamed late at the user'
 
 ## Tests
 
-Focused unit run, 17 files, 350 tests passed:
-- `themesIpc`, `themesOpenVsx`, `themeOpenVsxCorrections`
+Focused unit run, 17 original files, 350 tests passed. The citations below name their current split locations:
+
+- `themesIpc`, `themesOpenVsx`, `tests/unit/main/themes/openVsxCorrections.test.ts`, `tests/unit/shared/themes/vscodeImportCorrections.test.ts`
 - `designCaptureMatrix`, `notices`
-- `app`, `appearance`, `designSystem`, `diagramSafety` (two files), `messageDiagrams`
-- `settingsView`, `themeInspector`, `themeLibrary`, `themeTokens`
+- `tests/unit/renderer/appFrame.test.tsx`, `tests/unit/renderer/appRecovery.test.tsx`, `tests/unit/renderer/appAppearance.test.tsx`, `tests/unit/renderer/appUpdates.test.tsx`, `tests/unit/renderer/appOnboarding.test.tsx`, `tests/unit/renderer/appPrewarm.test.tsx`, `appearance`, `designSystem`, `tests/unit/renderer/diagramSafety.test.ts`, `tests/unit/renderer/agents/diagrams/diagramRendering.test.tsx`, `tests/unit/shared/diagramSource.test.ts`, `messageDiagrams`
+- `tests/unit/renderer/features/settings/settingsNavigation.test.tsx`, `tests/unit/renderer/features/settings/settingsMicrophone.test.tsx`, `tests/unit/renderer/features/settings/settingsCaptureOutput.test.tsx`, `tests/unit/renderer/features/settings/settingsGit.test.tsx`, `tests/unit/renderer/features/settings/settingsAppearance.test.tsx`, `tests/unit/renderer/features/settings/settingsTranscriptionKey.test.tsx`, `tests/unit/renderer/features/settings/settingsUpdatesPrivacy.test.tsx`, `tests/unit/renderer/features/settings/projectThreadDefaults.test.tsx`, `tests/unit/renderer/features/settings/settingsDictionary.test.tsx`, `themeInspector`, `themeLibrary`, `themeTokens`
 - shared `settings` and `themes`
 
 Other checks:

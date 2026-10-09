@@ -1,5 +1,7 @@
 # A thread setting shows the moment it is pressed (#319)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Checked on September 26, 2026, on Windows, in the built app driven by `tests/e2e/pending-settings.spec.ts`
 (`npm run build`, then `npx playwright test tests/e2e/pending-settings.spec.ts`: 1 passed). The provider is the e2e
 fixture host. Through the e2e bridge the spec holds its thread settings changes at the provider and lets them through
@@ -69,7 +71,7 @@ other spec and design capture over it shows, so it was left.
   through the chip over a real coordinator, not in the running app. The chips fixed while a prompt is on its way, a
   refusal kept while another chip is pressed, a press back to the value in force keeping its mark while the save before
   it is in flight, and a change main lets go without the thread showing it are unit tests
-  (`tests/unit/renderer/threadOptions.test.tsx`, `tests/unit/renderer/pendingSettings.test.ts`).
+  (`tests/unit/renderer/agents/threadOptions.test.tsx`, `tests/unit/renderer/agents/threadEffort.test.tsx`, `tests/unit/renderer/pendingSettings.test.ts`).
 - The managed composer (Manage), which places the same line under its own footer, in the running app.
 - Model and effort in the running app: their pressed value shows without a mark, which the unit tests cover.
 - A real provider. `docs/perf/2026-09-26-settings-press-to-paint.md` times the real Claude and Codex adapters over

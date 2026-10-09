@@ -16,7 +16,7 @@ Verification of the `feat/sidebar-on-every-page` branch in the built app (`npm r
 
 ## Keyboard
 
-- On Settings the column is one tab sequence: the sections, then the sidebar foot (the room switch, the page links, the update control), then the open section's panel. `tests/unit/renderer/settingsView.test.tsx` walks it.
+- On Settings the column is one tab sequence: the sections, then the sidebar foot (the room switch, the page links, the update control), then the open section's panel. `tests/unit/renderer/features/settings/settingsNavigation.test.tsx` walks it.
 - The sidebar beside Dictate answers the same keys as on Threads (arrow keys on the mode switch and the room switch). `tests/unit/renderer/pageSidebar.test.tsx` covers the sidebar's own behaviour on a page: open a thread, New thread, the Terminal side of the switch.
 
 ## Gates
