@@ -346,6 +346,17 @@ describe('terminal agent run state', () => {
     state.input('n'); state.input('e'); state.input('w'); state.input('\r'); expect(state.state).toBe('working')
     state.output(work); state.output(idle); expect(state.state).toBe('just-finished')
   })
+  it.each(['cancelled', 'ended'] as const)('rejects delayed %s from an interrupted turn while newer work finishes', kind => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.hook(event('working', { turnId: 'a', workPhase: 'submitted' })); state.output(work)
+    state.input('\x03'); state.output(idle); state.input('new work\r')
+    state.hook(event('working', { turnId: 'b', workPhase: 'submitted' })); state.output(work)
+    state.hook(event('permission', { turnId: 'b', requestId: 'new-request' }))
+    state.hook(event(kind, { turnId: 'a' })); expect(state.state).toBe('needs-you')
+    state.requestClosed('new-request'); state.output(work)
+    state.hook(event('completed', { turnId: 'b' })); state.output(idle)
+    expect(state.state).toBe('just-finished')
+  })
   it('rejects stale runs/duplicate events and makes Exited final', () => {
     const state = agent(); state.hook(event('working', { runId: 'old-run' })); expect(state.state).toBe('idle')
     const completed = event('completed', { eventId: 'once', turnId: 'turn' }); state.hook(completed); state.setVisible(true)

@@ -214,6 +214,22 @@ describe('run-scoped terminal agent hooks', () => {
     expect(events).toHaveLength(1)
     expect(JSON.stringify(events)).not.toContain('secret')
   })
+  it('closes only permission sockets belonging to a cancelled turn', async () => {
+    const { run, events, closed } = await prepared()
+    const sockets = ['a', 'b'].map(turnId => {
+      const socket = createConnection({ host: '127.0.0.1', port: Number(run.env.SOTTO_TERMINAL_HOOK_PORT) })
+      socket.on('error', () => {})
+      socket.on('connect', () => socket.write(`${JSON.stringify({ ...boundFrame(run), kind: 'permission', state: 'needs-you', turnId, requestId: turnId, approvalId: `approval-${turnId}` })}\n`))
+      return socket
+    })
+    try {
+      await expect.poll(() => events.filter(event => event.kind === 'permission').length).toBe(2)
+      await send(run, { ...boundFrame(run), kind: 'cancelled', state: 'idle', turnId: 'a' })
+      await expect.poll(() => closed).toEqual(['a'])
+      expect(run.answer({ terminalId: 'terminal-1', runId: run.runId, requestId: 'b', approvalId: 'approval-b', answerId: randomUUID(), decision: 'deny' })).toBe(true)
+      expect(closed).not.toContain('b')
+    } finally { for (const socket of sockets) socket.destroy() }
+  })
   it('does not replay an uncertain answer or redirect it to the next request', async () => {
     const { run, events, closed, delivered } = await prepared()
     const requestId = randomUUID(), approvalId = randomUUID()

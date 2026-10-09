@@ -124,6 +124,7 @@ export class TerminalAgentStateMachine {
         }
         break
       case 'cancelled': case 'ended':
+        if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         this.retireTurn(this.activeTurn); this.retireTurn(event.turnId); this.activeTurn = undefined
         this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false; break
       case 'notification':

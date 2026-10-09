@@ -107,7 +107,10 @@ export async function prepareTerminalAgentHooks(options: PrepareTerminalAgentHoo
         options.onEvent(event)
       } else {
         if (event.kind === 'cancelled' || event.kind === 'ended') {
-          for (const pending of requests.values()) pending.socket.destroy()
+          // A delayed turn cancellation cannot close a newer approval. An unbound session end owns the whole run.
+          for (const pending of requests.values()) {
+            if (event.kind === 'ended' && !event.turnId || pending.event.turnId === event.turnId) pending.socket.destroy()
+          }
         }
         options.onEvent(event)
         socket.end()
