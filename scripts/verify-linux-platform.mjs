@@ -1,10 +1,11 @@
-// Usage: node scripts/verify-linux-platform.mjs <isolated-config-folder>; needs a running Hyprland session on this machine.
+// Usage: node scripts/verify-linux-platform.mjs <isolated-config-folder> [inspector-port] [screenshot-folder]; needs Hyprland.
 /* global WebSocket, fetch */
 import assert from 'node:assert/strict'
 import { log } from 'node:console'
 import { execFileSync, spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -19,7 +20,9 @@ const env = Object.fromEntries(readFileSync(`/proc/${shellPid}/environ`, 'utf8')
   .map(entry => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)])
   .filter(([key]) => keep.has(key)))
 env.XDG_CONFIG_HOME = resolve(data)
-const port = 9340
+const port = Number(process.argv[3] ?? 9340)
+assert(Number.isInteger(port) && port > 1023 && port < 65536, 'Pass an unprivileged inspector port.')
+const screenshotFolder = process.argv[4] ? resolve(process.argv[4]) : null
 const child = spawn(resolve('node_modules/electron/dist/electron'), [`--inspect=${port}`, process.cwd()], { env, stdio: 'ignore' })
 const exited = new Promise(resolveExit => child.once('exit', resolveExit))
 let socket
@@ -104,16 +107,105 @@ try {
   assert(state.ready && state.available && state.keySaved && state.keyRoundTrip && state.keyAbsentFromSettings)
   const items = execFileSync('busctl', ['--user', 'get-property', 'org.kde.StatusNotifierWatcher', '/StatusNotifierWatcher',
     'org.kde.StatusNotifierWatcher', 'RegisteredStatusNotifierItems'], { env, encoding: 'utf8' }).trim()
-  const owned = [...items.matchAll(/"([^"]+)"/gu)].some(([, item]) => {
+  const ownedItem = [...items.matchAll(/"([^"]+)"/gu)].find(([, item]) => {
     const bus = item.split('/')[0]
     const pid = execFileSync('busctl', ['--user', 'call', 'org.freedesktop.DBus', '/org/freedesktop/DBus',
       'org.freedesktop.DBus', 'GetConnectionUnixProcessID', 's', bus], { env, encoding: 'utf8' }).trim()
     return pid === `u ${child.pid}`
   })
-  assert(owned, 'The tray item does not belong to the app process.')
+  assert(ownedItem, 'The tray item does not belong to the app process.')
   assert(child.exitCode === null && child.signalCode === null, 'The app quit before its tray was checked.')
   log(JSON.stringify({ ...state, onboarding: true, trayOwnedByProcess: true }))
   log(items)
+
+  const [bus, ...pathParts] = ownedItem[1].split('/')
+  const itemPath = `/${pathParts.join('/')}`
+  const trayProperty = name => JSON.parse(execFileSync('busctl', ['--user', '--json=short', 'get-property', bus,
+    itemPath, 'org.kde.StatusNotifierItem', name], { env, encoding: 'utf8' })).data
+  const pixmaps = await until(() => {
+    const current = trayProperty('IconPixmap')
+    return current.length > 0 ? current : null
+  })
+  const colourPixels = pixmaps.reduce((total, [, , pixels]) => total + pixels.reduce((count, _byte, i) =>
+    count + (i % 4 === 0 && pixels[i] > 0 && (pixels[i + 1] !== pixels[i + 2] || pixels[i + 2] !== pixels[i + 3]) ? 1 : 0), 0), 0)
+  assert(pixmaps.some(([width, height]) => width >= 44 && height === width), 'The tray must keep at least 44 pixels for a 2x bar.')
+  assert(colourPixels > 0, 'The tray image must have colour pixels.')
+  const chunks = resolve('out/main/chunks')
+  const icons = readdirSync(chunks).filter(name => /^icon-.*\.png$/u.test(name))
+  assert.equal(icons.length, 1, 'The build must emit the app icon once.')
+  const iconFile = join(chunks, icons[0])
+  const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex')
+  assert.equal(hash(iconFile), hash(resolve('build/icon.png')))
+  log(JSON.stringify({ trayBus: bus, trayPid: child.pid,
+    iconPixmapSizes: pixmaps.map(([width, height]) => [width, height]), colourPixels, iconFile,
+    sourceFile: resolve('build/icon.png'), sameSourceHash: true }))
+
+  if (screenshotFolder !== null) {
+    mkdirSync(screenshotFolder, { recursive: true })
+    await click('Continue')
+    await heading('Copy your words, then paste')
+    await click('Finish setup')
+    await until(() => page("!!document.querySelector('a[title=Settings]')"))
+    await page("document.querySelector('a[title=Settings]').click()")
+    await until(() => page("Array.from(document.querySelectorAll('[role=tab]')).some(b => b.textContent.trim() === 'Application')"))
+    await page("Array.from(document.querySelectorAll('[role=tab]')).find(b => b.textContent.trim() === 'Application').click()")
+    const startup = () => page(`(() => {
+      const row = document.querySelector('[role=switch][aria-label="Launch when you sign in"]');
+      if (!row) return null;
+      row.click();
+      return { disabled: row.disabled, label: row.getAttribute('aria-label'), explanation: row.querySelector('.tt-field__description')?.textContent,
+        errorNotice: document.body.textContent.includes('Launch at sign-in could not be updated.') };
+    })()`)
+    const startupState = await until(startup)
+    assert.equal(startupState.disabled, true)
+    assert.equal(startupState.explanation, 'Starting at sign-in comes with the installed package.')
+    assert.equal(startupState.errorNotice, false)
+    // Native decorations can add to the minimum on Wayland. Free this isolated
+    // window's constraint while checking the renderer at the exact documented sizes.
+    const minimumSize = await evaluate(`${mainWindow}.getMinimumSize()`)
+    await evaluate(`${mainWindow}.setMinimumSize(0, 0)`)
+    const screenshots = []
+    for (const appearance of ['dark', 'light']) {
+      await page(`window.sotto.updateSettings({ appearance: ${JSON.stringify(appearance)}, reducedMotion: 'on' })`)
+      await until(() => page(`document.documentElement.dataset.theme === ${JSON.stringify(appearance)} && document.documentElement.dataset.reducedMotion === 'on'`))
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
+        await evaluate(`${mainWindow}.setSize(${width}, ${height})`)
+        await until(() => page(`Math.abs(innerWidth - ${width}) <= 2 && Math.abs(innerHeight - ${height}) <= 2`))
+        await until(() => page(`(() => {
+          const row = document.querySelector('[role=switch][aria-label="Launch when you sign in"]');
+          row.scrollIntoView({ behavior: 'instant', block: 'center' });
+          const rect = row.getBoundingClientRect();
+          return rect.top >= 32 && rect.bottom <= innerHeight - 20;
+        })()`))
+        await page('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        const shot = join(screenshotFolder, `startup-${appearance}-${width}x${height}.png`)
+        await evaluate(`(async () => { const png = (await ${mainWindow}.webContents.capturePage()).toPNG();
+          process.mainModule.require('node:fs').writeFileSync(${JSON.stringify(shot)}, png); })()`)
+        const fits = await page('document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight')
+        assert(fits, 'The page must fit the window.')
+        screenshots.push(shot)
+      }
+    }
+    log(JSON.stringify({ startup: startupState, screenshots, reducedMotion: 'on', pageFitsAllSizes: true }))
+    await page("document.querySelector('a[title=Help]').click()")
+    await until(() => page("document.querySelector('.help-view h1')?.textContent === 'Help'"))
+    const helpState = await page(`({ about: document.querySelector('.help-about').textContent.trim(),
+      usesButton: document.body.textContent.includes('Use the dictation button to begin, then press Stop to finish.'),
+      waylandLimit: document.body.textContent.includes('Wayland does not deliver this shortcut yet. Use the dictation button.'),
+      copyOnly: document.body.textContent.includes('Sotto copies transcripts to the clipboard on Linux.') })`)
+    assert(helpState.about.includes('Linux') && helpState.usesButton && helpState.waylandLimit && helpState.copyOnly)
+    const helpShot = join(screenshotFolder, 'help-light-820x560.png')
+    await evaluate(`(async () => { const png = (await ${mainWindow}.webContents.capturePage()).toPNG();
+      process.mainModule.require('node:fs').writeFileSync(${JSON.stringify(helpShot)}, png); })()`)
+    log(JSON.stringify({ help: helpState, screenshot: helpShot }))
+    await page("document.querySelector('.help-about').scrollIntoView({ behavior: 'instant', block: 'center' })")
+    await page('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const aboutShot = join(screenshotFolder, 'help-about-light-820x560.png')
+    await evaluate(`(async () => { const png = (await ${mainWindow}.webContents.capturePage()).toPNG();
+      process.mainModule.require('node:fs').writeFileSync(${JSON.stringify(aboutShot)}, png); })()`)
+    log(JSON.stringify({ helpAboutScreenshot: aboutShot }))
+    await evaluate(`${mainWindow}.setMinimumSize(${minimumSize[0]}, ${minimumSize[1]})`)
+  }
 } finally {
   socket?.close()
   if (child.exitCode === null && child.signalCode === null) {

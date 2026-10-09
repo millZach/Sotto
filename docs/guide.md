@@ -618,11 +618,11 @@ npm run build
 npx electron .
 ```
 
-The tray uses a bundled PNG, and the window keeps the same controls as Windows for now. Frosted windows and the in-app updater are unavailable. Linux installers and release checks are separate work.
+The tray uses the colour app icon, sized for a 2x bar, and the window keeps the same controls as Windows for now. Frosted windows and the in-app updater are unavailable. **Launch when you sign in** is disabled: starting at sign-in comes with the installed package. Linux installers, sign-in startup and release checks are separate work (#841).
 
-Saving the OpenRouter key needs an unlocked keyring and a running secret service. On Linux, Sotto selects Chromium's `gnome-libsecret` password store before startup unless you supplied `--password-store` yourself. It keeps that choice, even when that store cannot encrypt; Sotto still refuses to save a key without encryption.
+Saving the OpenRouter key needs an unlocked keyring and a running secret service. On Linux, Sotto selects Chromium's `gnome-libsecret` password store before startup unless you supplied `--password-store` yourself or the desktop names KDE. On KDE, Chromium chooses the store so KWallet stays available. Sotto still refuses to save a key without encryption.
 
-Transcripts go to the clipboard. Sotto shows **Copied — paste manually** when automatic paste is on. Paste with Ctrl+V, or Shift+Insert in a terminal. Hyprland paste is not implemented yet. On Wayland, start and stop with the dictation button; the global shortcut does not work yet. Linux system speech is unavailable; hosted reply voices keep their existing paths.
+Transcripts go straight to the clipboard without hiding the widget or waiting for the paste delay. Sotto shows **Copied — paste manually** when automatic paste is on. Paste with Ctrl+V, or Shift+Insert in a terminal. Hyprland paste is not implemented yet. On Wayland, start and stop with the dictation button; the global shortcut does not work yet. Help names Linux and gives the same button and manual-paste instructions. Linux system speech is unavailable; hosted reply voices keep their existing paths.
 
 ### Tests
 
