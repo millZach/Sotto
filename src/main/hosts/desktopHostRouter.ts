@@ -4,7 +4,7 @@ import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey 
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
-import { LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type HostAnswerTarget } from '../../shared/hostProtocol'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -444,8 +444,7 @@ export class DesktopHostRouter {
       return this.shell()
     }
     const { connection, command } = this.route(input)
-    if (this.requiresManagementUpdate(connection.hostId)
-      && !['select-thread', 'select-project', 'compose', 'save-thread-draft', 'interrupt'].includes(command.type)) {
+    if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
     }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.

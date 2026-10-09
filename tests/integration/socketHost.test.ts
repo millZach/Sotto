@@ -633,7 +633,7 @@ describe('authenticated host socket', () => {
     expect(host.service.shell().draft).toBe(before.draft)
     expect(host.service.shell().threadDrafts).toEqual(expect.arrayContaining(before.threadDrafts ?? []))
   })
-  it.each(['cancel-draft'] as const)('targets the peer selection for %s and preserves another thread draft', async type => {
+  it('targets the peer selection for cancel-draft and preserves the host thread draft', async () => {
     const { client } = await pair()
     await client.command({ type: 'connect', provider: 'codex' })
     const threads = client.shell().host.threads
@@ -642,11 +642,10 @@ describe('authenticated host socket', () => {
     await client.command({ type: 'select-thread', threadId: threads[1]!.id })
     await client.command({ type: 'compose', text: 'Remote draft' })
     const before = host.service.shell()
-    if (type === 'cancel-draft') expect((await client.command({ type })).error).toBeNull()
-    else await expect(client.command({ type })).rejects.toMatchObject({ code: 'forbidden' })
+    expect((await client.command({ type: 'cancel-draft' })).error).toBeNull()
     expect(host.service.shell().activeThreadId).toBe(before.activeThreadId)
     expect(host.service.shell().draft).toBe(before.draft)
-    expect(host.service.shell().threadDrafts?.find(draft => draft.threadId === threads[1]!.id)?.text).toBe(type === 'cancel-draft' ? undefined : 'Remote draft')
+    expect(host.service.shell().threadDrafts?.find(draft => draft.threadId === threads[1]!.id)?.text).toBeUndefined()
   })
   it('refuses a second listener before it can open or overwrite the running host stores', async () => {
     await expect(startHeadlessHost({ dataDirectory: root, port: 0 })).rejects.toThrow(`Another host (process ${process.pid}) is using this data folder`)

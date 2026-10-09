@@ -24,6 +24,8 @@ export const LEGACY_VOICE_CONFIGURATION = {
   grokSpeechVoice: 'altair', wakeModelDirectory: '', wakeRuntimeDirectory: '',
 } as const
 export const MANAGEMENT_REMOVED = 'Voice control and thread management are no longer available. Your threads and drafts are kept. Use the thread composer to continue.'
+/** What a host still running legacy thread management keeps doing until it is updated: reading, drafting and stopping. */
+export const LEGACY_MANAGEMENT_ALLOWED_COMMANDS: ReadonlySet<string> = new Set(['select-thread', 'select-project', 'observe-threads', 'compose', 'save-thread-draft', 'interrupt'])
 export const LEGACY_MANAGEMENT_UPDATE = 'This host still has thread management running. Its history and drafts are kept. Update the host from the Threads page before continuing.'
 
 export function withoutVoiceConfiguration(value: object): Record<string, unknown> {
