@@ -1,30 +1,12 @@
 import type { IBuffer, IMarker, Terminal } from '@xterm/xterm'
 import { externalLinkSchema } from '../../../shared/externalLinks'
+import { terminalLineStart as firstRow, terminalLineText as lineText } from './terminalBuffer'
 
 // The pinned web-links addon's URL boundaries, shared with its mouse provider (xterm.js authors, MIT).
 export const TERMINAL_URL_PATTERN = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/u
 export const isTerminalLink = (uri: string): boolean => /^https?:/iu.test(uri) && externalLinkSchema.safeParse(uri).success
 
 interface NamedLink { uri: string; buffer: IBuffer; marker: IMarker; prefix: string; label: string }
-
-function firstRow(buffer: IBuffer, row: number): number {
-  while (row > 0 && buffer.getLine(row)?.isWrapped) row--
-  return row
-}
-
-/** Read a logical line across soft wraps, optionally ending at the current cursor. */
-function lineText(buffer: IBuffer, row: number, end?: { row: number; column: number }): string {
-  const first = firstRow(buffer, row)
-  let text = ''
-  for (let y = first; y < buffer.length; y++) {
-    const line = buffer.getLine(y)
-    if (!line || (y > first && !line.isWrapped)) break
-    if (end && y === end.row) return text + line.translateToString(false, 0, end.column)
-    const wraps = buffer.getLine(y + 1)?.isWrapped
-    text += line.translateToString(!wraps)
-  }
-  return text
-}
 
 /** The current cells under a named label, with Unicode widths and soft wraps accounted for. */
 function labelCells(link: NamedLink): { row: number; start: number; end: number }[] {

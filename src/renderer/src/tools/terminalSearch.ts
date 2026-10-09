@@ -1,5 +1,6 @@
 import type { IMarker, Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
+import { terminalLineStart, terminalLineText, terminalTextPosition } from './terminalBuffer'
 
 const HIGHLIGHT_LIMIT = 1_000
 
@@ -36,30 +37,35 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
-  let selected: { marker: IMarker; column: number; length: number; term: string; line: string } | undefined
+  let selected: { marker: IMarker; offset: number; length: number; term: string; line: string } | undefined
   const rememberSelection = (): void => {
     const range = terminal.getSelectionPosition()
     if (!range || terminal.getSelection().toLowerCase() !== input.value.toLowerCase()) return
     selected?.marker.dispose()
-    selected = { marker: terminal.registerMarker(range.start.y - terminal.buffer.active.baseY - terminal.buffer.active.cursorY), column: range.start.x,
+    const buffer = terminal.buffer.active, row = terminalLineStart(buffer, range.start.y)
+    selected = { marker: terminal.registerMarker(row - buffer.baseY - buffer.cursorY), offset: terminalLineText(buffer, row, { row: range.start.y, column: range.start.x }).length,
       length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value,
-      line: terminal.buffer.active.getLine(range.start.y)?.translateToString(true) ?? '' }
+      line: terminalLineText(buffer, row) }
   }
   const restoreSelection = (): void => {
-    if (!selected || selected.marker.isDisposed || selected.term !== input.value || terminal.getSelection().toLowerCase() === selected.term.toLowerCase()) return
+    if (!selected || selected.marker.isDisposed || selected.term !== input.value) return
     const buffer = terminal.buffer.active
-    if (buffer.getLine(selected.marker.line)?.translateToString(true) !== selected.line) {
+    const range = terminal.getSelectionPosition()
+    if (range && terminal.getSelection().toLowerCase() === selected.term.toLowerCase() && terminalLineText(buffer, range.start.y) === selected.line && terminalLineText(buffer, range.start.y, { row: range.start.y, column: range.start.x }).length === selected.offset) return
+    if (terminalLineText(buffer, selected.marker.line) !== selected.line) {
       // ConPTY can repaint the same screen at a new buffer row after a resize, without moving old markers.
       let nearest: number | undefined
       for (let row = 0; row < buffer.length; row++) {
-        if (buffer.getLine(row)?.translateToString(true) !== selected.line) continue
+        if (buffer.getLine(row)?.isWrapped || terminalLineText(buffer, row) !== selected.line) continue
         if (nearest === undefined || Math.abs(row - selected.marker.line) < Math.abs(nearest - selected.marker.line)) nearest = row
       }
       if (nearest === undefined) { selected.marker.dispose(); selected = undefined; return }
       selected.marker.dispose()
       selected.marker = terminal.registerMarker(nearest - buffer.baseY - buffer.cursorY)
     }
-    terminal.select(selected.column, selected.marker.line, selected.length)
+    const position = terminalTextPosition(buffer, terminalLineStart(buffer, selected.marker.line), selected.offset)
+    if (!position) return
+    terminal.select(position.column, position.row, selected.length)
     // A width change or repaint can replace the cells; never preserve an unrelated selection.
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
