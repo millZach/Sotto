@@ -98,6 +98,7 @@ describe('Linux XDG autostart', () => {
     expect(startup.get()).toEqual({ enabled: false, supported: true })
     expect(startup.set(true)).toEqual({ enabled: true, supported: true })
     expect(readFileSync(file, 'utf8')).toContain('Exec="/opt/sotto/sotto"\n')
+    expect(readFileSync(file, 'utf8')).toContain('TryExec=/opt/sotto/sotto\n')
     expect(startup.set(true)).toEqual({ enabled: true, supported: true })
     expect(startup.set(false)).toEqual({ enabled: false, supported: true })
     expect(startup.set(false)).toEqual({ enabled: false, supported: true })
@@ -110,6 +111,17 @@ describe('Linux XDG autostart', () => {
     const startup = new StartupService(linuxAutostart({ isPackaged: true, executable, home, configHome: 'relative-config' }))
     startup.set(true)
     expect(readFileSync(join(home, '.config/autostart/sotto.desktop'), 'utf8')).toContain('Exec="/some folder/Sotto%%\\\\$\\\\`\\\\"\\\\\\\\/sotto"\n')
+    expect(readFileSync(join(home, '.config/autostart/sotto.desktop'), 'utf8')).toContain('TryExec=/some folder/Sotto%$`"\\\\/sotto\n')
+  })
+
+  it('adds TryExec to an existing owned entry when startup is already on', () => {
+    const configHome = temporary()
+    const file = join(configHome, 'autostart/sotto.desktop')
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome }))
+    startup.set(true)
+    fs.writeFileSync(file, readFileSync(file, 'utf8').replace('TryExec=/opt/sotto/sotto\n', ''))
+    expect(startup.set(true)).toEqual({ enabled: true, supported: true })
+    expect(readFileSync(file, 'utf8')).toContain('TryExec=/opt/sotto/sotto\n')
   })
 
   it('leaves development builds disabled without touching a configuration folder', () => {

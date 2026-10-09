@@ -24,7 +24,9 @@ export function linuxAutostart(options: {
   const folder = join(config, 'autostart')
   const file = join(folder, 'sotto.desktop')
   const command = desktopExec(options.executable)
-  const contents = `[Desktop Entry]\nType=Application\nName=Sotto\nX-Sotto-Autostart=true\nExec=${command}\nIcon=sotto\nTerminal=false\nCategories=Utility;\n`
+  // TryExec is a Desktop Entry string, not an Exec command or field-code template.
+  const tryExec = options.executable.replaceAll('\\', '\\\\').replaceAll('\t', '\\t')
+  const contents = `[Desktop Entry]\nType=Application\nName=Sotto\nX-Sotto-Autostart=true\nExec=${command}\nTryExec=${tryExec}\nIcon=sotto\nTerminal=false\nCategories=Utility;\n`
   let supported = true
   const unavailable = (event: LinuxAutostartEvent) => {
     supported = false

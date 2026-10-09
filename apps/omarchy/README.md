@@ -78,3 +78,5 @@ The package installs the app into `/opt/sotto`, links `/usr/bin/sotto` to `/opt/
 Open Sotto from the application menu or run `sotto`. Under Settings → Application, **Launch when you sign in** writes or removes `$XDG_CONFIG_HOME/autostart/sotto.desktop` (normally `~/.config/autostart/sotto.desktop`). uwsm runs it at sign-in. Development builds keep that row disabled. **Start minimized** keeps the main window hidden at sign-in.
 
 Before the AUR publication, install a new package with `sudo pacman -U`. After publication, `omarchy update` brings updates. Sotto never updates itself on Linux. Release steps and the required installed-app checks are in [the release guide](../../docs/release/releasing.md#linux-desktop-package).
+
+Removing `sotto-bin` leaves your autostart entry in place. Its `TryExec` points to the same executable as `Exec`, so sign-in skips it once the package is removed. Turn **Launch when you sign in** off before removing the package to remove Sotto's entry too.
