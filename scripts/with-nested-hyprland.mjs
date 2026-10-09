@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:f
 import { join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
+import { nestedCommandEnvironment } from './nested-hyprland-environment.mjs'
 
 const [output, command, ...args] = process.argv.slice(2)
 assert.ok(output && command, 'Expected an evidence directory and command')
@@ -55,7 +56,7 @@ try {
   assert.notEqual(instance.wl_socket, live.WAYLAND_DISPLAY)
   identity = statSync(join(directory, instance.instance))
   console.log(`nested display: ${instance.wl_socket}; live display: ${live.WAYLAND_DISPLAY} (untouched)`)
-  const nested = { ...base, WAYLAND_DISPLAY: instance.wl_socket, HYPRLAND_INSTANCE_SIGNATURE: instance.instance, SOTTO_PACKAGE_NESTED_PID: String(hypr.pid), XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland' }
+  const nested = nestedCommandEnvironment(base, instance, hypr.pid)
   // Restore the real session bus after the scope wrapper: this check needs Secret Service and the tray.
   const child = owned.start(command, '/usr/bin/env', [`DBUS_SESSION_BUS_ADDRESS=${live.DBUS_SESSION_BUS_ADDRESS}`, command, ...args], { env: nested, stdio: 'inherit' })
   const code = await new Promise((resolveExit, reject) => { child.once('error', reject); child.once('exit', resolveExit) })

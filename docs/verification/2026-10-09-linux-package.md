@@ -37,7 +37,7 @@ Curated 820×560 captures, opened and inspected:
 
 ![Packaged startup setting, light](../../artifacts/linux-package/settings-light.png)
 
-All GUI runs used `scripts/with-nested-hyprland.mjs`. It identified the live signature from quickshell, created a distinct compositor, validated ownership and scoped window operations to it. It stopped its processes and removed only its own instance folder. Existing agents may stop their own nested displays concurrently; the wrapper checks that the live instance identity is preserved. No compositor key events reached the live locked session.
+All GUI runs used `scripts/with-nested-hyprland.mjs`. It identified the live signature from quickshell, created a distinct compositor, validated ownership and scoped window operations to it. Wrapped commands receive neither the live DISPLAY nor XAUTHORITY, and the scope runner preserves the supplied environment without merging those credentials back in. Two regression tests and a real scoped command confirmed this isolation. It stopped its processes and removed only its own instance folder. Existing agents may stop their own nested displays concurrently; the wrapper checks that the live instance identity is preserved. No compositor key events reached the live locked session.
 
 ## Pacman package and launcher
 
