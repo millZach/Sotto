@@ -29,13 +29,15 @@ describe('the line docked above Merge', () => {
     // Where the host cannot babysit, the menu has no such item, so the line does not send the reader there.
     expect(line(ended('comment-limit', at(17, 19)), 'open', false)).toEqual({ kind: 'ended', title: 'Not babysitting',
       detail: 'Ended at 5:19 pm, after ten wake-ups in a row brought only comments.' })
-    expect(line(ended('merged'), 'merged')).toEqual({ kind: 'ended', title: 'Babysitting ended', detail: 'Ended when #74 merged at 4:05 pm.' })
+    expect(line(ended('merged'), 'merged')).toEqual({ kind: 'ended', title: 'Babysitting ended', detail: 'Ended at 4:05 pm, after #74 merged.' })
   })
 
   it('says each ending in its own words, with the day when it was not today', () => {
     const words = (reason: Parameters<typeof ended>[0], endedAt = at(14, 40)) => endedWords({ number: 74, reason, endedAt }, NOW)
-    expect(words('merged')).toBe('Ended when #74 merged at 2:40 pm.')
-    expect(words('closed', at(9, 5, 6))).toBe('Ended when #74 was closed on Oct 6 at 9:05 am.')
+    // The time is when babysitting ended, never put on the merge or the close, which may have been well before it.
+    expect(words('merged')).toBe('Ended at 2:40 pm, after #74 merged.')
+    expect(words('closed', at(9, 5, 6))).toBe('Ended on Oct 6 at 9:05 am, after #74 was closed.')
+    expect(words('merged', 'not a time')).toBe('Ended after #74 merged.')
     expect(words('switched-off')).toBe('Ended at 2:40 pm, when Let agents babysit pull requests was turned off in Settings.')
   })
 

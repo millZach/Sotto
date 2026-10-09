@@ -553,7 +553,7 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     const endedAt = new Date().toISOString()
     mount({ babysit: { agent: 'Claude Code' }, thread: thread({ babysitEnded: [{ url: URL, number: 74, reason: 'merged', endedAt }] }), detail: detail({ state: 'merged', mergedAt: endedAt }) })
     await opened()
-    expect(screen.getByRole('group', { name: 'Babysitting ended' })).toHaveTextContent(/Ended when #74 merged at /u)
+    expect(screen.getByRole('group', { name: 'Babysitting ended' })).toHaveTextContent(/Ended at .+, after #74 merged\./u)
     fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
     expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
   })

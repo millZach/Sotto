@@ -66,16 +66,21 @@ function babysitAt(iso: string, now: Date): string {
   return at.toDateString() === now.toDateString() ? `at ${time(at)}` : `on ${day(at)} at ${time(at)}`
 }
 
-/** Why babysitting ended, as the surface says it. */
+/**
+ * Why babysitting ended, as the surface says it. The time is when babysitting ended, which is when a pass noticed: a
+ * merge or a close can be minutes before it, or hours when the computer slept, so the sentence never puts the time on
+ * the merge, which GitHub's own card above it dates.
+ */
 export function endedWords(ended: Pick<AgentBabysitEnded, 'number' | 'reason' | 'endedAt'>, now = new Date()): string {
   const at = babysitAt(ended.endedAt, now)
-  const when = at ? ` ${at}` : ''
+  // "Ended at 3:07 pm, after …", or "Ended after …" when the time cannot be read.
+  const lead = at ? `Ended ${at},` : 'Ended'
   const words: Record<BabysitEndedReason, string> = {
-    merged: `Ended when #${ended.number} merged${when}.`,
-    closed: `Ended when #${ended.number} was closed${when}.`,
-    'comment-limit': `Ended${when}, after ten wake-ups in a row brought only comments.`,
-    unreadable: `Ended${when}. Sotto could not read #${ended.number} from GitHub for about 16 minutes.`,
-    'switched-off': `Ended${when}, when Let agents babysit pull requests was turned off in Settings.`,
+    merged: `${lead} after #${ended.number} merged.`,
+    closed: `${lead} after #${ended.number} was closed.`,
+    'comment-limit': `${lead} after ten wake-ups in a row brought only comments.`,
+    unreadable: `${at ? `Ended ${at}` : 'Ended'}. Sotto could not read #${ended.number} from GitHub for about 16 minutes.`,
+    'switched-off': `${lead} when Let agents babysit pull requests was turned off in Settings.`,
   }
   return words[ended.reason]
 }

@@ -301,7 +301,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await event(page, { type: 'ready', threadId: 'workshop', text: '#74 is merged. Nothing left to do on this thread.' })
     await panel.getByRole('button', { name: 'Refresh pull request', exact: true }).click()
     const ended = panel.getByRole('group', { name: 'Babysitting ended' })
-    await expect(ended).toContainText(/Ended when #74 merged at \d/u, { timeout: 30_000 })
+    await expect(ended).toContainText(/Ended at \d.+, after #74 merged\./u, { timeout: 30_000 })
     await expect(status).toHaveText(/(Done|Just finished)$/u)
     await expectReadable({ 'ended words': ended.locator('.pr-surface__babysit-text span') })
     // The passing word from starting again has gone by the time anyone reads why it ended.
