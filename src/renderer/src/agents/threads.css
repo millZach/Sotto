@@ -141,9 +141,13 @@
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
 .thread-prompt:focus-within { border-color: var(--threads-field-focus); }
-.thread-prompt textarea { display: block; width: 100%; field-sizing: content; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-.thread-prompt textarea::placeholder { color: var(--tt-text-muted); }
-.thread-prompt textarea:disabled { cursor: not-allowed; }
+.thread-prompt .prompt-editor { display: block; width: 100%; min-height: 74px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.prompt-editor { white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt-editor p { margin: 0; }
+.prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--tt-text-muted); float: left; height: 0; pointer-events: none; }
+.prompt-editor[aria-disabled="true"] { cursor: not-allowed; }
+.followup-editor .prompt-editor { display: block; width: 100%; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); overflow-y: auto; padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; }
+.followup-editor .prompt-editor:focus { border-color: var(--tt-field-border-focus, var(--tt-focus-ring)); }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
 .thread-prompt__notice .tt-button { min-height: 30px; font-size: 13px; }
 /* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
@@ -256,7 +260,7 @@
   /* The header is already one row at its smallest; the transcript and composer share what is left. */
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
-  .thread-prompt textarea { min-height: 50px; max-height: 150px; }
+  .thread-prompt .prompt-editor { min-height: 50px; max-height: 150px; }
   .thread-workspace__compose .agent-composer { padding: 10px 14px 6px; }
   .thread-workspace__compose .agent-composer textarea { min-height: 50px; max-height: 150px; }
   /* Beside Clear and Send it the managed options wrap; their rows sit closer so the card fits the minimum window. */

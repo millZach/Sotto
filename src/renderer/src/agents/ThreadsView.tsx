@@ -32,7 +32,7 @@ const TOO_LONG_TO_MOVE = "This draft is too long to add after what the new threa
 
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
-  window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus(), 0)
+  window.setTimeout(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)')?.focus(), 0)
 }
 
 /** What a shared tools surface beside the panes receives. It follows the focused thread unless it pins its own. */

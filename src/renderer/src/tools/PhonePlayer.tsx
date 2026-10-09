@@ -20,7 +20,7 @@ function host(page: BrowserPage): string {
   try { return new URL(page.url).host || page.url } catch { return page.url }
 }
 
-const focusComposer = (): void => { requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus()) }
+const focusComposer = (): void => { requestAnimationFrame(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)')?.focus()) }
 
 export interface PhonePlayerProps {
   readonly state: AgentState

@@ -1,3 +1,4 @@
+import { setPromptText } from './helpers/promptEditor'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -56,7 +57,7 @@ describe('a busy thread beside an idle one in the same window', () => {
     expect(idle.getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
     const prompt = idle.getByRole('textbox', { name: 'Prompt' })
     expect(prompt).toBeEnabled()
-    fireEvent.change(prompt, { target: { value: 'Keep working here' } })
+    setPromptText(prompt, 'Keep working here')
     expect(idle.getByRole('button', { name: 'Send prompt' })).toBeEnabled()
   })
 

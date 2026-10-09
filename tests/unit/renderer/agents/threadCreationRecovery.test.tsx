@@ -1,3 +1,4 @@
+import { setPromptText, promptText } from '../helpers/promptEditor'
 import { NOW, stateFixture, connectionStores, connection, renderThreads } from '../../../fixtures/renderer/threadsViewHarness'
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -38,7 +39,7 @@ describe('a thread created without a round trip', () => {
     const request = await waitFor(() => { const found = createRequest(command); expect(found).toBeDefined(); return found! })
     expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', managed: false, threadId: expect.any(String) })
     const threadId = request.threadId!
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Start on the failing test.' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Start on the failing test.')
     const arrived: AgentState['host']['threads'][number] = { id: threadId, projectId: 'workshop', title: 'New thread', modelId: 'claude:sonnet',
       status: 'idle', messages: [], requests: [], nativeSessionStarted: false, worktree: { mode: 'independent', status: 'ready', path: 'C:/workshop-1' } }
     const published: AgentState = { ...state, activeThreadId: threadId, host: { ...state.host, threads: [...state.host.threads, arrived] } }
@@ -53,7 +54,7 @@ describe('a thread created without a round trip', () => {
     expect(observed.at(-1)).toEqual([threadId])
     expect(within(screen.getByRole('region', { name: 'Projects' })).getAllByRole('button', { name: 'New thread' })).toHaveLength(1)
     expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Start on the failing test.')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Start on the failing test.')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -119,10 +120,10 @@ describe('a thread created without a round trip', () => {
     if (mode === 'sent with overflow') {
       expect(screen.getAllByRole('status').some(status => status.textContent === 'Not sent')).toBe(true)
       fireEvent.click(screen.getByRole('button', { name: 'Restore prompt' }))
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('And this next thought.')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('And this next thought.')
       expect(store.draft(nextId).attachments.map(attachment => attachment.name)).toEqual(['newer.png'])
       fireEvent.click(screen.getByRole('button', { name: 'Restore prompt' }))
-      expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep this prompt.')
+      expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Keep this prompt.')
       expect(store.draft(nextId).attachments).toEqual(images)
     }
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
@@ -166,7 +167,7 @@ describe('a thread created without a round trip', () => {
     renderThreads(state, command)
     createThread()
     await screen.findByRole('heading', { name: 'New thread' })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Keep the pending screenshot.' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Keep the pending screenshot.')
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File([bytes], 'late.png', { type: 'image/png' })] } })
     await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce())
@@ -181,7 +182,7 @@ describe('a thread created without a round trip', () => {
     await act(async () => { finishStaging(handleOf(bytes, 'late', 'late.png')) })
     if (!reopenFirst) { createThread(); await screen.findByRole('heading', { name: 'New thread' }) }
     await waitFor(() => expect(screen.getByRole('img', { name: 'late.png' })).toBeVisible())
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Keep the pending screenshot.')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Keep the pending screenshot.')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
   })
@@ -201,13 +202,13 @@ describe('a thread created without a round trip', () => {
     createThread()
     await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Do not lose this.' } })
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Do not lose this.')
     await act(async () => { settle({ ...state, error: 'Send or clear your draft before creating another thread.' }) })
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft before creating another thread.'))
     expect(screen.queryByRole('heading', { name: 'New thread' })).not.toBeInTheDocument()
     // The refused draft's own pane is gone, but its text opens with the project's next new thread.
     createThread()
     await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
-    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Do not lose this.')
+    expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('Do not lose this.')
   })
 })

@@ -1,0 +1,33 @@
+/* A chosen skill inside the composer's text: one piece of the sentence, led by a wand, in the accent the room
+   already uses for selection. It sits on the text's baseline and is shorter than the line, so a line holding one
+   is no taller than a line without, and it wraps as a single word. Sized in em so it follows the text it sits in
+   (15px in the composer, 16px in the queued message editor). */
+.composer-skill { display: inline-flex; align-items: baseline; gap: .28em; max-width: 100%; margin: 0 .05em; padding: 0 .42em 0 .34em; border-radius: .42em; background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 500; line-height: 1.34; vertical-align: baseline; white-space: nowrap; cursor: default; }
+.composer-skill__icon { flex: none; align-self: center; width: .95em; height: .95em; }
+.composer-skill__name { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
+.composer-skill:hover { background: color-mix(in srgb, var(--tt-accent) 20%, transparent); }
+/* Selected by the editor as a whole: a firmer fill and the focus ring, drawn outside the box so nothing moves. */
+.ProseMirror-selectednode .composer-skill { background: color-mix(in srgb, var(--tt-accent) 24%, transparent); box-shadow: 0 0 0 1.5px var(--tt-focus-ring); }
+.ProseMirror-selectednode:has(.composer-skill) { outline: 0; }
+
+/* What the skill does, above the pill it belongs to. Solid overlay rather than glass: it is read, not looked
+   through, and its quiet line keeps 4.5:1 even over the queued message editor's backdrop at the lowest glass. */
+.skill-card { position: fixed; inset: auto; top: 0; left: 0; z-index: 60; box-sizing: border-box; width: max-content; max-width: min(320px, calc(100vw - 16px)); margin: 0; padding: 9px 12px 10px; overflow: visible; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: 0 14px 36px -12px var(--tt-shadow-color); color: var(--tt-text-2); font-family: var(--tt-font-ui); font-size: 13px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; user-select: none; }
+.skill-card p { margin: 0; }
+.skill-card__name { color: var(--tt-text); font-weight: 500; }
+.skill-card__description { margin-top: 2px; }
+.skill-card__meta { margin-top: 6px; color: var(--tt-text-muted); font-size: 12px; }
+.skill-card__meta code { color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11.5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .skill-card { animation: skill-card-in 120ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) .skill-card[data-side='below'] { animation-name: skill-card-in-below; }
+}
+@keyframes skill-card-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes skill-card-in-below { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+/* High contrast drops fills, so the pill keeps an edge in the text colour. */
+@media (forced-colors: active) {
+  .composer-skill { outline: 1px solid; outline-offset: -1px; }
+  .ProseMirror-selectednode .composer-skill { outline-width: 2px; }
+}

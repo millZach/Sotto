@@ -165,7 +165,7 @@ export function HostUpdateControl({ bridge = window.sotto?.hosts, doneMs = HOST_
   /** Focus leaves a note that is about to go: to the focused thread's composer, as after any page-level dismissal. */
   const leave = useCallback((): void => {
     if (!container.current?.contains(document.activeElement)) return
-    const composer = document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt textarea') ?? document.querySelector<HTMLElement>('.thread-prompt textarea')
+    const composer = document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)') ?? document.querySelector<HTMLElement>('.thread-prompt :is(.prompt-editor, textarea)')
     composer?.focus()
   }, [])
   /** One press. `focus` names the control to focus once it has landed, the host's name by default; null leaves focus alone. */

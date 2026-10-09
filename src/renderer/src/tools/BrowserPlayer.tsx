@@ -109,7 +109,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
     if (event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault()
     playerStore.shrink(threadId)
-    document.querySelector<HTMLTextAreaElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus()
+    document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)')?.focus()
   }
 
   if (visibility === 'shrunk') {
@@ -179,7 +179,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   }
   const hideToComposer = (): void => {
     playerStore.hide(threadId)
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.thread-pane[data-focused] .thread-prompt textarea')?.focus())
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.thread-pane[data-focused] .thread-prompt :is(.prompt-editor, textarea)')?.focus())
   }
   const answer = (allow: boolean, forThread = false): void => {
     setProblem(null); setAnswering(true)

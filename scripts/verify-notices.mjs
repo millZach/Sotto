@@ -9,6 +9,21 @@ const root = resolve(import.meta.dirname, '..')
 const packageComponent = (name, version, license, attribution, packagePath = `node_modules/${name}`) =>
   Object.freeze({ name, version, license, attribution, packagePath })
 
+// The thread composer bundles these development dependencies into the renderer.
+export const COMPOSER_NOTICE_COMPONENTS = Object.freeze([
+  ...['core', 'react', 'pm', 'extensions', 'extension-document', 'extension-paragraph', 'extension-text', 'extension-hard-break', 'extension-history']
+    .map(name => packageComponent(`@tiptap/${name}`, '3.31.4', 'MIT', 'Tiptap GmbH')),
+  ...[
+    ['prosemirror-changeset', '2.4.4'], ['prosemirror-transform', '1.12.2'], ['prosemirror-model', '1.25.12'],
+    ['prosemirror-commands', '1.7.2'], ['prosemirror-state', '1.4.4'], ['prosemirror-view', '1.42.6'],
+    ['prosemirror-dropcursor', '1.8.4'], ['prosemirror-gapcursor', '1.4.1'], ['prosemirror-keymap', '1.2.3'],
+    ['prosemirror-history', '1.5.1'], ['prosemirror-inputrules', '1.5.1'], ['prosemirror-schema-list', '1.5.1'],
+    ['prosemirror-tables', '1.8.5'], ['orderedmap', '2.1.1'], ['w3c-keyname', '2.2.8'], ['rope-sequence', '1.3.4'],
+  ].map(([name, version]) => packageComponent(name, version, 'MIT', 'Marijn Haverbeke and contributors')),
+  packageComponent('fast-equals', '5.4.4', 'MIT', 'Tony Quetano'),
+  packageComponent('use-sync-external-store', '1.7.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
+])
+
 export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('Electron', '43.1.0', 'MIT', 'Electron contributors', 'node_modules/electron'),
   Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.1.0 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
@@ -16,6 +31,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('react-dom', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
+  ...COMPOSER_NOTICE_COMPONENTS,
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),

@@ -1,4 +1,16 @@
 node_modules/
+artifacts/skill-pill-composer/*
+!artifacts/skill-pill-composer/proof.json
+!artifacts/skill-pill-composer/dark-1600x1000.png
+!artifacts/skill-pill-composer/dark-1280x800.png
+!artifacts/skill-pill-composer/dark-820x560.png
+!artifacts/skill-pill-composer/light-1600x1000.png
+!artifacts/skill-pill-composer/light-1280x800.png
+!artifacts/skill-pill-composer/light-820x560.png
+!artifacts/skill-pill-composer/reduced-motion.png
+!artifacts/skill-pill-composer/queued-editor.png
+!artifacts/skill-pill-composer/compact-grid.png
+!artifacts/skill-pill-composer/compact-question.png
 artifacts/linux-no-window-controls/*
 !artifacts/linux-no-window-controls/checks.json
 !artifacts/linux-no-window-controls/threads-1600x1000-dark.png

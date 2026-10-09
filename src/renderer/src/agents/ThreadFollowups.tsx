@@ -11,6 +11,8 @@ import { hasDraftContent, queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBM
 import type { ThreadRow } from './threadFacts'
 import { isWakeUpFollowup } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
+import type { AgentSkillCatalog } from '../../../shared/agentSkills'
+import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
 
 type Command = AgentConnection['command']
 
@@ -59,10 +61,12 @@ function confirmation(result: AgentState | null, shows: (state: AgentState) => b
  * One queued message in a focused editor. It opens over the workspace, so its actions are never
  * clipped by the queue, and it closes back to the Edit button that opened it.
  */
-function FollowupEditor({ item, current, saving, error, onSave, onClose }: {
+function FollowupEditor({ item, current, catalog, providerId, saving, error, onSave, onClose }: {
   readonly item: AgentFollowup
   /** The same item as the queue shows it now; gone or on its way means the edit can no longer be saved. */
   readonly current: AgentFollowup | undefined
+  readonly catalog: AgentSkillCatalog | undefined
+  readonly providerId: string | undefined
   readonly saving: boolean
   readonly error: string | null
   readonly onSave: (text: string) => void
@@ -70,7 +74,7 @@ function FollowupEditor({ item, current, saving, error, onSave, onClose }: {
 }): ReactNode {
   const [text, setText] = useState(item.text)
   const dialog = useRef<HTMLDialogElement>(null)
-  const field = useRef<HTMLTextAreaElement>(null)
+  const field = useRef<PromptEditorElement>(null)
   const titleId = useId()
   const hintId = useId()
   useEffect(() => {
@@ -79,7 +83,7 @@ function FollowupEditor({ item, current, saving, error, onSave, onClose }: {
     else element?.setAttribute('open', '')
     const input = field.current
     input?.focus()
-    input?.setSelectionRange(input.value.length, input.value.length)
+    if (input) setPromptSelection(input, item.text.length)
     return () => { element?.close?.() }
   }, [])
   const locked = current === undefined ? 'This message has left the queue.' : followupEditable(current) ? null : 'Sotto has started sending this message, so it can’t be changed.'
@@ -94,8 +98,8 @@ function FollowupEditor({ item, current, saving, error, onSave, onClose }: {
       if (!saving) onClose()
     }}>
     <h2 id={titleId}>Edit queued message</h2>
-    <textarea ref={field} aria-label="Edit queued message" aria-describedby={hintId} value={text} rows={4} spellCheck disabled={saving}
-      onChange={event => setText(event.target.value)}
+    <PromptEditor fieldRef={field} label="Edit queued message" aria-describedby={hintId} text={text} skills={item.skills ?? []}
+      sigils={skillSigils(providerId)} catalog={catalog} editable={!saving} onChange={value => setText(value)}
       onKeyDown={event => {
         if (composerEnterIntent(readComposerKey(event, false)) !== 'send') return
         event.preventDefault()
@@ -160,6 +164,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const short = useShortWindow()
   const [opened, setOpened] = useState<boolean | null>(null)
   const [editing, setEditing] = useState<AgentFollowup | null>(null)
+  const catalog = state.skillCatalogs?.find(item => item.threadId === threadId)
+  const skillsSupported = capabilitiesForThread(state.host, row.thread).skills === true
+  useEffect(() => {
+    if (editing?.skills?.length && catalog === undefined && skillsSupported) void command({ type: 'refresh-thread-skills', threadId })
+  }, [editing, catalog, command, skillsSupported, threadId])
   const [busy, setBusy] = useState<Busy>(null)
   const [queueError, setQueueError] = useState<string | null>(null)
   const listId = useId()
@@ -217,7 +226,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     // late move from there could land on a neighbour's Remove mid-word.
     const active = document.activeElement
     if (active !== null && active !== document.body && section.current?.contains(active) !== true) return
-    const element = pending.target() ?? host.current?.querySelector<HTMLElement>('textarea:not(:disabled)')
+    const element = pending.target() ?? host.current?.querySelector<HTMLElement>('.prompt-editor[contenteditable="true"], textarea:not(:disabled)')
     element?.focus()
   })
   // A dispatched follow-up already in the history is told by the transcript.
@@ -361,7 +370,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
         onRetry={() => onRetryAdmission(submission.draftId)} onRestore={() => store.restore(threadId, submission.draftId)}
         onDismiss={() => { store.dismiss(threadId, submission.draftId); refocus.current = { target: toggle, shown: shownNow } }} />)}
     </ol> : null}
-    {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)}
+    {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)} providerId={row.providerId} catalog={catalog}
       saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={() => closeEditor()}
       onSave={text => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: retainSkillReferences(text, editing.skills ?? [], skillSigils(row.providerId)), ...(editing.files?.length ? { files: retainFileReferences(text, editing.files) } : {}) },
         next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), 'Sotto could not confirm this edit. Check the queue before editing again.', closeEditor)} />
