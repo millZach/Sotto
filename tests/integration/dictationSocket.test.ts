@@ -2,6 +2,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createConnection, createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
@@ -11,7 +12,7 @@ import { validateDictationRuntime } from '../../src/main/hotkeys/dictationRuntim
 describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
   let runtime: string
   const services: DictationSocket[] = []
-  beforeEach(() => { mkdirSync('.cache', { recursive: true }); runtime = mkdtempSync(join(process.cwd(), '.cache/c-')) })
+  beforeEach(() => { runtime = mkdtempSync(join(tmpdir(), 'sotto-')) })
   afterEach(() => { vi.restoreAllMocks(); services.splice(0).forEach(service => service.dispose()); rmSync(runtime, { recursive: true, force: true }) })
   function service(dispatch = vi.fn(async () => true)): DictationSocket {
     const instance = new DictationSocket(runtime, dispatch)
