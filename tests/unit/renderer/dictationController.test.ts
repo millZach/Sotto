@@ -149,7 +149,7 @@ describe('DictationController', () => {
   it('keeps text and publishes clipboard unavailability without history or transcript on the widget', async () => {
     const harness = createHarness({
       platform: 'linux', currentSettings: settings({ historyEnabled: false }),
-      deliverOutput: async () => 'clipboard-unavailable',
+      deliverOutput: async () => 'clipboard-unavailable' as const,
     })
     await harness.controller.start()
     await harness.controller.stop()
