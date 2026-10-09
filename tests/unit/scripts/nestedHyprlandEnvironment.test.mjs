@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nestedCommandEnvironment } from '../../../scripts/nested-hyprland-environment.mjs'
 import { createOwnedProofProcesses } from '../../../scripts/owned-proof-processes.mjs'
 
@@ -9,6 +9,12 @@ vi.mock('node:child_process', async importOriginal => ({
   ...await importOriginal(),
   spawn: vi.fn(() => new EventEmitter()),
 }))
+// The proof runner reads the user's runtime folder and session bus; pin both so the
+// test does not depend on the machine (Windows CI has no getuid or XDG_RUNTIME_DIR).
+beforeEach(() => {
+  vi.stubEnv('XDG_RUNTIME_DIR', '/run/user/1000')
+  vi.stubEnv('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus')
+})
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs() })
 
 describe('nested Hyprland command isolation', () => {
