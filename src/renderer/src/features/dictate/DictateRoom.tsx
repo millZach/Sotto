@@ -261,7 +261,9 @@ export function DictateRoom({
           {kept ? (keyProblem ? <Button variant="secondary" onClick={onOpenSettings}>Open Settings</Button> : null) : configured && !microphoneSkipped ? (
             <span className="dictate__hint">
               {platform === 'linux'
-                ? listening ? 'Press Stop, then paste your copied text.' : 'Paste with Ctrl+V, or Shift+Insert in a terminal.'
+                ? listening
+                  ? 'Release F9, or press Super+Ctrl+X to stop. Paste your copied text.'
+                  : 'With Sotto’s compositor bindings: hold F9 to talk, or press Super+Ctrl+X. Paste with Ctrl+V, or Shift+Insert in a terminal.'
                 : <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>}
             </span>
           ) : (

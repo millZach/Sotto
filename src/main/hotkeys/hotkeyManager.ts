@@ -1,5 +1,6 @@
 import type { HotkeyChangeResult } from '../../shared/contracts'
 import type { WidgetSnapshot } from '../../shared/dictation'
+import type { SottoPlatform } from '../../shared/platform'
 
 const ESCAPE_ACCELERATOR = 'Escape'
 
@@ -18,6 +19,7 @@ export class HotkeyManager {
     private readonly shortcuts: GlobalShortcutAdapter,
     private readonly onToggle: () => void,
     private readonly onCancel: () => void,
+    private readonly platform: SottoPlatform = 'win32',
   ) {}
 
   replace(candidate: string): HotkeyChangeResult {
@@ -28,6 +30,11 @@ export class HotkeyManager {
     const next = candidate.trim()
     if (next.length === 0 || next.toLowerCase() === ESCAPE_ACCELERATOR.toLowerCase()) {
       return { ok: false, reason: 'invalid' }
+    }
+    // The saved setting is kept for reset/rollback; Linux listens through compositor bindings.
+    if (this.platform === 'linux') {
+      this.accelerator = next
+      return { ok: true }
     }
     if (next === this.accelerator) {
       return this.isRegistered(next)
@@ -67,6 +74,7 @@ export class HotkeyManager {
   }
 
   beginListening(): boolean {
+    if (this.platform === 'linux') return false
     if (this.disposed || this.listening) {
       return this.listening
     }
@@ -104,7 +112,7 @@ export class HotkeyManager {
 
     const active = this.accelerator
     this.accelerator = null
-    if (active !== null) {
+    if (active !== null && this.platform !== 'linux') {
       this.safeUnregister(active)
     }
   }

@@ -476,12 +476,15 @@ export function SettingsView({
                     </div>
                   </Field>
                   <div className="settings-input-action">
-                    <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
+                    {platform === 'linux' ? <div className="tt-field">
+                      <p className="tt-field__label">Compositor bindings</p>
+                      <p className="tt-field__description">{copy.settingsGlobalShortcutDescription}</p>
+                    </div> : <Field label="Global shortcut" description={copy.settingsGlobalShortcutDescription}>
                       <input className="tt-input" value={hotkeyDraft.value} onBlur={() => void saveHotkey()} onChange={(event) => {
                         const value = event.currentTarget.value
                         hotkeyDraft.edit(value)
                       }} />
-                    </Field>
+                    </Field>}
 
                   </div>
                   <Field label="Recording limit"><SegmentedControl label="Maximum recording time" value={String(settings.maxRecordingSeconds)} onChange={value => void save({ maxRecordingSeconds: Number(value) as AppSettings['maxRecordingSeconds'] })} options={[{ value: '30', label: '30 s' }, { value: '60', label: '1 min' }, { value: '120', label: '2 min' }, { value: '300', label: '5 min' }]} /></Field>

@@ -125,6 +125,14 @@ describe('WidgetApp', () => {
     expect(screen.getByText('Microphone blocked')).toHaveAttribute('title', macCopy.widgetMicrophoneBlockedDetail)
   })
 
+  it('names the Linux compositor binding instead of the saved global shortcut', () => {
+    const { container } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle', shortcut: 'Ctrl+Shift+Space' })} platform="linux" now={0} />,
+    )
+    expect(screen.getByText('F9 to talk')).toBeInTheDocument()
+    expect(container).not.toHaveTextContent('Ctrl+Shift+Space')
+  })
+
   it('renders idle, permission, listening, success, and cancelled without private content', () => {
     const privateFields = { text: 'private transcript', audio: [0.25], message: 'raw failure' }
     const { rerender, container } = render(
@@ -877,6 +885,17 @@ describe('WidgetApp', () => {
 })
 
 describe('WidgetEntry', () => {
+  it.each([
+    ['linux', 'Release F9 or press Super+Ctrl+X to finish'],
+    ['win32', 'Ctrl+Shift+Space to finish'],
+    ['darwin', '⌃+⇧+Space to finish'],
+  ] as const)('announces the %s finish binding', (platform, hint) => {
+    render(<WidgetEntry bridge={undefined} platform={platform} preview={snapshot({
+      status: 'listening', sessionId: 'hold', startedAt: 0, level: 0.5,
+    })} />)
+    expect(screen.getByRole('status')).toHaveTextContent(hint)
+    if (platform === 'linux') expect(screen.getByRole('status')).not.toHaveTextContent('Ctrl+Shift+Space')
+  })
   function liveBridge() {
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {

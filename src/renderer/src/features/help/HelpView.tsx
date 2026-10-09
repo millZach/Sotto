@@ -37,7 +37,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
 
   const gettingStarted: Topic[] = [
     { title: 'Start and stop', body: linux
-      ? <p>Use the dictation button to begin, then press Stop to finish. To stop without transcribing, press Cancel on the floating widget.</p>
+      ? <p>Hold F9 to talk, or press Super+Ctrl+X to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget.</p>
       : <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }

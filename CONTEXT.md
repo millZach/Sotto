@@ -389,7 +389,9 @@ Answering a question or permission request and creating a project are also part 
 
 **Segment.** One slice of a dictation, cut at a pause while streaming transcription is on, transcribed as its own request so the final text is ready almost as soon as the user stops. Avoid: "chunk".
 
-Pressing Stop or the dictation shortcut again while the microphone is connecting cancels the session as soon as the microphone is ready. No audio is kept or transcribed.
+**Compositor binding.** A key the desktop’s compositor, rather than Sotto, listens for and that runs Sotto’s dictation command. On Linux, Hyprland runs `sotto dictation start|stop|toggle|cancel`. Omarchy’s defaults are F9 to hold and talk (start on key-down, stop on key-up) and Super+Ctrl+X to toggle. They replace Voxtype’s bindings when the user installs Sotto’s snippet. Windows and macOS keep the global toggle shortcut. On Linux, Escape cancels inside Sotto’s window; a compositor binding may also run `cancel` from another app.
+
+Pressing Stop, releasing F9 or pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as the microphone is ready. No audio is kept or transcribed.
 
 ## Memory
 

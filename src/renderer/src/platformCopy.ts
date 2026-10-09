@@ -79,7 +79,7 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
     settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
     settingsMicrophoneDefaultOption: 'System default',
-    settingsGlobalShortcutDescription: 'Wayland does not deliver this shortcut yet. Use the dictation button.',
+    settingsGlobalShortcutDescription: 'Compositor bindings live in Hyprland. Omarchy defaults: hold F9 to talk, or press Super+Ctrl+X to start and stop. Install Sotto’s bindings first.',
     settingsAutoPasteDescription: 'Transcripts are copied on Linux. Paste them manually.',
     settingsLaunchAtStartupLabel: 'Launch when you sign in',
     settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',

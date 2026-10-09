@@ -213,7 +213,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
   switch (snapshot.status) {
     case 'idle':
       return {
-        tone: 'idle', title: 'Ready', detail: formatAccelerator(snapshot.shortcut, platform, 'display'),
+        tone: 'idle', title: 'Ready', detail: platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display'),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
@@ -223,7 +223,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       }
     case 'listening':
       return {
-        tone: 'listening', title: 'Listening', detail: `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
+        tone: 'listening', title: 'Listening', detail: platform === 'linux' ? 'Release F9 or press Super+Ctrl+X to finish' : `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'processing':
@@ -503,7 +503,7 @@ export function WidgetApp({
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
             {agentState === null && <span className="widget-sliver__prompt-keys">
-              {formatAccelerator(snapshot.shortcut, platform, 'display')}
+              {platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display')}
             </span>}
             {agentActions}
           </span>
