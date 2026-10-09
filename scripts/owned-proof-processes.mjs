@@ -1,51 +1,125 @@
-// Keep proof subprocesses in dedicated process groups, including reparented wl-copy owners.
+// Each run owns a systemd slice. Per-command scopes contain descendants across setsid/reparenting.
 import assert from 'node:assert/strict'
 import process from 'node:process'
-import { spawn } from 'node:child_process'
-import { readdirSync, readFileSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 
+const run = promisify(execFile)
+export const proofSystemdEnvironment = () => {
+  const runtime = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid()}`
+  return { ...process.env, XDG_RUNTIME_DIR: runtime, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS ?? `unix:path=${runtime}/bus` }
+}
+const identity = pid => {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+    return { pid: Number(pid), state: fields[0], start: fields[19] }
+  } catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') return undefined; throw error }
+}
+export const isProofProcessAlive = pid => {
+  const current = identity(pid)
+  return Boolean(current && current.state !== 'Z' && current.state !== 'X')
+}
+
 export function createOwnedProofProcesses(report) {
-  const groups = []
+  const token = randomUUID().replaceAll('-', '')
+  const slice = `app-sottoproof${token}.slice`
+  const commands = []
+  const recorded = new Map()
+  const cgroups = new Set()
+  const systemdEnv = proofSystemdEnvironment()
+  let stopping
+  const remember = pid => {
+    const current = identity(pid)
+    if (current) recorded.set(`${pid}:${current.start}`, current)
+  }
   const members = () => {
-    const owned = []
+    const found = []
     for (const name of readdirSync('/proc')) {
       if (!/^\d+$/u.test(name)) continue
-      try {
-        const stat = readFileSync(`/proc/${name}/stat`, 'utf8')
-        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
-        // Zombies have exited; the parent or init owns their reaping.
-        if (fields[0] !== 'Z' && groups.some(group => group.pid === Number(fields[2]))) owned.push(Number(name))
-      } catch { /* The process exited while /proc was being read. */ }
+      let path
+      try { path = readFileSync(`/proc/${name}/cgroup`, 'utf8').trim().split('::')[1] }
+      catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') continue; throw error }
+      if (!path?.includes(`/${slice}/`)) continue
+      const root = path.slice(0, path.indexOf(`/${slice}/`) + slice.length + 1)
+      cgroups.add(join('/sys/fs/cgroup', root))
+      remember(Number(name))
+      if (isProofProcessAlive(Number(name))) found.push(Number(name))
     }
-    return owned
+    return found.sort((a, b) => a - b)
   }
   const start = (name, executable, args, options = {}) => {
-    const child = spawn(executable, args, { ...options, detached: true })
+    assert.ok(!stopping, 'Cannot start a process during proof cleanup')
+    const scope = `sotto-proof-${token}-${commands.length}.scope`
+    // --scope execs the command in the runner's PID after placing it in its cgroup.
+    const child = spawn('systemd-run', ['--user', '--scope', '--quiet', '--collect', '--expand-environment=no',
+      `--unit=${scope}`, `--slice=${slice}`, '--property=KillMode=control-group', '--property=TimeoutStopSec=2s',
+      '--', executable, ...args], { ...options, env: { ...systemdEnv, ...options.env }, detached: true })
+    child.proofScope = scope
     child.once('error', error => { child.proofError = error })
-    if (child.pid) groups.push({ name, pid: child.pid })
+    if (child.pid) { commands.push({ name, pid: child.pid, scope }); remember(child.pid) }
+    report(`Started ${name} PID ${child.pid} in ${scope}`)
     return child
   }
-  const stop = async () => {
-    const signalGroups = signal => {
-      for (const group of [...groups].reverse()) {
-        try { process.kill(-group.pid, signal) } catch (error) { if (error.code !== 'ESRCH') throw error }
+  const stop = () => {
+    if (stopping) return stopping
+    stopping = (async () => {
+      const errors = []
+      // Discovery can fail, but termination of every command and scope still runs.
+      try { members() } catch (error) { errors.push(error) }
+      const signalGroups = signal => {
+        for (const command of [...commands].reverse()) {
+          try { process.kill(-command.pid, signal) } catch (error) { if (error.code !== 'ESRCH') errors.push(error) }
+        }
       }
-    }
-    signalGroups('SIGTERM')
-    for (let i = 0; i < 30 && members().length; i++) await wait(50)
-    if (members().length) signalGroups('SIGKILL')
-    for (let i = 0; i < 30 && members().length; i++) await wait(50)
-    for (const group of groups) report(`Stopped ${group.name} process group ${group.pid}`)
-    const remaining = members()
-    report(`Owned processes still running: ${JSON.stringify(remaining)}`)
-    assert.deepEqual(remaining, [], 'Every proof-owned process must stop')
+      signalGroups('SIGTERM')
+      try {
+        await run('systemctl', ['--user', 'stop', ...commands.map(command => command.scope), slice], { env: systemdEnv, timeout: 5000 })
+      } catch (error) {
+        // Collected scopes and a slice that never started may already be unloaded.
+        const lines = String(error.stderr ?? '').trim().split('\n').filter(Boolean)
+        if (!lines.length || lines.some(line => !/Unit .* not loaded\./u.test(line))) errors.push(error)
+      } finally { signalGroups('SIGKILL') }
+      for (let i = 0; i < 30 && [...recorded.values()].some(record => {
+        const current = identity(record.pid)
+        return current?.start === record.start && isProofProcessAlive(record.pid)
+      }); i++) await wait(50)
+      const remainingPids = [...recorded.values()].filter(record => {
+        const current = identity(record.pid)
+        return current?.start === record.start && isProofProcessAlive(record.pid)
+      }).map(record => record.pid)
+      const remainingMembers = members()
+      const cgroupPids = directory => {
+        if (!existsSync(directory)) return []
+        const pids = readFileSync(join(directory, 'cgroup.procs'), 'utf8').trim().split('\n').filter(Boolean).map(Number)
+        for (const entry of readdirSync(directory, { withFileTypes: true })) if (entry.isDirectory()) pids.push(...cgroupPids(join(directory, entry.name)))
+        return pids
+      }
+      const remainingCgroup = [...cgroups].flatMap(cgroupPids)
+      for (const directory of cgroups) if (existsSync(directory)) assert.match(readFileSync(join(directory, 'cgroup.events'), 'utf8'), /^populated 0$/mu)
+      for (const command of commands) report(`Stopped ${command.name} PID ${command.pid}`)
+      report(`Stopped proof slice ${slice}`)
+      report(`Recorded PIDs still running: ${JSON.stringify(remainingPids)}`)
+      report(`Proof cgroup processes after cleanup: ${JSON.stringify(remainingCgroup)}`)
+      report(`Owned processes still running: ${JSON.stringify(remainingMembers)}`)
+      assert.deepEqual(remainingPids, [], 'Every recorded proof PID must stop')
+      assert.deepEqual(remainingCgroup, [], 'The proof cgroup must be empty')
+      assert.deepEqual(remainingMembers, [], 'No process may remain in the proof slice')
+      const state = await run('systemctl', ['--user', 'show', slice, '--property=ActiveState', '--value'], { env: systemdEnv, timeout: 2000 })
+      assert.ok(['inactive', 'failed'].includes(state.stdout.trim()), 'The proof slice must have stopped')
+      if (errors.length) throw new AggregateError(errors, 'Proof termination completed with discovery or systemd errors')
+    })()
+    return stopping
   }
   const owns = (pid, child) => {
     try {
-      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
-      return Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[2]) === child.pid
+      const path = readFileSync(`/proc/${pid}/cgroup`, 'utf8').trim().split('::')[1]
+      return Boolean(path?.endsWith(`/${slice}/${child.proofScope}`) || path?.includes(`/${slice}/${child.proofScope}/`))
     } catch { return false }
   }
-  return { start, stop, owns }
+  return { start, stop, owns, slice }
 }

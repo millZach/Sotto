@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
 import { Buffer } from 'node:buffer'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { createOwnedProofProcesses } from '../../scripts/owned-proof-processes.mjs'
+import { createOwnedProofProcesses, isProofProcessAlive, proofSystemdEnvironment } from '../../scripts/owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
@@ -58,13 +58,19 @@ describe('proof debugger deadlines and disconnects', () => {
   })
 })
 
-describe.skipIf(process.platform !== 'linux')('proof process ownership', () => {
-  it('stops a reparented owned child without stopping an unrelated process', async () => {
+const hasUserSystemd = () => {
+  if (process.platform !== 'linux') return false
+  try { execFileSync('systemctl', ['--user', 'show-environment'], { env: proofSystemdEnvironment(), stdio: 'ignore', timeout: 2000 }); return true }
+  catch { return false }
+}
+describe.skipIf(!hasUserSystemd())('proof process ownership', () => {
+  it.each([false, true])('stops a reparented owned child (setsid=%s) and preserves an unrelated process', async escape => {
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
     const owned = createOwnedProofProcesses(() => undefined)
     try {
       const childCode = 'process.on("SIGTERM", () => {}); process.send("ready"); setInterval(() => {}, 1000)'
-      const parentCode = `const c = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(childCode)}], { stdio: ["ignore", "ignore", "ignore", "ipc"] }); c.once("message", () => { console.log(c.pid); c.disconnect(); c.unref() })`
+      // detached calls setsid in Node's POSIX child launcher. The child also ignores TERM.
+      const parentCode = `const c = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(childCode)}], { detached: ${escape}, stdio: ["ignore", "ignore", "ignore", "ipc"] }); c.once("message", () => { console.log(c.pid); c.disconnect(); c.unref() })`
       const parent = owned.start('forking fixture', process.execPath, ['-e', parentCode], { stdio: ['ignore', 'pipe', 'pipe'] })
       let output = ''
       let errors = ''
@@ -75,7 +81,12 @@ describe.skipIf(process.platform !== 'linux')('proof process ownership', () => {
       const pid = Number(output.trim())
       expect(pid).toBeGreaterThan(0)
       expect(() => process.kill(pid, 0)).not.toThrow()
+      expect(owned.owns(pid, parent)).toBe(true)
       await owned.stop()
+      // Independent PID assertion, rather than trusting stop's own report.
+      expect(isProofProcessAlive(pid)).toBe(false)
+      const state = execFileSync('systemctl', ['--user', 'show', owned.slice, '--property=ActiveState', '--value'], { env: proofSystemdEnvironment(), encoding: 'utf8' }).trim()
+      expect(state).toBe('inactive')
       expect(() => process.kill(unrelated.pid, 0)).not.toThrow()
     } finally {
       await owned.stop()
