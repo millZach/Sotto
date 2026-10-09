@@ -201,6 +201,24 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await capture(page, 'c-babysitting-1280x800-dark')
     await capture(page, 'c-surface-line-1280x800-dark', panel)
     await capture(page, 'c-sidebar-1280x800-dark', page.locator('.thread-nav').first())
+    // The collapsed rail names the thread's state as the row does, in the title it gives the thread.
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
+    const rail = page.locator('.thread-nav__rail-thread[aria-label="Greeting for reviewers"]')
+    await expect(rail).toHaveAttribute('title', 'Greeting for reviewers · Babysitting #74')
+    await capture(page, 'c-sidebar-collapsed-1280x800-dark')
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+    await expect(status).toHaveText(/Babysitting #74$/u)
+    // The pose's hover title keeps the time, which its visible line drops whole where it does not fit.
+    await expect(pose.locator('.thread-monitor__task')).toHaveAttribute('title', /^#74 Greet the reviewer\nBabysitting since \d/u)
+    // Linked pull requests marks the one the thread babysits.
+    const linkedFold = panel.getByRole('button', { name: /^Linked pull requests/u })
+    await linkedFold.click()
+    const linkedRow = panel.getByRole('list', { name: 'Linked pull requests' }).getByRole('button', { name: 'PR #74, Open: Greet the reviewer. Linked by you. Babysitting', exact: true })
+    await linkedRow.scrollIntoViewIfNeeded()
+    await expect(linkedRow.locator('.pr-surface__link-babysat')).toHaveText('Babysitting')
+    await expectReadable({ 'linked mark': linkedRow.locator('.pr-surface__link-babysat') })
+    await capture(page, 'c-linked-babysitting-1280x800-dark', panel)
+    await linkedFold.click()
     // The pose stands above the composer, outside its box, so its capture is the pane from a little above the pose down.
     const [poseBox, paneBox] = [(await pose.boundingBox())!, (await pane(page).boundingBox())!]
     const top = Math.max(paneBox.y, poseBox.y - 96)
