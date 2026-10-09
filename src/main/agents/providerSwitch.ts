@@ -33,6 +33,15 @@ export class ConfiguredProviderHost implements AgentHost {
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useLaunchProfiles?.(profiles)
   }
+  profileRefusalHandler(threadId: string) {
+    // Each SottoThreadHost stops only its bound or early-start runtime. Include early starts
+    // whose provider is not yet in the durable registry; one broken cleanup must not block another.
+    const handlers = Object.values(this.options.hosts).flatMap(host => {
+      const handler = host.profileRefusalHandler?.(threadId)
+      return handler ? [handler] : []
+    })
+    return async (reason: string): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason))) }
+  }
   readonly concurrentProviders = true
   private legacyProjectProvider: ProviderId | undefined
   private identityLoad: Promise<void> | undefined

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import * as fs from 'node:fs/promises'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,9 +12,12 @@ import { emptyCommandCenterRecord } from '../../src/shared/commandCenter'
 import type { AgentThread } from '../../src/shared/agents'
 import type { CommandCenterProfileTools, ThreadLaunchProfiles } from '../../src/main/agents/host'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
+import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
+
+vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
 const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-profile-')); roots.push(root)
   const hostId = randomUUID(), threadId = randomUUID()
@@ -28,6 +32,70 @@ async function setup() {
   source.useTools(tools)
   return { root, hostId, threadId, thread, record, save, source, tools }
 }
+it('shares a single read for concurrent checks and unchanged creation/admission checks', async () => {
+  const f = await setup(), path = join(f.root, 'agents.json'), reads = vi.spyOn(fs, 'readFile')
+  await Promise.all(Array.from({ length: 8 }, () => f.source.profileFor('ordinary')))
+  await f.source.profileFor(f.threadId)
+  await f.source.assertCreationBinding(f.threadId, 'special', 'codex')
+  await f.source.profileFor(f.threadId)
+  expect(reads.mock.calls.filter(([file]) => file === path)).toHaveLength(1)
+})
+
+it('sees an atomic same-size identity replacement on the next check even with its mtime restored', async () => {
+  const f = await setup(), path = join(f.root, 'agents.json')
+  const store = AtomicJsonStore.compact(path, value => value, () => ({}))
+  await store.write({ commandCenter: f.record })
+  await f.source.profileFor(f.threadId)
+  const before = await fs.stat(path), replacement = randomUUID()
+  f.record.current!.target.threadId = replacement
+  await store.write({ commandCenter: f.record })
+  await fs.utimes(path, before.atime, before.mtime)
+  expect((await fs.stat(path)).size).toBe(before.size)
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  expect(await f.source.profileFor(replacement)).toMatchObject({ kind: 'command-center' })
+})
+
+it.each(['current', 'creation', 'history'] as const)('retains last known %s identity only for refusal when the file becomes corrupt', async location => {
+  const f = await setup(), identity = f.record.current!
+  f.record.current = null
+  if (location === 'current') f.record.current = identity
+  else if (location === 'history') f.record.history = [identity]
+  else f.record.creation = { phase: 'intent', identity, replaces: null }
+  await f.save()
+  await f.source.profileFor('ordinary')
+  f.thread.kind = 'project'
+  await writeFile(join(f.root, 'agents.json'), '{')
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  expect(await f.source.profileFor('ordinary')).toBeUndefined()
+  expect(f.tools.mcpServer).not.toHaveBeenCalled()
+  await writeFile(join(f.root, 'agents.json'), '{}')
+  expect(await f.source.profileFor(f.threadId)).toBeUndefined()
+})
+
+it('isolates unknown ordinary kinds but refuses both special kinds when identity is invalid', async () => {
+  const f = await setup()
+  await writeFile(join(f.root, 'agents.json'), '{"commandCenter":{"version":999}}')
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  f.thread.kind = 'command-center-history'
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  delete f.thread.kind
+  expect(await f.source.profileFor(f.threadId)).toBeUndefined()
+  await writeFile(join(f.root, 'agents.json'), '{}')
+  expect(await f.source.profileFor(f.threadId)).toBeUndefined()
+  expect(f.tools.revoke).toHaveBeenCalledTimes(2)
+})
+
+it('does not cache or admit an identity replaced during the read', async () => {
+  const f = await setup(), path = join(f.root, 'agents.json'), read = fs.readFile
+  let replaced = false
+  vi.spyOn(fs, 'readFile').mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
+    const value = await read(...args)
+    if (args[0] === path && !replaced) { replaced = true; f.record.current = null; await f.save() }
+    return value
+  })
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  expect(f.tools.mcpServer).not.toHaveBeenCalled()
+})
 it('uses only the durable current identity, corroborated by host, kind, project and provider', async () => {
   const f = await setup()
   expect(await f.source.profileFor('ordinary')).toBeUndefined()

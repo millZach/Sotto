@@ -26,6 +26,12 @@ async function setup(create = false, pollIntervalMs = 60000) {
   f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
   return { id, restricted }
 }
+// Preflight admits no production launches. Model a profiled process at the defensive
+// callback seam so its refusal and reconnect checks remain separate from ordinary requests.
+function guardedProcess(id: string): void {
+  const native = f!.host as unknown as { processes: Map<string, { commandCenter: boolean }> }
+  native.processes.get(id)!.commandCenter = true
+}
 const workRequests = async () => (await f!.driver.requests()).filter(record => ['session/new', 'session/load', 'session/set_model', 'session/prompt'].includes(record.method ?? ''))
 const processes = async () => (await f!.driver.requests()).filter(record => record.method === 'fixture/process')
 /** A revoked process may be killed before acknowledging session/close. Observe the actual fake process. */
@@ -136,8 +142,7 @@ it('cancels a permission outside the profile and stops and revokes instead of pr
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
   const id = randomUUID()
   await f.host.execute({ type: 'create-thread', commandId: 'thread', threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Thread' })
-  // Exercise the defensive guard on a process started before main supplies its durable special identity.
-  // This does not install fake compatibility evidence or enable a restricted production launch.
+  guardedProcess(id)
   const restricted = profile(); f.host.useLaunchProfiles({ profileFor: async threadId => threadId === id ? restricted : undefined })
   let latest: AgentHostSnapshot | undefined
   const unsubscribe = f.host.subscribe(snapshot => { latest = snapshot })
@@ -171,6 +176,7 @@ it('stops a native permission request when the durable profile resolver refuses 
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Project', path: f.root })
   const id = randomUUID()
   await f.host.execute({ type: 'create-thread', commandId: 'thread', threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Thread' })
+  guardedProcess(id)
   const reason = 'The command center tool server is unavailable. Reopen the command center to recover.'
   f.host.useLaunchProfiles({ profileFor: async threadId => { if (threadId === id) throw new CommandCenterProfileRefusal(reason); return undefined } })
   let latest: AgentHostSnapshot | undefined
@@ -186,6 +192,7 @@ it('stops a native permission request when the durable profile resolver refuses 
 
 it('revokes the owning process for a permission carrying an unknown session identity', async () => {
   const { id, restricted } = await setup(true)
+  guardedProcess(id)
   await f!.action(id, { type: 'unreadable', method: 'session/request_permission', text: 'Synthetic malformed request', params: { sessionId: 'unknown-session' } })
   await expect.poll(() => restricted.revoke).toHaveBeenCalledWith(COMMAND_CENTER_PERMISSION_FAILURE)
   await expect.poll(nativeProcessStopped).toBe(true)
@@ -226,6 +233,7 @@ it.each([
   { stage: 'profile', result: 'restricted' },
 ] as const)('ignores a delayed $stage permission lookup returning $result after disconnect', async ({ stage, result }) => {
   const { id, restricted } = await setup(true); const gate = delayedProfile(); let lookups = 0; let entered = false; let waiting = true
+  guardedProcess(id)
   f!.host.useLaunchProfiles({ profileFor: async threadId => {
     if (threadId === id && waiting && ++lookups === (stage === 'admission' ? 2 : 1)) { entered = true; return gate.promise }
     return undefined
@@ -263,6 +271,7 @@ it.each([
 it.each(['ordinary', 'refused', 'restricted'] as const)('keeps a live replacement safe when an old RPC permission lookup later returns %s', async result => {
   const { id, restricted } = await setup(true); const gate = delayedProfile(); let entered = false
   const native = f!.host as unknown as { processes: Map<string, { rpc: GrokRpc }>; frame(frame: GrokFrame, rpc: GrokRpc): Promise<void> }
+  guardedProcess(id)
   const oldRpc = native.processes.get(id)!.rpc
   f!.host.useLaunchProfiles({ profileFor: async threadId => {
     if (threadId === id && !entered) { entered = true; return gate.promise }

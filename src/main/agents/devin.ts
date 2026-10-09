@@ -183,6 +183,14 @@ export interface DevinAcpOptions {
 export class DevinAcpHost implements AgentHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, connection = this.connections.get(id)
+    if (!connection) return undefined
+    return (reason: string) => {
+      if (generation !== this.generation || this.connections.get(id) !== connection) return
+      return this.stopProfileSession(id, reason)
+    }
+  }
   private async refuseCommandCenter(id: string, origin?: Connection, observer = false): Promise<void> {
     const generation = this.generation
     const current = (): boolean => generation === this.generation && (!origin || !origin.intentionalClose
@@ -773,10 +781,8 @@ export class DevinAcpHost implements AgentHost {
     }
     if (frame.method && frame.id !== undefined) {
       const generation = this.generation
-      if (this.launchProfiles) {
-        try { await this.refuseCommandCenter(id, connection, observer) }
-        catch { return }
-      }
+      // Every Devin connection launched without a command-center profile: start refuses it.
+      // Ordinary requests stay on the synchronous path; lifecycle checks still refuse promotion.
       if (generation !== this.generation || connection.intentionalClose
         || !observer && this.connections.get(id) !== connection) return
       if (observer || !params || params.sessionId !== alias.devinSessionId) { this.unsupported(connection.rpc, frame); return }

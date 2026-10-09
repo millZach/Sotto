@@ -166,6 +166,8 @@ export interface AgentHost {
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
   useCommandCenterTools?(tools: CommandCenterProfileTools): void
+  /** Capture the owned runtime before main checks identity. A refusal cannot close its replacement. */
+  profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
   /**

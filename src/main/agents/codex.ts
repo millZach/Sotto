@@ -135,7 +135,7 @@ class Rejected extends Error {
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
 type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 /** A thread's own app-server, and the client revision it was launched from (see `clientUpdated`). */
-type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; refreshing?: Promise<void> }
+type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; commandCenter: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.nonce}:${JSON.stringify(id)}`
 type ModelList = AgentHostSnapshot['models']
@@ -151,6 +151,15 @@ export class CodexAppServerHost implements AgentHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly commandCenterProfiles = new Map<string, CommandCenterLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, runtime = this.runtimes.get(id)
+    if (!runtime) return undefined
+    return (reason: string): void => {
+      if (generation !== this.generation || this.runtimes.get(id) !== runtime) return
+      try { this.commandCenterProfiles.get(id)?.revoke(reason) } catch { /* Cleanup failure never keeps the process alive. */ }
+      this.stopUnverifiedProfile(id, reason)
+    }
+  }
   private async checkLaunchProfile(id: string, modelId = this.aliases[id]?.modelId ?? ''): Promise<CommandCenterLaunchProfile | undefined> {
     const generation = this.generation
     try {
@@ -461,7 +470,7 @@ export class CodexAppServerHost implements AgentHost {
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
-      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true })
+      this.runtimes.set(id, { server, clientRevision, configStamp, reloadSupported: true, commandCenter: !!profile })
       // Launched from a client an update replaced meanwhile: it moves too, once its thread is idle.
       if (clientRevision !== this.clientRevision) { this.outdated.add(id); this.scheduleOutdatedStop() }
       return server
@@ -1523,7 +1532,7 @@ export class CodexAppServerHost implements AgentHost {
       const current = (): boolean => generation === this.generation && server.alive
         && (owner ? this.runtimes.get(owner)?.server === server : this.provider === server)
       if (!current()) return
-      if (owner && frame.method !== 'item/tool/requestUserInput' && (needsPerson(frame.method) || frame.method === 'item/tool/call')) {
+      if (owner && this.runtimes.get(owner)?.commandCenter && frame.method !== 'item/tool/requestUserInput' && (needsPerson(frame.method) || frame.method === 'item/tool/call')) {
         let profile: CommandCenterLaunchProfile | undefined
         try { profile = await this.launchProfiles?.profileFor(owner) }
         catch {

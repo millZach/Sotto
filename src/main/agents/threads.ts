@@ -115,6 +115,11 @@ export class SottoThreadHost implements AgentHost {
       return threadId ? profiles.profileFor(threadId) : undefined
     } })
   }
+  profileRefusalHandler(threadId: string) {
+    const binding = this.registry.byThread(threadId)
+    const sessionId = binding?.provider === this.provider ? binding.sessionId : this.unbound.get(threadId)
+    return sessionId ? this.inner.profileRefusalHandler?.(sessionId) : undefined
+  }
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
   /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */

@@ -158,6 +158,13 @@ export class GrokAcpHost implements AgentHost {
   /** Last supplied endpoint, used only to revoke when main can no longer resolve the profile. */
   private readonly knownLaunchProfiles = new Map<string, CommandCenterLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, entry = this.processes.get(id)
+    if (!entry) return undefined
+    return (reason: string): void => {
+      if (generation === this.generation && this.processes.get(id) === entry) this.revokeProfile(id, this.knownLaunchProfiles.get(id), reason)
+    }
+  }
   private assertGeneration(generation: number): void {
     if (generation !== this.generation) throw new GrokUncertain('Grok connection changed before the operation could continue.')
   }
@@ -236,7 +243,9 @@ export class GrokAcpHost implements AgentHost {
   /** Grok's prompt for one of this thread's own Sotto tool servers, answered here rather than shown (ADR-0020, ADR-0035). */
   private async toolAdmission(pending: Pending): Promise<unknown> {
     const profile = await this.launchProfile(pending.threadId, pending.rpc)
-    if (profile) return grokCommandCenterAdmission(pending, profile)
+    return profile ? grokCommandCenterAdmission(pending, profile) : undefined
+  }
+  private ordinaryToolAdmission(pending: Pending): unknown {
     if (!pending.permission || !this.httpToolServers || this.aliases[pending.threadId]?.kind === 'personal') return undefined
     // Each scoped server is answered the same way, by its own name: adding a host asks the user in the thread itself
     // (ADR-0035), and a visual changes nothing outside the thread (ADR-0056).
@@ -1150,7 +1159,7 @@ export class GrokAcpHost implements AgentHost {
     if (frame.id !== undefined && method) {
       const sessionId = object(params)?.sessionId
       const threadId = typeof sessionId === 'string' ? this.id(sessionId) : undefined
-      if (owner && owner !== threadId && needsPerson(method)) {
+      if (owner && this.processes.get(owner)?.commandCenter && owner !== threadId && needsPerson(method)) {
         const profile = await this.launchProfile(owner, rpc)
         if (!current()) return
         if (profile) {
@@ -1166,9 +1175,10 @@ export class GrokAcpHost implements AgentHost {
         pending.request.id = `grok-request-${digest(JSON.stringify([threadId, pending.toolCallId, pending.request.kind]))}`
         this.reaper.touch(pending.threadId)
         if (this.answeredRequests.get(rpc)?.has(pending.request.id) || this.pending.has(pending.request.id)) return
-        const profile = await this.launchProfile(pending.threadId, rpc)
+        const commandCenter = this.processes.get(owner!)?.commandCenter
+        const profile = commandCenter ? await this.launchProfile(pending.threadId, rpc) : undefined
         if (!current()) return
-        const admission = profile && !this.processes.get(pending.threadId)?.commandCenter ? undefined : await this.toolAdmission(pending)
+        const admission = commandCenter ? await this.toolAdmission(pending) : this.ordinaryToolAdmission(pending)
         if (!current()) return
         if (profile && pending.permission && admission === undefined) {
           try { await rpc.reply(pending.wireId, this.refusal(pending)) }
@@ -1184,7 +1194,7 @@ export class GrokAcpHost implements AgentHost {
         this.showRequest(pending)
       }
       else {
-        const profile = threadId && needsPerson(method) ? await this.launchProfile(threadId, rpc) : undefined
+        const profile = this.processes.get(owner!)?.commandCenter && threadId && needsPerson(method) ? await this.launchProfile(threadId, rpc) : undefined
         if (!current()) return
         if (profile) {
           rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'The command center cannot request permissions outside its read-only profile.' } })

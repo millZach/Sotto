@@ -181,7 +181,7 @@ type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames:
 /** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
 const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; commandCenter: boolean }
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -202,6 +202,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly resolvedCommandCenterProfiles = new Map<string, CommandCenterLaunchProfile>()
   private readonly checkingProfileRequests = new WeakMap<Runtime, Set<string>>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
+  profileRefusalHandler(id: string) {
+    const generation = this.generation, runtime = this.runtimes.get(id), spare = this.spares.get(id)
+    if (!runtime && !spare) return undefined
+    return (reason: string) => {
+      if (generation !== this.generation || this.runtimes.get(id) !== runtime || this.spares.get(id) !== spare) return
+      return this.stopCommandCenter(id, this.resolvedCommandCenterProfiles.get(id), reason, generation, runtime)
+    }
+  }
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
@@ -245,7 +253,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try { profile?.revoke(reason) } catch { /* A broken tool-server cleanup must still stop its provider process. */ }
     const spare = this.spares.get(id)
     if (spare) {
-      this.spares.delete(id)
+      spare.exited = true
+      // Drain startup without awaiting it here: spawn's own profile lookup can be the refusal.
+      void this.discardSpare(id)
       if (spare.runtime) { spare.runtime.protocol.stop(); this.trackClosure(spare.runtime.protocol.closed) }
     }
     const runtime = expectedRuntime ?? this.runtimes.get(id)
@@ -1166,13 +1176,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
         }])) }), { mode: 0o600, flag: 'wx' })
       } catch (error) { await this.removeConfig(mcpConfig); throw error }
     }
-    if (generation !== this.generation) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
+    if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...(profile ? [] : toolAllowance(servers))] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...(profile ? claudeCommandCenterArguments(profile) : permissionArguments(alias.runtimeMode)),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, commandCenter: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -1342,7 +1352,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (currentRuntime && frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') {
       this.checkingProfileRequests.get(currentRuntime)?.delete(frame.request_id)
     }
-    if (this.launchProfiles && frame.type === 'control_request') {
+    if (currentRuntime?.commandCenter && frame.type === 'control_request') {
       const runtime = currentRuntime
       const requestId = typeof frame.request_id === 'string' ? frame.request_id : undefined
       let checking = runtime ? this.checkingProfileRequests.get(runtime) : undefined

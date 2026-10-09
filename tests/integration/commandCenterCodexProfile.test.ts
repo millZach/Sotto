@@ -7,7 +7,7 @@ import type { CommandCenterLaunchProfile } from '../../src/main/agents/host'
 import { assertCodexCommandCenterPreflight, commandCenterCodexArguments, commandCenterCodexConfig } from '../../src/main/agents/commandCenterCodexProfile'
 import { COMMAND_CENTER_PERMISSION_FAILURE } from '../../src/main/agents/commandCenterProfile'
 import type { CodexProcess, RpcFrame } from '../../src/main/agents/codexProcess'
-import type { DevinRpc, DevinFrame } from '../../src/main/agents/devinRpc'
+import type { DevinRpc } from '../../src/main/agents/devinRpc'
 
 const profile = (): CommandCenterLaunchProfile => ({ kind: 'command-center', server: { name: 'sotto_threads', type: 'http',
   url: 'http://127.0.0.1:12345/mcp', headers: [{ name: 'Authorization', value: 'Bearer fixture-only' }] }, toolNames: ['list_threads', 'read_thread'], revoke: vi.fn() })
@@ -59,7 +59,9 @@ describe('Codex command-center profile', () => {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'worker', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
-    const frames = f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess }>; frame(server: CodexProcess, frame: RpcFrame): Promise<void> }
+    const frames = f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess; commandCenter: boolean }>; frame(server: CodexProcess, frame: RpcFrame): Promise<void> }
+    // Model an already-profiled process only at this defensive callback seam.
+    frames.runtimes.get('worker')!.commandCenter = true
     const original = frames.runtimes.get('worker')!.server
     let resolveLookup!: (value: undefined) => void
     let rejectLookup!: (reason: Error) => void
@@ -136,6 +138,8 @@ describe('Codex command-center profile', () => {
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'master', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
     const offered = profile(); f.host.useLaunchProfiles!({ profileFor: async () => offered })
+    const native = f.adapter as unknown as { runtimes: Map<string, { commandCenter: boolean }> }
+    native.runtimes.get('master')!.commandCenter = true
     await f.driver.raisePermission('master', 'synthetic outside permission')
     await vi.waitFor(() => expect(offered.revoke).toHaveBeenCalledWith(COMMAND_CENTER_PERMISSION_FAILURE))
     const thread = (await f.host.snapshot()).threads.find(thread => thread.id === 'master')!
@@ -177,7 +181,7 @@ it('does not reopen an ordinary Devin session after disconnect while its profile
   expect((await f.driver.requests()).slice(before).some(request => ['initialize', 'session/new', 'session/load'].includes(request.method ?? ''))).toBe(false)
 })
 
-it.each(['profile', 'failed'] as const)('drains Devin’s real native request queue after a %s permission refusal', async outcome => {
+it.each(['profile', 'failed'] as const)('drains Devin’s real native request queue after a %s lifecycle refusal', async outcome => {
   const f = await devinFixture(); cleanups.push(f.cleanup)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
@@ -186,7 +190,9 @@ it.each(['profile', 'failed'] as const)('drains Devin’s real native request qu
   const resolver = vi.fn(async () => { if (outcome === 'failed') throw new Error('Synthetic lookup failure'); return offered })
   f.host.useLaunchProfiles({ profileFor: resolver })
   await f.driver.raisePermission('worker', 'Synthetic outside permission')
-  await vi.waitFor(() => expect(resolver).toHaveBeenCalled())
+  await vi.waitFor(async () => expect((await f.host.snapshot()).threads.find(thread => thread.id === 'worker')!.requests).toHaveLength(1))
+  expect(resolver).not.toHaveBeenCalled()
+  await expect(f.host.startThreadSession('worker')).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
   await vi.waitFor(async () => expect(await f.sessions.stopped('worker')).toBe(true))
   await f.host.closed()
   expect(await f.sessions.stopped('worker')).toBe(true)
@@ -197,29 +203,23 @@ it.each(['profile', 'failed'] as const)('drains Devin’s real native request qu
   if (outcome === 'profile') expect(offered.revoke).toHaveBeenCalled()
 })
 
-it.each(['profile', 'failed'] as const)('does not stop a replacement Devin connection after an old %s permission lookup', async outcome => {
+it.each(['profile', 'failed'] as const)('keeps a replacement Devin connection safe when the ordinary %s permission path skips profile resolution', async outcome => {
   const f = await devinFixture(); cleanups.push(f.cleanup)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fixture', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: 'worker', projectId: f.projectId, title: 'Fixture', modelId: f.modelId })
-  const frames = f.host as unknown as { connections: Map<string, { rpc: DevinRpc }>; frame(id: string, connection: unknown, frame: DevinFrame, observer: boolean): Promise<void> }
+  const frames = f.host as unknown as { connections: Map<string, { rpc: DevinRpc }> }
   const original = frames.connections.get('worker')!
   const offered = profile()
-  let resolveLookup!: (value: CommandCenterLaunchProfile) => void
-  let rejectLookup!: (reason: Error) => void
-  let lookupEntered!: () => void
-  let first = true
-  const entered = new Promise<void>(resolve => { lookupEntered = resolve })
-  const lookup = new Promise<CommandCenterLaunchProfile>((resolve, reject) => { resolveLookup = resolve; rejectLookup = reject })
-  f.host.useLaunchProfiles({ profileFor: () => { if (!first) return Promise.resolve(undefined); first = false; lookupEntered(); return lookup } })
-  const handling = frames.frame('worker', original, { jsonrpc: '2.0', id: 'fixture-request', method: 'session/request_permission', params: { sessionId: await f.realId('worker') } }, false)
-  await entered
+  const resolver = vi.fn(async () => { if (outcome === 'failed') throw new Error('Synthetic lookup failure'); return offered })
+  f.host.useLaunchProfiles({ profileFor: resolver })
+  await f.driver.raisePermission('worker', 'Synthetic ordinary permission')
+  await vi.waitFor(async () => expect((await f.host.snapshot()).threads.find(thread => thread.id === 'worker')!.requests).toHaveLength(1))
+  expect(resolver).not.toHaveBeenCalled()
+  f.host.useLaunchProfiles({ profileFor: async () => undefined })
   original.rpc.close(); await original.rpc.closed
   await f.host.startThreadSession('worker')
   const replacement = frames.connections.get('worker')!
-  if (outcome === 'failed') rejectLookup(new Error('Synthetic lookup failure'))
-  else resolveLookup(offered)
-  await handling
   expect(frames.connections.get('worker')).toBe(replacement)
   expect(await f.sessions.stopped('worker')).toBe(false)
   expect((await f.host.snapshot()).threads.find(thread => thread.id === 'worker')!.requests).toEqual([])

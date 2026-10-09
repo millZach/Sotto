@@ -935,7 +935,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}) }
   }
   configureThreadWorkingCopy(threadId: string, selection: AgentWorkingCopySelection): Promise<AgentHostSnapshot> {
-    return this.onLane(threadId, async () => {
+    return this.onLane(threadId, () => this.withProfileRefusal(threadId, async () => {
       await this.initialize()
       if (await this.launchProfiles.profileFor(threadId)) throw new CommandCenterProfileRefusal('The command center’s working folder cannot be changed.')
       const thread = this.thread(threadId)
@@ -954,7 +954,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.readGitStatus(threadId, false)
       this.publish()
       return this.workspaceSnapshot()
-    })
+    }))
   }
   /** Folder ownership includes legacy sessions and project subdirectories, not just stored worktree paths. */
   private async exclusivelyOwnsCheckout(threadId: string): Promise<boolean> {
@@ -1047,7 +1047,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   rollbackThread(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult> {
     return this.onLane(threadId, async () => {
       if (!this.inner.rollbackThread) throw new Error('Native conversation rewind is unavailable.')
-      const result = await this.inner.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+      const result = await this.withProfileRefusal(threadId, () => this.inner.rollbackThread!(threadId, removedUserMessages, expectedUserMessageIds))
       // A confirmed rewind takes its turns back, and the visuals drawn in them go with them (ADR-0056). An uncertain one
       // keeps them: a visual whose turn did go is left out of every window anyway, having no place to sit.
       if (result.accepted && !result.uncertain && removedUserMessages > 0) this.forgetVisuals(threadId, expectedUserMessageIds.slice(-removedUserMessages))
@@ -1790,9 +1790,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
-      return this.inner.listThreadSkills(threadId, forceReload, { providerId: thread.providerId, workingDirectory })
+      return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload, { providerId: thread.providerId!, workingDirectory }))
     }
-    return this.inner.listThreadSkills(threadId, forceReload)
+    return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload))
   }
   workspaceSnapshot(): AgentHostSnapshot {
     this.applyEvents()
@@ -2207,7 +2207,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // echo is not in it (#765).
     if (purpose?.afterSend) return this.workspaceSnapshot()
     const creation = this.state.creations.find(item => item.threadId === threadId)
-    const read = await (creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
+    const read = await this.withProfileRefusal(threadId, () => creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
       : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
     // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
     // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
@@ -2492,7 +2492,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const release = await this.checkoutMutations.acquire(this.threadCheckoutFolder(thread.id), 'send', this.checkoutThreadHolder(thread.id, 'send'))
     try { return await this.executeOne(command, true) } finally { release() }
   }
-  private async executeOne(command: AgentHostCommand, checkoutHeld = false): Promise<AgentHostResult> {
+  private async withProfileRefusal<T>(threadId: string | undefined, work: () => Promise<T>): Promise<T> {
+    const refuse = threadId ? this.inner.profileRefusalHandler?.(threadId) : undefined
+    try { return await work() }
+    catch (error) {
+      if (threadId && error instanceof CommandCenterProfileRefusal) {
+        try { await refuse?.(error.message) }
+        catch { /* Preserve the definitive refusal even if shutdown cleanup fails. */ }
+      }
+      throw error
+    }
+  }
+  private executeOne(command: AgentHostCommand, checkoutHeld = false): Promise<AgentHostResult> {
+    return this.withProfileRefusal('threadId' in command ? command.threadId : undefined, () => this.executeWithProfile(command, checkoutHeld))
+  }
+  private async executeWithProfile(command: AgentHostCommand, checkoutHeld: boolean): Promise<AgentHostResult> {
     await this.initialize()
     const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
     if ('threadId' in command) {
@@ -2726,7 +2740,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!thread || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
-    return this.inner.writeShortText(threadId, prompt, signal)
+    return this.withProfileRefusal(threadId, () => this.inner.writeShortText!(threadId, prompt, signal))
   }
   /**
    * The threads a window says it is looking at. Only those hold their messages in memory: one leaving the
@@ -2773,7 +2787,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   startThreadSession(threadId: string): Promise<void> {
     const start = this.inner.startThreadSession
     if (!start) return Promise.resolve()
-    return this.onLane(threadId, async () => {
+    return this.onLane(threadId, () => this.withProfileRefusal(threadId, async () => {
       await this.initialize()
       const thread = this.state.snapshot.threads.find(item => item.id === threadId)
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
@@ -2786,7 +2800,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
         ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
         ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
-    })
+    }))
   }
   async clientUpdated(provider: ProviderId): Promise<void> { await this.inner.clientUpdated?.(provider) }
   disconnect(provider?: ProviderId): void {

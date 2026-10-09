@@ -38,6 +38,12 @@ function admit(f: Fixture, id: string, value = profile()) {
   f.adapter.useLaunchProfiles({ profileFor: resolver })
   return { value, resolver }
 }
+// No production launch can pass preflight yet. These request-guard tests model an already
+// profiled runtime at the private callback seam, without relaxing the production preflight.
+function guardedRuntime(f: Fixture, id: string): void {
+  const native = f.adapter as unknown as { runtimes: Map<string, { commandCenter: boolean }> }
+  native.runtimes.get(id)!.commandCenter = true
+}
 /** Only the original lookup waits; a replacement connection gets its own immediate ordinary-thread answer. */
 function pendingProfileLookup(f: Fixture) {
   let resolveLookup!: (value: CommandCenterLaunchProfile | undefined) => void
@@ -125,6 +131,7 @@ describe('Claude command-center profile', () => {
 
   it.each(['profile', 'refusal'] as const)('keeps a delayed native permission %s owned by its original process across reconnect', async result => {
     const f = await fixture(), id = await ordinary(f), pending = pendingProfileLookup(f), value = profile()
+    guardedRuntime(f, id)
     await f.driver.raisePermission(id, 'Synthetic stale permission')
     await pending.entered
     await f.adapter.connect()
@@ -251,6 +258,7 @@ describe('Claude command-center profile', () => {
 
   it('stops and revokes an outside native permission before publishing any request card or answer', async () => {
     const f = await fixture(), id = await ordinary(f), { value } = admit(f, id)
+    guardedRuntime(f, id)
     await f.driver.raisePermission(id, 'Synthetic native permission')
     await expect.poll(() => vi.mocked(value.revoke).mock.calls[0]?.[0]).toBe(COMMAND_CENTER_PERMISSION_FAILURE)
     await expect.poll(() => f.sessions!.stopped(id)).toBe(true)
@@ -262,6 +270,7 @@ describe('Claude command-center profile', () => {
 
   it('stops without a request card when durable profile resolution itself refuses a native permission', async () => {
     const f = await fixture(), id = await ordinary(f)
+    guardedRuntime(f, id)
     const reason = 'The command center’s tools are unavailable. Reopen the command center to recover.'
     f.adapter.useLaunchProfiles({ profileFor: async threadId => {
       if (threadId === id) throw new CommandCenterProfileRefusal(reason)
@@ -293,13 +302,20 @@ describe('Claude command-center profile', () => {
     let release!: () => void
     const gate = new Promise<void>(resolveGate => { release = resolveGate })
     const resolver = vi.fn(async () => { await gate; return undefined })
+    const marker = randomUUID()
+    let followingFrame!: () => void
+    const reached = new Promise<void>(resolve => { followingFrame = resolve })
+    const unsubscribe = f.host.subscribeEvents!(event => { if (event.event.kind === 'message-added' && event.event.message.id === marker) followingFrame() })
+    cleanup.push(async () => { unsubscribe() })
     f.adapter.useLaunchProfiles({ profileFor: resolver })
     await f.action(id, { type: 'raw-burst', frames: [
       { type: 'control_request', request_id: requestId, request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion',
         tool_use_id: randomUUID(), input: { questions: [{ question: 'Synthetic choice', header: 'Choice', options: [{ label: 'Blue', description: 'Blue' }], multiSelect: false }] } } },
       { type: 'control_cancel_request', request_id: requestId },
+      { type: 'assistant', uuid: marker, message: { role: 'assistant', content: [{ type: 'text', text: 'Synthetic following frame' }] } },
     ] })
-    await expect.poll(() => resolver.mock.calls.length).toBe(1)
+    await reached
+    expect(resolver).not.toHaveBeenCalled()
     release()
     expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
     expect(await f.sessions!.stopped(id)).toBe(false)
