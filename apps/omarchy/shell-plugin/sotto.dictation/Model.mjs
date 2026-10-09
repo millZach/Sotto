@@ -31,7 +31,7 @@ export const GLYPH = {
 }
 
 export function idle(edge) {
-  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top", pid: 0 }
+  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top", pid: 0, pidStart: null }
 }
 
 export function validEdge(edge) {
@@ -47,6 +47,12 @@ export function finiteNumber(value) {
 // does not.
 export function processId(value) {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0
+}
+
+// When that process started, as field 22 of its `/proc/<pid>/stat` reads,
+// or null when the file does not say, as an older Sotto's does not.
+export function processStart(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null
 }
 
 // The JSON in `text`, or undefined when it holds none. Only text that is not
@@ -78,7 +84,8 @@ function fromData(data) {
     detail: detail,
     kept: data.kept === true,
     edge: validEdge(data.edge) ? data.edge : "top",
-    pid: processId(data.pid)
+    pid: processId(data.pid),
+    pidStart: processStart(data.pidStart)
   }
 }
 
@@ -152,15 +159,24 @@ export function watchesProcess(record) {
 
 // Whether Sotto's process has gone, from `/proc/<pid>/stat`: null when that
 // file does not exist, or its text. A process that has exited but not been
-// reaped yet is gone too. Text that names another process, or that cannot
-// be read, decides nothing.
-export function processGone(stat, pid) {
+// reaped yet is gone too, and so is one that started at another time than
+// `pidStart`, since its PID now belongs to another process. Without
+// `pidStart`, from an older Sotto, the PID alone decides. Text that names
+// another process, or that cannot be read, decides nothing.
+export function processGone(stat, pid, pidStart) {
   if (stat === null || stat === undefined) return true
   var text = String(stat)
   if (text.indexOf(String(pid) + " (") !== 0) return false
+  // Field 2, the command name, may hold spaces and parentheses, so the
+  // fields are read after the last parenthesis: field 3 first.
   var close = text.lastIndexOf(")")
-  var state = close === -1 ? "" : text.charAt(close + 2)
-  return state === "Z" || state === "X" || state === "x"
+  if (close === -1) return false
+  var fields = text.slice(close + 1).trim().split(/\s+/)
+  var state = fields[0] || ""
+  if (state === "Z" || state === "X" || state === "x") return true
+  if (pidStart === null || pidStart === undefined) return false
+  var start = fields[22 - 3] || ""
+  return /^[0-9]+$/.test(start) && Number(start) !== pidStart
 }
 
 // What to say when Sotto's process is gone but the file still shows a

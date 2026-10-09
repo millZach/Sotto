@@ -12,6 +12,7 @@ export interface DictationRecord {
   kept: boolean
   edge: Edge
   pid: number
+  pidStart: number | null
 }
 export interface Area { x: number; y: number; width: number; height: number }
 export interface Point { x: number; y: number }
@@ -35,6 +36,7 @@ export function idle(edge?: unknown): DictationRecord
 export function validEdge(edge: unknown): boolean
 export function finiteNumber(value: unknown): number
 export function processId(value: unknown): number
+export function processStart(value: unknown): number | null
 export function parse(text: unknown): DictationRecord
 export function afterRead(previous: DictationRecord | null, text: string | null, missing: boolean): { record: DictationRecord; unreadable: boolean }
 export function key(record: Pick<DictationRecord, 'state' | 'since'>): string
@@ -43,7 +45,7 @@ export function displayFor(current: string, previous: DictationRecord | null, ne
 export function effectiveState(record: DictationRecord | null, now: number, dismissedKey: string): DictationStatus
 export function nextExpiry(record: DictationRecord | null, now: number): number
 export function watchesProcess(record: DictationRecord | null): boolean
-export function processGone(stat: string | null | undefined, pid: number): boolean
+export function processGone(stat: string | null | undefined, pid: number, pidStart?: number | null): boolean
 export function lostNotice(record: DictationRecord | null): string
 export function formatElapsed(since: number, now: number): string
 export function buttonsFor(state: DictationStatus, record: DictationRecord | null): Button[]

@@ -36,14 +36,16 @@ Item {
 
   signal lost(string notice)
 
-  // Sotto's process, while the file shows a dictation and names it. An
-  // older Sotto names none, and its file is taken at its word.
+  // Sotto's process, while the file shows a dictation and names it: its PID
+  // and, from a Sotto that says, when it started, so a PID reused by another
+  // process does not keep a dictation showing. An older Sotto names none,
+  // and its file is taken at its word.
   readonly property bool watching: Model.watchesProcess(record) && dismissedKey !== Model.key(record)
 
   // The notice goes up before the state is put away, so a pill that says
   // Sotto quit stays on the display and surface it was already on.
   function checkProcess(stat) {
-    if (!watching || !Model.processGone(stat, record.pid)) return
+    if (!watching || !Model.processGone(stat, record.pid, record.pidStart)) return
     var notice = Model.lostNotice(record)
     if (notice !== "") lost(notice)
     dismissedKey = Model.key(record)

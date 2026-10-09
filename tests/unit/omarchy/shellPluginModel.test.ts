@@ -30,17 +30,21 @@ import {
 } from '../../../apps/omarchy/shell-plugin/sotto.dictation/Model.mjs'
 
 const file = (fields: Record<string, unknown>): string => JSON.stringify({
-  version: 1, state: 'listening', since: 1_000, updatedAt: 1_000, detail: null, kept: false, edge: 'top', pid: 4242, ...fields,
+  version: 1, state: 'listening', since: 1_000, updatedAt: 1_000, detail: null, kept: false, edge: 'top', pid: 4242, pidStart: 177_000, ...fields,
 })
 const record = (state: DictationStatus, since: number, fields: Partial<DictationRecord> = {}): DictationRecord =>
-  ({ state, since, updatedAt: since, detail: '', kept: false, edge: 'top', pid: 4242, ...fields })
+  ({ state, since, updatedAt: since, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: null, ...fields })
+// A /proc/<pid>/stat line: fields 4 to 21 as Linux writes them, then field
+// 22, the start time, and a few after it.
+const stat = (pid: number, name: string, state: string, start: number | string): string =>
+  `${pid} (${name}) ${state} 1 ${pid} ${pid} 0 -1 4194560 2048 0 0 0 120 30 0 0 20 0 31 0 ${start} 1234567 890 18446744073709551615 1 1 0\n`
 
 describe('reading the state file', () => {
   it('reads a missing, malformed or unknown file as idle and hidden', () => {
     for (const text of ['', 'not json', '[]', 'null', '{"state":"listening"}', file({ version: 2 })]) {
       expect(parse(text)).toEqual(idle())
     }
-    expect(parse(undefined)).toEqual({ state: 'idle', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 0 })
+    expect(parse(undefined)).toEqual({ state: 'idle', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 0, pidStart: null })
   })
 
   it('keeps a valid edge from a state it does not know', () => {
@@ -49,13 +53,13 @@ describe('reading the state file', () => {
 
   it('ignores fields it does not know, a transcript among them', () => {
     const parsed = parse(file({ transcript: 'what the user said', level: 0.4, next: { version: 2 } }))
-    expect(parsed).toEqual({ state: 'listening', since: 1_000, updatedAt: 1_000, detail: '', kept: false, edge: 'top', pid: 4242 })
+    expect(parsed).toEqual({ state: 'listening', since: 1_000, updatedAt: 1_000, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000 })
     expect(JSON.stringify(parsed)).not.toContain('what the user said')
   })
 
   it('falls back field by field', () => {
     expect(parse(file({ state: 'failed', since: '1000', updatedAt: Infinity, detail: 7, kept: 'true', edge: 'middle' })))
-      .toEqual({ state: 'failed', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 4242 })
+      .toEqual({ state: 'failed', since: 0, updatedAt: 0, detail: '', kept: false, edge: 'top', pid: 4242, pidStart: 177_000 })
     expect(parse(file({ state: 'failed', detail: '  Sotto could not reach OpenRouter.\n Recording kept. ' })).detail)
       .toBe('Sotto could not reach OpenRouter. Recording kept.')
   })
@@ -67,6 +71,15 @@ describe('reading the state file', () => {
     for (const pid of [0, -1, 1.5, '4242', null, true, Number.NaN]) expect(parse(file({ pid })).pid).toBe(0)
     expect(parse(file({ pid: 1 })).pid).toBe(1)
     expect(parse(file({ pid: 4_194_304 })).pid).toBe(4_194_304)
+  })
+
+  it('reads pidStart only as a whole number, and null when an older Sotto gives none', () => {
+    const older = JSON.parse(file({})) as Record<string, unknown>
+    delete older.pidStart
+    expect(parse(JSON.stringify(older)).pidStart).toBeNull()
+    for (const pidStart of [-1, 1.5, '177000', null, true, Number.NaN]) expect(parse(file({ pidStart })).pidStart).toBeNull()
+    expect(parse(file({ pidStart: 0 })).pidStart).toBe(0)
+    expect(parse(file({ pidStart: 9_007_199_254_740_991 })).pidStart).toBe(9_007_199_254_740_991)
   })
 })
 
@@ -153,6 +166,50 @@ describe("checking that Sotto's process is alive", () => {
   it('reads the state after the last parenthesis, since a name may contain one', () => {
     expect(processGone('4242 (a) Z (b) S 1 2', 4242)).toBe(false)
     expect(processGone('4242 (a) S (b) Z 1 2', 4242)).toBe(true)
+  })
+
+  it('counts Sotto alive only while its PID started when pidStart says', () => {
+    expect(processGone(stat(4242, 'sotto', 'S', 177_000), 4242, 177_000)).toBe(false)
+    expect(processGone(stat(4242, 'sotto', 'R', 177_000), 4242, 177_000)).toBe(false)
+  })
+
+  it('takes a PID that another process now has as gone', () => {
+    expect(processGone(stat(4242, 'bash', 'S', 177_812), 4242, 177_000)).toBe(true)
+    expect(processGone(stat(4242, 'sotto', 'S', 0), 4242, 177_000)).toBe(true)
+    expect(processGone(stat(4242, 'sotto', 'Z', 177_000), 4242, 177_000)).toBe(true)
+  })
+
+  it('finds field 22 after a command name with spaces and parentheses', () => {
+    expect(processGone(stat(4242, 'Web Content', 'S', 177_000), 4242, 177_000)).toBe(false)
+    expect(processGone(stat(4242, 'Web Content', 'S', 177_001), 4242, 177_000)).toBe(true)
+    // A name that looks like the fields after it: `) S 1 ... 177000` inside it.
+    const tricky = 'a) S 1 2 3 (b'
+    expect(processGone(stat(4242, tricky, 'S', 177_000), 4242, 177_000)).toBe(false)
+    expect(processGone(stat(4242, tricky, 'S', 5), 4242, 177_000)).toBe(true)
+    expect(processGone(stat(4242, ') Z (', 'S', 177_000), 4242, 177_000)).toBe(false)
+    expect(processGone(stat(4242, '(sotto)', 'S', 177_000), 4242, 177_000)).toBe(false)
+  })
+
+  it('decides nothing from a start time it cannot read', () => {
+    expect(processGone(stat(4242, 'sotto', 'S', 'x'), 4242, 177_000)).toBe(false)
+    expect(processGone('4242 (sotto) S 1 4242', 4242, 177_000)).toBe(false)
+    expect(processGone('4242 (sotto S 1 4242', 4242, 177_000)).toBe(false)
+  })
+
+  it('falls back to the PID alone without pidStart, as for an older Sotto', () => {
+    expect(processGone(stat(4242, 'bash', 'S', 177_812), 4242, null)).toBe(false)
+    expect(processGone(stat(4242, 'bash', 'S', 177_812), 4242)).toBe(false)
+    expect(processGone(null, 4242, null)).toBe(true)
+  })
+
+  it('puts away a file that was already stale when first read, its PID taken by another process', () => {
+    const first = afterRead(null, file({ state: 'listening', pid: 4242, pidStart: 177_000 }), false)
+    expect(watchesProcess(first.record)).toBe(true)
+    expect(processGone(stat(4242, 'kworker/3:1-events', 'I', 177_900), first.record.pid, first.record.pidStart)).toBe(true)
+    expect(lostNotice(first.record)).toBe('Sotto quit. This dictation was lost. Open Sotto to dictate again.')
+    const kept = afterRead(null, file({ state: 'failed', kept: true, pid: 4242, pidStart: 177_000 }), false)
+    expect(processGone(stat(4242, 'bash', 'S', 177_900), kept.record.pid, kept.record.pidStart)).toBe(true)
+    expect(lostNotice(kept.record)).toBe('Sotto quit. The kept recording was lost. Open Sotto to dictate again.')
   })
 
   it('decides nothing from text that names another process or cannot be read', () => {
