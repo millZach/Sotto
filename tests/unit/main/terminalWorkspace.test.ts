@@ -150,6 +150,23 @@ describe('terminal workspace service', () => {
     expect(f.spawn).toHaveBeenCalledOnce()
   })
 
+  it('waits for Restart branch tracking before acquiring the removal reservation', async () => {
+    const acquireReclaim = vi.fn(async () => () => {})
+    const f = await fixture({ acquireReclaim })
+    const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    const branch = Promise.withResolvers<string>(), entered = Promise.withResolvers<void>()
+    f.git.mockImplementationOnce(() => { entered.resolve(); return branch.promise })
+    const restarting = f.service.restart({ id: terminal.id })
+    try {
+      await entered.promise
+      unwrap(await f.service.close({ id: terminal.id }))
+      await f.service.list()
+      expect(acquireReclaim).not.toHaveBeenCalled()
+    } finally { branch.resolve('main\n'); await restarting }
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+    expect(acquireReclaim).toHaveBeenCalledOnce()
+  })
+
   it('does not recreate a reclaimed checkout from a restart cancelled during shell lookup', async () => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })

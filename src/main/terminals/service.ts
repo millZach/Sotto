@@ -307,7 +307,7 @@ export class TerminalWorkspaceService extends ToolOperations {
         const launcher = await this.launcher(record.terminal.launch)
         await this.prepareFolder(record, generation)
         await this.start(record, launcher, generation)
-        void this.track(record, generation)
+        await this.track(record, generation)
         return this.snapshot(record)
       } catch (error) {
         if (record.terminal.closedAt !== null && error instanceof Error && 'code' in error && error.code === 'busy') throw error
