@@ -64,6 +64,10 @@ The Omarchy shell runs in B with its own `HOME`, XDG folders, runtime folder and
 
 Cleanup is armed before anything is made. Every process runs in one systemd slice and is recorded by the PID it started with. Each Hyprland instance folder is recorded by the PID in its lock, when hyprctl finds it and again at cleanup, so a compositor that fails discovery still has its folder found. After the slice stops, a process still in it or still running under a recorded PID fails the run. Only the recorded folders are removed, after their inode and lock are checked.
 
+## Sandbox correction from the integrated proof
+
+The integrated proof found that Omarchy 4.0.4's unrelated `omarchy.clipboard` service starts with a global `pkill` of clipboard watchers, including the live shell's. An isolated HOME and runtime do not confine that command. The verifier now disables that service too, before the nested shell starts. See [the integrated proof](omarchy-shell-integration.md) for the observed side effect and the corrected run's live-folder checks. This changes the sandbox, not the plugin or the scenes above.
+
 ## Results
 
 Every image below was opened and checked. Failure `detail` is the plumbing branch's own kept-failure sentences, which now end in "Recording kept." The scenes behind `read-failure-keeps-pill.png`, `rule-a-coalesced.png` and `sotto-quit.png` are new or changed, and those images are from this run. The others are from the run at `82869695`; this run repeated their scenes, which passed unchanged, and the images it took were not committed again.

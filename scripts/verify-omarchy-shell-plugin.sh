@@ -345,7 +345,9 @@ mkdir -p "$home/.config/omarchy/plugins"
 # Services that would reach past the nested session stay off in the copy.
 config=$home/.config/omarchy/shell.json
 [[ -s $config ]] || cp "$omarchy_path/config/omarchy/shell.json" "$config"
-jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight"] | unique)' \
+# Clipboard.qml starts by killing every matching clipboard watcher, including
+# the live shell's. Never load that unrelated service in a nested proof.
+jq '.disabledPlugins = ((.disabledPlugins // []) + ["omarchy.polkit", "omarchy.lock", "omarchy.idle", "omarchy.nightlight", "omarchy.clipboard"] | unique)' \
   "$config" >"$config.tmp" && mv "$config.tmp" "$config"
 
 make_theme() {
