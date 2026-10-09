@@ -59,6 +59,12 @@ test('Linux clipboard failure keeps text in Dictate while the main window is hid
         }
       }
     }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await page.getByRole('button', { name: 'Copy text' }).click()
+      await expect(page.getByRole('article', { name: 'Recovered transcript' }).getByRole('status')).toHaveText('Copied.')
+      await expect(page.getByText('Copy failed. Your text is still here. Try again or select and copy it.')).toHaveCount(0)
+    }
+    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ pasteAttempts: 0 })
   } finally { await closeSotto(launched) }
 })
 
