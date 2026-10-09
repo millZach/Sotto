@@ -17,32 +17,71 @@
 # Usage, from a Sotto checkout on an Omarchy machine, in its desktop session:
 #   scripts/verify-omarchy-shell-plugin.sh <out-dir>
 # Needs Hyprland, quickshell, grim, ImageMagick, jq, foot, systemd --user,
-# dbus-run-session and cc with the Wayland client headers. It writes raw
-# captures to <out-dir>/raw, composites to <out-dir>/curated and the
-# checks to <out-dir>/proof.txt.
+# dbus-run-session and cc with the Wayland client headers. It writes into a
+# folder of its own and, at the end, copies the checks (proof.txt), the raw
+# captures (raw/), the composites (curated/) and the logs to <out-dir>.
 
 set -euo pipefail
 
-out=$(realpath -m -- "${1:?usage: verify-omarchy-shell-plugin.sh <out-dir>}")
-# The captures and logs never go into the live session's own folders.
-# realpath follows every link that already exists, in the destination and
-# in these folders alike, so a link into one of them is refused too.
-for live_dir in "$HOME/.config/omarchy" "$HOME/.config/hypr" "$HOME/.local/state/omarchy"; do
-  live_dir=$(realpath -m -- "$live_dir")
-  if [[ $out == "$live_dir" || $out == "$live_dir"/* ]]; then
-    echo "verify-omarchy-shell-plugin.sh: refusing to write into $live_dir, which the live session uses: $out" >&2
-    exit 2
+me=verify-omarchy-shell-plugin.sh
+uid=$(id -u)
+# The destination as given, made absolute without following any link.
+dest=$(realpath -m -s -- "${1:?usage: $me <out-dir>}")
+
+# What the copy at the end may write to. No link anywhere on the way to the
+# destination or under it, since a write would follow it; nothing there but
+# folders and files of this user's; and nothing inside the live session's
+# own folders. Checked before anything is made and again just before the
+# copy, and says what it refused.
+check_dest() {
+  local path="" part entry why live_dir
+  local -a parts
+  IFS=/ read -ra parts <<<"${dest#/}"
+  for part in "${parts[@]}"; do
+    path+=/$part
+    if [[ -L $path ]]; then echo "$me: refusing $dest: $path is a symbolic link" >&2; return 1; fi
+    [[ -e $path ]] || break
+    if [[ ! -d $path ]]; then echo "$me: refusing $dest: $path is not a folder" >&2; return 1; fi
+  done
+  if [[ -d $dest ]]; then
+    if [[ ! -O $dest ]]; then echo "$me: refusing $dest: it is not yours" >&2; return 1; fi
+    if ! entry=$(find "$dest" -mindepth 1 \( -type l -o \! \( -type f -o -type d \) -o \! -user "$uid" \) -print -quit 2>/dev/null); then
+      echo "$me: refusing $dest: could not look through all of it" >&2
+      return 1
+    fi
+    if [[ -n $entry ]]; then
+      if [[ -L $entry ]]; then why="is a symbolic link"
+      elif [[ -O $entry ]]; then why="is not a plain file or folder"
+      else why="is not yours"; fi
+      echo "$me: refusing $dest: $entry $why" >&2
+      return 1
+    fi
   fi
-done
+  for live_dir in "$HOME/.config/omarchy" "$HOME/.config/hypr" "$HOME/.local/state/omarchy"; do
+    live_dir=$(realpath -m -- "$live_dir")
+    if [[ $dest == "$live_dir" || $dest == "$live_dir"/* ]]; then
+      echo "$me: refusing to write into $live_dir, which the live session uses: $dest" >&2
+      return 1
+    fi
+  done
+}
+check_dest || exit 2
+
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
-uid=$(id -u)
 run=/run/user/$uid
-mkdir -p "$out/raw" "$out/curated"
-: >"$out/proof.txt"
 
-say() { printf '%s\n' "$*" | tee -a "$out/proof.txt"; }
+# Everything the run writes goes under a folder it makes for itself,
+# exclusively and private to this user; the evidence is copied out at the
+# end. Until cleanup is armed below, an early exit just removes it.
+work=$(mktemp -d /tmp/sotto-shell-proof.XXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+evidence=$work/evidence
+mkdir -m 700 "$evidence" "$evidence/raw" "$evidence/curated"
+: >"$evidence/proof.txt"
+
+say() { printf '%s\n' "$*" | tee -a "$evidence/proof.txt"; }
 fail() { say "FAIL: $*"; exit 1; }
 passes=0
 check() { # condition-as-exit-status message
@@ -85,7 +124,7 @@ live_plugins=$(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true)
 # folder by the PID in its lock. Cleanup is armed before anything is made.
 token=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
 slice=app-sottoshellproof$token.slice
-work="" rt="" units=0 last_pid=""
+rt="" units=0 last_pid=""
 owned_pids=()
 owned_folders=() # "sig inode pid" for each instance folder a compositor of ours made
 a_pid="" b_pid="" a_sig="" b_sig="" a_wl="" b_wl=""
@@ -179,19 +218,27 @@ cleanup() {
   else
     say "FAIL: live plugins folder changed"; status=1
   fi
-  if [[ -n $work ]]; then
-    mkdir -p "$out/logs"
-    cp "$work"/*.log "$out/logs/" 2>/dev/null
-  fi
+  mkdir -p "$evidence/logs"
+  cp "$work"/*.log "$evidence/logs/" 2>/dev/null
+  deliver || status=1
   [[ $work == /tmp/sotto-shell-proof.* ]] && rm -rf -- "$work"
   [[ $rt == /tmp/ssp-* ]] && rm -rf -- "$rt"
   exit "$status"
 }
+# Copies the evidence out, the destination checked again first, so a link
+# that appeared there meanwhile is refused rather than followed. Existing
+# files are replaced, never written through.
+deliver() {
+  check_dest || { echo "$me: the evidence was not copied" >&2; return 1; }
+  mkdir -p -- "$dest" && check_dest || { echo "$me: the evidence was not copied" >&2; return 1; }
+  cp -R --no-dereference --remove-destination -- "$evidence/." "$dest/" || return 1
+  echo "evidence copied to $dest"
+}
+
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-work=$(mktemp -d /tmp/sotto-shell-proof.XXXXXX)
 # A short runtime folder: Hyprland's socket path must fit in 108 bytes.
 rt=$(mktemp -d /tmp/ssp-XXXXXX)
 home=$work/home
@@ -409,7 +456,7 @@ write_state() { # state kept detail edge since-ago-ms
   mv "$rt/sotto/.state.tmp" "$state_file"
 }
 go_idle() { rm -f "$state_file"; sleep 1.5; }
-capture() { WAYLAND_DISPLAY=$b_wl grim -o "${2:-WAYLAND-1}" "$out/raw/$1.png"; }
+capture() { WAYLAND_DISPLAY=$b_wl grim -o "${2:-WAYLAND-1}" "$evidence/raw/$1.png"; }
 pcapture() { park; capture "$@"; }
 baseline() {
   hypr_b dismissnotify >/dev/null
@@ -421,7 +468,7 @@ baseline() {
 # the pill's 44 px thickness is the pointer.
 strip_x=0 strip_y=27
 pill() { # capture [output]
-  magick "$out/raw/base-${2:-WAYLAND-1}.png" "$out/raw/$1.png" -compose difference -composite -crop "+$strip_x+$strip_y" +repage \
+  magick "$evidence/raw/base-${2:-WAYLAND-1}.png" "$evidence/raw/$1.png" -compose difference -composite -crop "+$strip_x+$strip_y" +repage \
     -colorspace gray -threshold 6% -format '%@' info: 2>/dev/null |
     sed -nE 's/^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/\1 \2 \3 \4/p' |
     awk -v dx="$strip_x" -v dy="$strip_y" '$1 > 30 && $2 > 30 {print $1, $2, $3 + dx, $4 + dy}'
@@ -459,7 +506,7 @@ in_shell env XDG_CONFIG_HOME="$elsewhere" bash "$omarchy_dir/install-shell-plugi
   cat "$work/install.out"
   fail "install-shell-plugin.sh failed"
 }
-sed 's/^/  install: /' "$work/install.out" | tee -a "$out/proof.txt"
+sed 's/^/  install: /' "$work/install.out" | tee -a "$evidence/proof.txt"
 check '[[ -f $home/.config/omarchy/plugins/sotto.dictation/manifest.json && ! -e $home/.config/omarchy/plugins/sotto.dictation/Model.d.mts ]]' "the plugin was copied to \$HOME/.config/omarchy/plugins whatever XDG_CONFIG_HOME says, without the tests' types"
 check 'grep -q "^There is another copy of the plugin in $elsewhere/" "$work/install.out"' "the script says a copy under XDG_CONFIG_HOME is not loaded"
 check '[[ $(find "$home/.config/omarchy/plugins" -mindepth 1 -maxdepth 1 | wc -l) == 1 ]]' "no staging folder was left behind"
@@ -496,7 +543,7 @@ baseline
 write_state transcribing
 sleep 1
 pcapture bar-transcribing
-read -r gw gh gx gy <<<"$(magick "$out/raw/base-WAYLAND-1.png" "$out/raw/bar-transcribing.png" -compose difference -composite \
+read -r gw gh gx gy <<<"$(magick "$evidence/raw/base-WAYLAND-1.png" "$evidence/raw/bar-transcribing.png" -compose difference -composite \
   -crop 1600x26+0+0 +repage -colorspace gray -threshold 6% -format '%@' info: | sed -E 's/^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/\1 \2 \3 \4/')"
 glyph_x=$((gx + gw / 2)) glyph_y=$((gy + gh / 2))
 go_idle
@@ -846,7 +893,7 @@ uninstall() { # name [env assignment]
   shift
   in_shell env "$@" bash "$omarchy_dir/install-shell-plugin.sh" --uninstall >"$work/$name.out" 2>&1
   local status=$?
-  sed "s/^/  $name: /" "$work/$name.out" | tee -a "$out/proof.txt"
+  sed "s/^/  $name: /" "$work/$name.out" | tee -a "$evidence/proof.txt"
   return "$status"
 }
 mkdir -m 700 "$work/no-shell"
@@ -863,34 +910,34 @@ check 'uninstall uninstall-again && grep -q "is not installed" "$work/uninstall-
 # ------------------------------------------------------------- composites
 
 say "--- composites"
-cd "$out/raw"
-crop_top() { magick "$1.png" -crop 1000x90+300+0 +repage "$out/curated/.$1.png"; echo "$out/curated/.$1.png"; }
-magick $(for s in idle starting listening transcribing delivered copied failed-kept failed-plain; do crop_top "$s"; done) -append "$out/curated/states-tokyo-night.png"
-magick $(for s in light-idle light-listening light-transcribing light-failed; do crop_top "$s"; done) -append "$out/curated/states-catppuccin-latte.png"
-magick $(for s in notice-missing notice-cleared; do crop_top "$s"; done) -append "$out/curated/notices.png"
-magick $(for s in stop-before stop-failed stop-failed-later cancel-failed; do crop_top "$s"; done) -append "$out/curated/failed-stop-keeps-pill.png"
-magick $(for s in crash-before crash-listening crash-kept older-sotto; do crop_top "$s"; done) -append "$out/curated/sotto-quit.png"
-magick $(for s in still-listening still-transcribing; do crop_top "$s"; done) -append "$out/curated/without-motion.png"
+cd "$evidence/raw"
+crop_top() { magick "$1.png" -crop 1000x90+300+0 +repage "$evidence/curated/.$1.png"; echo "$evidence/curated/.$1.png"; }
+magick $(for s in idle starting listening transcribing delivered copied failed-kept failed-plain; do crop_top "$s"; done) -append "$evidence/curated/states-tokyo-night.png"
+magick $(for s in light-idle light-listening light-transcribing light-failed; do crop_top "$s"; done) -append "$evidence/curated/states-catppuccin-latte.png"
+magick $(for s in notice-missing notice-cleared; do crop_top "$s"; done) -append "$evidence/curated/notices.png"
+magick $(for s in stop-before stop-failed stop-failed-later cancel-failed; do crop_top "$s"; done) -append "$evidence/curated/failed-stop-keeps-pill.png"
+magick $(for s in crash-before crash-listening crash-kept older-sotto; do crop_top "$s"; done) -append "$evidence/curated/sotto-quit.png"
+magick $(for s in still-listening still-transcribing; do crop_top "$s"; done) -append "$evidence/curated/without-motion.png"
 magick \( drag-to-left.png snapped-left.png +append \) \( drag-to-bottom.png snapped-bottom.png +append \) \
-  \( drag-to-right.png snapped-right.png +append \) \( drag-to-top.png snapped-top.png +append \) -append -resize 35% "$out/curated/drag-and-snap.png"
-magick snapped-left.png -crop 120x420+0+290 +repage -filter point -resize 200% "$out/curated/upright-left.png"
+  \( drag-to-right.png snapped-right.png +append \) \( drag-to-top.png snapped-top.png +append \) -append -resize 35% "$evidence/curated/drag-and-snap.png"
+magick snapped-left.png -crop 120x420+0+290 +repage -filter point -resize 200% "$evidence/curated/upright-left.png"
 for frame in start moved next; do
-  magick "rule-a-$frame-1.png" "rule-a-$frame-2.png" -background black -gravity north +append "$out/curated/.rule-a-$frame.png"
+  magick "rule-a-$frame-1.png" "rule-a-$frame-2.png" -background black -gravity north +append "$evidence/curated/.rule-a-$frame.png"
 done
-magick "$out/curated/.rule-a-start.png" "$out/curated/.rule-a-moved.png" "$out/curated/.rule-a-next.png" -append -resize 35% "$out/curated/rule-a-two-displays.png"
+magick "$evidence/curated/.rule-a-start.png" "$evidence/curated/.rule-a-moved.png" "$evidence/curated/.rule-a-next.png" -append -resize 35% "$evidence/curated/rule-a-two-displays.png"
 for frame in copied-shows after-copied; do
-  magick "$frame-1.png" "$frame-2.png" -background black -gravity north +append "$out/curated/.$frame.png"
+  magick "$frame-1.png" "$frame-2.png" -background black -gravity north +append "$evidence/curated/.$frame.png"
 done
-magick "$out/curated/.copied-shows.png" "$out/curated/.after-copied.png" -append -resize 35% "$out/curated/rule-a-after-copied.png"
+magick "$evidence/curated/.copied-shows.png" "$evidence/curated/.after-copied.png" -append -resize 35% "$evidence/curated/rule-a-after-copied.png"
 magick \( small-upright.png -crop 300x560+0+0 +repage \) \( -size 20x560 xc:black \) \
-  \( scaled-upright.png -crop 600x1080+0+0 +repage -resize 50% \) -background black -gravity north +append "$out/curated/upright-small-displays.png"
-cp listening.png "$out/curated/desktop-tokyo-night.png"
-magick drag-to-left.png -crop 560x440+0+290 +repage "$out/curated/drag-ghost-left.png"
-magick \( bar-left-top.png -crop 1000x140+300+0 +repage \) \( bar-left-left.png -crop 240x420+0+290 +repage -background black -gravity west -extent 1000x420 \) -append "$out/curated/bar-on-the-left.png"
-magick verbs-received.png -crop 800x440+0+0 +repage "$out/curated/verbs-received.png"
-cp light-listening.png "$out/curated/desktop-catppuccin-latte.png"
-rm -f "$out"/curated/.*.png
-cp "$work/verbs.log" "$out/verbs.log"
+  \( scaled-upright.png -crop 600x1080+0+0 +repage -resize 50% \) -background black -gravity north +append "$evidence/curated/upright-small-displays.png"
+cp listening.png "$evidence/curated/desktop-tokyo-night.png"
+magick drag-to-left.png -crop 560x440+0+290 +repage "$evidence/curated/drag-ghost-left.png"
+magick \( bar-left-top.png -crop 1000x140+300+0 +repage \) \( bar-left-left.png -crop 240x420+0+290 +repage -background black -gravity west -extent 1000x420 \) -append "$evidence/curated/bar-on-the-left.png"
+magick verbs-received.png -crop 800x440+0+0 +repage "$evidence/curated/verbs-received.png"
+cp light-listening.png "$evidence/curated/desktop-catppuccin-latte.png"
+rm -f "$evidence"/curated/.*.png
+cp "$work/verbs.log" "$evidence/verbs.log"
 cd - >/dev/null
 
 say "PASS: $passes checks"
