@@ -11,6 +11,7 @@ Verified on Windows in the built Electron app, using real ConPTY sessions in Ter
 - Paste a native clipboard PNG on every surface. Check that pasting in Find creates no file, then paste into xterm and check the saved PNG signature, the ignored `.sotto/clipboard` folder and the quoted path received by the PTY. Unit tests also cover invalid images, stale/exited sessions and the wrong owner.
 - Check Unicode 11 cell widths for CJK, emoji and a combining accent with the real addon. CJK and emoji are also rendered in each running-app journey.
 - Exercise search with WebGL in Terminal mode, then force context loss and finish the same journey with the DOM fallback. Drawer and Tools journeys use the DOM renderer, including link hit testing.
+- After a text-size change, check that each search highlight sits on its match's text in the DOM renderer at every capture size. The first captures failed this: xterm's DOM renderer measured its letter spacing before the new size was laid out, so after Ctrl+0 the text drifted up to a cell per word off its cells and the active match's fill covered the letter beside it. The view now has the DOM renderer measure again on the next frame after a size change or a remount; WebGL was not affected. The captures below were retaken with the fix.
 
 All captures below use reduced motion. Each search bar and its controls were checked to remain inside the terminal and viewport; the images were visually inspected for layout and clipping in both appearances.
 

@@ -177,12 +177,27 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     if (renderer) return
     try {
       renderer = new WebglAddon()
-      renderer.onContextLoss(releaseRenderer)
+      renderer.onContextLoss(() => { releaseRenderer(); respace() })
       terminal.loadAddon(renderer)
     } catch {
       // A remote desktop or unavailable GPU must still leave a usable DOM terminal.
       releaseRenderer()
+      respace()
     }
+  }
+  // xterm's DOM renderer spaces its letters from a width it measures in the same moment the text size changes, before
+  // the page has laid the new size out, and measures nothing while the view is off the page. Either way the text drifts
+  // off its cells, and off the search highlights drawn on them. Any option change measures again, so once the page has
+  // laid out, set the weight to its twin and back.
+  let respacing = 0
+  const respace = (): void => {
+    cancelAnimationFrame(respacing)
+    respacing = requestAnimationFrame(() => {
+      if (disposed || renderer || !element.isConnected) return
+      const weight = terminal.options.fontWeight ?? 'normal'
+      terminal.options.fontWeight = weight === 'normal' ? 400 : 'normal'
+      terminal.options.fontWeight = weight
+    })
   }
 
   terminal.onData(data => { if (inputEnabled) handlers.onInput(data) })
@@ -296,6 +311,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     focus() { terminal.focus() },
     dispose() {
       disposed = true
+      cancelAnimationFrame(respacing)
       if (element.contains(document.activeElement)) reportFocus(false)
       selectionChanges.dispose()
       element.removeEventListener('pointerdown', startSelection, true)
@@ -316,6 +332,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     const grid = view.fit()
     if (grid) handlers.onResize?.(grid)
     search.refresh()
+    respace()
   })
   return view
 }

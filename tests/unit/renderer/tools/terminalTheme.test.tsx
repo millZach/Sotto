@@ -38,6 +38,8 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions(): unde
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 const { createXtermView, terminalTheme } = await import('../../../../src/renderer/src/tools/terminalView')
+const { setTerminalPreferences } = await import('../../../../src/renderer/src/tools/terminalPreferences')
+const { DEFAULT_SETTINGS } = await import('../../../../src/shared/settings')
 
 it('copies a terminal selection through main when browser clipboard access is denied', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
@@ -291,6 +293,43 @@ describe('a live terminal', () => {
     view.setInputEnabled(true)
     expect(xterm.instances[0]!.options.disableStdin).toBe(false)
     view.dispose()
+    vi.unstubAllGlobals()
+  })
+
+  it('measures a DOM terminal’s letter spacing again once a new text size or a remount has been laid out', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+    const frames = new Map<number, FrameRequestCallback>()
+    let frame = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frame, callback); return frame })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
+    const flush = (): void => { const due = [...frames.values()]; frames.clear(); for (const callback of due) callback(0) }
+    for (const fail of [true, false]) {
+      gpu.fail = fail
+      const view = createXtermView({ onInput() {}, onInterrupt() {} }, { resolveColor: resolve })
+      const host = document.body.appendChild(document.createElement('div'))
+      view.mount(host)
+      // Any option change makes xterm measure again; the twin weight draws the same text.
+      const weights: unknown[] = []
+      let weight: unknown = 'normal'
+      Object.defineProperty(xterm.instances.at(-1)!.options, 'fontWeight', { get: () => weight, set: value => { weight = value; weights.push(value) }, configurable: true })
+      flush()
+      expect(weights).toEqual(fail ? [400, 'normal'] : [])
+      weights.length = 0
+      try {
+        setTerminalPreferences({ ...DEFAULT_SETTINGS, terminalFontSize: 16 }, async () => true)
+        expect(xterm.instances.at(-1)!.options.fontSize).toBe(16)
+        expect(weights).toEqual([])
+        flush()
+        // The GPU renderer measures nothing from the page, so only the DOM fallback is nudged.
+        expect(weights).toEqual(fail ? [400, 'normal'] : [])
+        expect(weight).toBe('normal')
+      } finally {
+        setTerminalPreferences(DEFAULT_SETTINGS, async () => true)
+        view.dispose()
+        host.remove()
+      }
+      flush()
+    }
     vi.unstubAllGlobals()
   })
 

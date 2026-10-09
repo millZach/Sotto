@@ -8,8 +8,9 @@ import { forceDomTerminalRenderer, terminalOutput } from './support/terminal'
 const SHOTS = resolve('artifacts/terminal-search-links-zoom')
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGOQnFbxH4QZYAwASEIImVOee9IAAAAASUVORK5CYII='
 
-async function clickTerminalLink(page: Page, scope: Locator, text: string, modifier = false): Promise<void> {
-  const point = await scope.locator('.xterm-rows > div').filter({ hasText: text }).first().evaluate((row, text) => {
+/** Where the DOM renderer drew `text` in the first row containing `row`. */
+async function renderedText(scope: Locator, row: string, text: string): Promise<{ x: number; y: number; width: number; height: number }> {
+  return scope.locator('.xterm-rows > div').filter({ hasText: row }).first().evaluate((row, text) => {
     const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
     const start = row.textContent!.replace(/\u00a0/gu, ' ').indexOf(text), end = start + text.length
     const range = document.createRange()
@@ -20,13 +21,33 @@ async function clickTerminalLink(page: Page, scope: Locator, text: string, modif
       if (!started && start >= offset && start < offset + length) { range.setStart(node, start - offset); started = true }
       if (started && end <= offset + length) {
         range.setEnd(node, end - offset)
-        const box = range.getBoundingClientRect()
-        return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+        const { x, y, width, height } = range.getBoundingClientRect()
+        return { x, y, width, height }
       }
       offset += length
     }
-    throw new Error('Link text was not rendered')
+    throw new Error('Text was not rendered')
   }, text)
+}
+
+/** Each search highlight sits on its match's text, also after the text size changed. The addon redraws a repainted screen's highlights shortly after. */
+async function expectHighlightOnText(scope: Locator): Promise<void> {
+  await expect(async () => {
+    const text = await renderedText(scope, 'beta needle two', 'needle')
+    const highlights = await scope.locator('.xterm-decoration').evaluateAll(elements => elements.map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }))
+    const highlight = highlights.find(box => Math.abs(box.y + box.height / 2 - (text.y + text.height / 2)) < box.height / 2)
+    expect(highlight, 'a highlight on the "beta needle two" row').toBeDefined()
+    expect(Math.abs(highlight!.x - text.x)).toBeLessThan(1.5)
+    expect(Math.abs(highlight!.width - text.width)).toBeLessThan(1.5)
+  }).toPass({ timeout: 15_000 })
+}
+
+async function clickTerminalLink(page: Page, scope: Locator, text: string, modifier = false): Promise<void> {
+  const box = await renderedText(scope, text, text)
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   await page.mouse.move(point.x, point.y)
   if (modifier) await page.keyboard.down('Control')
   try { await page.mouse.click(point.x, point.y) }
@@ -59,7 +80,7 @@ const paint = () => process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
  'Unsafe '+e+']8;;file:///tmp/blocked'+e+'\\\\'+'blocked file'+e+']8;;'+e+'\\\\',
  'CJK 界 emoji 😀', 'GRID='+process.stdout.columns+'x'+process.stdout.rows
 ].join('\\r\\n')+'\\r\\n');
-paint(); process.stdout.on('resize', paint);
+paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
 process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
@@ -212,6 +233,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
           await expect(search.locator('output')).toHaveText(/of 3$/u)
+          await expectHighlightOnText(scope)
           const box = await search.boundingBox(), bounds = await scope.locator('.terminal-view__screen').boundingBox()
           expect(box!.x).toBeGreaterThanOrEqual(bounds!.x)
           expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
