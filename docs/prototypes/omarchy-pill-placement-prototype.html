@@ -9,11 +9,13 @@
   &notif=0|1 (1: a notification arrives)&marks=0|1 (0: hide the marking)&motion=auto|reduced.
   The page writes every key. A key that is missing or has a value it does not know takes the
   default (place=p1, layout=split-left, focus=terminal, state=listening, theme=dark, notif=0,
-  marks=1, motion=auto); case does not matter.
+  marks=1, motion=auto); case does not matter in keys or values.
 
-  Decided by the owner on #850, October 8: P1 is the default, the pill can be dragged and snaps
-  to the nearest screen edge as the Windows pill does, and it shows on the focused display. The
-  page draws P1 where it starts; it does not draw the drag.
+  Decided by the owner on #850, October 8, as corrected on October 9: P1 is the default, and the
+  pill can be dragged. On release it snaps to the nearest screen edge, centred on that edge, as
+  the Windows pill does, and Sotto saves the edge. Proposed and pending the owner: the pill
+  appears on the focused display when dictation starts and stays there until it ends. The page
+  draws P1 where it starts; it does not draw the drag.
 
   The look is the #839 prototype's (prototype/omarchy-widget-chrome, 5b90bf2a): B's pill, the bar,
   the tiled windows, chrome 1, Tokyo Night and Catppuccin Latte. Positions come from omarchy-shell
@@ -121,6 +123,7 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
 .loupe figcaption{font-size:12px;color:#a3abb8;margin:0 0 5px}
 .loupe-view{position:relative;height:172px;overflow:hidden;border-radius:6px;border:1px solid #2c313a;background:#000}
 .loupe-view>.desk{transform:none}
+.loupe-empty{margin:0;height:100%;display:grid;place-items:center;padding:0 12px;text-align:center;color:#a3abb8;font-size:13px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 
 @media (max-width:760px){
@@ -363,7 +366,7 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
     <div class="frame" id="frame" role="img" aria-label=""></div>
     <div class="loupes" aria-hidden="true">
       <figure class="loupe"><figcaption>Around the pill, actual size</figcaption><div class="loupe-view" data-loupe="pill"></div></figure>
-      <figure class="loupe"><figcaption>Sotto's send and stop button, actual size</figcaption><div class="loupe-view" data-loupe="stop"></div></figure>
+      <figure class="loupe"><figcaption id="stopCaption">Sotto's send and stop button, actual size</figcaption><div class="loupe-view" data-loupe="stop"></div></figure>
       <figure class="loupe"><figcaption id="inputCaption">Where your words go, actual size</figcaption><div class="loupe-view" data-loupe="input"></div></figure>
     </div>
   </main>
@@ -429,11 +432,11 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
     <ul class="covers" id="covers"></ul>
 
     <h2>Placement trade-offs</h2>
-    <div class="trade" data-trade="p1"><h3>P1 · Top centre, under the bar</h3><p>Hangs from the bar's centre, under Sotto's indicator, where the shell already opens the clock's popup. It only ever covers the tops of the windows that meet in the middle: a header, a title, a terminal's oldest lines. It moves only when you drag it, needs nothing from Hyprland but the focused monitor, and keeps clear of notifications (top right) and the OSD (bottom centre). It is the furthest from the prompt you are looking at.</p></div>
-    <div class="trade" data-trade="p2"><h3>P2 · Bottom centre of the focused window <span class="dropped">Dropped</span></h3><p>It sits on the focused window's input, which is where your words go: Sotto's composer, Claude Code's prompt. It hides the text you are adding to, in every layout. It also has to follow focus, which P5’s card costs out.</p></div>
+    <div class="trade" data-trade="p1"><h3>P1 · Top centre, under the bar</h3><p>Hangs from the bar's centre, under Sotto's indicator, where the shell already opens the clock's popup. It only ever covers the tops of the windows that meet in the middle: a header, a title, a terminal's oldest lines. It moves only when you drag it, needs nothing from Hyprland but the focused monitor when dictation starts, and keeps clear of notifications (top right) and the OSD (bottom centre). It is the furthest from the prompt you are looking at.</p></div>
+    <div class="trade" data-trade="p2"><h3>P2 · Bottom centre of the focused window <span class="dropped">Dropped</span></h3><p>It sits at the bottom of the focused window, which is where most inputs are: Sotto's composer, Claude Code's prompt. There it hides the text you are adding to. Only nvim escapes it here, because its cursor line is near the top. It also has to follow focus, which P5’s card costs out.</p></div>
     <div class="trade" data-trade="p3"><h3>P3 · Bottom right of the screen, lifted</h3><p>Near where your eyes are, and never on the seam. Lifted 150 px it clears a composer at its resting height, but it lands on the right end of the latest reply, and a composer that grows with a long draft grows into it. Dropped into the corner itself, it would cover Sotto's send and stop button whenever Sotto is on the right.</p></div>
     <div class="trade" data-trade="p4"><h3>P4 · Top right, under the bar's right group</h3><p>Covers little in the windows. But it is exactly where notifications appear (top right, 380 px wide, the same anchor) and where the network, Bluetooth and audio panels open. A notification while you dictate lands on the pill or under it. Tick “A notification arrives” to see it.</p></div>
-    <div class="trade" data-trade="p5"><h3>P5 · Top centre of the focused window <span class="dropped" style="background:#16302d;color:#bff3ec">Added</span></h3><p>P2's idea without P2's problem: the pill rides on the window your words go to, over its title instead of its input. The cost is movement and plumbing. It jumps whenever focus moves, so the plugin follows Hyprland's focus and move events, and Hyprland's event socket has no resize event, so a split resized by hand leaves it behind until the next one. When the focused window is at the top right, it lands where notifications appear.</p></div>
+    <div class="trade" data-trade="p5"><h3>P5 · Top centre of the focused window <span class="dropped" style="background:#16302d;color:#bff3ec">Added</span></h3><p>P2's idea without P2's problem: the pill rides on the window your words go to, over its title instead of its input. It was not chosen. It jumps whenever focus moves, and following the window needs polling. Hyprland's event socket says when focus moves, but <code>movewindowv2</code> fires only when a window goes to another workspace; a swap, a split toggled or resized and a floating window dragged send nothing. So the plugin would re-read the window's place on a timer while the pill shows. Hyprland gives that place in desktop coordinates, and the pill's margins count from its own monitor, so the monitor's origin comes off first. When the focused window is at the top right, it lands where notifications appear.</p></div>
     <div class="trade" data-trade="p0"><h3>P0 · Before: bottom centre of the screen</h3><p>Where #839 drew it. In a split it straddles the seam and covers both windows' bottom inner corners: Sotto's send and stop button when Sotto is on the left, the terminal's prompt when the terminal is. Kept here only to compare.</p></div>
 
     <h2>How the plugin would anchor it</h2>
@@ -446,20 +449,23 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
       <li>The terminal runs Claude Code and is scrolled to its latest lines, so its prompt sits at the bottom, as it does once a session is under way. Sotto's transcript and composer use the real 760 px column.</li>
       <li>Red marks something you need while dictating: where your words go, Sotto's send and stop button, the bar's indicators, a notification. Amber marks something worth seeing: the reply you are answering, another window's input. Anything else under the pill is listed, not marked.</li>
       <li>The failed state is the widest pill and the one that waits for you, so it is here as well as listening and transcribing. Its second button says Discard, because that is what a press does to a kept recording.</li>
-      <li>If the bar is moved to the bottom (<code>omarchy bar position</code>), P1 would follow it to the bottom centre, back on the seam. The plugin should then keep to the top edge.</li>
+      <li>If the bar is moved to the bottom (<code>omarchy bar position</code>), a pill that hung from it would follow it to the bottom centre, back on the seam. The plugin keeps to the top edge instead, at the shell's 5 px gap, since there is no bar above to clear. On any edge the margin is that gap, plus the bar's height when the bar is on the same edge. This page draws only a bar at the top.</li>
     </ul>
 
     <h2>Decided on #850</h2>
     <div class="rec">
       <p><b>P1 is where the pill starts.</b> Top centre, just under the bar, hanging from Sotto's indicator.</p>
-      <p><b>It moves like the Windows pill.</b> Drag it, and on release it snaps to the nearest screen edge and keeps its place along that edge, as <code>snapToEdge</code> does on Windows. Sotto saves the place, so the pill comes back where you left it. A layer-shell surface can change its margins while it shows, so the plugin can do this. This page does not draw the drag.</p>
-      <p><b>It follows the focused display.</b> The pill shows on Hyprland's focused monitor. Omarchy's focus follows the mouse, so the pill moves to the display the mouse is on, even while you dictate, and a saved edge place applies on whichever display shows it. The bar indicator shows on every display's bar.</p>
+      <p><b>It moves like the Windows pill.</b> Drag it, and on release it snaps to the nearest screen edge, centred on that edge, as <code>snapToEdge</code> and <code>placementToBounds</code> do on Windows. Sotto saves the edge, so the pill comes back to it. On Omarchy the default edge is the top (P1), not the bottom that Windows starts on. Whether the pill turns upright on the left and right edges, as the Windows pill does, is part of the plugin's design. A layer-shell surface can change its anchors and margins while it shows, so the plugin can do this. This page does not draw the drag.</p>
+      <p><b>Proposed, pending the owner: it stays on one display.</b> The pill appears on Hyprland's focused monitor when dictation starts, which on Omarchy is the display the mouse is on, and stays there until dictation ends, as the Windows pill does. Moving a layer-shell surface to another display makes a new one, so following the mouse would make the pill blink. The saved edge applies on whichever display shows it. The bar indicator shows on every display's bar.</p>
     </div>
+
+    <h2>How the pill's buttons reach Sotto</h2>
+    <p>Stop and Cancel can run <code>sotto dictation stop</code> and <code>sotto dictation cancel</code>, which #858 added along with <code>start</code> and <code>toggle</code>. Try again and Discard, the failed state's buttons, and saving the edge after a drag have no command yet. #850 adds them, to the command or to the socket behind it.</p>
 
     <h2>Designer's recommendation</h2>
     <div class="rec">
-      <p><b>P1, top centre under the bar.</b> It is the only placement that covers nothing you need in every layout and every focus here, with or without a notification on screen. It stays put until you drag it, and it reads as part of the bar it hangs from, beside the indicator that carries the same state, in the place the shell already uses for the centre group's popups. Its cost is distance: it is far from a prompt at the bottom of the screen. The dictation hotkey, not a trip with the mouse, is how most dictations end.</p>
-      <p><b>P5 is the runner-up</b> if the pill should show which window your words go to. It earns that with a focus listener and a pill that jumps.</p>
+      <p><b>P1, top centre under the bar.</b> It is the only placement that covers nothing marked at all, neither something you need nor something worth seeing, in every layout and every focus here, with or without a notification on screen. P3 never covers anything you need either, but in 26 of its 54 views it sits on the reply or output you are answering. P1 stays put until you drag it, and it reads as part of the bar it hangs from, beside the indicator that carries the same state, in the place the shell already uses for the centre group's popups. Its cost is distance: it is far from a prompt at the bottom of the screen. The dictation hotkey, not a trip with the mouse, is how most dictations end.</p>
+      <p><b>P5 was the runner-up and was not chosen.</b> It shows which window your words go to, at the cost of a pill that jumps with focus and a timer that polls the window's place while the pill shows.</p>
     </div>
   </section>
 </div>
@@ -543,7 +549,7 @@ function pillPosition(s, wins, pw, ph) {
   let y
   switch (s.place) {
     case 'p1': x = DW / 2 - pw / 2; y = BAR + SHELL_GAP; break
-    case 'p2': x = f.x + f.w / 2 - pw / 2; y = f.y + f.h - 2 - 24 - ph; break
+    case 'p2': x = f.x + f.w / 2 - pw / 2; y = f.y + f.h - 24 - ph; break
     case 'p3': x = DW - 22 - pw; y = DH - LIFT - ph; break
     case 'p4': x = DW - SHELL_GAP - pw; y = BAR + SHELL_GAP; break
     case 'p5': x = f.x + f.w / 2 - pw / 2; y = f.y + 2 + 12; break
@@ -660,7 +666,9 @@ function terminal(s, win) {
       ${tl('<span class="grn">●</span> A bar widget watches a file and redraws when it changes. The')}
       ${tl('  Agents widget reads <span class="cyn">~/.local/state/omarchy/agents/usage/*.json</span>')}
       ${tl('  this way, so Sotto can write one state file for a plugin to')}
-      ${tl('  follow. The pill\'s buttons answer with <span class="cyn">sotto dictation stop</span>.')}${tl('')}
+      ${tl('  follow. Stop and Cancel can run <span class="cyn">sotto dictation stop</span> and')}
+      ${tl('  <span class="cyn">sotto dictation cancel</span>. Try again, Discard and saving a')}
+      ${tl('  dragged edge have no command yet; #850 adds them.')}${tl('')}
       ${tl('<span class="dim">></span> And the pill? It has to take clicks.')}${tl('')}
       ${tl('<span class="grn">●</span> <span class="bri">Read</span>(/usr/share/omarchy/shell/plugins/osd/Osd.qml)')}
       ${tl('  <span class="dim">Read 197 lines</span>')}${tl('')}
@@ -680,10 +688,10 @@ function terminal(s, win) {
       ${tl('<span class="dim">></span> Can a plugin follow the focused window?')}${tl('')}
     </div>
     <div class="blk" data-need="term-latest">
-      ${tl('<span class="grn">●</span> Yes. Quickshell\'s Hyprland module knows the active window, and')}
-      ${tl('  its IPC object carries <span class="cyn">at</span> and <span class="cyn">size</span>. The plugin moves its surface')}
-      ${tl('  on focus and move events. There is no resize event, so a split')}
-      ${tl('  resized by hand is only caught on the next one.')}
+      ${tl('<span class="grn">●</span> Only by polling. Quickshell\'s Hyprland module knows the active')}
+      ${tl('  window, and its IPC object carries <span class="cyn">at</span> and <span class="cyn">size</span>, but Hyprland')}
+      ${tl('  announces focus, not a window moved or resized in its workspace,')}
+      ${tl('  so the plugin would re-read the position on a timer.')}
     </div>
     <div class="blk">${tl('')}</div>
     <div class="blk" data-need="term-prompt">${top}${line(' <span class="dim">></span> <span class="cur"></span>', ' >  ')}${bottom}</div>
@@ -709,7 +717,7 @@ function editor() {
     '  <span class="pr">exclusionMode</span>: ExclusionMode.Ignore',
     '',
     '  <span class="pr">anchors.top</span>: <span class="nu">true</span>',
-    '  <span class="pr">margins.top</span>: Bar.height + Style.gapsOut<span class="cur"></span>',
+    '  <span class="pr">margins.top</span>: (barPosition === <span class="st">"top"</span> ? barSize : <span class="nu">0</span>) + Style.gapsOut<span class="cur"></span>',
     '',
     '  <span class="pr">implicitWidth</span>: card.width',
     '  <span class="pr">implicitHeight</span>: card.height',
@@ -780,6 +788,25 @@ const overlap = (a, b) => {
   const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
   return w >= 2 && h >= 2
 }
+const intersect = (a, b) => {
+  const x = Math.max(a.x, b.x)
+  const y = Math.max(a.y, b.y)
+  const w = Math.min(a.x + a.w, b.x + b.w) - x
+  const h = Math.min(a.y + a.h, b.y + b.h) - y
+  return w > 0 && h > 0 ? { x, y, w, h } : null
+}
+/* The part of an element you can see: its box cut to the inside of every ancestor that hides
+   overflow, such as a scroll area or the window itself. Null when none of it shows. */
+function visibleRect(el, desk) {
+  let r = deskRect(el, desk)
+  for (let a = el.parentElement; r && a && a !== desk; a = a.parentElement) {
+    const cs = getComputedStyle(a)
+    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+    const b = deskRect(a, desk)
+    r = intersect(r, { x: b.x + a.clientLeft, y: b.y + a.clientTop, w: a.clientWidth, h: a.clientHeight })
+  }
+  return r
+}
 
 /* Lays the pill out, finds what it covers, and draws the marks. Returns the findings. */
 function place(desk, s, wins) {
@@ -793,12 +820,13 @@ function place(desk, s, wins) {
   const hits = []
   for (const el of desk.querySelectorAll('[data-need]')) {
     const need = NEEDS[el.dataset.need](s)
-    const r = deskRect(el, desk)
-    if (need && overlap(p, r)) hits.push({ key: el.dataset.need, tier: need[0], words: need[1], label: need[2], r })
+    const r = need && visibleRect(el, desk)
+    if (r && overlap(p, r)) hits.push({ key: el.dataset.need, tier: need[0], words: need[1], label: need[2], r })
   }
   const overs = []
   for (const el of desk.querySelectorAll('[data-over]')) {
-    if (overlap(p, deskRect(el, desk)) && !overs.includes(el.dataset.over)) overs.push(el.dataset.over)
+    const r = visibleRect(el, desk)
+    if (r && overlap(p, r) && !overs.includes(el.dataset.over)) overs.push(el.dataset.over)
   }
   const spans = wins.filter((w) => overlap(p, w)).length
   if (spans > 1) overs.push(`the seam between ${spans === 2 ? 'two' : spans} windows`)
@@ -853,7 +881,8 @@ const CHOICES = { place: Object.keys(PLACES), layout: Object.keys(LAYOUT_NAMES),
 const FLAGS = { notif: ['0', '1'], marks: ['0', '1'], motion: ['auto', 'reduced'] }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1))
-  const get = (key) => (p.get(key) ?? '').trim().toLowerCase()
+  /* Keys and values in any case; the first matching key wins, as URLSearchParams.get does. */
+  const get = (key) => ([...p].find(([k]) => k.trim().toLowerCase() === key)?.[1] ?? '').trim().toLowerCase()
   const patch = {}
   for (const [key, allowed] of Object.entries(CHOICES)) patch[key] = allowed.includes(get(key)) ? get(key) : DEFAULTS[key]
   for (const [key, values] of Object.entries(FLAGS)) patch[key] = values.includes(get(key)) ? get(key) === values[1] : DEFAULTS[key]
@@ -895,7 +924,10 @@ function render() {
   const desk = frame.firstElementChild
   const found = place(desk, S, wins)
   lastTargets = found.targets
-  for (const view of loupes) view.innerHTML = frame.innerHTML
+  for (const view of loupes) {
+    view.innerHTML = view.dataset.loupe in lastTargets ? frame.innerHTML : '<p class="loupe-empty">Sotto is not on screen in this layout.</p>'
+  }
+  document.getElementById('stopCaption').textContent = lastTargets.stop ? 'Sotto\'s send and stop button, actual size' : 'Sotto\'s send and stop button'
 
   const red = found.hits.filter((h) => h.tier === 'red').map((h) => h.words)
   const amber = found.hits.filter((h) => h.tier === 'amber').map((h) => h.words)
@@ -922,14 +954,14 @@ function render() {
 }
 
 function renderAnchor() {
-  const follow = '// win: Hyprland.activeToplevel\'s "at" and "size", re-read on\n//   activewindowv2, movewindowv2, openwindow, closewindow,\n//   changefloatingmode and fullscreen. Nothing announces a resize.'
-  const head = '// apps/omarchy/shell-plugin/Pill.qml, a sketch\nPanelWindow {\n  screen: focusedScreen  // Hyprland\'s focused monitor\n  WlrLayershell.namespace: "sotto-pill"\n  WlrLayershell.layer: WlrLayer.Overlay\n  WlrLayershell.keyboardFocus: WlrKeyboardFocus.None\n  exclusionMode: ExclusionMode.Ignore\n'
+  const follow = `// win: the active toplevel's "at" and\n//   "size", in desktop coordinates.\n//   Re-read on activewindowv2, openwindow,\n//   closewindow, changefloatingmode and\n//   fullscreen, and polled while the pill\n//   shows: nothing announces a move, swap\n//   or resize inside a workspace\n//   (movewindowv2 fires only on a move to\n//   another workspace).\n// screen.x, screen.y: the pill's monitor's\n//   origin, in the same coordinates.\n//   Margins count from that monitor, so\n//   its origin comes off. A window on\n//   another monitor is not followed.`
+  const head = `// apps/omarchy/shell-plugin/Pill.qml,\n// a sketch\nPanelWindow {\n  // proposed: the focused monitor when\n  // dictation starts, kept until it ends\n  screen: startScreen\n  WlrLayershell.namespace: "sotto-pill"\n  WlrLayershell.layer: WlrLayer.Overlay\n  WlrLayershell.keyboardFocus:\n    WlrKeyboardFocus.None\n  exclusionMode: ExclusionMode.Ignore\n`
   const Q = {
-    p1: ['Anchored to the top edge alone, so the compositor centres it. The margin is the notifications’ own bar clearance.', `${head}  anchors.top: true      // no left or right: centred\n  margins.top: barSize + Style.gapsOut  // 26 + 5\n}`],
-    p2: ['Anchored to the top-left corner and moved by its margins whenever the focused window changes.', `${head}  anchors { top: true; left: true }\n  margins.left: win.x + (win.width - width) / 2\n  margins.top: win.y + win.height - height - 24\n}\n${follow}`],
+    p1: ['Anchored to the top edge alone, so the compositor centres it. Under a top bar the margin is the notifications’ own bar clearance; with the bar elsewhere it is the shell’s gap alone. After a drag, the saved edge takes the place of the top, centred the same way.', `${head}  anchors.top: true  // alone, so centred\n  // as notifications: 26 + 5 under a top\n  // bar, 5 with the bar elsewhere\n  margins.top: (barPosition === "top"\n    ? barSize : 0) + Style.gapsOut\n}\n// After a drag: anchor the saved edge\n// alone, so it centres on it, and add the\n// bar's size when the bar is on that edge.`],
+    p2: ['Anchored to the top-left corner and moved by its margins whenever the focused window changes, moves or resizes. Not built: P2 was dropped.', `${head}  anchors { top: true; left: true }\n  margins.left: win.x - screen.x\n    + (win.width - width) / 2\n  margins.top: win.y - screen.y\n    + win.height - height - 24\n}\n${follow}`],
     p3: ['Anchored to the bottom-right corner. The lift is a guess at a composer’s height; the shell cannot see inside a window.', `${head}  anchors { bottom: true; right: true }\n  margins.right: 22\n  margins.bottom: 150  // clears a composer at rest\n}`],
-    p4: ['Anchored to the top-right corner, with exactly the margins the shell gives its notifications.', `${head}  anchors { top: true; right: true }\n  margins.top: barSize + Style.gapsOut  // as notifications\n  margins.right: Style.gapsOut          // as notifications\n}`],
-    p5: ['Anchored to the top-left corner and moved by its margins whenever the focused window changes.', `${head}  anchors { top: true; left: true }\n  margins.left: win.x + (win.width - width) / 2\n  margins.top: win.y + 14  // inside its top edge\n}\n${follow}`],
+    p4: ['Anchored to the top-right corner, with exactly the margins the shell gives its notifications.', `${head}  anchors { top: true; right: true }\n  // as notifications\n  margins.top: (barPosition === "top"\n    ? barSize : 0) + Style.gapsOut\n  margins.right: Style.gapsOut\n}`],
+    p5: ['Anchored to the top-left corner and moved by its margins whenever the focused window changes, moves or resizes. Only focus is announced, so the rest is polled. Not built: P5 was not chosen.', `${head}  anchors { top: true; left: true }\n  margins.left: win.x - screen.x\n    + (win.width - width) / 2\n  // 14: inside the window's top edge\n  margins.top: win.y - screen.y + 14\n}\n${follow}`],
     p0: ['Anchored to the bottom edge alone, so the compositor centres it.', `${head}  anchors.bottom: true\n  margins.bottom: 16\n}`],
   }
   document.getElementById('anchorNote').textContent = Q[S.place][0]
@@ -941,8 +973,8 @@ function layout() {
   if (desk) desk.style.transform = `scale(${frame.clientWidth / DW})`
   for (const view of loupes) {
     const d = view.firstElementChild
-    if (!d) continue
-    const t = lastTargets[view.dataset.loupe] ?? lastTargets.pill
+    const t = lastTargets[view.dataset.loupe]
+    if (!d || !t) continue
     const w = view.clientWidth
     const h = view.clientHeight
     d.style.left = `${Math.round(Math.max(w - DW, Math.min(0, w / 2 - t.x)))}px`
