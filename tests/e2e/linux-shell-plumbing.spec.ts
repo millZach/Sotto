@@ -48,6 +48,9 @@ test('publishes private shell state, retries and discards, remembers placement a
     const raw = (await readFile(statePath, 'utf8')).trim()
     expect(raw).not.toContain(E2E_TRANSCRIPT)
     expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
+    const published = JSON.parse(raw)
+    if (published.detail !== null) expect(published.detail.length).toBeLessThan(60)
+    if (published.kept) expect(published.detail).toContain('Recording kept.')
     console.log(`${label}: ${raw}`)
   }
   const widgetVisible = () => launched!.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))?.isVisible() ?? false)

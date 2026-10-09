@@ -40,6 +40,29 @@ const failureDetail: Readonly<Record<WidgetErrorCode, string>> = {
   SETTINGS_UNAVAILABLE: 'Settings could not be read. Open Sotto and try again.',
 }
 
+// The shell pill displays detail directly; its buttons supply Try again and
+// Discard. Keep the reason and recording outcome in every kept failure.
+const keptFailureDetail: Readonly<Record<WidgetErrorCode, string>> = {
+  MIC_PERMISSION_DENIED: 'Microphone access denied. Recording kept.',
+  MIC_DEVICE_NOT_FOUND: 'No microphone found. Recording kept.',
+  MIC_START_FAILED: 'Microphone could not start. Recording kept.',
+  MIC_NOT_SET_UP: 'No microphone set up. Recording kept. Check Settings.',
+  RECORDING_FAILED: 'Recording stopped unexpectedly. Recording kept.',
+  NO_SPEECH: 'No speech was heard. Recording kept.',
+  TRANSCRIPTION_UNCONFIGURED: 'No OpenRouter key. Recording kept. Add it in Settings.',
+  TRANSCRIPTION_UNAUTHORIZED: 'API key rejected. Recording kept. Check it in Settings.',
+  TRANSCRIPTION_OFFLINE: 'Sotto could not reach OpenRouter. Recording kept.',
+  TRANSCRIPTION_BILLING: 'OpenRouter has no credit. Recording kept. Add credit.',
+  TRANSCRIPTION_RATE_LIMITED: 'The transcription service is busy. Recording kept.',
+  TRANSCRIPTION_SERVICE_ERROR: 'OpenRouter returned an error. Recording kept.',
+  TRANSCRIPTION_FAILED: 'Sotto did not get usable text back. Recording kept.',
+  OUTPUT_UNAVAILABLE: 'Text could not be delivered. Recording kept. Open Sotto.',
+  OUTPUT_FAILED: 'Text could not be delivered. Recording kept. Open Sotto.',
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Clipboard unavailable. Recording kept. Open Dictate.',
+  HISTORY_FAILED: 'Text delivered; history failed. Recording kept.',
+  SETTINGS_UNAVAILABLE: 'Settings could not be read. Recording kept. Open Sotto.',
+}
+
 export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictationState, 'state' | 'detail' | 'kept'> {
   switch (snapshot.status) {
     case 'idle': case 'cancelled': return { state: 'idle', detail: null, kept: false }
@@ -49,7 +72,9 @@ export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictat
     case 'success': return { state: snapshot.output === 'pasted' ? 'delivered' : 'copied', detail: snapshot.output === 'pasted' ? null : 'Copied — paste with Super+V', kept: false }
     case 'error': return {
       state: 'failed',
-      detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code) ? failureDetail[snapshot.code] : 'Dictation failed. Open Sotto to try again.',
+      detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code)
+        ? (snapshot.kept === true ? keptFailureDetail : failureDetail)[snapshot.code]
+        : snapshot.kept === true ? 'Dictation failed. Recording kept.' : 'Dictation failed. Open Sotto to try again.',
       kept: snapshot.kept === true,
     }
   }

@@ -20,6 +20,31 @@ function snapshot(fields: object): WidgetSnapshot {
   return { theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'F9', cancellable: true, sessionId: 's', ...fields } as WidgetSnapshot
 }
 
+describe('shell dictation copy', () => {
+  it.each([...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'])('states whether %s kept the recording in fewer than 60 characters', code => {
+    for (const kept of [false, true]) {
+      const fields = shellDictationFields(snapshot({ status: 'error', code, kept, message: 'PRIVATE PROVIDER BODY' }))
+      expect(fields).toMatchObject({ state: 'failed', kept })
+      expect(fields.detail!.length).toBeLessThan(60)
+      expect(fields.detail!.includes('Recording kept.')).toBe(kept)
+      expect(fields.detail).not.toContain('PRIVATE')
+    }
+  })
+
+  it('keeps the key and credit next steps and the copied instruction short', () => {
+    for (const [code, nextStep] of [
+      ['TRANSCRIPTION_UNCONFIGURED', 'Add it in Settings.'],
+      ['TRANSCRIPTION_UNAUTHORIZED', 'Check it in Settings.'],
+      ['TRANSCRIPTION_BILLING', 'Add credit.'],
+    ]) {
+      expect(shellDictationFields(snapshot({ status: 'error', code, kept: true })).detail).toContain(nextStep)
+    }
+    const copied = shellDictationFields(snapshot({ status: 'success', output: 'copied' }))
+    expect(copied.detail).toBe('Copied — paste with Super+V')
+    expect(copied.detail!.length).toBeLessThan(60)
+  })
+})
+
 describe.skipIf(process.platform !== 'linux')('private shell dictation state', () => {
   let runtime: string
   let file: DictationStateFile | undefined
@@ -86,7 +111,8 @@ describe.skipIf(process.platform !== 'linux')('private shell dictation state', (
       file.publish(snapshot({ status: 'error', code, kept: true, text: 'PRIVATE TRANSCRIPT', message: 'PRIVATE PROVIDER BODY' }))
       vi.advanceTimersByTime(50)
       expect(read()).toMatchObject({ state: 'failed', kept: true, edge: 'left' })
-      expect(read().detail.length).toBeLessThan(100)
+      expect(read().detail).toContain('Recording kept.')
+      expect(read().detail.length).toBeLessThan(60)
     }
     file.publish(snapshot({ status: 'error', code: 'PRIVATE TRANSCRIPT', message: 'PRIVATE PROVIDER BODY' }))
     vi.advanceTimersByTime(50)
