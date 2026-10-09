@@ -421,6 +421,25 @@ describe('terminal agent run state', () => {
 })
 
 describe('bounded active terminal screen', () => {
+  it.each([
+    ['claude', header, '✻ Working… (esc to interrupt)', '❯ \r\n? for shortcuts'],
+    ['codex', codexTitle, '• Working (0s • esc to interrupt)', '› Ask Codex to do anything\r\n? for shortcuts'],
+    ['grok', grokTitle, '⠧ Thinking… 0.2s       0.2s [stop]', '│>\r\nGrok 4.7 (xhigh) · auto-review'],
+  ] as const)('rejects fenced %s work examples above the live composer', (provider, title, status, ready) => {
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started()
+    const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules(provider)
+    for (const fence of ['```', '~~~']) {
+      const example = `Native status example:\r\n${fence}\r\n${status}\r\n${fence}`
+      screen.write(redraw(`${example}\r\n${ready}`, title))
+      expect(rules.read(screen).state).toBe('idle')
+      state.output(redraw(`${example}\r\n${ready}`, title)); state.quiet()
+      expect(state.state).toBe('idle')
+      screen.write(redraw(`${example}\r\n${status}`, title))
+      expect(rules.read(screen).state).toBe('working')
+    }
+    screen.write(redraw(`\x60\x60\x60\r\n${status}`, title))
+    expect(rules.read(screen).state).toBeUndefined()
+  })
   it('applies split ANSI redraw, erase, cursor movement and alternate-buffer restoration', () => {
     const screen = new TerminalAgentScreen(12, 4)
     screen.write('old\r\ntext'); screen.write('\x1b['); screen.write('2J\x1b[Hnew')

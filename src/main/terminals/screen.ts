@@ -191,14 +191,26 @@ export class TerminalScreenRules {
       ...(this.version && this.version !== TERMINAL_SCREEN_RULES[this.provider] ? { unsupportedVersion: true } : {}),
       ...(!this.version && screen.reliable && all.some(line => line.trim() !== '') ? { unresolvedVersion: true } : {}),
     }
-    // Blank space below the cursor is not scrollback. Read only the active screen's final twelve nonempty rows.
-    const bottom = screen.logicalLines(12).map(line => line.trim())
+    // Native chrome cannot belong to a transcript code example. Track fences from the whole bounded screen,
+    // including a fence above the footer window, and preserve blank rows so chrome anchors cannot join examples.
+    let fence: string | undefined
+    const native = all.map(line => {
+      const delimiter = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1]
+      if (delimiter) {
+        if (!fence) fence = delimiter
+        else if (delimiter[0] === fence[0] && delimiter.length >= fence.length) fence = undefined
+        return ''
+      }
+      return fence ? '' : line
+    })
+    // Blank space below the cursor is not scrollback. Read only the active screen's final twelve rows.
+    const bottom = native.slice(-screen.logicalLines(12).length).map(line => line.trim())
     const text = bottom.join('\n')
     // Approval chrome must own the current footer, not an example above a live draft or later output.
     const footer = bottom.at(-1) ?? ''
     const failed = /^(?:Error:|Interrupted|Cancelled|Canceled|Turn cancelled|Turn canceled|Request failed)/imu.test(text)
     if (this.provider === 'claude') {
-      const work = /(?:esc to interrupt|ctrl\+c to interrupt)/iu.test(text) && /^[✶✻✽✢·*]\s+\S.+/mu.test(text)
+      const work = /^[✶✻✽✢·*]\s+\S[^\r\n]*(?:esc to interrupt|ctrl\+c to interrupt)[^\r\n]*$/imu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
       if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const choices = /^(?:❯\s*)?1\.\s+Yes(?:,|$)/mu.test(text) && /^(?:❯\s*)?[2-9]\.\s+No(?:,|$)/mu.test(text)
