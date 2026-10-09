@@ -189,6 +189,10 @@ describe('formatAccelerator on darwin', () => {
 })
 
 describe('platform isolation', () => {
+  it('uses Control and Ctrl labels on Linux', () => {
+    expect(parseAccelerator('control+shift+space', 'linux')).toBe('CommandOrControl+Shift+Space')
+    expect(formatAccelerator('CommandOrControl+Shift+Space', 'linux', 'display')).toBe('Ctrl+Shift+Space')
+  })
   it('does not leak the darwin Control token onto win32', () => {
     expect(parseAccelerator('control+shift+space', 'win32')).toBe('CommandOrControl+Shift+Space')
     expect(parseAccelerator('control+shift+space', 'darwin')).toBe('Control+Shift+Space')

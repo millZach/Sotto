@@ -146,6 +146,24 @@ function snapshots(harness: ReturnType<typeof createHarness>): WidgetSnapshot[] 
 }
 
 describe('DictationController', () => {
+  it('keeps text and publishes clipboard unavailability without history or transcript on the widget', async () => {
+    const harness = createHarness({
+      platform: 'linux', currentSettings: settings({ historyEnabled: false }),
+      deliverOutput: async () => 'clipboard-unavailable' as const,
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.retainOutput).toHaveBeenCalledOnce()
+    expect(harness.retainOutput.mock.calls[0]![0].text).toBeTruthy()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })
+    const widget = snapshots(harness).at(-1)!
+    expect(widget).toMatchObject({ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })
+    expect(widgetSnapshotSchema.safeParse(widget).success).toBe(true)
+    expect(widget).not.toHaveProperty('text')
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.setTimer).not.toHaveBeenCalled()
+  })
+
   it('fails closed when settings are unavailable', async () => {
     const harness = createHarness({
       getSettings: () => { throw new Error('private settings path') },
@@ -258,6 +276,22 @@ describe('DictationController', () => {
     expect(harness.controller.getState().status).toBe('processing')
     stopping.resolve(null)
     await stop
+  })
+
+  it('pairs Linux push-to-talk without recording an unpaired stop or a repeated start', async () => {
+    const harness = createHarness({ platform: 'linux' })
+    await harness.controller.stop()
+    expect(harness.controller.getState().status).toBe('idle')
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+    await harness.controller.start()
+    await harness.controller.start()
+    expect(harness.controller.getState().status).toBe('listening')
+    expect(harness.createRecorder).toHaveBeenCalledOnce()
+    expect(harness.recorder.start).toHaveBeenCalledOnce()
+    await harness.controller.stop()
+    await harness.controller.stop()
+    expect(harness.recorder.stop).toHaveBeenCalledOnce()
+    expect(harness.deliverOutput).toHaveBeenCalledOnce()
   })
 
   it('toggles from the shortcut and ignores start or toggle during processing', async () => {

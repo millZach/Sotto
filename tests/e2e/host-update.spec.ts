@@ -150,7 +150,8 @@ test('an older host shows a pill on the Threads page, fails an update with its o
       const pillBox = document.querySelector('.host-update__pill')!.getBoundingClientRect()
       const header = document.querySelector('.thread-pane[data-under-controls] .thread-workspace__head')!.getBoundingClientRect()
       return { drag: getComputedStyle(document.querySelector('.host-update__pill')!).getPropertyValue('-webkit-app-region'), headerRight: header.right, pillLeft: pillBox.left, pillWidth: pillBox.width,
-        controlsLeft: document.querySelector('.threads-view__winctl')!.getBoundingClientRect().left }
+        // Linux and macOS draw no controls at the top right; the window's right edge stands in for them.
+        controlsLeft: document.querySelector('.threads-view__winctl')?.getBoundingClientRect().left ?? window.innerWidth }
     })
     await capture(launched, 'pill', async () => {
       const box = await layout()

@@ -131,6 +131,10 @@ function errorCopyFor(
       title: 'Couldn’t copy text',
       detail: 'Try again from the Sotto app.',
     },
+    DESKTOP_CLIPBOARD_UNAVAILABLE: {
+      title: 'Text kept in Sotto',
+      detail: 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.',
+    },
     HISTORY_FAILED: {
       title: 'Saved to clipboard',
       detail: 'Local history was not updated.',
@@ -213,7 +217,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
   switch (snapshot.status) {
     case 'idle':
       return {
-        tone: 'idle', title: 'Ready', detail: formatAccelerator(snapshot.shortcut, platform, 'display'),
+        tone: 'idle', title: 'Ready', detail: platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display'),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
@@ -223,7 +227,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       }
     case 'listening':
       return {
-        tone: 'listening', title: 'Listening', detail: `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
+        tone: 'listening', title: 'Listening', detail: platform === 'linux' ? 'Release F9 or press Super+Ctrl+X to finish' : `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'processing':
@@ -236,7 +240,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       return {
         tone: 'success',
         title: snapshot.output === 'pasted' ? 'Pasted' : 'Copied — paste manually',
-        detail: snapshot.output === 'pasted' ? 'Text delivered' : 'Clipboard is ready',
+        detail: snapshot.output === 'pasted' ? 'Text delivered' : platform === 'linux' ? 'Super+V to paste in apps and terminals' : 'Clipboard is ready',
         icon: <Check aria-hidden="true" size={23} strokeWidth={2.4} />,
       }
     case 'cancelled':
@@ -503,7 +507,7 @@ export function WidgetApp({
           <span className="widget-sliver__prompt">
             <span className="widget-sliver__prompt-action">Click to dictate</span>
             {agentState === null && <span className="widget-sliver__prompt-keys">
-              {formatAccelerator(snapshot.shortcut, platform, 'display')}
+              {platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display')}
             </span>}
             {agentActions}
           </span>

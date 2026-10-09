@@ -151,7 +151,9 @@ export function Onboarding({
           <section>
             <p className="onboarding-eyebrow">Welcome to Sotto</p>
             <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>Dictation, ready when you are</h1>
-            <p className="onboarding-lead">Press a shortcut, speak, and your words arrive as text wherever you were typing. You will need an OpenRouter API key.</p>
+            <p className="onboarding-lead">{platform === 'linux'
+              ? 'Hold F9 to talk after installing Sotto’s compositor bindings in Hyprland. Sotto copies your words, then pastes them into the focused app or terminal. You will need an OpenRouter API key.'
+              : 'Press a shortcut, speak, and your words arrive as text wherever you were typing. You will need an OpenRouter API key.'}</p>
             <div className="onboarding-assurances">
               <p><Check aria-hidden="true" size={18} /> Transcribed by Microsoft MAI-Transcribe-2 through OpenRouter</p>
               <p><Check aria-hidden="true" size={18} /> Audio leaves this computer only while you dictate</p>
@@ -235,9 +237,13 @@ export function Onboarding({
         {step === 4 ? (
           <section>
             <p className="onboarding-eyebrow">Shortcut &amp; paste</p>
-            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>One shortcut from speech to text</h1>
-            <p className="onboarding-lead">Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.</p>
-            <div className="onboarding-shortcut"><span>Active shortcut</span><ShortcutKey accelerator={shortcut} platform={platform} /></div>
+            <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>{platform === 'linux' ? 'Speak, then paste into any window' : 'One shortcut from speech to text'}</h1>
+            <p className="onboarding-lead">{platform === 'linux'
+              ? 'Install Sotto’s compositor bindings in Hyprland. Hold F9 to talk, or press Super+Ctrl+X to start and stop. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.'
+              : 'Press this shortcut to start. Press it again to finish. Your text is always copied before Sotto attempts to paste.'}</p>
+            <div className="onboarding-shortcut">{platform === 'linux'
+              ? <><span>Omarchy defaults</span><span>F9 · Super+Ctrl+X</span></>
+              : <><span>Active shortcut</span><ShortcutKey accelerator={shortcut} platform={platform} /></>}</div>
             <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
               <textarea
                 className="tt-input onboarding-paste-field"
