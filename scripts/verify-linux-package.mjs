@@ -89,6 +89,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="Launch when you sign in"]')?.getAttribute('aria-checked') === 'true')
   const autostart = readFileSync(file, 'utf8')
   assert.ok(autostart.includes(`Exec="${storage.executable}"`))
+  assert.ok(autostart.includes(`TryExec=${storage.executable}\n`))
   execFileSync('desktop-file-validate', [file])
   const generated = join(profile, 'generated-autostart')
   mkdirSync(generated, { recursive: true })

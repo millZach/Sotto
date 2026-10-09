@@ -163,6 +163,8 @@ artifacts/linux-package/*
 !artifacts/linux-package/proof.json
 !artifacts/linux-package/settings-dark.png
 !artifacts/linux-package/settings-light.png
+!artifacts/linux-package/settings-unavailable-dark.png
+!artifacts/linux-package/settings-unavailable-light.png
 !artifacts/linux-package/gates.txt
 !artifacts/linux-package/package-verification.json
 !artifacts/linux-package/package-list.txt
