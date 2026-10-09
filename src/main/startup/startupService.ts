@@ -1,6 +1,7 @@
 import type { StartupState } from '../../shared/contracts'
 
 export interface LoginItemAdapter {
+  readonly supported?: boolean
   /** `status` is macOS only. On macOS 13 and later it can say the login item waits for the user's approval. */
   getLoginItemSettings(): { readonly openAtLogin: boolean; readonly status?: string }
   setLoginItemSettings(settings: { readonly openAtLogin: boolean }): void
@@ -8,10 +9,11 @@ export interface LoginItemAdapter {
 
 /**
  * Electron's login items do nothing on Linux, so nothing there may reach them: not the Settings row, not a
- * remembered setting at startup, not the settings channel. Starting at sign-in comes with the installed
- * package (#841); until then Linux reads as off and a request to turn it on changes nothing.
+ * remembered setting at startup, not the settings channel. Development builds read as unsupported;
+ * packaged builds use the XDG autostart adapter instead.
  */
 export const LINUX_LOGIN_ITEMS: LoginItemAdapter = Object.freeze({
+  supported: false,
   getLoginItemSettings: () => ({ openAtLogin: false }),
   setLoginItemSettings: () => undefined,
 })
@@ -26,7 +28,7 @@ export class StartupService {
   get(): StartupState {
     const settings = this.loginItems.getLoginItemSettings()
     if (settings.status === 'requires-approval') return { enabled: true, approvalRequired: true }
-    return { enabled: settings.openAtLogin }
+    return { enabled: settings.openAtLogin, ...(this.loginItems.supported === undefined ? {} : { supported: this.loginItems.supported }) }
   }
 
   set(enabled: boolean): StartupState {

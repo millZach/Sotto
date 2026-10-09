@@ -1,0 +1,35 @@
+$ mise exec node@24.21.0 -- npm run typecheck
+> sotto@0.1.34 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tests.json
+exit: 0
+
+$ mise exec node@24.21.0 -- npm run lint
+> sotto@0.1.34 lint
+> eslint .
+exit: 0
+
+$ mise exec node@24.21.0 -- npm test -- --maxWorkers=2
+Test Files  627 passed | 50 skipped (677)
+      Tests  9289 passed | 182 skipped (9471)
+   Start at  08:52:37
+   Duration  507.67s (transform 10.46s, setup 39.54s, import 97.04s, tests 746.71s, environment 75.75s)
+exit: 0
+
+$ mise exec node@24.21.0 -- npm run notices:verify
+> sotto@0.1.34 notices:verify
+> node scripts/verify-notices.mjs
+
+Verified 174 third-party notice components.
+exit: 0
+
+$ mise exec node@24.21.0 -- node --input-type=module -e "import { readFileSync } from 'node:fs'; import { verifyExternalDependencyInventories } from './scripts/release-external-dependencies.mjs'; verifyExternalDependencyInventories({ main: JSON.parse(readFileSync('out/main/external-dependencies.json','utf8')), preload: JSON.parse(readFileSync('out/preload/external-dependencies.json','utf8')) }, ['node-pty','zod','electron']); console.log('allowlist check: PASS')"
+allowlist check: PASS
+exit: 0
+
+Final build-input comparison against out/build-provenance.json:
+final packaged inputs: 6f7be9ae3568b731b5f5dfa8cba7c617ec55bc041f7d424cd3ba827fdc03285e (MATCH)
+
+Nested Hyprland, one Playwright worker:
+  4 passed (14.3s)
+Owned processes still running: []
+exit: 0

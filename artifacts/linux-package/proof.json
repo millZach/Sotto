@@ -1,0 +1,76 @@
+{
+  "unpacked": {
+    "storage": {
+      "ready": true,
+      "packaged": true,
+      "version": "0.1.34",
+      "executable": "/home/zach/Projects/Sotto/.worktrees/linux-package/release/linux-unpacked/sotto",
+      "passwordStore": "gnome-libsecret",
+      "available": true,
+      "backend": "gnome_libsecret"
+    },
+    "trayRegistered": true,
+    "autostartWritten": "[Desktop Entry]\nType=Application\nName=Sotto\nExec=\"/home/zach/Projects/Sotto/.worktrees/linux-package/release/linux-unpacked/sotto\"\nIcon=sotto\nTerminal=false\nCategories=Utility;\n",
+    "autostartGenerated": true,
+    "autostartRemoved": true,
+    "captures": [
+      {
+        "appearance": "dark",
+        "width": 1600,
+        "height": 1000,
+        "fits": true
+      },
+      {
+        "appearance": "dark",
+        "width": 1280,
+        "height": 800,
+        "fits": true
+      },
+      {
+        "appearance": "dark",
+        "width": 820,
+        "height": 560,
+        "fits": true
+      },
+      {
+        "appearance": "light",
+        "width": 1600,
+        "height": 1000,
+        "fits": true
+      },
+      {
+        "appearance": "light",
+        "width": 1280,
+        "height": 800,
+        "fits": true
+      },
+      {
+        "appearance": "light",
+        "width": 820,
+        "height": 560,
+        "fits": true
+      }
+    ]
+  },
+  "extractedPackage": {
+    "storage": {
+      "ready": true,
+      "packaged": true,
+      "version": "0.1.34",
+      "executable": "/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/extracted-root/opt/sotto/sotto",
+      "passwordStore": "gnome-libsecret",
+      "available": true,
+      "backend": "gnome_libsecret"
+    },
+    "trayRegistered": true,
+    "autostartWritten": "[Desktop Entry]\nType=Application\nName=Sotto\nExec=\"/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/extracted-root/opt/sotto/sotto\"\nIcon=sotto\nTerminal=false\nCategories=Utility;\n",
+    "autostartGenerated": true,
+    "autostartRemoved": true,
+    "captures": [],
+    "command": {
+      "verb": "toggle",
+      "exitCode": 0,
+      "result": ""
+    }
+  }
+}

@@ -120,7 +120,8 @@ import {
   type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
-import { LINUX_LOGIN_ITEMS, StartupService } from './startup/startupService'
+import { StartupService } from './startup/startupService'
+import { linuxAutostart } from './startup/linuxAutostart'
 import {
   TrayController,
   type TrayAdapter,
@@ -592,10 +593,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
   const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
-  const startup = new StartupService(e2eConfiguration !== null ? {
+  const startup = new StartupService(platform === 'linux' ? linuxAutostart({
+    isPackaged: app.isPackaged, executable: process.execPath, configHome: process.env.XDG_CONFIG_HOME,
+  }) : e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
-  } : platform === 'linux' ? LINUX_LOGIN_ITEMS : app)
+  } : app)
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )
@@ -707,7 +710,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' ? powerMonitor : undefined)
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' || platform === 'linux' ? powerMonitor : undefined)
   let browserService: BrowserService | undefined
   let cloudIphoneService: CloudIphoneService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)

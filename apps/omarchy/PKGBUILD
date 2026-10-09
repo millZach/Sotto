@@ -1,0 +1,46 @@
+# The release owner updates pkgver and the archive checksum after verifying a release on forge.
+pkgname=sotto-bin
+pkgver=0.1.34
+pkgrel=1
+pkgdesc='Dictation and voice development coordinator'
+arch=('x86_64')
+url='https://github.com/millZach/Sotto-releases'
+license=('MIT')
+provides=('sotto')
+conflicts=('sotto')
+depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'gcc-libs'
+         'glib2' 'glibc' 'gtk3' 'hicolor-icon-theme' 'libcups' 'libnotify'
+         'libx11' 'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes'
+         'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss' 'pango' 'systemd-libs'
+         'xdg-utils' 'wl-clipboard' 'libsecret')
+optdepends=('gnome-keyring: unlock and save credentials through Secret Service')
+options=('!strip')
+_archive="Sotto-${pkgver}-linux-x64.tar.gz"
+# Local verification uses an absolute path and the same checksum checks as a release download.
+_source_url="https://github.com/millZach/Sotto-releases/releases/download/v${pkgver}/${_archive}"
+if [[ -n ${SOTTO_TARBALL:-} ]]; then
+  _source_url="file://${SOTTO_TARBALL}"
+fi
+source=("${_archive}::${_source_url}"
+        'sotto' 'sotto.desktop' 'bindings.lua' 'install.sh'
+        'sotto-48.png' 'sotto-128.png' 'sotto-256.png')
+# Filled from the verified archive and package sources; never use SKIP for the release archive.
+sha256sums=('9600c3948ef9739b1b5a3186e4c8471367561d3dcb7b4122843380abc74b5f09' 'b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86' '989830b03a273391c321e57d3cc599b7f7f4ab2c382a88cf917c23ea3a8ee891' '206490341a40be0fa88ca4b1cc29082e2d3f4d618c7ad7443d16bb283fdb512b'
+            '4cda2ee57a900f8e642081dc8d59771d34f5d812cbb0447234dbd43f7cf3d0f0' 'f648b5f86ead3bb0a9d9632edd3a878fa3b8498132f4f83b27cbbbadc0eb5415' 'f615b4743b3d65f74c3414e23e6bf712c02e5210d11c4d00ddbab781980471f4' '90b87c9eee0262e4eb7ad4e8b6962e9b1de72b5a94ff2374270b2f19606817b1')
+
+package() {
+  install -d "${pkgdir}/opt/sotto"
+  cp -a "${srcdir}/Sotto-${pkgver}-linux-x64/." "${pkgdir}/opt/sotto/"
+  chown root:root "${pkgdir}/opt/sotto/chrome-sandbox"
+  chmod 4755 "${pkgdir}/opt/sotto/chrome-sandbox"
+  install -Dm755 "${srcdir}/sotto" "${pkgdir}/opt/sotto/bin/sotto"
+  install -d "${pkgdir}/usr/bin"
+  ln -s /opt/sotto/bin/sotto "${pkgdir}/usr/bin/sotto"
+  install -Dm644 "${srcdir}/sotto.desktop" "${pkgdir}/usr/share/applications/sotto.desktop"
+  for size in 48 128 256; do
+    install -Dm644 "${srcdir}/sotto-${size}.png" "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/sotto.png"
+  done
+  install -Dm644 "${pkgdir}/opt/sotto/resources/LICENSE.md" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.md"
+  install -Dm644 "${srcdir}/bindings.lua" "${pkgdir}/usr/share/sotto/bindings.lua"
+  install -Dm755 "${srcdir}/install.sh" "${pkgdir}/usr/share/sotto/install.sh"
+}

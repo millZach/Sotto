@@ -614,6 +614,14 @@ Transcription itself needs no local assets: run the app, paste an OpenRouter key
 
 The same commands run in Terminal on macOS.
 
+### Linux installation
+
+Omarchy on x64 is the checked Linux desktop. Follow [the package guide](../apps/omarchy/README.md) to build `sotto-bin`, then install the resulting `.pkg.tar.zst` with `sudo pacman -U`. Open Sotto from the application menu or run `sotto`. The package includes its own Electron, so it needs no system Electron or Node. Its dependencies include wl-clipboard for dictation and libsecret for credential storage; Omarchy supplies the running keyring. The first release archive and AUR publication are still pending.
+
+Under **Settings → Application**, **Launch when you sign in** turns XDG autostart on or off. **Start minimized** controls whether the main window opens. The command in the autostart file points to the packaged executable; quit and reopen after moving a manually extracted build, then turn startup off and on again. Development builds cannot register autostart.
+
+Linux updates come from the package manager. Before the AUR publication, install the next verified package with `sudo pacman -U`; afterward, `omarchy update` brings `sotto-bin` updates. Sotto has no Linux in-app updater.
+
 ### Linux development builds
 
 The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
@@ -626,7 +634,7 @@ npm run build
 npx electron .
 ```
 
-The tray uses the colour app icon, sized for a 2x bar. The window keeps its title area without minimise, maximise or close buttons. On Omarchy, press Super+W to close Sotto to the tray. It keeps running; open it again from the tray, or choose Quit there to quit. Omarchy is the Linux desktop Sotto supports (ADR-0062). Elsewhere the window has no controls either, so close it with the desktop's own shortcut, such as Alt+F4, and use the tray to reopen or quit. A desktop with no tray, such as stock GNOME, has no way back once the window is closed. Frosted windows and the in-app updater are unavailable. **Launch when you sign in** is disabled: starting at sign-in comes with the installed package. Linux installers, sign-in startup and release checks are separate work (#841).
+The tray uses the colour app icon, sized for a 2x bar. The window keeps its title area without minimise, maximise or close buttons. On Omarchy, press Super+W to close Sotto to the tray. It keeps running; open it again from the tray, or choose Quit there to quit. Omarchy is the Linux desktop Sotto supports (ADR-0062). Elsewhere the window has no controls either, so close it with the desktop's own shortcut, such as Alt+F4, and use the tray to reopen or quit. A desktop with no tray, such as stock GNOME, has no way back once the window is closed. Frosted windows and the in-app updater are unavailable. **Launch when you sign in** stays disabled in development builds. In the installed package it writes or removes `sotto.desktop` in `$XDG_CONFIG_HOME/autostart` (normally `~/.config/autostart`), which Omarchy and uwsm run when you sign in.
 
 Saving the OpenRouter key needs an unlocked keyring and a running secret service. On Linux, Sotto selects Chromium's `gnome-libsecret` password store before startup unless you supplied `--password-store` yourself or the desktop names KDE. On KDE, Chromium chooses the store so KWallet stays available. Sotto still refuses to save a key without encryption.
 
@@ -667,6 +675,19 @@ Artifacts are written to:
 Brand assets (`build/icon.png`, `build/icon.ico`, `build/installer-sidebar.bmp`, the iPhone app icon and the Android launcher icons) are generated from the SVG masters in `build/` with `node scripts/generate-brand-assets.mjs`. The owl in `build/icon.svg` is the one master; `build/tray-template.svg` is the same owl simplified for 16 pixels.
 
 The packaged `resources` directory contains `runtime/`, `README.md`, and `THIRD_PARTY_NOTICES.md`. Each packaging command automatically verifies the source runtime before packaging and verifies the packaged runtime, notices, bridge and worklet afterward.
+
+### Linux packages
+
+On forge with Node 24 and a clean checkout:
+
+```sh
+mise exec node@24.21.0 -- npm ci
+mise exec node@24.21.0 -- node node_modules/electron/install.js
+mise exec node@24.21.0 -- npm run runtime:prepare
+mise exec node@24.21.0 -- npm run package:linux
+```
+
+This builds `release/linux-unpacked` and `release/Sotto-<version>-linux-x64.tar.gz`, rebuilding node-pty for bundled Electron only on Linux. Verification checks both outputs, including every external resource and native helper in the tarball. Smoke probes use an isolated profile and `--password-store=basic` to leave the release machine's keyring alone. Real keyring and tray checks are a separate forge pass. Build the pacman package with the [Omarchy recipe](../apps/omarchy/README.md); the [release procedure](release/releasing.md#linux-desktop-package) covers checksums and publication.
 
 ### macOS packages
 

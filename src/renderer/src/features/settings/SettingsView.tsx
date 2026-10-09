@@ -155,6 +155,13 @@ export function SettingsView({
   onDownloadUpdate,
   onInstallUpdate,
 }: SettingsViewProps): ReactNode {
+  const [linuxStartupSupported, setLinuxStartupSupported] = useState(false)
+  useEffect(() => {
+    if (platform !== 'linux') return
+    let active = true
+    void window.sotto?.getStartup?.().then(state => { if (active) setLinuxStartupSupported(state.supported === true) }).catch(() => undefined)
+    return () => { active = false }
+  }, [platform])
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
   if (settings.microphoneId !== savedMicrophoneId) {
@@ -581,7 +588,7 @@ export function SettingsView({
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
-                    {...(platform === 'linux' ? { disabled: true, description: 'Starting at sign-in comes with the installed package.' } : {})} onCheckedChange={async (checked) => {
+                    {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Starting at sign-in comes with the installed package.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
                     setNotice(result?.enabled !== checked
                       ? { text: copy.settingsStartupFailureNotice, error: true }

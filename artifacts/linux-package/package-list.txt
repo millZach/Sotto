@@ -1,0 +1,11 @@
+sotto-bin /opt/sotto/
+sotto-bin /opt/sotto/bin/sotto
+sotto-bin /opt/sotto/chrome-sandbox
+sotto-bin /opt/sotto/sotto
+sotto-bin /usr/bin/sotto
+sotto-bin /usr/share/applications/sotto.desktop
+sotto-bin /usr/share/icons/hicolor/128x128/apps/sotto.png
+sotto-bin /usr/share/icons/hicolor/256x256/apps/sotto.png
+sotto-bin /usr/share/icons/hicolor/48x48/apps/sotto.png
+-rwsr-xr-x  0 root   root    15232 Oct  9 08:40 opt/sotto/chrome-sandbox
+lrwxrwxrwx  0 root   root        0 Oct  9 08:40 usr/bin/sotto -> /opt/sotto/bin/sotto

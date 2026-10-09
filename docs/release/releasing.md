@@ -1,6 +1,6 @@
 # Cutting a release
 
-Releases are cut by hand on two machines and published to the public `millZach/Sotto-releases` repository, not to the private source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS still has none.
+Releases are cut by hand on three machines and published to the public `millZach/Sotto-releases` repository, not to the private source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS and Linux still have none.
 
 ## Steps
 
@@ -10,10 +10,10 @@ The first desktop release whose Add host turns on a host's tailnet connections (
 
 First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, which is a placeholder until the iPhone app's external TestFlight testing has a public link (ADR-0063). Set it to that link before a release.
 
-1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the two `package:*` installer paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
+1. Bump the version: `npm version X.Y.Z --no-git-tag-version` updates `package.json` and `package-lock.json` together, then update the three `package:*` distributable paths in `package.json` that carry the version. Commit on `main` as `Release X.Y.Z` with a body that says what the release is. The source repository carries no tag.
 2. On each machine, move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
-3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.
-4. Create release `vX.Y.Z` titled `Sotto X.Y.Z (beta)` on `millZach/Sotto-releases` and attach every installer and disk image.
+3. Build: `npm run package:win` on the Windows PC, `npm run package:mac` on the Mac, and `npm run package:linux` on forge. Each run verifies the runtime, writes build provenance and checks the packaged resources. The ONNX runtime ships only under `resources/runtime`; the check rejects a copy inside `app.asar`.
+4. Create release `vX.Y.Z` titled `Sotto X.Y.Z (beta)` on `millZach/Sotto-releases` and attach every installer, disk image and Linux desktop archive and pacman package.
 5. Assemble `SHA256SUMS.txt` and upload it last, after every artifact is attached.
 6. Mark the superseded release as a pre-release so the newest release is the only "Latest".
 
@@ -22,11 +22,12 @@ First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared
 Each machine produces only its own platform's artifacts:
 
 - Windows PC: `Sotto Setup X.Y.Z.exe`, the dashed `Sotto-Setup-X.Y.Z.exe` copies for GitHub upload, blockmaps, `latest.yml`.
+- forge (x64 Linux): `Sotto-X.Y.Z-linux-x64.tar.gz`, plus the `sotto-bin-X.Y.Z-1-x86_64.pkg.tar.zst` built from it.
 - Apple silicon Mac: `Sotto-X.Y.Z-arm64.dmg` and its blockmap. There is no `latest-mac.yml`: the mac build has a dmg target only, no zip target, and no auto-updater.
 
 The local `release/` folder (gitignored) holds only the CURRENT version's artifacts for the machine it was built on.
 
-`SHA256SUMS.txt` spans both platforms: each machine appends its own hashes as `<hash>  <filename>` (two spaces, lower-case hex), and the assembled file is uploaded LAST, after every installer and disk image is attached. On the Mac that is `shasum -a 256 <file>`; on the Windows PC:
+`SHA256SUMS.txt` spans all three platforms: each machine appends its own hashes as `<hash>  <filename>` (two spaces, lower-case hex), and the assembled file is uploaded LAST, after every platform artifact is attached. On the Mac that is `shasum -a 256 <file>`; on the Windows PC:
 
 ```powershell
 Get-ChildItem release\Sotto-Setup-*.exe, release\*.blockmap, release\latest.yml |
@@ -39,7 +40,34 @@ macOS builds are ad-hoc signed (`identity: '-'`) and not notarized, so the relea
 
 ## Where the feeds point
 
-electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand.
+electron-builder's publish config and the Windows auto-update feed point at `millZach/Sotto-releases`. Windows installs are offered the new version by the in-app updater; macOS users download the disk image by hand. Linux users install the next pacman package; once `sotto-bin` is in the AUR, `omarchy update` brings it.
+
+## Linux desktop package
+
+Cut by hand on forge (Omarchy, x64), using Node 24.21.0 and a clean `npm ci`. Never change shared electron-builder keys for Linux: `package:linux` enables the native rebuild on its command line and the `linux:` block owns the target. Windows and macOS keep their release commands.
+
+```sh
+mise exec node@24.21.0 -- npm ci
+mise exec node@24.21.0 -- node node_modules/electron/install.js
+mise exec node@24.21.0 -- npm run runtime:prepare
+mise exec node@24.21.0 -- npm run package:linux
+```
+
+The command produces `release/linux-unpacked` and `release/Sotto-X.Y.Z-linux-x64.tar.gz`. It verifies provenance, runtime, notices, normal startup, SQLite and the native PTY. The tarball is extracted and every file compared with the verified unpacked build, including external runtime and native resources. Smoke profiles use `--password-store=basic` and an isolated HOME/XDG configuration so the release machine's keyring is untouched.
+
+Run the four normal gates in [CI](../ci.md) and the external import allowlist check. For the real packaged launch, run `scripts/verify-linux-package.mjs` in the nested Hyprland wrapper described in its usage comment: verify `ready`, `gnome_libsecret`, tray registration and Settings writing/removing XDG autostart. Never send keys to forge's locked live desktop.
+
+Set `pkgver`, `pkgrel` and the archive SHA-256 in `apps/omarchy/PKGBUILD` from the verified archive. The recipe's initial checksum records the ticket's local verification build, which is not a published release. Recalculate package-source hashes if the launcher, desktop entry, bindings, install helper or icons changed. Run `makepkg --printsrcinfo > .SRCINFO` after updating the recipe, before submitting it to the AUR. Build with the local archive:
+
+```sh
+cd apps/omarchy
+SOTTO_TARBALL="$PWD/../../release/Sotto-X.Y.Z-linux-x64.tar.gz" makepkg --cleanbuild --force
+pacman -Qlp sotto-bin-X.Y.Z-1-x86_64.pkg.tar.zst
+```
+
+No root is needed to build. Check `/opt/sotto`, `/usr/bin/sotto`, the desktop entry and hicolor icons. `bsdtar -tvf` must show `chrome-sandbox` owned by root:root with mode 4755. Extract into a temporary root and run that root's launcher and dictation client before installing with `sudo pacman -U`. The optional `install.sh` requires sudo and is not part of automated verification. A release pass on the installed app finishes onboarding, dictates into Chromium and a terminal, and opens a thread (ADR-0062).
+
+Hash the tarball and pacman package with `sha256sum`; append their lines to `SHA256SUMS.txt` with lower-case hex and two spaces before each filename. Publish both to `millZach/Sotto-releases` beside Windows and macOS artifacts, then upload the assembled checksum file last. Only reviewed clean-commit builds may be published. Confirm the downloaded artifacts against that file. Publishing and installation are manual owner actions, separate from verification; CI and package scripts never upload anything. The AUR publication follows once packaging is proven, under the owner's account.
 
 ## Linux host archive
 

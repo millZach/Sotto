@@ -112,8 +112,41 @@ function macProfile(arch) {
   })
 }
 
+function linuxProfile() {
+  return Object.freeze({
+    key: 'linux',
+    packagedDirName: 'linux-unpacked',
+    executableLabel: 'sotto',
+    distributableLabel: 'tarball',
+    applicationRoot: (target) => target,
+    executablePath: (target) => join(target, 'sotto'),
+    resourcesPath: (target) => join(target, 'resources'),
+    licenseRoot: (target) => target,
+    smokeEnvironment: async (profileRoot) => {
+      const home = join(profileRoot, 'Home')
+      const config = join(home, '.config')
+      await mkdir(config, { recursive: true })
+      return { HOME: home, XDG_CONFIG_HOME: config }
+    },
+    // Release checks must never use the machine's Secret Service.
+    smokeArgs: ['--password-store=basic'],
+    openDistributable: async (distributablePath, open) => {
+      const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-tarball-'))
+      try {
+        await execFileAsync('tar', ['-xzf', distributablePath, '-C', extractionRoot], { maxBuffer: 4 * 1024 * 1024 })
+        // electron-builder prefixes tar archives with the artifact name, without .tar.gz.
+        const root = join(extractionRoot, distributablePath.split(/[\\/]/u).at(-1).replace(/\.tar\.gz$/u, ''))
+        return await open(join(root, 'resources', 'app.asar'), root)
+      } finally {
+        await rm(extractionRoot, { recursive: true, force: true })
+      }
+    },
+  })
+}
+
 export function releasePlatformProfile(platform = process.platform, arch = 'arm64') {
   if (platform === 'win32') return windowsProfile()
   if (platform === 'darwin') return macProfile(arch)
-  throw new Error(`Sotto release verification supports win32 and darwin only, not ${platform}`)
+  if (platform === 'linux') return linuxProfile()
+  throw new Error(`Sotto release verification supports win32, darwin and linux only, not ${platform}`)
 }
