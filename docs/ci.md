@@ -415,7 +415,7 @@ Electron journeys run serially with one worker. Do not run another Electron jour
 
 ## Recovery through application boundaries
 
-`npm run test:recovery` is the compact recovery check (#395). It runs seven focused test files with two Vitest workers, builds the app, then runs the dictation recovery, command receipt and queued steering journeys in one Electron worker. Run it from an installed checkout on the desktop being verified, with no other Electron journey running. Every case uses isolated temporary storage and scripted effects; it needs no provider account or paid turn and does not regenerate design baselines.
+`npm run test:recovery` is the compact recovery check (#395). It runs fifteen focused test files with two Vitest workers, builds the app, then runs the dictation recovery, command receipt and queued steering journeys in one Electron worker. Run it from an installed checkout on the desktop being verified, with no other Electron journey running. Every case uses isolated temporary storage and scripted effects; it needs no provider account or paid turn and does not regenerate design baselines.
 
 | Boundary | Assertions |
 | --- | --- |
