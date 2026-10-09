@@ -1,0 +1,76 @@
+live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
+nested A: efb50993780079460b0cbed1363e2166a2de1d9f_1791561059_936333881 on wayland-3, PID 454561; nested B: efb50993780079460b0cbed1363e2166a2de1d9f_1791561060_715163097 on wayland-4, PID 454588
+PASS: B has two displays, 1600x1000 and 1280x800
+PASS: the nested shell's IPC lives in the isolated runtime folder
+--- install
+  install: Copied the plugin to /tmp/sotto-shell-proof.4WQlU4/home/.config/omarchy/plugins/sotto.dictation.
+  install: sotto.dictation is on the bar
+  install: Sotto's glyph runs /tmp/sotto-shell-proof.4WQlU4/checkout/apps/omarchy/sotto.
+PASS: the plugin was copied to the isolated plugins folder
+PASS: no staging folder was left behind
+PASS: the glyph sits right after Omarchy's indicators
+PASS: the command setting names the checkout launcher
+PASS: the shell lists sotto.dictation as enabled
+--- states, Tokyo Night
+PASS: starting: the pill is centred under the bar (284x44 at 658,31)
+PASS: listening: the pill is centred under the bar (284x44 at 658,31)
+PASS: transcribing: the pill is centred under the bar (384x44 at 608,31)
+PASS: copied: the pill is centred under the bar (263x44 at 669,31)
+PASS: failed-kept: the pill is centred under the bar (681x44 at 460,31)
+PASS: failed-plain: the pill is centred under the bar (416x44 at 592,31)
+PASS: delivered: the pill shows Pasted
+PASS: delivered: the pill is gone after its hold
+--- the bar glyph
+PASS: a click on the bar glyph runs: /tmp/sotto-shell-proof.4WQlU4/checkout/apps/omarchy/sotto dictation toggle
+--- the pill's buttons
+PASS: Cancel runs: sotto dictation cancel
+PASS: Stop runs: sotto dictation stop
+PASS: the focused terminal keeps keyboard focus after the pill's buttons are pressed
+PASS: the pill is a layer-shell surface on the overlay layer
+PASS: Discard runs: sotto dictation discard
+PASS: Try again runs: sotto dictation retry
+PASS: Dismiss puts a failure away in the plugin and runs nothing
+--- drag and snap
+PASS: drag to the left: the pill snaps centred on that edge and runs: sotto dictation place left
+PASS: drag to the bottom: the pill snaps centred on that edge and runs: sotto dictation place bottom
+PASS: drag to the right: the pill snaps centred on that edge and runs: sotto dictation place right
+PASS: drag to the top: the pill snaps centred on that edge and runs: sotto dictation place top
+--- upright buttons
+PASS: Sotto's saved edge (left) places a new dictation's pill
+PASS: upright Cancel runs: sotto dictation cancel
+PASS: upright Stop runs: sotto dictation stop
+--- notices
+PASS: a command that cannot run shows a notice while idle
+PASS: a new dictation replaces the notice at once
+PASS: the failing stand-in received: dictation stop
+PASS: an unanswered Stop shows a notice
+PASS: after the notice the unanswered dictation is put away
+--- rule A: the display focused when dictation starts
+PASS: the pointer on the second display focuses it
+PASS: the pill opens on the focused second display only
+PASS: the pointer moves focus back to the first display mid-dictation
+PASS: the pill stays on the display it opened on until dictation ends
+PASS: the next dictation opens on the newly focused first display
+--- a bar on the left edge
+PASS: with the bar on the left, the top pill sits 5 px from the top, centred beside the bar (284x44 at 672,5)
+PASS: with the bar on the left, a left-edge pill keeps clear of the bar (44x284 at 33,358)
+--- without motion
+PASS: with Hyprland's animations off, the transcribing pill drops its travelling track
+--- Catppuccin Latte
+PASS: light listening: the pill shows in the Latte palette
+PASS: light transcribing: the pill shows in the Latte palette
+PASS: light failed: the pill shows in the Latte palette
+PASS: light: a drag to the left snaps upright
+--- uninstall
+  uninstall: Removed Sotto's shell plugin from /tmp/sotto-shell-proof.4WQlU4/home/.config/omarchy/plugins.
+  uninstall: Its glyph is off the bar.
+PASS: --uninstall says the glyph is off the bar
+PASS: --uninstall removes the plugin folder
+PASS: --uninstall takes the glyph off the bar
+--- composites
+PASS: 50 checks
+processes left in the proof slice: []
+note: efb50993780079460b0cbed1363e2166a2de1d9f_1791560999_344366579, not this proof's, changed meanwhile
+instance folders after cleanup: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 
+live shell.json unchanged
+live plugins folder unchanged
