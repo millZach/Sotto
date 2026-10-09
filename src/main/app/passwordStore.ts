@@ -6,8 +6,13 @@ export interface PasswordStoreCommandLine {
 }
 
 /** Hyprland needs an explicit secret-service backend before Chromium starts. */
-export function configurePasswordStore(platform: SottoPlatform, commandLine: PasswordStoreCommandLine): void {
-  if (platform === 'linux' && !commandLine.hasSwitch('password-store')) {
+export function configurePasswordStore(
+  platform: SottoPlatform,
+  commandLine: PasswordStoreCommandLine,
+  desktop = '',
+): void {
+  const kde = desktop.split(':').some(name => name.trim().toUpperCase() === 'KDE')
+  if (platform === 'linux' && !kde && !commandLine.hasSwitch('password-store')) {
     commandLine.appendSwitch('password-store', 'gnome-libsecret')
   }
 }

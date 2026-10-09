@@ -1487,7 +1487,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
-configurePasswordStore(platform, app.commandLine)
+configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
 if (process.platform === 'win32') {
