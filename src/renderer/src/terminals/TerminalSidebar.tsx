@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, Columns2, RotateCcw, SquarePlus, X } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
@@ -51,8 +51,8 @@ function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, pa
   const status = terminalStateLabel(terminal, state, panes.lastLineOf(terminal.id))
   const statusId = useId()
   const unseen = state === 'just-finished'
-  return <li className="thread-nav__row terminal-nav__row" data-terminal-state={state} data-unseen={unseen || undefined} data-current={current || undefined} data-open={open && !current ? true : undefined}>
-    <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-describedby={statusId} aria-current={current ? 'page' : undefined} draggable={!closed} disabled={closed}
+  return <li className="thread-nav__row terminal-nav__row" data-terminal-id={terminal.id} data-terminal-state={state} data-unseen={unseen || undefined} data-current={current || undefined} data-open={open && !current ? true : undefined}>
+    <button type="button" data-terminal-action="open" className="thread-nav__item tt-focusable" aria-label={title} aria-describedby={statusId} aria-current={current ? 'page' : undefined} draggable={!closed} disabled={closed}
       aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(terminal.id); else onOpen(terminal.id) }}
       onKeyDown={event => { if (besideAvailable && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); panes.onOpenBeside(terminal.id) } }}
@@ -69,10 +69,10 @@ function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, pa
       <span id={statusId} className="thread-nav__status tt-visually-hidden" data-state={SIDEBAR_STATE[state]} title={terminal.command}>{[row.provider, ...(showProject ? [row.project?.title ?? 'Project'] : []), status].join(', ')}</span>
     </button>
     <span className="thread-nav__row-actions">
-      {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(terminal.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
+      {besideAvailable && !open ? <button type="button" data-terminal-action="beside" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(terminal.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
       {closed
-        ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Reopen ${title}`} title="Reopen terminal" disabled={busy} onClick={() => panes.onReopenTerminal(terminal.id)}><RotateCcw size={16} aria-hidden="true" /></button>
-        : <button type="button" className="thread-nav__action tt-focusable" aria-label={`Close ${title}`} title="Close terminal" disabled={busy} onClick={() => panes.onCloseTerminal(terminal.id)}><X size={16} aria-hidden="true" /></button>}
+        ? <button type="button" data-terminal-action="reopen" className="thread-nav__action tt-focusable" aria-label={`Reopen ${title}`} title="Reopen terminal" disabled={busy} onClick={() => panes.onReopenTerminal(terminal.id)}><RotateCcw size={16} aria-hidden="true" /></button>
+        : <button type="button" data-terminal-action="close" className="thread-nav__action tt-focusable" aria-label={`Close ${title}`} title="Close terminal" disabled={busy} onClick={() => panes.onCloseTerminal(terminal.id)}><X size={16} aria-hidden="true" /></button>}
     </span>
   </li>
 }
@@ -125,6 +125,22 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
 }): ReactNode {
   const [closedOpen, setClosedOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const rowsRef = useRef<HTMLDivElement>(null)
+  const focusedRow = useRef<{ id: string; action: string; element: HTMLButtonElement } | null>(null)
+  useLayoutEffect(() => {
+    const focused = focusedRow.current
+    if (!focused || focused.element.isConnected || document.activeElement !== document.body) return
+    const row = [...rowsRef.current?.querySelectorAll<HTMLLIElement>('[data-terminal-id]') ?? []].find(item => item.dataset.terminalId === focused.id)
+    const buttons = [...row?.querySelectorAll<HTMLButtonElement>('[data-terminal-action]') ?? []]
+    const replacement = buttons.find(button => button.dataset.terminalAction === focused.action && !button.disabled)
+      ?? buttons.find(button => button.dataset.terminalAction === 'open' && !button.disabled)
+    if (replacement) { replacement.focus({ preventScroll: true }); return }
+    // A row returning to its collapsed project must remain reachable by the keyboard.
+    const folder = organization.open.find(item => item.rows.some(item => item.terminal.id === focused.id))
+    if (folder && collapsed.has(`open:${folder.id}`)) {
+      setCollapsed(previous => { const next = new Set(previous); next.delete(`open:${folder.id}`); return next })
+    } else focusedRow.current = null
+  })
   const searching = query.trim() !== ''
   const toggle = (key: string): void => setCollapsed(previous => {
     const next = new Set(previous)
@@ -147,6 +163,14 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Terminal sidebar" query={query} searchPlaceholder="Search terminals" onQuery={onQuery}
     // A plus, not a second terminal glyph beside the room switch's: the same relation New thread's pen has to Threads.
     onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquarePlus}>
+    <div ref={rowsRef} onFocusCapture={event => {
+      const button = event.target instanceof HTMLButtonElement ? event.target : null
+      const id = button?.closest<HTMLLIElement>('[data-terminal-id]')?.dataset.terminalId
+      focusedRow.current = button && id && button.dataset.terminalAction ? { id, action: button.dataset.terminalAction, element: button } : null
+    }} onBlurCapture={event => {
+      // Removing a focused row does not emit a browser blur. Explicitly leaving it does, and must not steal focus back.
+      if (event.target === focusedRow.current?.element && focusedRow.current.element.isConnected) focusedRow.current = null
+    }}>
       {stateGroup('Needs you', needsYou)}
       {stateGroup('Working', working)}
       <section aria-label="Projects">
@@ -161,5 +185,6 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
         {closedShown ? <div>{closed.map(folderView('closed'))}{!closed.length ? <p className="thread-nav__empty">No closed terminals this session.</p> : null}</div> : null}
       </section>
       {searching && !organization.matching ? <p className="thread-nav__empty">Nothing matches "{query}".</p> : null}
+    </div>
   </SidebarFrame>
 }

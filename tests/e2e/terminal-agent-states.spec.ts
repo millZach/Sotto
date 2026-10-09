@@ -82,6 +82,17 @@ test('native fake agents report state and only unseen successful turns earn Just
     await input.pressSequentially('i'); await input.press('Enter')
     await expect.poll(() => state(page, initial)).toBe('idle')
 
+    // Native asynchronous state changes must preserve the focused row action across group parents.
+    await command(page, initial, 'w'); await expect.poll(() => state(page, initial)).toBe('working')
+    const initialRow = sidebar.getByRole('button', { name: 'Claude approval', exact: true })
+    await initialRow.focus()
+    await command(page, initial, 'n'); await expect.poll(() => state(page, initial)).toBe('needs-you')
+    await expect(initialRow).toBeFocused()
+    await command(page, initial, 'i'); await expect.poll(() => state(page, initial)).toBe('idle')
+    await expect(initialRow).toBeFocused()
+    await initialRow.press('Enter')
+    await expect(input).toBeFocused()
+
     const others = await page.evaluate(async () => {
       const agents = await window.sotto!.agents!.get()
       const first = agents.host.projects.find(item => item.title === 'workshop')!

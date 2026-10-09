@@ -210,6 +210,28 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); localStorage.clear() })
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('Terminal mode', () => {
+  it.each(['Tests', 'Close Tests', 'Open Tests beside'])('preserves focus on %s through asynchronous sidebar regrouping', async action => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build', exact: true }))
+    await screen.findByRole('region', { name: 'Build', exact: true })
+    within(sidebar()).getByRole('button', { name: action, exact: true }).focus()
+    for (const agentState of ['needs-you', 'idle', 'working'] as const) {
+      await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState }) }) })
+      expect(within(sidebar()).getByRole('button', { name: action, exact: true })).toHaveFocus()
+    }
+    search().focus()
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_2, { title: 'Tests', agentState: 'idle' }) }) })
+    expect(search()).toHaveFocus()
+  })
+  it('keeps the focused row reachable when it returns to a collapsed project', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' })])
+    const toggle = await within(sidebar()).findByRole('button', { name: /^workshop / })
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    within(sidebar()).getByRole('button', { name: 'Close Build', exact: true }).focus()
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_1, { title: 'Build', agentState: 'idle' }) }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Close Build', exact: true })).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
   it('shows main-owned agent states in Variant B order and leaves the pane header state free', async () => {
     const otherProject = threadsStateFixture().host.projects.find(project => project.id !== 'workshop')!
     const view = mount([
