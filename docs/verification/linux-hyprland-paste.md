@@ -28,7 +28,7 @@ After `mise exec node@24.21.0 -- npm run build`:
 mise exec node@24.21.0 -- node scripts/verify-hyprland-paste-nested.mjs /tmp/nested-paste-final
 ```
 
-The proof starts its own Hyprland, loads Omarchy's terminal-tag rules, launches its own targets and Sotto profile, and sends only to that compositor. Alacritty was absent from the system, so its [Arch package](https://archlinux.org/packages/extra/x86_64/alacritty/) was extracted to this worktree's ignored `.cache/alacritty/`; no system package was installed. Version: `alacritty 0.17.0 (94e7c887)`.
+The proof starts its own Hyprland, loads Omarchy's terminal-tag rules, launches its own targets and Sotto profile, and sends only to that compositor. Alacritty was absent from the system, so its [Arch package](https://archlinux.org/packages/extra/x86_64/alacritty/) was extracted to this worktree's ignored `.cache/alacritty/` and passed to the proof as `SOTTO_ALACRITTY=.cache/alacritty/usr/bin/alacritty`; no system package was installed. With Alacritty installed, the proof uses it from `PATH`. Version: `alacritty 0.17.0 (94e7c887)`.
 
 | Target | Tags | Chord | Result |
 | --- | --- | --- | --- |

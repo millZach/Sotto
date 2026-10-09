@@ -85,7 +85,8 @@ try {
   const catArgs = (file, ready) => ['sh', '-c', 'stty raw -echo; : > "$2"; exec cat > "$1"', 'proof-cat', file, ready]
   const foot = owned.start('foot', 'foot', ['-a', 'foot', '-e', ...catArgs(footFile, footReady)], { env: nested, stdio: 'ignore' })
   // A missing system executable can be extracted into this checkout's ignored cache.
-  const alacrittyExecutable = existsSync('/usr/bin/alacritty') ? '/usr/bin/alacritty' : join(checkout, '.cache/alacritty/usr/bin/alacritty')
+  // Alacritty from PATH; SOTTO_ALACRITTY points at another build, such as an unpacked Arch package.
+  const alacrittyExecutable = process.env.SOTTO_ALACRITTY ?? 'alacritty'
   const alacritty = owned.start('Alacritty', alacrittyExecutable, ['--class', 'Alacritty', '-e', ...catArgs(alacrittyFile, alacrittyReady)], { env: nested, stdio: 'ignore' })
   const chromium = owned.start('Chromium', 'chromium', [`--user-data-dir=${join(out, 'chromium')}`, '--ozone-platform=wayland', '--no-first-run', '--remote-debugging-port=9347',
     '--app=data:text/html,<title>pastebox</title><textarea id=t autofocus style="width:95vw;height:90vh"></textarea>'], { env: nested, stdio: 'ignore' })
