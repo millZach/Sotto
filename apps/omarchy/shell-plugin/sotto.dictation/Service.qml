@@ -6,7 +6,7 @@ import "Model.mjs" as Model
 
 // The plugin's one long-lived part. It follows Sotto's state file, runs the
 // dictation command, and shows the pill while Sotto dictates: on the display
-// Hyprland has focused when the dictation starts, until it ends.
+// Hyprland has focused when each dictation starts, until it ends.
 Item {
   id: root
   visible: false
@@ -49,7 +49,10 @@ Item {
   property string noticeShownFor: ""
 
   readonly property bool shown: dictation.active || notice !== ""
-  property var pillScreen: null
+  // The display the pill is on, by name, chosen by Model.displayFor.
+  property string pillScreenName: ""
+  readonly property var pillScreen: screenNamed(pillScreenName)
+  property var lastRecord: null
 
   // Omarchy has no reduced-motion setting, so Hyprland's animations switch
   // stands in for one: with it off, the level bars and the transcribing
@@ -65,43 +68,38 @@ Item {
     }
   }
 
-  function focusedScreen() {
-    var monitor = Hyprland.focusedMonitor
-    var name = monitor ? String(monitor.name || "") : ""
+  function screenNamed(name) {
     var screens = Quickshell.screens
     for (var i = 0; i < screens.length; i++) {
-      if (screens[i] && screens[i].name === name) return screens[i]
+      if (screens[i] && name !== "" && screens[i].name === name) return screens[i]
     }
-    return screens.length > 0 ? screens[0] : null
+    return null
   }
 
-  function screenPresent(screen) {
+  function focusedName() {
+    var monitor = Hyprland.focusedMonitor
+    var name = monitor ? String(monitor.name || "") : ""
+    if (screenNamed(name) !== null) return name
     var screens = Quickshell.screens
-    for (var i = 0; i < screens.length; i++) {
-      if (screens[i] && screen && screens[i].name === screen.name) return true
-    }
-    return false
+    return screens.length > 0 && screens[0] ? String(screens[0].name) : ""
   }
 
   onShownChanged: {
-    if (shown) {
-      pillScreen = focusedScreen()
-      motionProbe.running = true
-    } else {
-      pillScreen = null
-      draggedEdge = ""
-    }
+    pillScreenName = Model.displayFor(pillScreenName, dictation.record, dictation.record, shown, focusedName())
+    if (shown) motionProbe.running = true
+    else draggedEdge = ""
   }
 
   Component.onCompleted: {
     motionProbe.running = true
-    if (shown) pillScreen = focusedScreen()
+    lastRecord = dictation.record
+    if (shown) pillScreenName = focusedName()
   }
 
   Connections {
     target: Quickshell
     function onScreensChanged() {
-      if (root.shown && !root.screenPresent(root.pillScreen)) root.pillScreen = root.focusedScreen()
+      if (root.shown && root.screenNamed(root.pillScreenName) === null) root.pillScreenName = root.focusedName()
     }
   }
 
@@ -147,7 +145,10 @@ Item {
   Connections {
     target: root.dictation
     function onRecordChanged() {
-      if (root.notice !== "" && Model.key(root.dictation.record) !== root.noticeShownFor) root.endNotice()
+      var record = root.dictation.record
+      root.pillScreenName = Model.displayFor(root.pillScreenName, root.lastRecord, record, root.shown, root.focusedName())
+      root.lastRecord = record
+      if (root.notice !== "" && Model.key(record) !== root.noticeShownFor) root.endNotice()
     }
     function onLost(text) { root.showLost(text) }
   }

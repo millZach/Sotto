@@ -77,6 +77,27 @@ export function key(record) {
   return record.state + "@" + record.since
 }
 
+// Whether `next` begins a dictation: Sotto starting or listening under a new
+// key, except listening after the same dictation's start. States written
+// within 50 ms of each other can arrive as one, so a new dictation is read
+// from the change of key rather than from an idle in between.
+export function startsDictation(previous, next) {
+  if (!next || (next.state !== "starting" && next.state !== "listening")) return false
+  if (!previous) return true
+  if (key(previous) === key(next)) return false
+  return !(previous.state === "starting" && next.state === "listening")
+}
+
+// Rule A: the display the pill shows on, by name. A new dictation takes the
+// focused display and keeps it until it ends, even when the pill was already
+// up for the one before; a pill that appears without one, such as a notice,
+// takes the focused display too. "" while nothing shows.
+export function displayFor(current, previous, next, shown, focused) {
+  if (startsDictation(previous, next)) return focused
+  if (!shown) return ""
+  return current !== "" ? current : focused
+}
+
 // What is on screen now: a finished dictation past its hold, or a state the
 // user put away, shows as idle.
 export function effectiveState(record, now, dismissedKey) {

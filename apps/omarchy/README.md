@@ -66,7 +66,7 @@ The script copies the plugin to `~/.config/omarchy/plugins/sotto.dictation/`, wh
 How it behaves:
 
 - A click on the glyph runs `sotto dictation toggle`: it starts dictating, or stops a dictation that is running. While Sotto transcribes, a click does nothing. While a recording is kept, a click starts a new dictation and the kept recording is let go.
-- The pill appears on the display the mouse is on when dictation starts, which is Hyprland's focused monitor, and stays there until the dictation ends.
+- The pill appears on the display the mouse is on when a dictation starts, which is Hyprland's focused monitor, and stays there until that dictation ends. The next dictation chooses again, even while the last one's result or kept recording is still showing.
 - It starts top centre, just under the bar. Drag it, and on release it snaps to the nearest edge of the screen, centred on that edge; Sotto saves the edge with `sotto dictation place <edge>`. On the left and right edges the pill stands upright and its words read top to bottom.
 - Stop, Cancel, Try again and Discard run `sotto dictation stop`, `cancel`, `retry` and `discard`. A failure with nothing kept shows Dismiss, which only hides the pill.
 - If a command does not get through, the pill says so and what to do, and keeps its buttons so you can press again. The dictation stays on screen until Sotto moves on, since after a Stop that did not get through the recording may still be running. A notice with no dictation behind it lasts five seconds.
