@@ -41,6 +41,15 @@ for (const place of ['tools', 'drawer'] as const) {
           await retry.focus()
           await expect(retry).toBeFocused()
           await expect(retry).toBeInViewport()
+          if (place === 'drawer') {
+            await notice.scrollIntoViewIfNeeded()
+            const contained = await notice.evaluate(element => {
+              const drawer = element.closest('.pane-terminal')!.getBoundingClientRect()
+              const bounds = element.getBoundingClientRect()
+              return bounds.top >= drawer.top && bounds.bottom <= drawer.bottom
+            })
+            expect(contained).toBe(true)
+          }
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
           await mkdir('artifacts/terminal-truths', { recursive: true })
           await page.screenshot({ path: `artifacts/terminal-truths/busy-${place}-${width}-${appearance}.png`, animations: 'disabled' })
