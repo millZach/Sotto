@@ -134,6 +134,8 @@
 /* An answer is yours to write, so its dot is an open ring; a permission holds the agent still, so its dot stays filled. */
 .thread-nav__status[data-waiting='question'] i { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 .thread-nav__status[data-unseen] { color: var(--tt-text-2); }
+/* A thread that babysits a pull request says so where it would say Done (ADR-0061): Sotto's claim, so not the activity colour. */
+.thread-nav__status[data-babysitting] { color: var(--tt-text-2); }
 .thread-nav__status[data-unseen] i { background: var(--tt-activity); }
 
 .provider-mark { display: block; flex: none; fill: currentColor; }

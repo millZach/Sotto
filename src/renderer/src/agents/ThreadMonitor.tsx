@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode, type RefOb
 import type { AgentBackgroundWork, AgentMonitoringTask } from '../../../shared/agentMonitoring'
 import type { AgentThread } from '../../../shared/agents'
 import { formatDuration, heldAction, heldLabel, heldLongEnough, HELD_AFTER_MS, type HeldAction } from './threadActivityView'
+import { babysitReadout } from './babysitting'
 import './threadMonitor.css'
 
 /** One frame of a pixel pose: seconds since the pose appeared, whether motion is held, and the track it stands on. */
@@ -179,6 +180,33 @@ function HeldCreature(): ReactNode {
   </div>
 }
 
+/** Eyes half shut: at rest, not looking at anything. */
+const RESTING_EYES = 'M15 18h2v1h-2z M22 18h2v1h-2z M20 22h2v1h-2z'
+
+/**
+ * The same creature at rest, holding up a sign with a pull request's mark, in the muted colour. It never moves: it
+ * claims no watch the provider confirmed and no work running, only that Sotto is babysitting (ADR-0061), so reduced
+ * motion has nothing to hold still.
+ */
+function BabysittingCreature(): ReactNode {
+  return <div className="thread-monitor__actor" aria-hidden="true">
+    <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">
+      <path className="thread-monitor__color" d="M11 29h5v3h-5z M21 29h5v3h-5z" />
+      <path className="thread-monitor__color" d={BODY} />
+      <path className="thread-monitor__shine" opacity=".24" d="M10 14h3v9h-3z" />
+      <path className="thread-monitor__ink" opacity=".24" d="M13 25h10v3H13z" />
+      <path className="thread-monitor__ink" d={RESTING_EYES} />
+      <path className="thread-monitor__color" d="M25 25h5v2h-5z" />
+      {/* The arm holds the pole; the sign above it carries the pull request mark, outlined so it reads on any surface. */}
+      <path className="thread-monitor__color" d="M28 17h3v2h-3z" />
+      <path className="thread-monitor__handle" d="M31 11h2v21h-2z" />
+      <path className="thread-monitor__color" opacity=".28" d="M28 3h9v8h-9z" />
+      <path className="thread-monitor__shine" d="M28 2h9v1h-9z M28 11h9v1h-9z M27 3h1v8h-1z M37 3h1v8h-1z" />
+      <path className="thread-monitor__sign" d="M29 4h2v2h-2z M30 6h1v4h-1z M29 10h2v2h-2z M34 4h1v1h-1z M35 5h1v5h-1z M34 10h2v2h-2z M33 4h1v1h-1z" />
+    </svg>
+  </div>
+}
+
 /** A small agent: the creature's silhouette at a third of the size, on a 12 × 10 grid. */
 const MINI = 'M3 2h2v2H3z M7 1h2v3H7z M2 4h8v5H2z M1 6h10v2H1z M3 9h2v1H3z M7 9h2v1H7z'
 const MINI_EYES = 'M4 5h1v1H4z M7 5h1v1H7z'
@@ -281,20 +309,26 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
-function ThreadOrnament({ kind, creature, label, title, status, wide = false }: {
-  readonly kind: 'monitoring' | 'working' | 'held'
+function ThreadOrnament({ kind, creature, label, title, status, wide = false, quiet }: {
+  readonly kind: 'monitoring' | 'working' | 'held' | 'babysitting'
   readonly creature: ReactNode
   readonly label: string
   readonly title: string
   readonly status: ReactNode
   /** The readout carries more than a word and a count, so it gets the wider column. */
   readonly wide?: boolean
+  /**
+   * A pose that comes back on its own after every turn is not news, so it is not announced: it is read as one picture
+   * named by this, in its place on the page, the way the prototype draws it.
+   */
+  readonly quiet?: string
 }): ReactNode {
-  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} role="status" aria-live="polite" aria-atomic="true">
+  const named = quiet === undefined ? { role: 'status', 'aria-live': 'polite', 'aria-atomic': true } as const : { role: 'img', 'aria-label': quiet } as const
+  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} {...named}>
     <div className="thread-monitor__track">{creature}</div>
     <div className="thread-monitor__task" title={title}>
       <span className="thread-monitor__label">{label}</span>
-      <span className="thread-monitor__status">{status}</span>
+      <span className={`thread-monitor__status thread-monitor__status--${kind}`}>{status}</span>
     </div>
   </div>
 }
@@ -351,4 +385,19 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
   const label = heldLabel(action)
   return <ThreadOrnament kind="held" creature={<HeldCreature key={action.id} />} label={label} title={label}
     status={<>Waiting<WaitedFor startedAt={action.startedAt} now={now} /></>} />
+}
+
+/**
+ * Sotto's own claim, the weakest the track shows: the thread babysits a pull request (ADR-0061, variant C). The caller
+ * judged that nothing stronger holds the track and that no turn runs. The readout names the pull request, and every one
+ * the thread babysits on hover.
+ */
+export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>; readonly now: number | undefined }): ReactNode {
+  const readout = babysitReadout(thread, new Date(now ?? Date.now()))
+  if (!readout) return null
+  // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
+  // (threadMonitor.css); the hover title and the Pull request surface still say it.
+  return <ThreadOrnament kind="babysitting" creature={<BabysittingCreature />} label={readout.label} title={readout.title}
+    quiet={`Babysitting ${readout.label}${readout.since ? ` since ${readout.since}` : ''}`}
+    status={<>Babysitting{readout.since ? <span className="thread-monitor__since">{` since ${readout.since}`}</span> : null}</>} />
 }

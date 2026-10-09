@@ -214,6 +214,7 @@ import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { installRemoteHostE2E } from './e2e/remoteHost'
+import { installBabysitPassE2E } from './e2e/babysitPass'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -691,6 +692,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     claudeSettingsLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
+  // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
+  if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
   // The window's panes show their threads only while it has the focus (ADR-0046). The widget taking the focus is the
   // window losing it, as is another app, minimising or hiding to the tray.
   const windowFocusChanged = (): void => {

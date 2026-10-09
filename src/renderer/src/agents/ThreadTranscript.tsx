@@ -14,6 +14,8 @@ import { renderedPlainText, useTransientFlag, writeClipboard } from './richActio
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, LiveActivity, TurnChangedFiles } from './ThreadActivity'
 import { isDrawableVisual, VisualCard } from './VisualCard'
+import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
+import { SottoMark } from '../components/SottoMark'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -133,6 +135,11 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
   </>
 }
 
+/** Who sent a wake-up: Sotto, with its mark, and what it is. */
+function WakeUpWho(): ReactNode {
+  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">Wake-up</span></>
+}
+
 /**
  * One message in the transcript. Memoised on the message itself: the state the window receives shares the
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
@@ -143,12 +150,18 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly threadId: string | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
-  return <article className="thread-message" data-role={message.role} ref={article}>
-    <header><span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span><time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
+  // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
+  // provider received, as it received it (ADR-0061 decision 8).
+  const wakeUp = isWakeUpMessage(message)
+  const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
+  return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} ref={article}>
+    <header>{wakeUp ? <WakeUpWho />
+      : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? provider : 'System'}</span>}
+      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
       {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}</header>
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
-      : <MessageContent text={message.text} streaming={writing} />}
+      : <MessageContent text={markdown} streaming={writing} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
   </article>
 })
@@ -291,12 +304,15 @@ const QUEUED_ECHO: Record<AgentFollowup['status'], { readonly label: string; rea
  * A message the thread's queue holds, in the place it will take in the conversation. It repeats what the
  * user wrote and nothing else: the queue under the composer is where it is edited, moved or removed.
  */
-function QueuedMessage({ item }: { readonly item: AgentFollowup }): ReactNode {
+export function QueuedMessage({ item }: { readonly item: AgentFollowup }): ReactNode {
   const echo = QUEUED_ECHO[item.status]
-  return <article className="thread-message thread-message--pending" data-role="user" data-status={echo.status} aria-label="Queued message">
-    <header><span className="thread-message__who">You</span>
+  // Sotto's wake-up waiting in the queue is Sotto's here too, with every word the provider will receive (ADR-0061).
+  const wakeUp = isWakeUpFollowup(item)
+  return <article className="thread-message thread-message--pending" data-role="user" data-from={wakeUp ? 'sotto' : undefined} data-status={echo.status}
+    aria-label={wakeUp ? 'Queued wake-up from Sotto' : 'Queued message'}>
+    <header>{wakeUp ? <WakeUpWho /> : <span className="thread-message__who">You</span>}
       <span className="thread-message__status" data-status={echo.status}><i aria-hidden="true" />{echo.label}</span></header>
-    <MessageContent text={item.text} /><AttachmentPreviews attachments={item.attachments} />
+    <MessageContent text={wakeUp ? wakeUpMarkdown(item.text) : item.text} /><AttachmentPreviews attachments={item.attachments} />
   </article>
 }
 
