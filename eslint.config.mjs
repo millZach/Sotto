@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/linux-no-window-controls/**',
       'artifacts/visuals-live/**',
       'artifacts/remove-personal-chats/**',
       'artifacts/disabled-coordinator-voice/**',

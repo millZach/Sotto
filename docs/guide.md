@@ -614,7 +614,7 @@ npm run build
 npx electron .
 ```
 
-The tray uses a bundled PNG, and the window keeps the same controls as Windows for now. Frosted windows and the in-app updater are unavailable. Linux installers and release checks are separate work.
+The tray uses a bundled PNG. The window keeps its title area without minimise, maximise or close buttons. On Omarchy, press Super+W to close Sotto to the tray. It keeps running; open it again from the tray, or choose Quit there to quit. Frosted windows and the in-app updater are unavailable. Linux installers and release checks are separate work.
 
 Saving the OpenRouter key needs an unlocked keyring and a running secret service. On Linux, Sotto selects Chromium's `gnome-libsecret` password store before startup unless you supplied `--password-store` yourself. It keeps that choice, even when that store cannot encrypt; Sotto still refuses to save a key without encryption.
 

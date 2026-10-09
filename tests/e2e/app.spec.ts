@@ -51,6 +51,17 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
   return value
 }
 
+async function closeMainToTray(app: ElectronApplication, page: Page): Promise<void> {
+  if (process.platform === 'linux') {
+    // Linux has no close button; a compositor request arrives as a native close event.
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.close()
+    })
+  } else {
+    await page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+  }
+}
+
 interface NativeRectangle {
   readonly x: number
   readonly y: number
@@ -518,7 +529,7 @@ test('closing the main window hides it to the tray without quitting', async () =
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+    await closeMainToTray(launched.app, launched.page)
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
     expect(launched.app.process().exitCode).toBeNull()
   } finally {
@@ -530,7 +541,7 @@ test('a second instance reveals the existing hidden window', async () => {
   const launched = await launchSotto()
   try {
     await completeOnboarding(launched.page)
-    await launched.page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+    await closeMainToTray(launched.app, launched.page)
     await expect.poll(async () => (await snapshot(launched.page)).mainVisible).toBe(false)
 
     const electronExecutable = createRequire(join(process.cwd(), 'package.json'))('electron') as string

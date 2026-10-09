@@ -95,6 +95,7 @@
 .settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }
 .settings-view .settings-feedback { padding-right: 116px; }
+[data-platform='linux'] .settings-view .settings-feedback { padding-right: 0; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
 .settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }

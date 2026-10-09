@@ -1,4 +1,5 @@
 node_modules/
+artifacts/linux-no-window-controls/
 artifacts/remove-personal-chats/*
 !artifacts/remove-personal-chats/threads-1600x1000-dark.png
 !artifacts/remove-personal-chats/threads-820x560-light.png
