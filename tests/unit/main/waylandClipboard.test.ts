@@ -2,12 +2,13 @@
 import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { createWaylandClipboard, CLIPBOARD_PROCESS_TIMEOUT_MS } from '../../../src/main/output/waylandClipboard'
+import { createWaylandClipboard, CLIPBOARD_PROCESS_TIMEOUT_MS, CLIPBOARD_TERMINATE_GRACE_MS } from '../../../src/main/output/waylandClipboard'
 import { OutputClipboardError, OutputService } from '../../../src/main/output/outputService'
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 
 function harness() {
   const child = new ChildProcess()
+  Object.defineProperty(child, 'pid', { value: 12345 })
   child.stdin = new PassThrough()
   child.stdout = new PassThrough()
   child.kill = vi.fn(() => true)
@@ -71,15 +72,33 @@ describe('Wayland clipboard', () => {
     expect(h.notice).toHaveBeenCalledOnce()
   })
 
-  it('kills a hung clipboard child and falls back at a finite deadline', async () => {
+  it.each(['timeout', 'stdin'] as const)('terminates and escalates a still-running clipboard child after %s', async failure => {
     vi.useFakeTimers()
     try {
       const h = harness()
       const write = h.clipboard.writeText('kept text')
-      await vi.advanceTimersByTimeAsync(CLIPBOARD_PROCESS_TIMEOUT_MS)
+      if (failure === 'stdin') h.child.stdin!.emit('error', new Error('EPIPE'))
+      else await vi.advanceTimersByTimeAsync(CLIPBOARD_PROCESS_TIMEOUT_MS)
       await write
-      expect(h.child.kill).toHaveBeenCalledOnce()
+      expect(vi.mocked(h.child.kill).mock.calls).toEqual([['SIGTERM']])
       expect(h.fallback.writeText).toHaveBeenCalledWith('kept text')
+      await vi.advanceTimersByTimeAsync(CLIPBOARD_TERMINATE_GRACE_MS)
+      expect(vi.mocked(h.child.kill).mock.calls).toEqual([['SIGTERM'], ['SIGKILL']])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('cancels escalation when the failed clipboard child exits after SIGTERM', async () => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      const write = h.clipboard.writeText('kept text')
+      h.child.stdin!.emit('error', new Error('EPIPE'))
+      await write
+      h.child.emit('exit', null, 'SIGTERM')
+      await vi.advanceTimersByTimeAsync(CLIPBOARD_PROCESS_TIMEOUT_MS)
+      expect(vi.mocked(h.child.kill).mock.calls).toEqual([['SIGTERM']])
+      expect(vi.getTimerCount()).toBe(0)
     } finally { vi.useRealTimers() }
   })
 
