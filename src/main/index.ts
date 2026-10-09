@@ -253,6 +253,7 @@ type NativeDiagnostic =
   | 'native-widget-state-delivery-failed'
   | 'native-widget-show-failed'
   | 'native-dictation-state-write-failed'
+  | 'native-dictation-pid-start-unavailable'
   | 'settings-update-failed'
   | 'secure-key-migration-unavailable'
   | 'memory-store-open-failed'
@@ -1247,7 +1248,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
       },
       () => widgetPlacement?.kind === 'edge' ? widgetPlacement.edge : 'top',
-      () => logOperational('native-dictation-state-write-failed'),
+      logOperational,
     )
   }
   return new NativeRuntimeController({

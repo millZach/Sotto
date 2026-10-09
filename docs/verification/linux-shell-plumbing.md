@@ -1,5 +1,11 @@
 # Dictation state and commands for the Omarchy shell
 
+## Contract addendum 2: process start time
+
+Following PR #877 at `0b589a65`, Linux main reads field 22 of `/proc/self/stat` once when constructing its shell owner. The parser starts after the last `)` so spaces and parentheses in the command name cannot shift the field. Every state and placement write carries the resulting integer `pidStart` beside `pid`. Read or parse failure logs only `native-dictation-pid-start-unavailable`, omits the field and leaves startup working. Windows and macOS never construct this owner or read procfs.
+
+The three focused process-start, lifecycle and state files pass 58 tests. They cover the parenthesized command name, invalid records, private read/parse errors, one startup read, publication without procfs and preservation through every serialized write. The built-app journey now compares each `pidStart` with field 22 of the actual main PID's stat record across all five launches. The complete addendum proof and gate results are recorded below when rerun.
+
 October 9, 2026. Ticket [#850](https://github.com/millZach/Sotto/issues/850), Sotto plumbing only, on `feat/linux-omarchy-shell-plumbing` from `6495c602`. The contract addendum follows `e691a9c6`, with the HOME-folder change in `a410b110`. Review fixes follow `55028971`; merge commit `bd1bcc75` brings in `origin/main` at `f77c40f2`, including the accepted Linux desktop ADR and AGENTS platform guidance. This re-review starts at `125df400`; startup recovery is fixed in `4f37aa58`, and recording/text outcomes in `10cb49ff`.
 
 **VERIFIED on forge:** the built, unpackaged Electron 43.1.0 app, with isolated profiles and HOME folders, driven through the checkout’s actual `apps/omarchy/sotto dictation …` command and Unix socket. Node 24.21.0 ran every Node command. Microphone samples, transcription failures and output effects used the existing development-only e2e fixtures; no paid provider or live microphone was needed. This verifies Sotto’s command, controller, state publication, placement and window boundaries, not provider availability or the separately built Quickshell plugin.

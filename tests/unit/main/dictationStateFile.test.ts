@@ -140,6 +140,24 @@ describe.skipIf(process.platform !== 'linux')('private shell dictation state', (
     vi.advanceTimersByTime(100)
     expect(renamed).toHaveBeenCalledTimes(3)
   })
+  it('retains the startup process start time in every state and placement write', () => {
+    file = new DictationStateFile(runtime, 'top', failure, 12345678)
+    for (const fields of [
+      { status: 'requesting-permission' }, { status: 'listening', level: 0, startedAt: 1 },
+      { status: 'processing', stage: 'transcribing', progress: 0, startedAt: 1 },
+      { status: 'success', output: 'copied', pidStart: -1 }, { status: 'idle' },
+    ]) {
+      file.publish(snapshot(fields))
+      vi.advanceTimersByTime(50)
+    }
+    file.place('left')
+    vi.advanceTimersByTime(50)
+    expect(written.mock.calls.length).toBeGreaterThan(1)
+    for (const [, data] of written.mock.calls) {
+      expect(JSON.parse(data)).toMatchObject({ pid: process.pid, pidStart: 12345678 })
+    }
+    expect(read().edge).toBe('left')
+  })
   it('writes only reviewed failure copy and kept status for every controller error', () => {
     file = new DictationStateFile(runtime, 'left', failure)
     for (const code of WIDGET_ERROR_CODES) {

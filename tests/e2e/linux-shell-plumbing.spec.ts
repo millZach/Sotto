@@ -26,6 +26,12 @@ test('publishes private shell state, retries and discards, remembers placement a
   let rawApp: ChildProcess | undefined
   let rawAppClosed: Promise<number | null> | undefined
   let mainPid: number | undefined
+  let mainStart: number | undefined
+  const readMainStart = async (): Promise<void> => {
+    const stat = await readFile(`/proc/${mainPid}/stat`, 'utf8')
+    mainStart = Number(stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19])
+    expect(Number.isSafeInteger(mainStart)).toBe(true)
+  }
   const launch = async (scenario: E2EScenario): Promise<LaunchedSotto> => {
     const app = await launchSotto(scenario, profile, {
       createProfile: async () => { throw new Error('Use the owned profile') },
@@ -35,8 +41,9 @@ test('publishes private shell state, retries and discards, remembers placement a
     })
     console.log(`Built app PID ${app.app.process().pid}; isolated profile; scripted microphone and transcription`)
     mainPid = app.app.process().pid
+    await readMainStart()
     await openPage(app.page, 'Dictate')
-    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, state: 'idle' })
+    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, pidStart: mainStart, state: 'idle' })
     return app
   }
   const command = (...args: string[]) => run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', ...args], { env: { ...process.env, XDG_RUNTIME_DIR: profile } })
@@ -49,10 +56,10 @@ test('publishes private shell state, retries and discards, remembers placement a
   }
   const showState = async (label: string, state: string, extra: object = {}): Promise<void> => {
     expect(mainPid).toBeGreaterThan(0)
-    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, state, ...extra })
+    await expect.poll(read).toMatchObject({ version: 1, pid: mainPid, pidStart: mainStart, state, ...extra })
     const raw = (await readFile(statePath, 'utf8')).trim()
     expect(raw).not.toContain(E2E_TRANSCRIPT)
-    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'pid', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
+    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['version', 'pid', 'pidStart', 'state', 'since', 'updatedAt', 'detail', 'kept', 'edge'].sort())
     const published = JSON.parse(raw)
     if (published.detail !== null) expect(published.detail.length).toBeLessThan(60)
     if (published.kept) expect(published.detail).toContain('Recording kept.')
@@ -196,6 +203,7 @@ const timer = setInterval(() => {
     })
     const forcedPid = rawApp.pid
     mainPid = forcedPid
+    await readMainStart()
     rawAppClosed = new Promise<number | null>((resolve, reject) => {
       rawApp!.once('error', reject)
       rawApp!.once('close', resolve)

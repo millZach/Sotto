@@ -12,12 +12,20 @@ import { ShellWidgetMonitor } from '../../../src/main/windows/shellWidgetMonitor
 import { DEFAULT_WIDGET_PALETTE } from '../../../src/shared/themeBranding'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
+const { readStat } = vi.hoisted(() => ({ readStat: vi.fn() }))
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, readFileSync: (...args: Parameters<typeof fs.readFileSync>) =>
+    args[0] === '/proc/self/stat' ? readStat() : fs.readFileSync(...args) }
+})
+
 describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', () => {
   let runtime: string
   let shell: LinuxDictationShell
   let exitSource: EventEmitter
   let statePath: string
   beforeEach(() => {
+    readStat.mockReset().mockReturnValue(`123 (sotto) S ${Array(18).fill('0').join(' ')} 12345678 999`)
     runtime = mkdtempSync(join(tmpdir(), 'sotto-shell-'))
     statePath = join(runtime, 'sotto/dictation-state.json')
     exitSource = new EventEmitter()
@@ -26,6 +34,28 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
       async () => true, () => 'top', vi.fn(), exitSource)
   })
   afterEach(() => { shell.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); rmSync(runtime, { recursive: true, force: true }) })
+
+  it('reads the main start time once at construction and keeps it across publication', async () => {
+    expect(readStat).toHaveBeenCalledOnce()
+    await shell.start()
+    shell.publish({ status: 'listening', sessionId: 's', startedAt: 1, level: 0,
+      theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'F9', cancellable: true })
+    shell.place('left')
+    expect(JSON.parse(readFileSync(statePath, 'utf8'))).toMatchObject({ pid: process.pid, pidStart: 12345678 })
+    expect(readStat).toHaveBeenCalledOnce()
+  })
+
+  it('starts and publishes without pidStart when proc cannot be read', async () => {
+    shell.dispose()
+    readStat.mockReset().mockImplementation(() => { throw new Error('PRIVATE BODY') })
+    const log = vi.fn()
+    shell = new LinuxDictationShell(runtime, new ShellWidgetMonitor('linux', runtime, vi.fn()),
+      async () => true, () => 'top', log, exitSource)
+    await expect(shell.start()).resolves.toBeUndefined()
+    expect(JSON.parse(readFileSync(statePath, 'utf8'))).not.toHaveProperty('pidStart')
+    expect(log.mock.calls).toEqual([['native-dictation-pid-start-unavailable']])
+    expect(readStat).toHaveBeenCalledOnce()
+  })
 
   it.each([undefined, 'relative-runtime'])('opens Sotto without commands or shell state when the runtime path is %s', async runtimeDirectory => {
     shell.dispose()

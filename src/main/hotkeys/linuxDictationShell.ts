@@ -4,6 +4,7 @@ import type { WidgetEdge } from '../windows/widgetPlacementMath'
 import type { CompositorDictationCommand } from './dictationCommand'
 import { DictationSocket } from './dictationSocket'
 import { DictationStateFile } from './dictationStateFile'
+import { readLinuxProcessStart } from './linuxProcessStart'
 
 interface ExitSource {
   on(event: 'exit', listener: () => void): unknown
@@ -16,6 +17,7 @@ export class LinuxDictationShell {
   private stateFile: DictationStateFile | null = null
   private stopped = false
   private disposed = false
+  private readonly pidStart: number | undefined
   private readonly onExit = (): void => {
     this.stopped = true
     this.removeStateFile()
@@ -27,9 +29,10 @@ export class LinuxDictationShell {
     private readonly monitor: ShellWidgetMonitor,
     private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>,
     private readonly edge: () => WidgetEdge,
-    private readonly onFailure: () => void,
+    private readonly log: (event: 'native-dictation-state-write-failed' | 'native-dictation-pid-start-unavailable') => void,
     private readonly exitSource: ExitSource = process,
   ) {
+    this.pidStart = readLinuxProcessStart(this.log)
     this.exitSource.on('exit', this.onExit)
     this.monitor.start()
   }
@@ -41,7 +44,8 @@ export class LinuxDictationShell {
     this.socket = new DictationSocket(this.runtimeDirectory, this.dispatch)
     await this.socket.start()
     if (this.stopped) return
-    this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(), this.onFailure)
+    this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(),
+      () => this.log('native-dictation-state-write-failed'), this.pidStart)
   }
 
   publish(state: WidgetSnapshot): void { this.stateFile?.publish(state) }
