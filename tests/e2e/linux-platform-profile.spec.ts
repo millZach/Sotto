@@ -26,7 +26,7 @@ test('Linux saves a key during onboarding and copies dictation without attemptin
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Copied.', exact: true })).toBeVisible()
-    await expect(page.getByText('Paste with Ctrl+V, or Shift+Insert in a terminal.', { exact: true })).toBeVisible()
+    await expect(page.getByText(/With Sotto’s compositor bindings: hold F9 to talk/)).toBeVisible()
     expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 0 })
   } finally { await closeSotto(launched) }
 })

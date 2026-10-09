@@ -36,7 +36,7 @@ If Codex asks for an approval Sotto cannot show, Sotto refuses it and tells you.
 - **Codex's Computer Use.** In a Codex thread set to Full access, with the Codex app open, Codex can operate the apps on your computer. When the app changes its connection, Sotto refreshes the thread's tools before the next prompt; a refresh failure leaves that prompt unsent so you can try again. If its connection is still unavailable, open Codex if it is closed. Keep it open and try again. If that continues, restart Sotto when your other threads are idle.
 - **Git in one press.** Commit, push and open a pull request. Leave the message empty and the agent writes it. Selected files keep staged hunks; files left out keep their staging. While a Git action runs, sends from threads sharing that checkout are refused. Your text is kept so you can send it again when the action finishes. A refused Git action names the thread holding the folder and says whether to wait, answer it or review its pending work.
 - **Worktrees for parallel work.** Choose the current checkout, a new worktree, or one of five recent worktrees under the composer. Search finds older worktrees. Remove a thread's own folder when you're done, after reviewing any ignored files and their file counts. Nested repositories and worktrees are listed too, including uncommitted work and repository commits not on any remote, including history in clean or deinitialized submodules. They are removed only after your acknowledgement.
-- **Dictation anywhere.** Press `Ctrl+Shift+Space` (`⌃⇧Space` on a Mac), speak, and press it again. The text is copied and can be pasted at your cursor.
+- **Dictation anywhere.** Press `Ctrl+Shift+Space` (`⌃⇧Space` on a Mac), speak, and press it again. On Omarchy, install Sotto’s [compositor bindings](apps/omarchy/README.md), then hold F9 to talk or press Super+Ctrl+X to toggle. The text is copied and can be pasted at your cursor.
 
 Thread drafts save automatically while you type, including while other threads are working.
 For a remote managed thread, the laptop also keeps the latest text and image selections during remote saves. A disconnect or busy host does not replace those edits with an older host draft. Recovery saves the original draft; it never sends an answer automatically.
@@ -145,7 +145,7 @@ npm run dev
 
 `npm run package:win` and `npm run package:mac` build the installers. Each packaging command automatically verifies the source runtime before packaging.
 
-An unpackaged Linux build can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one. Transcripts are copied for you to paste. On Wayland, use the dictation button; the global shortcut does not work yet. Linux has no installer, frosted window or in-app updater. See the [Linux development notes](docs/guide.md#linux-development-builds).
+An unpackaged Linux build can start on Omarchy and save the OpenRouter key through an unlocked keyring. Sotto selects the libsecret password store unless you pass another one. Transcripts are copied for you to paste. Hyprland compositor bindings run `sotto dictation start|stop|toggle|cancel`: hold F9 to talk, or press Super+Ctrl+X to start and stop, after installing [Sotto’s snippet](apps/omarchy/README.md). Paste with Ctrl+V, or Shift+Insert in a terminal. The dictation button still works. Linux has no installer, frosted window or in-app updater. See the [Linux development notes](docs/guide.md#linux-development-builds).
 
 ## More
 

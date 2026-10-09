@@ -87,6 +87,7 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
+import { DictationSocket } from './hotkeys/dictationSocket'
 import { isAuthorizedIpcSender, registerIpc } from './ipc/registerIpc'
 import { createMicrophoneAccessGate } from './media/microphoneAccess'
 import {
@@ -1078,6 +1079,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
     },
+    platform,
   )
 
   const nativeTray = e2eConfiguration === null
@@ -1201,7 +1203,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           request: () => systemPreferences.askForMediaAccess('microphone'),
         })
       : null
+  let dictationSocket: DictationSocket | null = null
   return new NativeRuntimeController({
+    ...(platform === 'linux' ? { dictationCommands: {
+      async start(): Promise<void> {
+        dictationSocket = new DictationSocket(
+          e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
+          command => messageDelivery.sendToMain(DICTATION_COMMAND, { type: command }),
+        )
+        await dictationSocket.start()
+      },
+      dispose(): void { dictationSocket?.dispose() },
+    } } : {}),
     windows,
     hotkeys,
     tray,
