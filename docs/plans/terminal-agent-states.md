@@ -30,8 +30,10 @@ The October 9 finish request supersedes the earlier local-only handoff and autho
 - [x] Complete the final CI gates and affected Electron journeys on this revision.
 - [x] Resolve the fresh independent Standards and Spec reviews.
 - [x] Inspect final captures and record exact results in the verification note.
-- [ ] Push and open the requested pull request; leave it unmerged.
+- [x] Push and open the requested pull request; leave it unmerged.
 
 The design pass's full-width attention edge, accessible pane/tab names, empty-folder wording and stable unknown-version note are retained. Its completion timeout is checked again in the native fake-agent journey. The existing xterm scrollbar and extra compact-tab state decoration are outside #883; the sidebar remains the state navigation surface.
 
-Final gates at `2fe9391cf`: typecheck, lint, notices and build exit 0; six Electron cases passed; the single full run returned 9399 passed | 222 skipped (9621), across 628 passed | 51 skipped (679). All eight supplied findings and the additional review/redraw findings have fixes and regressions. The final verification note records the earlier failed attempts and compatibility limits. Push and PR creation are the only remaining delivery actions.
+Final gates at `2fe9391cf`: typecheck, lint, notices and build exit 0; six Electron cases passed; the single full run returned 9,399 tests passed and 222 skipped (9,621), across 628 files passed and 51 skipped (679). All eight supplied findings and the additional review/redraw findings have fixes and regressions. The final verification note records the earlier failed attempts and compatibility limits.
+
+Delivery completed on October 9: `feat/terminal-agent-states` was pushed and [PR #896](https://github.com/millZach/Sotto/pull/896) opened against `feat/terminal-agent-state-adr`. It was left unmerged as requested. No source changed after the final gates; the delivery record is documentation only.
