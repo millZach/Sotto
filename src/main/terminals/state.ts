@@ -168,6 +168,14 @@ export class TerminalAgentStateMachine {
       else if (this.state !== 'just-finished') this.state = 'idle'
       return
     }
+    if (this.completion && this.compatibility === 'unavailable' && this.evidence.state === undefined) {
+      // Successful hook completion ends known work even when this version has no readable ready controls.
+      // It supplies no observed Working-to-ready transition, so it can only settle conservatively to Idle.
+      this.retireTurn(this.activeTurn); this.activeTurn = undefined
+      this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false
+      this.readyForCompletion = false; this.continuingWork = false; this.finishedObserved = true; this.awaitingReady = false
+      this.state = 'idle'; return
+    }
     if (this.knownWork) this.state = 'working'
     else if (this.state !== 'just-finished') this.state = this.awaitingReady && !this.evidence.unresolvedVersion ? 'starting' : this.fresh ? 'working' : 'idle'
   }

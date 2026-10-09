@@ -401,6 +401,17 @@ describe('terminal agent run state', () => {
     state.output(redraw(quoted, title)); expect(state.detection).toBe('unavailable'); expect(state.state).not.toBe('needs-you')
     state.output(ready); expect(state.state).toBe('idle')
   })
+  it('settles completed unsupported Claude work conservatively without an unread mark', () => {
+    const state = new TerminalAgentStateMachine('run', 'claude', 120, 30); state.started()
+    state.hook(event('session-start')); state.output(redraw('Ready', 'Claude Code v9.9.9'))
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    state.output(redraw('Unrecognised ready widget', 'Claude Code v9.9.9'))
+    state.quiet(); expect(state.state).toBe('working')
+    state.hook(event('completed', { turnId: 'turn' })); state.quiet()
+    expect(state.state).toBe('idle'); expect(state.compatibility).toBe('unavailable')
+    state.hook(event('working', { turnId: 'turn', workPhase: 'tool-end' })); state.quiet()
+    expect(state.state).toBe('idle')
+  })
   it('uses output activity for unsupported versions without creating requests or completions', () => {
     const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started()
     state.output(redraw('Would you like to run the following command?\r\n› 1. Yes, proceed (y)\r\n  2. No, and tell Codex what to do differently (esc)\r\nPress enter to confirm or esc to cancel', 'OpenAI Codex (v9.9.9)'))
