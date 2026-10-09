@@ -335,6 +335,8 @@ is still releasing a just-exited child's handles.
 
 Measured on a warm developer machine: install 18 s, runtime preparation 1 s, typecheck 22 s, lint 31 s, vitest with two workers 234 s, notices 2 s — about five minutes of gate time. A cold runner adds the dependency install and the Electron binary download, so a full run is expected to land inside the 15-minute budget, with the 30-minute job timeout as a backstop.
 
+That measurement predates the suite's growth. On October 9, 2026, on the Windows development laptop with nothing else running, `npm test -- --maxWorkers=2` took 1,328 s for 9,099 cases at `c53d2908c`, before the #123 cleanup, and 1,248 s for 9,617 cases after it: about 11% less time per case. Gates (Windows) on GitHub took 24 to 28 minutes for the pull requests of that week, so the job now runs close to its 30-minute timeout.
+
 ## Native usage archive writes
 
 Native usage archive write bounds run in `tests/unit/main/nativeUsagePersistence.test.ts`, beside the accounting cases in `nativeUsage.test.ts`. They check unchanged replay, coalescing, latest-total drain and observable persistence failures without stopwatch assertions. The isolated before/after benchmark in `tests/perf/nativeUsageWrites.perf.test.ts` requires `SOTTO_PERF_BENCH=1`; run it alone with one worker. See [the workload and verification state](perf/2026-09-27-native-usage-writes.md); since #767 the ledger is also written at most once a second while a reply streams ([the note](perf/2026-10-06-send-writes.md)).
