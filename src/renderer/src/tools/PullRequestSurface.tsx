@@ -137,11 +137,13 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   }
   /**
    * Focus after a press that takes the babysitting line away: on ··· (`menu`), where Babysit pull request is, else on the
-   * pull request, unless the reader has already moved on elsewhere in the surface.
+   * pull request. Only while focus is still in the line, or went with it; a reader who moved on while the host answered,
+   * to the composer or anywhere else, stays where they went.
    */
   const leaveLine = (menu: boolean): void => { requestAnimationFrame(() => {
     const active = document.activeElement
-    if (surface.current?.contains(active) && !active?.closest('.pr-surface__babysit')) return
+    const lost = !active || active === document.body || !active.isConnected
+    if (!lost && !active.closest('.pr-surface__babysit')) return
     ((menu ? surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') : null) ?? top.current)?.focus()
   }) }
   const copyLink = async (url: string): Promise<void> => {

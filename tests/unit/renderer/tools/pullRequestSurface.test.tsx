@@ -570,6 +570,28 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     await act(async () => { answer({ notice: 'Stopped.', error: null } as AgentState) })
   })
 
+  it('leaves focus where the user moved it while a slow Stop was under way', async () => {
+    let answer!: (state: AgentState) => void
+    const { command, onStatus } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user') })
+    command.mockImplementation(() => new Promise(resolve => { answer = resolve }))
+    await opened()
+    const stop = screen.getByRole('button', { name: 'Stop babysitting #74' })
+    stop.focus()
+    fireEvent.click(stop)
+    await waitFor(() => expect(stop).toHaveAttribute('aria-disabled', 'true'))
+    // The user goes on to the composer, outside the surface, before the host answers.
+    const composer = document.createElement('textarea')
+    composer.setAttribute('aria-label', 'Message')
+    document.body.append(composer)
+    try {
+      composer.focus()
+      await act(async () => { answer({ notice: 'Stopped babysitting PR #74.', error: null } as AgentState) })
+      await waitFor(() => expect(onStatus).toHaveBeenCalledWith('Stopped babysitting #74'))
+      await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))) })
+      expect(composer).toHaveFocus()
+    } finally { composer.remove() }
+  })
+
   it('offers nothing where the host cannot babysit, still showing what the thread babysits', async () => {
     mount({ thread: babysat('user') })
     await opened()
