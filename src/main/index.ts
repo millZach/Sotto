@@ -1003,6 +1003,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       onUntrusted: () => recoveryNotices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }),
     }),
     buildPasteInvocation: pasteCommands.oneShot,
+    keepWidgetVisibleDuringPaste: platform === 'linux',
   })
 
   const copyOutput = async (text: string): Promise<void> => {

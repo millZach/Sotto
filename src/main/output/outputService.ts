@@ -21,6 +21,7 @@ export interface OutputServiceDependencies {
   readonly delay: (milliseconds: number) => void | Promise<void>
   readonly process: PasteProcessAdapter
   readonly buildPasteInvocation: () => PasteInvocation | null
+  readonly keepWidgetVisibleDuringPaste?: boolean
 }
 
 interface DeliveryOptions {
@@ -148,8 +149,10 @@ export class OutputService {
     try {
       const invocation = this.dependencies.buildPasteInvocation()
       if (invocation === null) return 'copied'
-      await this.dependencies.widget.hideWidget()
-      hidForPaste = true
+      if (!this.dependencies.keepWidgetVisibleDuringPaste) {
+        await this.dependencies.widget.hideWidget()
+        hidForPaste = true
+      }
       await this.dependencies.delay(options.pasteDelayMs)
       let pasted: boolean
       try {

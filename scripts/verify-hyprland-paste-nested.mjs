@@ -203,17 +203,18 @@ try {
   assertDebuggerListener(chromiumPort, chromium)
   assert.equal(await cdp.evaluate('document.getElementById("t").value'), '')
 
-  const deliver = async (label, child, matches, tags, text, receive) => {
+  const deliver = async (label, child, matches, tags, text, receive, refocus = true) => {
     assertNested()
     const target = JSON.parse(hyprctl('clients', '-j')).find(client => matches(client) && owned.owns(client.pid, child))
     assert.ok(target, `${label}: target must be a window owned by this proof`)
-    const active = await poll(`${label} focus`, async () => {
+    const active = refocus ? await poll(`${label} focus`, async () => {
       assert.equal(hyprctl('dispatch', `hl.dsp.focus({ window = "address:${target.address}" })`).trim(), 'ok')
       // Initial window activation and keyboard focus delivery are asynchronous.
       await wait(500)
       const window = JSON.parse(hyprctl('activewindow', '-j'))
       return window.address === target.address ? window : undefined
-    }, child)
+    }, child) : JSON.parse(hyprctl('activewindow', '-j'))
+    assert.equal(active.address, target.address, `${label}: target stays focused without refocusing`)
     assert.equal(active.pid, target.pid, `${label}: focused PID`)
     assert.equal(active.class, target.class, `${label}: focused class`)
     assert.equal(active.title, target.title, `${label}: focused title`)
@@ -240,6 +241,22 @@ try {
     console.log(`${label} received:`, JSON.stringify(receivedText))
   }
   await deliver('foot', foot, client => client.class === 'foot', ['terminal*'], 'Sotto pasted into foot — café 🚀', () => readFileSync(footFile, 'utf8'))
+  await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
+  await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', readChromium)
+  await invoke('window.sotto.updateSettings({ showWidgetWhenIdle: true, onboardingComplete: true })')
+  const widget = "process.mainModule.require('electron').BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))"
+  await poll('Idle widget shown', remaining => inspector.evaluate(`Boolean((${widget}).isVisible())`, Math.min(2000, remaining), false), sotto)
+  await cdp.evaluate('document.getElementById("t").value = ""')
+  const widgetFirst = 'Widget on: first dictation — café 🚀'
+  const widgetSecond = ' + second dictation to the same target ✓'
+  await deliver('widget on first', chromium, client => client.title === 'pastebox', [], widgetFirst, readChromium)
+  assert.equal(await inspector.evaluate(`(${widget}).isVisible()`, 5000, false), true, 'Idle widget stays visible after paste')
+  await deliver('widget on second', chromium, client => client.title === 'pastebox', [], widgetSecond, async () => {
+    const received = await readChromium()
+    return received.startsWith(widgetFirst) ? received.slice(widgetFirst.length) : received
+  }, false)
+  assert.equal(await readChromium(), widgetFirst + widgetSecond, 'Both dictations reach the same textarea without refocusing')
+  console.log('widget on: target focus retained; second dictation reached the same target without refocusing')
   const stalePrimary = 'Different PRIMARY selection: never paste this'
   await new Promise((resolve, reject) => {
     const child = owned.start('Primary sentinel', 'wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], { env: nested, stdio: ['pipe', 'ignore', 'ignore'] })
@@ -252,12 +269,10 @@ try {
   assert.equal(execFileSync('wl-paste', ['--primary', '--no-newline'], { env: nested, encoding: 'utf8', timeout: 5000 }), stalePrimary)
   console.log('stock foot PRIMARY before:', JSON.stringify(stalePrimary))
   await deliver('stock foot', stockFoot, client => client.title === 'stock foot', ['terminal*'], 'Sotto pasted into stock foot — café 🚀', () => readFileSync(stockFootFile, 'utf8'))
-  await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
-  await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', readChromium)
   execFileSync('grim', [join(out, 'nested.png')], { env: nested, timeout: 5000 })
   console.log('screenshot:', join(out, 'nested.png'))
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
-  console.log('PASS: exact paste into foot, stock foot with seeded PRIMARY, Alacritty and Chromium')
+  console.log('PASS: exact paste into foot, stock foot with seeded PRIMARY, Alacritty and Chromium; widget-on focus and second dictation')
 } finally {
   await lifecycle.cleanup()
 }

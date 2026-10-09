@@ -209,6 +209,23 @@ describe('OutputService', () => {
     expect(harness.events).toEqual(['clipboard', 'hide', 'delay:275', 'process', 'delay:150'])
   })
 
+  it.each([true, false])('keeps the Linux widget mapped through paste success=%s and a following dictation', async success => {
+    const widget = { hideWidget: vi.fn(), showWidget: vi.fn() }
+    const harness = createHarness({
+      widget, keepWidgetVisibleDuringPaste: true,
+      buildPasteInvocation: createPasteCommands('linux').oneShot,
+      process: { run: () => success },
+    })
+    for (const text of ['first', 'second']) {
+      await expect(harness.service.deliver(text, {
+        autoPaste: true, pasteDelayMs: 50, restoreWidget: true,
+      })).resolves.toBe(success ? 'pasted' : 'copied')
+    }
+    expect(widget.hideWidget).not.toHaveBeenCalled()
+    expect(widget.showWidget).not.toHaveBeenCalled()
+    expect(harness.events).toEqual(['clipboard', 'delay:50', 'delay:150', 'clipboard', 'delay:50', 'delay:150'])
+  })
+
   it('restores the idle widget after paste when restoreWidget is requested', async () => {
     const harness = createHarness()
 
