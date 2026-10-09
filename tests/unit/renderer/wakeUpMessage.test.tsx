@@ -80,7 +80,7 @@ describe('a wake-up waiting in the follow-up queue', () => {
   function queue(items: AgentFollowup[]) {
     const state: AgentState = { ...threadsStateFixture(), followups: items }
     const row = describeThreads(state, Date.parse(at)).find(item => item.thread.id === 'footer-links')!
-    const command = vi.fn(async (request: { type: string; itemId?: string }) => ({ ...state, followups: items.filter(item => item.id !== request.itemId) }) as AgentState)
+    const command = vi.fn(async (request: { type: string; itemId?: string }) => ({ ...state, followups: items.filter(item => item.id !== request.itemId) }))
     render(<ThreadFollowups row={row} state={state} command={command as never} store={new ThreadDraftStore(vi.fn(async () => null), 0)} onRetryAdmission={vi.fn()} />)
     return command
   }

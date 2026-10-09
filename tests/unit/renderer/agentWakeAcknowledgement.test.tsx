@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,7 +26,7 @@ describe('wake acknowledgement in the real application voice session', () => {
       state = 'suspended'; currentTime = 0; destination = {}
       createOscillator() { return oscillator }
       createGain() { return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} } }
-      resume() { return new Promise<void>(() => { /* Browser playback may still be suspended. */ }) }
+      resume() { return /* Browser playback may still be suspended. */ deferred<void>().promise }
       close = close
     })
     let captureOptions: VoiceCaptureOptions | undefined
@@ -34,7 +36,7 @@ describe('wake acknowledgement in the real application voice session', () => {
       setSuppressed(value: boolean) { suppressed = value },
     }
     const transcribe = vi.fn(async () => ({ text: placement === 'same utterance' ? 'Open Workshop' : '', language: 'en' }))
-    const speak = vi.fn(() => new Promise<void>(() => { /* Simulate a speech model still loading. */ }))
+    const speak = vi.fn(() => /* Simulate a speech model still loading. */ deferred<void>().promise)
     external.dependencies = {
       createCapture: (options) => { captureOptions = options; return capture },
       createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: true, endSeconds: 0 }), dispose() {} }),
@@ -43,14 +45,10 @@ describe('wake acknowledgement in the real application voice session', () => {
       setTimer: (callback, delay) => setTimeout(callback, delay),
       clearTimer: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
     }
-    const state: AgentState = {
-      configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true },
-      connection: 'disconnected', host: EMPTY_AGENT_HOST, assignments: [], queue: [],
-      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-      composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-      speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
-      credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    }
+    const state: AgentState = threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true },
+    host: EMPTY_AGENT_HOST,
+    topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null, voice: { status: 'wake', error: null, action: 'none', revision: 0 } } })
     const command = vi.fn(async () => state)
     vi.stubGlobal('sotto', { agents: agentWireBridge({ get: async () => state, onState: () => () => undefined, command }) })
     vi.stubGlobal('sottoE2E', {})

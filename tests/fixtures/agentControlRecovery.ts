@@ -1,9 +1,11 @@
+import { createAgentControl } from './agentControlFixture'
+import { testCredentials, xorCredentialEncryption } from './testCredentials'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, vi } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../src/main/agents/credentials'
+import { type CredentialEncryption } from '../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner, type AgentDecision, type AgentIntent } from '../../src/main/agents/reasoning'
 import type { AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
@@ -20,11 +22,7 @@ export const OPENAI_KEY = 'fixture-openai-key'
 
 // Only external effects are replaced: OS encryption, native coding adapters, and provider HTTP.
 // The controller, configured reasoner, and durable credential/state stores are real.
-export const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
+export const encryption: CredentialEncryption = xorCredentialEncryption()
 
 export class UnacknowledgedCreationHost extends E2EAgentHost {
   readonly creationAttempts: AgentHostCommand[] = []
@@ -60,8 +58,7 @@ export async function fixture(host = new E2EAgentHost(), options: { coordinatorE
   const root = await mkdtemp(join(tmpdir(), 'sotto-control-recovery-'))
   roots.push(root)
   const credentialsDirectory = join(root, 'vault')
-  const credentials = new AgentCredentials(credentialsDirectory, encryption)
-  await credentials.load()
+  const credentials = await testCredentials(credentialsDirectory, { encryption: encryption })
   const service = { offline: false, intent: { type: 'select-project', projectId: 'project' } as AgentIntent,
     decision: { decision: 'followup', text: 'Fix the current failing test within the assigned scope.' } as AgentDecision,
     decisionGate: null as Promise<void> | null }
@@ -81,7 +78,7 @@ export async function fixture(host = new E2EAgentHost(), options: { coordinatorE
   let control: AgentControl
   const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials)
   const create = async (): Promise<void> => {
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, ...options,
+    control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, ...options,
     })
     controls.push(control)
     await control.start()

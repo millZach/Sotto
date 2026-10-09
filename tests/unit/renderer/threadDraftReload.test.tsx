@@ -1,10 +1,12 @@
+import { deferred } from '../../fixtures/deferred'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
@@ -19,10 +21,10 @@ const image = handleOf(PIXEL_PNG, 'retained-image', 'pixel.png')
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-reload-drafts-'))
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
   })
-  await credentials.load(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
+  await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
   const bridge: AgentBridge = agentBridgeFor(control)
   return { control, bridge, disk: async () => JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')),
     async close() {
@@ -38,8 +40,7 @@ describe('fresh renderer draft durability with a live main controller', () => {
     ['pending', 'retry'], ['failed', 'retry'], ['failed', 'unrelated write'], ['pending', 'original success'],
   ] as const)('does not certify a %s disk write on initial get, then confirms %s', async (stage, recovery) => {
     const f = await fixture()
-    let release!: () => void
-    const gate = new Promise<void>(done => { release = done })
+    const { promise: gate, resolve: release } = deferred<void>()
     let writing = false
     const original = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
@@ -92,8 +93,8 @@ describe('fresh renderer draft durability with a live main controller', () => {
   it('keeps a newer revision dirty when an older real write completes after reload', async () => {
     const f = await fixture()
     let releaseOld!: () => void, releaseNew!: () => void
-    const oldGate = new Promise<void>(done => { releaseOld = done })
-    const newGate = new Promise<void>(done => { releaseNew = done })
+    const oldGate = (() => { const pending = deferred<void>(); releaseOld = pending.resolve; return pending.promise })()
+    const newGate = (() => { const pending = deferred<void>(); releaseNew = pending.resolve; return pending.promise })()
     let started = 0
     const original = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {

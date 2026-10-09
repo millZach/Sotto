@@ -7,7 +7,8 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../../src/shared/th
 import { agentCommandSchema, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
-import { cleanup, fixture, local, send, deferred } from '../../fixtures/workspaceTestFixture'
+import { cleanup, fixture, local, send } from '../../fixtures/workspaceTestFixture'
+import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
   it('names a saved Claude Code model Claude Code after restart, though it was saved under the provider id', async () => {
@@ -64,7 +65,7 @@ describe("durable project/thread organization", () => {
     await f.host.setWorkspaceSettled('project', project.id, true)
     const writing = deferred(); const rejectWrite = deferred()
     const write = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async () => {
-      writing.release(); await rejectWrite.promise; throw new Error('Disk unavailable')
+      writing.resolve(); await rejectWrite.promise; throw new Error('Disk unavailable')
     })
     const creation = f.host.execute({ type: 'create-thread', commandId: 'overlapping-create', threadId: 'new-work', projectId: project.id, modelId: model.id, title: 'New work' })
     await writing.promise
@@ -72,7 +73,7 @@ describe("durable project/thread organization", () => {
     const results = Promise.allSettled([creation, restoration])
     // Let restoration reach the shared write or queue behind creation; no elapsed-time assertion.
     await new Promise<void>(resolve => setImmediate(resolve))
-    rejectWrite.release()
+    rejectWrite.resolve()
     const outcomes = await results
     expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'local')?.workspaceSettledAt).toBe(original)
     // Restoring an already-unsettled thread is a no-op after creation rolls back.

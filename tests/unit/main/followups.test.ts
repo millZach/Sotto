@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { AttachmentStore } from '../../../src/main/agents/attachmentStore'
 import { FollowupStore } from '../../../src/main/agents/followups'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
@@ -15,6 +15,9 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_PNG, pngOfSize, stageInto } from '../../fixtures/stagedImages'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []; const controls: AgentControl[] = []
 afterEach(async () => {
@@ -52,9 +55,9 @@ class Host implements AgentHost {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
   const host = new Host()
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' });
   const create = () => {
-    const c = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+    const c = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
     })
     controls.push(c); return c
   }
@@ -102,8 +105,8 @@ it('queues running manual sends by default, acknowledges immediately and dispatc
 })
 
 it('allows another thread send and draft saves while a first provider send is slow', async () => {
-  const f = await fixture(); let release!: () => void
-  f.host.gate = new Promise<void>(done => { release = done })
+  const f = await fixture(); const { promise: heldRelease, resolve: release } = deferred<void>()
+  f.host.gate = heldRelease
   const first = f.control.command({ ...queued('slow'), type: 'manual-send' })
   try {
     await expect.poll(() => f.host.attempts.length).toBe(1)
@@ -206,8 +209,8 @@ it('keeps a definitively rejected queue head for editing and does not advance un
 
 it('rechecks native completion after saving outbox intent, before dispatching a queued follow-up', async () => {
   const f = await fixture(); f.host.update('workshop', { status: 'running' }); await f.control.command(queued('must wait'))
-  let release!: () => void; let entered!: () => void; let blocked = false
-  const gate = new Promise<void>(done => { release = done }); const ready = new Promise<void>(done => { entered = done })
+    let blocked = false
+  const { promise: gate, resolve: release } = deferred<void>(); const { promise: ready, resolve: entered } = deferred<void>()
   const original = AtomicJsonStore.prototype.write
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
     await original.call(this, value)
@@ -241,8 +244,8 @@ it('clears an accepted selected-skill and file revision from both draft represen
 })
 
 it('does not queue a revision whose manual acknowledgement is still pending', async () => {
-  const f = await fixture(); let release!: () => void
-  f.host.gate = new Promise<void>(done => { release = done })
+  const f = await fixture(); const { promise: heldRelease, resolve: release } = deferred<void>()
+  f.host.gate = heldRelease
   const command = { ...queued('dispatch once'), type: 'manual-send' as const }
   const first = f.control.command(command)
   try {
@@ -294,8 +297,8 @@ it('keeps file prompt admission and retries bounded by image handles with one di
   const reads = vi.spyOn(AttachmentStore.prototype, 'read')
   const command = { ...queued('Read @README.md with this image'), type: 'manual-send' as const,
     files: [{ path: 'README.md' }], attachments: [image], skills: [{ name: 'build', path: 'C:/skills/build/SKILL.md' }] }
-  let release!: () => void
-  f.host.gate = new Promise<void>(done => { release = done })
+  const { promise: heldRelease, resolve: release } = deferred<void>()
+  f.host.gate = heldRelease
   f.host.result = { accepted: false, uncertain: true }
   const sending = f.control.command(command)
   const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value))
@@ -322,8 +325,8 @@ it('keeps file prompt admission and retries bounded by image handles with one di
 it.each(['manual-send', 'steer', 'queue-followup'] as const)('reserves queue ownership against %s while its durable write is pending', async type => {
   const f = await fixture(); f.host.update('workshop', { status: 'running' })
   const command = { ...queued('owned once'), files: [{ path: 'README.md' }] }
-  let release!: () => void; let entered!: () => void
-  const gate = new Promise<void>(done => { release = done }); const ready = new Promise<void>(done => { entered = done })
+
+  const { promise: gate, resolve: release } = deferred<void>(); const { promise: ready, resolve: entered } = deferred<void>()
   const original = AtomicJsonStore.prototype.write
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {
     if ((value as { items?: unknown[] }).items?.length) { entered(); await gate }
@@ -402,8 +405,8 @@ it('never queues uncertain manual intent, while retaining newer revisions and th
 })
 
 it('rejects conflicting file selections during manual admission before any outbox write', async () => {
-  const f = await fixture(); let release!: () => void; let entered!: () => void
-  const gate = new Promise<void>(done => { release = done }); const ready = new Promise<void>(done => { entered = done })
+  const f = await fixture();
+  const { promise: gate, resolve: release } = deferred<void>(); const { promise: ready, resolve: entered } = deferred<void>()
   const original = AtomicJsonStore.prototype.write
   let blocked = false
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function(this: AtomicJsonStore<unknown>, value) {

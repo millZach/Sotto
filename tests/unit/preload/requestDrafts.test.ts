@@ -1,11 +1,12 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, REQUEST_DRAFT_CHANGED, requestDraftSchema, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 
 it('validates read-only accepted, native unconfirmed, draft and missing status without invoking Check', async () => {
-  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
   const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'claude', requestId: 'request', questions: [
     { id: 'q', question: 'Notes', options: [], multiSelect: false, allowFreeText: true },
@@ -29,7 +30,7 @@ it('validates read-only accepted, native unconfirmed, draft and missing status w
 })
 
 it('keeps exact acceptance separate from an editable draft across the Check bridge', async () => {
-  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
   const target: RequestDraftTarget = { kind: 'thread', ownerId: 'thread', providerId: 'claude', requestId: 'request', questions: [
     { id: 'q', question: 'Notes', options: [], multiSelect: false, allowFreeText: true },
@@ -49,7 +50,7 @@ it('keeps exact acceptance separate from an editable draft across the Check brid
 })
 
 it('validates identity-only draft change events and removes their listener on unsubscribe', () => {
-  const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
   const changed = vi.fn()
   const off = bridge.onChanged!(changed)
@@ -66,7 +67,7 @@ it('validates identity-only draft change events and removes their listener on un
 })
 
 it('exposes validated request draft persistence only to the main renderer', async () => {
-  const ipc = { invoke: vi.fn().mockResolvedValue(null), on: vi.fn(), removeListener: vi.fn() }
+  const ipc = ({ ...preloadElectron().ipcRenderer, invoke: vi.fn().mockResolvedValue(null) })
   const bridge = createSottoBridge(ipc, 'win32').requestDrafts!
   expect(Object.isFrozen(bridge)).toBe(true)
   expect(createSottoWidgetBridge(ipc, 'win32')).not.toHaveProperty('requestDrafts')

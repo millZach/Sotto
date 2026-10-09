@@ -1,3 +1,4 @@
+import { parseProviderRecords } from './providerRecords'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
@@ -50,7 +51,7 @@ export async function fakeSystemd(directory: string, initial: FakeSystemdState =
   const pathKey = Object.keys(base).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
   const env: NodeJS.ProcessEnv = { ...base, [pathKey]: [bin, base[pathKey]].filter(Boolean).join(process.platform === 'win32' ? ';' : ':'),
     XDG_CONFIG_HOME: config, FAKE_SYSTEMD_STATE: statePath, FAKE_SYSTEMD_RECORD: recordPath }
-  const records = async (): Promise<Record<string, unknown>[]> => (await readFile(recordPath, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
+  const records = async (): Promise<Record<string, unknown>[]> => parseProviderRecords<Record<string, unknown>>(await readFile(recordPath, 'utf8'), { trim: false })
   return {
     env, unitPath: join(config, 'systemd', 'user', 'sotto-host.service'),
     state: async () => ({ enabled: false, ...JSON.parse(await readFile(statePath, 'utf8')) as FakeSystemdState }),

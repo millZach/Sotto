@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { expect, it, vi } from 'vitest'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -13,9 +14,8 @@ it('loads unstarted skills from the independent project subfolder and rejects it
   const subfolder = join(repository, 'packages', 'app')
   await mkdir(subfolder, { recursive: true })
   await writeFile(join(subfolder, 'README.md'), 'Independent project fixture')
-  await runWorktreeGit(repository, ['init'])
-  await runWorktreeGit(repository, ['add', '.'])
-  await runWorktreeGit(repository, ['-c', 'user.name=Sotto Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Fixture'])
+
+  await initializeGitRepository(repository, { files: {}, message: "Fixture", identity: { name: "Sotto Fixture", email: "fixture@example.invalid" } })
   f.adapters.codex.state.projects[0]!.path = subfolder
   const list = vi.fn(async (threadId: string, _reload?: boolean, scope?: AgentSkillScope) => ({
     threadId, cwd: scope?.workingDirectory ?? f.host.workspaceSnapshot().threads.find(thread => thread.id === 'isolated')?.workingDirectory ?? '', providerId: 'codex' as const, status: 'ready' as const, skills: [], errors: [],
@@ -66,9 +66,8 @@ it('maps a project skill preview into the new checkout and validates it before n
   const relativeSkill = join('.agents', 'skills', 'review', 'SKILL.md')
   await mkdir(join(repository, '.agents', 'skills', 'review'), { recursive: true })
   await writeFile(join(repository, relativeSkill), 'Synthetic review skill')
-  await runWorktreeGit(repository, ['init'])
-  await runWorktreeGit(repository, ['add', '.'])
-  await runWorktreeGit(repository, ['-c', 'user.name=Sotto Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Fixture'])
+
+  await initializeGitRepository(repository, { files: {}, message: "Fixture", identity: { name: "Sotto Fixture", email: "fixture@example.invalid" } })
   const list = vi.fn(async (threadId: string, _reload?: boolean, scope?: AgentSkillScope) => ({
     threadId, cwd: scope!.workingDirectory, providerId: 'codex' as const, status: 'ready' as const,
     skills: [{ name: 'review', path: join(scope!.workingDirectory, relativeSkill), description: 'Review', scope: 'repo' as const }], errors: [],

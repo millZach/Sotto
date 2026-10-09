@@ -1,3 +1,4 @@
+import { agentThread, threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,10 +11,11 @@ const project = { path: 'C:\\Users\\zache\\Projects\\sotto-app' }
 const worktreePath = 'C:\\Users\\zache\\AppData\\Roaming\\Sotto\\thread-worktrees\\7f1c0000-0000-4000-8000-000000000000'
 const own: AgentWorktree = { mode: 'independent', status: 'ready', path: worktreePath, repositoryRoot: project.path, branch: 'feat/finished', dirty: false }
 const thread: WorkingCopyThread = { id: 'thread-1', nativeSessionStarted: true, workingDirectory: worktreePath, worktree: own }
-const ok = (): AgentState => ({ configuration: defaultAgentConfiguration(), connection: 'connected', error: null,
-  host: { threads: [thread] }, worktreeReclaimPreview: { path: worktreePath, branch: own.branch, dirty: false, ignored: [], items: [], repositories: [], untracked: [] },
-} as unknown as AgentState)
-const refused = (error: string): AgentState => ({ ...ok(), error } as AgentState)
+const ok = (): AgentState => (threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: {projects: [], models: [],  threads: [agentThread(thread)] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, worktreeReclaimPreview: { path: worktreePath, branch: own.branch, dirty: false, ignored: [], items: [], repositories: [], untracked: [] } } }))
+const refused = (error: string): AgentState => ({ ...ok(), error })
 afterEach(() => cleanup())
 
 function SettleButton({ command, target }: { readonly command: (request: AgentCommand) => Promise<AgentState>; readonly target: WorkingCopyThread }) {

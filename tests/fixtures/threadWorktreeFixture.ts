@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { initializeGitRepository } from './gitRepository'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -16,21 +17,17 @@ afterEach(async () => {
 export async function fixture(commit = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-worktree-test-')); roots.push(root)
   const project = join(root, 'project'); await mkdir(project)
-  await git(project, ['init'])
-  if (commit) {
-    await writeFile(join(project, 'tracked.txt'), 'committed baseline')
-    await git(project, ['add', '.'])
-    await git(project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
-  }
+  if (commit) await initializeGitRepository(project, { files: { 'tracked.txt': 'committed baseline' } })
+  else await git(project, ['init']) // This scenario deliberately has no initial commit.
   return { root, project, service: new ThreadWorktrees(root) }
 }
 export async function submoduleHistoryFixture(reference: 'branch' | 'tag' | 'no-remote' | 'deinitialized-branch' | 'deinitialized-tag' = 'branch', moduleName = 'module') {
   const f = await fixture()
   const origin = join(f.root, 'module-origin'); await mkdir(origin)
-  await git(origin, ['init'])
+
   await writeFile(join(origin, 'module.txt'), 'published baseline')
-  await git(origin, ['add', '.'])
-  await git(origin, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Module baseline'])
+
+  await initializeGitRepository(origin, { files: {}, message: "Module baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
   await git(f.project, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '--name', moduleName, origin, 'module'])
   await git(f.project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', 'Add module'])
   const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))

@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +18,9 @@ function thread(git: GitStatus | undefined, over: Partial<AgentThread> = {}): Ag
   return { id: 'thread-1', projectId: project.id, title: 'Task', modelId: 'codex:model', status: 'idle', messages: [], requests: [], nativeSessionStarted: true,
     worktree: { mode: 'shared', status: 'ready', path: project.path, repositoryRoot: project.path, branch: git?.branch ?? 'main', ...(git ? { git } : {}) }, ...over } as AgentThread
 }
-const state = (current: AgentThread, extra: Partial<AgentState> = {}): AgentState => ({ connection: 'connected', error: null, notice: null, activeThreadId: current.id, host: { projects: [project], threads: [current] }, ...extra } as unknown as AgentState)
+const state = (current: AgentThread, extra: Partial<AgentState> = {}): AgentState => (threadsStateFixture({ cloneOverrides: false,
+    host: {models: [],  projects: [project], threads: [current] },
+    topLevel: { notice: null as unknown as string, assignments: [], queue: [], activeProjectId: null, activeThreadId: current.id, ...extra } , ...extra}))
 const files = (listed: GitChangedFiles['files'] = [{ path: 'src/app.ts', status: 'modified', insertions: 4, deletions: 1 }, { path: 'docs/new.md', status: 'untracked', insertions: 2, deletions: 0 }, { path: 'logo.png', status: 'modified', insertions: null, deletions: null }]): GitChangedFiles => ({ isRepository: true, files: listed, truncated: false })
 function mount(current: AgentThread, options: { command?: (request: AgentCommand) => Promise<AgentState | null>; changed?: GitChangedFiles; openExternalLink?: ReturnType<typeof vi.fn>; explained?: (error: string | null) => void } = {}) {
   const gitChangedFiles = vi.fn(async () => options.changed ?? files())
@@ -285,7 +289,7 @@ describe('the Git action in the pane header', () => {
   it('runs one command at a time from the header', async () => {
     let release!: () => void
     const current = thread(status({ ahead: 1, pullRequest: pr }))
-    const { command } = mount(current, { command: () => new Promise(resolve => { release = () => resolve(state(current)) }) })
+    const { command } = mount(current, { command: () => { const pending = deferred<AgentState | null>(); release = () => pending.resolve(state(current)); return pending.promise } })
     fireEvent.click(quick())
     await waitFor(() => expect(quick()).toBeDisabled())
     fireEvent.click(quick())

@@ -7,7 +7,8 @@ import { type AgentHostSnapshot } from '../../../src/shared/agents'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
 import type { GitStatus } from '../../../src/shared/gitStatus'
-import { fixture, send, deferred } from '../../fixtures/workspaceTestFixture'
+import { fixture, send } from '../../fixtures/workspaceTestFixture'
+import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
   it('adopts the branch the worktree has checked out on send and publishes it', async () => {
@@ -172,10 +173,10 @@ describe("durable project/thread organization", () => {
     vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch }))
     const status = (): GitStatus => ({ isRepository: true, branch, upstream: null, hasRemote: true, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
     // The next remote half stands for a fetch and a GitHub lookup that take as long as the test holds them.
-    let held: { fetching: ReturnType<typeof deferred>; fetched: ReturnType<typeof deferred> } | undefined
+    let held: { fetching: ReturnType<typeof deferred<void>>; fetched: ReturnType<typeof deferred<void>> } | undefined
     const readRemote = vi.fn(async () => {
       const hold = held
-      if (hold) { held = undefined; hold.fetching.release(); await hold.fetched.promise }
+      if (hold) { held = undefined; hold.fetching.resolve(); await hold.fetched.promise }
       return true
     })
     const read = vi.fn(async () => status())
@@ -202,7 +203,7 @@ describe("durable project/thread organization", () => {
     expect(sends()).toBe(2)
     // Once the fetch is done, a local read in the thread's lane takes what it brought.
     ahead = 3
-    fetch.fetched.release()
+    fetch.fetched.resolve()
     await vi.waitFor(() => expect(worktree()?.git?.ahead).toBe(3))
     // A branch switch: the switch, and the local read of the folder after it, are made in the thread's lane, and
     // its remote half fetches outside it while a send goes.
@@ -213,7 +214,7 @@ describe("durable project/thread organization", () => {
     expect(worktree()).toMatchObject({ branch: 'topic', git: { branch: 'topic' } })
     await f.host.execute({ ...send(), commandId: 'after-switch', messageId: 'after-switch' })
     expect(sends()).toBe(3)
-    fetch.fetched.release()
+    fetch.fetched.resolve()
     expect(await switched).toBeDefined()
     // A pull request action, the same way.
     await idle()
@@ -223,7 +224,7 @@ describe("durable project/thread organization", () => {
     await fetch.fetching.promise
     await f.host.execute({ ...send(), commandId: 'after-pull-request', messageId: 'after-pull-request' })
     expect(sends()).toBe(4)
-    fetch.fetched.release()
+    fetch.fetched.resolve()
     expect((await acted).notice).toBe('Pull request merged.')
     // Nothing the host read itself was a remote read: the fetch and the lookup are the remote half's alone.
     expect(read).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ remote: true }))
@@ -283,7 +284,7 @@ describe("durable project/thread organization", () => {
     const fetching = deferred(), fetched = deferred()
     let holdNext = true
     const readRemote = vi.fn(async () => {
-      if (holdNext) { holdNext = false; fetching.release(); await fetched.promise }
+      if (holdNext) { holdNext = false; fetching.resolve(); await fetched.promise }
       return true
     })
     f.host.setGitStatus({ read, readRemote, invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
@@ -299,7 +300,7 @@ describe("durable project/thread organization", () => {
     await fetching.promise
     await f.host.switchThreadBranch('local', 'topic', true)
     const readsBefore = read.mock.calls.length
-    fetched.release()
+    fetched.resolve()
     // The read that takes what the fetch brought runs in the thread's lane after the switch, finds the folder on a
     // branch of its own, and pulls nothing.
     await vi.waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(readsBefore))
@@ -325,7 +326,7 @@ describe("durable project/thread organization", () => {
     const earlierRead = deferred(), joined = deferred()
     let holdLocal = false
     const read = vi.fn((_cwd: string, options: { remote: boolean; fresh?: boolean }): Promise<GitStatus> => {
-      if (!options.fresh && underWay) { joined.release(); return underWay }
+      if (!options.fresh && underWay) { joined.resolve(); return underWay }
       const answer = status(), hold = holdLocal
       holdLocal = false
       const task = (async () => { if (hold) await earlierRead.promise; return answer })()
@@ -347,7 +348,7 @@ describe("durable project/thread organization", () => {
     // A refresh's remote half is done, and the read that takes it shares the earlier one.
     await f.host.updateThreadWorktree('local', false)
     await joined.promise
-    earlierRead.release()
+    earlierRead.resolve()
     // The pull is decided again from a read of its own, which finds the folder on its own branch.
     await vi.waitFor(() => expect(read).toHaveBeenCalledWith(project.path, { remote: false, fresh: true }))
     await f.host.updateThreadWorktree('local', false)
@@ -370,7 +371,7 @@ describe("durable project/thread organization", () => {
     const held = deferred(), reached = deferred()
     vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => {
       events.push(`inspect ${branch}`)
-      if (holding) { holding = false; reached.release(); await held.promise }
+      if (holding) { holding = false; reached.resolve(); await held.promise }
       return { ...metadata, status: 'ready', branch }
     })
     const status = (): GitStatus => ({ isRepository: true, branch, upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: branch === 'main', dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-06T00:00:00.000Z' })
@@ -388,7 +389,7 @@ describe("durable project/thread organization", () => {
     await reached.promise
     const switched = f.host.switchThreadBranch('local', 'feature', true)
     const statusRead = f.host.gitActionFinished('local')
-    held.release()
+    held.resolve()
     await Promise.all([refreshed, switched, statusRead])
     // Neither lands inside the refresh's inspection: the switch checks its folder once the refresh is done, and every
     // read after the switch finds the new branch.

@@ -6,13 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentPreviews, ATTACHMENT_PREVIEW_RETENTION_MS, MAX_ATTACHMENT_PREVIEW_BYTES } from '../../../src/main/agents/attachmentPreviews'
 import { AttachmentStore, inlineStager } from '../../../src/main/agents/attachmentStore'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentAttachmentPreviewSchema, type AgentAttachmentHandle, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG, stageInto } from '../../fixtures/stagedImages'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const image = handleOf(PIXEL_PNG, 'image', 'Screenshot.png')
 /** The preview store over a real attachment store on `root`, with the pixel image staged in it. */
@@ -200,10 +202,10 @@ class FixtureHost extends E2EAgentHost {
 }
 async function fixture() {
   const root = await directory(); const host = new FixtureHost(); let enabled = true
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => enabled,
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => enabled,
     })
     controls.add(control); return control
   }

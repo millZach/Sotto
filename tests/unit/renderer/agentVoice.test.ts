@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import type { AgentVoiceTiming } from '../../../src/shared/agents'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,11 +9,7 @@ import {
 } from '../../../src/renderer/src/agents/voiceSession'
 import type { VoiceCaptureOptions } from '../../../src/renderer/src/agents/voiceCapture'
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
+
 
 function harness() {
   let captureOptions!: VoiceCaptureOptions

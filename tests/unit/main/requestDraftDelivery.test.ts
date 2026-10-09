@@ -6,6 +6,7 @@ import { RequestDraftService, requestQuestionsDigest, type RequestDraftOwnerStat
 import { requestDraftQuestions, type RequestDraft } from '../../../src/shared/requestDrafts'
 import type { AgentRequest } from '../../../src/shared/agents'
 import { questions, target, submittedAnswers, owner, request, draft, directory, disk, registerRequestDraftFixture } from '../../fixtures/requestDrafts'
+import { deferred } from '../../fixtures/deferred'
 
 registerRequestDraftFixture()
 
@@ -147,9 +148,9 @@ it('reports exact acceptance when refresh publication already reconciled the cap
 
 it.each([false, true])('a delayed Check preserves a newer saved revision (held %s)', async held => {
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
-  let begin!: () => void, finish!: () => void
-  const started = new Promise<void>(resolve => { begin = resolve })
-  const gate = new Promise<void>(resolve => { finish = resolve })
+
+  const { promise: started, resolve: begin } = deferred<void>()
+  const { promise: gate, resolve: finish } = deferred<void>()
   const refresh = vi.fn(async () => {})
   refresh.mockImplementationOnce(async () => { begin(); await gate })
   const service = new RequestDraftService(directory, () => state, refresh)
@@ -312,9 +313,9 @@ it.each(['digest', 'words', 'duplicate', 'bound'] as const)('preserves malformed
 
 it('does not replace a newer accepted retirement with a delayed older Check result', async () => {
   let state: RequestDraftOwnerState = { connected: true, ready: true, requests: [request] }
-  let begin!: () => void, finish!: () => void
-  const started = new Promise<void>(resolve => { begin = resolve })
-  const gate = new Promise<void>(resolve => { finish = resolve })
+
+  const { promise: started, resolve: begin } = deferred<void>()
+  const { promise: gate, resolve: finish } = deferred<void>()
   const refresh = vi.fn(async () => {})
   refresh.mockImplementationOnce(async () => { begin(); await gate })
   const service = new RequestDraftService(directory, () => state, refresh)

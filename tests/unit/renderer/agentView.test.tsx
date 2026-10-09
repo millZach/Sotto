@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,9 +18,8 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 vi.mock('../../../src/renderer/src/agents/orb/AgentOrb', () => ({ AgentOrb: () => null }))
 
 function stateFixture(): AgentState {
-  return {
+  return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), defaultModelId: 'model', projectsDirectory: 'D:\\Projects' },
-    connection: 'connected',
     host: {
       connected: true, name: 'Codex', version: 'test',
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
@@ -30,14 +31,7 @@ function stateFixture(): AgentState {
         { id: 'guide', projectId: 'docs', title: 'Write guide', modelId: 'model', status: 'idle', messages: [], requests: [] },
       ],
     },
-    assignments: [{ threadId: 'thread', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: 0, startedAt: '', origin: 'unknown', stopReason: 'none', stoppedAt: '' }],
-    queue: [], activeThreadId: 'thread', activeProjectId: 'project',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-    speech: { id: 0, text: '' }, voice: { status: 'wake', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true },
-    reasoningAccounts: [],
-  }
+    topLevel: { assignments: [{ threadId: 'thread', mode: 'managed', instruction: '', followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '', contextUpdatedAt: 0, startedAt: '', origin: 'unknown', stopReason: 'none', stoppedAt: '' }], queue: [], activeThreadId: 'thread', activeProjectId: 'project', voice: { status: 'wake', error: null, action: 'none', revision: 0 } } })
 }
 
 function connection(state: AgentState, command = vi.fn(async () => state)): ReturnType<typeof useAgents> {
@@ -165,8 +159,7 @@ describe('one pill with agent controls', () => {
 describe('AgentView user workflows', () => {
   it('does not restore an older autosave reply after atomic Send succeeds', async () => {
     const state = stateFixture()
-    let finishCompose!: (value: AgentState) => void
-    const compose = new Promise<AgentState>(resolve => { finishCompose = resolve })
+    const { promise: compose, resolve: finishCompose } = deferred<AgentState>()
     const cleared = { ...state, draft: '', draftThreadId: null, composing: false }
     const command = vi.fn((request: AgentCommand) => request.type === 'compose' ? compose : Promise.resolve(cleared))
     render(<AgentComposer state={state} command={command} />)
@@ -180,8 +173,7 @@ describe('AgentView user workflows', () => {
   it('keeps edits made while an atomic Send reply is pending', async () => {
     const state = stateFixture()
     state.draft = 'Text at Send'; state.draftThreadId = 'thread'; state.composing = true
-    let finishSend!: (value: AgentState) => void
-    const sent = new Promise<AgentState>(resolve => { finishSend = resolve })
+    const { promise: sent, resolve: finishSend } = deferred<AgentState>()
     const command = vi.fn((request: AgentCommand) => request.type === 'send' ? sent
       : Promise.resolve({ ...state, draft: request.type === 'compose' ? request.text : state.draft }))
     render(<AgentComposer state={state} command={command} />)
@@ -209,9 +201,7 @@ describe('AgentView user workflows', () => {
     state.host.models[0]!.supportsImages = true
     let finishRead: (() => void) | undefined
     // Staging answers only when the test says so, the way a slow main would (ADR-0031).
-    vi.stubGlobal('sotto', { agents: { stageAttachment: (request: AgentAttachmentStageRequest) => new Promise(done => {
-      finishRead = () => done(handleOf(request.bytes, 'slow', request.name))
-    }) } })
+    vi.stubGlobal('sotto', { agents: { stageAttachment: (request: AgentAttachmentStageRequest) => { const pending = deferred<unknown>(); finishRead = () => pending.resolve(handleOf(request.bytes, 'slow', request.name)); return pending.promise } } })
     const command = vi.fn(async (request: AgentCommand) => {
       if (request.type === 'compose') { state.draft = request.text; if (request.attachments) state.draftAttachments = request.attachments }
       return { ...state }

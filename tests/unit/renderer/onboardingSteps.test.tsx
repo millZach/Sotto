@@ -1,3 +1,5 @@
+import { hostsBridgeFixture, hostsState, hostStatus, phonesBridgeFixture, phonesState } from '../../fixtures/renderer/hostBridges'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -5,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultAgentConfiguration, type AgentCapabilities, type AgentProject, type AgentProviderStatus, type AgentState } from '../../../src/shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../src/shared/hostProviders'
-import type { HostsBridge, HostsState, HostStatus } from '../../../src/shared/hosts'
-import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../src/shared/phones'
+import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
+import { IPHONE_BETA_URL, type PhonesBridge, type PhonesState } from '../../../src/shared/phones'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { Onboarding } from '../../../src/renderer/src/features/onboarding/Onboarding'
@@ -26,14 +28,10 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); appearancePreview.reset() })
 const CAPS: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 
 function agentState(providers: readonly AgentProviderStatus[], projects: readonly AgentProject[] = [], options: { stale?: boolean } = {}): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Test', version: '1.0', capabilities: CAPS, projects: [...projects], providers: [...providers], models: [], threads: [] },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-    ...(options.stale ? { stale: true } : {}),
-  }
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, ...(options.stale ? { stale: true } : {}) } })
 }
 
 function provide(state: AgentState | null, command = vi.fn(async () => state)): void {
@@ -287,25 +285,18 @@ describe('ProjectStep', () => {
 })
 
 function hostsFixture(hosts: HostStatus[] = []): { readonly bridge: HostsBridge } {
-  const state: HostsState = { hosts, localHostEnabled: true, localHostRunning: true }
-  const bridge: HostsBridge = {
-    get: async () => state,
-    command: vi.fn(async () => state),
-    onChanged: () => () => undefined,
+  return hostsBridgeFixture({ initial: hostsState({ hosts }), commands: {
     devices: vi.fn(async () => ({ tailscale: { state: 'running' as const, user: 'zach', loginName: 'zach@github', deviceCount: 1 }, devices: [] })),
     tailscale: vi.fn(async () => ({ state: 'running' as const, user: 'zach', loginName: 'zach@github', deviceCount: 1 })),
     connectTailscale: vi.fn(async () => 'connected' as const),
-    openTailscaleDownload: vi.fn(async () => undefined),
-    providerAction: vi.fn(async () => ({})) as HostsBridge['providerAction'],
-    updateClients: vi.fn(async () => ({})) as HostsBridge['updateClients'],
-    signIn: vi.fn(async () => null),
-  }
-  return { bridge }
+  } })
 }
 
 describe('ComputersStep', () => {
   function host(patch: Partial<HostStatus> = {}): HostStatus {
-    return { id: 'host-1', name: 'Build box', target: 'zach@build', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, ...patch }
+    const status = hostStatus({ id: 'host-1', name: 'Build box', target: 'zach@build', ...patch })
+    delete status.hostId
+    return status
   }
 
   it('lists hosts from the bridge and reports their count', async () => {
@@ -335,19 +326,12 @@ describe('ComputersStep', () => {
 })
 
 function phonesFixture(initial: Partial<PhonesState> = {}): { readonly bridge: PhonesBridge; readonly command: ReturnType<typeof vi.fn> } {
-  let state: PhonesState = {
-    enabled: false, localHostRunning: true, phase: 'off',
-    tailscale: { status: 'waiting' }, serve: { status: 'waiting' },
-    address: null, computerName: 'This computer', defaultName: 'This computer',
-    code: null, phones: [], answersAvailable: true, ...initial,
-  }
-  const command = vi.fn(async (request: PhonesCommand) => {
-    if (request.type === 'show-code') state = { ...state, code: { code: '12345678', expiresAt: new Date(Date.now() + 300_000).toISOString() } }
-    if (request.type === 'cancel-code') state = { ...state, code: null }
-    return state
-  })
-  const bridge: PhonesBridge = { get: async () => state, command, onChanged: () => () => undefined }
-  return { bridge, command }
+  return phonesBridgeFixture({ initial: phonesState({ computerName: 'This computer', defaultName: 'This computer', ...initial }),
+    answer: (request, state) => {
+      if (request.type === 'show-code') return { ...state, code: { code: '12345678', expiresAt: new Date(Date.now() + 300_000).toISOString() } }
+      if (request.type === 'cancel-code') return { ...state, code: null }
+      return state
+    } })
 }
 
 describe('PhoneStep', () => {

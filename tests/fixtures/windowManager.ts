@@ -116,15 +116,7 @@ export class FakeWindow implements BrowserWindowLike {
   }
 }
 
-export function createDeferred<Value>() {
-  let resolve!: (value: Value | PromiseLike<Value>) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, reject, resolve }
-}
+export { deferred as createDeferred } from './deferred'
 
 export function darwinOverrides(): Partial<ConstructorParameters<typeof WindowManager>[0]> {
   return { platform: 'darwin', chrome: platformProfile('darwin') }

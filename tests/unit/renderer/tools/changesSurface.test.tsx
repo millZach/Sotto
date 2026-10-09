@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -423,7 +424,7 @@ describe('diff rows and base choices', () => {
     const store = new ChangesStore()
     let finishFirst!: () => void
     vi.mocked(git.bridge.list).mockImplementation(async ({ threadId }) => {
-      if (threadId === 'first') await new Promise<void>(resolve => { finishFirst = resolve })
+      if (threadId === 'first') await (() => { const pending = deferred<void>(); finishFirst = pending.resolve; return pending.promise })()
       return { ok: true, value: { workspace: { ...workspace, threadId, workspaceId: threadId }, branch: 'main', revision: 'r1', files: [], truncated: false } }
     })
     store.activate(git.bridge, 'first')

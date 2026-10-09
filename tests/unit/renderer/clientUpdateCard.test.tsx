@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,15 +14,13 @@ const behind = (patch: Partial<ProviderClientUpdate> = {}): ProviderClientUpdate
   command: 'npm install -g @xai-official/grok@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle', ...patch,
 })
 function fixture(clientUpdates: ProviderClientUpdate[], running = false): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected', clientUpdates,
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
     host: { connected: true, name: 'Providers', version: '', capabilities: caps, projects: [], models: [],
       providers: providerIdSchema.options.map(id => ({ id, name: PROVIDER_LABELS[id], version: '1.0.5', connection: 'connected' as const, capabilities: caps })),
       threads: [{ id: 'thread', providerId: 'grok', projectId: 'project', title: 'Grok work', modelId: 'grok:4.7', status: running ? 'running' : 'idle', messages: [], requests: [] }],
-    }, assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
-    pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],
-  }
+    },
+    topLevel: { clientUpdates, assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
 }
 function provide(state: AgentState) {
   const command = vi.fn(async () => state)

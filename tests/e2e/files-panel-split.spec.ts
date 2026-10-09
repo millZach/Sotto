@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -8,8 +10,6 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 // The shared Files panel beside a real split: a Git worktree thread and a shared-folder thread on real temporary
 // folders, real Git and Files IPC; only providers are fixtures. Captures are the inspected review evidence.
 const SHOTS = 'test-results/issue74-ui-captures/files-split'
-
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Sotto Test', '-c', 'user.email=test@sotto.invalid', '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8', windowsHide: true })
 
 async function write(root: string, files: Record<string, string>): Promise<void> {
   for (const [path, content] of Object.entries(files)) {
@@ -19,13 +19,7 @@ async function write(root: string, files: Record<string, string>): Promise<void>
 }
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    // The shipped minimum is an outer size; relax it slightly so the content area can be exactly 820x560.
-    window.setMinimumSize(800, 540)
-    window.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function capture(page: Page, name: string): Promise<void> {
@@ -61,7 +55,7 @@ async function closeWithKey(page: Page, panel: Locator, key: 'Enter' | 'Escape')
 
 test('Files beside a split: worktree identity, pinned ownership, docking choice and keyboard close', async () => {
   test.setTimeout(180_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-files-split-'))
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-files-split-' })).directory
   const repo = join(root, 'repo-app')
   const notes = join(root, 'field-notes')
   await write(repo, {
@@ -69,7 +63,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     'src/app.ts': 'export function main(): number {\n  return 42\n}\n',
     'docs/guide.md': '## Guide\n',
   })
-  git(repo, 'init', '-q'); git(repo, 'add', '.'); git(repo, 'commit', '-q', '-m', 'Initial')
+  await initializeGitRepository(repo, { files: {}, message: 'Initial', identity: { name: 'Sotto Test', email: 'test@sotto.invalid' } })
   await write(notes, { 'today.md': '# Today\n\n- Review the split\n', 'draft.txt': 'Plain text notes.\n' })
   const launched = await launchSotto()
   const { page } = launched
@@ -210,6 +204,6 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await capture(page, 'single-1280-worktree-docked')
   } finally {
     await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })

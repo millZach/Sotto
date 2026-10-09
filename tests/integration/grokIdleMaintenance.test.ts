@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import type { SessionReaper } from '../../src/main/agents/sessionReaper'
@@ -67,7 +68,7 @@ it('does not renew idle age through recurring empty Grok history reads', async (
   const f = await grokFixture(undefined, undefined, 60_000, { reaperSweepMs: 60_000, sessionIdleMs: 150 })
   const id = randomUUID()
   let reading: Promise<void> | undefined
-  let gate: { entered: ReturnType<typeof Promise.withResolvers<void>>; release: ReturnType<typeof Promise.withResolvers<void>> } | undefined
+  let gate: { entered: ReturnType<typeof deferred<void>>; release: ReturnType<typeof deferred<void>> } | undefined
   try {
     await f.host.connect()
     const owned = f.adapter as unknown as { processes: Map<string, { rpc: { request: Request } }>; reaper: SessionReaper; historyReads: Map<string, Promise<void>> }
@@ -85,7 +86,7 @@ it('does not renew idle age through recurring empty Grok history reads', async (
     })
     // Empty maintenance overlaps every sweep for eighty idle windows; no user/provider activity occurs.
     for (let cycle = 0; cycle < 600; cycle++) {
-      gate = { entered: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() }
+      gate = { entered: deferred<void>(), release: deferred<void>() }
       reading = f.adapter.pollHistory()
       await gate.entered.promise
       expect(owned.historyReads.has(id)).toBe(true)

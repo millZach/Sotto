@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { DispatchEventHost, fixture, registerAgentControlRecoveryCleanup } from '../../fixtures/agentControlRecovery'
+import { deferred } from '../../fixtures/deferred'
 
 registerAgentControlRecoveryCleanup()
 
@@ -17,8 +18,8 @@ describe('supervision event ordering', () => {
       await decisionGate
       throw failure
     })
-    let release!: () => void
-    const decisionGate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: decisionGate, resolve: release } = deferred<void>()
     const write = AtomicJsonStore.prototype.write
     let rejectWrites = false
     const save = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<unknown>, value: unknown) {
@@ -115,10 +116,9 @@ describe('supervision event ordering', () => {
       { id: 'recent', role: 'user', text: 'Recent prompt', createdAt: new Date().toISOString() },
     ] })
     await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Keep watching' })
-    let release!: () => void
-    let started!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
-    const waiting = new Promise<void>(resolve => { started = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>()
+    const { promise: waiting, resolve: started } = deferred<void>()
     Object.assign(f.host, { loadEarlierMessages: async () => {
       const snapshot = await f.host.snapshot()
       f.host.event({ type: 'history', threadId: 'workshop', text: '', messages: [
@@ -205,8 +205,8 @@ describe('supervision event ordering', () => {
     const f = await fixture()
     await f.account()
     f.service.decision = { decision: 'done', text: 'Review finished.' }
-    let release!: () => void
-    f.service.decisionGate = new Promise<void>(resolve => { release = resolve })
+    const { promise: heldRelease, resolve: release } = deferred<void>()
+    f.service.decisionGate = heldRelease
     await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Finish the assigned change.' })
     f.host.event({ type: 'ready', threadId: 'workshop', text: 'This result was still being reviewed at the crash.' })
     await expect.poll(() => f.decisions.length).toBe(1)
@@ -249,8 +249,8 @@ describe('supervision event ordering', () => {
   it('reasons about the newest failure when an earlier decision becomes stale before dispatch', async () => {
     const f = await fixture()
     await f.account()
-    let release!: () => void
-    f.service.decisionGate = new Promise<void>(resolve => { release = resolve })
+    const { promise: heldRelease, resolve: release } = deferred<void>()
+    f.service.decisionGate = heldRelease
     await f.control.command({ type: 'assign', threadId: 'workshop', instruction: 'Fix the existing failing tests.' })
     f.host.event({ type: 'failure', threadId: 'workshop', text: 'Superseded failure' })
     await expect.poll(() => f.decisions.length).toBe(1)

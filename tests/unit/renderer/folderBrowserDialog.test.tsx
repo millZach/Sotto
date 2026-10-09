@@ -334,7 +334,7 @@ describe('Add project', () => {
   it('keeps the dialog open with the refusal when the host does not add the project', async () => {
     stubBridge()
     const state = twoHosts()
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => ({ ...state, error: 'Connect Codex before creating a project.' }) as AgentState | null)
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => ({ ...state, error: 'Connect Codex before creating a project.' }))
     const user = userEvent.setup()
     render(<Harness state={state} command={command} />)
     await user.click(screen.getByRole('button', { name: 'Add project' }))

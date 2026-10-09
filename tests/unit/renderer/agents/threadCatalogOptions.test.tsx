@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -85,7 +86,7 @@ describe('a long-context model the catalog does not list', () => {
     let release!: () => void
     render(<LiveThread start={longContext()} answer={async (request, current) => {
       sent.push(request)
-      await new Promise<void>(resolve => { release = resolve })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return withThread(current, { modelId: (request as { modelId: string }).modelId })
     }} />)
     choose('Sonnet 4.6')

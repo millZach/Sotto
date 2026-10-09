@@ -1,3 +1,5 @@
+import { deferred } from '../deferred'
+import { hostStatus, hostsBridgeFixture, hostsState } from './hostBridges'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -31,23 +33,21 @@ const sshOnly = (devices: HostDevice[]): HostDevice[] => devices.filter(item => 
   .map(({ target, name, names, detail, port, sshConfiguration, knownHost }) => ({ target, name, names, ...(detail ? { detail } : {}), ...(port ? { port } : {}), ...(sshConfiguration ? { sshConfiguration } : {}), ...(knownHost ? { knownHost } : {}) }))
 
 function host(patch: Partial<HostStatus> = {}): HostStatus {
-  return { id: REMOTE, hostId: REMOTE, name: 'Build box', target: 'build', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true, ...patch }
+  return hostStatus(patch)
 }
 
 /** A bridge whose state the test moves on, the way main's broadcasts do. */
 function fixture(hosts: HostStatus[] = [host()], answer?: (command: HostsCommand, state: HostsState) => HostsState | Promise<HostsState>,
   options: { tailscale?: TailscaleSummary; connect?: () => Promise<TailscaleConnectOutcome> } = {}) {
-  let state: HostsState = { localHostEnabled: true, localHostRunning: true, localHostId: LOCAL, activeHostId: LOCAL, hosts }
   let tailscale = options.tailscale ?? RUNNING
-  const listeners = new Set<(value: HostsState) => void>()
-  const push = (next: Partial<HostsState>): void => { state = { ...state, ...next }; act(() => { for (const listener of listeners) listener(state) }) }
-  const command = vi.fn<HostsBridge['command']>(async input => { if (answer) state = await answer(input, state); return state })
   const devices = vi.fn(async () => ({ tailscale, devices: tailscale.state === 'running' ? DEVICES : sshOnly(DEVICES) }))
   const connectTailscale = vi.fn(options.connect ?? (async (): Promise<TailscaleConnectOutcome> => 'connected'))
   const openTailscaleDownload = vi.fn(async () => undefined)
-  const bridge: HostsBridge = { get: async () => state, command, onChanged: listener => { listeners.add(listener); return () => listeners.delete(listener) },
-    devices, tailscale: vi.fn(async () => tailscale), connectTailscale, openTailscaleDownload, providerAction: vi.fn(async () => ({})), updateClients: vi.fn(async () => ({})), signIn: vi.fn(async () => null) }
-  return { bridge, command, push, state: () => state, devices, connectTailscale, openTailscaleDownload, setTailscale: (next: TailscaleSummary) => { tailscale = next } }
+  const made = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, activeHostId: LOCAL, hosts }), ...(answer ? { answer } : {}),
+    commands: { devices, tailscale: vi.fn(async () => tailscale), connectTailscale, openTailscaleDownload } })
+  const push = (next: Partial<HostsState>): void => { act(() => made.publish(next)) }
+  return { bridge: made.bridge, command: made.command, push, state: made.state, devices, connectTailscale, openTailscaleDownload,
+    setTailscale: (next: TailscaleSummary) => { tailscale = next } }
 }
 
 /** Opens Add host and waits for its device list. */
@@ -78,7 +78,7 @@ const settings = (bridge: HostsBridge) => render(<HostsSettings localHostEnabled
 /** Adds forge from the form, and hands back the dialog, the add's ID and the press that ends the add. */
 async function addForge(user: ReturnType<typeof userEvent.setup>, answer?: (command: HostsCommand, state: HostsState) => HostsState | Promise<HostsState>) {
   let resolveAdd: ((state: HostsState) => void) | undefined
-  const made = fixture([], (input, current) => input.type === 'add' ? new Promise<HostsState>(resolve => { resolveAdd = resolve }) : answer ? answer(input, current) : current)
+  const made = fixture([], (input, current) => input.type === 'add' ? (() => { const pending = deferred<HostsState>(); resolveAdd = pending.resolve; return pending.promise })() : answer ? answer(input, current) : current)
   settings(made.bridge)
   const { dialog } = await openAddHost(user)
   await user.click(within(dialog).getByRole('option', { name: /^forge/ }))

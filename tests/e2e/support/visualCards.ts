@@ -1,4 +1,14 @@
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
+
+/** Restore the user's clipboard after a copy journey, even when the check fails. */
+export async function withClipboard<T>(app: ElectronApplication, run: () => Promise<T>): Promise<T> {
+  const saved = await app.evaluate(({ clipboard }) => clipboard.readText())
+  try { return await run() } finally { await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved) }
+}
+
+export function horizontalOverflow(page: Page): Promise<number> {
+  return page.getByLabel('Thread transcript').evaluate(element => element.scrollWidth - element.clientWidth)
+}
 
 // What the visual specs share (ADR-0056): calling the visualize tool as a thread's agent would, scrolling a card into
 // view, quiet captures, and the checks for contrast and motion.

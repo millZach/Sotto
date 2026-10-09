@@ -9,6 +9,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { serveTarget } from '../../../src/main/phones/tailscale'
 import { HOST_START_RETRY_WINDOW_MS } from '../../../src/host/phones'
 import { root, DNS, fakeTailscale, fakeServer, create, record } from '../../fixtures/phoneAccessFixture'
+import { deferred } from '../../fixtures/deferred'
 
 it('turns on: checks Tailscale, opens a loopback listener with no admin routes, then asks Serve for 8443', async () => {
   const fake = fakeTailscale(), server = fakeServer()
@@ -470,9 +471,9 @@ it.each(['corrupt', 'unreadable'])('checks cleanup rather than declaring an occu
 it.each([false, true])('stops phone access during pending setup and follows a later turn-on choice of %s', async turnBackOn => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
-  let finish!: () => void, reached!: () => void
-  const pending = new Promise<void>(resolve => { finish = resolve })
-  const requested = new Promise<void>(resolve => { reached = resolve })
+
+  const { promise: pending, resolve: finish } = deferred<void>()
+  const { promise: requested, resolve: reached } = deferred<void>()
   vi.mocked(fake.tailscale.serve).mockImplementationOnce(async (_servePort, loopback) => {
     fake.setOther(serveTarget(loopback))
     reached()

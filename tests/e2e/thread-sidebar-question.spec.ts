@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -44,7 +45,7 @@ async function resize(app: ElectronApplication, page: Page, width: number, heigh
   await expect.poll(() => page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
 }
 
-const state = (page: Page): Promise<AgentState> => page.evaluate(() => window.sotto!.agents!.get())
+const state = (page: Page): Promise<AgentState> => agentState(page)
 const row = (page: Page, title: string): Locator => page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true })
 const scopedThread = (snapshot: AgentState, threadId: string): string => snapshot.hostId ? hostEntityKey(snapshot.hostId, threadId) : threadId
 const pending = async (page: Page, threadId: string): Promise<string[] | undefined> => {

@@ -6,6 +6,7 @@
  * sets it (docs/ci.md). SOTTO_REAL_SSHD_INSTALL points at an extracted host archive; without it the test
  * stages one the way `npm run package:host` does. Nothing here touches the account's own ~/.ssh.
  */
+import { testCredentials } from '../fixtures/testCredentials'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { connect, createServer } from 'node:net'
@@ -15,7 +16,7 @@ import { randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { HostCredentialEncryption } from '../../src/host/credentials'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { PairedClients } from '../../src/main/agents/pairing'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHosts, reconnectDelayMs } from '../../src/main/hosts/desktopHosts'
@@ -111,8 +112,7 @@ describe.skipIf(!enabled)('the SSH transport against a real OpenSSH server', () 
   })
 
   it('connects, pairs itself, reconnects after the forward dies, leaves the host on Disconnect, stops it and forgets it', { timeout: 180_000 }, async () => {
-    const credentials = new AgentCredentials(join(root, 'desktop'), new HostCredentialEncryption('synthetic-desktop-credential-key'))
-    await credentials.load()
+    const credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') })
     router = new DesktopHostRouter(emptyDesktopState)
     const env = { ...process.env }
     delete env.SSH_AUTH_SOCK

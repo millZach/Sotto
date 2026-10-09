@@ -39,10 +39,7 @@ function device(deviceId: string, label: string): MediaDeviceInfo {
   return { deviceId, groupId: 'group', kind: 'audioinput', label, toJSON: () => ({}) }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void
-  return { promise: new Promise<T>((done) => { resolve = done }), resolve }
-}
+
 
 function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProps {
   return {
@@ -69,4 +66,6 @@ async function selectCategory(name: string): Promise<void> {
   await userEvent.click(screen.getByRole('tab', { name }))
 }
 
-export { createMediaDevices, device, deferred, baseProps, copy, selectCategory }
+export { createMediaDevices, device, baseProps, copy, selectCategory }
+
+export { deferred } from '../deferred'
