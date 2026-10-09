@@ -103,6 +103,11 @@ export class TerminalAgentStateMachine {
         if (event.workPhase === 'submitted') {
           // Independent hook helpers can deliver submission after this turn's tool work or Stop. Its same opaque ID corroborates that turn, without starting it again.
           if (event.turnId && this.activeTurn === event.turnId) { this.awaitingSubmissionHook = false; break }
+          // Native work and readiness can both precede the submitted helper. Bind the awaited turn while
+          // retaining that observed readiness and its visibility; this callback does not submit it again.
+          if (this.awaitingSubmissionHook && !this.pendingSubmission && this.readyForCompletion) {
+            this.activeTurn = event.turnId; this.awaitingSubmissionHook = false; break
+          }
           if (this.activeTurn !== event.turnId) this.retireTurn(this.activeTurn)
           this.activeTurn = event.turnId; this.awaitingSubmissionHook = false
         }

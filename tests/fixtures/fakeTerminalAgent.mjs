@@ -33,6 +33,7 @@ else if (provider === 'codex') {
   }
 }
 let turnId = randomUUID()
+let deferredSubmit = false
 let permission
 const hookChildren = new Set()
 const wait = child => new Promise(resolve => child.once('exit', resolve))
@@ -99,10 +100,11 @@ let chain = Promise.resolve()
 input.on('line', line => {
   chain = chain.then(async () => {
     const command = line.trim()
-    if (command === 'w') {
+    if (command === 'w' || command === 'l') {
       turnId = randomUUID()
+      deferredSubmit = command === 'l'
       screen('working')
-      await claudeHook('UserPromptSubmit', { prompt: 'PRIVATE_PROMPT' })
+      if (!deferredSubmit) await claudeHook('UserPromptSubmit', { prompt: 'PRIVATE_PROMPT' })
     } else if (command === 'n') {
       screen('permission')
       await claudeHook('PermissionRequest', { tool_name: 'Write', tool_input: { content: 'PRIVATE_TOOL_CONTENT', file_path: 'PRIVATE_PATH' }, permission_suggestions: [] }, true)
@@ -113,6 +115,8 @@ input.on('line', line => {
     } else if (command === 'f') {
       await stopPermission()
       screen('idle')
+      // Script a slow submitted helper explicitly rather than relying on startup timing under load.
+      if (deferredSubmit) { deferredSubmit = false; await claudeHook('UserPromptSubmit', { prompt: 'PRIVATE_PROMPT' }) }
       await completion()
     } else if (command === 'i') {
       if (!await stopPermission()) await claudeHook('StopFailure', { error: 'PRIVATE_ERROR' })

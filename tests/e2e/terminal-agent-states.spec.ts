@@ -202,7 +202,8 @@ test('native fake agents report state and only unseen successful turns earn Just
     await page.screenshot({ path: join(SHOTS, 'viewed-idle.png'), animations: 'disabled' })
     // Minimise withdraws visibility; returning reads the completion rather than marking it retroactively.
     await sidebar.getByRole('button', { name: 'Claude finished', exact: true }).click()
-    await command(page, others.finished, 'w'); await expect.poll(() => state(page, others.finished)).toBe('working')
+    // The fixture holds its submitted hook until after the ready redraw to exercise delayed admission.
+    await command(page, others.finished, 'l'); await expect.poll(() => state(page, others.finished)).toBe('working')
     await launched.app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!.minimize() })
     await command(page, others.finished, 'f'); await expect.poll(() => state(page, others.finished)).toBe('just-finished')
     await launched.app.evaluate(({ BrowserWindow }) => { const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.restore(); host.show() })

@@ -20,6 +20,16 @@ const event = (kind: TerminalAgentHookEvent['kind'], values: Partial<TerminalAge
 const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude', 100, 30, 'session'); state.started(); state.output(idle); return state }
 
 describe('terminal agent run state', () => {
+  it.each([false, true])('binds a delayed submitted hook after native readiness without restarting work (viewed %s)', viewed => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work)
+    state.setVisible(viewed); state.output(idle); state.setVisible(false)
+    // Under load, the helper can be admitted after both native redraws.
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    state.hook(event('completed', { turnId: 'turn' }))
+    expect(state.state).toBe(viewed ? 'idle' : 'just-finished')
+  })
+
   it.each([
     ['claude', work, idle], ['codex', codexWork, codexIdle],
     ['grok', redraw('⠧ Thinking… 0.2s       0.2s [stop]', grokTitle), grokIdle],
