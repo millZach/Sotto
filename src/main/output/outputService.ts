@@ -19,7 +19,7 @@ export interface OutputServiceDependencies {
   readonly widget: WidgetAdapter
   readonly delay: (milliseconds: number) => void | Promise<void>
   readonly process: PasteProcessAdapter
-  readonly buildPasteInvocation: () => PasteInvocation
+  readonly buildPasteInvocation: () => PasteInvocation | null
 }
 
 interface DeliveryOptions {
@@ -144,6 +144,7 @@ export class OutputService {
       hidForPaste = true
       await this.dependencies.delay(options.pasteDelayMs)
       const invocation = this.dependencies.buildPasteInvocation()
+      if (invocation === null) return 'copied'
       let pasted: boolean
       try {
         pasted = await this.dependencies.process.run(invocation)

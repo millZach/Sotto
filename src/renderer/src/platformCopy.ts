@@ -59,6 +59,35 @@ const PLATFORM_COPY: Readonly<Record<SottoPlatform, PlatformCopy>> = Object.free
     widgetPermissionPromptDetail: 'Approve access in Windows',
     widgetProcessingDetail: 'Sent to OpenRouter, never saved',
   }),
+  linux: Object.freeze({
+    platform: 'linux',
+    helpMicrophoneAccess:
+      'If recording cannot start, check that your microphone is connected and not muted. Choose an available input in Sotto Settings, then test again.',
+    helpPasteFallback:
+      'Sotto copies transcripts to the clipboard on Linux. Paste manually with Ctrl+V, or Shift+Insert in a terminal.',
+    accessibilityHelp: null,
+    openRouterKeyUnreadable:
+      'Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Transcription.',
+    homeMicrophonePermissionDenied:
+      'Microphone access is off. Check your microphone access, then try again.',
+    homeRequestingPermissionDetail: 'Allow microphone access if asked.',
+    onboardingMicrophoneDenied:
+      'Allow microphone access if asked, then test again.',
+    onboardingMicrophoneMissing:
+      'Connect or enable an input device in your sound settings, then try again.',
+    settingsReducedMotionDescription: 'Follow the system or minimize non-essential motion.',
+    settingsMicrophoneUnavailable: 'Microphones are unavailable. Check your input device, then test again.',
+    settingsMicrophoneDenied: 'Microphone access is blocked. Allow access if asked, then test again.',
+    settingsMicrophoneDefaultOption: 'System default',
+    settingsGlobalShortcutDescription: 'Wayland does not deliver this shortcut yet. Use the dictation button.',
+    settingsAutoPasteDescription: 'Transcripts are copied on Linux. Paste them manually.',
+    settingsLaunchAtStartupLabel: 'Launch when you sign in',
+    settingsStartupFailureNotice: 'Launch at sign-in could not be updated.',
+    settingsStartMinimizedDescription: 'Open directly in the tray when Sotto launches.',
+    widgetMicrophoneBlockedDetail: 'Allow microphone access if asked.',
+    widgetPermissionPromptDetail: 'Allow microphone access if asked',
+    widgetProcessingDetail: 'Sent to OpenRouter, never saved',
+  }),
   darwin: Object.freeze({
     platform: 'darwin',
     helpMicrophoneAccess:

@@ -602,6 +602,24 @@ Transcription itself needs no local assets: run the app, paste an OpenRouter key
 
 The same commands run in Terminal on macOS.
 
+### Linux development builds
+
+The unpackaged desktop app starts on Omarchy (Arch Linux and Hyprland on Wayland). Prepare a source checkout with Node 24:
+
+```sh
+npm ci
+node node_modules/electron/install.js
+npm run runtime:prepare
+npm run build
+npx electron .
+```
+
+The tray uses a bundled PNG, and the window keeps the same controls as Windows for now. Frosted windows and the in-app updater are unavailable. Linux installers and release checks are separate work.
+
+Saving the OpenRouter key needs an unlocked keyring and a running secret service. On Linux, Sotto selects Chromium's `gnome-libsecret` password store before startup unless you supplied `--password-store` yourself. It keeps that choice, even when that store cannot encrypt; Sotto still refuses to save a key without encryption.
+
+Transcripts go to the clipboard. Sotto shows **Copied — paste manually** when automatic paste is on. Paste with Ctrl+V, or Shift+Insert in a terminal. Hyprland paste is not implemented yet. On Wayland, start and stop with the dictation button; the global shortcut does not work yet. Linux system speech is unavailable; hosted reply voices keep their existing paths.
+
 ### Tests
 
 ```powershell

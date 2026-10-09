@@ -15,6 +15,7 @@ export type WindowFrost = 'acrylic' | 'vibrancy'
  */
 export function windowFrostFor(platform: SottoPlatform, release: string): WindowFrost | null {
   if (platform === 'darwin') return 'vibrancy'
+  if (platform !== 'win32') return null
   const build = Number(release.split('.')[2])
   return Number.isInteger(build) && build >= 22_621 ? 'acrylic' : null
 }
@@ -43,6 +44,7 @@ export interface PlatformProfile {
    */
   readonly widgetIsPanel: boolean
   readonly trayIcon: TrayIconSource
+  readonly inAppUpdates: boolean
   readonly pasteRequiresAccessibilityTrust: boolean
   readonly pasteUsesWarmHelper: boolean
   readonly requiresMediaAccessGate: boolean
@@ -76,6 +78,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
+      inAppUpdates: true,
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
@@ -91,10 +94,27 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      inAppUpdates: false,
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
       defaultHotkey: defaultHotkey('darwin'),
+    }),
+    linux: immutableProfile({
+      platform: 'linux',
+      mainWindowChrome: 'frameless',
+      trafficLightPosition: null,
+      applicationMenu: 'none',
+      widgetAlwaysOnTopLevel: 'normal',
+      widgetFocusable: false,
+      widgetVisibleOnAllWorkspaces: false,
+      widgetIsPanel: false,
+      trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      inAppUpdates: false,
+      pasteRequiresAccessibilityTrust: false,
+      pasteUsesWarmHelper: false,
+      requiresMediaAccessGate: false,
+      defaultHotkey: defaultHotkey('linux'),
     }),
   })
 

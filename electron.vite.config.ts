@@ -93,6 +93,8 @@ function headlessHostBuild(): Plugin {
 
 export default defineConfig({
   main: {
+    // Runtime assets keep their verified resource path; emit the tray PNG under out/ with ?asset.
+    publicDir: 'resources/runtime',
     build: { rollupOptions: { external: ['node-pty'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       wakeWorker: resolve(__dirname, 'src/main/agents/wakeWorker.ts'),

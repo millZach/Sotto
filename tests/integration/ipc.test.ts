@@ -619,7 +619,7 @@ describe('typed preload bridge', () => {
     expect(parsePlatformArgument(['electron', '--sotto-platform=darwin'])).toBe('darwin')
     expect(parsePlatformArgument(['electron', '--sotto-platform=win32'])).toBe('win32')
     expect(parsePlatformArgument(['electron'])).toBe('win32')
-    expect(parsePlatformArgument(['electron', '--sotto-platform=linux'])).toBe('win32')
+    expect(parsePlatformArgument(['electron', '--sotto-platform=linux'])).toBe('linux')
     expect(parsePlatformArgument([
       'electron',
       '--sotto-platform=darwin',
