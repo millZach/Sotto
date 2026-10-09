@@ -1,20 +1,29 @@
-import { chmodSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { chmodSync, lstatSync, mkdirSync, readlinkSync, symlinkSync, unlinkSync, type Stats } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
-import { dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { dictationSocketPath, parseDictationCommand, type CompositorDictationCommand } from './dictationCommand'
 import { assertDictationDirectories, validateDictationRuntime, type DictationDirectory } from './dictationRuntime'
 
-/** One private Unix socket per desktop session. It never listens on a network interface. */
+interface Endpoint {
+  stat: Stats
+  target: string | null
+  socketStat: Stats | null
+}
+
+/** The public command link is separate from libuv's automatically unlinked listening path. */
 export class DictationSocket {
   private server: Server | null = null
   private readonly clients = new Set<Socket>()
-  private ownedInode: number | null = null
+  private ownedEndpoint: Stats | null = null
   private disposed = false
   private directories: DictationDirectory[] = []
   readonly path: string
+  private readonly listeningPath: string
 
   constructor(private readonly runtimeDirectory: string | undefined, private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>) {
     this.path = dictationSocketPath(runtimeDirectory)
+    this.listeningPath = join(dirname(this.path), `dictation-${process.pid}-${randomBytes(4).toString('hex')}.sock`)
   }
 
   async start(): Promise<void> {
@@ -34,13 +43,17 @@ export class DictationSocket {
     try {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject)
-        server.listen(this.path, () => { server.removeListener('error', reject); resolve() })
+        server.listen(this.listeningPath, () => { server.removeListener('error', reject); resolve() })
       })
-      this.ownedInode = lstatSync(this.path).ino
-      chmodSync(this.path, 0o600)
       // Keep a native listener error out of the process's uncaught-error path.
       server.on('error', () => this.dispose())
-      if (this.disposed) { server.close(); this.cleanupSocket() }
+      if (this.disposed) { server.close(); return }
+      assertDictationDirectories(this.directories)
+      chmodSync(this.listeningPath, 0o600)
+      // symlink is an atomic, exclusive publication: a concurrent listener or a
+      // replacement endpoint wins rather than being overwritten by this instance.
+      symlinkSync(basename(this.listeningPath), this.path)
+      this.ownedEndpoint = lstatSync(this.path)
     } catch (error) {
       this.dispose()
       throw error
@@ -51,9 +64,9 @@ export class DictationSocket {
     this.disposed = true
     for (const client of this.clients) client.destroy()
     this.clients.clear()
+    this.cleanupEndpoint()
     this.server?.close()
     this.server = null
-    this.cleanupSocket()
   }
 
   private secureDirectory(directory: string): void {
@@ -63,28 +76,57 @@ export class DictationSocket {
   }
 
   private async removeStaleSocket(): Promise<void> {
-    let stat: ReturnType<typeof lstatSync>
-    try { stat = lstatSync(this.path) } catch (error) {
+    let endpoint: Endpoint
+    try { endpoint = this.readEndpoint() } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
       throw error
     }
-    if (!stat.isSocket() || stat.uid !== process.getuid?.()) throw new Error('Dictation socket is unavailable.')
     await new Promise<void>((resolve, reject) => {
       const probe = createConnection(this.path)
       probe.setTimeout(1_000, () => { probe.destroy(); reject(new Error('Dictation socket is busy.')) })
       probe.once('connect', () => { probe.destroy(); reject(new Error('Sotto is already listening for dictation commands.')) })
       probe.once('error', error => {
         probe.destroy()
-        if ((error as NodeJS.ErrnoException).code !== 'ECONNREFUSED') { reject(error); return }
+        const code = (error as NodeJS.ErrnoException).code
+        if (code !== 'ECONNREFUSED' && !(code === 'ENOENT' && endpoint.target !== null && endpoint.socketStat === null)) {
+          reject(error); return
+        }
         try {
           // A live or replaced endpoint belongs to its owner, even during recovery.
           assertDictationDirectories(this.directories)
-          if (lstatSync(this.path).ino !== stat.ino) throw new Error('Dictation socket changed.')
+          const current = this.readEndpoint()
+          if (!this.sameFile(current.stat, endpoint.stat) || current.target !== endpoint.target ||
+            !this.sameFile(current.socketStat, endpoint.socketStat)) throw new Error('Dictation socket changed.')
           unlinkSync(this.path)
+          if (endpoint.target !== null && endpoint.socketStat !== null) unlinkSync(join(dirname(this.path), endpoint.target))
           resolve()
         } catch (failure) { reject(failure) }
       })
     })
+  }
+
+  private readEndpoint(): Endpoint {
+    const stat = lstatSync(this.path)
+    if (stat.uid !== process.getuid?.()) throw new Error('Dictation socket is unavailable.')
+    // Recover sockets left by the earlier direct-binding implementation too.
+    if (stat.isSocket()) return { stat, target: null, socketStat: stat }
+    if (!stat.isSymbolicLink()) throw new Error('Dictation socket is unavailable.')
+    const target = readlinkSync(this.path)
+    if (!/^dictation-\d+-[a-f0-9]{8}\.sock$/.test(target)) throw new Error('Dictation socket is unavailable.')
+    let socketStat: Stats | null = null
+    try { socketStat = lstatSync(join(dirname(this.path), target)) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    if (socketStat !== null && (!socketStat.isSocket() || socketStat.uid !== process.getuid?.())) {
+      throw new Error('Dictation socket is unavailable.')
+    }
+    return { stat, target, socketStat }
+  }
+
+  private sameFile(current: Stats | null, previous: Stats | null): boolean {
+    if (current === null || previous === null) return current === previous
+    return current.dev === previous.dev && current.ino === previous.ino &&
+      current.uid === previous.uid && current.mode === previous.mode
   }
 
   private accept(socket: Socket): void {
@@ -109,12 +151,14 @@ export class DictationSocket {
     })
   }
 
-  private cleanupSocket(): void {
-    if (this.ownedInode === null) return
+  private cleanupEndpoint(): void {
+    if (this.ownedEndpoint === null) return
     try {
       assertDictationDirectories(this.directories)
-      if (lstatSync(this.path).ino === this.ownedInode) unlinkSync(this.path)
+      const stat = lstatSync(this.path)
+      if (stat.isSymbolicLink() && this.sameFile(stat, this.ownedEndpoint) &&
+        readlinkSync(this.path) === basename(this.listeningPath)) unlinkSync(this.path)
     } catch { /* Quitting also works when the runtime directory has disappeared. */ }
-    this.ownedInode = null
+    this.ownedEndpoint = null
   }
 }

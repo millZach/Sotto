@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { createConnection } from 'node:net'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createConnection, createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
@@ -35,13 +35,16 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     const server = service(dispatch)
     await server.start()
     expect(lstatSync(dirname(server.path)).mode & 0o777).toBe(0o700)
-    expect(lstatSync(server.path).mode & 0o777).toBe(0o600)
-    expect(lstatSync(server.path).isSocket()).toBe(true)
+    expect(lstatSync(server.path).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(server.path)).toMatch(/^dictation-\d+-[a-f0-9]{8}\.sock$/)
+    expect(statSync(server.path).mode & 0o777).toBe(0o600)
+    expect(statSync(server.path).isSocket()).toBe(true)
     for (const command of ['start', 'stop', 'toggle', 'cancel']) expect(await send(`${command}\n`)).toBe('ok\n')
     expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['toggle'], ['cancel']])
     server.dispose()
     server.dispose()
     expect(existsSync(server.path)).toBe(false)
+    expect(readdirSync(dirname(server.path))).toEqual([])
   })
   it('rejects text, multiple commands, and oversized messages without dispatch', async () => {
     const dispatch = vi.fn(async () => true)
@@ -59,9 +62,30 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     await expect(service().start()).rejects.toThrow('already listening')
     expect(await send('start\n')).toBe('ok\n')
   })
+  it('leaves another process\'s replacement socket intact on quit', async () => {
+    const first = service()
+    await first.start()
+    const privatePath = join(dirname(first.path), readlinkSync(first.path))
+    unlinkSync(first.path)
+    const replacement = createServer(socket => socket.once('data', () => socket.end('replacement\n')))
+    await new Promise<void>(resolve => replacement.listen(first.path, resolve))
+    const inode = lstatSync(first.path).ino
+    try {
+      first.dispose()
+      expect(lstatSync(first.path).ino).toBe(inode)
+      expect(await send('start\n')).toBe('replacement\n')
+      expect(existsSync(privatePath)).toBe(false)
+    } finally { await new Promise<void>(resolve => replacement.close(() => resolve())) }
+  })
+  it('publishes only one endpoint when profiles start concurrently', async () => {
+    const results = await Promise.allSettled([service().start(), service().start()])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(await send('start\n')).toBe('ok\n')
+    expect(readdirSync(join(runtime, 'sotto'))).toHaveLength(2)
+  })
   it('refuses a foreign-owned runtime before creating the dictation folder', async () => {
     // Treat the on-disk owner as another UID without requiring chown or root.
-    vi.spyOn(process, 'getuid').mockReturnValue(process.getuid() + 1)
+    vi.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1)
     expect(() => validateDictationRuntime(runtime)).toThrow('only you can access')
     await expect(service().start()).rejects.toThrow('only you can access')
     expect(existsSync(join(runtime, 'sotto'))).toBe(false)
@@ -115,6 +139,30 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     expect(abandoned.status).toBe(0)
     await service().start()
     expect(await send('toggle\n')).toBe('ok\n')
+  })
+  it('recovers a dead instance\'s public link and private socket', async () => {
+    const folder = join(runtime, 'sotto')
+    mkdirSync(folder, { mode: 0o700 })
+    const oldSocket = join(folder, 'dictation-123-1a2b3c4d.sock')
+    const abandoned = spawnSync(process.execPath, ['-e', 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', oldSocket])
+    expect(abandoned.status).toBe(0)
+    symlinkSync('dictation-123-1a2b3c4d.sock', dictationSocketPath(runtime))
+    await service().start()
+    expect(existsSync(oldSocket)).toBe(false)
+    expect(await send('toggle\n')).toBe('ok\n')
+    expect(readdirSync(folder)).toHaveLength(2)
+  })
+  it('recovers a dead instance\'s link when its private socket is already gone', async () => {
+    mkdirSync(join(runtime, 'sotto'), { mode: 0o700 })
+    symlinkSync('dictation-123-1a2b3c4d.sock', dictationSocketPath(runtime))
+    await service().start()
+    expect(await send('toggle\n')).toBe('ok\n')
+  })
+  it.each(['../dictation-123-1a2b3c4d.sock', '/tmp/dictation-123-1a2b3c4d.sock', 'other.sock'])('leaves an unrelated endpoint link to %s intact', async target => {
+    mkdirSync(join(runtime, 'sotto'), { mode: 0o700 })
+    symlinkSync(target, dictationSocketPath(runtime))
+    await expect(service().start()).rejects.toThrow('socket is unavailable')
+    expect(readlinkSync(dictationSocketPath(runtime))).toBe(target)
   })
   it('refuses a symlink folder or a non-socket endpoint without removing it', async () => {
     const target = join(runtime, 'target')
