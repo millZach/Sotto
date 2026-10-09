@@ -356,6 +356,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
             return saved
           }}
         />
+        {/* Setup can save a computer, and a saved host reconnecting on its own can need an answer from SSH here too. */}
+        <HostQuestionDialog />
         <ToastRegion messages={recoveryToasts} />
       </>
     )

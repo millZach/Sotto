@@ -130,6 +130,14 @@ describe('ThreadsTour', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
   })
 
+  it('tells Linux to hold F9 with the Hyprland bindings rather than press the shortcut', async () => {
+    const user = userEvent.setup()
+    render(<><ThreadsPage parts={ALL_PARTS} /><ThreadsTour shortcut="CommandOrControl+Shift+Space" platform="linux" onDone={vi.fn()} /></>)
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByText(/Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings\./)).toBeVisible()
+    expect(screen.queryByText(/Shift\+Space/)).toBeNull()
+  })
+
   it('shows the Threads sidebar rather than Terminal mode for the tour', () => {
     localStorage.setItem('sotto.threadWorkspace.mode', 'terminals')
     renderTour()

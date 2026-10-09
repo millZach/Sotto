@@ -6,7 +6,7 @@ import type { AgentProject, AgentState } from '../../../../shared/agents'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { useAddProject } from '../../agents/addProject'
 import { Button } from '../../components/Button'
-import { liveAgentState, localProjects, localProviders } from './localAgents'
+import { liveAgentState, localHostId, localProjects, localProviders } from './localAgents'
 
 export interface ProjectStepProps {
   readonly heading: ReactNode
@@ -27,7 +27,8 @@ function ProjectList({ projects }: { readonly projects: readonly AgentProject[] 
 
 /** Add project as the sidebar runs it, once main's state is live and an agent is connected to make the project with. */
 function AddProject({ state, command, another }: { readonly state: AgentState; readonly command: AgentConnection['command']; readonly another: boolean }): ReactNode {
-  const addProject = useAddProject(state, command)
+  // Setup lists and counts this computer's projects, so the folder is chosen on this computer.
+  const addProject = useAddProject(state, command, { hostId: localHostId(state) })
   return (
     <>
       <Button variant={another ? 'secondary' : 'primary'} disabled={addProject.adding} onClick={() => void addProject.add()}>

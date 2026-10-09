@@ -1104,6 +1104,26 @@ describe('Sotto application onboarding integration', () => {
 
 })
 
+describe('SSH questions during first-run setup', () => {
+  it('asks a saved host’s SSH question while setup is showing', async () => {
+    const asking = {
+      id: '33333333-3333-4333-8333-333333333333', name: 'forge', target: 'zach@forge', identityFile: '', installPath: '~/.local/share/sotto-host',
+      dataDirectory: '~/.sotto', enabled: true, phase: 'connecting' as const, prompt: { id: 'passphrase-prompt', kind: 'passphrase' as const, text: 'Enter passphrase for key' },
+    }
+    const state = { localHostEnabled: true, localHostRunning: true, hosts: [asking] }
+    const hosts = { get: vi.fn(async () => state), command: vi.fn(async () => state), onChanged: vi.fn(() => () => undefined) }
+    // The question dialog reads the hosts bridge the preload puts on the window.
+    Object.assign(window, { sotto: { hosts } })
+    try {
+      renderApp(createBridge())
+      await screen.findByRole('heading', { level: 1, name: 'Talk to your computer and your coding agents' })
+      expect(await screen.findByRole('dialog')).toHaveTextContent('forge')
+    } finally {
+      Reflect.deleteProperty(window, 'sotto')
+    }
+  })
+})
+
 describe('Threads tour after first-run setup', () => {
   // jsdom lays nothing out, and the tour passes over a part with no box, so every element reports one here.
   let layout: { mockRestore: () => void } | undefined

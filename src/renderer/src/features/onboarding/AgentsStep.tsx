@@ -18,6 +18,8 @@ type RowKind = 'ready' | 'checking' | 'not-installed' | 'needs-you' | 'off' | 'u
 interface Row { readonly kind: RowKind; readonly state: string; readonly detail: string; readonly guide: boolean }
 
 const CHECK_FAILED = 'Sotto could not check your coding agents. Nothing was changed. Press Check again.'
+const LOCAL_HOST_OFF = 'This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts, then restart Sotto.'
+const SWITCH_FAILED = 'Sotto could not switch to this computer, so it checked nothing. Press Check again.'
 
 /**
  * One provider's row. Only main's own answer says a client is missing: Connect providers tries the default client it
@@ -54,6 +56,9 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState<ReadonlySet<ProviderId>>(() => new Set())
   const [failure, setFailure] = useState<string | null>(null)
+  const [hostProblem, setHostProblem] = useState<string | null>(null)
+  // The host selected for new work before this step switched to this computer, given back when the step closes.
+  const switchedFrom = useRef<string | null>(null)
   const [linkFailed, setLinkFailed] = useState<ProviderId | null>(null)
   const command = agents?.command
   const started = useRef(false)
@@ -63,12 +68,27 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   stateRef.current = state
 
   // Provider commands go to the host selected for new work; setup checks this computer, so it selects this one first,
-  // as Add project selects the host it adds to. Reset settings can reopen setup with another host selected.
-  const selectThisComputer = useCallback(async (): Promise<void> => {
+  // as Add project selects the host it adds to. Reset settings can reopen setup with another host selected. Nothing is
+  // sent unless this computer is then the one selected.
+  const selectThisComputer = useCallback(async (): Promise<boolean> => {
+    setHostProblem(null)
     const current = stateRef.current
-    const local = current ? localHostId(current) : undefined
-    if (!current?.connections?.length || !local || current.hostId === local) return
+    if (!current) return false
+    if (!current.connections?.length) return true
+    const local = localHostId(current)
+    if (!local) { setHostProblem(LOCAL_HOST_OFF); return false }
+    if (current.hostId === local) return true
+    const previous = current.hostId ?? null
     await window.sotto?.hosts?.command({ type: 'select', hostId: local }).catch(() => undefined)
+    const now = await window.sotto?.agents?.get?.().catch(() => null)
+    if (now?.hostId !== local) { setHostProblem(SWITCH_FAILED); return false }
+    if (switchedFrom.current === null && previous !== null) switchedFrom.current = previous
+    return true
+  }, [])
+
+  useEffect(() => () => {
+    const previous = switchedFrom.current
+    if (previous !== null) void window.sotto?.hosts?.command({ type: 'select', hostId: previous }).catch(() => undefined)
   }, [])
 
   const run = useCallback(async (send: () => Promise<unknown>): Promise<void> => {
@@ -83,7 +103,7 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   const check = useCallback(async (): Promise<void> => {
     if (!command) return
     setChecking(true)
-    await selectThisComputer()
+    if (!await selectThisComputer()) { setChecking(false); return }
     const current = providersRef.current
     const troubled = current.filter(provider => provider.connection === 'error').map(provider => provider.id)
     await Promise.all(troubled.map(provider => run(() => command({ type: 'refresh', provider }))))
@@ -94,8 +114,7 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   const connect = async (provider: ProviderId): Promise<void> => {
     if (!command) return
     setConnecting(current => new Set(current).add(provider))
-    await selectThisComputer()
-    await run(() => command({ type: 'connect', provider }))
+    if (await selectThisComputer()) await run(() => command({ type: 'connect', provider }))
     setConnecting(current => { const next = new Set(current); next.delete(provider); return next })
   }
 
@@ -151,7 +170,8 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
         </Button>
       </div>
       {failure ? <p className="onboarding-recovery" role="alert">{failure}</p> : null}
-      {state && !checking && providers.length === 0
+      {hostProblem ? <p className="onboarding-recovery" role="alert">{hostProblem}</p> : null}
+      {state && !checking && !hostProblem && providers.length === 0
         ? <p className="onboarding-recovery" role="status">Sotto has no word yet on this computer's agents. Press Check again, or connect them later in Settings › Providers.</p>
         : null}
       <p className="onboarding-aside">Threads need at least one agent. You can connect more later in Settings › Providers.</p>

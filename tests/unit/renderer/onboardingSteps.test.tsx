@@ -215,6 +215,51 @@ describe('AgentsStep', () => {
   })
 })
 
+describe('AgentsStep on a desktop with another computer', () => {
+  const LOCAL = '11111111-1111-4111-8111-111111111111'
+  const REMOTE = '22222222-2222-4222-8222-222222222222'
+  const local = { hostId: LOCAL, name: 'This computer', kind: 'local' as const, connected: true }
+  const remote = { hostId: REMOTE, name: 'forge', kind: 'remote' as const, connected: true }
+  const withHosts = (selected: string, connections: AgentState['connections']): AgentState => ({ ...agentState([]), hostId: selected, connections })
+  const sotto = (selectedAfter: string) => {
+    const hosts = { command: vi.fn(async () => ({})) }
+    const agents = { get: vi.fn(async () => ({ hostId: selectedAfter })) }
+    Object.assign(window, { sotto: { hosts, agents } })
+    return { hosts, agents }
+  }
+  afterEach(() => { Reflect.deleteProperty(window, 'sotto') })
+
+  it('checks nothing and says why when this computer runs no local host', async () => {
+    sotto(REMOTE)
+    const command = vi.fn(async () => agentState([]))
+    provide(withHosts(REMOTE, [remote]), command)
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('This computer’s local host is off')
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('checks nothing when it cannot switch to this computer', async () => {
+    const { hosts } = sotto(REMOTE)
+    const command = vi.fn(async () => agentState([]))
+    provide(withHosts(REMOTE, [local, remote]), command)
+    render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sotto could not switch to this computer, so it checked nothing.')
+    expect(hosts.command).toHaveBeenCalledWith({ type: 'select', hostId: LOCAL })
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('switches to this computer to check it, and gives the selection back when the step closes', async () => {
+    const { hosts } = sotto(LOCAL)
+    const command = vi.fn(async () => agentState([]))
+    provide(withHosts(REMOTE, [local, remote]), command)
+    const { unmount } = render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
+    expect(hosts.command).toHaveBeenCalledWith({ type: 'select', hostId: LOCAL })
+    unmount()
+    expect(hosts.command).toHaveBeenLastCalledWith({ type: 'select', hostId: REMOTE })
+  })
+})
+
 describe('ProjectStep', () => {
   it('shows the needs-agent sentence when no local provider is connected', () => {
     provide(agentState([]))

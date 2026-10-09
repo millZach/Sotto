@@ -21,10 +21,15 @@ interface TourStop {
   readonly body: string
 }
 
-export function threadsTourStops(shortcut: string): readonly TourStop[] {
+/** How the New thread note says to speak: the dictation shortcut, or on Linux the Hyprland binding setup describes. */
+function speakIt(shortcut: string, platform: SottoPlatform): string {
+  return platform === 'linux' ? 'hold F9 to speak it with Sotto’s Hyprland bindings' : `press ${shortcut} and speak it`
+}
+
+export function threadsTourStops(shortcut: string, platform: SottoPlatform): readonly TourStop[] {
   return [
     { selector: 'aside.thread-nav', title: 'Projects and threads', body: 'Your projects and their threads are listed here. Add project brings in another folder.' },
-    { selector: 'aside.thread-nav button[aria-label="New thread"]', title: 'New thread', body: `Starts a thread in the selected project. Type your message, or press ${shortcut} and speak it.` },
+    { selector: 'aside.thread-nav button[aria-label="New thread"]', title: 'New thread', body: `Starts a thread in the selected project. Type your message, or ${speakIt(shortcut, platform)}.` },
     { selector: 'section.thread-workspace', title: 'Threads', body: "A thread shows the agent's work, and the questions and permissions it asks you to answer." },
     { selector: 'aside.thread-nav a.thread-nav__page[href="#settings"]', title: 'Settings', body: 'Anything you skipped in setup waits here, with your shortcut, microphone and keys.' },
   ]
@@ -77,7 +82,7 @@ function bubblePlace(target: Box | null, height: number): { top: number; left: n
  * passed over, and the count covers only the parts it can show.
  */
 export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): ReactNode {
-  const stops = threadsTourStops(formatAccelerator(shortcut, platform, 'editing'))
+  const stops = threadsTourStops(formatAccelerator(shortcut, platform, 'editing'), platform)
   const [index, setIndex] = useState(0)
   const [target, setTarget] = useState<Box | null>(null)
   // Which stops' parts are on the page now; the tour shows and counts only those.
