@@ -21,7 +21,8 @@ import { usePullRequestMergeMethod } from './usePullRequestMergeMethod'
 import './pullRequestSurface.css'
 
 type Command = (command: AgentCommand) => Promise<AgentState | null>
-type Notice = { readonly text: string; readonly tone: 'status' | 'error' }
+/** `at: 'babysit'`: a refused Stop, said in the babysitting line beside the Stop it answers rather than above the checklist. */
+type Notice = { readonly text: string; readonly tone: 'status' | 'error'; readonly at?: 'babysit' }
 type Busy = GitPullRequestAction | 'unlink' | 'create-pr' | 'babysit'
 const LINE_ICONS: Record<LineTone, LucideIcon> = { done: CircleCheck, failed: CircleX, running: CircleDashed, todo: Circle, unknown: CircleHelp, open: CircleAlert }
 /** Said before a line's words, since its colour and icon are not read. */
@@ -120,14 +121,17 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   }
   /**
    * Babysit pull request and Stop babysitting: the host answers with what it did, or why it did nothing. The docked line
-   * coming or going says what it did, so success passes in the panel's status rather than above the checklist.
+   * coming or going says what it did, so success passes in the panel's status rather than above the checklist. A refused
+   * Stop leaves the line and its Stop, which keeps focus, and says why in the line, where the reader is.
    */
   const babysitting = async (url: string, number: number, start: boolean): Promise<void> => {
-    await send({ type: start ? 'babysit-pull-request' : 'stop-babysitting', threadId: thread.id, url }, 'babysit',
+    const done = await send({ type: start ? 'babysit-pull-request' : 'stop-babysitting', threadId: thread.id, url }, 'babysit',
       start ? 'Sotto could not confirm babysitting started. Check the pull request before trying again.' : 'Sotto could not confirm babysitting stopped. Check the pull request before trying again.',
       undefined, start ? `Babysitting #${number}` : `Stopped babysitting #${number}`)
-    // Stop takes its own button away; Babysit pull request is in the ··· menu again, so focus waits there.
-    if (!start) requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) (surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') ?? top.current)?.focus() })
+    if (start) return
+    if (!done) { setNotice(current => current?.tone === 'error' ? { ...current, at: 'babysit' } : current); return }
+    // Stop took its own button away; Babysit pull request is in the ··· menu again, so focus waits there.
+    requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) (surface.current?.querySelector<HTMLElement>('.pr-surface__menu > button') ?? top.current)?.focus() })
   }
   const copyLink = async (url: string): Promise<void> => {
     try { await writeClipboard(url); onStatus('Link copied') } catch { onStatus('Could not copy the link. Open on GitHub and copy the address from your browser.') }
@@ -137,8 +141,9 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const show = (url: string): void => { setChosen(url); setDescriptionOpen(false); requestAnimationFrame(() => top.current?.focus()) }
   const linkDialog = linking && command ? <LinkPullRequestDialog threadId={thread.id} command={command} onClose={() => setLinking(false)}
     onLinked={text => { setLinking(false); setNotice({ text, tone: 'status' }) }} /> : null
-  const noticeLine = <>
-    {notice ? <p className="pr-surface__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
+  /** `docked`: the notice is a refused Stop that the babysitting line shows instead. */
+  const noticeLine = (docked = false): ReactNode => <>
+    {notice && !docked ? <p className="pr-surface__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
     {/* A read that failed under a checklist already shown: the checklist is the last one GitHub gave, and says so. */}
     {failure && detail ? <p className="pr-surface__notice" data-tone="error" role="alert">{failure} What shows below is from the last read.</p> : null}
   </>
@@ -151,7 +156,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         <span className="pr-surface__lead"><GitPullRequest size={16} aria-hidden="true" data-state="none" /><h2 ref={top} tabIndex={-1} className="pr-surface__name">{loading ? 'Pull request' : 'No pull request'}</h2></span>
         <div className="tools-chrome__actions">{refresh}</div>
       </div>
-      {noticeLine}
+      {noticeLine()}
       <div className="pr-surface__body">
         {loading ? <p className="files-preview__loading" role="status">Reading the pull request…</p>
           : failure ? <div className="files-problem" role="status"><strong>{failure}</strong><button type="button" className="files-link tt-focusable" onClick={() => void load()}>Try again</button></div>
@@ -179,6 +184,10 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const babysat = babysittingOf(thread, detail.url) !== undefined
   const offerBabysit = Boolean(babysit && command && open && (detail.linked || detail.branch) && !babysat)
   const line = babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? 'the agent', offered: offerBabysit })
+  // A refused Stop is said in the line it answers, while that line is still there to say it.
+  const stopRefused = notice?.at === 'babysit' && line?.kind === 'babysitting' ? notice.text : null
+  const dock = <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} refused={stopRefused}
+    onStop={() => void babysitting(detail.url, detail.number, false)} />
   const menu: PaneMenuItem[][] = [[
     ...(open ? [detail.draft ? { id: 'ready', label: 'Ready for review', disabled: running, run: () => void act('ready') }
       : { id: 'draft', label: 'Convert to draft', disabled: running, run: () => void act('draft') }] : []),
@@ -218,7 +227,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         <PaneMenu groups={menu} label="More pull request actions" className="pr-surface__menu" />
       </div>
     </div>
-    {noticeLine}
+    {noticeLine(stopRefused !== null)}
     <div className="pr-surface__body">
       <h3 className="pr-surface__heading">{checklistHeading(detail, clear)}{' '}<small data-tone={clear ? 'done' : undefined}>{checklistCount(lines)}</small></h3>
       <ol className="pr-surface__lines" aria-label="Merge checklist">{lines.map(line => {
@@ -230,7 +239,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         </li>
       })}</ol>
       <div className="pr-surface__dock">
-        {open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, detail.number, false)} /> : null}
+        {open ? dock : null}
         {detail.state === 'merged' ? <div className="pr-surface__finished" data-state="merged"><CircleCheck size={20} aria-hidden="true" />
           <div><strong>Merged into <bdi>{detail.baseBranch}</bdi></strong>{when ? <span>{when}</span> : null}</div></div>
           : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
@@ -251,7 +260,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
               </>}
         {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
             merge, that it is still babysat, which Stop can end now. */}
-        {!open ? <BabysitDock line={line} busy={busy === 'babysit'} disabled={running || !command} onStop={() => void babysitting(detail.url, detail.number, false)} /> : null}
+        {!open ? dock : null}
       </div>
       <Fold label="Description" open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
         {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet">No description.</p>}
@@ -272,15 +281,21 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
 
 /**
  * The line docked above Merge (variant C): babysitting since when, who started it and what Sotto does, with Stop; or
- * that it ended, and why. Stop is named for the pull request it stops, so a reader hears what a press does.
+ * that it ended, and why. Stop is named for the pull request it stops, so a reader hears what a press does. It is held
+ * with aria-disabled rather than disabled, so a press keeps focus on it: a refused Stop says why under it (`refused`),
+ * and a Stop that worked takes the line away and focus moves on.
  */
-function BabysitDock({ line, busy, disabled, onStop }: { readonly line: BabysitLine; readonly busy: boolean; readonly disabled: boolean; readonly onStop: () => void }): ReactNode {
+function BabysitDock({ line, busy, disabled, refused, onStop }: {
+  readonly line: BabysitLine; readonly busy: boolean; readonly disabled: boolean; readonly refused: string | null; readonly onStop: () => void
+}): ReactNode {
   if (line === null) return null
   const Icon = line.kind === 'babysitting' ? AlarmClock : AlarmClockOff
   return <div className="pr-surface__babysit" data-state={line.kind} role="group" aria-label={line.title}>
     <Icon size={18} aria-hidden="true" />
     <div className="pr-surface__babysit-text"><strong>{line.title}</strong><span>{line.detail}</span></div>
-    {line.kind === 'babysitting' ? <Button variant="secondary" aria-label={line.stop} title={line.stop} disabled={disabled} onClick={onStop}>{busy ? BUSY_LABEL.babysit : 'Stop'}</Button> : null}
+    {line.kind === 'babysitting' ? <Button variant="secondary" aria-label={line.stop} title={line.stop} aria-disabled={disabled || undefined}
+      onClick={() => { if (!disabled) onStop() }}>{busy ? BUSY_LABEL.babysit : 'Stop'}</Button> : null}
+    {refused ? <p className="pr-surface__babysit-refused" role="alert">{refused}</p> : null}
   </div>
 }
 

@@ -70,6 +70,10 @@
 .pr-surface__babysit-text strong { display: block; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
 .pr-surface__babysit-text span { display: block; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
 .pr-surface__babysit .tt-button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.pr-surface__babysit .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: .45; }
+.pr-surface__babysit .tt-button[aria-disabled='true']:hover { border-color: var(--tt-hairline); color: var(--tt-text-2); }
+/* A refused Stop, under the line it answers, across its whole width. */
+.pr-surface__babysit-refused { flex: 1 0 100%; margin: 2px 0 0; padding: 6px 10px; border-radius: var(--tt-radius-sm); background: var(--tt-error-surface); color: var(--tt-error-text); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
 .pr-surface__babysit[data-state='ended'] { padding-right: 12px; border-color: var(--tt-hairline); background: transparent; }
 .pr-surface__babysit[data-state='ended'] > svg { color: var(--tt-text-muted); }
 .pr-surface__babysit[data-state='ended'] .pr-surface__babysit-text span { color: var(--tt-text-muted); }

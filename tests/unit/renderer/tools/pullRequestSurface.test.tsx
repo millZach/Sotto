@@ -533,6 +533,38 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Link this pull request to the thread first. Nothing was started.')
   })
 
+  it('keeps focus on a refused Stop and says why in its line, not above the checklist', async () => {
+    const { command, onStatus } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user'), result: { error: 'Sotto could not save that babysitting stopped. It goes on.', notice: null } })
+    await opened()
+    const line = screen.getByRole('group', { name: /^Babysitting since / })
+    const stop = within(line).getByRole('button', { name: 'Stop babysitting #74' })
+    stop.focus()
+    fireEvent.click(stop)
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'stop-babysitting', threadId: 'thread-1', url: URL }]))
+    expect(await within(line).findByRole('alert')).toHaveTextContent('Sotto could not save that babysitting stopped. It goes on.')
+    // Said once, beside the Stop it answers; focus never left Stop, and it presses again once the host has answered.
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    await waitFor(() => expect(stop).not.toHaveAttribute('aria-disabled'))
+    expect(stop).toHaveFocus()
+    expect(onStatus).not.toHaveBeenCalled()
+  })
+
+  it('holds Stop while a press is under way without taking focus from it', async () => {
+    let answer!: (state: AgentState) => void
+    const { command } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user') })
+    command.mockImplementation(() => new Promise(resolve => { answer = resolve }))
+    await opened()
+    const stop = screen.getByRole('button', { name: 'Stop babysitting #74' })
+    stop.focus()
+    fireEvent.click(stop)
+    await waitFor(() => expect(stop).toHaveAttribute('aria-disabled', 'true'))
+    expect(stop).toHaveTextContent('Stopping...')
+    expect(stop).toHaveFocus()
+    fireEvent.click(stop)
+    expect(command).toHaveBeenCalledTimes(1)
+    await act(async () => { answer({ notice: 'Stopped.', error: null } as AgentState) })
+  })
+
   it('offers nothing where the host cannot babysit, still showing what the thread babysits', async () => {
     mount({ thread: babysat('user') })
     await opened()
