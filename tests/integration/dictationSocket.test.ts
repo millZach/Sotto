@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { createConnection, createServer } from 'node:net'
+import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
@@ -67,15 +67,23 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     await first.start()
     const privatePath = join(dirname(first.path), readlinkSync(first.path))
     unlinkSync(first.path)
-    const replacement = createServer(socket => socket.once('data', () => socket.end('replacement\n')))
-    await new Promise<void>(resolve => replacement.listen(first.path, resolve))
-    const inode = lstatSync(first.path).ino
+    const replacement = spawn(process.execPath, ['-e', 'require("node:net").createServer(s => s.once("data", () => s.end("replacement\\n"))).listen(process.argv[1], () => console.log("ready"))', first.path])
+    const exited = new Promise(resolve => replacement.once('exit', resolve))
     try {
+      await new Promise<void>((resolve, reject) => {
+        replacement.once('error', reject)
+        replacement.stdout.once('data', () => resolve())
+        replacement.once('exit', () => reject(new Error('Replacement listener exited before binding')))
+      })
+      const inode = lstatSync(first.path).ino
       first.dispose()
       expect(lstatSync(first.path).ino).toBe(inode)
       expect(await send('start\n')).toBe('replacement\n')
       expect(existsSync(privatePath)).toBe(false)
-    } finally { await new Promise<void>(resolve => replacement.close(() => resolve())) }
+    } finally {
+      if (replacement.exitCode === null && replacement.signalCode === null) process.kill(replacement.pid!, 'SIGTERM')
+      await exited
+    }
   })
   it('publishes only one endpoint when profiles start concurrently', async () => {
     const results = await Promise.allSettled([service().start(), service().start()])
