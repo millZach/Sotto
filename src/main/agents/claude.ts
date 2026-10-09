@@ -741,14 +741,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         }
         const runtime = await this.start(id)
         const { content, nativeText, origin } = await this.nativePrompt(id, command)
-        alias.origins.push(origin)
-        try { await this.recordOrigin(id, origin) } catch (error) {
-          alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
-          // The line may be on disk though its sync or close failed. A whole write moves the generation past it, so
-          // the next connect never folds back the origin of a prompt that was not sent.
-          await this.persist().catch(() => undefined)
-          throw error
-        }
+        await this.addOrigin(id, alias, origin)
         // Resume and durable origin writes can yield while the user takes over.
         // Recheck at the dispatch boundary; an undispatched origin is safe to remove.
         try {
@@ -1548,6 +1541,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * Claude reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
    * its user message, the same identity the projected activity rows already carry.
    */
+  /** Adds a prompt's origin and makes it durable before the prompt goes; one that could not be made durable is taken back. */
+  private async addOrigin(id: string, alias: Alias, origin: Alias['origins'][number]): Promise<void> {
+    alias.origins.push(origin)
+    try { await this.recordOrigin(id, origin) } catch (error) {
+      alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
+      // The line may be on disk though its sync or close failed. A whole write moves the generation past it, so
+      // the next connect never folds back the origin of a prompt that was not sent.
+      await this.persist().catch(() => undefined)
+      throw error
+    }
+  }
   /** A steer the CLI held unread ends with the CLI; one still unacknowledged reports uncertain now rather than at the deadline. */
   private dropSteers(id: string): void {
     for (const [uuid, steer] of this.steers) if (steer.threadId === id) { this.steers.delete(uuid); this.acknowledgements.get(uuid)?.(false) }
@@ -1587,12 +1591,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.dispatching.add(id)
     try {
       const { content, nativeText, origin } = await this.nativePrompt(id, command)
-      alias.origins.push(origin)
-      try { await this.recordOrigin(id, origin) } catch (error) {
-        alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid)
-        await this.persist().catch(() => undefined)
-        throw error
-      }
+      await this.addOrigin(id, alias, origin)
       try { await this.sync(id); validate() }
       catch (error) { alias.origins = alias.origins.filter(candidate => candidate.uuid !== origin.uuid); await this.persist(); throw error }
       let timer: ReturnType<typeof setTimeout> | undefined
