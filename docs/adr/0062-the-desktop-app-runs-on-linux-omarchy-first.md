@@ -93,7 +93,7 @@ Proposed: **option 2**. The tarball is verified the same way the Windows and mac
 - **Documents change on acceptance.** `AGENTS.md` ("Windows first, Apple silicon macOS second"), the README's platform list and `docs/release/releasing.md` change when this is accepted, not before.
 - **The Windows build must not break.** The owner's condition for merging Linux work. Three measures apply:
   - `Gates (Windows)` becomes a required check on `main`;
-  - CI packages and verifies the Windows app (`npm run package:dir`) when a pull request touches packaging, `src/main` or `src/shared`;
+  - CI packages and verifies the Windows app (`npm run package:dir`, the job **Package (Windows)**). It runs on every pull request that changes anything beyond documents, tests or the phone clients, including the documents the package ships, and on every push to `main`. Its **Package result** job is what a ruleset requires, because a skipped job reads as passing (#847);
   - Linux behaviour lives only behind the `linux` profile, with Windows and macOS values pinned by tests, and `electron-builder.yml` changes stay inside a new `linux` block.
 
   The desktop smoke check on the Windows PC before each release stays as it is.
