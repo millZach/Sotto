@@ -78,6 +78,16 @@ it('stops a turn a steer was read into as that one turn', async () => {
   expect(await turns(f)).toEqual(['interrupted'])
 })
 
+it('forgets a steer the CLI held when Sotto lets the CLI go, so a later turn still ends', async () => {
+  const f = await running()
+  await steer(f, 'Never read')
+  f.adapter.disconnect(); await f.adapter.closed()
+  await f.host.connect()
+  await f.host.execute({ type: 'send', commandId: 'next', messageId: 'next', threadId: 'thread', text: 'Next' })
+  await f.driver.completeTurn('thread', 'Done')
+  await expect.poll(async () => (await thread(f)).status).toBe('idle')
+})
+
 it('refuses to steer a thread with no running turn', async () => {
   const f = await running()
   await f.driver.completeTurn('thread', 'Done')
