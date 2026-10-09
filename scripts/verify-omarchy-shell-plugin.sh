@@ -11,8 +11,8 @@
 # session, the plugin is installed by install-shell-plugin.sh, and stand-in
 # `sotto` launchers record the verbs they receive. A virtual pointer inside B
 # drags and clicks. Every process runs in one systemd slice that is stopped
-# at the end, and only the Hyprland runtime folders this run made are
-# removed.
+# at the end; one that outlives it fails the run. Only the Hyprland runtime
+# folders this run's compositors made are removed.
 #
 # Usage, from a Sotto checkout on an Omarchy machine, in its desktop session:
 #   scripts/verify-omarchy-shell-plugin.sh <out-dir>
@@ -80,14 +80,121 @@ live_plugins=$(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true)
 
 # ------------------------------------------------------------- ownership
 
+# Everything this proof starts is its own from the moment it starts: each
+# process by its exact PID, in this run's slice, and each Hyprland instance
+# folder by the PID in its lock. Cleanup is armed before anything is made.
 token=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
 slice=app-sottoshellproof$token.slice
+work="" rt="" units=0 last_pid=""
+owned_pids=()
+owned_folders=() # "sig inode pid" for each instance folder a compositor of ours made
+a_pid="" b_pid="" a_sig="" b_sig="" a_wl="" b_wl=""
+
+in_slice() { grep -lF "/$slice/" /proc/[0-9]*/cgroup 2>/dev/null | cut -d/ -f3 | tr '\n' ' '; }
+
+# Takes the folder only when this run did not find it already there and its
+# lock names the compositor this run started.
+own_folder() { # sig pid
+  local sig=$1 pid=$2 dir=$run/hypr/$1 entry
+  [[ -n $sig && -n $pid && $sig != "$live_sig" && -d $dir ]] || return 1
+  grep -q "^$sig " <<<"$instances_before" && return 1
+  [[ $(head -n1 "$dir/hyprland.lock" 2>/dev/null) == "$pid" ]] || return 1
+  for entry in "${owned_folders[@]}"; do [[ ${entry%% *} == "$sig" ]] && return 0; done
+  owned_folders+=("$sig $(stat -c %i "$dir") $pid")
+}
+
+# A compositor can make its folder and then fail before hyprctl finds it,
+# so its folder is also found from the PID in its lock.
+recover_folders() {
+  local pid dir entry found
+  for pid in "$a_pid" "$b_pid"; do
+    [[ -n $pid ]] || continue
+    found=0
+    for entry in "${owned_folders[@]}"; do [[ ${entry##* } == "$pid" ]] && found=1; done
+    ((found)) && continue
+    for dir in "$run"/hypr/*/; do
+      own_folder "$(basename "$dir")" "$pid" && break
+    done
+  done
+}
+
+cleanup() {
+  local status=$? left="" pid entry sig ino dir lock_pid after
+  set +e
+  exec 7>&- 2>/dev/null
+  recover_folders
+  systemctl --user stop "$slice" 2>/dev/null
+  for _ in $(seq 1 50); do
+    [[ -z $(in_slice) ]] && break
+    sleep 0.1
+  done
+  left=$(in_slice)
+  for pid in "${owned_pids[@]}"; do
+    [[ " $left " == *" $pid "* ]] && continue
+    kill -0 "$pid" 2>/dev/null && grep -qF "/$slice/" "/proc/$pid/cgroup" 2>/dev/null && left+="$pid "
+  done
+  if [[ -n ${left// /} ]]; then
+    say "FAIL: processes outlived the proof: $left"
+    systemctl --user kill --signal=SIGKILL "$slice" 2>/dev/null
+    status=1
+  else
+    say "no process outlived the proof"
+  fi
+  for entry in "${owned_folders[@]}"; do
+    read -r sig ino pid <<<"$entry"
+    dir=$run/hypr/$sig
+    [[ -d $dir ]] || continue
+    if kill -0 "$pid" 2>/dev/null; then
+      say "FAIL: $sig was left: its compositor, PID $pid, is still running"
+      status=1
+      continue
+    fi
+    [[ $(stat -c %i "$dir") == "$ino" ]] || { say "left $sig alone: it was replaced"; continue; }
+    lock_pid=$(head -n1 "$dir/hyprland.lock" 2>/dev/null)
+    [[ -z $lock_pid || $lock_pid == "$pid" ]] || { say "left $sig alone: another process holds it"; continue; }
+    rm -rf -- "$dir"
+  done
+  after=$(snapshot_instances)
+  while read -r name ino; do
+    [[ -n $name ]] || continue
+    # Another session's nested Hyprland may come and go meanwhile; the live
+    # one must not.
+    if ! grep -q "^$name $ino\$" <<<"$after"; then
+      if [[ $name == "$live_sig" ]]; then say "FAIL: the live instance folder changed"; status=1
+      else say "note: $name, not this proof's, changed meanwhile"; fi
+    fi
+  done <<<"$instances_before"
+  for entry in "${owned_folders[@]}"; do
+    sig=${entry%% *}
+    grep -q "^$sig " <<<"$after" && { say "FAIL: $sig is still there"; status=1; }
+  done
+  say "instance folders after cleanup: $(cut -d' ' -f1 <<<"$after" | tr '\n' ' ')"
+  if [[ $(stat -c '%Y %s' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo none) == "$live_config_stamp" ]]; then
+    say "live shell.json unchanged"
+  else
+    say "FAIL: live shell.json changed"; status=1
+  fi
+  if [[ $(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true) == "$live_plugins" ]]; then
+    say "live plugins folder unchanged"
+  else
+    say "FAIL: live plugins folder changed"; status=1
+  fi
+  if [[ -n $work ]]; then
+    mkdir -p "$out/logs"
+    cp "$work"/*.log "$out/logs/" 2>/dev/null
+  fi
+  [[ $work == /tmp/sotto-shell-proof.* ]] && rm -rf -- "$work"
+  [[ $rt == /tmp/ssp-* ]] && rm -rf -- "$rt"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 work=$(mktemp -d /tmp/sotto-shell-proof.XXXXXX)
 # A short runtime folder: Hyprland's socket path must fit in 108 bytes.
 rt=$(mktemp -d /tmp/ssp-XXXXXX)
 home=$work/home
-units=0
-a_pid="" b_pid="" a_sig="" b_sig="" a_wl="" b_wl="" a_ino="" b_ino=""
 
 # A background command reads /dev/null unless it names its own stdin, so
 # the pointer passes its pipe in `scoped_stdin`.
@@ -100,57 +207,8 @@ scoped() { # name env-file command... (its output goes to <work>/<name>.log)
     --slice="$slice" --property=KillMode=control-group --property=TimeoutStopSec=2s \
     -- /usr/bin/env -i $(cat "$envfile") "$@" <"${scoped_stdin:-/dev/null}" >>"$work/$name.log" 2>&1 &
   last_pid=$!
+  owned_pids+=("$last_pid")
 }
-
-remove_instance_folder() { # sig inode pid
-  local sig=$1 ino=$2 pid=$3 dir=$run/hypr/$1
-  [[ -n $sig && $sig != "$live_sig" && -d $dir ]] || return 0
-  [[ $(stat -c %i "$dir") == "$ino" ]] || { say "left $sig alone: it was replaced"; return 0; }
-  if [[ -f $dir/hyprland.lock ]]; then
-    [[ $(head -n1 "$dir/hyprland.lock") == "$pid" ]] || { say "left $sig alone: another process holds it"; return 0; }
-  fi
-  rm -rf -- "$dir"
-}
-
-cleanup() {
-  local status=$?
-  set +e
-  exec 7>&- 2>/dev/null
-  systemctl --user stop "$slice" 2>/dev/null
-  for _ in $(seq 1 40); do
-    grep -lq "$slice" /proc/[0-9]*/cgroup 2>/dev/null || break
-    sleep 0.1
-  done
-  local left
-  left=$(grep -l "$slice" /proc/[0-9]*/cgroup 2>/dev/null | cut -d/ -f3 | tr '\n' ' ')
-  say "processes left in the proof slice: [${left}]"
-  remove_instance_folder "$b_sig" "$b_ino" "$b_pid"
-  remove_instance_folder "$a_sig" "$a_ino" "$a_pid"
-  local after
-  after=$(snapshot_instances)
-  while read -r name ino; do
-    # Another session's nested Hyprland may come and go meanwhile; the live
-    # one must not.
-    if ! grep -q "^$name $ino\$" <<<"$after"; then
-      [[ $name == "$live_sig" ]] && say "WARNING: the live instance folder changed" || say "note: $name, not this proof's, changed meanwhile"
-    fi
-  done <<<"$instances_before"
-  [[ -n $b_sig ]] && grep -q "^$b_sig " <<<"$after" && say "WARNING: $b_sig is still there"
-  [[ -n $a_sig ]] && grep -q "^$a_sig " <<<"$after" && say "WARNING: $a_sig is still there"
-  say "instance folders after cleanup: $(cut -d' ' -f1 <<<"$after" | tr '\n' ' ')"
-  [[ $(stat -c '%Y %s' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo none) == "$live_config_stamp" ]] \
-    && say "live shell.json unchanged" || say "WARNING: live shell.json changed"
-  [[ $(ls -A "$HOME/.config/omarchy/plugins" 2>/dev/null || true) == "$live_plugins" ]] \
-    && say "live plugins folder unchanged" || say "WARNING: live plugins folder changed"
-  mkdir -p "$out/logs"
-  cp "$work"/*.log "$out/logs/" 2>/dev/null
-  [[ $work == /tmp/sotto-shell-proof.* ]] && rm -rf -- "$work"
-  [[ $rt == /tmp/ssp-* ]] && rm -rf -- "$rt"
-  exit "$status"
-}
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 wait_for() { # seconds condition
   local deadline=$((SECONDS + $1))
@@ -193,8 +251,8 @@ scoped hyprland-a "$work/env-a" Hyprland -c "$work/hypr-a.lua"
 a_pid=$last_pid
 wait_for 20 '[[ -n $(instance_of "$a_pid") ]]' || fail "nested Hyprland A did not start"
 read -r a_sig a_wl <<<"$(instance_of "$a_pid")"
-a_ino=$(stat -c %i "$run/hypr/$a_sig")
 [[ $a_sig != "$live_sig" && $a_wl != "$live_wl" ]] || fail "A is the live instance"
+own_folder "$a_sig" "$a_pid" || fail "A's instance folder is not one this proof can own"
 
 hypr_a() {
   [[ $a_sig != "$live_sig" ]] || fail "refusing to address the live instance"
@@ -210,7 +268,7 @@ scoped hyprland-b "$work/env-b" Hyprland -c "$work/hypr-b.lua"
 b_pid=$last_pid
 wait_for 20 '[[ -n $(instance_of "$b_pid") ]]' || fail "nested Hyprland B did not start"
 read -r b_sig b_wl <<<"$(instance_of "$b_pid")"
-b_ino=$(stat -c %i "$run/hypr/$b_sig")
+own_folder "$b_sig" "$b_pid" || fail "B's instance folder is not one this proof can own"
 say "nested A: $a_sig on $a_wl, PID $a_pid; nested B: $b_sig on $b_wl, PID $b_pid"
 hypr_b output create wayland >/dev/null
 
