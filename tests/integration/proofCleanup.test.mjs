@@ -4,11 +4,11 @@ import { Buffer } from 'node:buffer'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, proofSystemdEnvironment, snapshotProofInstances, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
+import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, proofSystemdEnvironment, snapshotProofInstances, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
@@ -126,6 +126,22 @@ describe('proof runtime folders', () => {
   })
 })
 describe.skipIf(!hasUserSystemd())('proof process ownership', () => {
+  it('execs the command in its recorded PID and proof scope without the desktop bus', async () => {
+    const owned = createOwnedProofProcesses(() => undefined)
+    try {
+      const code = 'console.log(JSON.stringify({ pid: process.pid, bus: process.env.DBUS_SESSION_BUS_ADDRESS, cgroup: require("node:fs").readFileSync("/proc/self/cgroup", "utf8") }))'
+      const child = owned.start('identity fixture', process.execPath, ['-e', code], { stdio: ['ignore', 'pipe', 'pipe'] })
+      let output = ''
+      child.stdout.on('data', chunk => { output += chunk.toString() })
+      await once(child, 'close')
+      expect(child.exitCode).toBe(0)
+      const identity = JSON.parse(output)
+      expect(identity.pid).toBe(child.pid)
+      expect(identity.cgroup).toContain(`/${owned.slice}/${child.proofScope}`)
+      expect(identity.bus).not.toBe(proofSystemdEnvironment().DBUS_SESSION_BUS_ADDRESS)
+      expect(identity.bus).toMatch(/\/sotto-proof-[a-f0-9]+-no-bus$/u)
+    } finally { await owned.stop() }
+  })
   it.each([false, true])('stops a reparented owned child (setsid=%s) and preserves an unrelated process', async escape => {
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
     const owned = createOwnedProofProcesses(() => undefined)
@@ -143,10 +159,16 @@ describe.skipIf(!hasUserSystemd())('proof process ownership', () => {
       const pid = Number(output.trim())
       expect(pid).toBeGreaterThan(0)
       expect(() => process.kill(pid, 0)).not.toThrow()
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      const session = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[3])
+      expect(session).toBe(escape ? pid : parent.pid)
       expect(owned.owns(pid, parent)).toBe(true)
       await owned.stop()
       // Independent PID assertion, rather than trusting stop's own report.
-      expect(isProofProcessAlive(pid)).toBe(false)
+      try {
+        const stopped = readFileSync(`/proc/${pid}/stat`, 'utf8')
+        expect(['Z', 'X']).toContain(stopped.slice(stopped.lastIndexOf(')') + 2).split(' ')[0])
+      } catch (error) { if (error.code !== 'ENOENT') throw error }
       const state = execFileSync('systemctl', ['--user', 'show', owned.slice, '--property=ActiveState', '--value'], { env: proofSystemdEnvironment(), encoding: 'utf8' }).trim()
       expect(state).toBe('inactive')
       expect(() => process.kill(unrelated.pid, 0)).not.toThrow()

@@ -117,7 +117,10 @@ export function createOwnedProofProcesses(report) {
     // --scope execs the command in the runner's PID after placing it in its cgroup.
     const child = spawn('systemd-run', ['--user', '--scope', '--quiet', '--collect', '--expand-environment=no',
       `--unit=${scope}`, `--slice=${slice}`, '--property=KillMode=control-group', '--property=TimeoutStopSec=2s',
-      '--', executable, ...args], { ...options, env: { ...systemdEnv, ...options.env }, detached: true })
+      // Chromium otherwise asks the live user manager to move it to a desktop scope.
+      // The runner needs the real bus to create our scope; the command and its children do not.
+      '--', '/usr/bin/env', `DBUS_SESSION_BUS_ADDRESS=unix:path=${systemdEnv.XDG_RUNTIME_DIR}/sotto-proof-${token}-no-bus`,
+      executable, ...args], { ...options, env: { ...systemdEnv, ...options.env }, detached: true })
     child.proofScope = scope
     child.once('error', error => { child.proofError = error })
     if (child.pid) { commands.push({ name, pid: child.pid, scope }); remember(child.pid) }
