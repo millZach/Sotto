@@ -20,7 +20,7 @@ Physical modifier release on a keyboard remains unverified. Windows and macOS be
 8. The nested proof asserts the focused target's address, PID, class, title and tags, checks `deliverOutput === 'pasted'`, and compares exact received text. Both terminals use raw-mode cat. Initial window activation settles before target delivery. Every mismatch exits non-zero. The final three-target run passed.
 9. While recording on Linux, the Dictate hint promises copy and paste only with **Automatic paste** on. With it off, the hint says Sotto copies and names Super+V. Renderer and built-app tests exercise both settings.
 
-This follows the staged Hyprland paste decision in ADR-0062 on `origin/feat/linux-desktop-adr`. No new domain term, network host, runtime dependency, theme token or Windows/macOS copy was introduced. The desktop clipboard failure reuses Dictate's existing completed-text recovery. Widget snapshots carry its error code; completed text stays in Dictate, outside the widget and logs.
+This follows the staged Hyprland paste decision in ADR-0064 on `origin/feat/linux-desktop-adr`. No new domain term, network host, runtime dependency, theme token or Windows/macOS copy was introduced. The desktop clipboard failure reuses Dictate's existing completed-text recovery. Widget snapshots carry its error code; completed text stays in Dictate, outside the widget and logs.
 
 ## Real nested paste
 
