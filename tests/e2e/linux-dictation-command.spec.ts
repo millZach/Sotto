@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
@@ -30,6 +30,18 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
   const captures = join(process.cwd(), 'artifacts/linux-hyprland-paste')
   await mkdir(captures, { recursive: true })
   const { page, userData } = launched
+  const capture = async (name: string): Promise<void> => {
+    const viewport = page.viewportSize()!
+    // Wayland suspends frame callbacks while the live session is locked.
+    // Electron's native capture keeps painting without sending compositor keys.
+    const image = await launched.app.evaluate(async ({ BrowserWindow }, size) => {
+      const main = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!
+      const frame = await main.webContents.capturePage({ x: 0, y: 0, ...size }, { stayHidden: true, stayAwake: true })
+      return { png: frame.toPNG().toString('base64'), size: frame.getSize() }
+    }, viewport)
+    expect(image.size).toEqual(viewport)
+    await writeFile(join(captures, name), Buffer.from(image.png, 'base64'))
+  }
   const command = async (verb: string, at?: bigint): Promise<void> => {
     await run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', verb, ...(at === undefined ? [] : ['--at', String(at)])], { env: { ...process.env, XDG_RUNTIME_DIR: userData } })
   }
@@ -46,7 +58,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
     await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, 'Finish setup')
     await page.setViewportSize({ width: 820, height: 560 })
-    await page.screenshot({ path: join(captures, 'onboarding-820x560-light.png') })
+    await capture('onboarding-820x560-light.png')
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.getByRole('button', { name: 'Finish setup' }).focus()
     await page.keyboard.press('Enter')
@@ -102,7 +114,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
         await page.getByRole('tab', { name: 'Output', exact: true }).click()
         await expect(page.getByText(/Paste into the focused window on Hyprland, terminals included/)).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        if (width === 820 && appearance === 'dark') await page.screenshot({ path: join(captures, 'settings-820x560-dark.png') })
+        if (width === 820 && appearance === 'dark') await capture('settings-820x560-dark.png')
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         await openPage(page, 'Dictate')
@@ -110,7 +122,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
         await expect(hint).toBeVisible()
         const bounds = await hint.boundingBox()
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(await page.evaluate(() => innerWidth))
-        if (width === 820 && appearance === 'light') await page.screenshot({ path: join(captures, 'dictate-820x560-light.png') })
+        if (width === 820 && appearance === 'light') await capture('dictate-820x560-light.png')
         await openPage(page, 'Settings')
       }
     }
