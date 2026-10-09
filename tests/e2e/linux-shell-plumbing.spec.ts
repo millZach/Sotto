@@ -59,6 +59,12 @@ test('publishes private shell state, retries and discards, remembers placement a
     if (!output) return
     expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).toBeTruthy()
     expect(process.env.HYPRLAND_INSTANCE_SIGNATURE).not.toBe(process.env.SOTTO_PROOF_LIVE_SIGNATURE)
+    // The nested compositor's locked parent can suspend frame callbacks. Ask
+    // Electron to paint the full main frame before capturing the owned output.
+    await launched!.app.evaluate(async ({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!
+      await main.webContents.capturePage(undefined, { stayAwake: true })
+    })
     await expect.poll(async () => {
       const { stdout } = await run('hyprctl', ['clients', '-j'])
       const clients = JSON.parse(stdout) as Array<{ pid: number; title: string; mapped: boolean }>
