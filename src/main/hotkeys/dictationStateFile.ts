@@ -43,7 +43,7 @@ const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof noth
   OUTPUT_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
   OUTPUT_FAILED: 'Text kept in Sotto. Open Dictate to copy it.',
   DESKTOP_CLIPBOARD_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
-  HISTORY_FAILED: 'Text on clipboard. History not saved. Paste with Super+V.',
+  HISTORY_FAILED: 'Text delivered and on the clipboard. History not saved.',
 }
 const failureDetail: Readonly<Record<WidgetErrorCode, string>> = { ...nothingRecordedDetail, ...capturedDetail }
 

@@ -40,7 +40,7 @@ describe('shell dictation copy', () => {
         expect(fields.detail).not.toMatch(/Recording (kept|lost)|was lost/)
         expect(fields.detail).toMatch(/try again|Dictate again|Settings/i)
       } else {
-        expect(fields.detail).toMatch(/Recording lost\.|was lost\.|Text kept in Sotto\.|Text on clipboard\./)
+        expect(fields.detail).toMatch(/Recording lost\.|was lost\.|Text kept in Sotto\.|Text delivered and on the clipboard\./)
       }
       expect(fields.detail).not.toContain('PRIVATE')
     }
@@ -51,9 +51,9 @@ describe('shell dictation copy', () => {
       .toBe('Text kept in Sotto. Open Dictate to copy it.')
   })
 
-  it('names the clipboard when only history saving failed', () => {
+  it('says the text was delivered when only history saving failed', () => {
     expect(shellDictationFields(snapshot({ status: 'error', code: 'HISTORY_FAILED' })).detail)
-      .toBe('Text on clipboard. History not saved. Paste with Super+V.')
+      .toBe('Text delivered and on the clipboard. History not saved.')
   })
 
   it.each([false, true])('uses kept=%s for the unknown-code fallback', kept => {
