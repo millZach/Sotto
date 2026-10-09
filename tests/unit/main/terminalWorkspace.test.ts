@@ -131,6 +131,25 @@ describe('terminal workspace service', () => {
     await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
   })
 
+  it('reclaims a restored checkout when Close cancels Reopen during restoration', async () => {
+    const f = await fixture()
+    const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    unwrap(await f.service.close({ id: terminal.id }))
+    await expect.poll(async () => unwrap(await f.service.list()).terminals[0]!.worktree?.reclaimedAt).toBeTruthy()
+    const restored = Promise.withResolvers<AgentWorktree>(), entered = Promise.withResolvers<void>()
+    f.worktrees.ensure.mockImplementationOnce(() => { entered.resolve(); return restored.promise })
+    const reopening = f.service.restart({ id: terminal.id })
+    try {
+      await entered.promise
+      unwrap(await f.service.close({ id: terminal.id }))
+      expect(f.worktrees.reclaim).toHaveBeenCalledOnce()
+    } finally { restored.resolve({ ...terminal.worktree!, reclaimedAt: undefined }) }
+    expect(await reopening).toMatchObject({ ok: false, error: { code: 'session-unavailable' } })
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(2)
+    expect(f.worktrees.reclaim.mock.calls[1]![0].reclaimedAt).toBeUndefined()
+    expect(f.spawn).toHaveBeenCalledOnce()
+  })
+
   it('does not recreate a reclaimed checkout from a restart cancelled during shell lookup', async () => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })

@@ -338,14 +338,13 @@ export class TerminalWorkspaceService extends ToolOperations {
   }) }
 
   private async reclaim(record: LiveTerminal, preparation: Promise<void> | undefined): Promise<void> {
-    const metadata = record.terminal.worktree
-    if (!metadata || metadata.mode !== 'independent' || metadata.reused || metadata.reclaimedAt) return
     try {
       await preparation
       const prepared = await record.folder
       // A Reopen that overtook preparation owns the folder again. Never remove it under a new process.
       if (record.terminal.closedAt === null || record.pty || this.disposed) return
-      const owner = prepared?.worktree ?? metadata
+      const owner = prepared?.worktree ?? record.terminal.worktree
+      if (!owner || owner.mode !== 'independent' || owner.reused || owner.reclaimedAt) return
       const release = await this.dependencies.acquireReclaim?.(owner.path!)
       let identity: string | undefined
       let reserved = false
