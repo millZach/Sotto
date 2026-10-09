@@ -15,7 +15,12 @@ export class LinuxDictationShell {
   private readonly socket: DictationSocket
   private stateFile: DictationStateFile | null = null
   private stopped = false
-  private readonly onExit = (): void => this.dispose()
+  private disposed = false
+  private readonly onExit = (): void => {
+    this.stopped = true
+    this.removeStateFile()
+    this.exitSource.off('exit', this.onExit)
+  }
 
   constructor(
     private readonly runtimeDirectory: string | undefined,
@@ -41,13 +46,19 @@ export class LinuxDictationShell {
   place(edge: WidgetEdge): void { this.stateFile?.place(edge) }
 
   dispose(): void {
-    if (this.stopped) return
+    if (this.disposed) return
+    this.disposed = true
     this.stopped = true
-    // The state publisher unlinks synchronously, before any other teardown can fail.
-    this.stateFile?.dispose()
-    this.stateFile = null
+    this.removeStateFile()
     this.monitor.dispose()
     this.socket.dispose()
     this.exitSource.off('exit', this.onExit)
+  }
+
+  private removeStateFile(): void {
+    // At process exit, only synchronous file cleanup is safe. Native handle
+    // teardown belongs to runtime disposal, before Electron starts exiting.
+    this.stateFile?.dispose()
+    this.stateFile = null
   }
 }

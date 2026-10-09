@@ -1,5 +1,5 @@
 // Built-app proof, with microphone and provider effects scripted; commands use the real sotto client and socket.
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import { _electron as electron, expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../src/shared/e2e'
-import { closeSotto, firstSottoWindow, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, e2eEnvironment, firstSottoWindow, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 
 const run = promisify(execFile)
@@ -21,6 +21,8 @@ test('publishes private shell state, retries and discards, remembers placement a
   const statePath = join(profile, 'sotto/dictation-state.json')
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, autoPaste: false, successDisplayMs: 5_000 }))
   let launched: LaunchedSotto | undefined
+  let rawApp: ChildProcess | undefined
+  let rawAppClosed: Promise<number | null> | undefined
   const launch = async (scenario: E2EScenario): Promise<LaunchedSotto> => {
     const app = await launchSotto(scenario, profile, {
       createProfile: async () => { throw new Error('Use the owned profile') },
@@ -158,7 +160,41 @@ test('publishes private shell state, retries and discards, remembers placement a
     await command('cancel')
     await showState('cancel connecting', 'idle')
     await quit()
+    // Observe Electron's real exit event without a main-process debugger.
+    // Check publication cleanup before the harness reaps any remaining handles.
+    const exitSignal = join(profile, 'force-exit')
+    const exitObserved = join(profile, 'exit-observed')
+    const exitHook = join(profile, 'force-exit.cjs')
+    await writeFile(exitHook, `const { app } = require('electron')
+const { existsSync, writeFileSync } = require('node:fs')
+process.once('exit', () => writeFileSync(${JSON.stringify(exitObserved)}, ''))
+require(${JSON.stringify(join(process.cwd(), 'out/main/index.js'))})
+const timer = setInterval(() => {
+  if (existsSync(${JSON.stringify(exitSignal)})) { clearInterval(timer); app.exit() }
+}, 25)
+`)
+    rawApp = spawn(join(process.cwd(), 'node_modules/electron/dist/electron'), [exitHook], {
+      env: { ...e2eEnvironment('success', profile), XDG_CONFIG_HOME: config }, stdio: 'ignore',
+    })
+    const forcedPid = rawApp.pid
+    rawAppClosed = new Promise<number | null>((resolve, reject) => {
+      rawApp!.once('error', reject)
+      rawApp!.once('close', resolve)
+    })
+    console.log(`Built app PID ${forcedPid}; isolated profile; no main-process debugger`)
+    await showState('launch before forced exit', 'idle')
+    await command('start')
+    await showState('start before forced exit', 'listening')
+    await writeFile(exitSignal, '')
+    await expect.poll(() => stat(exitObserved).then(() => true, () => false)).toBe(true)
+    await expect.poll(read).toEqual({})
+    console.log(`forced exit PID ${forcedPid}: Electron exit event observed; dictation-state.json absent`)
   } finally {
+    if (rawApp?.exitCode === null) {
+      rawApp.kill('SIGKILL')
+      await rawAppClosed
+      console.log(`Stopped forced-exit app PID ${rawApp.pid}`)
+    }
     if (launched) await closeSotto(launched)
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
   }

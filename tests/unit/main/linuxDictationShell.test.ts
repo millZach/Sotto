@@ -26,6 +26,8 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
   afterEach(() => { shell.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); rmSync(runtime, { recursive: true, force: true }) })
 
   it('unlinks listening state on the forced quit timeout without runtime disposal', async () => {
+    const disposeMonitor = vi.spyOn(ShellWidgetMonitor.prototype, 'dispose')
+    const disposeSocket = vi.spyOn(DictationSocket.prototype, 'dispose')
     vi.useFakeTimers()
     await shell.start()
     await vi.advanceTimersByTimeAsync(50)
@@ -42,7 +44,11 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
     expect(app.quit).not.toHaveBeenCalled()
     expect(existsSync(statePath)).toBe(false)
     expect(exitSource.listenerCount('exit')).toBe(0)
+    expect(disposeMonitor).not.toHaveBeenCalled()
+    expect(disposeSocket).not.toHaveBeenCalled()
     shell.dispose()
+    expect(disposeMonitor).toHaveBeenCalledOnce()
+    expect(disposeSocket).toHaveBeenCalledOnce()
     exitSource.emit('exit')
     await vi.advanceTimersByTimeAsync(100)
     expect(existsSync(statePath)).toBe(false)
