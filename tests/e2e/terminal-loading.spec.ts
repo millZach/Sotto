@@ -30,7 +30,7 @@ for (const surface of ['tools', 'workspace'] as const) {
       const id = await page.evaluate(async surface => {
         if (surface === 'workspace') {
           const state = await window.sotto!.agents!.get()
-          const projectId = state.host.threads.find(thread => thread.id === 'workshop')!.projectId
+          const projectId = state.host.threads.find(thread => thread.id === 'workshop' || thread.id.endsWith(':workshop'))!.projectId
           const created = await window.sotto!.terminals!.open({ projectId, title: 'Recovery shell', workingCopy: 'shared',
             launch: { provider: null, modelId: null, reasoning: null, permission: null } })
           if (!created.ok) throw new Error(created.error.message)

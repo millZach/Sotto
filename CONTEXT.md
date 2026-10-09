@@ -141,6 +141,20 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Terminal.** In Terminal mode, a shell or a provider CLI that Sotto starts in a project folder or in its own worktree, named by the user when it opens. It belongs to a project, never to a thread, and keeps running while its pane is hidden. Distinct from the Tools panel's terminal and from a pane's Terminal drawer, which both belong to a thread's working copy. Its first line, printed by Sotto, names the folder and the command.
 
+The following terminal states are proposed in [ADR-0066](docs/adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md); today's output-based Running and Idle labels remain until that work ships. They describe Terminal mode's agents, apart from thread states. Plain shells keep Running and Idle.
+
+**Starting (terminal).** A terminal whose provider CLI is opening and is not yet ready for input.
+
+**Working (terminal).** A terminal whose agent has work in progress, even when it prints nothing. Avoid: "Running" for an agent's work, which remains the plain shell's output activity.
+
+**Idle (terminal).** A terminal whose agent is ready for input, with no work, pending request or unread completion.
+
+**Needs you (terminal).** A terminal whose agent is waiting for the user's approval or answer to a question. It describes a current request, not silence or a completed turn; a request the provider cannot take through Sotto must be answered in its own CLI. Avoid: "Blocked", "Done".
+
+**Just finished (terminal).** A terminal whose agent completed a turn while no client showed it, held until a client views it or its agent works again, asks or exits. An on-screen pane counts whether focused or not; a list row does not. Avoid: "Done", "Needs you".
+
+**Exited (terminal).** A terminal whose launched provider CLI has ended. Its retained output is still readable, distinct from a Closed terminal whose output the user released.
+
 **Terminal drawer.** A thread pane's own terminal, under its composer across the bottom third of the pane, opened with the pane's Terminal drawer button or Ctrl+J (Cmd+J on a Mac) in the pane the key lands in. Its terminal leaves Ctrl+J to the page; Escape and every other key belong to the shell. Its shells start in the thread's working copy and are separate from the Tools panel's terminal: a shell started in one never shows in the other. Opening a drawer with no shell starts one; closing its last shell hides it. Hiding it leaves its shells running. Each thread remembers whether its drawer is open and how tall it is, and every pane of a split has its own. Under a Frosted window the drawer is see-through too, a little more solid than the room. A thread on a paired host has no drawer; its terminal is on the host (ADR-0049). Avoid: "bottom panel", "terminal tab", or "Terminal" alone, which is Terminal mode's.
 
 **Closed.** Terminal mode's counterpart to Settled: the shelf of terminals explicitly closed this session, which can be reopened with the same command until Sotto quits. Every row stays; its old output is released on Close. Stop and a process exiting leave its output readable. The 64-terminal limit counts terminals outside Closed.
