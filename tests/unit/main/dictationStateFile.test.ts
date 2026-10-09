@@ -21,22 +21,26 @@ function snapshot(fields: object): WidgetSnapshot {
 }
 
 describe('shell dictation copy', () => {
-  const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_DEVICE_NOT_FOUND', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
+  const nothingRecorded = ['MIC_PERMISSION_DENIED', 'MIC_START_FAILED', 'MIC_NOT_SET_UP', 'NO_SPEECH', 'SETTINGS_UNAVAILABLE'] as const
   const captured = ['RECORDING_FAILED', 'TRANSCRIPTION_UNCONFIGURED', 'TRANSCRIPTION_UNAUTHORIZED', 'TRANSCRIPTION_OFFLINE', 'TRANSCRIPTION_BILLING', 'TRANSCRIPTION_RATE_LIMITED', 'TRANSCRIPTION_SERVICE_ERROR', 'TRANSCRIPTION_FAILED', 'OUTPUT_UNAVAILABLE', 'OUTPUT_FAILED', 'DESKTOP_CLIPBOARD_UNAVAILABLE', 'HISTORY_FAILED'] as const
+  const captureDependent = ['MIC_DEVICE_NOT_FOUND'] as const
 
-  it('puts every known failure in exactly one recording group', () => {
-    const grouped = [...nothingRecorded, ...captured]
+  it('puts every known failure in exactly one recording group, including capture-dependent errors', () => {
+    const grouped = [...nothingRecorded, ...captured, ...captureDependent]
     expect(new Set(grouped).size).toBe(grouped.length)
     expect(grouped.slice().sort()).toEqual([...WIDGET_ERROR_CODES].sort())
   })
 
-  it.each([...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'])('states the recording or text outcome for %s in fewer than 60 characters', code => {
+  it.each([
+    ...[...WIDGET_ERROR_CODES, 'UNKNOWN_ERROR'].map(code => ({ code, captureStarted: false })),
+    { code: 'MIC_DEVICE_NOT_FOUND', captureStarted: true },
+  ])('states the outcome for $code with captureStarted=$captureStarted in fewer than 60 characters', ({ code, captureStarted }) => {
     for (const kept of [false, true]) {
-      const fields = shellDictationFields(snapshot({ status: 'error', code, kept, message: 'PRIVATE PROVIDER BODY' }))
+      const fields = shellDictationFields(snapshot({ status: 'error', code, captureStarted, kept, message: 'PRIVATE PROVIDER BODY' }))
       expect(fields).toMatchObject({ state: 'failed', kept })
       expect(fields.detail!.length).toBeLessThan(60)
       if (kept) expect(fields.detail).toContain('Recording kept.')
-      else if ((nothingRecorded as readonly string[]).includes(code)) {
+      else if ((nothingRecorded as readonly string[]).includes(code) || (code === 'MIC_DEVICE_NOT_FOUND' && !captureStarted)) {
         expect(fields.detail).not.toMatch(/Recording (kept|lost)|was lost/)
         expect(fields.detail).toMatch(/try again|Dictate again|Settings/i)
       } else {

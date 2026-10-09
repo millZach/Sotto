@@ -86,6 +86,8 @@ Commit `91b373a5`. Every known error and the unknown-code fallback is checked wi
 
 ## Re-review: recording and text outcomes
 
+This round's two-group classification is superseded for `MIC_DEVICE_NOT_FOUND` by the capture-dependent case in the third-review section below.
+
 The refined contract distinguishes six failures before any usable recording from twelve failures after captured audio. The two static copy maps form an exhaustive, disjoint partition of `WidgetErrorCode`; tests independently enumerate both groups and require every code exactly once. Every captured failure with `kept: false` positively states loss or names where the text is. Every `kept: true` detail says “Recording kept.”, even for a synthetic kept snapshot of a pre-recording error. Both unknown-code outcomes start “Dictation failed.” and follow `kept`. All 38 known/fallback variants stay under 60 characters and reject unreviewed provider copy.
 
 The actual controller retains completed output before attempting history for `OUTPUT_UNAVAILABLE`, `OUTPUT_FAILED` and `DESKTOP_CLIPBOARD_UNAVAILABLE`. AppContext keeps those entries in Dictate’s selectable recovery list, independent of history; a history save failure does not erase them. The existing controller tests cover unavailable, empty and throwing delivery, history off and history failure. `HISTORY_FAILED` alone follows successful clipboard delivery, so its copy points to the clipboard. Nothing about retention itself changed. The guide now describes these outcomes. The copy/state file passes all 41 tests; the controller file passes all 92 tests.
@@ -175,3 +177,14 @@ Temporary root removed: /tmp/sp-80oDgh
 ```
 
 Standards review against AGENTS.md found no remaining issue: procfs reads occur only in the Linux owner, imports remain allowlisted, logs carry stable names, content never supplies either field, and provider, authority, network, runtime dependencies and Windows/macOS behavior are unchanged. Contract review against addendum 2 found no remaining issue: the parser handles the command name, startup reads once and recovers without procfs, every write retains process identity, and dictation identity follows the snapshot through coalescing and placement. The guide records both additive fields and the existing cancellation-to-idle mapping.
+
+## Third review: microphone loss during capture
+
+Starting at `4698b45a`, the controller now marks whether its recorder reached listening, at the same point it dispatches Started. Only Linux `MIC_DEVICE_NOT_FOUND` snapshots carry that flag through the validated IPC boundary. Main uses it to choose the fixed shell detail; the flag itself never enters the state file. It does not infer capture from a timestamp or from earlier file publications, which can coalesce.
+
+| Microphone case | Before | After |
+| --- | --- | --- |
+| Missing before capture | No microphone was found. Connect one, then try again. | No microphone was found. Connect one, then try again. |
+| Disappears while listening | No microphone was found. Connect one, then try again. | Microphone lost. Recording lost. Connect it again. |
+
+Controller-to-publication regressions pass the real controller's snapshots through `widgetSnapshotSchema` and `shellDictationFields` for both cases. The loss case captures a streaming segment, loses the microphone and resolves a late partial transcript; Retry and Stop cannot deliver or retain that discarded recording or text. Capture begins at timestamp zero in the test, so timestamp truthiness cannot stand in for capture status. Both cases also assert the complete unchanged Windows and macOS snapshots and controller error sentence. Copy tests classify the microphone code as capture-dependent and check both outcomes, kept wording, privacy and the under-60-character limit. The guide describes the distinction.

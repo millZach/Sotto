@@ -24,7 +24,6 @@ export interface ShellDictationState {
 // a provider's response is accepted, even if a caller carries extra fields.
 const nothingRecordedDetail = {
   MIC_PERMISSION_DENIED: 'Microphone access was denied. Allow it, then try again.',
-  MIC_DEVICE_NOT_FOUND: 'No microphone was found. Connect one, then try again.',
   MIC_START_FAILED: 'The microphone could not start. Try again.',
   MIC_NOT_SET_UP: 'Set up your microphone in Settings.',
   NO_SPEECH: 'No speech was heard. Dictate again.',
@@ -33,7 +32,7 @@ const nothingRecordedDetail = {
 
 // These failures follow captured audio. Say it was lost, or where the completed
 // text remains. Output recovery in Dictate exists even when history is off.
-const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof nothingRecordedDetail>, string>> = {
+const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof nothingRecordedDetail | 'MIC_DEVICE_NOT_FOUND'>, string>> = {
   RECORDING_FAILED: 'Recording stopped and was lost. Dictate again.',
   TRANSCRIPTION_UNCONFIGURED: 'No OpenRouter key. Recording lost. Add it in Settings.',
   TRANSCRIPTION_UNAUTHORIZED: 'OpenRouter key rejected. Recording lost. Check Settings.',
@@ -47,7 +46,12 @@ const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof noth
   DESKTOP_CLIPBOARD_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
   HISTORY_FAILED: 'Text delivered and on the clipboard. History not saved.',
 }
-const failureDetail: Readonly<Record<WidgetErrorCode, string>> = { ...nothingRecordedDetail, ...capturedDetail }
+// The same code also follows a microphone disappearing while listening. The
+// controller carries whether capture started; do not infer it from file order.
+const failureDetail: Readonly<Record<WidgetErrorCode, string>> = {
+  ...nothingRecordedDetail, ...capturedDetail,
+  MIC_DEVICE_NOT_FOUND: 'No microphone was found. Connect one, then try again.',
+}
 
 // The shell pill displays detail directly; its buttons supply Try again and
 // Discard. Keep the reason and recording outcome in every kept failure.
@@ -88,7 +92,10 @@ export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictat
       dictation,
       state: 'failed',
       detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code)
-        ? (snapshot.kept === true ? keptFailureDetail : failureDetail)[snapshot.code]
+        ? snapshot.kept === true ? keptFailureDetail[snapshot.code]
+          : snapshot.code === 'MIC_DEVICE_NOT_FOUND' && snapshot.captureStarted === true
+            ? 'Microphone lost. Recording lost. Connect it again.'
+            : failureDetail[snapshot.code]
         : snapshot.kept === true ? 'Dictation failed. Recording kept.' : 'Dictation failed. Recording lost. Dictate again.',
       kept: snapshot.kept === true,
     }

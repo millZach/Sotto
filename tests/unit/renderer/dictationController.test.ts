@@ -2,6 +2,7 @@ import { TranscriptionError } from '../../../src/renderer/src/transcription/open
 import { describe, expect, it, vi } from 'vitest'
 
 import { widgetSnapshotSchema } from '../../../src/shared/contracts'
+import { shellDictationFields } from '../../../src/main/hotkeys/dictationStateFile'
 import { TRANSCRIPTION_KEPT_DETAIL, type WidgetSnapshot } from '../../../src/shared/dictation'
 import { widgetPaletteFor } from '../../../src/shared/themeBranding'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
@@ -869,6 +870,69 @@ describe('DictationController', () => {
     })
     expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
     expect(harness.deliverOutput).not.toHaveBeenCalled()
+  })
+
+  it.each(['linux', 'win32', 'darwin'] as const)('publishes a missing microphone before capture on %s', async platform => {
+    const harness = createHarness({
+      platform,
+      recorder: { start: async () => { throw new AudioRecorderError('START_FAILED', 'PRIVATE DEVICE', 'NotFoundError') } },
+    })
+    await harness.controller.start()
+
+    const publication = widgetSnapshotSchema.parse(snapshots(harness).at(-1))
+    expect(publication).toEqual({
+      status: 'error', sessionId: 'session', code: 'MIC_DEVICE_NOT_FOUND',
+      ...(platform === 'linux' ? { captureStarted: false } : {}),
+      theme: harness.currentSettings.theme, palette: widgetPaletteFor(harness.currentSettings),
+      reducedMotion: harness.currentSettings.reducedMotion, shortcut: harness.currentSettings.hotkey,
+      voiceCoordinator: harness.currentSettings.voiceCoordinatorEnabled,
+      cancellable: false,
+    })
+    expect(harness.controller.getState()).toMatchObject({ message: 'The selected microphone is unavailable.' })
+    if (platform === 'linux') {
+      expect(shellDictationFields(publication)).toMatchObject({
+        state: 'failed', kept: false, detail: 'No microphone was found. Connect one, then try again.',
+      })
+    }
+    expect(harness.transcriber.transcribe).not.toHaveBeenCalled()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    harness.controller.dispose()
+  })
+
+  it.each(['linux', 'win32', 'darwin'] as const)('publishes a microphone lost after capture on %s without keeping its parts', async platform => {
+    const segment = deferred<TranscriptionResult>()
+    const harness = createHarness({ platform, now: () => 0, transcribe: () => segment.promise })
+    await harness.controller.start()
+    recorderOptions(harness).onSegment?.({ samples: new Float32Array([0.2]), sourceSampleRate: 16_000, durationMs: 500 })
+    expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
+    recorderOptions(harness).onDeviceUnavailable?.()
+
+    const publication = widgetSnapshotSchema.parse(snapshots(harness).at(-1))
+    expect(publication).toEqual({
+      status: 'error', sessionId: 'session', code: 'MIC_DEVICE_NOT_FOUND',
+      ...(platform === 'linux' ? { captureStarted: true } : {}),
+      theme: harness.currentSettings.theme, palette: widgetPaletteFor(harness.currentSettings),
+      reducedMotion: harness.currentSettings.reducedMotion, shortcut: harness.currentSettings.hotkey,
+      voiceCoordinator: harness.currentSettings.voiceCoordinatorEnabled,
+      cancellable: false,
+    })
+    expect(harness.controller.getState()).toMatchObject({ message: 'The selected microphone is unavailable.' })
+    if (platform === 'linux') {
+      expect(shellDictationFields(publication)).toMatchObject({
+        state: 'failed', kept: false, detail: 'Microphone lost. Recording lost. Connect it again.',
+      })
+    }
+    expect(harness.recorder.cancel).toHaveBeenCalledOnce()
+    segment.resolve({ text: 'PRIVATE PARTIAL TRANSCRIPT', language: 'en' })
+    await harness.controller.retry()
+    await harness.controller.stop()
+    expect(snapshots(harness).at(-1)).toEqual(publication)
+    expect(harness.transcriber.transcribe).toHaveBeenCalledOnce()
+    expect(harness.deliverOutput).not.toHaveBeenCalled()
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.retainOutput).not.toHaveBeenCalled()
+    harness.controller.dispose()
   })
 
   it('creates a fresh recorder per session', async () => {
