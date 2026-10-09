@@ -20,10 +20,15 @@ wake-up wording and the real send path through the follow-up queue.
    #74" in passing, at its foot; nothing is added above the checklist, so it stays where it was.
 2. **The line, the row and the pose.** A line docked under the checklist and above Merge says "Babysitting since 4:12
    pm" and "Started by you. Sotto sends this thread a wake-up when #74 needs it.", with **Stop**, named "Stop
-   babysitting #74". The sidebar row reads **Babysitting #74**. Above the composer the creature rests in the muted
+   babysitting #74". The sidebar row reads **Babysitting #74**, and so does the title the collapsed rail gives the
+   thread, "Greeting for reviewers · Babysitting #74"
+   ([collapsed](../../artifacts/babysitting-surfaces/sidebar-collapsed-1280x800-dark.png)). Linked pull requests marks
+   #74 "Linked by you · Babysitting", in the row's second text colour at 4.5:1 or better, and its button's name ends
+   "Babysitting" ([linked](../../artifacts/babysitting-surfaces/linked-babysitting-1280x800-dark.png)). Above the composer the creature rests in the muted
    colour with its sign, over "#74 Greet the reviewer" and "Babysitting since 4:12 pm"
    ([1280x800 dark](../../artifacts/babysitting-surfaces/babysitting-1280x800-dark.png)). The pose is named as one
-   picture, "Babysitting #74 Greet the reviewer since 4:12 pm", and is not a live region, so it is not read out again
+   picture, "Babysitting #74 Greet the reviewer since 4:12 pm", its hover title says "#74 Greet the reviewer" over
+   "Babysitting since 4:12 pm", so the time is there wherever the visible line drops it, and it is not a live region, so it is not read out again
    each time it comes back after a turn. The journey measures where the time sits rather than trusting one capture: at
    1280x800 with Tools open, today's time shows whole, and so does the widest one ("since 12:55 pm") put in its place;
    an earlier day's ("since Oct 17, 12:55 pm") either shows whole or drops whole, never cut by an ellipsis. The line's title, words and
@@ -50,14 +55,17 @@ wake-up wording and the real send path through the follow-up queue.
    ([820x560](../../artifacts/babysitting-surfaces/pose-beside-queue-820x560-dark.png), where the queue folds to its
    heading).
 6. **Stop.** Stop keeps focus through its press. The panel says "Stopped babysitting #74" in passing, focus moves to ···,
-   where Babysit pull request is again, the line goes, and the row and the pose go back to rest.
+   where Babysit pull request is again, the line goes, and the row and the pose go back to rest. Focus moves only from
+   Stop or from nowhere: a user who went on to the composer while a slow Stop was under way stays there, which the unit
+   tests hold, since the scripted host answers at once.
 7. **Ended on its own.** Started again from ···, then merged on GitHub: the next pass sends the last wake-up ("It
    merged, so Sotto has stopped babysitting it.") and ends babysitting. After Refresh the surface shows Merged into main
    and under it "Babysitting ended. Ended at 5:46 pm, after #74 merged.", with **Dismiss**
    ([ended](../../artifacts/babysitting-surfaces/ended-1280x800-dark.png)). The time is when babysitting ended, which is
    when the pass noticed the merge, so the sentence does not put it on the merge, which the card above dates. Dismiss,
    named "Dismiss why babysitting #74 ended", puts the line away, focus goes back to the pull request's name, and
-   Refresh does not bring it back.
+   Refresh does not bring it back. What the window keeps for it is a 16-byte SHA-256 digest of the thread, the pull
+   request and when it ended, never their names.
 8. **Settings.** Settings → Application has **Let agents babysit pull requests** right after "Let agents draw visuals in
    threads", on by default, saying what Sotto does with the value shown. Turned off it says "Agents cannot start
    babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request
@@ -72,7 +80,11 @@ the sidebar's state word; `threadSidebarStatus.test.tsx` the row's ranking; `bab
 and readout; `wakeUpMessage.test.tsx` that a wake-up is told by its mark and never its words, in the transcript, the
 queue and the queue's echo, and that the Agent room's short transcript names it Sotto; `pullRequestSurface.test.tsx` the
 menu item, the line, Stop and refusals, a refused Stop keeping focus and saying why in the line rather than above the
-checklist, and Dismiss keeping an ending put away in the window until a later ending of the same pull request;
+checklist, a slow Stop leaving focus where the user moved it, the Babysitting mark in Linked pull requests, and Dismiss
+keeping an ending put away in the window until a later ending of the same pull request; `babysitEndingsDismissed.test.tsx`
+that what Dismiss keeps is a digest naming no repository, number or thread, the newest 200;
+`threadSidebarStatus.test.tsx` the collapsed rail's title; `tests/unit/shared/gitPullRequests.test.ts` the one pull
+request key the host and the window share;
 `settingsView.test.tsx` the switch; and `workspaceBabysitting.test.ts` and `agentRuntimeBabysitting.test.ts` that why
 babysitting ended is kept on the thread's record through a restart, and not for the user's own Stop.
 
