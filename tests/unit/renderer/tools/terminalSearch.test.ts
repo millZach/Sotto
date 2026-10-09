@@ -14,7 +14,7 @@ afterEach(() => { document.body.replaceChildren(); document.documentElement.styl
 it('searches incrementally, shows results, navigates both ways and closes from any control with terminal focus restored', () => {
   const element = document.createElement('div'); document.body.append(element)
   const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn() }
-  const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456', event => event.ctrlKey && event.key === 'j')
+  const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456')
   view.mount(); view.open()
   const input = element.querySelector('input')!, count = element.querySelector('output')!
   const [previous, next, close] = element.querySelectorAll('button')
@@ -24,7 +24,14 @@ it('searches incrementally, shows results, navigates both ways and closes from a
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true }))
   expect(pageKey).toHaveBeenCalledOnce()
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }))
-  expect(pageKey).toHaveBeenCalledOnce()
+  expect(pageKey).toHaveBeenCalledTimes(2)
+  for (const control of [input, previous!, next!, close!]) {
+    for (const chord of [{ key: 'F6' }, { key: 'F6', shiftKey: true }, { key: 'M', ctrlKey: true, shiftKey: true }, { key: 'k', ctrlKey: true }, { key: 'k', metaKey: true }]) {
+      pageKey.mockClear()
+      control.dispatchEvent(new KeyboardEvent('keydown', { ...chord, bubbles: true }))
+      expect(pageKey).toHaveBeenCalledOnce()
+    }
+  }
   expect(next!.disabled).toBe(true)
   input.value = 'match'; input.dispatchEvent(new Event('input'))
   expect(search.next).toHaveBeenLastCalledWith('match', expect.objectContaining({ incremental: true, decorations: expect.objectContaining({ matchBorder: '#123456' }) }))

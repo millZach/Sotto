@@ -160,7 +160,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   let opened = false
   let inputEnabled = false
   let disposed = false
-  const search = terminalSearch(terminal, element, resolveColor, handlers.isPageShortcut)
+  const search = terminalSearch(terminal, element, resolveColor)
   let selectionRevision = 0
   const selectionChanges = terminal.onSelectionChange(() => { selectionRevision++ })
   // xterm reports a dragged selection on release. Protect it from queued copies from the first press.

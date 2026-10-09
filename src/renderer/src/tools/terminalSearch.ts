@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 const HIGHLIGHT_LIMIT = 1_000
 
 /** The approved inline search bar, owned by the view so hiding a pane keeps its query and scrollback. */
-export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null, isPageShortcut?: (event: KeyboardEvent) => boolean) {
+export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve: (css: string) => string | null) {
   const addon = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT })
   terminal.loadAddon(addon)
   const bar = document.createElement('div')
@@ -65,12 +65,14 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   previous.addEventListener('click', () => find(true))
   next.addEventListener('click', () => find())
   close.addEventListener('click', hide)
-  // Escape works from every control. Only the drawer's existing page chord leaves the search controls.
+  // Consume search actions only. Pane navigation, pane zoom and app shortcuts keep their existing route.
   bar.addEventListener('keydown', event => {
-    if (event.isComposing || isPageShortcut?.(event)) return
-    if (event.key === 'Escape') { event.preventDefault(); hide() }
-    if (event.key === 'Enter' && event.target === input) { event.preventDefault(); find(event.shiftKey) }
-    event.stopPropagation()
+    if (event.isComposing) return
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); hide() }
+    if (event.key === 'Enter') {
+      if (event.target === input) { event.preventDefault(); find(event.shiftKey) }
+      event.stopPropagation()
+    }
   })
   previous.disabled = next.disabled = true
   return {
