@@ -4,8 +4,9 @@ import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { URL } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { setTimeout as wait } from 'node:timers/promises'
 import { createOwnedProofProcesses } from './owned-proof-processes.mjs'
@@ -52,6 +53,18 @@ const assertNested = () => {
   assert.notEqual(sock, live.WAYLAND_DISPLAY, 'Never use the live display')
   assert.ok(sig && sock && instances().some(instance => instance.pid === hypr.pid && instance.instance === sig && instance.wl_socket === sock), 'The spawned compositor must own both the instance and display')
 }
+const assertDebuggerListener = (port, child) => {
+  assert.equal(child.exitCode, null, 'The owned browser must still be running')
+  assert.equal(child.signalCode, null, 'The owned browser must still be running')
+  const sockets = readFileSync('/proc/net/tcp', 'utf8').trim().split('\n').slice(1)
+    .map(line => line.trim().split(/\s+/u))
+    .filter(fields => fields[1] === `0100007F:${port.toString(16).toUpperCase().padStart(4, '0')}` && fields[3] === '0A')
+  assert.equal(sockets.length, 1, 'Exactly one loopback debugger listener must exist')
+  const expected = `socket:[${sockets[0][9]}]`
+  assert.ok(readdirSync(`/proc/${child.pid}/fd`).some(fd => {
+    try { return readlinkSync(`/proc/${child.pid}/fd/${fd}`) === expected } catch { return false }
+  }), 'The browser started by this proof must own the debugger socket')
+}
 
 try {
   writeFileSync(join(out, 'hyprland.lua'), [
@@ -88,7 +101,8 @@ try {
   // Alacritty from PATH; SOTTO_ALACRITTY points at another build, such as an unpacked Arch package.
   const alacrittyExecutable = process.env.SOTTO_ALACRITTY ?? 'alacritty'
   const alacritty = owned.start('Alacritty', alacrittyExecutable, ['--class', 'Alacritty', '-e', ...catArgs(alacrittyFile, alacrittyReady)], { env: nested, stdio: 'ignore' })
-  const chromium = owned.start('Chromium', 'chromium', [`--user-data-dir=${join(out, 'chromium')}`, '--ozone-platform=wayland', '--no-first-run', '--remote-debugging-port=9347',
+  const chromiumProfile = mkdtempSync(join(out, 'chromium-'))
+  const chromium = owned.start('Chromium', 'chromium', [`--user-data-dir=${chromiumProfile}`, '--ozone-platform=wayland', '--no-first-run', '--remote-debugging-port=0',
     '--app=data:text/html,<title>pastebox</title><textarea id=t autofocus style="width:95vw;height:90vh"></textarea>'], { env: nested, stdio: 'ignore' })
   const data = join(out, `sotto-profile-${process.pid}`)
   mkdirSync(data)
@@ -115,10 +129,30 @@ try {
       && existsSync(footReady) && existsSync(alacrittyReady)
   }, chromium)
 
-  const pages = await fetchProofJson('http://127.0.0.1:9347/json/list')
-  const page = pages.find(p => p.title === 'pastebox')
+  const [portText, browserPath] = await poll('Chromium debugger startup', () => {
+    try { return readFileSync(join(chromiumProfile, 'DevToolsActivePort'), 'utf8').trim().split('\n') }
+    catch (error) { if (error.code === 'ENOENT') return undefined; throw error }
+  }, chromium)
+  const chromiumPort = Number(portText)
+  assert.ok(Number.isInteger(chromiumPort) && chromiumPort > 0 && chromiumPort <= 65535)
+  assert.match(browserPath, /^\/devtools\/browser\/[\w-]+$/u)
+  assertDebuggerListener(chromiumPort, chromium)
+  const origin = `http://127.0.0.1:${chromiumPort}`
+  const browser = await fetchProofJson(`${origin}/json/version`)
+  assert.equal(browser.webSocketDebuggerUrl, `ws://127.0.0.1:${chromiumPort}${browserPath}`, 'Discovery must identify the browser in the fresh profile')
+  const pages = await fetchProofJson(`${origin}/json/list`)
+  const page = pages.find(p => p.type === 'page' && p.title === 'pastebox')
   assert.ok(page, 'Chromium pastebox debugger must exist')
+  const pageSocket = new URL(page.webSocketDebuggerUrl)
+  assert.equal(pageSocket.origin, `ws://127.0.0.1:${chromiumPort}`, 'The page must use the owned browser listener')
+  assert.equal(pageSocket.pathname, `/devtools/page/${page.id}`, 'The debugger must address the discovered page')
   const cdp = await connect(page.webSocketDebuggerUrl)
+  const readChromium = () => {
+    assertDebuggerListener(chromiumPort, chromium)
+    return cdp.evaluate('document.getElementById("t").value')
+  }
+  console.log(`Chromium debugger: owned browser PID ${chromium.pid}, assigned port ${chromiumPort}`)
+  assertDebuggerListener(chromiumPort, chromium)
   assert.equal(await cdp.evaluate('document.getElementById("t").value'), '')
 
   const deliver = async (label, child, matches, tags, text, receive) => {
@@ -159,7 +193,7 @@ try {
   }
   await deliver('foot', foot, client => client.class === 'foot', ['terminal*'], 'Sotto pasted into foot — café 🚀', () => readFileSync(footFile, 'utf8'))
   await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
-  await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', () => cdp.evaluate('document.getElementById("t").value'))
+  await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', readChromium)
   execFileSync('grim', [join(out, 'nested.png')], { env: nested, timeout: 5000 })
   console.log('screenshot:', join(out, 'nested.png'))
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
