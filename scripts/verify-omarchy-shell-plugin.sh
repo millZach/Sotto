@@ -1160,12 +1160,17 @@ uninstall() { # name [env assignment]
 }
 mkdir -m 700 "$work/no-shell"
 check '! uninstall uninstall-without-shell XDG_RUNTIME_DIR="$work/no-shell" && [[ -d $plugin_dir ]] && on_bar' "without a running shell --uninstall fails and removes nothing"
-# shell.json that cannot be read while the shell keeps its layout.
-config_mode=$(stat -c %a "$config")
-chmod 000 "$config"
-uninstall uninstall-unreadable && unreadable_status=0 || unreadable_status=$?
-chmod "$config_mode" "$config"
-check '((unreadable_status != 0)) && [[ -d $plugin_dir ]] && grep -q "^.*Could not read $config to see whether Sotto.s glyph is on the bar: .*Permission denied. Nothing was removed." "$work/uninstall-unreadable.out"' "with shell.json unreadable, --uninstall keeps the plugin folder and says why"
+# shell.json that cannot be read, in a copy of the home folder. The running
+# shell must never see its own shell.json unreadable: it then falls back to
+# Omarchy's defaults, which start every service turned off above, clipboard's
+# global pkill among them. The script reads the file before it asks the shell
+# anything, so the copy takes the same path.
+unreadable_home=$work/unreadable-home
+mkdir -p "$unreadable_home/.config"
+cp -a "$home/.config/omarchy" "$unreadable_home/.config/omarchy"
+chmod 000 "$unreadable_home/.config/omarchy/shell.json"
+uninstall uninstall-unreadable HOME="$unreadable_home" && unreadable_status=0 || unreadable_status=$?
+check '((unreadable_status != 0)) && [[ -d $unreadable_home/.config/omarchy/plugins/sotto.dictation ]] && grep -q "^.*Could not read $unreadable_home/.config/omarchy/shell.json to see whether Sotto.s glyph is on the bar: .*Permission denied. Nothing was removed." "$work/uninstall-unreadable.out"' "with shell.json unreadable, --uninstall keeps the plugin folder and says why"
 sleep 1
 check 'on_bar' "the glyph is still on the bar after that"
 check 'uninstall uninstall && [[ ! -e $plugin_dir ]] && ! on_bar && grep -q "glyph off the bar" "$work/uninstall.out"' "--uninstall takes the glyph off the bar, then removes the plugin folder"
