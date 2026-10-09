@@ -47,14 +47,14 @@ async function settle(page: Page): Promise<void> {
   await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
 }
 
-/** The mark's tile, sampled left of the bar where only the tile shows. */
+/** The mark's tile, sampled above the owl's ears (its head sits lower, at mid-height) where only the tile shows. */
 async function sampleTile(mark: Locator, name: string, expected: string): Promise<void> {
   const png = await mark.screenshot({ animations: 'disabled', path: resolve(evidenceRoot, `${name}.png`) })
   const image = sharp(png)
   const { width, height } = await image.metadata()
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true })
-  const x = Math.round(width! * 0.16)
-  const y = Math.round(height! * 0.5)
+  const x = Math.round(width! * 0.5)
+  const y = Math.round(height! * 0.09)
   const offset = (y * info.width + x) * info.channels
   const measured = `#${[0, 1, 2].map(index => data[offset + index]!.toString(16).padStart(2, '0')).join('')}`
   const want = parseThemeRgb(expected, BLACK)

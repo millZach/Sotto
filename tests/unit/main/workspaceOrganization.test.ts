@@ -10,6 +10,16 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { cleanup, fixture, local, send, deferred } from '../../fixtures/workspaceTestFixture'
 
 describe("durable project/thread organization", () => {
+  it('names a saved Claude Code model Claude Code after restart, though it was saved under the provider id', async () => {
+    const f = await fixture()
+    f.adapters.claude.state.models[0]!.provider = 'claude'
+    await f.host.connect(); await f.stop()
+    const reopened = await workspaceFixture(f.root); cleanup.push(reopened.stop)
+    const retained = await reopened.host.snapshot()
+    expect(retained.models.find(model => model.providerId === 'claude')).toMatchObject({ provider: 'Claude Code', ready: false })
+    expect(retained.models.filter(model => model.providerId !== 'claude').map(model => model.provider)).toEqual(['Fake', 'Fake'])
+  })
+
   it('opens a new thread in a settled project while its older threads stay settled across restart', async () => {
     const f = await fixture(); const { project } = await local(f)
     await local(f, 'already-settled')

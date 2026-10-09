@@ -1,4 +1,4 @@
-export type SottoPlatform = 'win32' | 'darwin'
+export type SottoPlatform = 'win32' | 'darwin' | 'linux'
 
 export const PLATFORM_ARGUMENT_PREFIX = '--sotto-platform='
 /** Present on the main window when the system can draw a frosted material behind it (ADR-0048). */
@@ -8,7 +8,7 @@ export const WINDOW_FROST_ARGUMENT = '--sotto-window-frost'
 // missing launch argument) degrades to the shipped Windows behavior instead of
 // leaving the platform undefined.
 export function resolvePlatform(raw: string): SottoPlatform {
-  return raw === 'darwin' ? 'darwin' : 'win32'
+  return raw === 'darwin' || raw === 'linux' ? raw : 'win32'
 }
 
 const DEFAULT_HOTKEYS: Readonly<Record<SottoPlatform, string>> = Object.freeze({
@@ -16,6 +16,7 @@ const DEFAULT_HOTKEYS: Readonly<Record<SottoPlatform, string>> = Object.freeze({
   // so darwin binds the literal Control key instead.
   win32: 'CommandOrControl+Shift+Space',
   darwin: 'Control+Shift+Space',
+  linux: 'CommandOrControl+Shift+Space',
 })
 
 export function defaultHotkey(platform: SottoPlatform): string {

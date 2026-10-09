@@ -1,7 +1,7 @@
 import React, { StrictMode } from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, vi } from 'vitest'
+import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { App } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
@@ -114,8 +114,18 @@ function renderApp(
 }
 
 async function reachMicrophoneStep(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
+  await waitFor(() => expect(screen.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible())
+  await user.click(screen.getByRole('button', { name: /get started/i }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: /choose how sotto looks/i })).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: /check your microphone/i })).toBeVisible())
+}
+
+/** Clicks whichever of Continue or Skip for now is offered until Finish setup is reached, without pressing it. */
+async function finishRemainingSteps(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  while (screen.queryByRole('button', { name: 'Finish setup' }) === null) {
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
+  }
 }
 
 async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -124,8 +134,17 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await waitFor(() => expect(screen.getByText(/microphone ready/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
   await waitFor(() => expect(screen.getByText(/connect your openrouter key/i)).toBeVisible())
-  await user.click(screen.getByRole('button', { name: /continue/i }))
+  await finishRemainingSteps(user)
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
+}
+
+function setupThreadsTourTests(): void {
+  // jsdom lays nothing out, and the tour passes over a part with no box, so every element reports one here.
+  let layout: { mockRestore: () => void } | undefined
+  beforeEach(() => {
+    layout = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 20, left: 20, width: 200, height: 40, right: 220, bottom: 60, x: 20, y: 20, toJSON: () => ({}) } as DOMRect)
+  })
+  afterEach(() => layout?.mockRestore())
 }
 
 afterEach(() => {
@@ -139,4 +158,4 @@ afterEach(() => {
   localStorage.clear()
 })
 
-export { OK, deferred, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, completeReadySetup }
+export { OK, deferred, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }

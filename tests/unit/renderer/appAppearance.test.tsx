@@ -18,7 +18,7 @@ describe('Sotto application onboarding integration', () => {
     })
     renderApp(bridge)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible())
     // The heading commits with the settings render; the preferences land in an
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))

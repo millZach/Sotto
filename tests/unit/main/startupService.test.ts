@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { StartupService, type LoginItemAdapter } from '../../../src/main/startup/startupService'
+import { LINUX_LOGIN_ITEMS, StartupService, type LoginItemAdapter } from '../../../src/main/startup/startupService'
 
 function loginItems(initial: { openAtLogin: boolean; status?: string }, onSet?: (openAtLogin: boolean) => { openAtLogin: boolean; status?: string }) {
   let current = initial
@@ -13,6 +13,13 @@ function loginItems(initial: { openAtLogin: boolean; status?: string }, onSet?: 
 }
 
 describe('StartupService', () => {
+  it('on Linux reads as off and turns nothing on, so a remembered or requested on never reaches Electron', () => {
+    const startup = new StartupService(LINUX_LOGIN_ITEMS)
+    expect(startup.get()).toEqual({ enabled: false })
+    expect(startup.set(true)).toEqual({ enabled: false })
+    expect(startup.set(false)).toEqual({ enabled: false })
+  })
+
   it('reads and writes the login item where the system reports no status', () => {
     const { adapter, calls } = loginItems({ openAtLogin: false })
     const startup = new StartupService(adapter)

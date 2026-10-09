@@ -33,6 +33,7 @@ describe('thread grouping and states from Sotto state', () => {
 
   it('keys the badge from the provider field, not the model display name, and falls back to a neutral badge', () => {
     expect(providerKey('Claude')).toBe('claude')
+    expect(providerKey('Claude Code')).toBe('claude')
     expect(providerKey('anthropic')).toBe('claude')
     expect(providerKey('Codex')).toBe('codex')
     expect(providerKey('OpenAI')).toBe('codex')

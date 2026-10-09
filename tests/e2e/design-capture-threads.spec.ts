@@ -83,7 +83,13 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, `threads-split-focus-820-${appearance}.png`, { theme: appearance, category: 'threads', state: 'split-focus-820' })
       await page.getByRole('button', { name: 'Tools', exact: true }).click()
       const tools = page.getByRole('complementary', { name: 'Tools', exact: true })
-      await expect(tools.getByText('The working folder is not available.', { exact: true })).toBeVisible()
+      // Files answers at most four requests at once and says it is busy past that, with Retry. Late in a full capture
+      // run on a loaded machine the earlier panes' reads can still be in flight, so a busy answer is retried once.
+      const unavailable = tools.getByText('The working folder is not available.', { exact: true })
+      const busy = tools.getByText('Files is busy.', { exact: true })
+      await expect(unavailable.or(busy)).toBeVisible()
+      if (await busy.isVisible()) await tools.getByRole('button', { name: 'Retry', exact: true }).click()
+      await expect(unavailable).toBeVisible()
       await capturePage(page, `threads-files-unavailable-${appearance}.png`, { theme: appearance, category: 'threads', state: 'files-unavailable' })
       await tools.getByRole('button', { name: 'Close tools panel' }).click()
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()

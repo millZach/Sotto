@@ -14,13 +14,15 @@ test.describe('authoritative design-review captures', () => {
   test('light room, accents, System and the minimum width', async () => {
     await withSotto({ onboardingComplete: false, appearance: 'light' }, async ({ page }) => {
       const onboarding = page.locator('.onboarding-shell')
+      const forward = page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
       await assertRenderedRoom(page, 'light')
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await page.getByRole('button', { name: 'Get started' }).click()
+      await forward.click()
       await page.getByRole('button', { name: /test microphone/i }).click()
       await expect(page.getByText(/microphone ready/i)).toBeVisible()
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await forward.click()
       await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-3-openrouter-light.png', { theme: 'light' })
+      await captureSection(page, onboarding, 'onboarding-step-4-openrouter-light.png', { theme: 'light' })
     })
 
     await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {

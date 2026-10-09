@@ -14,6 +14,22 @@ import { widgetPaletteFor } from '../../../../../src/shared/themeBranding'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
 describe('DictationController', () => {
+  it('pairs Linux push-to-talk without recording an unpaired stop or a repeated start', async () => {
+    const harness = createHarness({ platform: 'linux' })
+    await harness.controller.stop()
+    expect(harness.controller.getState().status).toBe('idle')
+    expect(harness.createRecorder).not.toHaveBeenCalled()
+    await harness.controller.start()
+    await harness.controller.start()
+    expect(harness.controller.getState().status).toBe('listening')
+    expect(harness.createRecorder).toHaveBeenCalledOnce()
+    expect(harness.recorder.start).toHaveBeenCalledOnce()
+    await harness.controller.stop()
+    await harness.controller.stop()
+    expect(harness.recorder.stop).toHaveBeenCalledOnce()
+    expect(harness.deliverOutput).toHaveBeenCalledOnce()
+  })
+
   it('fails closed when settings are unavailable', async () => {
     const harness = createHarness({
       getSettings: () => { throw new Error('private settings path') },

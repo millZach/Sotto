@@ -5,8 +5,21 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { UPDATE_CHECK_PRIVACY_NOTICE } from '../../../../../src/shared/contracts'
+import { platformCopy } from '../../../../../src/renderer/src/platformCopy'
 
 describe('SettingsView', () => {
+  it('disables Linux startup with the package explanation and never calls native startup or shows an error', async () => {
+    const props = baseProps({ platform: 'linux', onSetStartup: vi.fn(async () => { throw new Error('unsupported') }) })
+    render(<SettingsView {...props} />)
+    await selectCategory('Application')
+    const startup = screen.getByRole('switch', { name: platformCopy('linux').settingsLaunchAtStartupLabel })
+    expect(startup).toBeDisabled()
+    expect(screen.getByText('Starting at sign-in comes with the installed package.')).toBeVisible()
+    await userEvent.click(startup)
+    expect(props.onSetStartup).not.toHaveBeenCalled()
+    expect(screen.queryByText(platformCopy('linux').settingsStartupFailureNotice)).not.toBeInTheDocument()
+  })
+
   it('keeps update actions busy through category navigation until the pending check settles', async () => {
     const pending = deferred<null>()
     const check = vi.fn(() => pending.promise)

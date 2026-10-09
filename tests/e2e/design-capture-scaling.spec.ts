@@ -13,10 +13,12 @@ test.describe('authoritative design-review captures', () => {
   test('dense scaling matrix remains bounded', async () => {
     for (const scalePercent of scales) {
       await withSotto({ onboardingComplete: false, scalePercent }, async ({ page }) => {
-        await page.getByRole('button', { name: 'Continue' }).click()
+        const forward = page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
+        await page.getByRole('button', { name: 'Get started' }).click()
+        await forward.click()
         await page.getByRole('button', { name: /test microphone/i }).click()
         await expect(page.getByText(/microphone ready/i)).toBeVisible()
-        await page.getByRole('button', { name: 'Continue' }).click()
+        await forward.click()
         await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
         await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)
       })

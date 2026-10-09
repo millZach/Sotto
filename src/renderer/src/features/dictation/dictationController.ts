@@ -58,6 +58,7 @@ export interface DictationCuePlayer {
 export type DictationOutputResult =
   | 'pasted'
   | 'copied'
+  | 'clipboard-unavailable'
   | 'empty'
   | Readonly<{ ok: false; reason: 'unavailable' }>
 
@@ -149,6 +150,7 @@ const ERROR_MESSAGES = Object.freeze({
   ...TRANSCRIPTION_ERROR_DETAIL,
   OUTPUT_UNAVAILABLE: 'Output is unavailable.',
   OUTPUT_FAILED: 'The transcript could not be delivered.',
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it.',
   HISTORY_FAILED: 'The transcript was delivered but history could not be updated.',
   SETTINGS_UNAVAILABLE: 'Settings are unavailable.',
 } as const)
@@ -723,7 +725,7 @@ export class DictationController {
       modelPreset: 'mai',
     }
     let output: DictationOutputResult = 'empty'
-    let outputFailure: 'OUTPUT_FAILED' | 'OUTPUT_UNAVAILABLE' | undefined
+    let outputFailure: 'OUTPUT_FAILED' | 'OUTPUT_UNAVAILABLE' | 'DESKTOP_CLIPBOARD_UNAVAILABLE' | undefined
     try {
       output = await session.deliverOutput({
         text,
@@ -736,6 +738,7 @@ export class DictationController {
     if (!this.isCurrent(session)) return
     if (typeof output === 'object') outputFailure = 'OUTPUT_UNAVAILABLE'
     else if (output === 'empty') outputFailure = 'OUTPUT_FAILED'
+    else if (output === 'clipboard-unavailable') outputFailure = 'DESKTOP_CLIPBOARD_UNAVAILABLE'
     if (outputFailure) this.dependencies.retainOutput?.(entry)
 
     if (session.settings.historyEnabled) {
@@ -749,7 +752,7 @@ export class DictationController {
     }
 
     if (outputFailure) { this.fail(session, outputFailure); return }
-    if (typeof output === 'object' || output === 'empty') return
+    if (typeof output === 'object' || output === 'empty' || output === 'clipboard-unavailable') return
 
     this.dispatch(
       { type: 'TRANSCRIBED', sessionId: session.id, text, output },

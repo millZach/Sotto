@@ -2,7 +2,8 @@ import type { OutputOutcome } from '../../shared/contracts'
 import type { PasteInvocation } from './pasteCommand'
 
 export interface ClipboardAdapter {
-  writeText(text: string): void
+  writeText(text: string): void | Promise<void>
+  canPaste?(): boolean
 }
 
 export interface WidgetAdapter {
@@ -19,7 +20,9 @@ export interface OutputServiceDependencies {
   readonly widget: WidgetAdapter
   readonly delay: (milliseconds: number) => void | Promise<void>
   readonly process: PasteProcessAdapter
-  readonly buildPasteInvocation: () => PasteInvocation
+  readonly buildPasteInvocation: () => PasteInvocation | null
+  readonly keepWidgetVisibleDuringPaste?: boolean
+  readonly preparePasteText?: (text: string) => string
 }
 
 interface DeliveryOptions {
@@ -111,6 +114,9 @@ export class OutputService {
     text: string,
     options: DeliveryOptions,
   ): Promise<OutputOutcome> {
+    if (options.autoPaste && this.dependencies.preparePasteText) {
+      text = this.dependencies.preparePasteText(text)
+    }
     if (text.trim().length === 0) {
       return 'empty'
     }
@@ -126,13 +132,18 @@ export class OutputService {
     options: DeliveryOptions,
   ): Promise<OutputOutcome> {
     try {
-      this.dependencies.clipboard.writeText(text)
+      await this.dependencies.clipboard.writeText(text)
     } catch {
+      // Wayland availability still matters if Electron's own fallback also fails.
+      if (options.autoPaste && this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
       throw new OutputClipboardError()
     }
 
     if (!options.autoPaste) {
       return 'copied'
+    }
+    if (this.dependencies.clipboard.canPaste?.() === false) {
+      return 'clipboard-unavailable'
     }
 
     // Hide only for the paste keystroke so the previously focused app stays
@@ -140,10 +151,13 @@ export class OutputService {
     // it afterward — otherwise auto-paste permanently conceals the widget.
     let hidForPaste = false
     try {
-      await this.dependencies.widget.hideWidget()
-      hidForPaste = true
-      await this.dependencies.delay(options.pasteDelayMs)
       const invocation = this.dependencies.buildPasteInvocation()
+      if (invocation === null) return 'copied'
+      if (!this.dependencies.keepWidgetVisibleDuringPaste) {
+        await this.dependencies.widget.hideWidget()
+        hidForPaste = true
+      }
+      await this.dependencies.delay(options.pasteDelayMs)
       let pasted: boolean
       try {
         pasted = await this.dependencies.process.run(invocation)

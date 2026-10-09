@@ -2,9 +2,28 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { type DictationOutputResult } from '../../../../../src/renderer/src/features/dictation/dictationController'
 import type { TranscriptionProgress } from '../../../../../src/renderer/src/transcription/openRouterTranscriber'
+import { widgetSnapshotSchema } from '../../../../../src/shared/contracts'
 import { createHarness, deferred, recorderOptions, settings, snapshots } from '../../../../fixtures/renderer/dictationControllerHarness'
 
 describe('DictationController', () => {
+  it('keeps text and publishes clipboard unavailability without history or transcript on the widget', async () => {
+    const harness = createHarness({
+      platform: 'linux', currentSettings: settings({ historyEnabled: false }),
+      deliverOutput: async () => 'clipboard-unavailable' as const,
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    expect(harness.retainOutput).toHaveBeenCalledOnce()
+    expect(harness.retainOutput.mock.calls[0]![0].text).toBeTruthy()
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })
+    const widget = snapshots(harness).at(-1)!
+    expect(widget).toMatchObject({ status: 'error', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })
+    expect(widgetSnapshotSchema.safeParse(widget).success).toBe(true)
+    expect(widget).not.toHaveProperty('text')
+    expect(harness.addHistory).not.toHaveBeenCalled()
+    expect(harness.setTimer).not.toHaveBeenCalled()
+  })
+
   it('copies a successful result and records returned metadata', async () => {
     const harness = createHarness()
 

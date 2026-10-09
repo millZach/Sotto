@@ -32,11 +32,16 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
 export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactNode {
   const copy = platformCopy(platform)
   const mac = platform === 'darwin'
+  const linux = platform === 'linux'
   const modifier = mac ? '⌘' : 'Ctrl'
 
   const gettingStarted: Topic[] = [
-    { title: 'Start and stop', body: <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
-    { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
+    { title: 'Start and stop', body: linux
+      ? <p>Hold F9 to talk, or press Super+Ctrl+X to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget.</p>
+      : <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
+    linux
+      ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
+      : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
     { title: 'Transcription', body: <p>Microsoft MAI-Transcribe-2 transcribes your speech through OpenRouter. Add your OpenRouter API key in Settings and use Verify key to check the connection.</p> },
   ]
   const privacy: Topic[] = [
@@ -65,16 +70,16 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>Keyboard</h2></div>
             <dl className="help-keys">
-              <div><dt>Start or stop dictation</dt><dd><ShortcutKey accelerator={shortcut} platform={platform} /></dd></div>
-              <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>
+              {linux ? null : <div><dt>Start or stop dictation</dt><dd><ShortcutKey accelerator={shortcut} platform={platform} /></dd></div>}
+              {!linux && <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>}
               <div><dt>Search history</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
-              <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
+              <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{linux ? 'Super' : modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
           </section>
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>About</h2></div>
             <p className="help-about">
-              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : 'Windows'}. No account with Sotto and no telemetry.
+              {version === undefined ? 'Sotto' : `Sotto ${version}`}, {mac ? 'macOS' : linux ? 'Linux' : 'Windows'}. No account with Sotto and no telemetry.
               <br />
               Transcription uses your OpenRouter account.
             </p>

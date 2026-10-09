@@ -13,6 +13,23 @@ import { setupWidgetTests, snapshot, win32Copy } from '../../../fixtures/rendere
 setupWidgetTests()
 
 describe('WidgetApp', () => {
+  it('directs Linux clipboard failure to Dictate without suggesting the stale selection can be pasted', () => {
+    const { container } = render(<WidgetApp platform="linux" now={0}
+      snapshot={snapshot({ status: 'error', sessionId: 'fallback', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })} />)
+    expect(screen.getByText('Text kept in Sotto')).toBeVisible()
+    expect(screen.getByText('Text kept in Sotto')).toHaveAttribute('title', 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.')
+    expect(container).not.toHaveTextContent('Super+V')
+    expect(container).not.toHaveTextContent('Copied — paste manually')
+  })
+
+  it('names the Linux compositor binding instead of the saved global shortcut', () => {
+    const { container } = render(
+      <WidgetApp snapshot={snapshot({ status: 'idle', shortcut: 'Ctrl+Shift+Space' })} platform="linux" now={0} />,
+    )
+    expect(screen.getByText('F9 to talk')).toBeInTheDocument()
+    expect(container).not.toHaveTextContent('Ctrl+Shift+Space')
+  })
+
   it('says dictated audio went to OpenRouter only once transcription is underway, on both platforms', () => {
     // ADR-0006: the audio is uploaded to OpenRouter for transcription, and it is never written to disk. Before the
     // upload, a stop that fails or finds no speech sends nothing, so those stages only say the audio is not kept.

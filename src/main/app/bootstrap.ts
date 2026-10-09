@@ -310,10 +310,13 @@ export interface NativeRuntimeDependencies {
   readonly installProtocols?: () => () => void
   readonly registerIpc: () => () => void
   readonly publishIdleWidgetState?: (settings: AppSettings) => Promise<void>
+  readonly dictationCommands?: { start(): Promise<void>; dispose(): void }
   readonly log: (code: NativeRuntimeDiagnostic) => void
 }
 
 export type NativeRuntimeDiagnostic =
+  | 'native-dictation-command-start-failed'
+  | 'native-dictation-command-cleanup-failed'
   | 'native-hotkey-registration-failed'
   | 'native-main-show-failed'
   | 'native-window-begin-quit-failed'
@@ -404,6 +407,10 @@ export class NativeRuntimeController implements RuntimeController {
     this.protocolCleanup = null
 
     this.runTeardownStep(ipcCleanup, 'native-ipc-cleanup-failed')
+    this.runTeardownStep(
+      () => this.dependencies.dictationCommands?.dispose(),
+      'native-dictation-command-cleanup-failed',
+    )
     this.runTeardownStep(protocolCleanup, 'native-protocol-cleanup-failed')
     this.runTeardownStep(permissionCleanup, 'native-permission-cleanup-failed')
     this.runTeardownStep(
@@ -452,6 +459,12 @@ export class NativeRuntimeController implements RuntimeController {
     this.assertRunning()
     await this.dependencies.windows.createWindows()
     this.assertRunning()
+    if (this.dependencies.dictationCommands !== undefined) {
+      try { await this.dependencies.dictationCommands.start() } catch {
+        this.dependencies.log('native-dictation-command-start-failed')
+      }
+      this.assertRunning()
+    }
     if (!settings.startMinimized) {
       await this.dependencies.windows.showMain()
       this.assertRunning()

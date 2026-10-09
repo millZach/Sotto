@@ -11,6 +11,26 @@ import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 
 describe('SettingsView', () => {
+  it('turns letting agents babysit pull requests off beside the other agent switches, saying what each value does (ADR-0061)', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn(async () => true)
+    const view = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
+    await selectCategory('Application')
+
+    const toggle = screen.getByRole('switch', { name: 'Let agents babysit pull requests' })
+    expect(toggle).toBeChecked()
+    expect(toggle).toHaveAccessibleDescription('An agent can ask Sotto to babysit its pull request and stop checking GitHub itself. Sotto sends its thread a wake-up when the pull request needs it.')
+    // It sits with the switches that let agents act on their own, after the visuals one.
+    const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
+    expect(switches.indexOf('Let agents babysit pull requests')).toBe(switches.indexOf('Let agents draw visuals in threads') + 1)
+    await user.click(toggle)
+    expect(update).toHaveBeenCalledWith({ babysitPullRequests: false })
+
+    view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, babysitPullRequests: false } })} />)
+    expect(screen.getByRole('switch', { name: 'Let agents babysit pull requests' })).toHaveAccessibleDescription(
+      'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.')
+  })
+
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)

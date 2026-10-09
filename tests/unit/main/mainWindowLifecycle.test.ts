@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { APP_MAXIMIZED, APP_WINDOW_HIDDEN } from '../../../src/shared/channels'
+import { platformProfile } from '../../../src/main/platformProfile'
 import { createDeferred, createHarness } from '../../fixtures/windowManager'
 
 describe('WindowManager lifecycle', () => {
@@ -129,8 +130,8 @@ describe('WindowManager lifecycle', () => {
     expect(manager.sendToMain('dictation', { type: 'toggle' })).toBe(true)
   })
 
-  it('hides the main window on close until application quit begins', async () => {
-    const { manager, windows } = createHarness()
+  it.each(['win32', 'darwin', 'linux'] as const)('hides the %s main window on close until application quit begins', async (platform) => {
+    const { manager, windows } = createHarness({ platform, chrome: platformProfile(platform) })
     await manager.createMainWindow()
     const main = windows[0]!
 
@@ -138,6 +139,11 @@ describe('WindowManager lifecycle', () => {
 
     expect(ordinaryClose.preventDefault).toHaveBeenCalledOnce()
     expect(main.hide).toHaveBeenCalledOnce()
+    expect(main.destroy).not.toHaveBeenCalled()
+    expect(manager.sendToMain('still-running', null)).toBe(true)
+    await manager.showMain()
+    expect(windows).toHaveLength(1)
+    expect(main.show).toHaveBeenCalled()
 
     manager.beginQuit()
     const quittingClose = main.emit('close')

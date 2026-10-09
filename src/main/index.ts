@@ -87,6 +87,7 @@ import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
+import { DictationSocket } from './hotkeys/dictationSocket'
 import { isAuthorizedIpcSender, registerIpc } from './ipc/registerIpc'
 import { createMicrophoneAccessGate } from './media/microphoneAccess'
 import {
@@ -101,6 +102,8 @@ import {
   type AccessibilityTrustAdapter,
 } from './output/pasteAccessibility'
 import { createPasteCommands } from './output/pasteCommand'
+import { createHyprlandPasteAdapter, sanitizeLinuxPasteText } from './output/pasteCommand.linux'
+import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
 import { createSystemSettingsOpener } from './app/systemSettings'
@@ -117,7 +120,7 @@ import {
   type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
-import { StartupService } from './startup/startupService'
+import { LINUX_LOGIN_ITEMS, StartupService } from './startup/startupService'
 import {
   TrayController,
   type TrayAdapter,
@@ -150,6 +153,8 @@ import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
+import { configurePasswordStore } from './app/passwordStore'
+import linuxTrayIconPath from '../../build/icon.png?asset'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
@@ -212,6 +217,7 @@ import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { installRemoteHostE2E } from './e2e/remoteHost'
+import { installBabysitPassE2E } from './e2e/babysitPass'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -558,7 +564,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
     ? null
-    : join(__dirname, '../../build/icon.ico')
+    : join(__dirname, platform === 'linux' ? '../../build/icon.png' : '../../build/icon.ico')
   const recoveryNotices = new RecoveryNoticeCenter()
   const { settings: plainSettings, history } = createStorageRepositories(
     userDataPath,
@@ -586,10 +592,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
   const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
-  const startup = new StartupService(e2eConfiguration === null ? app : {
+  const startup = new StartupService(e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
-  })
+  } : platform === 'linux' ? LINUX_LOGIN_ITEMS : app)
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )
@@ -689,6 +695,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     claudeSettingsLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
+  // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
+  if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
   // The window's panes show their threads only while it has the focus (ADR-0046). The widget taking the focus is the
   // window losing it, as is another app, minimising or hiding to the tray.
   const windowFocusChanged = (): void => {
@@ -925,7 +933,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
     // Updates install only on Windows today, so the macOS app menu leaves the command out.
-    ...(platform === 'win32' ? { onCheckForUpdates: requestUpdateCheck } : {}),
+    ...(profile.inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
     onShowTurnRecords: showTurnRecords,
   })
   if (applicationMenuTemplate !== null) {
@@ -935,6 +943,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
   const runtimeSource = runtimeVerification === null ? null : await runtimeVerification
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
+  const linuxClipboard = e2eState === null && platform === 'linux'
+    ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
+    : null
   const pasteCommands = createPasteCommands(platform)
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
@@ -964,7 +975,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             }),
             log: logOperational,
           })
-        : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
+        : platform === 'linux'
+          ? createHyprlandPasteAdapter(undefined, undefined, undefined, () => linuxClipboard!.copyToPrimary())
+          : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === APP_NAME,
@@ -976,7 +989,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       ? { isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt) }
       : ALWAYS_TRUSTED_ACCESSIBILITY
   const output = new OutputService({
-    clipboard: e2eState === null ? clipboard : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
+    clipboard: e2eState === null
+      ? linuxClipboard ?? clipboard
+      : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
     widget: windows,
     delay: (milliseconds) =>
       new Promise((resolve) => {
@@ -988,6 +1003,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       onUntrusted: () => recoveryNotices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }),
     }),
     buildPasteInvocation: pasteCommands.oneShot,
+    keepWidgetVisibleDuringPaste: platform === 'linux',
+    ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
   })
 
   const copyOutput = async (text: string): Promise<void> => {
@@ -1039,7 +1056,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // macOS disk image ships no update metadata, and a development or E2E run
   // must never reach the network. Everywhere else the service resolves to the
   // 'unsupported' phase without constructing electron-updater at all.
-  const updatesSupported = app.isPackaged && e2eConfiguration === null && platform === 'win32'
+  const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
   const updates = new UpdateService({
     currentVersion: appVersion,
     getSettings: () => settings.get(),
@@ -1076,6 +1093,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     hotkeys.cancelListening()
     dispatchDictation({ type: 'cancel' })
     },
+    platform,
   )
 
   const nativeTray = e2eConfiguration === null
@@ -1084,9 +1102,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         executablePath: process.execPath,
         unpackagedIconPath,
         getFileIcon: (path, options) => app.getFileIcon(path, options),
-        resolveResourcePath: (relativePath) => join(resourceRoot, relativePath),
-        loadImageIcon: (path) => nativeImage.createFromPath(path),
-        markTemplate: (icon) => icon.setTemplateImage(true),
+        // The build emits this PNG under out/, which existing packaging includes on every platform.
+        // macOS keeps its existing resource path and automatic @2x template lookup.
+        resolveResourcePath: (relativePath) => platform === 'linux' ? linuxTrayIconPath : join(resourceRoot, relativePath),
+        loadImageIcon: (path) => {
+          const icon = nativeImage.createFromPath(path)
+          // Keep the colour app icon small enough for the tray, with pixels for a 2x bar.
+          return platform === 'linux' ? icon.resize({ width: 44, height: 44 }) : icon
+        },
+        markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
         configure: (tray) => tray.setToolTip(APP_NAME),
       })
@@ -1197,7 +1221,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           request: () => systemPreferences.askForMediaAccess('microphone'),
         })
       : null
+  let dictationSocket: DictationSocket | null = null
   return new NativeRuntimeController({
+    ...(platform === 'linux' ? { dictationCommands: {
+      async start(): Promise<void> {
+        dictationSocket = new DictationSocket(
+          e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
+          command => messageDelivery.sendToMain(DICTATION_COMMAND, { type: command }),
+        )
+        await dictationSocket.start()
+      },
+      dispose(): void { dictationSocket?.dispose() },
+    } } : {}),
     windows,
     hotkeys,
     tray,
@@ -1476,6 +1511,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
+configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
 if (process.platform === 'win32') {

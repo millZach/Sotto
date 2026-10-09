@@ -6,7 +6,7 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import type { BabysitNews } from './babysitNews'
-import { pullRequestKey } from './gitPullRequests'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 import { babysitNewsSchema, foldNews, WAKE_UP_NEWS_MAX } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */

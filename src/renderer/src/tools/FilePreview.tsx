@@ -16,6 +16,7 @@ export function trustedImageSource(content: FilePreviewValue['content']): string
 }
 
 export function revealLabel(platform: string | undefined): string {
+  if (platform === 'linux') return 'Show in file manager'
   return platform === 'darwin' ? 'Show in Finder' : 'Show in File Explorer'
 }
 

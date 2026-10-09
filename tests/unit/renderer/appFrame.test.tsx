@@ -26,7 +26,7 @@ describe('shared main-window frame', () => {
     {
       name: 'onboarding',
       createStateBridge: () => createBridge(),
-      stateText: /dictation, ready when you are/i,
+      stateText: /talk to your computer and your coding agents/i,
     },
   ])('renders exactly one strip and both window controls in the $name state', async ({
     createStateBridge,
