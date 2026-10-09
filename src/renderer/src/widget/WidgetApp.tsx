@@ -131,6 +131,10 @@ function errorCopyFor(
       title: 'Couldn’t copy text',
       detail: 'Try again from the Sotto app.',
     },
+    DESKTOP_CLIPBOARD_UNAVAILABLE: {
+      title: 'Text kept in Sotto',
+      detail: 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.',
+    },
     HISTORY_FAILED: {
       title: 'Saved to clipboard',
       detail: 'Local history was not updated.',
@@ -236,7 +240,7 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy 
       return {
         tone: 'success',
         title: snapshot.output === 'pasted' ? 'Pasted' : 'Copied — paste manually',
-        detail: snapshot.output === 'pasted' ? 'Text delivered' : 'Clipboard is ready',
+        detail: snapshot.output === 'pasted' ? 'Text delivered' : platform === 'linux' ? 'Super+V to paste in apps and terminals' : 'Clipboard is ready',
         icon: <Check aria-hidden="true" size={23} strokeWidth={2.4} />,
       }
     case 'cancelled':

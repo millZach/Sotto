@@ -196,6 +196,15 @@ describe('WidgetApp', () => {
     expect(container.innerHTML).not.toContain('0.25')
   })
 
+  it('directs Linux clipboard failure to Dictate without suggesting the stale selection can be pasted', () => {
+    const { container } = render(<WidgetApp platform="linux" now={0}
+      snapshot={snapshot({ status: 'error', sessionId: 'fallback', code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' })} />)
+    expect(screen.getByText('Text kept in Sotto')).toBeVisible()
+    expect(screen.getByText('Text kept in Sotto')).toHaveAttribute('title', 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.')
+    expect(container).not.toHaveTextContent('Super+V')
+    expect(container).not.toHaveTextContent('Copied — paste manually')
+  })
+
   it.each([
     ['preparing-audio', 'Preparing audio'],
     ['loading-model', 'Preparing transcription'],

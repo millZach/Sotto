@@ -4,3 +4,4 @@ artifacts/design/app-review/manifest.json text eol=lf
 
 # The executable launcher must retain its Unix shebang in Windows checkouts too.
 apps/omarchy/sotto text eol=lf
+
