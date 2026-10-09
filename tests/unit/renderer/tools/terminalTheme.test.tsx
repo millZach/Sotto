@@ -27,6 +27,7 @@ vi.mock('@xterm/xterm', () => ({
     attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void { this.key = handler }
     selectionChange: () => void = () => {}
     onSelectionChange(listener: () => void): { dispose(): void } { this.selectionChange = listener; return { dispose() {} } }
+    onResize(): { dispose(): void } { return { dispose() {} } }
     hasSelection(): boolean { return xterm.selection.length > 0 }
     getSelection(): string { return xterm.selection }
     getSelectionPosition() { return xterm.selection ? { start: { ...xterm.range.start }, end: { ...xterm.range.end } } : undefined }

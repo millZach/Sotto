@@ -21,6 +21,7 @@ vi.mock('@xterm/xterm', () => ({
     getSelection(): string { return this.selection }
     clearSelection(): void { this.selection = ''; this.cleared += 1 }
     onSelectionChange(): { dispose(): void } { return { dispose() {} } }
+    onResize(): { dispose(): void } { return { dispose() {} } }
     getSelectionPosition(): { start: { x: number; y: number }; end: { x: number; y: number } } | undefined {
       return this.selection ? { start: { x: 0, y: 0 }, end: { x: 13, y: 0 } } : undefined
     }

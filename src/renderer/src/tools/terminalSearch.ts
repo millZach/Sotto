@@ -1,4 +1,4 @@
-import type { Terminal } from '@xterm/xterm'
+import type { IMarker, Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 
 const HIGHLIGHT_LIMIT = 1_000
@@ -36,11 +36,27 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
+  let selected: { marker: IMarker; column: number; length: number; term: string } | undefined
+  const rememberSelection = (): void => {
+    const range = terminal.getSelectionPosition()
+    if (!range || terminal.getSelection() !== input.value) return
+    selected?.marker.dispose()
+    selected = { marker: terminal.registerMarker(range.start.y - terminal.buffer.active.baseY - terminal.buffer.active.cursorY), column: range.start.x,
+      length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value }
+  }
+  const restoreSelection = (): void => {
+    if (!selected || selected.marker.isDisposed || selected.term !== input.value || terminal.getSelectionPosition()) return
+    terminal.select(selected.column, selected.marker.line, selected.length)
+    // A width change or repaint can replace the cells; never preserve an unrelated selection.
+    if (terminal.getSelection() !== selected.term) terminal.clearSelection()
+  }
   const resultChanges = addon.onDidChangeResults(result => {
     const total = `${result.resultCount}${result.resultCount >= HIGHLIGHT_LIMIT ? '+' : ''}`
     count.textContent = !input.value ? '' : result.resultCount === 0 ? 'No matches' : result.resultIndex < 0 ? `${total} matches` : `${result.resultIndex + 1} of ${total}`
     previous.disabled = next.disabled = result.resultCount === 0
+    if (result.resultIndex >= 0) rememberSelection()
   })
+  const resizeChanges = terminal.onResize(restoreSelection)
   let paintedDecorations = ''
   const decorationColors = () => {
     const style = getComputedStyle(document.documentElement)
@@ -53,6 +69,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   }
   const find = (backwards = false, incremental = false): void => {
     if (!input.value) {
+      selected?.marker.dispose(); selected = undefined
       addon.clearDecorations()
       terminal.clearSelection()
       count.textContent = ''
@@ -62,10 +79,11 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     const decorations = decorationColors()
     paintedDecorations = JSON.stringify(decorations)
     const options = { incremental, decorations }
+    restoreSelection()
     if (backwards) addon.findPrevious(input.value, options)
     else addon.findNext(input.value, options)
   }
-  const hide = (): void => { bar.hidden = true; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
+  const hide = (): void => { bar.hidden = true; selected?.marker.dispose(); selected = undefined; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
   input.addEventListener('input', () => find(false, true))
   previous.addEventListener('click', () => find(true))
   next.addEventListener('click', () => find())
@@ -89,6 +107,6 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     refreshTheme(): void {
       if (!bar.hidden && paintedDecorations !== JSON.stringify(decorationColors())) { addon.clearDecorations(); find(false, true) }
     },
-    dispose(): void { resultChanges.dispose(); bar.remove() },
+    dispose(): void { resultChanges.dispose(); resizeChanges.dispose(); selected?.marker.dispose(); bar.remove() },
   }
 }

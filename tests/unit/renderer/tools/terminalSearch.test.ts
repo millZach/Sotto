@@ -13,7 +13,7 @@ afterEach(() => { document.body.replaceChildren(); document.documentElement.styl
 
 it('searches incrementally, shows results, navigates both ways and closes from any control with terminal focus restored', () => {
   const element = document.createElement('div'); document.body.append(element)
-  const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn() }
+  const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(), getSelectionPosition: () => undefined, onResize: () => ({ dispose() {} }) }
   const visibility = vi.fn()
   const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456', visibility)
   view.mount(); view.open()
@@ -70,7 +70,7 @@ it('searches incrementally, shows results, navigates both ways and closes from a
 
 it('repaints a changed Text role even when the terminal theme is unchanged, and ignores unrelated root mutations', () => {
   const element = document.createElement('div'); document.body.append(element)
-  const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn() }
+  const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(), getSelectionPosition: () => undefined, onResize: () => ({ dispose() {} }) }
   const view = terminalSearch(terminal as unknown as Terminal, element, css => css || null)
   view.mount(); view.open()
   const input = element.querySelector('input')!
