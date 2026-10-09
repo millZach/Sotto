@@ -27,6 +27,15 @@ export function localProjects(state: AgentState): readonly AgentProject[] {
   return local === undefined ? state.host.projects : state.host.projects.filter(project => projectOnHost(project, local))
 }
 
+/**
+ * What this computer's last Connect providers found installed, and the clients the user turned off here. Both are the
+ * selected host's, so they say nothing until this computer is the host selected for new work.
+ */
+export function localProviderChoices(state: AgentState): { readonly installed: readonly ProviderId[] | undefined; readonly off: readonly ProviderId[] } | null {
+  if (state.connections?.length && state.hostId !== localHostId(state)) return null
+  return { installed: state.installedProviders, off: state.configuration.disconnectedProviders ?? [] }
+}
+
 export function providerLabel(provider: ProviderId): string {
   return PROVIDER_LABELS[provider]
 }

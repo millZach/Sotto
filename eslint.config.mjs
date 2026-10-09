@@ -14,6 +14,7 @@ export default tseslint.config(
       'artifacts/visuals-live/**',
       'artifacts/babysitting-surfaces-run/**',
       'artifacts/remove-personal-chats/**',
+      'artifacts/first-run-setup-fit/**',
       'artifacts/disabled-coordinator-voice/**',
       'artifacts/show-thinking/**',
       'artifacts/hidden-player-typing/**',
