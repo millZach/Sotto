@@ -5,9 +5,10 @@ import assert from 'node:assert/strict'
 import console from 'node:console'
 import process from 'node:process'
 import { setTimeout, clearTimeout } from 'node:timers'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createOwnedProofProcesses } from './owned-proof-processes.mjs'
 
 const root = process.cwd()
 const scratch = join(root, '.cache/hyprland-paste-proof')
@@ -21,10 +22,15 @@ const env = { ...process.env, ...session, XDG_CONFIG_HOME: join(scratch, `profil
 await mkdir(env.XDG_CONFIG_HOME, { recursive: true })
 for (const key of Object.keys(env)) if (key.startsWith('SOTTO_E2E') || key === 'ELECTRON_RUN_AS_NODE') delete env[key]
 const clipboard = () => execFileSync('wl-paste', ['--no-newline'], { env, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
-const owners = () => new Set(execFileSync('pgrep', ['-x', 'wl-copy'], { encoding: 'utf8' }).trim().split('\n').map(Number))
-let existingOwners
-try { existingOwners = owners() } catch { existingOwners = new Set() }
-const writeClipboard = text => execFileSync('wl-copy', ['--type', 'text/plain;charset=utf-8'], { env, input: text, stdio: ['pipe', 'ignore', 'ignore'], timeout: 5000 })
+const owned = createOwnedProofProcesses(console.log)
+const writeClipboard = text => new Promise((resolve, reject) => {
+  const child = owned.start('wl-copy sentinel', 'wl-copy', ['--type', 'text/plain;charset=utf-8'], { env, stdio: ['pipe', 'ignore', 'ignore'] })
+  const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Clipboard deadline')) }, 5000)
+  child.once('error', error => { clearTimeout(timeout); reject(error) })
+  child.stdin.once('error', error => { clearTimeout(timeout); child.kill('SIGTERM'); reject(error) })
+  child.once('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error('Clipboard write failed')) })
+  child.stdin.end(text, 'utf8')
+})
 const locked = execFileSync('/usr/bin/hyprctl', ['locked', '-j'], { env, encoding: 'utf8' }).trim()
 assert.equal(JSON.parse(locked).locked, true, 'This proof is for the locked forge session')
 const stub = join(scratch, 'bin')
@@ -37,7 +43,7 @@ Object.assign(env, {
 })
 await writeFile(env.SOTTO_HYPRCTL_LOG, '')
 const bootLog = await open(join(scratch, 'electron-boot.log'), 'w')
-const child = spawn(join(root, 'node_modules/electron/dist/electron'), ['--inspect=9345', root], { env, stdio: ['ignore', bootLog.fd, bootLog.fd] })
+const child = owned.start('Electron and clipboard children', join(root, 'node_modules/electron/dist/electron'), ['--inspect=9345', root], { env, stdio: ['ignore', bootLog.fd, bootLog.fd] })
 let socket
 let id = 0
 const lines = []
@@ -83,7 +89,7 @@ try {
   await invoke('window.sotto.updateSettings({ autoPaste: true, showWidgetWhenIdle: false, localHostEnabled: false })')
   await evaluate("process.mainModule.require('electron').BrowserWindow.getAllWindows().forEach(w => w.hide())")
   report('session locked (read-only query)', JSON.parse(locked).locked)
-  writeClipboard('before-hyprland-paste-proof')
+  await writeClipboard('before-hyprland-paste-proof')
   report('wl-paste before', clipboard())
   const focused = await evaluate("Boolean(process.mainModule.require('electron').BrowserWindow.getFocusedWindow())")
   assert.equal(focused, false)
@@ -108,20 +114,8 @@ try {
   await writeFile(join(evidence, 'clipboard-proof.txt'), `${lines.join('\n')}\n`)
 } finally {
   socket?.close()
-  // Electron tears its own subprocesses down on SIGTERM. Stop only this owned main PID.
-  if (!childExited) child.kill('SIGTERM')
-  for (let tries = 0; tries < 30 && !childExited; tries++) await wait(100)
-  if (!childExited) child.kill('SIGKILL')
+  // Forked wl-copy owners inherit these dedicated groups even after reparenting.
+  await owned.stop()
   await bootLog.close()
-  console.log(`Stopped Electron PID ${child.pid}`)
-  // Windows does not restore the old selection, so Linux does not either. Retire
-  // the synthetic test selection by stopping its owned wl-copy process by PID.
-  let remaining
-  try { remaining = owners() } catch { remaining = new Set() }
-  for (const pid of remaining) {
-    if (!existingOwners.has(pid)) {
-      try { process.kill(pid, 'SIGTERM'); console.log(`Stopped wl-copy PID ${pid}`) } catch { /* Already retired. */ }
-    }
-  }
   await rm(env.XDG_CONFIG_HOME, { recursive: true, force: true })
 }
