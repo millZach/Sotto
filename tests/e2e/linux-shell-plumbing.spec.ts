@@ -72,6 +72,47 @@ test('keeps the Electron widget with the plugin installed when another listener 
   }
 })
 
+test('publishes the migrated legacy edge while the Electron widget is suppressed', async () => {
+  test.skip(process.platform !== 'linux', 'Omarchy shell plumbing')
+  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const home = join(profile, 'home')
+  const plugin = join(home, '.config/omarchy/plugins/sotto.dictation')
+  const statePath = join(profile, 'sotto/dictation-state.json')
+  let launched: LaunchedSotto | undefined
+  try {
+    await mkdir(plugin, { recursive: true })
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+    await writeFile(join(profile, 'widget-placement.json'), JSON.stringify({ version: 1, placement: { x: 0, y: 500 } }))
+    launched = await launchSotto('success', profile, {
+      createProfile: async () => { throw new Error('Use the owned profile') },
+      launch: options => electron.launch({ ...options, env: { ...options?.env, HOME: home } }),
+      firstWindow: firstSottoWindow,
+      removeProfile: path => rm(requireOwnedE2EProfile(path), { recursive: true, force: true }),
+    })
+    await openPage(launched.page, 'Dictate')
+    await expect.poll(async () => {
+      try { return JSON.parse(await readFile(statePath, 'utf8')) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+        throw error
+      }
+    }).toMatchObject({ state: 'idle', edge: 'left' })
+    await expect.poll(async () => JSON.parse(await readFile(join(profile, 'widget-placement.json'), 'utf8')))
+      .toEqual({ version: 3, placement: { edge: 'left' } })
+    const widgetVisible = () => launched!.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))?.isVisible() ?? false)
+    expect(await widgetVisible()).toBe(false)
+    console.log(`legacy point (0, 500), plugin present; built app PID ${launched.app.process().pid}: edge=left; Electron widget visible=false; placement migrated to v3`)
+    await rm(plugin, { recursive: true })
+    await expect.poll(widgetVisible).toBe(true)
+    expect(JSON.parse(await readFile(statePath, 'utf8')).edge).toBe('left')
+    console.log('legacy placement after plugin removal: edge=left; Electron widget visible=true')
+  } finally {
+    if (launched) await closeSotto(launched)
+    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+  }
+})
+
 test('publishes private shell state, retries and discards, remembers placement and steps aside for the plugin', async () => {
   test.skip(process.platform !== 'linux', 'Omarchy shell plumbing')
   test.setTimeout(90_000)

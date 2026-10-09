@@ -689,6 +689,13 @@ export class WindowManager {
     if (this.widgetVisible) await this.showWidget()
   }
 
+  getWidgetPlacement(): WidgetPlacement {
+    // Shell publication needs the same legacy-point migration even when the
+    // Electron widget is suppressed and never reaches showWidget().
+    this.loadWidgetPlacement()
+    return this.widgetPlacement
+  }
+
   async showWidget(): Promise<void> {
     this.widgetWanted = true
     if (this.widgetSuppressed) return

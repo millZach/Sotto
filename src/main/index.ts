@@ -1247,7 +1247,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         }
         return messageDelivery.sendToMain(DICTATION_COMMAND, { type: command === 'discard' ? 'dismiss' : command })
       },
-      () => widgetPlacement?.kind === 'edge' ? widgetPlacement.edge : 'top',
+      () => windows.getWidgetPlacement().edge,
       logOperational,
     )
   }
