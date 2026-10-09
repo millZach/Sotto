@@ -2,7 +2,7 @@ import type { IBuffer, IMarker, Terminal } from '@xterm/xterm'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 
 // The pinned web-links addon's URL boundaries, shared with its mouse provider (xterm.js authors, MIT).
-export const TERMINAL_URL_PATTERN = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\\^<>`]*[^\s"':,.!?{}|\\\^~\[\]`()<>]/u
+export const TERMINAL_URL_PATTERN = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/u
 export const isTerminalLink = (uri: string): boolean => /^https?:/iu.test(uri) && externalLinkSchema.safeParse(uri).success
 
 interface NamedLink { uri: string; buffer: IBuffer; marker: IMarker; prefix: string; label: string }
