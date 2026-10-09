@@ -98,11 +98,13 @@ In Terminal mode, **Close** releases the terminal's output and keeps its row on 
 
 In Terminal mode, the Terminal drawer and the Tools terminal, **Ctrl+F** (**Cmd+F** on a Mac) opens a search bar at the top right of the focused terminal. Type to highlight matches in its output; Enter and Shift+Enter move forward and back, and Escape or Close search returns focus to the shell. An empty field clears the highlights. A hidden terminal keeps its search for when it comes back. At 1,000 matches, the count shows **1000+**; next and previous still search beyond that count.
 
+Search sits above the output so it cannot cover a match. A short drawer grows while search is open and returns to its saved height on close. Pane navigation, pane zoom and History keep working from the search controls.
+
 **Ctrl+click** (**Cmd+click** on a Mac) opens an HTTP or HTTPS URL, including a named OSC 8 link, in your browser. From the keyboard, open search, Tab to **Open terminal link** and press Enter. Choose a link with Tab and Enter; its destination appears below its name. Escape closes the list and returns to its button. A click without the modifier keeps the link in the terminal. Other link schemes do not open.
 
 **Ctrl+=**, **Ctrl+-** and **Ctrl+0** (**Cmd** on a Mac) make terminal text larger, smaller and reset it to 13 pixels. The size, from 8 to 32 pixels, is shared by all terminals and remembered when Sotto restarts. Search and zoom leave a chord to dictation when it is your global dictation shortcut; other keys still go to the shell. Emoji and wide characters, such as Chinese or Japanese text, take two columns, so the text after them lines up.
 
-Pasting an image in any of these terminals saves a PNG under `.sotto/clipboard` in its working folder and types its path as a quoted, literal argument. Later keys and image pastes wait until it finishes. That folder excludes the images from Git. PNGs are limited to 10 MiB; if conversion or saving fails, Sotto stops queued input and asks you to check the command before trying again. Text pastes as text.
+Pasting an image in any of these terminals saves a PNG under `.sotto/clipboard` in its working folder and types its path as a quoted, literal argument. Later keys and image pastes wait until it finishes. That folder excludes the images from Git. PNGs are limited to 10 MiB; larger images ask for a smaller one. If conversion or saving fails, Sotto says whether later queued input was discarded and asks you to check the command before trying again. Text pastes as text.
 
 ### Sending, steering and screenshots
 

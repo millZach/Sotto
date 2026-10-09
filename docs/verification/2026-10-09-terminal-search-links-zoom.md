@@ -17,7 +17,7 @@ All captures below use reduced motion. Each search bar and its controls were che
 
 ## Captures
 
-The generated folder is ignored by lint and Git; only these 18 cited PNGs are retained in the commit. Paths are relative to `artifacts/terminal-search-links-zoom/`.
+The generated folder is ignored by lint and Git; only the 36 cited search and link-choice PNGs are retained in the commit. Paths are relative to `artifacts/terminal-search-links-zoom/`.
 
 | Surface | Size | Dark | Light |
 | --- | --- | --- | --- |
@@ -31,6 +31,18 @@ The generated folder is ignored by lint and Git; only these 18 cited PNGs are re
 | Tools | 1280×800 | `tools-search-1280x800-dark.png` | `tools-search-1280x800-light.png` |
 | Tools | 820×560 | `tools-search-820x560-dark.png` | `tools-search-820x560-light.png` |
 
+| Link choices | Size | Dark | Light |
+| --- | --- | --- | --- |
+| Terminal mode | 1600×1000 | `workspace-links-1600x1000-dark.png` | `workspace-links-1600x1000-light.png` |
+| Terminal mode | 1280×800 | `workspace-links-1280x800-dark.png` | `workspace-links-1280x800-light.png` |
+| Terminal mode | 820×560 | `workspace-links-820x560-dark.png` | `workspace-links-820x560-light.png` |
+| Terminal drawer | 1600×1000 | `drawer-links-1600x1000-dark.png` | `drawer-links-1600x1000-light.png` |
+| Terminal drawer | 1280×800 | `drawer-links-1280x800-dark.png` | `drawer-links-1280x800-light.png` |
+| Terminal drawer | 820×560 | `drawer-links-820x560-dark.png` | `drawer-links-820x560-light.png` |
+| Tools | 1600×1000 | `tools-links-1600x1000-dark.png` | `tools-links-1600x1000-light.png` |
+| Tools | 1280×800 | `tools-links-1280x800-dark.png` | `tools-links-1280x800-light.png` |
+| Tools | 820×560 | `tools-links-820x560-dark.png` | `tools-links-820x560-light.png` |
+
 ## Shortcut audit
 
 Searched renderer `keydown` listeners and their helpers before claiming `mod+f`, `mod+=`, `mod+-` and `mod+0`. Compared them with History's `mod+k`, the drawer's `mod+j`, Changes' `mod+d`/`mod+shift+d`, New thread's `mod+shift+n`, toolbar `mod+shift+g`/`mod+shift+x`/`mod+shift+l`, pane zoom's Ctrl+Shift+M, F6 navigation, terminal Ctrl+Tab/Shift+Tab, copy/paste and dialog Enter/Escape.
@@ -39,7 +51,7 @@ The default dictation chord is CmdOrCtrl+Shift+Space on Windows/Linux and Contro
 
 Electron's native View-menu zoom overlaps `mod+=`, `mod+-` and `mod+0`. The main window now yields precisely those menu shortcuts while a terminal or its search controls have focus, using `before-input-event` and `setIgnoreMenuShortcuts`. Edit-menu copy/paste and other native shortcuts remain active. The running-app check confirms terminal zoom does not zoom the page.
 
-## Gates and review
+## Builder gates and review
 
 | Gate | Result |
 | --- | --- |
@@ -68,3 +80,37 @@ Two independent read-only reviewers ran with Sol (`gpt-6.1-sol`) at max reasonin
 - P2: The addon's 1,000-match highlight limit was presented as an exact total. The limit is explicit and the count shows `1000+` whenever it is reached; unit cases and the 1,001-match PTY scenario cover it.
 
 The real-PTY specs are Windows acceptance checks. macOS and Omarchy were not run in this lane; platform modifier behavior is covered by unit tests. The app was built and launched locally, without packaging an installer, pushing a branch or opening a pull request. Existing terminal capture baselines were restored after their tests; no design baseline was intentionally changed.
+
+## Finishing review
+
+The finishing pass read the three supplied reports under `%TEMP%/terminal-run/881/`: `review-standards.out.md`, `review-spec.out.md` and `design.out.md`. Duplicate findings are grouped below.
+
+- **Image input order (both axes): fixed.** The paste event reserves the renderer's input lane before PNG conversion. Main queues staging and path insertion with writes, including ownership checks and restarted sessions. Deferred conversion/save tests hold later Enter and additional pastes; every real-PTY journey pastes and immediately presses Enter.
+- **Literal image paths (spec): fixed.** PowerShell and POSIX single-quote encodings preserve expansions, backticks and apostrophes. A real PowerShell round-trip verifies a path containing `$()`, a variable reference, backticks, ASCII and smart quotes.
+- **Existing shortcuts (both axes): fixed.** Search consumes only its handled keys. Every search control has event tests for F6, Shift+F6, Ctrl+Shift+M and Ctrl/Cmd+K. The real drawer journey checks Ctrl+J and opens History from search.
+- **Keyboard link activation (standards): fixed.** Tab from search to Open terminal link, then select a native button showing its label and destination. Plain URLs and named OSC 8 links use the same validated main bridge as clicks; unsafe destinations never appear. Escape restores focus. Real-PTY journeys check named and plain links from the keyboard.
+- **Overlay hides matches (design): fixed.** Search reserves a row above output. A drawer saved at its 120-pixel minimum temporarily grows to 184 pixels while searching, then restores its saved height. Link choices use the top layer, stay in the viewport and follow their trigger through window resizing. All three surfaces have bounds and highlight-alignment assertions at all capture sizes.
+- **Font finishes loading after terminal opens (design): fixed.** Both terminal renderers remeasure when the bundled font loads. Deferred font-loading unit tests cover the DOM and WebGL paths.
+- **Escape closes search before reaching the shell (design): retained.** Issue #881 explicitly requires Escape to close search and restore terminal focus; CONTEXT.md and ADR-0049 agree. With no link choices or search open, Escape still belongs to the shell. Changing this would contradict the agreed keyboard path.
+- **Highlight fills differ from the prototype (design): retained.** The approved bar's geometry and tokens remain. xterm's current-match selection and bright border distinguish it from other matches' rings, while the count also names the active match. The design report measured count contrast above 4.5:1 in both appearances and found the hierarchy clear. Keeping xterm's selection avoids a second text renderer; light/dark captures and real highlight/text alignment checks cover the result.
+- **macOS and Omarchy not run (design): limitation confirmed.** This pass proves the built Windows app with native ConPTYs. It does not claim a packaged-installer, macOS or Omarchy check.
+
+Two additional independent Sol reviews at max reasoning were kept separate as `finishing-standards.out.md` and `finishing-spec.out.md`. Every actionable finding was fixed: search now preserves its active match across case differences, ConPTY repaint and soft-wrap reflow; overwritten OSC 8 destinations are removed even when their label is unchanged; the shortest drawer remains searchable; oversized images name the 10 MiB limit before IPC validation; and paste failures disclose when later queued input was discarded. Real xterm-addon tests exercise repaint/reflow and link replacement. Store tests cover both failure messages.
+
+The extra prototype compared reserved output space, a floating bar that scrolls matches clear, and a full-width search strip. The reserved row and compact link choices were chosen as a reversible assumption after the clarification prompt received no answer. The temporary HTML and variant images stay outside the repository. The new keyboard path adds no chord. Privacy hosts and production dependencies are unchanged.
+
+During final Playwright verification, one bounds read returned the previous composited popover position (right edge 1,231) while the DOM already reported the correct position (right edge 771) in an 820-pixel window. The assertion waits for current painted bounds, without a sleep. A separate real-window journey resizes while link choices remain open; a unit case verifies following and cleanup.
+
+## Finishing gates and captures
+
+| Gate | Final result |
+| --- | --- |
+| `npm run typecheck` | Pass, exit 0; all three TypeScript projects checked |
+| `npm run lint` | Pass, exit 0; no lint errors |
+| `npm test -- --maxWorkers=2` | Pass, exit 0; 631 files passed, 51 skipped; 9,280 tests passed, 222 skipped (682 files and 9,502 tests total); 1,301.43 seconds |
+| `npm run notices:verify` | Pass, exit 0; 177 components verified |
+| `npm run build && npx playwright test` with the five specs named above | Pass, exit 0; build succeeded; 8 tests passed, 0 failed, 0 skipped, one worker (1.3 minutes) |
+
+The finishing pass ran `npm ci` first and ran the full suite once near the end, after the final source changes and app checks. The 36 cited screenshots were retaken by the passing Playwright run and inspected as paired light/dark contact sheets, including full-size minimum-window views. Search never covered output or its matches; focused link choices stayed inside the window. All captures have reduced motion enabled. Existing `review-384` and `terminal-display` images were restored after their specs. No design baseline changed.
+
+All required local gates passed. This evidence covers local build/app verification, not a packaged installer or GitHub CI.

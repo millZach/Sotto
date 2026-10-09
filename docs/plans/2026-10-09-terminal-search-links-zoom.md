@@ -26,9 +26,10 @@ The builder and design passes are committed. The finishing pass tracks the suppl
 
 - [x] Install this worktree's dependencies with `npm ci`.
 - [x] Keep image conversion, staging and insertion ordered with keys and later pastes, in renderer and main. Targeted tests: 4 files, 69 tests passed.
-- [ ] Quote image paths as literal shell arguments, including expansion characters and apostrophes.
-- [ ] Let app and pane shortcuts propagate from every search control.
-- [ ] Add keyboard activation for URLs and named OSC 8 links through the validated bridge.
-- [ ] Resolve the search overlay hiding matches in narrow panes; assess all remaining design notes with evidence.
-- [ ] Run the final gates, real-PTY journeys and visual inspection, then record the current evidence.
-- [ ] Push this branch and open the PR without merging.
+- [x] Quote image paths as literal shell arguments, including expansion characters and apostrophes; round-trip a sensitive folder name through real PowerShell.
+- [x] Let app and pane shortcuts propagate from every search control.
+- [x] Add keyboard activation for URLs and named OSC 8 links through the validated bridge; discard overwritten destinations.
+- [x] Reserve space for search, grow the shortest drawer temporarily, and use the top layer for link choices. Compared three temporary prototypes outside this branch; chose reserved space and a compact picker as a reversible assumption after the clarification prompt.
+- [x] Remeasure after font loading, preserve navigation across ConPTY repaint and soft-wrap reflow, and explain size failures and discarded input. Both finishing review axes' actionable findings are fixed.
+- [x] Run the final gates, real-PTY journeys and visual inspection, then record the current evidence. Full suite: 631 files and 9,280 tests passed; 51 files and 222 tests skipped. Five affected Playwright specs: 8 tests passed.
+- [x] Prepare the verified branch and PR body for the authorized push and pull request. Publishing follows the evidence commit; never merge.
