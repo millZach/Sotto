@@ -41,6 +41,17 @@ describe('release assets', () => {
     await expect(verifyTerminalAssets(options)).rejects.toThrow()
   })
 
+  it('verifies the Linux native build without requiring macOS spawn-helper or a prebuild', async () => {
+    const options = await fixture()
+    const directory = join(options.nodePtyRoot, 'build', 'Release')
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'pty.node'), 'native-pty')
+    const linux = { ...options, platform: 'linux' }
+    await expect(verifyTerminalAssets(linux)).resolves.toEqual({ version: '1.1.0', files: 1 })
+    await writeFile(join(directory, 'pty.node'), '')
+    await expect(verifyTerminalAssets(linux)).rejects.toThrow('Invalid terminal asset: pty.node')
+  })
+
   it('rejects an empty native binary', async () => {
     const options = await fixture()
     await writeFile(join(options.nodePtyRoot, 'prebuilds', 'win32-x64', 'pty.node'), '')

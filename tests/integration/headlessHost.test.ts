@@ -7,11 +7,12 @@ import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { publicProviderEntityId, type ProviderId } from '../../src/shared/agents'
-import { codexFixture } from '../fixtures/codexFixture'
+import type { AdapterFixture, AdapterSessionOptions, HostServiceFixture } from '../fixtures/adapterFixture'
 import { claudeFixture } from '../fixtures/claudeFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { codexFixture } from '../fixtures/codexFixture'
 import { devinFixture } from '../fixtures/devinFixture'
-import { describeHostServiceContract, type AdapterFixture, type AdapterSessionOptions, type HostServiceFixture } from './adapterContract'
+import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { describeHostServiceContract } from './hostServiceContract'
 
 /** Provider IDs remain inside the fixture driver; every tested client operation uses HostService. */
 async function hostFixture(provider: ProviderId, native: AdapterFixture): Promise<HostServiceFixture> {

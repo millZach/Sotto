@@ -85,7 +85,7 @@ keeping an ending put away in the window until a later ending of the same pull r
 that what Dismiss keeps is a digest naming no repository, number or thread, the newest 200;
 `threadSidebarStatus.test.tsx` the collapsed rail's title; `tests/unit/shared/gitPullRequests.test.ts` the one pull
 request key the host and the window share;
-`settingsView.test.tsx` the switch; and `workspaceBabysitting.test.ts` and `agentRuntimeBabysitting.test.ts` that why
+`tests/unit/renderer/features/settings/settingsNavigation.test.tsx` the switch; and `workspaceBabysitting.test.ts` and `agentRuntimeBabysitting.test.ts` that why
 babysitting ended is kept on the thread's record through a restart, and not for the user's own Stop.
 
 ## Not driven

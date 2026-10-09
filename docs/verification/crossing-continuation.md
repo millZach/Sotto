@@ -62,7 +62,7 @@ New regression tests in `agentSpeechControl.test.tsx` and `agent-attention.spec.
 
 Automatic spoken replies were switched off in the user's live profile while investigating. The user subsequently stopped Computer Use with Escape; no further desktop interactions were issued. The final renderer reload and refreshed visual baselines for this correction remain pending. The previous 83-tuple visual record predates the new speech controls and stopped-status correction.
 
-The final `vitest run --maxWorkers=2` completed with 2,009 tests passed, 8 skipped, and one failure in the unchanged `agentControlRecovery.test.ts` teardown: `ENOTEMPTY` while deleting its temporary fixture directory. All speech-control regression tests, including the stopped-status correction, passed. Final typecheck, lint, and build passed. No coordinator or recovery-test changes were made for this correction.
+The final `vitest run --maxWorkers=2` completed with 2,009 tests passed, 8 skipped, and one failure in the unchanged `agentControlRecovery.test.ts` (since split into `tests/unit/main/agentProviderConfigurationRecovery.test.ts`, `tests/unit/main/agentCompositionNavigation.test.ts`, `tests/unit/main/agentCoordinatorGate.test.ts`, `tests/unit/main/agentSupervisionRecovery.test.ts`, `tests/unit/main/agentQuestionDraftRecovery.test.ts`, `tests/unit/main/agentClarificationRecovery.test.ts`) teardown: `ENOTEMPTY` while deleting its temporary fixture directory. All speech-control regression tests, including the stopped-status correction, passed. Final typecheck, lint, and build passed. No coordinator or recovery-test changes were made for this correction.
 
 
 ## September 11 follow-up: reference corrections

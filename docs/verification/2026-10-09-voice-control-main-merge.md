@@ -1,5 +1,7 @@
 # Bring voice-control removal up to date with main
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 9, 2026. Local merge of `origin/main` at `9d6eff099a46a9d1dbd1a8570e90f385719b50cb` into `feat/remove-voice-control`, whose previous tip was `006442f7b0e14f7a6cfd244faccbda89c785f770`. No push or release.
 
 ## Acceptance checks

@@ -1,88 +1,17 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentHost, AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
+import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread, ProviderId } from '../../src/shared/agents'
-import type { ThreadEventKind } from '../../src/shared/threadEvents'
-import type { RecordedRpc } from '../fixtures/codexFixture'
-import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
+import type { AgentHostSnapshot, AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import { resolveModel } from '../../src/shared/modelCatalog'
-import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
-
-/** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
-export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }
-
-export interface AdapterFixture {
-  host: AgentHost; projectId: string; modelId: string; root: string
-  driver: {
-    typeInProvider(sessionId: string, text: string): Promise<void>
-    completeTurn(sessionId: string, text: string): Promise<void>
-    raiseQuestion(sessionId: string, text: string): Promise<void>
-    raisePermission(sessionId: string, text: string): Promise<void>
-    delayNextAck(method: string): Promise<void>
-    requests(): Promise<RecordedRpc[]>
-    restart(): Promise<AdapterFixture>
-    /**
-     * Where the provider reports agent work a turn left running: finish the turn so that a subagent it
-     * launched is still running afterwards, then report that subagent finished. Absent where it reports none.
-     */
-    backgroundWork?: {
-      completeLeaving(sessionId: string, text: string, description: string): Promise<void>
-      end(sessionId: string): Promise<void>
-    }
-  }
-  cleanup(): Promise<void>
-  /** Decode recorded native traffic; fixtures must also reject invalid native replies. */
-  protocol?: {
-    promptMethod: string
-    resumeMethod: string
-    permissionDecision(record: RecordedRpc): boolean | undefined
-  }
-  /** A process-owned turn may stop when its adapter process exits. */
-  restartStatus?: 'idle' | 'running'
-  /** Lazy provider sessions: what this provider saw start, and whether one thread's session has stopped. */
-  sessions?: {
-    starts(threadId: string): Promise<number>
-    stopped(threadId: string): Promise<boolean>
-  }
-  /** `sendStages`: the host writes no prompt to a client, so it has none to mark written and acknowledged (#763). */
-  skips?: Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages', string>>
-  /**
-   * Sotto's side writing on this provider's own client (ADR-0026): script the next answer, and read back
-   * what each side call was given. Absent where the provider writes nothing, whose adapter answers null.
-   */
-  sideWriting?: {
-    answer(text: string): Promise<void>
-    calls(): Promise<{ cwd: string; model: string | undefined; material: string }[]>
-  }
-  /**
-   * Where a provider applies thread settings to its running session in place (#317): script how it answers
-   * settings requests from now on (refuse them, lose the answer, or answer normally), and read what the running
-   * session would use for its next turn and which process that is. Absent where a provider does not.
-   */
-  liveSettings?: {
-    refuse(): Promise<void>
-    silence(): Promise<void>
-    answer(): Promise<void>
-    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string }>
-  }
-  /**
-   * What a thread settings change hands back (#318). `snapshot`: a change the provider confirmed comes back with
-   * the snapshot the adapter emitted for it; absent, a result may leave it out and the coordinator reads the
-   * thread instead. `loseConfirmation`: script the next settings change's confirmation away, where the fixture can.
-   */
-  settings?: { snapshot: boolean; loseConfirmation?(): Promise<void> }
-  /**
-   * Where the adapter is told its client was replaced on disk (ADR-0042, ADR-0038): which provider it is, and
-   * `install`, which puts a newer client where the adapter will find it and answers the version it reports.
-   * Absent where the client updates with another app, as Devin's does.
-   */
-  clientUpdate?: { provider: ProviderId; install(): Promise<string> }
-}
+import type { ThreadEventKind } from '../../src/shared/threadEvents'
+import type { AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
+import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
 export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>): void {
@@ -703,144 +632,6 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       if (!update || !f.host.clientUpdated) { context.skip(); return }
       await expect(f.host.clientUpdated(update.provider)).resolves.toBeUndefined()
       expect((await f.host.snapshot()).connected).toBe(false)
-    })
-  })
-}
-
-/** The same provider behavior at the client boundary. Unlike AgentHost, HostService owns message and
- * command IDs and creates a native session only on first send, so its contract uses returned IDs. */
-export interface HostServiceFixture {
-  client?: import('../../src/main/agents/hostService').ClientIdentity
-  service: import('../../src/main/agents/hostService').HostService
-  provider: import('../../src/shared/agents').ProviderId
-  root: string
-  modelId: string
-  driver: Omit<AdapterFixture['driver'], 'restart'> & { restart(): Promise<HostServiceFixture> }
-  sessions?: AdapterFixture['sessions']
-  nativeStarted(threadId: string): Promise<boolean>
-  protocol?: AdapterFixture['protocol']
-  skips?: AdapterFixture['skips']
-  cleanup(): Promise<void>
-}
-
-export function describeHostServiceContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<HostServiceFixture>): void {
-  describe(name + ' host service contract', () => {
-    let f: HostServiceFixture
-    let threadId: string
-    let projectId: string
-    const client = { clientId: 'desktop-window', user: 'host-contract', transport: 'ipc' } as const
-    const command = async (value: import('../../src/shared/agents').AgentCommand) => f.service.command(value, client)
-    const thread = (id = threadId) => f.service.state().host.threads.find(item => item.id === id)!
-    const send = (text = 'Synthetic prompt', id = threadId) => command({ type: 'manual-send', threadId: id, text })
-    const create = async (title: string): Promise<string> => {
-      const id = randomUUID()
-      const state = await command({ type: 'create-thread', threadId: id, projectId, title, modelId: f.modelId, workingCopy: 'shared' })
-      expect(state.error).toBeNull()
-      return id
-    }
-    const permissionDecision = (record: RecordedRpc): boolean | undefined => f.protocol
-      ? f.protocol.permissionDecision(record)
-      : record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
-    beforeEach(async () => {
-      f = await factory({ reaperSweepMs: 20, sessionIdleMs: 150 })
-      expect((await command({ type: 'connect', provider: f.provider })).error).toBeNull()
-      const state = await command({ type: 'create-project', provider: f.provider, title: 'Contract project', path: f.root, useExisting: true })
-      expect(state.error).toBeNull()
-      projectId = state.host.projects.find(project => project.path === f.root)!.id
-      threadId = await create('Contract thread')
-      await command({ type: 'observe-threads', threadIds: [threadId] })
-    })
-    afterEach(async () => { await f?.cleanup() })
-
-    it('creates and streams through Sotto identities and exposes the event history', async () => {
-      expect(await f.nativeStarted(threadId)).toBe(false)
-      expect((await send()).error).toBeNull()
-      expect(thread().status).toBe('running')
-      await f.driver.completeTurn(threadId, 'Completed reply')
-      await expect.poll(() => thread().status).toBe('idle')
-      await expect.poll(() => f.service.threadDetail(threadId)?.messages.some(message => message.text.includes('Completed reply'))).toBe(true)
-      expect(f.service.events(0, threadId).some(event => event.event.kind === 'message-added')).toBe(true)
-      expect(f.service.shell().host.threads.every(item => item.messages.length === 0)).toBe(true)
-    })
-
-    it('observes provider takeover without inventing a Sotto command for native user input', async () => {
-      await send()
-      await f.driver.typeInProvider(threadId, 'Typed in the provider')
-      await expect.poll(() => thread().messages.some(message => message.role === 'user' && message.text === 'Typed in the provider' && message.commandId === undefined)).toBe(true)
-    })
-
-    it('delivers a question answer', async () => {
-      await send(); await f.driver.raiseQuestion(threadId, 'Which color?')
-      await expect.poll(() => thread().requests.length).toBe(1)
-      const request = thread().requests[0]!
-      expect(request.kind).toBe('question')
-      expect((await command({ type: 'answer', threadId, requestId: request.id, answer: 'Blue' })).error).toBeNull()
-      await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('Blue')
-      expect(thread().requests).toEqual([])
-    })
-
-    it.each([true, false])('records an explicit permission answer (%s) with the client identity', async approved => {
-      await send(); await f.driver.raisePermission(threadId, 'Run build?')
-      await expect.poll(() => thread().requests.length).toBe(1)
-      const request = thread().requests[0]!
-      expect((await command({ type: 'answer', threadId, requestId: request.id, answer: '', approved })).error).toBeNull()
-      await expect.poll(async () => (await f.driver.requests()).some(record => permissionDecision(record) === approved)).toBe(true)
-      expect(f.service.events(0, threadId)).toContainEqual(expect.objectContaining({
-        event: expect.objectContaining({ kind: 'answer-given', approved, attribution: f.client ?? client }),
-      }))
-    })
-
-    it('cancels without approving a skipped permission', async () => {
-      await send(); await f.driver.raisePermission(threadId, 'Skipped permission')
-      await expect.poll(() => thread().requests.length).toBe(1)
-      await command({ type: 'interrupt', threadId })
-      await command({ type: 'disconnect', provider: f.provider })
-      expect((await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(false)
-    })
-
-    it('reconciles a lost prompt acknowledgement without resending', async context => {
-      if (f.skips?.uncertain) { context.skip(); return }
-      const method = f.protocol?.promptMethod ?? 'turn/start'
-      await f.driver.delayNextAck(method)
-      await send()
-      await expect.poll(() => thread().messages.filter(message => message.role === 'user' && message.text === 'Synthetic prompt').length).toBe(1)
-      expect((await f.driver.requests()).filter(record => record.method === method)).toHaveLength(1)
-    })
-
-    it('keeps the same thread and saved messages across host restart during a run', async context => {
-      if (f.skips?.restart) { context.skip(); return }
-      await send()
-      const before = thread().messages
-      const identity = f.service.state().hostId
-      f = await f.driver.restart()
-      await command({ type: 'observe-threads', threadIds: [threadId] })
-      await command({ type: 'connect', provider: f.provider })
-      await expect.poll(() => thread().messages).toEqual(before)
-      expect(f.service.state().hostId).toBe(identity)
-      expect(thread().id).toBe(threadId)
-    })
-
-    it('reaps an unwatched idle session beside a running one and resumes it on send with its history', async context => {
-      if (!f.sessions || f.skips?.lazy) { context.skip(); return }
-      await send()
-      await expect.poll(() => thread().status).toBe('running')
-      const runningStarts = await f.sessions.starts(threadId)
-      const quiet = await create('Quiet thread')
-      await send('Quiet prompt', quiet)
-      await f.driver.completeTurn(quiet, 'Quiet reply')
-      await expect.poll(() => thread(quiet).status).toBe('idle')
-      await command({ type: 'select-thread', threadId })
-      await command({ type: 'observe-threads', threadIds: [threadId] })
-      const starts = await f.sessions.starts(quiet)
-      await expect.poll(() => f.sessions!.stopped(quiet)).toBe(true)
-      expect(thread().status).toBe('running')
-      expect(await f.sessions.starts(threadId)).toBe(runningStarts)
-      expect(f.service.events(0, quiet).some(event => event.event.kind === 'message-added')).toBe(true)
-      expect((await send('After reaping', quiet)).error).toBeNull()
-      await expect.poll(() => f.sessions!.starts(quiet)).toBeGreaterThan(starts)
-      await command({ type: 'select-thread', threadId: quiet })
-      await command({ type: 'observe-threads', threadIds: [quiet] })
-      await expect.poll(() => f.service.threadDetail(quiet)?.messages.some(message => message.text === 'Quiet prompt')).toBe(true)
     })
   })
 }

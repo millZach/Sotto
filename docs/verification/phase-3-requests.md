@@ -2,6 +2,8 @@
 
 October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Worker: phase3-requests (Claude Opus 5), branch `work/phase3-requests` from `e34936f`. This covers only the shared request card (`src/renderer/src/agents/requests/*`), its unit tests and one complete-app Electron spec. Target: the Windows Electron desktop window, checked at 1280 × 860 and at the window minimum of 820 × 560, in dark and light.
 
 ## What changed
@@ -19,7 +21,7 @@ Worker: phase3-requests (Claude Opus 5), branch `work/phase3-requests` from `e34
 | `npm run typecheck` (node + web) | passed |
 | `npx eslint src/renderer/src/agents/requests tests/unit/renderer/requests tests/e2e/native-request-forms.spec.ts` | passed |
 | `npm run build` then `npx playwright test tests/e2e/native-request-forms.spec.ts --workers=1` | 2 passed, and passed again on three more consecutive runs |
-| Tests that render ThreadsView and the thread pane (8 files) | 119 passed, 3 failed. The 2 `threadsView.test.tsx` failures also fail on the baseline `e34936f` request card. The `threadQueueSkills` failure was a timing flake and passed 3 of 3 reruns. See Gaps. |
+| Tests that render ThreadsView and the thread pane (8 files) | 119 passed, 3 failed. The 2 `tests/unit/renderer/agents/threadsView.test.tsx` failures also fail on the baseline `e34936f` request card. The `threadQueueSkills` failure was a timing flake and passed 3 of 3 reruns. See Gaps. |
 
 The new unit tests were written first and failed against the old code: 7 failures (no `answerProgress` or `isRequired`, optional fields blocked sending, Allow shown for `[]`, the voice hint shown). The simultaneous-request tests passed on the baseline store and now guard against regressions.
 
@@ -61,5 +63,5 @@ Screenshots were inspected. They are untracked in this worktree at `artifacts/cr
 2. **Composer copy contradicts the no-choice case** (ThreadComposer, primary UI). When `permissionChoices` is `[]`, the placeholder and hint still say "Allow or deny the request above to continue." They also repeat each other.
 3. **Jump to latest covers content** (ThreadTranscript). When the reader scrolls up in a short window, the floating button can cover the request card's buttons or text (`permission-refused-820-light`, `docs-required-unavailable-820-*`). Keyboard focus is not affected, which the spec asserts.
 4. **Voice approval with an explicit empty list** (controller, and the hint condition in ThreadPane). `ThreadRequests` still passes the "Say allow or deny" hint for `[]`; the card now hides it. The spoken "allow"/"deny" path in `control.ts` still sends a legacy `approved` without a choice, so adapters must keep rejecting it. Codex does this for `item/permissions/requestApproval`. Not verified for Claude or Grok.
-5. **Stale ThreadsView tests** (`tests/unit/renderer/threadsView.test.tsx`, layout owner). "keeps permission decisions explicit…" expects Deny to send after Allow already succeeded, which conflicts with resolve-once. "writes an answer in the selected workspace…" changes only the queue item, not the request. Both fail on `e34936f` too.
+5. **Stale ThreadsView tests** (`tests/unit/renderer/agents/threadsView.test.tsx`, layout owner). "keeps permission decisions explicit…" expects Deny to send after Allow already succeeded, which conflicts with resolve-once. "writes an answer in the selected workspace…" changes only the queue item, not the request. Both fail on `e34936f` too.
 6. **Fixture coverage.** All E2E threads use the fixture Claude model. Codex (MCP form, empty permission profile), Claude (header/multiselect) and Grok (`allow_always`) request shapes go through the shared contract and card, but provider-specific mapping is covered only by the backend's own tests. No native clients were launched.

@@ -372,7 +372,7 @@ describe('the startup shell cache', () => {
     expect(restored.host.clientHosts!.find(entry => entry.hostId === 'remote-host')!.models).toEqual([remoteModel])
   })
 
-  it('keeps a remote thread\'s model in the host\'s own catalog, where the Agents room looks it up', () => {
+  it('keeps a remote thread\'s model in the host\'s own catalog, where the Threads room looks it up', () => {
     // Model IDs are not host-keyed, so the same model can sit in both catalogs.
     const shared = model('native:claude:model:sonnet')
     const live = fullState([

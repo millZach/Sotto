@@ -1,5 +1,7 @@
 # Phase 3 renderer and UI verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Owner: `work/phase3-ui` (Claude Opus 5 UI worker). Tickets #49 #50 #52 #56 #57 #59 #64 #65 #68. #54 layout is owned by the separate layout worker.
 
 Target: Windows Electron desktop, pointer and keyboard, at 1600 and 1280 wide, the 820 minimum and a short 820x560 window, light and dark, reduced motion.
@@ -102,7 +104,7 @@ The browser page is a main-owned `WebContentsView` layered over the window, and 
 ### Known gaps for integration
 
 - **Requests spec assertion.** `tests/e2e/native-request-forms.spec.ts:260` (requests worker) expects "Jump to latest" to be visible at scrollTop 0 in 820x560 with the approval card in view. 2e12d20 deliberately hides Jump while a request card reaches its bottom band, so that one assertion now fails. With only that line changed to `toHaveCount(0)`, the whole spec passes. I checked this with a throwaway copy that was not committed.
-- **Stale request tests.** `tests/unit/renderer/threadsView.test.tsx` has 2 stale request tests. They fail on the baseline too (see requests-result.md), and they still fail after merging main at 10439a8. This branch did not cause them.
+- **Stale request tests.** `tests/unit/renderer/agents/threadsView.test.tsx` has 2 stale request tests. They fail on the baseline too (see requests-result.md), and they still fail after merging main at 10439a8. This branch did not cause them.
 - **Provider name casing.** The backend's unsupported-reasoning reason names the provider by its lower-case id ("claude"), and Chats shows it verbatim.
 
 Resolved by main at 10439a8, rechecked after merge 0252b35:

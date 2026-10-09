@@ -119,7 +119,8 @@ import {
   type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
-import { LINUX_LOGIN_ITEMS, StartupService } from './startup/startupService'
+import { StartupService } from './startup/startupService'
+import { linuxAutostart, type LinuxAutostartEvent } from './startup/linuxAutostart'
 import {
   TrayController,
   type TrayAdapter,
@@ -234,6 +235,7 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey)
 
 type NativeDiagnostic =
+  | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
   | RendererDiagnostic
@@ -572,10 +574,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
   let workingCopySettings = startupSettings
   let e2eOpenAtLogin = false
-  const startup = new StartupService(e2eConfiguration !== null ? {
+  const startup = new StartupService(platform === 'linux' ? linuxAutostart({
+    isPackaged: app.isPackaged, executable: process.execPath, configHome: process.env.XDG_CONFIG_HOME, log: logOperational,
+  }) : e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
-  } : platform === 'linux' ? LINUX_LOGIN_ITEMS : app)
+  } : app)
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )

@@ -26,7 +26,7 @@ Implementation shapes the ADRs leave open, recorded here so the pull requests ag
 - The connect order lives in a small pure planner, `src/main/hosts/hostConnectionPlan.ts`, so its table can be unit-tested. `DesktopHosts.open()` follows it.
 - The failure classes are typed codes beside today's: `tailnet-unreachable`, `tailnet-wrong-host` and `tailnet-not-desktop` go to SSH; a 401 is today's `pairing-required`; `version_mismatch` is unchanged.
 - Drops and moves call the router's `setReconnecting` and then `replace`, generalising the path a host update's restart uses. `remove` is for Forget, switch-off and a final failure.
-- `tailnetConnections` is host-local but lives in `AppSettings` like `phoneAccess`, because the host's settings store validates against it. It is not on the desktop's settings allow-list in `registerIpc.ts`: nothing on a desktop sets it, and the host's administrative route writes it. `tests/integration/ipc.test.ts`'s every-field check leaves it out the way it leaves out `hotkey` and `launchAtStartup`, with a comment saying why.
+- `tailnetConnections` is host-local but lives in `AppSettings` like `phoneAccess`, because the host's settings store validates against it. It is not on the desktop's settings allow-list in `registerIpc.ts`: nothing on a desktop sets it, and the host's administrative route writes it. `tests/integration/settingsHistoryIpc.test.ts`'s every-field check leaves it out the way it leaves out `hotkey` and `launchAtStartup`, with a comment saying why.
 - The launch script's `boot-status` result is `{ supported, reason?, installed, enabled, active, linger, nodeDrift, fix? }`, where `fix` is the `sudo loginctl enable-linger <user>` line whenever linger is off. A launch reports the same shape.
 - The launch script's `revoke-client` stays the only revoke. `DesktopHosts.press()` runs it, keyed by the saved host rather than the live connect so that Forget of a switched-off host has one, and Forget calls it through `press()` whichever connection carries the socket (ADR-0053, October 5 amendment); the socket gains no revoke command.
 
@@ -100,7 +100,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
 2. **Let a host's tailnet listener carry desktops**
    - Branch: `feat/host-tailnet-listener`.
    - Files:
-     - `src/shared/settings.ts`: `tailnetConnections` (type, schema, default `false`), and `tests/integration/ipc.test.ts`'s every-field check leaving it out, as section 1 says;
+     - `src/shared/settings.ts`: `tailnetConnections` (type, schema, default `false`), and `tests/integration/settingsHistoryIpc.test.ts`'s every-field check leaving it out, as section 1 says;
      - `src/shared/hostProtocol.ts`: optional `tailnetAddress`, `startedBy` and `phoneAccess` on `hostHelloSchema`, optional `tailnetAddress` and `startedBy` on `hostHealthSchema`, since both are plain `z.object` and would strip unknown keys;
      - `src/host/index.ts` and `src/host/phones.ts`: the setting, the `/v1/admin/tailnet` route, the descriptor's `tailnetAddress` and `startedBy`, turning the setting off when the last desktop is revoked;
      - `src/main/phones/phoneAccess.ts`: Serve on while either setting is on; refuse `/v1/pair` while phones are off; refuse a session to any client not in `desktop-clients.json` while phones are off;
@@ -122,7 +122,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
      - drops use `setReconnecting` then `replace`;
      - `SocketHostService` gates on hello's features, and `pair()` refuses any address that is not loopback.
    - Tests:
-     - `desktopHosts.test.ts`: threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it;
+     - `tests/integration/desktopHosts.test.ts`, `tests/integration/desktopHostAdmin.test.ts`: threads survive a drop; a final failure removes them; an admin press on a host on its SSH connection opens no second ssh; on a tailnet connection it opens one and reuses it;
      - Forget: on a host on its SSH connection, `revoke-client` runs over that connection with no second ssh; on a host whose socket is not on SSH, it opens an admin connection and runs `revoke-client` there; in both, the recorded operations show the revoke before `stop`; with `press()` failing to connect, or reaching a stopped host so `revoke-client` returns `failed`, the host is removed, its credential cleared and the result says not revoked; `revoked: false` counts as revoked; the revoke's drop of the socket does not reconnect or pair again;
      - the `hostPhones` and `hostUpdates` unit tests.
 4. **Connect to a host over its tailnet before SSH**
@@ -137,7 +137,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
    - Docs: the README lines in section 3, the guide's approval and privacy lines, and anything in ADR-0053 the build changed.
 5. **Show how each host is connected in Settings > Hosts**
    - Branch: `feat/host-connection-ui`.
-   - Row copy, Edit connection's choice with its Serve sentence, Add host's step and its Serve sentence, the Phones dialog's approval and not-yet-read states, and the PR 5 states in section 4. Update every exact string in `hostsSettings.test.tsx` and the hosts, host-setup, host-agent-setup and host-provider specs.
+   - Row copy, Edit connection's choice with its Serve sentence, Add host's step and its Serve sentence, the Phones dialog's approval and not-yet-read states, and the PR 5 states in section 4. Update every exact string in `tests/unit/renderer/features/settings/hostRows.test.tsx`, `tests/unit/renderer/features/settings/hostConnectionDialogs.test.tsx`, `tests/unit/renderer/features/settings/addHost.test.tsx`, `tests/unit/renderer/features/settings/hostQuestions.test.tsx` and the hosts, host-setup, host-agent-setup and host-provider specs.
    - Docs: the guide's Hosts row and Edit connection. A verification note with captures in `artifacts/host-tailnet-connection/`.
 6. **Let a Linux host start at boot**
    - Branch: `feat/host-boot-start`.

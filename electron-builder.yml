@@ -110,3 +110,13 @@ mac:
 dmg:
   artifactName: '${productName}-${version}-${arch}.${ext}'
   title: '${productName} ${version}'
+
+linux:
+  executableName: sotto
+  icon: build/icon.png
+  category: Utility
+  target:
+    - target: tar.gz
+      arch:
+        - x64
+  artifactName: '${productName}-${version}-linux-${arch}.${ext}'

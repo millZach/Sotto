@@ -1,5 +1,7 @@
 # The Git interface, end to end (#272)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Proved in the built app on September 24, 2026, on Windows 11, from `main` at `e4d09733` with this branch's documentation on top (`npm run build`, then Playwright). It covers the whole Git interface #127 asked for, as ADR-0027 and its amendments record it: the branch toolbar and branch picker, the Git action with its commit dialog, default-branch question and notice, Changes and its scopes, review comments, the pull request checklist and Settings → Git.
 
 Git, every repository and its owned bare remote are real. GitHub is the scripted `gh` in `tests/fixtures/fakeGh.mjs`, reached through the host's test seam (`SOTTO_E2E_GH_SCRIPT`, development builds only), and the threads run on the fake providers in `tests/fixtures/`. No live GitHub or provider was contacted.
@@ -62,5 +64,5 @@ The context and cost figures that sat under the composer are gone on Threads and
 ## What this run does not prove
 
 - **Live GitHub.** Every `gh` answer came from the fixture. The `gh` commands' shapes are checked in the unit and integration tests (`tests/unit/main/gitActions.test.ts`, `gitPullRequests.test.ts`), not against github.com.
-- **A paired host.** The branch toolbar, the Git action and the pull request run on the thread's host through the same commands. The socket operations and the remote command list they use are covered by `tests/integration/socketHost.test.ts` and `tests/unit/main/socketHostService.test.ts`, not by this run. Changes for a remote thread says it is on the host machine.
+- **A paired host.** The branch toolbar, the Git action and the pull request run on the thread's host through the same commands. The socket operations and the remote command list they use are covered by `tests/integration/socketClientIsolation.test.ts` and `tests/integration/socketHostCompatibility.test.ts`, not by this run. Changes for a remote thread says it is on the host machine.
 - **macOS.** This run was on Windows only.

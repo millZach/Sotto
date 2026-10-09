@@ -1,5 +1,7 @@
 # Phone access: Settings > Phones in the built app
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 September 26, 2026, on the Windows 11 development machine, branch `feat/phone-access`. The page follows variant C, "Guided setup", of `docs/prototypes/phone-access-prototype.html` (ADR-0033).
 
 ## The running app
@@ -33,5 +35,5 @@ The parsers were run once against the real CLI on this machine, through the same
 - `tests/unit/main/tailscale.test.ts`: status and Serve status parsing, who holds 8443 (free, Sotto's, anyone else's, Funnel), finding the CLI, the exact `serve` and `off` arguments, and stopping at the consent page.
 - `tests/unit/main/phoneAccess.test.ts`: on, off, quit, a failed step changing nothing, another app's setting left alone before and after, a crash's leftover removed at the next start, the remembered port and its fallback, paired phones that cannot be read keeping the listener shut, a failed start removing a crash's leftover setting, the local host off, the name, and one code at a time.
 - `tests/integration/phoneAccess.test.ts`: the real socket server over a real host service: health's name, no admin routes, pairing with a shown code, cancelled and replaced codes refused, Can answer writing and revoking the policy record, Remove closing the phone's connection, and off closing every socket.
-- `tests/unit/main/phonesIpc.test.ts`, `tests/unit/main/policyStore.test.ts`, `tests/integration/ipc.test.ts`, `tests/unit/shared/settings.test.ts`: the main-window-only channels, the shared remote-answer switch, and both new settings on the allow-list.
+- `tests/unit/main/phonesIpc.test.ts`, `tests/unit/main/policyStore.test.ts`, `tests/integration/ipcAuthorization.test.ts`, `tests/integration/settingsHistoryIpc.test.ts`, `tests/unit/shared/settings.test.ts`: the main-window-only channels, the shared remote-answer switch, and both new settings on the allow-list.
 - `tests/unit/renderer/phonesSettings.test.tsx`: the page in each state, the code's focus and Escape, the announcement when a phone pairs, Can answer, Remove asking first, Go to Hosts, and the name field.

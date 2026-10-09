@@ -29,7 +29,7 @@ async function withProfile(
 ): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-appearance-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
-  // The Agents room is hidden for the beta, so the evidence that records it asks for the coordinator by name.
+  // Threads captures start with the fixture host connected.
   if (options.threads === true) {
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
       configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },

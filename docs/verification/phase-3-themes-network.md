@@ -1,5 +1,7 @@
 # Phase 3 Open VSX corrections
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Scope: corrections to isolated snapshot `b8c4a54` on `work/phase3-theme-network-fixes`. Root must apply the correction patch after the theme module commit; do not integrate the snapshot wholesale. No UI, settings, dependencies, external settings, model calls, push, or subagents.
 
 ## Acceptance checklist
@@ -34,10 +36,10 @@ Both `tsconfig.node.json` and `tsconfig.web.json` typechecks passed on this snap
 Final focused run: **66/66 passed**, including additional streamed-manifest cancellation, invalid/untrusted advertised manifests, missing checksum, exactly 40 successful contributions and invalid comma syntax. `git diff --check` passed. Commands from this worktree:
 
 ```powershell
-node node_modules/vitest/vitest.mjs run tests/unit/shared/themeOpenVsxCorrections.test.ts --reporter=default --reporter=json --outputFile.json=../phase3-orchestration/themes-network-fixed-tests.json
+node node_modules/vitest/vitest.mjs run tests/unit/main/themes/openVsxCorrections.test.ts tests/unit/shared/themes/vscodeImportCorrections.test.ts --reporter=default --reporter=json --outputFile.json=../phase3-orchestration/themes-network-fixed-tests.json
 node node_modules/typescript/bin/tsc --noEmit -p tsconfig.node.json
 node node_modules/typescript/bin/tsc --noEmit -p tsconfig.web.json
-node node_modules/eslint/bin/eslint.js src/main/themes/openVsx.ts src/main/themes/openVsxFixture.ts src/shared/themes/vscodeImport.ts tests/unit/shared/themeOpenVsxCorrections.test.ts
+node node_modules/eslint/bin/eslint.js src/main/themes/openVsx.ts src/main/themes/openVsxFixture.ts src/shared/themes/vscodeImport.ts tests/unit/main/themes/openVsxCorrections.test.ts tests/unit/shared/themes/vscodeImportCorrections.test.ts
 git diff --check
 ```
 

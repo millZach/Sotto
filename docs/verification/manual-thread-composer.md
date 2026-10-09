@@ -2,6 +2,8 @@
 
 October 9, 2026: Voice control and thread management described below are historical under [ADR-0065](../adr/0065-remove-voice-control-and-thread-management.md); the original plan or evidence is retained.
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 The reported screenshot replaced the composer with “Your saved draft belongs to test.”
 `ThreadsView` checked for a foreign coordinator draft before choosing the managed or
 manual composer. `AgentControl.sendManual` also rejected any send while another
@@ -19,7 +21,7 @@ Acceptance checks:
 - [x] Pending permissions still require an explicit answer.
 - [x] Inspect the built Electron workflow and screenshot.
 
-Red reproduction: `npx vitest run tests/unit/renderer/threadsView.test.tsx tests/unit/main/threadNavigationDelivery.test.ts -t 'unmanaged composer|manual prompt on B'`
+Red reproduction: `npx vitest run tests/unit/renderer/agents/threadsView.test.tsx tests/unit/main/threadNavigationDelivery.test.ts -t 'unmanaged composer|manual prompt on B'`
 failed with a missing Prompt textbox and “Send or clear the existing draft before
 prompting another thread.” Both pass after the fix.
 

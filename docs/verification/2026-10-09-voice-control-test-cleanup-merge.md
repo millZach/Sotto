@@ -1,5 +1,7 @@
 # Merge the test suite cleanup into voice removal
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 9, 2026, Windows 11. Merged main at `0c34255c6eadb03a52e01fbf908aca6f5da8e51a` (PR #866) into `feat/remove-voice-control` (PR #880). The merge commit is `9e2871566`; `2fc59dcd0` corrects moved-suite citations found by both independent review axes. Production source and the lockfile are unchanged by this merge. Runtime dependencies remain exactly `node-pty` and `zod`; no reinstall was needed.
 
 ## Conflict resolutions
@@ -29,8 +31,8 @@ October 9, 2026, Windows 11. Merged main at `0c34255c6eadb03a52e01fbf908aca6f5da
 | `tests/fixtures/phaseTwoReview/main.tsx` | Keep #866's deletion; no surviving imports. |
 | `tests/unit/renderer/hostIdentity.test.tsx` | Keep removal assertions and import the relocated renderer fixture. |
 | `tests/unit/renderer/threadHandoffFocus.test.tsx` | Keep deleted. |
-| `tests/unit/renderer/threadsView.test.tsx` | Keep removal cases and import the relocated renderer fixture. |
-| `tests/unit/renderer/widgetApp.test.tsx` | Keep dictation-only cases; discard imports used only by deleted agent-widget tests. |
+| `tests/unit/renderer/agents/threadsView.test.tsx` | Keep removal cases and import the relocated renderer fixture. |
+| `tests/unit/renderer/widget/widgetAppearance.test.tsx`, `widgetDictation.test.tsx`, `widgetEntry.test.tsx`, `widgetInteraction.test.tsx` and `widgetPreview.test.tsx` | Keep dictation-only cases; discard imports used only by deleted agent-widget tests. |
 
 The renamed copy of the deleted disabled-coordinator remote spec stays deleted; its surviving manual replacement is `tests/e2e/remote-thread-opening.spec.ts`. No active test imports the deleted voice journey or phaseTwoReview harness. The removal plan and earlier verification note now use the moved test locations.
 
@@ -67,7 +69,7 @@ No failure was waived as pre-existing. All final gates above are green.
 
 - The first typecheck found a duplicate evidenceDirectory import in settings-index from conflict resolution. Removed the duplicate; subsequent typechecks and lint pass. This was a resolution error, not a baseline claim.
 - The first complete two-worker run passed 8,619 tests, skipped 222 and failed `threadTitles.test.ts:334`, the older-thread case: expected Workshop, received The palette is unreadable in dark mode. The isolated branch file passed all 18 cases. Clean main at the merged commit passed the file thirteen times and passed the single older-thread case (17 other cases skipped). The original failure was not reproduced on main, so it is not declared pre-existing. The final complete branch run passes all title cases.
-- A second full branch run hit the default 15-second deadline in recursive initialized-submodule reclaim, dirty-hidden initialized-submodule reclaim, and bare-repository-under-dependencies cases in `threadWorktrees.test.ts`. That red run was stopped before its final aggregate summary to shorten diagnosis. Another clean main checkout passed all 92 cases in the complete threadWorktrees and gitStatus files at the same two-worker cap. The same failures were not reproduced on main. Commit `515405a5d` gives initialized-submodule and bare-repository fixtures the existing 60-second allowance of their neighboring nested-repository cases. Assertions, test inputs and worker count are unchanged; the final full gate passes.
+- A second full branch run hit the default 15-second deadline in recursive initialized-submodule reclaim, dirty-hidden initialized-submodule reclaim, and bare-repository-under-dependencies cases in `tests/integration/threadWorktreeSubmodules.test.ts` and `threadWorktreeReclaim.test.ts`. That red run was stopped before its final aggregate summary to shorten diagnosis. Another clean main checkout passed all 92 cases in the complete threadWorktrees and gitStatus files at the same two-worker cap. The same failures were not reproduced on main. Commit `515405a5d` gives initialized-submodule and bare-repository fixtures the existing 60-second allowance of their neighboring nested-repository cases. Assertions, test inputs and worker count are unchanged; the final full gate passes.
 
 Both main comparisons used clean detached checkouts at `0c34255c6eadb03a52e01fbf908aca6f5da8e51a` under `D:/Talk to Text Application/.worktrees/voice-cleanup-main-proof`, created with `git worktree add --detach`. Git status was clean before the probes. There was no node_modules link; Vitest used the main checkout's binary:
 
@@ -78,6 +80,8 @@ Both main comparisons used clean detached checkouts at `0c34255c6eadb03a52e01fbf
 ```
 
 Each proof checkout was removed with `git worktree remove` after the comparison. No other branch or worktree was changed.
+
+Current equivalents of the historical thread-worktree probe are `tests/integration/threadWorktreeAllocation.test.ts`, `threadWorktreeGitTimeout.test.ts`, `threadWorktreeIdentity.test.ts`, `threadWorktreeReclaim.test.ts`, `threadWorktreeRecovery.test.ts`, `threadWorktreeSubmodules.test.ts` and `tests/unit/main/gitStatus.test.ts` / `gitStatusGitHub.test.ts`. The command block above records the original run verbatim.
 
 ## Rendered checks
 
