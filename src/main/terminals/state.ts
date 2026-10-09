@@ -34,6 +34,8 @@ export class TerminalAgentStateMachine {
   private hooksKnown = false
   private pendingSubmission = false
   private awaitingSubmissionHook = false
+  /** A Stop can precede the submitted helper; only a matching hook may admit its candidate. */
+  private readonly deferredCompletions = new Map<string, boolean>()
   private unversioned = false
   constructor(readonly runId: string, private readonly provider: TerminalProvider, cols: number, rows: number, providerSessionId?: string) {
     this.screen = new TerminalAgentScreen(cols, rows); this.rules = new TerminalScreenRules(provider)
@@ -61,7 +63,7 @@ export class TerminalAgentStateMachine {
     if (this.evidence.unresolvedVersion) this.unversioned = true
     if (this.evidence.state) this.inputReady = this.evidence.state === 'idle'
     if (this.evidence.state === 'idle' && !this.draftStarted) this.localCommand = false
-    if (this.evidence.failed) { this.interrupted = true; this.completion = false; this.readyForCompletion = false; this.continuingWork = false }
+    if (this.evidence.failed) { this.deferredCompletions.clear(); this.interrupted = true; this.completion = false; this.readyForCompletion = false; this.continuingWork = false }
     this.reconcile()
   }
   /** Input invalidates a screen-only request. Ctrl+C cancels; Grok's Escape deliberately does not. */
@@ -71,8 +73,9 @@ export class TerminalAgentStateMachine {
     if (this.inputReady && !this.draftStarted && data.charCodeAt(0) >= 32) { this.localCommand = data.trimStart().startsWith('/'); this.draftStarted = true }
     const cancel = data.includes('\x03') || this.provider !== 'grok' && data === '\x1b' && this.state === 'working'
     this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'
-    if (cancel) { this.retireTurn(this.activeTurn); this.activeTurn = undefined; this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false }
+    if (cancel) { this.deferredCompletions.clear(); this.retireTurn(this.activeTurn); this.activeTurn = undefined; this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false }
     if (submitted && !cancel && !this.localCommand) {
+      this.deferredCompletions.clear()
       // Enter starts new work before its helper can bind it. Neither the prior turn's Stop nor an unbound Stop may settle this new submission.
       this.retireTurn(this.activeTurn); this.activeTurn = undefined
       this.awaitingSubmissionHook = this.provider === 'claude' && this.hooksKnown
@@ -106,7 +109,7 @@ export class TerminalAgentStateMachine {
           // Native work and readiness can both precede the submitted helper. Bind the awaited turn while
           // retaining that observed readiness and its visibility; this callback does not submit it again.
           if (this.awaitingSubmissionHook && !this.pendingSubmission && this.readyForCompletion) {
-            this.activeTurn = event.turnId; this.awaitingSubmissionHook = false; break
+            this.activeTurn = event.turnId; this.awaitingSubmissionHook = false; this.admitDeferredCompletion(event.turnId); break
           }
           if (this.activeTurn !== event.turnId) this.retireTurn(this.activeTurn)
           this.activeTurn = event.turnId; this.awaitingSubmissionHook = false
@@ -115,20 +118,32 @@ export class TerminalAgentStateMachine {
           this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = event.workPhase === 'continuing'
           this.pendingSubmission = event.workPhase === 'submitted'
         }
+        if (event.workPhase === 'continuing') this.deferredCompletions.clear()
         this.hooksKnown = true
         this.activeTurn = event.turnId ?? this.activeTurn
         this.knownWork = true; this.interrupted = false; this.awaitingReady = false; this.finishedObserved = false
-        this.fresh = false; this.state = 'working'; break
+        this.fresh = false; this.state = 'working'
+        if (!this.awaitingSubmissionHook) this.admitDeferredCompletion(event.turnId)
+        break
       case 'permission':
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (this.interrupted || !event.requestId) break
-        this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
+        this.deferredCompletions.clear(); this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
+        if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
+        if (this.awaitingSubmissionHook) {
+          // No unbound Stop may settle the reservation. Retain only opaque turn candidates until a
+          // submitted/tool hook identifies its owner; another turn's candidate cannot consume visibility.
+          if (event.turnId && !this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') {
+            this.deferredCompletions.set(event.turnId, (this.deferredCompletions.get(event.turnId) ?? false) || this.visible)
+            if (this.deferredCompletions.size > 16) this.deferredCompletions.delete(this.deferredCompletions.keys().next().value!)
+          }
+          break
+        }
         // Codex has no submitted hook to bind a notify to current work. An older callback can arrive both before
         // and during its new Working frame; only the current ready screen can settle that native transition.
-        if (this.awaitingSubmissionHook || this.provider === 'codex' && (this.pendingSubmission || this.screenWork)) break
-        if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
+        if (this.provider === 'codex' && (this.pendingSubmission || this.screenWork)) break
         if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') {
           this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false
           this.activeTurn ??= event.turnId
@@ -136,6 +151,7 @@ export class TerminalAgentStateMachine {
         break
       case 'cancelled': case 'ended':
         if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
+        this.deferredCompletions.clear()
         this.retireTurn(this.activeTurn); this.retireTurn(event.turnId); this.activeTurn = undefined
         this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false; break
       case 'notification':
@@ -147,9 +163,15 @@ export class TerminalAgentStateMachine {
   }
   requestClosed(requestId: string): void { if (this.requests.delete(requestId)) this.reconcile() }
   unavailable(): void { this.requests.clear(); this.detection = 'unavailable'; this.reconcile() }
-  exit(): void { this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.providerSessionId = undefined; this.pendingSubmission = false; this.awaitingSubmissionHook = false }
+  exit(): void { this.deferredCompletions.clear(); this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.providerSessionId = undefined; this.pendingSubmission = false; this.awaitingSubmissionHook = false }
   /** Output activity may settle only work inferred by the compatibility fallback, never known silent work. */
   quiet(): void { if (this.live && !this.knownWork && this.requests.size === 0 && this.evidence.state === undefined && this.state === 'working') this.state = 'idle' }
+  private admitDeferredCompletion(turnId: string | undefined): void {
+    const viewed = turnId === undefined ? undefined : this.deferredCompletions.get(turnId)
+    this.deferredCompletions.clear()
+    if (viewed === undefined || this.interrupted || this.requests.size || this.evidence.state === 'needs-you') return
+    this.completion = true; this.completionViewed ||= viewed || this.visible; this.pendingSubmission = false
+  }
   private retireTurn(turnId: string | undefined): void {
     if (!turnId) return
     this.inactiveTurns.add(turnId)

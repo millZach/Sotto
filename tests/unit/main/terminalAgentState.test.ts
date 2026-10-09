@@ -21,13 +21,47 @@ const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude
 
 describe('terminal agent run state', () => {
   it.each([false, true])('binds a delayed submitted hook after native readiness without restarting work (viewed %s)', viewed => {
+    for (const order of ['submitted-first', 'stop-first'] as const) {
+      const state = agent(); state.hook(event('session-start')); state.output(idle)
+      state.input('work\r'); state.output(work)
+      state.setVisible(viewed); state.output(idle); state.setVisible(false)
+      // Under load, both helpers can be admitted after native readiness, in either order.
+      if (order === 'stop-first') state.hook(event('completed', { turnId: 'turn' }))
+      state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+      if (order === 'submitted-first') state.hook(event('completed', { turnId: 'turn' }))
+      expect(state.state, order).toBe(viewed ? 'idle' : 'just-finished')
+    }
+  })
+  it.each(['submitted', 'tool-start', 'tool-end'] as const)('corroborates buffered completion only with its matching %s hook', phase => {
     const state = agent(); state.hook(event('session-start')); state.output(idle)
     state.input('work\r'); state.output(work)
-    state.setVisible(viewed); state.output(idle); state.setVisible(false)
-    // Under load, the helper can be admitted after both native redraws.
-    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' }))
+    state.setVisible(true); state.hook(event('completed', { turnId: 'old-unbound-turn' })); state.setVisible(false)
+    state.output(idle)
+    state.hook(event('completed', { turnId: 'current-turn' }))
+    expect(state.state).toBe('idle')
+    state.hook(event('working', { turnId: 'current-turn', workPhase: phase }))
+    if (phase !== 'submitted') state.output(idle)
+    expect(state.state).toBe('just-finished')
+  })
+  it('drops buffered completion when a new local submission replaces its reservation', () => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('a\r'); state.output(work); state.output(idle)
+    state.hook(event('completed', { turnId: 'a' }))
+    state.input('b\r'); state.output(work); state.output(idle)
+    state.hook(event('working', { turnId: 'b', workPhase: 'submitted' }))
+    expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'b' })); expect(state.state).toBe('just-finished')
+  })
+  it.each(['failure', 'permission', 'cancel', 'continuing'] as const)('revokes buffered completion on current %s evidence', reason => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle)
+    state.input('work\r'); state.output(work); state.output(idle)
     state.hook(event('completed', { turnId: 'turn' }))
-    expect(state.state).toBe(viewed ? 'idle' : 'just-finished')
+    if (reason === 'failure') state.output(redraw('Interrupted\r\n❯ \r\n? for shortcuts'))
+    else if (reason === 'permission') state.hook(event('permission', { turnId: 'turn', requestId: 'request' }))
+    else if (reason === 'cancel') state.hook(event('cancelled', { turnId: 'turn' }))
+    else state.hook(event('working', { turnId: 'turn', workPhase: 'continuing' }))
+    state.hook(event('working', { turnId: 'turn', workPhase: 'submitted' })); state.output(idle)
+    expect(state.state).not.toBe('just-finished')
   })
 
   it.each([
