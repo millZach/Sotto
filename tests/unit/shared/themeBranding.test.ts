@@ -70,15 +70,10 @@ describe('widget palette projection', () => {
   it('projects presentation from settings without leaking unrelated fields', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'tropic', llmApiKey: 'secret' }
     const presentation = widgetPresentationFor(settings)
-    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme', 'voiceCoordinator'])
+    expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme'])
     expect(presentation.theme).toBe('light')
     expect(presentation.reducedMotion).toBe('on')
     expect(JSON.stringify(presentation)).not.toContain('secret')
-  })
-
-  it('tells the widget whether the voice coordinator is shown, since the widget cannot read settings', () => {
-    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS }).voiceCoordinator).toBe(false)
-    expect(widgetPresentationFor({ ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true }).voiceCoordinator).toBe(true)
   })
 
   it('rejects palettes with extra roles, missing halves or app icon flags, or colours that are not canonical literals', () => {
@@ -100,8 +95,7 @@ describe('widget palette projection', () => {
     const withoutPalette: Partial<typeof idle> = { ...idle }
     delete withoutPalette.palette
     expect(() => widgetSnapshotSchema.parse(withoutPalette)).toThrow()
-    // The widget only hides its voice controls if the flag survives the boundary.
-    expect(widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toMatchObject({ voiceCoordinator: true })
+    expect(() => widgetSnapshotSchema.parse({ ...idle, voiceCoordinator: true })).toThrow()
   })
 })
 

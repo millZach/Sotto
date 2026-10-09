@@ -691,8 +691,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     claudeSettingsLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
-  // The window's panes show their threads only while it has the focus (ADR-0046). The widget taking the focus is the
-  // window losing it, as is another app, minimising or hiding to the tray.
+  // The window's panes show their threads only while it has the focus (ADR-0046).
   const windowFocusChanged = (): void => {
     const focused = BrowserWindow.getFocusedWindow()
     hostService.setWindowFocused(focused !== null && focused.webContents === windows.getMainWebContents())
@@ -885,15 +884,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
   const reconcileRequestDrafts = (): void => { void hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined) }
 
-  // The shell reaches both windows; the widget draws a thread's state, never its history, so it needs
-  // nothing more. Only the threads the main window has declared viewed receive their messages.
+  // Only the threads the main window has declared viewed receive their messages.
   const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     reconcileRequestDrafts()
     // A window's model catalog rarely changes; omitting a repeat is most of what this saves (issue #286).
-    agentStateBroadcaster.send(state, 'main', payload => windows.sendToMain(AGENT_STATE, payload))
-    agentStateBroadcaster.send(state, 'widget', payload => windows.sendToWidget(AGENT_STATE, payload))
-    if (state.configuration.enabled) void windows.showWidget().catch(() => undefined)
+    agentStateBroadcaster.send(state, payload => windows.sendToMain(AGENT_STATE, payload))
   })
   // A detail that opens a message goes out at once; the shell waiting in its window goes just ahead of it, so the
   // window paints the two in one commit (issue #771).

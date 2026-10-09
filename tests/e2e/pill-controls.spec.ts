@@ -13,6 +13,7 @@ test('the idle pill starts dictation and keeps its controls inside the capsule',
     await page.reload()
     const widget = app.windows().find(window => window.url().endsWith('/widget.html'))!
     await expect(widget.getByTestId('widget-sliver')).toBeVisible()
+    expect(await widget.evaluate(() => 'agents' in window.sottoWidget!)).toBe(false)
     await expect(widget.locator('.agent-widget')).toHaveCount(0)
     await expect(widget.getByRole('region', { name: 'Threads', exact: true })).toHaveCount(0)
     await widget.screenshot({ animations: 'disabled', path: 'artifacts/crossing/pill-resting.png' })

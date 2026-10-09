@@ -1049,7 +1049,7 @@ export interface AgentBridge {
 }
 
 /**
- * The agent bridge as the preload exposes it (`window.sotto.agents`, `window.sottoWidget.agents`): what
+ * The agent bridge as the preload exposes it (`window.sotto.agents`): what
  * crosses from main before the page puts the model catalogs back (ADR-0028). A broadcast may omit a catalog
  * the window was already sent, and a command answers with a receipt that names every catalog by revision.
  * `wrapAgentBridge` in `src/renderer/src/agents/agentStateCatalogs.ts` turns it into the `AgentBridge` every

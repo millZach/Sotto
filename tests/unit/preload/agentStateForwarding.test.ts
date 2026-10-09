@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
-import { createSottoWidgetBridge } from '../../../src/preload'
+import { createSottoBridge } from '../../../src/preload'
 import { AGENT_STATE, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 
 const state: AgentState = {
+  hostId: 'aaaaaaaa-0000-4000-8000-000000000000',
   configuration: defaultAgentConfiguration(), connection: 'connected',
   host: { ...EMPTY_AGENT_HOST, hostId: 'aaaaaaaa-0000-4000-8000-000000000000' },
   assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -18,7 +19,7 @@ const state: AgentState = {
 describe('agent state broadcast forwarding', () => {
   it('forwards a broadcast raw, without reassembling an omitted catalog itself', () => {
     const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
-    const bridge = createSottoWidgetBridge(ipc, 'win32').agents!
+    const bridge = createSottoBridge(ipc, 'win32').agents!
     const listener = vi.fn()
     bridge.onState(listener)
     const handler = ipc.on.mock.calls.find(([channel]) => channel === AGENT_STATE)![1] as (event: unknown, ...args: unknown[]) => void
@@ -36,16 +37,16 @@ describe('agent command receipt parsing', () => {
   it('accepts a receipt that names its catalog by revision and leaves putting it back to the page', async () => {
     const receipt = { ...state, host: { ...state.host, models: { revision: 3, omitted: true } } }
     const ipc = { invoke: vi.fn(async () => receipt), on: vi.fn(), removeListener: vi.fn() }
-    const bridge = createSottoWidgetBridge(ipc, 'win32').agents!
-    await expect(bridge.command({ type: 'voice', action: 'mute' })).resolves.toMatchObject({ host: { models: { revision: 3, omitted: true } } })
+    const bridge = createSottoBridge(ipc, 'win32').agents!
+    await expect(bridge.command({ type: 'select-thread', threadId: 'workshop' })).resolves.toMatchObject({ host: { models: { revision: 3, omitted: true } } })
   })
 
   it('refuses a receipt whose catalog is anything but a revision, a whole list included', async () => {
     for (const models of [{ revision: 3 }, []]) {
       const receipt = { ...state, host: { ...state.host, models } }
       const ipc = { invoke: vi.fn(async () => receipt), on: vi.fn(), removeListener: vi.fn() }
-      const bridge = createSottoWidgetBridge(ipc, 'win32').agents!
-      await expect(bridge.command({ type: 'voice', action: 'mute' })).rejects.toThrow()
+      const bridge = createSottoBridge(ipc, 'win32').agents!
+      await expect(bridge.command({ type: 'select-thread', threadId: 'workshop' })).rejects.toThrow()
     }
   })
 })

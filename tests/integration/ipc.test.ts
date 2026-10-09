@@ -475,7 +475,6 @@ describe('typed preload bridge', () => {
     const bridge = createSottoWidgetBridge(electronMock.ipcRenderer, 'win32')
     expect(Object.keys(bridge).sort()).toEqual(
       [
-        'agents',
         'onWidgetState',
         'onWidgetVisibilityChange',
         'platform',
@@ -493,8 +492,8 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('requestDictation')
     expect(bridge).not.toHaveProperty('deliverOutput')
     expect(Object.isFrozen(bridge)).toBe(true)
-    expect(Object.isFrozen(bridge.agents)).toBe(true)
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['attachmentContent', 'attachmentPreview', 'command', 'get', 'onState', 'stageAttachment'])
+    expect(bridge).not.toHaveProperty('agents')
+    expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel)).not.toContain('sotto:agents:state')
 
     electronMock.ipcRenderer.invoke
       .mockResolvedValueOnce({ ok: true })
@@ -578,6 +577,8 @@ describe('typed preload bridge', () => {
       { presentation: 'active', generation: -1 },
       { presentation: 'active', generation: 1.5 },
       { presentation: 'active', generation: 4, extra: true },
+      { presentation: 'pill-controls', generation: 4 },
+      { presentation: 'threads-expanded', generation: 4 },
     ]) {
       await expect(bridge.setPresentation(payload)).rejects.toThrow()
     }

@@ -241,17 +241,16 @@ function validatedRoutedCommand(command: import('../shared/agents').AgentCommand
   return command
 }
 
-function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'): import('../shared/agents').AgentWireBridge {
+function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agents').AgentWireBridge {
   return Object.freeze({
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
-    // Each window's composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
+    // The composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
     stageAttachment: (request: import('../shared/agents').AgentAttachmentStageRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
     attachmentContent: (request: import('../shared/agents').AgentAttachmentContentRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
-    ...(role === 'main' ? {
     chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, z.string().min(1).max(4_096).nullable()),
     workingCopyOptions: (projectId: string) => invokeParsed(renderer, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema.parse(projectId)),
     gitRefs: (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
@@ -265,12 +264,10 @@ function createAgentBridge(renderer: IpcRendererAdapter, role: 'main' | 'widget'
     prepareWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'prepare' }),
     detectWake: (audio: Float32Array) => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'detect', audio }),
     releaseWake: () => invokeParsed(renderer, AGENT_WAKE, agentWakeDetectionSchema, { type: 'release' }),
-    // Thread history reaches the management window alone: the widget draws a thread's state from the shell.
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
-    } : {}),
     // A command's answer is a receipt (issue #323): its catalogs are named by catalog revision, and the page
     // puts them back from what the broadcast sent it, the same way it does for an omitted broadcast catalog.
     // See src/renderer/src/agents/agentStateCatalogs.ts.
@@ -346,7 +343,7 @@ export function createSottoBridge(
       command: command => invokeParsed(renderer, MEMORY_COMMAND, memorySnapshotSchema, memoryCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MEMORY_CHANGED, memorySnapshotSchema, listener),
     }),
-    agents: createAgentBridge(renderer, 'main'),
+    agents: createAgentBridge(renderer),
     requestDrafts: Object.freeze<RequestDraftBridge>({
       onChanged: listener => subscribe(renderer, REQUEST_DRAFT_CHANGED, requestDraftOwnerSchema, listener),
       list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftSchema.array(), requestDraftOwnerSchema.parse(owner)),
@@ -440,8 +437,6 @@ export function createSottoWidgetBridge(
   )
   return Object.freeze({
     platform,
-
-    agents: createAgentBridge(renderer, 'widget'),
 
     onWidgetState,
     onWidgetVisibilityChange,

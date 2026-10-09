@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
 import { isAbsolute, join } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsRequestSchema, agentWorkingCopyOptionsSchema, type AgentWorkingCopyOptions, type AgentCommandReceipt, type AgentState } from '../../shared/agents'
+import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsRequestSchema, agentWorkingCopyOptionsSchema, type AgentWorkingCopyOptions, type AgentCommand, type AgentCommandReceipt, type AgentState } from '../../shared/agents'
 import { AGENT_GIT_REFS, gitRefsRequestSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -115,26 +115,25 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   // The window assembles its own full state from the shell and the detail of the threads it is looking at,
   // so neither the first state nor a command's answer carries every thread's history across the bridge.
   ipc.handle(AGENT_GET, event => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
     return control.shell()
   })
-  // Thread history is the management window's alone; the widget draws a thread's state from the shell.
   ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     return control.threadDetail(agentThreadDetailRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_ATTACHMENT_PREVIEW, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
     return control.attachmentPreview(agentAttachmentPreviewRequestSchema.parse(payload))
   })
-  // Both windows have a composer that takes screenshots, so both stage them and read back a chip's image (ADR-0031).
+  // The composer stages screenshots and reads back a chip's image (ADR-0031).
   ipc.handle(AGENT_ATTACHMENT_STAGE, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
     if (!control.stageAttachment) throw new Error('Screenshots cannot be attached in this window. Nothing was attached.')
     return control.stageAttachment(agentAttachmentStageRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_ATTACHMENT_CONTENT, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
     if (!control.attachmentContent) return null
     return control.attachmentContent(agentAttachmentContentRequestSchema.parse(payload))
   })
@@ -163,15 +162,12 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     return control.hostFolders(hostFoldersClientRequestSchema.parse(payload))
   })
   ipc.handle(AGENT_COMMAND, (event, payload) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main', 'widget'])) throw new Error('AGENT_SENDER_REJECTED')
-    const command = agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
-    const speakOnly = command.type === 'configure' && typeof command.patch.speak === 'boolean' && Object.keys(command.patch).length === 1
-    const widgetCommand = ['compose', 'send', 'manual-send', 'answer', 'steer', 'queue-followup', 'edit-followup', 'steer-followup', 'remove-followup', 'reorder-followups', 'resume-followups', 'cancel-draft', 'pause-draft', 'resume-draft', 'cancel-request', 'assign', 'unassign', 'resume', 'pause', 'voice', 'utterance', 'select-thread', 'select-attention', 'next', 'later'].includes(command.type)
-    if (!speakOnly && !widgetCommand && !isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
+    agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
     // The host answers with the shell already; the coordinator builds it without copying any history.
     // The window already has the catalogs from the broadcast, so the answer names each by its catalog
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.
-    return host.command(payload as typeof command, windowClient).then(encodeReceipt)
+    return host.command(payload as AgentCommand, windowClient).then(encodeReceipt)
   })
   return () => { grokSpeech.cancel(); kokoroSpeech.cancel(); wake.dispose(); ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_WAKE); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_COMMAND); ipc.removeHandler(AGENT_SPEECH); ipc.removeHandler(AGENT_SPEECH_CANCEL); ipc.removeHandler(AGENT_GROK_VOICES); ipc.removeHandler(AGENT_VOICE_MODEL) }
 }

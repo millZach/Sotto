@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
-import { AGENT_WAKE, AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_VOICE_MODEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
+import { AGENT_WAKE, AGENT_COMMAND, AGENT_GET, AGENT_THREAD_DETAIL_GET, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, AGENT_VOICE_MODEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
@@ -41,6 +41,12 @@ function fixture(voiceCoordinatorEnabled = true, removalMode = false) {
 }
 
 describe('agent command IPC authorization', () => {
+  it.each([AGENT_GET, AGENT_THREAD_DETAIL_GET])('refuses widget reads on %s', async channel => {
+    const f = fixture()
+    await expect(f.invoke(channel, 'workshop', f.widget)).rejects.toThrow()
+    expect(f.control.get).not.toHaveBeenCalled()
+    expect(f.control.command).not.toHaveBeenCalled()
+  })
   it('refuses wake, reply speech, catalog and download admission in removal mode', async () => {
     const f = fixture(true, true), prepare = vi.spyOn(AgentWakeService.prototype, 'prepare')
     for (const [channel, payload] of [[AGENT_WAKE, { type: 'prepare' }], [AGENT_SPEECH, 'Preview'], [AGENT_GROK_VOICES, undefined], [AGENT_VOICE_MODEL, 'download']] as const) {
@@ -49,11 +55,11 @@ describe('agent command IPC authorization', () => {
     expect(prepare).not.toHaveBeenCalled(); expect(f.grok.synthesize).not.toHaveBeenCalled(); expect(f.grok.voices).not.toHaveBeenCalled()
     expect(f.kokoro.synthesize).not.toHaveBeenCalled(); expect(synthesizeAgentSpeech).not.toHaveBeenCalled()
   })
-  it.each([false, true])('allows a trusted widget to configure speak=%s', async speak => {
+  it.each([false, true])('rejects a widget configuring speak=%s', async speak => {
     const f = fixture()
     const command = { type: 'configure', patch: { speak } }
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(f.reply)
-    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    expect(f.control.command).not.toHaveBeenCalled()
   })
 
   it.each(Object.entries(defaultAgentConfiguration()).filter(([key]) => key !== 'speak'))(
@@ -61,7 +67,7 @@ describe('agent command IPC authorization', () => {
       const f = fixture()
       for (const patch of [{ [key]: value }, { speak: false, [key]: value }, { speak: true, [key]: undefined }]) {
         const command = { type: 'configure', patch }
-        await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
+        await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
         expect(f.control.command).not.toHaveBeenCalled()
         await expect(f.invoke(AGENT_COMMAND, command)).resolves.toEqual(f.reply)
         expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
@@ -94,7 +100,7 @@ describe('agent command IPC authorization', () => {
     { type: 'git-action', threadId: 'workshop', actionId: '11111111-1111-4111-8111-111111111111', action: 'commit' },
   ])('keeps privileged command %j main-only', async command => {
     const f = fixture()
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_MAIN_WINDOW_REQUIRED')
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
     expect(f.control.command).not.toHaveBeenCalled()
     await expect(f.invoke(AGENT_COMMAND, command)).resolves.toEqual(f.reply)
     expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
@@ -119,17 +125,17 @@ describe('agent command IPC authorization', () => {
     { type: 'assign', threadId: 'workshop' }, { type: 'resume', threadId: 'workshop' },
     { type: 'select-thread', threadId: 'workshop' }, { type: 'next' }, { type: 'later' },
     { type: 'cancel-draft' }, { type: 'resume-draft', threadId: 'workshop' },
-  ])('preserves widget command %j', async command => {
+  ])('rejects former widget command %j', async command => {
     const f = fixture()
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(f.reply)
-    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    expect(f.control.command).not.toHaveBeenCalled()
   })
 
-  it.each(['mute', 'unmute'])('preserves widget microphone %s commands', async action => {
+  it.each(['mute', 'unmute'])('rejects former widget microphone %s commands', async action => {
     const f = fixture()
     const command = { type: 'voice', action }
-    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).resolves.toEqual(f.reply)
-    expect(f.control.command).toHaveBeenCalledExactlyOnceWith(command)
+    await expect(f.invoke(AGENT_COMMAND, command, f.widget)).rejects.toThrow('AGENT_SENDER_REJECTED')
+    expect(f.control.command).not.toHaveBeenCalled()
   })
 })
 

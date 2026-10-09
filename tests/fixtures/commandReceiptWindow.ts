@@ -101,7 +101,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
     control, host, router, broadcaster, handle, preload, page, wire, seen,
     get held() { return held },
     set held(value) { held = value },
-    broadcast: () => { broadcaster.send(router.shell(), 'main', payload => { listener!({}, clone(payload)); return true }) },
+    broadcast: () => { broadcaster.send(router.shell(), payload => { listener!({}, clone(payload)); return true }) },
     dispose: () => { unregister(); router.dispose(); control.dispose() },
   }
 }
