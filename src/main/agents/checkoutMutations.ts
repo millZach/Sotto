@@ -50,7 +50,7 @@ export function checkoutMutationRefusal(holder: CheckoutHolder): GitActionRefusa
   return new GitActionRefusal(`${holdingMessage(holder)} ${recovery}`)
 }
 
-/** A definitive refusal before the provider receives a prompt. Queue delivery supplies its own recovery copy. */
+/** A refusal of a checkout's send reservation, before a prompt or terminal starts. Each consumer supplies its own recovery copy. */
 export class CheckoutSendRefusal extends Error {
   constructor(private readonly holder: CheckoutHolder = { kind: 'git-action' }) {
     super(`${holdingMessage(holder)} Your message was not sent. Send it again when the action finishes.`)
