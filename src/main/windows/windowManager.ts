@@ -399,6 +399,8 @@ export class WindowManager {
   private widgetLastAppliedBounds: Rectangle | null = null
   private widgetProgrammaticTarget: Rectangle | null = null
   private widgetVisible = false
+  private widgetSuppressed = false
+  private widgetWanted = false
   private widgetVisibilityGeneration = 0
   private widgetRevealGeneration: number | null = null
   private widgetMonitorTimer: ReturnType<typeof setInterval> | null = null
@@ -668,7 +670,35 @@ export class WindowManager {
     this.mainWindow?.minimize()
   }
 
+  /** The live shell plugin owns the Linux pill. Keep the reveal intent for its removal. */
+  async setWidgetSuppressed(suppressed: boolean): Promise<void> {
+    if (this.dependencies.platform !== 'linux' || this.widgetSuppressed === suppressed) return
+    this.widgetSuppressed = suppressed
+    if (suppressed) {
+      const wanted = this.widgetWanted
+      this.hideWidget()
+      this.widgetWanted = wanted
+    } else if (this.widgetWanted) {
+      await this.showWidget()
+    }
+  }
+
+  async setWidgetPlacement(placement: WidgetPlacement): Promise<void> {
+    this.widgetPlacement = placement
+    this.widgetPlacementLoaded = true
+    if (this.widgetVisible) await this.showWidget()
+  }
+
+  getWidgetPlacement(): WidgetPlacement {
+    // Shell publication needs the same legacy-point migration even when the
+    // Electron widget is suppressed and never reaches showWidget().
+    this.loadWidgetPlacement()
+    return this.widgetPlacement
+  }
+
   async showWidget(): Promise<void> {
+    this.widgetWanted = true
+    if (this.widgetSuppressed) return
     const visibilityGeneration = this.widgetVisible
       ? this.widgetVisibilityGeneration
       : this.widgetRevealGeneration ?? this.advanceWidgetVisibilityGeneration()
@@ -893,6 +923,7 @@ export class WindowManager {
   }
 
   hideWidget(): void {
+    this.widgetWanted = false
     const wasVisible = this.widgetVisible
     const hadPendingReveal = this.widgetRevealGeneration !== null
     if (wasVisible || hadPendingReveal) {
@@ -1009,16 +1040,17 @@ export class WindowManager {
   private loadWidgetPlacement(): void {
     if (this.widgetPlacementLoaded) return
     this.widgetPlacementLoaded = true
+    const defaultPlacement: WidgetPlacement = this.dependencies.platform === 'linux' ? { edge: 'top' } : DEFAULT_WIDGET_PLACEMENT
 
     let stored: StoredWidgetPlacement | null
     try {
       stored = this.dependencies.getWidgetPlacement()
     } catch {
-      this.widgetPlacement = DEFAULT_WIDGET_PLACEMENT
+      this.widgetPlacement = defaultPlacement
       return
     }
     if (stored === null) {
-      this.widgetPlacement = DEFAULT_WIDGET_PLACEMENT
+      this.widgetPlacement = defaultPlacement
       return
     }
     if (stored.kind === 'edge') {
@@ -1026,7 +1058,7 @@ export class WindowManager {
       return
     }
     if (!Number.isFinite(stored.x) || !Number.isFinite(stored.y)) {
-      this.widgetPlacement = DEFAULT_WIDGET_PLACEMENT
+      this.widgetPlacement = defaultPlacement
       return
     }
 
@@ -1043,7 +1075,7 @@ export class WindowManager {
         workArea,
       )
     } catch {
-      this.widgetPlacement = DEFAULT_WIDGET_PLACEMENT
+      this.widgetPlacement = defaultPlacement
       return
     }
     try {
