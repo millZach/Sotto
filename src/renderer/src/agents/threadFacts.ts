@@ -1,4 +1,4 @@
-import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
@@ -76,16 +76,14 @@ const parse = (value: string | null | undefined): number => {
   return Date.parse(value)
 }
 
-const PROVIDER_KEYS: Readonly<Record<string, ProviderKey>> = {
-  claude: 'claude', anthropic: 'claude',
-  codex: 'codex', openai: 'codex', chatgpt: 'codex',
-  grok: 'grok', xai: 'grok',
-  devin: 'devin', cognition: 'devin',
+/** Other names a label may give a provider than its id or its name: its company's, or ChatGPT for Codex. */
+const OTHER_NAMES: Readonly<Record<string, ProviderKey>> = {
+  anthropic: 'claude', openai: 'codex', chatgpt: 'codex', xai: 'grok', cognition: 'devin',
 }
 
 /** The badge tint for a provider name as the provider reports it (a model's `provider` field), never a model's display name. */
 export function providerKey(provider: string): ProviderKey {
-  return PROVIDER_KEYS[provider.trim().toLocaleLowerCase()] ?? 'other'
+  return providerIdOfLabel(provider) ?? OTHER_NAMES[provider.trim().toLocaleLowerCase()] ?? 'other'
 }
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */

@@ -11,7 +11,7 @@ import { AgentComposer, AgentManualNotice, AgentQueue } from './AgentView'
 import { NewThreadDialog } from './NewThreadDialog'
 import { AgentSetupFields } from './AgentAccountSettings'
 import { VoiceSettings } from './VoiceSettings'
-import { providerGlyph } from './threadFacts'
+import { providerGlyph, providerKey } from './threadFacts'
 import { messageSpeaker } from './babysitting'
 import { AgentOrb } from './orb/AgentOrb'
 import type { OrbState } from './orb/orb'
@@ -72,7 +72,7 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
       {state.composing ? <div className="agent-actions"><Button variant="secondary" onClick={() => { if (draftTarget) void selectThread(draftTarget); else setSheet('session') }}>Review draft</Button><Button variant="ghost" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'pause-draft' })}>Talk to Sotto</Button></div> : connected && state.configuration.enabled ? <small>Try “what needs my attention?”</small> : <div className="agent-actions">{!connected ? <Button variant="secondary" disabled={state.connection === 'connecting'} onClick={() => void command({ type: 'connect' })}>{state.connection === 'connecting' ? 'Connecting…' : 'Connect providers'}</Button> : null}{!state.configuration.enabled ? <Button variant="ghost" onClick={() => void command({ type: 'configure', patch: { enabled: true } })}>Enable agent control</Button> : null}</div>}
       {state.pendingRequest ? <details><summary>Pending spoken request</summary><p>{state.pendingRequest}</p><Button variant="ghost" onClick={() => void command({ type: 'cancel-request' })}>Clear request</Button></details> : null}
     </div>
-    <div className="agent-sessions" aria-label="Sessions">{state.host.threads.filter(thread => !isThreadClosed(thread)).slice(0, 6).map(thread => <button key={thread.id} type="button" className="agent-session tt-focusable" aria-label={`Open ${thread.title}`} onClick={() => void selectThread(thread)}><span className="agent-session__badge" data-provider={provider(thread).toLowerCase()}>{providerGlyph(provider(thread))}</span><span>{thread.title}</span><i data-state={thread.requests.length ? 'attention' : thread.status} /></button>)}
+    <div className="agent-sessions" aria-label="Sessions">{state.host.threads.filter(thread => !isThreadClosed(thread)).slice(0, 6).map(thread => <button key={thread.id} type="button" className="agent-session tt-focusable" aria-label={`Open ${thread.title}`} onClick={() => void selectThread(thread)}><span className="agent-session__badge" data-provider={providerKey(provider(thread))}>{providerGlyph(provider(thread))}</span><span>{thread.title}</span><i data-state={thread.requests.length ? 'attention' : thread.status} /></button>)}
       <Button variant="secondary" className="agent-session-new" disabled={!connected} onClick={() => setSheet('new')}>New session</Button><Button variant="ghost" onClick={onOpenThreads}>All threads</Button>
     </div>
     {sheet === 'settings' ? <SideSheet title="Agent configuration" onClose={() => setSheet(null)}><AgentSetupFields /><div className="agent-actions"><Button variant="secondary" onClick={() => void command({ type: 'configure', patch: { enabled: !state.configuration.enabled } })}>{state.configuration.enabled ? 'Turn off agent control' : 'Enable agent control'}</Button></div></SideSheet> : null}
