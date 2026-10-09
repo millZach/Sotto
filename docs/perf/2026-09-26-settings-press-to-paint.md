@@ -52,7 +52,7 @@ SOTTO_PERF_BENCH=1 npx vitest run tests/perf/settingsPressToPaint.perf.test.tsx 
 ```
 
 It is skipped without `SOTTO_PERF_BENCH=1`, because it starts real child processes and asserts no time. The behaviour
-it times is pinned in the default run by `tests/unit/renderer/threadOptions.test.tsx` (a press shows at once; a refusal
+it times is pinned in the default run by `tests/unit/renderer/agents/threadOptions.test.tsx`, `tests/unit/renderer/agents/threadEffort.test.tsx` (a press shows at once; a refusal
 puts it back and says so; two presses during one save send one more save for the last; the pending mark stays until the
 window draws the confirmation) and `tests/unit/renderer/agentCommandLanes.test.tsx` (a prompt sent while a press is
 pending reaches main at once and runs on the pressed mode).

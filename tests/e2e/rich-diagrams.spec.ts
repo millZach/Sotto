@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Windows Electron renders of Mermaid diagrams inside answers, using the rich message fixture
 // (production window security posture, Threads layout classes and tokens).
-const shots = resolve(process.cwd(), 'artifacts/rich-diagrams')
+const shots = evidenceDirectory('artifacts/rich-diagrams')
 
 interface FixtureRecord { opened: string[]; navigations: string[]; popups: string[]; requests: string[] }
 declare global { interface Window { richFixture?: { stream: (text: string, streaming: boolean) => void }; pwned?: unknown } }

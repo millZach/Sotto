@@ -7,6 +7,7 @@ import { expect, it } from 'vitest'
 // that setup can exceed the default deadline on a busy runner; elapsed time is not the assertion.
 it('keeps generated hand-test and iOS delivery bundles out of Git and lint', { timeout: 60_000 }, async () => {
   const paths = [
+    'artifacts/e2e-runs/verification/phase-1-appearance/capture.js',
     'artifacts/forge-hand-test/capture.js',
     'artifacts/review-ios-focus-delivery/capture.js',
     'artifacts/review-ios-settings-delivery/capture.js',

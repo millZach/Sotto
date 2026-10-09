@@ -1,17 +1,18 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import type { AgentMessage } from '../../src/shared/agents'
 import { captureWindow, closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // An interactive visual runs in a sealed page (ADR-0060, #794), in the running app. The page an agent sends draws, runs
 // its script and follows Sotto's step and theme messages; an ordinary fetch, an ordinary image and an ordinary link aimed
 // at a listener on this computer reach nothing. These are ordinary loads, not a catalogue of ways out: the ADR says what
 // this does not prove.
-const SHOTS = resolve('artifacts/interactive-visual')
+const SHOTS = evidenceDirectory('artifacts/interactive-visual')
 const START = Date.now() - 60_000
 const at = (second: number): string => new Date(START + second * 1000).toISOString()
 const HISTORY: AgentMessage[] = [

@@ -1,12 +1,13 @@
 import { createServer } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { BrowserTask } from '../../src/shared/browser'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/agent-browser')
-const GRANT_SHOTS = resolve('artifacts/browser-grant')
+const SHOTS = evidenceDirectory('artifacts/agent-browser')
+const GRANT_SHOTS = evidenceDirectory('artifacts/browser-grant')
 const CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{padding:20px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}.landscape{height:120px;background:linear-gradient(150deg,#dbe0d0 35%,#a7b8a0 35%,#a7b8a0 57%,#688a73 57%,#688a73 76%,#294b3e 76%);margin:20px 0}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:12px 18px;font:inherit}#saved{min-height:28px}</style></head><body><header>Fieldnotes</header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><div class="landscape"></div><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved';localStorage.setItem('saved','yes')">Save trail</button><p id="saved" role="status"></p></main></body></html>`
 // Test 2's own page, apart from CONTENT: an input field to prove typing runs without asking, kept off the other test's element order.
 const GRANT_CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{padding:20px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}.landscape{height:120px;background:linear-gradient(150deg,#dbe0d0 35%,#a7b8a0 35%,#a7b8a0 57%,#688a73 57%,#688a73 76%,#294b3e 76%);margin:20px 0}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:12px 18px;font:inherit}input{display:block;margin-top:12px;padding:8px;font:inherit}#saved{min-height:28px}</style></head><body><header>Fieldnotes</header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><div class="landscape"></div><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved';localStorage.setItem('saved','yes')">Save trail</button><p id="saved" role="status"></p><input id="note" type="text" placeholder="Trail notes"></main></body></html>`

@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Windows Electron renders of the Threads page transcript with Codex activity records (#48).
 // The fixture mounts the real ThreadsView, transcript, composer and tokens; only the agent connection is stubbed.
-const shots = resolve(process.cwd(), 'artifacts/thread-activity')
+const shots = evidenceDirectory('artifacts/thread-activity')
 type Scenario = 'settled' | 'live' | 'disconnected' | 'restored'
 declare global { interface Window { activityFixture?: { show: (scenario: Scenario) => void } } }
 

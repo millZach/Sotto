@@ -3,8 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { GrokAcpHost } from '../../src/main/agents/grok'
-import type { RecordedRpc } from './codexFixture'
-import type { AdapterSessionOptions } from '../integration/adapterContract'
+import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
 async function readLog(path: string): Promise<string> {
  try { return await readFile(path, 'utf8') }

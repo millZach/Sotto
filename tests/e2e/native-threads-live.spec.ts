@@ -5,6 +5,9 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 import type { ProviderId } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidenceRoot = evidenceDirectory('artifacts/native-threads-live')
 
 // No automatic retries: every fresh run sends one native subscription turn per provider.
 test.describe.configure({ retries: 0, timeout: 180_000 })
@@ -24,7 +27,7 @@ for (const provider of ['codex', 'claude', 'grok'] as const) {
       // Prevent legacy-profile migration, and bypass the microphone onboarding only.
       await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
     }
-    const artifacts = resolve('artifacts/native-threads-live', provider)
+    const artifacts = join(evidenceRoot, provider)
     await mkdir(artifacts, { recursive: true })
     const title = `Native ${provider} acceptance`
     const prompt = 'Reply with exactly the one word READY. Do not use any tools, read any files, modify any files, or perform any other actions.'

@@ -1,5 +1,7 @@
 # Composer option chips
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Date: 2026-09-18
 Plan: `docs/plans/composer-selectors.md` (prototype A, Chips, chosen by Zach).
 
@@ -13,13 +15,13 @@ The composer's one option pill ("Fable · High · Auto") is now three chips: the
 | `npm run lint` | Clean. |
 | `npm test -- --maxWorkers=2` | 3651 passed, 22 skipped, 0 failed after the review fixes. An earlier run of the same command had one failure in `personalChatsView.test.tsx`, which touches no file on this branch and passed alone and on the rerun. |
 | `npm run notices:verify` | 174 components verified. |
-| `npm run build && npx playwright test tests/e2e/thread-creation.spec.ts tests/e2e/workspace-projects.spec.ts tests/e2e/phase-one-integrated.spec.ts --workers=1` | 11 passed, 1 failed, run before and again after the review fixes (the creation spec once hit its 30s budget while the build was still settling, and passes alone in 15s). The failure is `workspace-projects.spec.ts` line 228 expecting the prompt at 16px at the 760px minimum; `threads.css` sets the prompt at 15px since the quiet-scale commit on `main` (f98b5e7), which this branch did not touch. |
-| `npm run design:capture` | Did not reach the Threads room. `design-capture.spec.ts` fails in its first matrix with `ReferenceError: content is not defined`: `pageBoundProblems` declares `content` inside a loop and reads it after (spec lines 265 and 326), unchanged on this branch since 2ee9d97 on `main`. The Threads baselines therefore still show the pill and need regenerating once the spec is fixed. |
+| `npm run build && npx playwright test tests/e2e/thread-creation.spec.ts tests/e2e/workspace-projects.spec.ts tests/e2e/workspace-draft-and-delivery-journeys.spec.ts --workers=1` | 11 passed, 1 failed, run before and again after the review fixes (the creation spec once hit its 30s budget while the build was still settling, and passes alone in 15s). The failure is `workspace-projects.spec.ts` line 228 expecting the prompt at 16px at the 760px minimum; `threads.css` sets the prompt at 15px since the quiet-scale commit on `main` (f98b5e7), which this branch did not touch. |
+| `npm run design:capture` | Did not reach the Threads room. The original first matrix, now in `tests/e2e/design-capture-pages.spec.ts`, failed with `ReferenceError: content is not defined`: `pageBoundProblems` (now in `tests/e2e/support/designCapture.ts`) declares `content` inside a loop and reads it after (original spec lines 265 and 326), unchanged on this branch since 2ee9d97 on `main`. The Threads baselines therefore still show the pill and need regenerating once the spec is fixed. |
 
 ## Evidence
 
 - `artifacts/crossing/composer-provider-models.png`: the three chips in the composer footer of a new thread, dark, with the model menu open over the model chip.
-- `artifacts/crossing/phase-one-model-picker-light.png`: the same menu, light, on a thread whose provider has not set permissions, so the third chip reads "Permissions" and its list offers "Provider default" as unchoosable.
+- `artifacts/crossing/workspace-journey-model-picker-light.png`: the same menu, light, on a thread whose provider has not set permissions, so the third chip reads "Permissions" and its list offers "Provider default" as unchoosable.
 - `artifacts/crossing/new-thread-options.png`: the New thread dialog's model field with the provider mark beside the name.
 - `artifacts/crossing/composer-chips-820.png`: the chips and the open model menu at the 820x560 minimum window, nothing overflowing (`thread-creation.spec.ts` also asserts no horizontal overflow there).
 - `artifacts/composer-selectors-prototypes/`: the three prototype variants the pick was made from.
@@ -28,9 +30,9 @@ The composer's one option pill ("Fable · High · Auto") is now three chips: the
 
 - Opening the model menu from the chip, choosing a model, and the thread's options changing (`thread-creation.spec.ts`).
 - Choosing an effort and a permission from their chips, and each chip reading the choice (`thread-creation.spec.ts`).
-- Escape closing the model menu and returning focus to the model chip (`phase-one-integrated.spec.ts`).
+- Escape closing the model menu and returning focus to the model chip (`workspace-draft-and-delivery-journeys.spec.ts`).
 - An unstarted thread's model chip enabled from the composer (`workspace-projects.spec.ts`).
-- Unit: the chips' names, the provider mark on the model chip, arrow keys and Escape in a list, Tab closing a list, focus returning to the chip once a change is confirmed, the unset case, and provider tabs with the reminder before the first message against the "stays with" note after (`tests/unit/renderer/threadOptions.test.tsx`).
+- Unit: the chips' names, the provider mark on the model chip, arrow keys and Escape in a list, Tab closing a list, focus returning to the chip once a change is confirmed, the unset case, and provider tabs with the reminder before the first message against the "stays with" note after (`tests/unit/renderer/agents/threadOptions.test.tsx`, `tests/unit/renderer/agents/threadEffort.test.tsx`).
 - Reduced motion: the one rise animation is behind `prefers-reduced-motion` and the `data-reduced-motion` root attribute (`threadChips.css`), the same gate the follow-up ledger uses.
 
 ## After the two-axis review

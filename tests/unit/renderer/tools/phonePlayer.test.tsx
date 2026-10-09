@@ -7,7 +7,7 @@ import { BrowserPlayer } from '../../../../src/renderer/src/tools/BrowserPlayer'
 import { PhonePlayer } from '../../../../src/renderer/src/tools/PhonePlayer'
 import { PhonePlayerStore } from '../../../../src/renderer/src/tools/phonePlayerStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }
 const page: BrowserPage = { id: '11111111-1111-4111-8111-111111111111', workspace, url: 'http://localhost:8081/', title: 'Expo', status: 'ready', error: null, canGoBack: false, canGoForward: false, device: 'iphone' }

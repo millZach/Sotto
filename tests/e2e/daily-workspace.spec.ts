@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { terminalOutput } from './support/terminal'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
 // GitHub is a scripted gh (tests/fixtures/fakeGh.mjs), reached AFTER a real push to an owned local bare repository.

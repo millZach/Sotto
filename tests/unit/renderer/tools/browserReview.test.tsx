@@ -11,7 +11,7 @@ import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraftStore'
-import { threadsStateFixture } from '../liveAgentState'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { handleOf } from '../../../fixtures/stagedImages'
 import type { AgentAttachmentStageRequest } from '../../../../src/shared/agents'
 

@@ -1,12 +1,14 @@
 # Bounded desktop quit (#492)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 The desktop quit drain now has ten seconds to finish. Its listener runs before bootstrap, so a prevented quit keeps the native windows and tray. A settled drain resumes normal quit and bootstrap disposes the native runtime. A drain that reaches the deadline calls `app.exit()`, which closes the windows and releases the single-instance lock.
 
 ## Regression evidence
 
 Before the fix, `npx vitest run tests/unit/main/quitDrain.test.ts --maxWorkers=2` failed three new checks: the two deadline cases never called exit, and bootstrap disposed the native runtime before the drain settled. After the fix, those checks pass. They also verify that a repeated quit does not restart the deadline, a late resolve or rejection does not quit again, and successful cleanup cancels the deadline.
 
-`npx vitest run tests/unit/main/quitDrain.test.ts tests/integration/ipc.test.ts --maxWorkers=2` passed 141 checks, including existing startup cancellation and teardown failures.
+`npx vitest run tests/unit/main/quitDrain.test.ts tests/integration/preloadBridge.test.ts tests/integration/ipcAuthorization.test.ts tests/integration/transcriptionIpc.test.ts tests/integration/updateIpc.test.ts tests/integration/settingsHistoryIpc.test.ts tests/integration/outputIpc.test.ts tests/integration/ipcLifecycle.test.ts tests/integration/widgetPresentationIpc.test.ts tests/unit/main/app/permissionPolicy.test.ts tests/unit/main/startupServiceIdempotence.test.ts tests/unit/main/tray/trayController.test.ts tests/unit/main/app/bootstrap.test.ts tests/unit/main/app/nativeRuntime.test.ts --maxWorkers=2` passed 141 checks, including existing startup cancellation and teardown failures.
 
 The new check in `tests/e2e/app.spec.ts` launches the built Electron app, records that native windows remain when quit is prevented, waits for a clean process exit, and relaunches with the same profile. The first version of this test harness timed out; replacing its test-side file write during quit with a synchronous observation fixed the harness. The focused native quit and relaunch check then passed, and `npm run build` followed by `npx playwright test tests/e2e/app.spec.ts` passed all 16 journeys. Typecheck, lint and third-party notices also passed.
 

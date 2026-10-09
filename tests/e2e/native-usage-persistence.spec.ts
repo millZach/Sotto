@@ -8,6 +8,9 @@ import type { ThreadUsage } from '../../src/shared/threadUsage'
 import { storedClaudeOrigins } from '../fixtures/claudeOrigins'
 import { nativeUsageBoundary } from '../fixtures/nativeUsageBoundary'
 import { firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const artifacts = evidenceDirectory('artifacts/review-389/electron')
 
 const NATIVE_MODEL = 'claude-sonnet-4-6'
 const PUBLIC_MODEL = 'native:claude:model:claude-sonnet-4-6'
@@ -17,7 +20,6 @@ test('native Claude usage survives replay and a graceful quit with its latest ar
   test.setTimeout(120_000)
   const root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-e2e-usage-')))
   const profile = join(root, 'profile'), project = join(root, 'project'), client = join(root, 'client'), home = join(root, 'home')
-  const artifacts = resolve('artifacts/review-389/electron')
   let app: ElectronApplication | undefined
   let page: Page
   let closing: Promise<void> | undefined

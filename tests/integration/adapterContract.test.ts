@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import type { AdapterFixture, RecordedRpc } from '../fixtures/adapterFixture'
+import { codexFixture } from '../fixtures/codexFixture'
+
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { codexFixture, type RecordedRpc } from '../fixtures/codexFixture'
-import { describeAdapterContract, type AdapterFixture } from './adapterContract'
+import { describeAdapterContract } from './adapterContract'
 
 describeAdapterContract('Codex App Server', session => codexFixture(undefined, false, undefined, session))
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {

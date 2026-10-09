@@ -3,9 +3,9 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
-import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AgentHost } from '../../src/main/agents/host'
-import type { AdapterSessionOptions } from '../integration/adapterContract'
+import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
+import type { AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export function rolloutLine(ordinal: number, payload: unknown, type = 'event_msg'): string {
   return JSON.stringify({ timestamp: new Date().toISOString(), ordinal, type, payload }) + '\n'
@@ -19,7 +19,7 @@ const flag = (args: unknown, name: string): string | undefined => { const list =
 export const nativeRequestId = (requestId: string): string | number => JSON.parse(requestId.replace(/^rpc:[^:]+:/u, '')) as string | number
 /** What the fake recorded of the app-servers Sotto started: each one's introduction, and each thread start or resume on it. */
 export interface ServedRecord { pid: number; method: 'initialize' | 'thread/start' | 'thread/resume'; threadId?: string }
-export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
+export type { RecordedRpc } from './adapterFixture'
 /** The thread history requests among `requests`, in order: `turns` for the newest-turn check, `read` for a whole-transcript read. */
 export function historyReads(requests: readonly RecordedRpc[]): ('turns' | 'read')[] {
   return requests.flatMap(request => request.method === 'thread/turns/list' ? ['turns' as const]

@@ -19,6 +19,7 @@ artifacts/babysitting-surfaces-run/
 coverage/
 playwright-report/
 test-results/
+artifacts/e2e-runs/
 .vite/
 .cache/
 *.log
