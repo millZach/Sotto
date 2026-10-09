@@ -117,7 +117,7 @@ import {
   type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
-import { StartupService } from './startup/startupService'
+import { LINUX_LOGIN_ITEMS, StartupService } from './startup/startupService'
 import {
   TrayController,
   type TrayAdapter,
@@ -589,10 +589,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
   const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
-  const startup = new StartupService(e2eConfiguration === null ? app : {
+  const startup = new StartupService(e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
-  })
+  } : platform === 'linux' ? LINUX_LOGIN_ITEMS : app)
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )

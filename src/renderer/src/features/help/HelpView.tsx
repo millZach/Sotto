@@ -37,7 +37,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
 
   const gettingStarted: Topic[] = [
     { title: 'Start and stop', body: linux
-      ? <p>Use the dictation button to begin, then press Stop to finish. Press Escape in Sotto to cancel an active recording without transcribing.</p>
+      ? <p>Use the dictation button to begin, then press Stop to finish. To stop without transcribing, press Cancel on the floating widget.</p>
       : <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
@@ -71,7 +71,7 @@ export function HelpView({ shortcut, platform, version }: HelpViewProps): ReactN
             <div className="tt-panel__header"><h2>Keyboard</h2></div>
             <dl className="help-keys">
               {linux ? null : <div><dt>Start or stop dictation</dt><dd><ShortcutKey accelerator={shortcut} platform={platform} /></dd></div>}
-              <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>
+              {!linux && <div><dt>Cancel recording</dt><dd><kbd className="tt-kbd">Esc</kbd></dd></div>}
               <div><dt>Search history</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
               <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
