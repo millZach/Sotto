@@ -535,7 +535,7 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
   })
 
   it('keeps focus on a refused Stop and says why in its line, not above the checklist', async () => {
-    const { command, onStatus } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user'), result: { error: 'Sotto could not save that babysitting stopped. It goes on.', notice: null } })
+    const { command, onStatus } = mount({ babysit: { agent: 'Codex' }, thread: babysat('user'), result: { error: 'Sotto could not save that babysitting stopped. It goes on.' } })
     await opened()
     const line = screen.getByRole('group', { name: /^Babysitting since / })
     const stop = within(line).getByRole('button', { name: 'Stop babysitting #74' })
