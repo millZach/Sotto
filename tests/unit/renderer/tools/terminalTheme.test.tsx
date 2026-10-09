@@ -11,7 +11,7 @@ vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class {
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     readonly unicode = { activeVersion: "6" }
-    readonly parser = { registerOscHandler: () => ({ dispose() {} }) }
+    readonly parser = { registerOscHandler: () => ({ dispose() {} }), registerCsiHandler: () => ({ dispose() {} }) }
     readonly themes: unknown[] = []
     readonly options: Record<string, unknown>
     constructor(options: Record<string, unknown>) {

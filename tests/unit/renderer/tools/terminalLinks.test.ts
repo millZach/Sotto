@@ -37,6 +37,23 @@ it('drops named links when their rows leave scrollback', async () => {
   } finally { catalog.dispose(); terminal.dispose() }
 })
 
+it('replaces a repainted named destination, and forgets erased or unsafe replacements with the same label', async () => {
+  const terminal = new Terminal({ allowProposedApi: true })
+  const catalog = terminalLinkCatalog(terminal)
+  try {
+    await write(terminal, osc('https://example.com/old', 'project docs'))
+    await write(terminal, '\r' + osc('https://example.com/new', 'project docs'))
+    expect(catalog.list()).toEqual([{ uri: 'https://example.com/new', label: 'project docs' }])
+    await write(terminal, '\r' + osc('file:///tmp/no', 'project docs'))
+    expect(catalog.list()).toEqual([])
+    await write(terminal, '\r' + osc('https://example.com/last', 'project docs'))
+    await write(terminal, '\x1b[K')
+    expect(catalog.list()).toEqual([{ uri: 'https://example.com/last', label: 'project docs' }])
+    await write(terminal, '\r\x1b[2Kproject docs')
+    expect(catalog.list()).toEqual([])
+  } finally { catalog.dispose(); terminal.dispose() }
+})
+
 it('provides named destinations, native keyboard controls, empty feedback and focus restoration', () => {
   const element = document.createElement('div'), trigger = document.createElement('button')
   document.body.append(element, trigger); trigger.focus()

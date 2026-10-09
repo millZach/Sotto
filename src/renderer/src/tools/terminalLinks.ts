@@ -7,10 +7,14 @@ export const isTerminalLink = (uri: string): boolean => /^https?:/iu.test(uri) &
 
 interface NamedLink { uri: string; buffer: IBuffer; marker: IMarker; prefix: string; label: string }
 
+function firstRow(buffer: IBuffer, row: number): number {
+  while (row > 0 && buffer.getLine(row)?.isWrapped) row--
+  return row
+}
+
 /** Read a logical line across soft wraps, optionally ending at the current cursor. */
 function lineText(buffer: IBuffer, row: number, end?: { row: number; column: number }): string {
-  let first = row
-  while (first > 0 && buffer.getLine(first)?.isWrapped) first--
+  const first = firstRow(buffer, row)
   let text = ''
   for (let y = first; y < buffer.length; y++) {
     const line = buffer.getLine(y)
@@ -20,6 +24,29 @@ function lineText(buffer: IBuffer, row: number, end?: { row: number; column: num
     text += line.translateToString(!wraps)
   }
   return text
+}
+
+/** The current cells under a named label, with Unicode widths and soft wraps accounted for. */
+function labelCells(link: NamedLink): { row: number; start: number; end: number }[] {
+  const cells: { row: number; start: number; end: number }[] = []
+  const first = firstRow(link.buffer, link.marker.line), endOffset = link.prefix.length + link.label.length
+  let offset = 0
+  for (let row = first; row < link.buffer.length && offset < endOffset; row++) {
+    const line = link.buffer.getLine(row)
+    if (!line || row > first && !line.isWrapped) break
+    for (let column = 0; column < line.length && offset < endOffset; column++) {
+      const cell = line.getCell(column)
+      if (!cell || !cell.getWidth()) continue
+      const end = offset + (cell.getChars() || ' ').length
+      if (end > link.prefix.length) {
+        const previous = cells.at(-1)
+        if (previous?.row === row) previous.end = column + cell.getWidth()
+        else cells.push({ row, start: column, end: column + cell.getWidth() })
+      }
+      offset = end
+    }
+  }
+  return cells
 }
 
 /** Observe OSC 8 through the public parser without consuming it; markers keep named links tied to scrollback. */
@@ -36,18 +63,40 @@ export function terminalLinkCatalog(terminal: Terminal) {
     if (!text.startsWith(link.prefix)) { link.marker.dispose(); return }
     link.label = text.slice(link.prefix.length)
     if (!link.label.trim()) { link.marker.dispose(); return }
+    for (const previous of named) {
+      if (previous.buffer !== buffer || firstRow(buffer, previous.marker.line) !== firstRow(buffer, link.marker.line)) continue
+      const overlap = previous.prefix.length < link.prefix.length + link.label.length && link.prefix.length < previous.prefix.length + previous.label.length
+      if (overlap) previous.marker.dispose()
+    }
+    // Unsafe destinations also replace an older link at these cells, but never become picker entries.
+    if (!isTerminalLink(link.uri)) { link.marker.dispose(); return }
     named.add(link)
     link.marker.onDispose(() => named.delete(link))
   }
   const osc = terminal.parser.registerOscHandler(8, data => {
     finish()
     const separator = data.indexOf(';'), uri = separator < 0 ? '' : data.slice(separator + 1)
-    if (isTerminalLink(uri)) {
+    if (uri) {
       const buffer = terminal.buffer.active, row = buffer.baseY + buffer.cursorY
       pending = { uri, buffer, marker: terminal.registerMarker(0), prefix: lineText(buffer, row, { row, column: buffer.cursorX }), label: '' }
     }
     return false
   })
+  const erasures = ['J', 'K'].map(final => terminal.parser.registerCsiHandler({ final }, params => {
+    const mode = params[0] ?? 0
+    const buffer = terminal.buffer.active, row = buffer.baseY + buffer.cursorY
+    for (const link of named) {
+      if (link.buffer !== buffer) continue
+      const affected = labelCells(link).some(cells => {
+        if (final === 'K') return cells.row === row && (mode === 2 || mode === 0 && cells.end > buffer.cursorX || mode === 1 && cells.start <= buffer.cursorX)
+        if (mode === 0) return cells.row > row || cells.row === row && cells.end > buffer.cursorX
+        if (mode === 1) return cells.row >= buffer.baseY && (cells.row < row || cells.row === row && cells.start <= buffer.cursorX)
+        return mode === 2 && cells.row >= buffer.baseY
+      })
+      if (affected) link.marker.dispose()
+    }
+    return false
+  }))
   const clear = (): void => {
     pending?.marker.dispose(); pending = undefined
     for (const link of named) link.marker.dispose()
@@ -80,7 +129,7 @@ export function terminalLinkCatalog(terminal: Terminal) {
       return [...links.values()]
     },
     clear,
-    dispose(): void { osc.dispose(); clear() },
+    dispose(): void { osc.dispose(); for (const erase of erasures) erase.dispose(); clear() },
   }
 }
 
