@@ -194,6 +194,8 @@ export class TerminalScreenRules {
     // Blank space below the cursor is not scrollback. Read only the active screen's final twelve nonempty rows.
     const bottom = screen.logicalLines(12).map(line => line.trim())
     const text = bottom.join('\n')
+    // Approval chrome must own the current footer, not an example above a live draft or later output.
+    const footer = bottom.at(-1) ?? ''
     const failed = /^(?:Error:|Interrupted|Cancelled|Canceled|Turn cancelled|Turn canceled|Request failed)/imu.test(text)
     if (this.provider === 'claude') {
       const work = /(?:esc to interrupt|ctrl\+c to interrupt)/iu.test(text) && /^[✶✻✽✢·*]\s+\S.+/mu.test(text)
@@ -201,11 +203,11 @@ export class TerminalScreenRules {
       if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const choices = /^❯\s*1\.\s+Yes(?:,|$)/mu.test(text) && /^\s*[2-9]\.\s+No(?:,|$)/mu.test(text)
       const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
-      const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(text)
+      const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(footer)
       if (choices && prompt && controls) return { detection: 'available', state: 'needs-you' }
       // The bundled 2.1.295 AskUserQuestion component uses numbered choices, its built-in Other row and select/navigation/cancel chrome.
       const questionChoices = /^❯\s*\d+\.\s+\S.+/mu.test(text) && /^\d+\.\s+(?:Type something\.?|Chat about this)$/mu.test(text)
-      const questionControls = /enter to select/iu.test(text) && /(?:↑\/↓ to navigate|Tab\/Arrow keys to navigate)/iu.test(text) && /(?:esc|escape) to cancel/iu.test(text)
+      const questionControls = /enter to select/iu.test(footer) && /(?:↑\/↓ to navigate|Tab\/Arrow keys to navigate)/iu.test(footer) && /(?:esc|escape) to cancel/iu.test(footer)
       if (questionChoices && questionControls) return { detection: 'available', state: 'needs-you' }
     } else if (this.provider === 'codex') {
       // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
@@ -214,12 +216,12 @@ export class TerminalScreenRules {
       if (bottom.slice(-4).some(line => /^›\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
       const choices = /^›\s*1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^\s*[2-9]\.\s+No, and tell Codex .+/mu.test(text)
-      const controls = /^Press enter to confirm or esc to cancel$/imu.test(text)
+      const controls = /^Press enter to confirm or esc to cancel$/iu.test(footer)
       if (prompt && choices && controls) return { detection: 'available', state: 'needs-you' }
       // Codex rust-v0.162.0 request_user_input has a progress header, selected choice/freeform input, and its own submission footer.
       const questionHeader = /^Question \d+\/\d+(?: \(\d+ unanswered\))?(?: · auto-resolves in .+)?$/mu.test(text)
       const questionInput = /^›\s*(?:\d+\.\s+\S.+|Type your answer \(optional\))$/mu.test(text)
-      const questionControls = /(?:enter|⌃\w(?: enter)?) to submit (?:answer|all)/iu.test(text) && /(?:esc|⌃c) to interrupt/iu.test(text)
+      const questionControls = /(?:enter|⌃\w(?: enter)?) to submit (?:answer|all)/iu.test(footer) && /(?:esc|⌃c) to interrupt/iu.test(footer)
       if (questionHeader && questionInput && questionControls) return { detection: 'available', state: 'needs-you' }
     } else {
       // Grok 1.0.50's prompt is a bordered input, with its model/mode footer. Escape never cancels work.
