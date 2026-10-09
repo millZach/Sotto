@@ -144,8 +144,14 @@ describe('naming a thread from its first exchange', () => {
     const threadId = workshop(f.control).id
     // A real client shows the reply while the turn is still running, and ends the turn on a later frame
     // that adds no message. The name is asked for on that later frame, not skipped for good.
-    reply(f.adapters.codex)
-    f.adapters.codex.state.threads[0]!.status = 'running'
+    // Publish reply and Running together: an earlier Idle frame legitimately starts naming.
+    const thread = f.adapters.codex.state.threads[0]!
+    const at = new Date().toISOString()
+    thread.messages = [
+      { id: 'first-prompt', role: 'user', text: 'The palette is unreadable in dark mode.', createdAt: at },
+      { id: 'first-reply', role: 'assistant', text: 'I raised the foreground contrast on both dark themes.', createdAt: at },
+    ]
+    thread.status = 'running'
     f.adapters.codex.emit()
     await f.control.command({ type: 'refresh' })
     expect(f.titles).not.toHaveBeenCalled()
