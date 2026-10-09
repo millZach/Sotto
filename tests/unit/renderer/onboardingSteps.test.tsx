@@ -120,7 +120,7 @@ describe('AgentsStep', () => {
     render(<AgentsStep heading={<div />} onOpenLink={vi.fn(async () => true)} />)
     expect(command).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Check again' }))
-    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', provider: 'grok' })
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', provider: 'grok' }))
   })
 
   it('runs Connect providers again on Check again while no client is connected', async () => {
@@ -132,8 +132,8 @@ describe('AgentsStep', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
     command.mockClear()
     await user.click(await screen.findByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect' }))
     expect(command).toHaveBeenCalledWith({ type: 'refresh', provider: 'claude' })
-    expect(command).toHaveBeenCalledWith({ type: 'connect' })
   })
 
   it('says Not connected, never Not installed, for a client main has not tried, and connects it on Connect', async () => {
@@ -150,7 +150,7 @@ describe('AgentsStep', () => {
     expect(claudeRow).not.toHaveTextContent('Not installed')
     expect(screen.queryByRole('button', { name: 'Open the Claude Code install guide' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Connect Claude Code' }))
-    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude' })
+    await waitFor(() => expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'connect', provider: 'claude' }))
   })
 
   it('maps each provider problem to its row label and detail', () => {
