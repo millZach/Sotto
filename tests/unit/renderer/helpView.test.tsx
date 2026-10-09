@@ -8,6 +8,18 @@ import { platformCopy } from '../../../src/renderer/src/platformCopy'
 afterEach(cleanup)
 
 describe('HelpView', () => {
+  it('names Linux and explains button dictation, manual paste and the Wayland shortcut limit', () => {
+    const copy = platformCopy('linux')
+    render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="linux" version="3.4.0" />)
+    expect(screen.getByText(/Sotto 3.4.0, Linux/)).toBeVisible()
+    expect(screen.getByText(/Use the dictation button to begin, then press Stop to finish/)).toBeVisible()
+    expect(screen.getByText(copy.settingsGlobalShortcutDescription)).toBeVisible()
+    expect(screen.getByText(copy.helpPasteFallback)).toBeVisible()
+    expect(screen.queryByLabelText('Ctrl+Shift+Space')).not.toBeInTheDocument()
+    expect(screen.queryByText(/anywhere to begin/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/previous working shortcut active/)).not.toBeInTheDocument()
+  })
+
   it('documents operation, privacy, and paste limitations honestly', () => {
     const copy = platformCopy('win32')
     render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" />)
