@@ -118,7 +118,7 @@ import {
   type StoredWidgetPlacement,
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
-import { StartupService } from './startup/startupService'
+import { LINUX_LOGIN_ITEMS, StartupService } from './startup/startupService'
 import {
   TrayController,
   type TrayAdapter,
@@ -152,7 +152,7 @@ import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
-import linuxTrayIconPath from '../../resources/tray/sottoTemplate.png?asset'
+import linuxTrayIconPath from '../../build/icon.png?asset'
 import { defaultSettings, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
@@ -215,6 +215,7 @@ import { KokoroSpeechService } from './agents/kokoroSpeech'
 import { e2eGrokSpeechFetch, e2eKokoroSpeechFetch } from './e2e/agentSpeech'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
 import { installRemoteHostE2E } from './e2e/remoteHost'
+import { installBabysitPassE2E } from './e2e/babysitPass'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -589,10 +590,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   let agentVoiceCoordinatorEnabled = startupSettings.voiceCoordinatorEnabled
   const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
-  const startup = new StartupService(e2eConfiguration === null ? app : {
+  const startup = new StartupService(e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },
-  })
+  } : platform === 'linux' ? LINUX_LOGIN_ITEMS : app)
   const widgetPlacementStore = new WidgetPlacementRepository(
     join(userDataPath, 'widget-placement.json'),
   )
@@ -692,6 +693,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     claudeSettingsLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
+  // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
+  if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
   // The window's panes show their threads only while it has the focus (ADR-0046). The widget taking the focus is the
   // window losing it, as is another app, minimising or hiding to the tray.
   const windowFocusChanged = (): void => {
@@ -1091,7 +1094,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         // The build emits this PNG under out/, which existing packaging includes on every platform.
         // macOS keeps its existing resource path and automatic @2x template lookup.
         resolveResourcePath: (relativePath) => platform === 'linux' ? linuxTrayIconPath : join(resourceRoot, relativePath),
-        loadImageIcon: (path) => nativeImage.createFromPath(path),
+        loadImageIcon: (path) => {
+          const icon = nativeImage.createFromPath(path)
+          // Keep the colour app icon small enough for the tray, with pixels for a 2x bar.
+          return platform === 'linux' ? icon.resize({ width: 44, height: 44 }) : icon
+        },
         markTemplate: (icon) => { if (platform === 'darwin') icon.setTemplateImage(true) },
         createTray: (icon) => new Tray(icon),
         configure: (tray) => tray.setToolTip(APP_NAME),
@@ -1493,7 +1500,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 registerModelSchemesAsPrivileged(protocol, [VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
-configurePasswordStore(platform, app.commandLine)
+configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
 // Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
 if (process.platform === 'win32') {

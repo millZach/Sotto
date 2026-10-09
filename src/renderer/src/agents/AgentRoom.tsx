@@ -12,6 +12,7 @@ import { NewThreadDialog } from './NewThreadDialog'
 import { AgentSetupFields } from './AgentAccountSettings'
 import { VoiceSettings } from './VoiceSettings'
 import { providerGlyph } from './threadFacts'
+import { messageSpeaker } from './babysitting'
 import { AgentOrb } from './orb/AgentOrb'
 import type { OrbState } from './orb/orb'
 
@@ -79,7 +80,7 @@ export function AgentRoom({ onOpenThreads, initialSheet = null }: { readonly onO
     {sheet === 'session' ? <SideSheet title={active?.title ?? 'Session'} onClose={() => setSheet(null)}>
       {active ? <><p className="agent-muted">{project?.title} · {resolveModel(state.host.models, active.modelId)?.name ?? active.modelId}</p><AgentManualNotice state={state} command={command} />
         <div className="agent-actions">{assignment ? <><Button variant="ghost" onClick={() => void command({ type: assignment.paused || assignment.mode === 'manual' ? 'resume' : 'pause', threadId: active.id })}>{assignment.paused || assignment.mode === 'manual' ? 'Resume management' : 'Pause management'}</Button><Button variant="ghost" onClick={() => void command({ type: 'unassign', threadId: active.id })}>Stop managing</Button></> : <Button variant="secondary" disabled={!isThreadProviderConnected(state.host, active) || state.globalLaneBusy || !supportsAgentSupervision(capabilitiesForThread(state.host, active))} onClick={() => void command({ type: 'assign', threadId: active.id })}>Manage this thread</Button>}{active.status === 'running' && !isThreadClosed(active) && capabilitiesForThread(state.host, active).interrupt ? <Button variant="ghost" disabled={!isThreadProviderConnected(state.host, active) || isThreadBusy(state, active.id)} onClick={() => void command({ type: 'interrupt', threadId: active.id })}>Stop agent</Button> : null}</div>
-        <div className="agent-transcript" aria-label="Session transcript">{active.messages.length ? active.messages.map(message => <article key={message.id}><small>{message.role === 'user' ? 'You' : 'Agent'}</small><p>{message.text}</p></article>) : <p className="agent-muted">No messages yet.</p>}</div></> : <p>Select a thread to read its transcript.</p>}
+        <div className="agent-transcript" aria-label="Session transcript">{active.messages.length ? active.messages.map(message => <article key={message.id}><small>{messageSpeaker(message)}</small><p>{message.text}</p></article>) : <p className="agent-muted">No messages yet.</p>}</div></> : <p>Select a thread to read its transcript.</p>}
       {attention.items.some(item => item.threadId === state.activeThreadId) ? <AgentQueue approvalLabel="Allow" state={attentionState} command={command} compact /> : null}
       <AgentComposer state={state} command={command} />
       {state.error || agents.error ? <p className="agent-error" role="alert">{state.error ?? agents.error}</p> : null}

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { agentBabysittingSchema, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
 import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './githubBabysitReads'
-import { pullRequestKey } from './gitPullRequests'
+import { pullRequestKey } from '../../shared/gitPullRequests'
 
 /**
  * What babysitting finds (ADR-0061 decision 6): the news in a read of a pull request, against what one thread was last

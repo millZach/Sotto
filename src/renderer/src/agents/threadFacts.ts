@@ -1,5 +1,6 @@
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
 const DAY_MS = 86_400_000
@@ -274,6 +275,18 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     facts: factsLine(assignment, model, provider, management, state.configuration.followupLimit, now),
     lastMessage, management,
   }
+}
+
+/**
+ * The state a sidebar row says. A thread the host marked finished while no client showed it says Just finished
+ * (ADR-0046); one that babysits a pull request says so where it would say Done (ADR-0061, variant C), so Working, Just
+ * finished and anything waiting on you all outrank it. Settling says Settled, which ends babysitting anyway.
+ */
+export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): { readonly text: string; readonly finished: boolean; readonly babysitting: boolean } {
+  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
+  const finished = row.thread.finishedUnread === true && label === 'Done'
+  const babysitting = !finished && label === 'Done' ? babysittingWord(row.thread) : undefined
+  return { text: finished ? 'Just finished' : babysitting ?? label, finished, babysitting: babysitting !== undefined }
 }
 
 /** Every thread Sotto knows, described from its own state. */

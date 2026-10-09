@@ -28,6 +28,7 @@ export interface TrafficLightPosition {
 export type TrayIconSource =
   | { readonly kind: 'executable' }
   | { readonly kind: 'template'; readonly relativePath: string }
+  | { readonly kind: 'image'; readonly relativePath: string }
 
 export interface PlatformProfile {
   readonly platform: SottoPlatform
@@ -109,7 +110,7 @@ const PLATFORM_PROFILES: Readonly<Record<SottoPlatform, PlatformProfile>> =
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
-      trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      trayIcon: { kind: 'image', relativePath: 'icon.png' },
       inAppUpdates: false,
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,

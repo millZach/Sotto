@@ -140,11 +140,11 @@ export class OutputService {
     // it afterward — otherwise auto-paste permanently conceals the widget.
     let hidForPaste = false
     try {
+      const invocation = this.dependencies.buildPasteInvocation()
+      if (invocation === null) return 'copied'
       await this.dependencies.widget.hideWidget()
       hidForPaste = true
       await this.dependencies.delay(options.pasteDelayMs)
-      const invocation = this.dependencies.buildPasteInvocation()
-      if (invocation === null) return 'copied'
       let pasted: boolean
       try {
         pasted = await this.dependencies.process.run(invocation)

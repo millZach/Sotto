@@ -63,7 +63,7 @@ describe('platformProfile', () => {
     })
   })
 
-  it('keeps Linux frameless, with a resource PNG tray and copy-only output', () => {
+  it('keeps Linux frameless, with the colour app PNG tray and copy-only output', () => {
     const profile = platformProfile('linux')
     expect(profile).toEqual({
       platform: 'linux',
@@ -74,15 +74,15 @@ describe('platformProfile', () => {
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
-      trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
+      trayIcon: { kind: 'image', relativePath: 'icon.png' },
       inAppUpdates: false,
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
     })
-    if (profile.trayIcon.kind !== 'template') throw new Error('Linux needs a PNG resource')
-    expect(existsSync(join('resources', profile.trayIcon.relativePath))).toBe(true)
+    if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
+    expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
     expect(createPasteCommands('linux').oneShot()).toBeNull()
   })
 

@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { parsePullRequestReference } from '../../shared/gitPullRequests'
+import { parsePullRequestReference, pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { BABYSIT_REFUSALS, type Babysitter, type BabysitListing } from './babysitting'
-import { pullRequestAddress, pullRequestKey } from './gitPullRequests'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 import { BABYSIT_TOOL, STOP_BABYSITTING_TOOL } from './wakeUp'
 
