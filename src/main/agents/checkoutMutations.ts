@@ -66,10 +66,10 @@ export class CheckoutMutations {
     if (![...this.active.values()].some(state => state.mutation)) return false
     return Boolean(this.active.get(await checkoutIdentity(folder))?.mutation)
   }
-  async acquire(folder: string, kind: 'send' | 'mutation', holder?: CheckoutHolder): Promise<() => void> {
+  async acquire(folder: string, kind: 'send' | 'read' | 'mutation', holder?: CheckoutHolder): Promise<() => void> {
     return this.acquireIdentity(await checkoutIdentity(folder), kind, holder)
   }
-  acquireIdentity(key: string, kind: 'send' | 'mutation', holder: CheckoutHolder = { kind: 'git-action' }): () => void {
+  acquireIdentity(key: string, kind: 'send' | 'read' | 'mutation', holder: CheckoutHolder = { kind: 'git-action' }): () => void {
     const state = this.active.get(key) ?? { reads: new Set<CheckoutHolder>(), mutation: null }
     const held = state.mutation ?? (kind === 'mutation' ? state.reads.values().next().value : undefined)
     if (held) throw kind === 'send' ? new CheckoutSendRefusal(held) : checkoutMutationRefusal(held)

@@ -77,17 +77,39 @@ it('names a shell startup reservation and refuses another startup during removal
   } finally { release?.(); await f.stop(); await f.remove() }
 })
 
-it('reserves an unused terminal checkout against a new sibling send until removal finishes', async () => {
+it('refuses working-copy selection throughout terminal checkout removal', async () => {
   const f = await fixture()
   let release: (() => void) | undefined
   try {
     const terminalWorktrees = new worktrees.ThreadWorktrees(f.root, git, worktrees.TERMINAL_WORKTREE_HOME)
     const owned = await terminalWorktrees.ensure(await terminalWorktrees.allocate(f.project.path, 'independent'))
     release = await f.host.acquireWorktreeReclaim(owned.path!)
-    await f.host.configureThreadWorkingCopy('a', { workingCopy: 'independent', existingWorktreePath: owned.path! })
-    await expect(f.host.execute(send('a'))).rejects.toThrow('Sotto is removing this folder')
+    const before = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'a')!.worktree
+    await expect(f.host.configureThreadWorkingCopy('a', { workingCopy: 'independent', existingWorktreePath: owned.path! })).rejects.toThrow('Sotto is removing this folder')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'a')!.worktree).toEqual(before)
     release(); release = undefined
+    await f.host.configureThreadWorkingCopy('a', { workingCopy: 'independent', existingWorktreePath: owned.path! })
     await expect(f.host.execute(send('a'))).resolves.toMatchObject({ accepted: true })
+  } finally { release?.(); await f.stop(); await f.remove() }
+})
+
+it.each(['existing', 'shared'] as const)('refuses thread creation in a terminal checkout reserved for removal (%s)', async selection => {
+  const f = await fixture()
+  let release: (() => void) | undefined
+  try {
+    const terminalWorktrees = new worktrees.ThreadWorktrees(f.root, git, worktrees.TERMINAL_WORKTREE_HOME)
+    const owned = await terminalWorktrees.ensure(await terminalWorktrees.allocate(f.project.path, 'independent'))
+    // Use the working-copy selector's project record for a shared selection into the reserved checkout.
+    const model = f.host.workspaceSnapshot().models.find(item => item.providerId === 'codex')!
+    if (selection === 'shared') await f.host.execute({ type: 'create-project', commandId: 'terminal-project', projectId: 'terminal-project', provider: 'codex', title: 'Terminal project', path: owned.path! })
+    const projectId = selection === 'shared' ? f.host.workspaceSnapshot().projects.find(project => project.path === owned.path)!.id : f.project.id
+    release = await f.host.acquireWorktreeReclaim(owned.path!)
+    const create = () => f.host.execute({ type: 'create-thread', commandId: 'draft', threadId: 'draft', projectId, modelId: model.id, title: 'Draft',
+      ...(selection === 'shared' ? { workingCopy: 'shared' as const } : { workingCopy: 'independent' as const, existingWorktreePath: owned.path! }) })
+    await expect(create()).rejects.toThrow('Sotto is removing this folder')
+    expect(f.host.workspaceSnapshot().threads.some(thread => thread.id === 'draft')).toBe(false)
+    release(); release = undefined
+    await expect(create()).resolves.toMatchObject({ accepted: true })
   } finally { release?.(); await f.stop(); await f.remove() }
 })
 
