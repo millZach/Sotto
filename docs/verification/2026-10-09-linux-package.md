@@ -8,6 +8,8 @@ Verified on forge, October 9, 2026, for #841, under the accepted Linux desktop d
 
 The final four gates and the main/preload external allowlist output are retained in [gates.txt](../../artifacts/linux-package/gates.txt). Typecheck and lint passed. Vitest passed 627 files and 9,289 tests, with 50 files and 182 tests skipped (677 files, 9,471 tests total), in 507.67 seconds. Notices verification checked 174 components, and the external allowlist printed `allowlist check: PASS`. A final build-input comparison matched the packaged digest. The normal unit gate covers the Linux profile, isolated smoke environment, complete archive comparison, a tarball missing its WASM resource while its ASAR is unchanged, packaged autostart write/remove and disabled development startup. Existing Windows/macOS profiles and the false shared rebuild setting remain pinned.
 
+The Linux hicolor icons now come from `scripts/generate-brand-assets.mjs`. The `--linux` pass renders 48, 128 and 256 pixels from the master SVG on forge; all 16 existing Windows/macOS/phone output hashes remained identical. Full regeneration needs the original platform fonts and rendering libraries, so its unrelated output was restored before the scoped pass. The recipe’s icon hashes and `.SRCINFO` were refreshed, and the package revision is now 2.
+
 The first full run found a base-branch defect: the owl mark and Linux desktop ADRs both used 0062. The owl decision was renumbered to 0064, with its glossary and historical verification references updated; neither decision changed. The unique-number test passes after that fix.
 
 ## Linux archive

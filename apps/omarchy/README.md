@@ -71,6 +71,8 @@ bsdtar -tvf ./sotto-bin-<version>-1-x86_64.pkg.tar.zst
 
 Builds need no root. Installation does. `install.sh path/to/package.pkg.tar.zst` installs the local package with pacman and offers the bindings and shell plugin instructions; it does not change your desktop configuration. Without a path it uses `omarchy-pkg-add sotto-bin` when a package repository carries it, or `yay -S --needed sotto-bin` for the AUR. Do not use that form before publication. The shell plugin is shipped separately by #850; follow its own README in `shell-plugin/` when available.
 
+Regenerate the hicolor icons from `build/icon.svg` with `mise exec node@24.21.0 -- node scripts/generate-brand-assets.mjs --linux` at the repository root. This leaves Windows, macOS and phone outputs alone. Refresh the three icon checksums and run `makepkg --printsrcinfo > .SRCINFO` afterward.
+
 The package installs the app into `/opt/sotto`, links `/usr/bin/sotto` to `/opt/sotto/bin/sotto`, adds `sotto.desktop` and hicolor icons, and sets `chrome-sandbox` to root:root 4755. Arch's user namespaces normally supply the sandbox. The helper supports desktops with user namespaces turned off. The dependency list follows forge's `t3code-bin`, with wl-clipboard and libsecret added. Omarchy supplies gnome-keyring; an unlocked Secret Service is needed to save keys.
 
 Open Sotto from the application menu or run `sotto`. Under Settings → Application, **Launch when you sign in** writes or removes `$XDG_CONFIG_HOME/autostart/sotto.desktop` (normally `~/.config/autostart/sotto.desktop`). uwsm runs it at sign-in. Development builds keep that row disabled. **Start minimized** keeps the main window hidden at sign-in.
