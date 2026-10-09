@@ -179,6 +179,8 @@ artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/drag-and-snap.png
 !artifacts/omarchy-shell-plugin/drag-ghost-left.png
 !artifacts/omarchy-shell-plugin/failed-stop-keeps-pill.png
+!artifacts/omarchy-shell-plugin/late-stop-after-quit.png
+!artifacts/omarchy-shell-plugin/late-stop-before-fix.png
 !artifacts/omarchy-shell-plugin/nested-proof.txt
 !artifacts/omarchy-shell-plugin/notices.png
 !artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
