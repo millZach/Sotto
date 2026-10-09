@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { createOwnedProofProcesses, isProofProcessAlive, proofSystemdEnvironment } from '../../scripts/owned-proof-processes.mjs'
+import { createOwnedProofProcesses, isProofProcessAlive, proofSystemdEnvironment, terminateThenCleanup } from '../../scripts/owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from '../../scripts/proof-debugger.mjs'
 
 async function fakeDebugger(mode, check) {
@@ -63,6 +63,24 @@ const hasUserSystemd = () => {
   try { execFileSync('systemctl', ['--user', 'show-environment'], { env: proofSystemdEnvironment(), stdio: 'ignore', timeout: 2000 }); return true }
   catch { return false }
 }
+describe('proof cleanup ordering', () => {
+  it.each([false, true])('terminates first and keeps discovery errors (termination failure=%s)', async failure => {
+    const calls = []
+    const discoveryError = new Error('Runtime discovery refused')
+    let caught
+    try {
+      await terminateThenCleanup(async () => {
+        calls.push('terminate')
+        if (failure) throw new Error('Termination assertion failed')
+      }, [
+        () => { calls.push('discover'); throw discoveryError },
+        () => { calls.push('assert') },
+      ])
+    } catch (error) { caught = error }
+    expect(calls).toEqual(['terminate', 'discover', 'assert'])
+    expect(caught.errors).toContain(discoveryError)
+  })
+})
 describe.skipIf(!hasUserSystemd())('proof process ownership', () => {
   it.each([false, true])('stops a reparented owned child (setsid=%s) and preserves an unrelated process', async escape => {
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })

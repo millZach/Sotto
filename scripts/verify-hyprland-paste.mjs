@@ -7,7 +7,7 @@ import { setTimeout, clearTimeout } from 'node:timers'
 import { execFileSync } from 'node:child_process'
 import { mkdir, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createOwnedProofProcesses } from './owned-proof-processes.mjs'
+import { createOwnedProofProcesses, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const root = process.cwd()
@@ -103,12 +103,14 @@ try {
   report('live key dispatch', 'NONE — every dispatch used a recording stub')
   await writeFile(join(evidence, 'clipboard-proof.txt'), `${lines.join('\n')}\n`)
 } finally {
-  debuggerClient?.close()
-  // Forked wl-copy owners inherit these dedicated groups even after reparenting.
-  await owned.stop()
-  await bootLog.close()
-  await rm(env.XDG_CONFIG_HOME, { recursive: true, force: true })
-  const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
-  console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
-  assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
+  await terminateThenCleanup(() => owned.stop(), [
+    () => debuggerClient?.close(),
+    () => bootLog.close(),
+    () => rm(env.XDG_CONFIG_HOME, { recursive: true, force: true }),
+    async () => {
+      const remainingInstances = await readdir(join(env.XDG_RUNTIME_DIR, 'hypr'))
+      console.log('Hyprland instance folders after cleanup:', JSON.stringify(remainingInstances))
+      assert.deepEqual(remainingInstances, [session.HYPRLAND_INSTANCE_SIGNATURE])
+    },
+  ])
 }

@@ -25,6 +25,15 @@ export const isProofProcessAlive = pid => {
   return Boolean(current && current.state !== 'Z' && current.state !== 'X')
 }
 
+export async function terminateThenCleanup(terminate, tasks) {
+  const errors = []
+  try { await terminate() } catch (error) { errors.push(error) }
+  for (const task of tasks) {
+    try { await task() } catch (error) { errors.push(error) }
+  }
+  if (errors.length) throw new AggregateError(errors, 'Proof cleanup failed after process termination')
+}
+
 export function createOwnedProofProcesses(report) {
   const token = randomUUID().replaceAll('-', '')
   const slice = `app-sottoproof${token}.slice`

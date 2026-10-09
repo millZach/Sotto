@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { URL } from 'node:url'
 import { performance } from 'node:perf_hooks'
 import { setTimeout as wait } from 'node:timers/promises'
-import { createOwnedProofProcesses } from './owned-proof-processes.mjs'
+import { createOwnedProofProcesses, terminateThenCleanup } from './owned-proof-processes.mjs'
 import { fetchProofJson, openProofDebugger } from './proof-debugger.mjs'
 
 const checkout = process.cwd()
@@ -199,37 +199,41 @@ try {
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
   console.log('PASS: exact paste into foot, Alacritty and Chromium')
 } finally {
-  for (const debuggerClient of debuggers) debuggerClient.close()
-  // Startup may fail before discovery completes. A lock naming our PID still
-  // establishes ownership; never infer it from a newly appeared directory.
-  if (hypr?.pid && !runtimeIdentity) {
-    for (const candidate of readdirSync(join(runtime, 'hypr'))) {
-      if (candidate === liveSig) continue
-      const folder = join(runtime, 'hypr', candidate)
-      try {
-        const [pid, display] = readFileSync(join(folder, 'hyprland.lock'), 'utf8').split('\n')
-        if (Number(pid) === hypr.pid && display !== live.WAYLAND_DISPLAY) {
-          sig = candidate; sock = display; runtimeIdentity = statSync(folder)
-          break
+  await terminateThenCleanup(() => owned.stop(), [
+    () => { for (const debuggerClient of debuggers) debuggerClient.close() },
+    () => {
+      // Startup may fail before discovery completes. A lock naming our PID still
+      // establishes ownership; never infer it from a newly appeared directory.
+      if (hypr?.pid && !runtimeIdentity) {
+        for (const candidate of readdirSync(join(runtime, 'hypr'))) {
+          if (candidate === liveSig) continue
+          const folder = join(runtime, 'hypr', candidate)
+          try {
+            const [pid, display] = readFileSync(join(folder, 'hyprland.lock'), 'utf8').split('\n')
+            if (Number(pid) === hypr.pid && display !== live.WAYLAND_DISPLAY) {
+              sig = candidate; sock = display; runtimeIdentity = statSync(folder)
+              break
+            }
+          } catch { /* No owned runtime folder was created here. */ }
         }
-      } catch { /* No owned runtime folder was created here. */ }
-    }
-  }
-  try { await owned.stop() } finally {
-    const folder = sig && join(runtime, 'hypr', sig)
-    if (folder && sig !== liveSig && runtimeIdentity && existsSync(folder)) {
-      const current = statSync(folder)
-      assert.ok(current.ino === runtimeIdentity.ino && current.dev === runtimeIdentity.dev, 'Never remove a replaced runtime folder')
-      const lock = join(folder, 'hyprland.lock')
-      if (existsSync(lock)) {
-        const [pid, display] = readFileSync(lock, 'utf8').split('\n')
-        assert.equal(Number(pid), hypr.pid, 'Only remove the spawned compositor runtime folder')
-        assert.equal(display, sock)
       }
-      rmSync(folder, { recursive: true, force: true })
-    }
-    const remaining = readdirSync(join(runtime, 'hypr'))
-    console.log('Hyprland instance folders after cleanup:', JSON.stringify(remaining))
-    assert.deepEqual(remaining, [liveSig], 'Only the live session instance folder may remain')
-  }
+      const folder = sig && join(runtime, 'hypr', sig)
+      if (folder && sig !== liveSig && runtimeIdentity && existsSync(folder)) {
+        const current = statSync(folder)
+        assert.ok(current.ino === runtimeIdentity.ino && current.dev === runtimeIdentity.dev, 'Never remove a replaced runtime folder')
+        const lock = join(folder, 'hyprland.lock')
+        if (existsSync(lock)) {
+          const [pid, display] = readFileSync(lock, 'utf8').split('\n')
+          assert.equal(Number(pid), hypr.pid, 'Only remove the spawned compositor runtime folder')
+          assert.equal(display, sock)
+        }
+        rmSync(folder, { recursive: true, force: true })
+      }
+    },
+    () => {
+      const remaining = readdirSync(join(runtime, 'hypr'))
+      console.log('Hyprland instance folders after cleanup:', JSON.stringify(remaining))
+      assert.deepEqual(remaining, [liveSig], 'Only the live session instance folder may remain')
+    },
+  ])
 }
