@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { execFile } from 'node:child_process'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { E2E_TRANSCRIPT, E2E_PRESERVED_CLIPBOARD } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
@@ -6,6 +9,9 @@ test('Linux clipboard failure keeps text in Dictate while the main window is hid
   test.skip(process.platform !== 'linux', 'Linux desktop clipboard')
   const launched = await launchSotto('desktop-clipboard-unavailable')
   const { page, app } = launched
+  const command = (verb: string) => promisify(execFile)(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', verb], {
+    env: { ...process.env, XDG_RUNTIME_DIR: launched.userData },
+  })
   try {
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await page.getByRole('button', { name: 'Skip for now' }).click()
@@ -19,10 +25,10 @@ test('Linux clipboard failure keeps text in Dictate while the main window is hid
     await openPage(page, 'Dictate')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!.hide())
     expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ mainVisible: false, clipboardText: E2E_PRESERVED_CLIPBOARD })
-    // The fixture toggles Sotto through IPC; no OS key event is sent.
-    await page.evaluate(() => window.sottoE2E!.triggerShortcut())
+    // Linux compositor commands enter Sotto through its private socket, without OS keys.
+    await command('start')
     await expect(page.getByRole('region', { name: 'Dictation', exact: true })).toHaveAttribute('data-status', 'listening')
-    await page.evaluate(() => window.sottoE2E!.triggerShortcut())
+    await command('stop')
     const widget = app.windows().find(w => w.url().includes('/widget.html'))!
     await expect(widget.getByRole('alert')).toContainText('Text kept in Sotto')
     await expect(widget.getByRole('alert')).toContainText('Open Sotto, then Dictate. Use Copy text or select the text there.')
