@@ -1,8 +1,8 @@
 {
   "foot": {
     "focused": "foot",
-    "pid": 3811903,
-    "address": "0x5f2690b84ae0",
+    "pid": 3896518,
+    "address": "0x56340ea08180",
     "tags": [
       "terminal*"
     ],
@@ -11,8 +11,8 @@
   },
   "Alacritty": {
     "focused": "Alacritty",
-    "pid": 3811904,
-    "address": "0x5f2690bda190",
+    "pid": 3896519,
+    "address": "0x56340ea5e390",
     "tags": [
       "terminal*"
     ],
@@ -21,8 +21,8 @@
   },
   "Chromium": {
     "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
-    "pid": 3811905,
-    "address": "0x5f2690c88e60",
+    "pid": 3896520,
+    "address": "0x56340eabc360",
     "tags": [],
     "result": "pasted",
     "receivedText": "Sotto pasted into Chromium — naïve façade ✓"

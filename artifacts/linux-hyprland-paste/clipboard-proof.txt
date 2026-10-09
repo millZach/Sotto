@@ -6,4 +6,8 @@ wl-paste after real output: "Sotto Wayland output while unfocused — café 🚀
 wl-paste after settle (no automatic restore): "Sotto Wayland output while unfocused — café 🚀\nSecond line."
 stubbed app output result: "pasted"
 stubbed terminal output result: "pasted"
-real key dispatch: "NOT VERIFIED — screen locked; every dispatch used a recording stub"
+live key dispatch: "NONE — every dispatch used a recording stub"
+Stopped Electron and clipboard children process group 3897022
+Stopped wl-copy sentinel process group 3897155
+Owned processes still running: []
+Hyprland instance folders after cleanup: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
