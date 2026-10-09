@@ -1,5 +1,6 @@
 import { createConnection } from 'node:net'
 import { dictationSocketPath, parseDictationArguments } from './dictationCommand'
+import { validateDictationRuntime } from './dictationRuntime'
 
 const command = parseDictationArguments(process.argv.slice(2))
 if (command === null) {
@@ -7,6 +8,7 @@ if (command === null) {
   process.exitCode = 2
 } else {
   try {
+    validateDictationRuntime(process.env.XDG_RUNTIME_DIR)
     const socket = createConnection(dictationSocketPath(process.env.XDG_RUNTIME_DIR))
     let finished = false
     const fail = (): void => {
@@ -31,7 +33,7 @@ if (command === null) {
     })
     socket.once('close', () => { if (!finished) fail() })
   } catch {
-    console.error('Dictation needs a desktop session with XDG_RUNTIME_DIR. Open Sotto there, then try again.')
+    console.error('Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.')
     process.exitCode = 1
   }
 }

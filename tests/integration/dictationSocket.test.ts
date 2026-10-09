@@ -1,17 +1,18 @@
 // @vitest-environment node
 import { spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
 import { dictationSocketPath } from '../../src/main/hotkeys/dictationCommand'
+import { validateDictationRuntime } from '../../src/main/hotkeys/dictationRuntime'
 
 describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
   let runtime: string
   const services: DictationSocket[] = []
   beforeEach(() => { mkdirSync('.cache', { recursive: true }); runtime = mkdtempSync(join(process.cwd(), '.cache/c-')) })
-  afterEach(() => { services.splice(0).forEach(service => service.dispose()); rmSync(runtime, { recursive: true, force: true }) })
+  afterEach(() => { vi.restoreAllMocks(); services.splice(0).forEach(service => service.dispose()); rmSync(runtime, { recursive: true, force: true }) })
   function service(dispatch = vi.fn(async () => true)): DictationSocket {
     const instance = new DictationSocket(runtime, dispatch)
     services.push(instance)
@@ -57,6 +58,56 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
     await first.start()
     await expect(service().start()).rejects.toThrow('already listening')
     expect(await send('start\n')).toBe('ok\n')
+  })
+  it('refuses a foreign-owned runtime before creating the dictation folder', async () => {
+    // Treat the on-disk owner as another UID without requiring chown or root.
+    vi.spyOn(process, 'getuid').mockReturnValue(process.getuid() + 1)
+    expect(() => validateDictationRuntime(runtime)).toThrow('only you can access')
+    await expect(service().start()).rejects.toThrow('only you can access')
+    expect(existsSync(join(runtime, 'sotto'))).toBe(false)
+  })
+  it.each([0o755, 0o770, 0o1700])('refuses runtime permissions %s without changing them', async mode => {
+    chmodSync(runtime, mode)
+    expect(() => validateDictationRuntime(runtime)).toThrow('only you can access')
+    await expect(service().start()).rejects.toThrow('only you can access')
+    expect(lstatSync(runtime).mode & 0o7777).toBe(mode)
+    expect(existsSync(join(runtime, 'sotto'))).toBe(false)
+  })
+  it('refuses a runtime link and a linked ancestor, including before a dot-dot', async () => {
+    const target = join(runtime, 'real')
+    const link = join(runtime, 'link')
+    mkdirSync(target, { mode: 0o700 })
+    mkdirSync(join(target, 'child'), { mode: 0o700 })
+    symlinkSync(target, link)
+    for (const path of [link, `${link}/`, join(link, 'child'), `${link}/../real`]) {
+      expect(() => validateDictationRuntime(path)).toThrow('real desktop runtime folder')
+      const server = new DictationSocket(path, vi.fn(async () => true))
+      services.push(server)
+      await expect(server.start()).rejects.toThrow('real desktop runtime folder')
+    }
+    expect(existsSync(join(target, 'sotto'))).toBe(false)
+    expect(existsSync(join(target, 'child/sotto'))).toBe(false)
+  })
+  it.each(['runtime', 'sotto'])('leaves the endpoint alone when the %s directory is replaced during recovery', async replaced => {
+    const folder = join(runtime, 'sotto')
+    mkdirSync(folder, { mode: 0o700 })
+    const path = dictationSocketPath(runtime)
+    const abandoned = spawnSync(process.execPath, ['-e', 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', path])
+    expect(abandoned.status).toBe(0)
+    const inode = lstatSync(path).ino
+    const starting = service().start()
+    // start has reached the asynchronous connection probe. Move the same socket inode
+    // into a new directory so checking the endpoint inode alone cannot detect this swap.
+    const directory = replaced === 'runtime' ? runtime : folder
+    const moved = `${directory}-old`
+    renameSync(directory, moved)
+    mkdirSync(directory, { mode: 0o700 })
+    if (replaced === 'runtime') mkdirSync(folder, { mode: 0o700 })
+    renameSync(replaced === 'runtime' ? join(moved, 'sotto/dictation.sock') : join(moved, 'dictation.sock'), path)
+    try {
+      await expect(starting).rejects.toThrow('runtime folder changed')
+      expect(lstatSync(path).ino).toBe(inode)
+    } finally { rmSync(moved, { recursive: true, force: true }) }
   })
   it('recovers a socket left by a process that exited without cleanup', async () => {
     mkdirSync(join(runtime, 'sotto'), { mode: 0o700 })

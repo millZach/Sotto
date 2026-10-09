@@ -2,6 +2,7 @@ import { chmodSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { dirname } from 'node:path'
 import { dictationSocketPath, parseDictationCommand, type CompositorDictationCommand } from './dictationCommand'
+import { assertDictationDirectories, validateDictationRuntime, type DictationDirectory } from './dictationRuntime'
 
 /** One private Unix socket per desktop session. It never listens on a network interface. */
 export class DictationSocket {
@@ -9,21 +10,25 @@ export class DictationSocket {
   private readonly clients = new Set<Socket>()
   private ownedInode: number | null = null
   private disposed = false
+  private directories: DictationDirectory[] = []
   readonly path: string
 
-  constructor(runtimeDirectory: string | undefined, private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>) {
+  constructor(private readonly runtimeDirectory: string | undefined, private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>) {
     this.path = dictationSocketPath(runtimeDirectory)
   }
 
   async start(): Promise<void> {
     if (this.disposed || this.server !== null) throw new Error('Dictation command is unavailable.')
+    this.directories = validateDictationRuntime(this.runtimeDirectory)
     const directory = dirname(this.path)
     try { mkdirSync(directory, { mode: 0o700 }) } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     }
     this.secureDirectory(directory)
+    this.directories.push({ path: directory, stat: lstatSync(directory) })
     await this.removeStaleSocket()
     if (this.disposed) return
+    assertDictationDirectories(this.directories)
     const server = createServer(socket => this.accept(socket))
     this.server = server
     try {
@@ -73,6 +78,7 @@ export class DictationSocket {
         if ((error as NodeJS.ErrnoException).code !== 'ECONNREFUSED') { reject(error); return }
         try {
           // A live or replaced endpoint belongs to its owner, even during recovery.
+          assertDictationDirectories(this.directories)
           if (lstatSync(this.path).ino !== stat.ino) throw new Error('Dictation socket changed.')
           unlinkSync(this.path)
           resolve()
@@ -106,6 +112,7 @@ export class DictationSocket {
   private cleanupSocket(): void {
     if (this.ownedInode === null) return
     try {
+      assertDictationDirectories(this.directories)
       if (lstatSync(this.path).ino === this.ownedInode) unlinkSync(this.path)
     } catch { /* Quitting also works when the runtime directory has disappeared. */ }
     this.ownedInode = null
