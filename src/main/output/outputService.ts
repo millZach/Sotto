@@ -130,15 +130,15 @@ export class OutputService {
       await this.dependencies.clipboard.writeText(text)
     } catch {
       // Wayland availability still matters if Electron's own fallback also fails.
-      if (this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
+      if (options.autoPaste && this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
       throw new OutputClipboardError()
     }
 
-    if (this.dependencies.clipboard.canPaste?.() === false) {
-      return 'clipboard-unavailable'
-    }
     if (!options.autoPaste) {
       return 'copied'
+    }
+    if (this.dependencies.clipboard.canPaste?.() === false) {
+      return 'clipboard-unavailable'
     }
 
     // Hide only for the paste keystroke so the previously focused app stays

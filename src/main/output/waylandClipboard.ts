@@ -17,6 +17,12 @@ export function createWaylandClipboard(
   spawnProcess: ClipboardSpawn = spawn,
 ): TextClipboard {
   let desktopClipboardWritten = false
+  let fallbackReported = false
+  const reportFallback = (): void => {
+    if (fallbackReported) return
+    fallbackReported = true
+    onFallback()
+  }
   const run = (executable: string, args: readonly string[], text?: string): Promise<string> =>
     new Promise((resolve, reject) => {
       let child: ChildProcess | undefined
@@ -79,8 +85,9 @@ export function createWaylandClipboard(
       try {
         await run('wl-copy', ['--type', 'text/plain;charset=utf-8'], text)
         desktopClipboardWritten = true
+        fallbackReported = false
       } catch {
-        onFallback()
+        reportFallback()
         await fallback.writeText(text)
       }
     },
@@ -89,7 +96,7 @@ export function createWaylandClipboard(
       try {
         return await run('wl-paste', ['--no-newline'])
       } catch {
-        onFallback()
+        reportFallback()
         return fallback.readText()
       }
     },

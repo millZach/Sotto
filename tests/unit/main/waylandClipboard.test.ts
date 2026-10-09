@@ -3,7 +3,7 @@ import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { createWaylandClipboard, CLIPBOARD_PROCESS_TIMEOUT_MS, CLIPBOARD_TERMINATE_GRACE_MS } from '../../../src/main/output/waylandClipboard'
-import { OutputService } from '../../../src/main/output/outputService'
+import { OutputService, OutputClipboardError } from '../../../src/main/output/outputService'
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 
 function harness() {
@@ -58,6 +58,27 @@ describe('Wayland clipboard', () => {
     expect(h.clipboard.canPaste!()).toBe(false)
     if (operation === 'write') expect(h.fallback.writeText).toHaveBeenCalledWith('copied text')
     else expect(h.fallback.readText).toHaveBeenCalledOnce()
+  })
+
+  it('does not repost the fallback notice on repeated copy clicks and retries after recovery', async () => {
+    const h = harness()
+    h.spawn.mockImplementation(() => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) })
+    const service = new OutputService({
+      clipboard: h.clipboard, widget: { hideWidget: vi.fn(), showWidget: vi.fn() },
+      delay: vi.fn(), process: { run: vi.fn() }, buildPasteInvocation: createPasteCommands('linux').oneShot,
+    })
+    // Copy text, History, thread actions, host setup and sign-in all request copy-only output.
+    for (const text of ['Copy text', 'History copy', 'agent copy', 'host setup', 'sign-in']) {
+      await expect(service.deliver(text, { autoPaste: false, pasteDelayMs: 0 })).resolves.toBe('copied')
+      expect(h.fallback.writeText).toHaveBeenLastCalledWith(text)
+    }
+    expect(h.notice).toHaveBeenCalledOnce()
+    h.spawn.mockImplementationOnce(() => h.child)
+    const recovered = h.clipboard.writeText('recovered')
+    h.child.emit('close', 0, null)
+    await recovered
+    await h.clipboard.writeText('missing again')
+    expect(h.notice).toHaveBeenCalledTimes(2)
   })
 
   it.each(['throw', 'exit', 'signal', 'stdin'] as const)('falls back on %s without leaking OS details', async failure => {
@@ -120,7 +141,7 @@ describe('Wayland clipboard', () => {
     expect(h.spawn).toHaveBeenCalledOnce() // Windows does not restore; Linux also leaves the text copied.
   })
 
-  it.each([false, true])('reports an unavailable desktop selection after Electron fallback with autoPaste=%s', async autoPaste => {
+  it.each([false, true])('reports copied for copy-only and unavailable for automatic paste after Electron fallback with autoPaste=%s', async autoPaste => {
     const h = harness()
     const run = vi.fn()
     const service = new OutputService({
@@ -130,7 +151,7 @@ describe('Wayland clipboard', () => {
     const delivery = service.deliver('dictation', { autoPaste, pasteDelayMs: 80 })
     await vi.waitFor(() => expect(h.spawn).toHaveBeenCalledOnce())
     h.child.emit('error', new Error('missing'))
-    await expect(delivery).resolves.toBe('clipboard-unavailable')
+    await expect(delivery).resolves.toBe(autoPaste ? 'clipboard-unavailable' : 'copied')
     expect(run).not.toHaveBeenCalled()
   })
 
@@ -142,7 +163,8 @@ describe('Wayland clipboard', () => {
       delay: vi.fn(), process: { run: vi.fn() }, buildPasteInvocation: createPasteCommands('linux').oneShot,
     })
     const delivery = service.deliver('dictation', { autoPaste, pasteDelayMs: 80 })
-    const assertion = expect(delivery).resolves.toBe('clipboard-unavailable')
+    const assertion = autoPaste ? expect(delivery).resolves.toBe('clipboard-unavailable')
+      : expect(delivery).rejects.toBeInstanceOf(OutputClipboardError)
     await vi.waitFor(() => expect(h.spawn).toHaveBeenCalledOnce())
     h.child.emit('error', new Error('missing'))
     await assertion
