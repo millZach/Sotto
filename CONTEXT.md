@@ -141,7 +141,7 @@ Sotto is a desktop dictation app that is becoming a voice development coordinato
 
 **Terminal.** In Terminal mode, a shell or a provider CLI that Sotto starts in a project folder or in its own worktree, named by the user when it opens. It belongs to a project, never to a thread, and keeps running while its pane is hidden. Distinct from the Tools panel's terminal and from a pane's Terminal drawer, which both belong to a thread's working copy. Its first line, printed by Sotto, names the folder and the command.
 
-The following terminal states are proposed in [ADR-0066](docs/adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md); today's output-based Running and Idle labels remain until that work ships. They describe Terminal mode's agents, apart from thread states. Plain shells keep Running and Idle.
+The following states describe Terminal mode's agents, apart from thread states ([ADR-0066](docs/adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md)). Plain shells keep output-based Running and Idle. Needs you and Working group terminals across projects; other terminals stay under their projects before Closed.
 
 **Starting (terminal).** A terminal whose provider CLI is opening and is not yet ready for input.
 

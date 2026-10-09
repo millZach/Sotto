@@ -27,14 +27,15 @@ describe('terminal rows', () => {
     expect(terminalState(starting, Number.NEGATIVE_INFINITY, NOW)).toBe('starting')
     expect(terminalStateLabel(starting, 'starting')).toBe('Starting')
     expect(SIDEBAR_STATE.starting).toBe('working')
-    expect(terminalState(terminal(1), NOW - 1_000, NOW)).toBe('running')
-    expect(terminalState(terminal(1), NOW - 60_000, NOW)).toBe('idle')
+    const shell = terminal(1, { launch: { provider: null, modelId: null, reasoning: null, permission: null } })
+    expect(terminalState(shell, NOW - 1_000, NOW)).toBe('running')
+    expect(terminalState(shell, NOW - 60_000, NOW)).toBe('idle')
     expect(terminalState(terminal(1, { status: 'exited', exitCode: 2 }), NOW, NOW)).toBe('exited')
     expect(terminalState(terminal(1, { closedAt: NOW }), NOW, NOW)).toBe('closed')
     expect(terminalStateLabel(terminal(1, { status: 'exited', exitCode: 2 }), 'exited')).toBe('Exited with code 2')
     expect(terminalStateLabel(terminal(1, { status: 'unavailable' }), 'exited')).toBe('Could not start')
     expect(terminalStateLabel(terminal(1), 'idle')).toBe('Idle')
-    expect(terminalStateLabel(terminal(1), 'idle', 'Port 5173 in use')).toBe('Port 5173 in use')
+    expect(terminalStateLabel(shell, 'idle', 'Port 5173 in use')).toBe('Port 5173 in use')
   })
 
   it('takes the last notable line from the output, without colours, prompts or blank lines', () => {
@@ -44,17 +45,66 @@ describe('terminal rows', () => {
     expect(lastNotableLine(`${'x'.repeat(80)}\n`)).toHaveLength(60)
   })
 
+  it('reads an agent state only from main, regardless of recent output or a quiet interval', () => {
+    const labels = { starting: 'Starting', working: 'Working', idle: 'Idle', 'needs-you': 'Needs you', 'just-finished': 'Just finished', exited: 'Exited' } as const
+    for (const [agentState, label] of Object.entries(labels)) {
+      const record = terminal(1, { agentState: agentState as WorkspaceTerminal['agentState'] })
+      expect(terminalState(record, NOW, NOW)).toBe(agentState)
+      expect(terminalState(record, NOW - 24 * 60 * 60_000, NOW)).toBe(agentState)
+      expect(terminalStateLabel(record, terminalState(record, NOW, NOW), 'An old permission prompt?')).toBe(label)
+    }
+    expect(terminalState(terminal(1, { status: 'exited', agentState: 'just-finished' }), NOW, NOW)).toBe('exited')
+    expect(terminalState(terminal(1, { closedAt: NOW, agentState: 'needs-you' }), NOW, NOW)).toBe('closed')
+    expect(terminalState(terminal(1), NOW, NOW)).toBe('idle')
+    expect(terminalStateLabel(terminal(1), 'idle', 'Unclassified output')).toBe('Idle')
+  })
+
+  it('keeps plain shells on their Running and Idle clock, apart from agent states', () => {
+    const shell = terminal(1, { launch: { provider: null, modelId: null, reasoning: null, permission: null }, agentState: 'needs-you' })
+    expect(terminalState(shell, NOW, NOW)).toBe('running')
+    expect(terminalState(shell, NOW - 60_000, NOW)).toBe('idle')
+    expect(terminalStateLabel(shell, 'idle', 'Server ready')).toBe('Server ready')
+  })
+
   it('groups open terminals by project, newest first, and keeps closed ones on their own shelf', () => {
     const state = threadsStateFixture()
     const rows = describeTerminals(state, [terminal(1, { openedAt: NOW - 60_000 }), terminal(2, { status: 'starting' }), terminal(3, { closedAt: NOW })], NOW)
     const organization = organizeTerminals(state, rows, '')
     const workshop = organization.open.find(folder => folder.id === 'workshop')!
-    expect(workshop.rows.map(row => row.title)).toEqual(['Terminal 1', 'Terminal 2'])
-    // A terminal on its way up counts among the folder's running ones.
-    expect(workshop.running).toBe(2)
+    expect(workshop.rows.map(row => row.title)).toEqual(['Terminal 1'])
+    expect(organization.working.map(row => row.title)).toEqual(['Terminal 2'])
+    expect(workshop.running).toBe(1)
+    // The folder knows a row moved up, so its empty line can say "other"; a project with no terminals cannot.
+    expect(workshop.grouped).toBe(1)
+    expect(organization.open.filter(folder => folder.id !== 'workshop').every(folder => folder.grouped === 0)).toBe(true)
     // Every open project is listed so a terminal can be started there.
     expect(organization.open.map(folder => folder.id)).toEqual(expect.arrayContaining(state.host.projects.filter(project => !project.workspaceSettledAt).map(project => project.id)))
     expect(organization.closed.map(folder => folder.rows.map(row => row.title))).toEqual([['Terminal 3']])
+  })
+
+  it('puts current requests across projects first, then starting and working agents, with no duplicated rows', () => {
+    const state = threadsStateFixture()
+    const other = state.host.projects.find(project => project.id !== 'workshop')!
+    const records = [
+      terminal(1, { agentState: 'idle' }),
+      terminal(2, { projectId: other.id, agentState: 'needs-you' }),
+      terminal(3, { agentState: 'working' }),
+      terminal(4, { agentState: 'needs-you', openedAt: NOW }),
+      terminal(5, { status: 'starting', agentState: 'starting' }),
+      terminal(6, { agentState: 'just-finished' }),
+      terminal(7, { closedAt: NOW, agentState: 'needs-you' }),
+      terminal(8, { launch: { provider: null, modelId: null, reasoning: null, permission: null } }),
+    ]
+    const organization = organizeTerminals(state, describeTerminals(state, records, NOW), '')
+    expect(organization.needsYou.map(row => row.title)).toEqual(['Terminal 4', 'Terminal 2'])
+    expect(organization.working.map(row => row.title)).toEqual(['Terminal 3', 'Terminal 5'])
+    expect(organization.open.flatMap(folder => folder.rows).map(row => row.title)).toEqual(['Terminal 1', 'Terminal 6', 'Terminal 8'])
+    expect(organization.closed.flatMap(folder => folder.rows).map(row => row.title)).toEqual(['Terminal 7'])
+    expect(organization.matching).toBe(8)
+    const filtered = organizeTerminals(state, describeTerminals(state, records, NOW), 'Terminal 2')
+    expect(filtered.needsYou.map(row => row.project?.title)).toEqual([other.title])
+    expect(filtered.working).toEqual([])
+    expect(filtered.open).toEqual([])
   })
 
   it('searches titles, providers, commands and branches, and drops empty projects while searching', () => {

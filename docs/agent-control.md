@@ -4,11 +4,11 @@ Sotto creates and manages coding threads through the installed Codex, Claude Cod
 
 ## Terminal mode
 
-Terminal mode starts an installed provider CLI in its own terminal, apart from the thread adapters described below. Today its sidebar reads recent output as Running and silence as Idle; approvals and questions stay in the CLI.
+Terminal mode starts an installed provider CLI in its own terminal, apart from the thread adapters described below. Main owns each agent's run-scoped Starting, Working, Idle, Needs you, Just finished and Exited state, using private hooks and bundled live-screen rules. Approvals and questions stay in the native CLI; the sidebar and pane-header attention edge lead the user there. Needs you groups agents across projects first, Working next, other terminals by project, then Closed.
 
-[ADR-0066](adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md) proposes Starting, Working, Idle, Needs you, Just finished and Exited for those agents. Just finished means a turn completed out of sight, and viewing it clears the mark; an on-screen pane earns nothing, focused or not. Plain shells keep Running and Idle. These states and phone terminal controls are not implemented by that ADR.
+[ADR-0066](adr/0066-a-terminal-agent-reports-state-through-run-scoped-hooks.md) governs those states. Just finished means a successful turn completed while no client showed it. Viewing clears the thread-style dot and bold title for every client; any on-screen pane earns nothing, focused or not. The mark is ephemeral and belongs to that run. Plain shells keep output-based Running and Idle. The ADR's iPhone terminal Host feature and approval preview remain proposed work.
 
-The proposal uses hooks for each Claude Code run to report state and return the user's one-time Yes or No for a live approval. Codex notify supplies completion and its provider session ID; Codex and Grok approvals and questions still need the native desktop CLI. A phone answer would require its current Can answer policy and a request-bound preview; no phone terminal input or persistent approval choice is proposed. The prototype records the chosen look, not working approval controls. Thread permission handling below is unchanged.
+Claude Code uses private hooks for each run; Codex notify supplies completion and a consistent provider session ID. Grok uses bundled screen rules. Hooks carry normalised state and IDs, never prompt or tool content. The tested Claude permission channel can deliver an exact one-time Yes or No, but no desktop Sotto answer controls are added. A future phone answer would require its current Can answer policy and a request-bound preview; no phone terminal input or persistent approval choice is proposed. The prototype records the chosen look, not working approval controls. Thread permission handling below is unchanged.
 
 ## Set up
 

@@ -71,14 +71,17 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     { id: 'restart', label: 'Restart', icon: <RotateCcw size={15} aria-hidden="true" />, disabled: busy || !bridge, run: () => { focusNext.current = id; void store.restart(bridge, id) } },
     ...(running ? [{ id: 'stop', label: 'Stop', icon: <Square size={15} aria-hidden="true" />, disabled: !bridge, run: () => void store.stop(bridge, id) }] : []),
   ]
-  return <div className="terminal-pane" data-focused={focused || undefined}>
+  const needsYou = terminal.status === 'running' && terminal.agentState === 'needs-you'
+  // Sits in the status line, not above the screen: a note that comes and goes there would resize the terminal under the CLI.
+  const unread = terminal.status === 'running' && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable'
+  return <div className="terminal-pane" data-focused={focused || undefined} data-needs-you={needsYou || undefined}>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         {row.providerId ? <ProviderMark provider={row.providerId} name={row.provider} size={16} /> : <SquareTerminal size={16} aria-hidden="true" />}
         <h2>{terminal.title}</h2>
         <span className="thread-workspace__crumb">
           <span>{row.project?.title ?? row.provider} · {workingCopy}</span>
-          {!running ? <span className="thread-workspace__tag">{exitLabel(terminal)}</span> : null}
+          {!running && terminal.launch.provider === null ? <span className="thread-workspace__tag">{exitLabel(terminal)}</span> : null}
         </span>
       </div>
       <div className="thread-workspace__actions"><PaneMenu groups={[actions]} /></div>
@@ -98,6 +101,8 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     </div>
     <p className="terminal-status">
       <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? (starting ? 'Starting…' : 'No branch')}</span>
+      {unread ? <span className="terminal-status__note" title={`Sotto has no screen rules for this ${row.provider} version, so it cannot show Needs you or Just finished. Watch the terminal for questions.`}>
+        Sotto can't tell when this {row.provider} version needs you</span> : null}
       <span className="terminal-status__hints">{modifier}+C copies a selection or interrupts · {modifier}+V pastes text or an image</span>
     </p>
   </div>

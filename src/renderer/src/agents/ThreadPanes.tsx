@@ -18,6 +18,8 @@ export interface PaneLabel {
   readonly title: string
   readonly providerId: ProviderId | undefined
   readonly provider: string
+  /** A state the pane's own name carries, such as "needs you"; the edge that shows it visually is the content's. */
+  readonly attention?: string | undefined
 }
 
 export interface ThreadPanesProps {
@@ -38,6 +40,8 @@ export interface ThreadPanesProps {
   readonly onDrop: (threadId: string, target: DropTarget) => void
   /** Close one pane's view. */
   readonly onClosePane: (threadId: string) => void
+  /** IDs actually on screen; retained panes hidden by zoom or the compact layout are excluded. */
+  readonly onVisiblePaneIdsChange?: ((ids: readonly string[]) => void) | undefined
   /** Test-only: a fixed pane-area size where layout measurement is unavailable. */
   readonly measuredWidth?: number | undefined
   readonly measuredHeight?: number | undefined
@@ -218,7 +222,7 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  * Every pane stays mounted in a stable order, so moving, hiding or resizing never loses its scroll position,
  * keyboard focus or draft, and the retained arrangement returns when there is room.
  */
-export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
+export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, onVisiblePaneIdsChange, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
   const app = useOptionalApp()
   const zoomShortcut = chordClaimed('ctrl+shift+m', app?.settings?.hotkey, app?.platform ?? 'win32')
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
@@ -233,11 +237,13 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const narrow = split && !fits
   const single = split && (narrow || layout.zoomed)
   const shownId = focusedId !== null && paneIds.includes(focusedId) ? focusedId : paneIds[0] ?? null
+  useLayoutEffect(() => { onVisiblePaneIdsChange?.(single ? shownId === null ? [] : [shownId] : paneIds) }, [single, shownId, paneIds, onVisiblePaneIdsChange])
   const shape = paneShape(layout)
   const shown = shownLayout(layout, width, height)
   const [shownRows, shownColumns] = gridSizes(shown)
   const placed = split && !single ? placements(shape, shownRows, shownColumns) : null
   const title = (id: string): string => rows.get(id)?.title ?? 'Pane'
+  const paneName = (id: string): string => { const attention = rows.get(id)?.attention; return attention ? `${title(id)}, ${attention}` : title(id) }
 
   useLayoutEffect(() => {
     const kept = preserved.current
@@ -350,6 +356,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
         const paneRow = rows.get(id)
         const selected = id === shownId
         return <button key={id} id={tabDomId(id)} type="button" role="tab" aria-selected={selected} aria-controls={paneDomId(id)} tabIndex={selected ? 0 : -1}
+          aria-label={paneRow?.attention ? paneName(id) : undefined}
           className="thread-panes__tab tt-focusable" onClick={() => onFocusPane(id)} onKeyDown={event => onTabKey(event, index)}>
           {paneRow ? <ProviderMark provider={paneRow.providerId} name={paneRow.provider} size={14} /> : null}
           <span>{title(id)}</span>
@@ -366,7 +373,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
         const zooms = !narrow || layout.zoomed
         return <React.Fragment key={id}><section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined}
-          aria-label={title(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
+          aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
