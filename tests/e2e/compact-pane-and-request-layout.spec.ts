@@ -1,5 +1,6 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { resizeContentWindow } from './support/sottoWindow'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { claudePending } from '../../src/main/agents/claudeRequests'
@@ -15,13 +16,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const SHOTS = evidenceDirectory('artifacts/phase-three-review-ui-fixes')
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    // The shipped minimum is an outer size; relax it slightly so the content area can be exactly 820x560.
-    window.setMinimumSize(800, 540)
-    window.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function shoot(page: Page, name: string, before?: () => Promise<void>): Promise<void> {
@@ -77,90 +72,93 @@ async function expectUncrowded(pane: Locator): Promise<void> {
 test('a single row that goes compact keeps its arrangement switch, and the grid comes back from it at 1280 and 820', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-review-ui-fixes-'))
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
-  await writeFile(join(profile, 'agents.json'), JSON.stringify({
-    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
-    draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
-  }))
-  const launched = await launchSotto('design-threads', profile)
+  const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-review-ui-fixes-' })
   try {
-    const { page } = launched
-    await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
-    // Panes are keyed by the host that owns their thread.
-    const key = await hostKeys(page)
-    await size(launched, 1280, 800)
-    await openThreads(page)
-    const panes = page.getByRole('group', { name: 'Thread panes' })
-    const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
-    const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-    for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
-      await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
-    }
-    const placed = panes.locator('section.thread-pane[role="region"]:not([data-hidden])')
-    await expect(placed).toHaveCount(4)
-    await pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true }).fill('Footer draft through compact.')
-    // Verify the saved revision before changing arrangement, so a persistence failure is separate from layout.
-    await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, key('footer-links'))).toBe('Footer draft through compact.')
-    await pane('visual-gate').click({ position: { x: 200, y: 200 } })
-    const rows = page.getByRole('separator', { name: 'Resize rows 1 and 2' })
-    await rows.focus()
-    await page.keyboard.press('ArrowUp')
-    await expect(rows).toHaveAttribute('aria-valuenow', '45')
-    const area = await page.locator('.thread-panes__area').boundingBox()
-    // The grid fits this pane area; four panes in a row need 4 × 400px plus three dividers.
-    expect(area!.width).toBeGreaterThanOrEqual(809)
-    expect(area!.width).toBeLessThan(1627)
-    await shoot(page, 'panes-grid-1280')
-    await expectUncrowded(pane('visual-gate'))
+    const profile = profileOwner.directory
+    await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark' }))
+    await writeFile(join(profile, 'agents.json'), JSON.stringify({
+      configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
+      assignments: [], queue: [], activeThreadId: 'grok-previews', activeProjectId: 'workshop',
+      draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
+    }))
+    const launched = await launchSotto('design-threads', profile)
+    try {
+      const { page } = launched
+      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
+      // Panes are keyed by the host that owns their thread.
+      const key = await hostKeys(page)
+      await size(launched, 1280, 800)
+      await openThreads(page)
+      const panes = page.getByRole('group', { name: 'Thread panes' })
+      const pane = (id: string) => panes.locator(`section.thread-pane[data-thread-id="${key(id)}"]`)
+      const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+      for (const title of ['Footer links', 'Weekly note', 'Visual gate flake']) {
+        await sidebar.getByRole('button', { name: title, exact: true }).hover()
+        await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
+      }
+      const placed = panes.locator('section.thread-pane[role="region"]:not([data-hidden])')
+      await expect(placed).toHaveCount(4)
+      await pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true }).fill('Footer draft through compact.')
+      // Verify the saved revision before changing arrangement, so a persistence failure is separate from layout.
+      await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).threadDrafts?.find(draft => draft.threadId === id)?.text, key('footer-links'))).toBe('Footer draft through compact.')
+      await pane('visual-gate').click({ position: { x: 200, y: 200 } })
+      const rows = page.getByRole('separator', { name: 'Resize rows 1 and 2' })
+      await rows.focus()
+      await page.keyboard.press('ArrowUp')
+      await expect(rows).toHaveAttribute('aria-valuenow', '45')
+      const area = await page.locator('.thread-panes__area').boundingBox()
+      // The grid fits this pane area; four panes in a row need 4 × 400px plus three dividers.
+      expect(area!.width).toBeGreaterThanOrEqual(809)
+      expect(area!.width).toBeLessThan(1627)
+      await shoot(page, 'panes-grid-1280')
+      await expectUncrowded(pane('visual-gate'))
 
-    const tabs = page.getByRole('tablist', { name: 'Open panes' })
-    const toggle = pane('visual-gate').getByRole('button', { name: 'Single row' })
-    await toggle.click()
-    await expect(tabs).toBeVisible()
-    await expect(tabs.getByRole('tab', { name: 'Visual gate flake' })).toHaveAttribute('aria-selected', 'true')
-    await expect(toggle).toBeVisible()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    await expect(pane('visual-gate').locator('.thread-pane__controls button')).toHaveCount(2)
-    await shoot(page, 'panes-row-compact-1280')
-    await expectUncrowded(pane('visual-gate'))
+      const tabs = page.getByRole('tablist', { name: 'Open panes' })
+      const toggle = pane('visual-gate').getByRole('button', { name: 'Single row' })
+      await toggle.click()
+      await expect(tabs).toBeVisible()
+      await expect(tabs.getByRole('tab', { name: 'Visual gate flake' })).toHaveAttribute('aria-selected', 'true')
+      await expect(toggle).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(pane('visual-gate').locator('.thread-pane__controls button')).toHaveCount(2)
+      await shoot(page, 'panes-row-compact-1280')
+      await expectUncrowded(pane('visual-gate'))
 
-    // From the keyboard, back to the same grid.
-    await toggle.focus()
-    await page.keyboard.press('Enter')
-    await expect(tabs).toHaveCount(0)
-    await expect(placed).toHaveCount(4)
-    await expect(rows).toHaveAttribute('aria-valuenow', '45')
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    await expect(toggle).toBeFocused()
-    await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
-    await shoot(page, 'panes-grid-returned-1280')
+      // From the keyboard, back to the same grid.
+      await toggle.focus()
+      await page.keyboard.press('Enter')
+      await expect(tabs).toHaveCount(0)
+      await expect(placed).toHaveCount(4)
+      await expect(rows).toHaveAttribute('aria-valuenow', '45')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(toggle).toBeFocused()
+      await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
+      await shoot(page, 'panes-grid-returned-1280')
 
-    // At 820 neither arrangement fits the pane area, so the view is compact either way; the switch stays and says which
-    // arrangement will return, and widening brings the one chosen here.
-    await size(launched, 820, 560)
-    await expect(tabs).toBeVisible()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    await shoot(page, 'panes-grid-compact-820')
-    await expectUncrowded(pane('visual-gate'))
-    await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a single row when there is room')
-    await shoot(page, 'panes-row-compact-820')
-    await expectUncrowded(pane('visual-gate'))
-    await toggle.focus()
-    await page.keyboard.press('Space')
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    await expect(toggle).toBeFocused()
-    await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a grid when there is room')
-    await size(launched, 1280, 800)
-    await expect(tabs).toHaveCount(0)
-    await expect(placed).toHaveCount(4)
-    await expect(rows).toHaveAttribute('aria-valuenow', '45')
-    await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
-  } finally { await closeSotto(launched) }
+      // At 820 neither arrangement fits the pane area, so the view is compact either way; the switch stays and says which
+      // arrangement will return, and widening brings the one chosen here.
+      await size(launched, 820, 560)
+      await expect(tabs).toBeVisible()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await shoot(page, 'panes-grid-compact-820')
+      await expectUncrowded(pane('visual-gate'))
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a single row when there is room')
+      await shoot(page, 'panes-row-compact-820')
+      await expectUncrowded(pane('visual-gate'))
+      await toggle.focus()
+      await page.keyboard.press('Space')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await expect(toggle).toBeFocused()
+      await expect(panes.locator('> [role="status"]')).toHaveText('Panes will be arranged in a grid when there is room')
+      await size(launched, 1280, 800)
+      await expect(tabs).toHaveCount(0)
+      await expect(placed).toHaveCount(4)
+      await expect(rows).toHaveAttribute('aria-valuenow', '45')
+      await expect(pane('footer-links').getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Footer draft through compact.')
+    } finally { await closeSotto(launched) }
+  } finally { await profileOwner.dispose() }
 })
 
 const nativeMessage = 'The release-notes server needs a publishing target before it drafts v0.9.\nNothing is published until you confirm in the next step.'
@@ -240,6 +238,5 @@ test('threaded structured forms show the native explanation and tool context onc
     expect(await questions.evaluate(element => element.textContent!.split('Which layout should the settings page use?').length - 1)).toBe(1)
     await shoot(page, 'form-threaded-claude-820', () => questions.evaluate(element => element.scrollIntoView({ block: 'start' })))
   } finally { await closeSotto(threaded) }
-
 
 })

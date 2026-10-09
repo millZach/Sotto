@@ -4,11 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { CLIENT_PACKAGES, ProviderClients, type RunResult } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderClientUpdate, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 /**
  * #480: a machine's client updates run one at a time, in one line that a tile's Update and Update all share. Update all
@@ -40,7 +43,7 @@ function heldInstaller(host: ThreeClients, failing: ReadonlySet<ProviderId> = ne
   const run = async (_executable: string, args: readonly string[]): Promise<RunResult> => {
     const provider = IDS.find(id => args.some(arg => arg === `${CLIENT_PACKAGES[id]}@latest`))!
     started.push(provider)
-    await new Promise<void>(resolve => releases.push(resolve))
+    const pending = deferred(); releases.push(pending.resolve); await pending.promise
     if (failing.has(provider)) return { ok: false, detail: 'npm ERR! network socket hang up', printed: 'npm ERR! code ECONNRESET\nnpm ERR! network socket hang up' }
     host.onDisk[provider] = PUBLISHED[provider]!
     return { ok: true }
@@ -57,9 +60,9 @@ async function coordinator(host: ThreeClients, run: (executable: string, args: r
     await mkdir(join(prefix, 'node_modules', ...CLIENT_PACKAGES[id]!.split('/')), { recursive: true })
     await writeFile(join(prefix, 'node_modules', ...CLIENT_PACKAGES[id]!.split('/'), 'package.json'), '{}')
   }
-  const credentials = new AgentCredentials(join(directory, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
-  const control = new AgentControl({
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+
+  const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
     clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'),
       fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[IDS.find(id => url.includes(encodeURIComponent(CLIENT_PACKAGES[id]!.split('/')[0]!)))!] }), { status: 200 }) }),
@@ -195,7 +198,9 @@ describe('the client update line', () => {
     clients.check = async (...args) => { if (holdCheck) await holdCheck; return check(...args) }
     try {
       await control.command({ type: 'queue-client-updates', providers: ['codex'] })
-      holdCheck = new Promise<void>(resolve => { releaseCheck = resolve })
+      const pending1 = deferred<void>();
+      releaseCheck = pending1.resolve;
+      holdCheck = pending1.promise
       const checking = control.command({ type: 'check-client-updates' })
       await installer.finish()
       await vi.waitFor(() => { expect(control.get().clientUpdateRun).toBeUndefined() })
@@ -238,7 +243,9 @@ describe('the client update line', () => {
     clients.check = async (...args) => { if (holdCheck) await holdCheck; return check(...args) }
     try {
       await control.command({ type: 'queue-client-updates', providers: ['codex'] })
-      holdCheck = new Promise<void>(resolve => { releaseCheck = resolve })
+      const pending2 = deferred<void>();
+      releaseCheck = pending2.resolve;
+      holdCheck = pending2.promise
       const checking = control.command({ type: 'check-client-updates' })
       await installer.finish()
       await vi.waitFor(() => { expect(states(control)).toMatchObject({ codex: 'failed' }) })
@@ -274,15 +281,19 @@ describe('the client update line', () => {
           canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }
       }
       override async install(_provider: ProviderId, _executable: string | undefined, _environment: NodeJS.ProcessEnv, onStep?: (step: number) => void) {
-        onStep?.(1); await new Promise<void>(resolve => { next = resolve })
-        onStep?.(2); await new Promise<void>(resolve => { next = resolve })
+        onStep?.(1); const pending3 = deferred<void>();
+next = pending3.resolve;
+await pending3.promise
+        onStep?.(2); const pending4 = deferred<void>();
+next = pending4.resolve;
+await pending4.promise
         return { ok: false, step: 2, failure: 'install-step' as const, detail: 'EACCES: permission denied' }
       }
     })()
     const directory = await mkdtemp(join(tmpdir(), 'sotto-client-steps-')); roots.push(directory)
-    const credentials = new AgentCredentials(join(directory, 'vault'), { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-    await credentials.load()
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined,
+    const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined,
       reasoner: { intent: async () => ({ type: 'clarify', text: '' }), decide: async () => ({ decision: 'human', text: '' }) },
     })
     await control.start()

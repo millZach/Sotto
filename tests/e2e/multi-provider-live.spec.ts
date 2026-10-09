@@ -1,5 +1,6 @@
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState as state } from './support/agentAccess'
+import { ownedE2EProfile } from './support/e2eProfile'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import type { AgentState, ProviderId } from '../../src/shared/agents'
@@ -16,10 +17,6 @@ test.describe.configure({ retries: 0, timeout: 360_000 })
 const providers = ['codex', 'claude', 'grok'] as const
 const prompt = 'Reply with exactly the one word READY. Do not use any tools, read any files, modify any files, or perform any other actions.'
 const title = (provider: ProviderId): string => `Independent ${PROVIDER_LABELS[provider]} acceptance`
-
-async function state(page: Page): Promise<AgentState> {
-  return page.evaluate(async () => window.sotto!.agents!.get())
-}
 
 function identities(snapshot: AgentState) {
   return snapshot.host.threads.map(thread => ({ id: thread.id, title: thread.title, providerId: thread.providerId,
@@ -38,7 +35,6 @@ async function settleProviders(page: Page): Promise<void> {
   await expect(navigation).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel', { name: 'Providers', exact: true })).toBeVisible()
 }
-
 
 async function openProviders(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
@@ -97,7 +93,7 @@ async function aliases(profile: string) {
 test('three native providers coexist independently of Sotto reasoning and survive restart', async () => {
   test.skip(process.env.SOTTO_MULTI_PROVIDER_LIVE !== '1', 'Explicit three-provider native subscription smoke opt-in required.')
   const restoreRoot = process.env.SOTTO_MULTI_PROVIDER_RESTORE_ROOT
-  const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : await mkdtemp(join(tmpdir(), 'sotto-e2e-native-'))
+  const root = restoreRoot ? requireOwnedE2EProfile(restoreRoot) : (await ownedE2EProfile({ prefix: 'sotto-e2e-native-' })).directory
   const profile = join(root, 'profile')
   const project = join(root, 'project')
   if (!restoreRoot) {
@@ -222,7 +218,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       window.setSize(previous.size[0]!, previous.size[1]!)
     }, previousSize)
 
-
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
     const configuration = page.locator('#settings-agents')
@@ -252,7 +247,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'coordinator-off.png') })
     await agentControl.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
     evidence.coordinatorOffPreservesProviders = true
-
 
     // Disconnect only a completed provider; other native connections and all
     // three materialized transcripts must remain usable without another turn.

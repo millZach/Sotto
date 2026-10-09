@@ -1,11 +1,13 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import type { AgentState } from '../../src/shared/agents'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { FollowupStore } from '../../src/main/agents/followups'
@@ -16,11 +18,10 @@ const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 async function fixture(root?: string) {
   const f = await workspaceFixture(root)
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
   const opened: string[] = []
   const recorder = new TurnRecorder({ directory: f.root, resolveSession: id => f.registry.byThread(id) })
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, turns: recorder,
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, turns: recorder,
     openThreadFolder: async path => { opened.push(path) },
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
   })
@@ -88,8 +89,9 @@ describe('workspace controller integration', () => {
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
     await f.control.command({ type: 'assign', threadId, instruction: 'Keep watching' })
     const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: gate, resolve: release } = deferred<void>()
+
     const pause = vi.spyOn(FollowupStore.prototype, 'pause').mockImplementationOnce(async () => { await gate })
     const stopping = f.control.command({ type: 'interrupt', threadId })
     try {
@@ -186,8 +188,9 @@ describe('workspace controller integration', () => {
     const threadId = f.control.get().host.threads.find(thread => thread.providerId === 'codex')!.id
     const native = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread(threadId)!.sessionId)!
     const original = f.adapters.codex.execute.bind(f.adapters.codex)
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
+
+    const { promise: held, resolve: release } = deferred<void>()
+
     const execute = vi.spyOn(f.adapters.codex, 'execute').mockImplementation(async command => {
       if (command.type !== 'send') return original(command)
       native.status = 'running'; native.lastTurn = { id: 'unconfirmed-turn', status: 'running' }

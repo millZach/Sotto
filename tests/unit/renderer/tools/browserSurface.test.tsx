@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import { browserBridgeFixture, browserPage } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -309,7 +310,7 @@ describe('Browser page placement', () => {
     const browser = fakeBrowser([page(PAGE_1), page(PAGE_2, { title: 'Docs' })])
     let refuse!: (result: ToolsResult<void>) => void
     vi.mocked(browser.bridge.mount).mockImplementation(async ({ pageId, bounds }) => pageId === PAGE_2 && bounds !== null
-      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+      ? (() => { const pending = deferred<ToolsResult<void>>(); refuse = pending.resolve; return pending.promise })() : ok(undefined))
     setup(browser)
     await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith({ ...target, pageId: PAGE_2, bounds: shownAt }))
     await userEvent.click(within(panel()).getByRole('tab', { name: 'Vite App' }))
@@ -330,7 +331,7 @@ describe('Browser page placement', () => {
     let refuse!: (result: ToolsResult<void>) => void
     let calls = 0
     vi.mocked(browser.bridge.mount).mockImplementation(async ({ bounds }) => bounds !== null && ++calls === 1
-      ? new Promise<ToolsResult<void>>(resolve => { refuse = resolve }) : ok(undefined))
+      ? (() => { const pending = deferred<ToolsResult<void>>(); refuse = pending.resolve; return pending.promise })() : ok(undefined))
     setup(browser)
     await waitFor(() => expect(calls).toBe(1))
     vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
@@ -467,7 +468,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 800 })
@@ -482,7 +483,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
@@ -498,7 +499,7 @@ describe('browser placement admission', () => {
     store.adopt(page(PAGE_1))
     store.adopt(page(PAGE_2))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, null)
     store.mount(browser.bridge, workspace.threadId, PAGE_2, shownAt)
@@ -525,7 +526,7 @@ describe('browser placement admission', () => {
         return ok(undefined)
       }
       desired = pageId
-      await new Promise<void>(resolve => { finish = resolve })
+      await (() => { const pending = deferred<void>(); finish = pending.resolve; return pending.promise })()
       if (desired === pageId) mounted = pageId
       return ok(undefined)
     })
@@ -543,7 +544,7 @@ describe('browser placement admission', () => {
     const store = new BrowserStore()
     store.adopt(page(PAGE_1))
     let finish!: (result: ToolsResult<void>) => void
-    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(browser.bridge.mount).mockImplementationOnce(() => { const pending = deferred<ToolsResult<void>>(); finish = pending.resolve; return pending.promise })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, shownAt)
     store.mount(browser.bridge, workspace.threadId, PAGE_1, { ...shownAt, x: 900 })
     store.mount(browser.bridge, workspace.threadId, PAGE_1, null)

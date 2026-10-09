@@ -8,11 +8,13 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { LocalHostService, desktopWindowClient } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentState } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = []
 const controls = new Set<AgentControl>()
@@ -29,9 +31,9 @@ async function start(root?: string) {
   const directory = root ?? await mkdtemp(join(tmpdir(), 'sotto-finished-unread-'))
   if (root === undefined) roots.push(directory)
   const host = new E2EAgentHost()
-  const credentials = new AgentCredentials(directory, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner })
+  const credentials = await testCredentials(directory, { mode: 'unavailable' })
+
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner })
   controls.add(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })

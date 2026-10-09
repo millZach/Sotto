@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { deferred } from '../../fixtures/deferred'
 
 const repositories: Awaited<ReturnType<Awaited<ReturnType<typeof gitRepositorySeed>>['copy']>>[] = []
 let seed: Awaited<ReturnType<typeof gitRepositorySeed>>
@@ -170,8 +171,9 @@ describe('Git status the way T3 reads it', () => {
     }
     const reader = new GitStatusReader({ run, fetchIntervalMs: () => 0 })
     const holdNext = () => {
-      let reached!: () => void, go!: () => void
-      const state = { reached: new Promise<void>(done => { reached = done }), go: new Promise<void>(done => { go = done }) }
+      const { promise: reachedRead, resolve: reached } = deferred()
+      const { promise: continueRead, resolve: go } = deferred()
+      const state = { reached: reachedRead, go: continueRead }
       hold = { reached, go: state.go }
       return { reached: state.reached, go }
     }
@@ -228,10 +230,12 @@ describe('the remote half of a read, on its own', () => {
   })
   it('starts no remote half in a folder held for removal, and lets the removal wait for one already running', async () => {
     let release!: () => void
-    let started!: () => void
-    const fetching = new Promise<void>(resolve => { started = resolve })
+
+    const { promise: fetching, resolve: started } = deferred<void>()
     const f = await fixture({ before: async (command, args) => {
-      if (command === 'git' && args[0] === 'fetch') { started(); await new Promise<void>(go => { release = go }) }
+      if (command === 'git' && args[0] === 'fetch') { started(); const pending3 = deferred<void>();
+release = pending3.resolve;
+await pending3.promise }
     } })
     // The thread works in a folder inside the checkout, as one does whose project is a subfolder of its repository.
     const inside = join(f.repo, 'app'); await mkdir(inside)
@@ -272,8 +276,9 @@ describe('the remote half of a read, on its own', () => {
   it('lets no fetch or pull request answer begun before a Git action stand for one asked after it', async () => {
     let held: { call: 'fetch' | 'gh'; started: () => void; go: Promise<void> } | undefined
     const holdNext = (call: 'fetch' | 'gh') => {
-      let started!: () => void, go!: () => void
-      const state = { started: new Promise<void>(done => { started = done }), go: new Promise<void>(done => { go = done }) }
+      const { promise: startedRead, resolve: started } = deferred()
+      const { promise: continueRead, resolve: go } = deferred()
+      const state = { started: startedRead, go: continueRead }
       held = { call, started, go: state.go }
       return { started: state.started, go }
     }

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { collectLaunchScript as collect, launchScriptChild, type LaunchScriptOutcome as Outcome } from '../fixtures/launchScriptRunner'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,21 +27,12 @@ async function fixture() {
   return { directory, installPath, dataDirectory: join(directory, 'data'), remotePort: 0, readyTimeoutMs: 5000, stopDrainMs: HOST_STOP_DRAIN_MS }
 }
 type Configuration = Awaited<ReturnType<typeof fixture>>
-interface Outcome { readonly messages: Record<string, unknown>[]; readonly code: number | null; readonly errors: string }
 /** One operation the way the desktop sends it: the script on stdin, the configuration as an argument. */
 function run(configuration: Configuration, operation: LaunchOperation, env: NodeJS.ProcessEnv = process.env): Promise<Outcome> {
-  const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify({ ...configuration, ...operation })], { shell: false, windowsHide: true, env })
-  children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
+  const child = launchScriptChild({ ...configuration, ...operation }, env, child => children.push(child))
   return collect(child)
 }
-function collect(child: ChildProcess): Promise<Outcome> {
-  let output = '', errors = ''
-  child.stdout!.on('data', chunk => { output += String(chunk) })
-  child.stderr!.on('data', chunk => { errors += String(chunk) })
-  return new Promise(resolve => child.once('close', code => resolve({ code, errors,
-    messages: output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>) })))
-}
+
 async function launch(configuration: Configuration, env?: NodeJS.ProcessEnv): Promise<Record<string, unknown>> {
   const outcome = await run(configuration, { op: 'launch' }, env)
   const ready = outcome.messages.at(-1)!
@@ -312,7 +304,6 @@ const posix = process.platform !== 'win32'
 function probe(configuration: Configuration, env: NodeJS.ProcessEnv): Promise<Outcome> {
   const child = spawn('/bin/sh', ['-c', NODE_PROBE_SOURCE, 'sotto-launch', JSON.stringify({ ...configuration, op: 'launch', nodeRange: `>=${major} <${major + 1}` }), NODE_CHECK_SOURCE], { env })
   children.push(child)
-  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
   return collect(child)
 }
 it.skipIf(!posix)('finds a Node that only a version manager puts on the path, then runs the launch script on it', async () => {

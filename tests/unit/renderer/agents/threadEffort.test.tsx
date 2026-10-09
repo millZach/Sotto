@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -133,7 +134,7 @@ describe('composer option chips', () => {
   it('keeps the effort card mounted and live while a selection is being confirmed', async () => {
     const state = fixture()
     let release!: () => void
-    const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
+    const command = vi.fn(() => { const pending = deferred<typeof state>(); release = () => pending.resolve(state); return pending.promise })
     render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
     const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
@@ -157,7 +158,7 @@ describe('composer option chips', () => {
     const asked: string[] = []
     render(<Live answer={async effort => {
       asked.push(effort)
-      await new Promise<void>(resolve => { release = resolve })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       return fixture({ reasoningEffort: effort })
     }} />)
     const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
@@ -182,7 +183,7 @@ describe('composer option chips', () => {
   it('shows the level the provider settled on when it answers with one of its own', async () => {
     let release!: () => void
     render(<Live answer={async () => {
-      await new Promise<void>(resolve => { release = resolve })
+      await (() => { const pending = deferred<void>(); release = pending.resolve; return pending.promise })()
       // Taken, but the thread is left on a level of the provider's choosing rather than the one asked for.
       return fixture({ reasoningEffort: 'medium' })
     }} />)
@@ -202,7 +203,7 @@ describe('composer option chips', () => {
     const asked: string[] = []
     render(<Live answer={async effort => {
       asked.push(effort)
-      await new Promise<void>(resolve => { releases.push(resolve) })
+      await (() => { const pending = deferred<void>(); releases.push(pending.resolve); return pending.promise })()
       return fixture({ reasoningEffort: effort })
     }} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
@@ -313,7 +314,7 @@ describe('composer option chips', () => {
   it('keeps focus on the chip through a save, and puts it back if it went to the page meanwhile', async () => {
     let release!: () => void
     const state = fixture()
-    const command = vi.fn(() => new Promise<typeof state>(resolve => { release = () => resolve(state) }))
+    const command = vi.fn(() => { const pending = deferred<typeof state>(); release = () => pending.resolve(state); return pending.promise })
     render(<ThreadOptions thread={state.host.threads[0]!} state={state} command={command} />)
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread permissions' }))
     fireEvent.click(screen.getByRole('option', { name: 'Full access' }))

@@ -1,6 +1,6 @@
+import { threadsStateFixture } from '../fixtures/agentState'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-
 import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
 import { approximateDetailBytes } from '../../src/renderer/src/agents/detailCacheSize'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST,
@@ -31,16 +31,18 @@ const history = (id: string, extra = ''): AgentMessage[] => Array.from({ length:
 }))
 
 function fullState(threads: AgentThread[], notice = ''): AgentState {
-  return {
-    configuration: { ...defaultAgentConfiguration(), enabled: true }, connection: 'connected',
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true },
     host: { ...EMPTY_AGENT_HOST, connected: true, threads },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice, error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-     historyEnabled: true,
-  }
+    topLevel: {
+      connection: 'connected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '',
+      draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
+      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice, error: null, speech: { id: 0, text: '' },
+      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: false },
+      reasoningAccounts: [], historyEnabled: true,
+    },
+  })
 }
 
 function threadsAt(tick: number): AgentThread[] {

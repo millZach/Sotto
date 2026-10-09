@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { describe, expect, it, vi } from 'vitest'
 import { version as packageVersion } from '../../package.json'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
@@ -65,8 +66,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
   it('ends a connect still opening its socket before it revokes, and revokes and stops over an admin connection instead', async () => {
     const remote = await add()
     await fixture.manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
     let held = false
     const connect = SocketHostService.prototype.connect
     const opening = vi.spyOn(SocketHostService.prototype, 'connect').mockImplementation(async function (this: SocketHostService) {
@@ -255,7 +255,7 @@ describe('admin connections and Forget (ADR-0053)', () => {
     const remote = await add()
     await fixture.manager.command({ type: 'disconnect', id: remote.id })
     const url = 'https://login.tailscale.com/a/l1a2b3c4'
-    const approved = Promise.withResolvers<void>()
+    const approved = deferred<void>()
     fixture.onConnect = async callbacks => { callbacks.onApproval?.({ url }); await approved.promise; callbacks.onApproval?.(null) }
     const forgetting = fixture.manager.command({ type: 'forget', id: remote.id })
     await vi.waitFor(() => expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'disconnected', tailscale: { waiting: true, url } }), { timeout: 20_000 })

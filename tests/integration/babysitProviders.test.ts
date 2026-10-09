@@ -6,11 +6,12 @@
  * reports a check failing, and the thread is woken with exactly one message, marked as Sotto's. Then Stop, settling and
  * the switch each end or refuse babysitting as decided.
  */
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { BABYSITTING_SWITCHED_OFF, PULL_REQUEST_MCP_SERVER, PullRequestToolServer } from '../../src/main/agents/pullRequestTools'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
@@ -64,8 +65,7 @@ async function call(server: Pick<ThreadMcpServer, 'url' | 'headers'>, name: stri
 async function stack(provider: 'codex' | 'claude' | 'grok', fixture: AdapterFixture, pulls: ScriptedPull[]) {
   const github = scriptedGitHub(pulls)
   let settings: AppSettings = { ...DEFAULT_SETTINGS }
-  const credentials = new AgentCredentials(join(fixture.root, 'vault'), { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(join(fixture.root, 'vault'), { mode: 'unavailable' })
   const directory = join(fixture.root, 'sotto')
   await mkdir(directory, { recursive: true })
   const runtime = await createAgentRuntime({

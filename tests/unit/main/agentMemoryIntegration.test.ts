@@ -14,6 +14,8 @@ import { MemoryStore } from '../../../src/main/memory/store'
 import { PolicyStore } from '../../../src/main/memory/policies'
 import { MAX_PREFERENCE_CONTEXT_CHARACTERS, memoryTopics } from '../../../src/shared/memory'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials, plainCredentialEncryption } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -30,8 +32,8 @@ async function fixture() {
   roots.push(root)
   const host = new E2EAgentHost()
   const execute = vi.spyOn(host, 'execute')
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => true, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'plain' })
+
   let store: MemoryStore
   let profile: MemoryProfile
   let control: AgentControl
@@ -49,7 +51,7 @@ async function fixture() {
     const reasoner = new ConfiguredAgentReasoner(() => control.get().configuration, credentials, { claude: {
       complete, status: async () => ({ provider: 'claude', installed: true, ready: true, label: 'Fixture', detail: '', models: [] }),
     } })
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, preferences: profile, authority: new PolicyStore(store), turns,
+    control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, preferences: profile, authority: new PolicyStore(store), turns,
     })
     controls.push(control)
     await control.start()
@@ -64,7 +66,7 @@ async function fixture() {
 describe('saved memory in coordinator reasoning', () => {
   it('rejects oversized preference context before calling an external model', async () => {
     const f = await fixture()
-    const credentials = new AgentCredentials(roots[0]!, { isEncryptionAvailable: () => true, encryptString: text => Buffer.from(text), decryptString: bytes => bytes.toString() })
+    const credentials = new AgentCredentials(roots[0]!, plainCredentialEncryption())
     const reasoner = new ConfiguredAgentReasoner(() => f.control.get().configuration, credentials, { claude: {
       complete: f.complete, status: async () => ({ provider: 'claude', installed: true, ready: true, label: 'Fixture', detail: '', models: [] }),
     } })

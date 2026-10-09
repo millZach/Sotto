@@ -10,6 +10,7 @@ vi.mock('node:util', async importOriginal => {
 })
 import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentClientHost, type AgentModel, type AgentState, type AgentStateBroadcast } from '../../../src/shared/agents'
+import { threadsStateFixture } from '../../fixtures/agentState'
 
 function model(id: string, overrides: Partial<AgentModel> = {}): AgentModel {
   return { id, provider: 'codex', name: id, ready: true, ...overrides }
@@ -21,16 +22,13 @@ function clientHost(hostId: string, models: AgentModel[]): AgentClientHost {
 
 /** A shell whose only interesting field is its host's catalogs; everything else stays the fixed shape. */
 function state(models: AgentModel[], clientHosts?: AgentClientHost[]): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
+  return threadsStateFixture({
+    configuration: defaultAgentConfiguration(),
     host: { ...structuredClone(EMPTY_AGENT_HOST), hostId: 'aaaaaaaa-0000-4000-8000-000000000000', models, ...(clientHosts ? { clientHosts } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false },
-    reasoningAccounts: [],
-  }
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draftAttachments: [],
+      credentials: { reasoning: false, grokSpeech: false, secure: false } },
+    cloneOverrides: false,
+  })
 }
 
 describe('AgentStateBroadcaster', () => {

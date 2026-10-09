@@ -1,3 +1,4 @@
+import { deferred } from '../../../fixtures/deferred'
 import { browserBridgeFixture, browserPage, browserTask } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -248,7 +249,7 @@ describe('the browser player', () => {
     const pending = task({ pendingAction: { id: '33333333-3333-4333-8333-333333333333', action: { type: 'click', x: 10, y: 20 }, description: 'Click at 10, 20 on localhost', expiresAt: Date.now() + 10000 } })
     const browser = fake([pending]); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()
     let settleAnswer: (() => void) | null = null
-    browser.bridge.answerAction = vi.fn<NonNullable<BrowserBridge['answerAction']>>(() => new Promise(resolve => { settleAnswer = () => resolve(ok(task())) }))
+    browser.bridge.answerAction = vi.fn<NonNullable<BrowserBridge['answerAction']>>(() => { const pending = deferred<ToolsResult<BrowserTask>>(); settleAnswer = () => pending.resolve(ok(task())); return pending.promise })
     render(<BrowserPlayer state={threadsStateFixture()} focusedThreadId="visual-gate" bridge={browser.bridge} store={store} playerStore={playerStore} />)
     const allowOnce = await screen.findByRole('button', { name: 'Allow once' })
     const deny = screen.getByRole('button', { name: 'Deny' })
@@ -440,7 +441,7 @@ describe('browser feedback', () => {
     drafts.edit('visual-gate', { text: 'Keep this thought' })
     const before = drafts.draft('visual-gate')
     let finish: (value: { blob: Blob }) => void = () => undefined
-    const prepare = vi.fn(() => new Promise<{ blob: Blob }>(resolve => { finish = resolve }))
+    const prepare = vi.fn(() => { const pending = deferred<{ blob: Blob }>(); finish = pending.resolve; return pending.promise })
     const controller = new AbortController()
     const added = appendBrowserFeedback(drafts, 'visual-gate', capture, 'Too tight', true, { prepare, signal: controller.signal })
     controller.abort()
@@ -452,7 +453,7 @@ describe('browser feedback', () => {
     const browser = fake(); const close = vi.fn()
     let signal: AbortSignal | undefined
     let finish: (error: string | null) => void = () => undefined
-    const add = vi.fn((_capture: unknown, _comment: string, given: AbortSignal) => { signal = given; return new Promise<string | null>(resolve => { finish = resolve }) })
+    const add = vi.fn((_capture: unknown, _comment: string, given: AbortSignal) => { signal = given; const pending = deferred<string | null>(); finish = pending.resolve; return pending.promise })
     render(<BrowserFeedback page={page} initial={capture} bridge={browser.bridge} onAdd={add} onClose={close} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Browser feedback comment' }), { target: { value: 'Give this more space' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add to draft' }))
@@ -473,7 +474,7 @@ describe('browser feedback', () => {
     const drafts = new ThreadDraftStore(vi.fn(async () => null))
     const dimensions = { original: { width: 5120, height: 2880 }, sent: { width: 2576, height: 1449 } }
     let finish: (value: { blob: Blob, dimensions: typeof dimensions }) => void = () => undefined
-    const prepare = vi.fn<(image: Blob) => Promise<{ blob: Blob, dimensions: typeof dimensions }>>(() => new Promise(resolve => { finish = resolve }))
+    const prepare = vi.fn<(image: Blob) => Promise<{ blob: Blob, dimensions: typeof dimensions }>>(() => { const pending = deferred<{ blob: Blob; dimensions: { original: { width: number; height: number; }; sent: { width: number; height: number; }; }; }>(); finish = pending.resolve; return pending.promise })
     const added = appendBrowserFeedback(drafts, 'visual-gate', { ...capture, width: 5120, height: 2880 }, 'Too tight', true, { prepare })
     // The capture is decoded from its data URL once, and those bytes are what is prepared.
     expect(new Uint8Array(await prepare.mock.calls[0]![0].arrayBuffer())).toEqual(new Uint8Array(Buffer.from('abc')))

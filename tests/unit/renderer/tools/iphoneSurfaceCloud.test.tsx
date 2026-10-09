@@ -1,9 +1,10 @@
+import { browserBridgeFixture } from '../../../fixtures/renderer/browserBridge'
 import { cloudIphoneBridgeFixture, cloudStatus, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent } from '../../../../src/shared/browser'
+import type { BrowserBridge } from '../../../../src/shared/browser'
 import type { CloudIphoneBridge, CloudIphoneStatus, CloudSession } from '../../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { useOptionalAgents } from '../../../../src/renderer/src/agents/AgentContext'
@@ -21,14 +22,24 @@ const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:\\work\\workshop', workspaceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 
 function fakeEmptyBrowser(): BrowserBridge {
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  return {
-    tasks: vi.fn(async () => ok([])), list: vi.fn(async () => ok({ workspace, pages: [] })),
-    create: vi.fn(), navigate: vi.fn(), back: vi.fn(), forward: vi.fn(), reload: vi.fn(), close: vi.fn(), mount: vi.fn(async () => ok(undefined)),
-    share: vi.fn(), viewport: vi.fn(), capture: vi.fn(),
-    controlTask: vi.fn(), answerAction: vi.fn(), stopGrant: vi.fn(async () => ok(undefined)), openLink: vi.fn(),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+
+  return browserBridgeFixture({ workspace,
+    commands: { tasks: vi.fn(async () => ok([])),
+    list: vi.fn(async () => ok({ workspace, pages: [] })),
+    create: vi.fn(),
+    navigate: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    reload: vi.fn(),
+    close: vi.fn(),
+    mount: vi.fn(async () => ok(undefined)),
+    share: vi.fn(),
+    viewport: vi.fn(),
+    capture: vi.fn(),
+    controlTask: vi.fn(),
+    answerAction: vi.fn(),
+    stopGrant: vi.fn(async () => ok(undefined)),
+    openLink: vi.fn() } }).bridge
 }
 
 const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSession({ threadId: 'visual-gate', status: 'active', device: 'iPhone 16 \u00b7 iOS 18', expiresAt: null, startedAt: Date.now(), minutes: 3, ...patch })

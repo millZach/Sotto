@@ -1,11 +1,10 @@
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentHostCommand } from '../../src/main/agents/host'
 import { useAgentConnection } from '../../src/renderer/src/agents/AgentContext'
@@ -42,11 +41,9 @@ describe.skipIf(!PERF_BENCH)('thread command lanes in the window', () => {
     for (const ackMs of ACKS_MS) {
       const root = await mkdtemp(join(tmpdir(), 'sotto-perf-lanes-'))
       const host = new E2EAgentHost()
-      const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: value => Buffer.from(value), decryptString: value => value.toString() })
-      const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
-      })
-      try {
-        await credentials.load(); await control.start(); await control.command({ type: 'connect' })
+      const credentials = await testCredentials(root, { mode: 'unavailable' })
+      const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner })
+      try {; await control.start(); await control.command({ type: 'connect' })
         const execute = host.execute.bind(host)
         vi.spyOn(host, 'execute').mockImplementation(async (command: AgentHostCommand) => {
           if (command.type === 'answer' && ackMs > 0) await new Promise(done => { setTimeout(done, ackMs) })

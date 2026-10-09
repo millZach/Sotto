@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { createHttpsDownloader, replaceDirectoryAtomic, validateDownloadRedirect, type HttpsGet } from '../../../src/main/models/modelDownload'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -109,8 +110,8 @@ describe('download redirect policy', () => {
     const destination = join(root, 'mismatch.bin')
     const response = idleResponse(200, { 'content-length': '11' })
     const destroy = vi.spyOn(response, 'destroy')
-    let accepted!: () => void
-    const responseAccepted = new Promise<void>((resolve) => { accepted = resolve })
+
+    const { promise: responseAccepted, resolve: accepted } = deferred<void>()
     const get = vi.fn((_url: URL, callback: Parameters<HttpsGet>[1]): ReturnType<HttpsGet> => {
       const request = fakeRequest()
       queueMicrotask(() => { callback(response); accepted() })
@@ -265,8 +266,8 @@ describe('download redirect policy', () => {
     const response = idleResponse(200)
     const destroy = vi.spyOn(response, 'destroy')
     let deadline!: () => void
-    let accepted!: () => void
-    const responseAccepted = new Promise<void>((resolve) => { accepted = resolve })
+
+    const { promise: responseAccepted, resolve: accepted } = deferred<void>()
     const get = vi.fn((_url: URL, callback: Parameters<HttpsGet>[1]): ReturnType<HttpsGet> => {
       const request = fakeRequest()
       queueMicrotask(() => { callback(response); accepted() })

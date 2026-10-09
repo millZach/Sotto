@@ -1,8 +1,10 @@
+import { cloudIphoneBridgeFixture, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
+import { browserBridgeFixture } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent } from '../../../../src/shared/browser'
-import type { CloudEvent, CloudIphoneBridge, CloudSession } from '../../../../src/shared/cloudIphone'
+import type { BrowserBridge } from '../../../../src/shared/browser'
+import type { CloudEvent, CloudSession } from '../../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { PhonePlayer } from '../../../../src/renderer/src/tools/PhonePlayer'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
@@ -13,17 +15,27 @@ import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeEmptyBrowser(): BrowserBridge {
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  return {
-    tasks: vi.fn(async () => ok([])), list: vi.fn(async () => ok({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }, pages: [] })),
-    create: vi.fn(), navigate: vi.fn(), back: vi.fn(), forward: vi.fn(), reload: vi.fn(), close: vi.fn(), mount: vi.fn(async () => ok(undefined)),
-    share: vi.fn(), viewport: vi.fn(), capture: vi.fn(),
-    controlTask: vi.fn(), answerAction: vi.fn(), stopGrant: vi.fn(async () => ok(undefined)), openLink: vi.fn(),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+
+  return browserBridgeFixture({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' },
+    commands: { tasks: vi.fn(async () => ok([])),
+    list: vi.fn(async () => ok({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }, pages: [] })),
+    create: vi.fn(),
+    navigate: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    reload: vi.fn(),
+    close: vi.fn(),
+    mount: vi.fn(async () => ok(undefined)),
+    share: vi.fn(),
+    viewport: vi.fn(),
+    capture: vi.fn(),
+    controlTask: vi.fn(),
+    answerAction: vi.fn(),
+    stopGrant: vi.fn(async () => ok(undefined)),
+    openLink: vi.fn() } }).bridge
 }
 
-const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
+const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSession({
   id: '11111111-1111-4111-8111-111111111111', threadId: 'visual-gate', workspaceId: 'workspace',
   status: 'active', description: 'Checking the Needs you list', buildPath: 'apps/ios/build/Sotto.app.zip', buildBytes: 41_000_000,
   device: 'iPhone 16 · iOS 18', expiresAt: null, startedAt: Date.now(), endedAt: null, endReason: null, minutes: 3,
@@ -32,14 +44,13 @@ const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
 })
 
 function fakeCloudBridge(initial: CloudSession[]) {
-  const listeners = new Set<(event: CloudEvent) => void>()
-  const bridge: CloudIphoneBridge = {
-    status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
-    setKey: vi.fn(), sessions: vi.fn(async () => ok(initial)),
-    answer: vi.fn(), end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended', endReason: 'user' }))),
-    mount: vi.fn(async () => ok(undefined)),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
+
+  const { bridge, listeners } = cloudIphoneBridgeFixture({ commands: { status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
+    setKey: vi.fn(),
+    sessions: vi.fn(async () => ok(initial)),
+    answer: vi.fn(),
+    end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended', endReason: 'user' }))),
+    mount: vi.fn(async () => ok(undefined)) } })
   return { bridge, emit: (event: CloudEvent) => { for (const listener of [...listeners]) listener(event) } }
 }
 

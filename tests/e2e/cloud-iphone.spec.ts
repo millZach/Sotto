@@ -1,3 +1,5 @@
+import { captureSotto } from './support/sottoCapture'
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -8,31 +10,12 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const SHOTS = evidenceDirectory('artifacts/cloud-iphone')
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540); host.setContentSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 /** The window as the user sees it, native views included. */
 async function screenshot(launched: LaunchedSotto, name: string): Promise<void> {
   const title = `Sotto cloud iPhone ${name}`
-  await launched.app.evaluate(({ BrowserWindow }, title) => {
-    const host = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!; host.setTitle(title); host.show()
-  }, title)
-  const png = await launched.app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }, title) => {
-    const bounds = BrowserWindow.getAllWindows().find(item => item.getTitle() === title)!.getBounds()
-    const scale = screen.getDisplayMatching(bounds).scaleFactor
-    // The OS window manager can be slow to register the retitled window under load; a reached deadline costs nothing.
-    for (let attempt = 0; ; attempt++) {
-      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } })
-      const source = sources.find(item => item.name === title)
-      if (source) return source.thumbnail.toPNG().toString('base64')
-      if (attempt >= 9) throw new Error('Native window capture unavailable')
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-  }, title)
-  await writeFile(join(SHOTS, `${name}.png`), Buffer.from(png, 'base64'))
+  await captureSotto(launched, join(SHOTS, `${name}.png`), { mode: 'native-window', title, retries: 9, retryDelayMs: 500 })
 }
 async function viewerUrls(launched: LaunchedSotto): Promise<string[]> {
   return launched.app.evaluate(({ BrowserWindow, WebContentsView }) => {

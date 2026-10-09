@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+
 import { AGENT_WAKE, AGENT_COMMAND, AGENT_GROK_VOICES, AGENT_SPEECH, AGENT_SPEECH_CANCEL, agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../../src/shared/agents'
 import type { AgentControl } from '../../../src/main/agents/control'
 
@@ -10,19 +10,16 @@ import { synthesizeAgentSpeech } from '../../../src/main/agents/speech'
 import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { AgentWakeService } from '../../../src/main/agents/wake'
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
+import { ipcRegistry } from '../../fixtures/ipcHarness'
+import { deferred } from '../../fixtures/deferred'
 
 const disposables: Array<() => void> = []
 afterEach(() => { for (const dispose of disposables.splice(0)) dispose(); vi.restoreAllMocks(); vi.clearAllMocks() })
 
 function fixture(voiceCoordinatorEnabled = true) {
-  const listeners = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { listeners.set(channel, handler) }, removeHandler: channel => { listeners.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
-    const url = `file:///${role}.html`
-    const mainFrame = { parent: null, url }
-    return { role, url, webContents: { mainFrame, isDestroyed: () => false, getURL: () => url } }
-  }
-  const main = sender('main'), widget = sender('widget')
+  const registry = ipcRegistry()
+  const { ipc } = registry
+  const { main, widget } = registry
   const state = { configuration: { ...defaultAgentConfiguration(), speechProvider: 'grok', grokSpeechVoice: 'custom-voice' }, host: EMPTY_AGENT_HOST } as AgentState
   const control = { get: vi.fn(() => state), configuration: vi.fn(() => state.configuration), shell: () => state, threadDetail: () => null, command: vi.fn<AgentControl['command']>(async () => state), attachmentPreview: vi.fn<AgentControl['attachmentPreview']>(async () => null) }
   const grok = {
@@ -34,7 +31,7 @@ function fixture(voiceCoordinatorEnabled = true) {
     status: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
     download: async () => ({ ready: true, completedBytes: 1, totalBytes: 1 }),
   }, grok, kokoro, { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, voiceCoordinatorEnabled, wakeControl: control }))
-  const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => listeners.get(channel)!({ sender: source.webContents, senderFrame: frame }, payload)
+  const invoke = async (channel: string, payload?: unknown, source = main, frame = source.webContents.mainFrame) => registry.invoke(channel, [payload], { sender: source.webContents, senderFrame: frame })
   // A command answers with a receipt: the shell with its catalog named by revision (issue #323).
   const reply = new AgentStateBroadcaster().encodeReceipt(agentShell(state))
   return { state, reply, control, grok, kokoro, invoke, main, widget }
@@ -135,8 +132,8 @@ describe('native speech IPC', () => {
     await expect(f.invoke(AGENT_SPEECH, 'No key')).rejects.toThrow('OpenRouter key')
     expect(f.grok.synthesize).not.toHaveBeenCalled()
     expect(synthesizeAgentSpeech).not.toHaveBeenCalled()
-    let release!: (value: { audioBase64: string; mimeType: 'audio/wav' }) => void
-    f.kokoro.synthesize.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const { promise: heldRelease, resolve: release } = deferred<{ audioBase64: string; mimeType: 'audio/wav' }>()
+    f.kokoro.synthesize.mockReturnValueOnce(heldRelease)
     const old = f.invoke(AGENT_SPEECH, 'Old Kokoro reply')
     f.state.configuration.speechProvider = 'grok'
     await f.invoke(AGENT_SPEECH_CANCEL)
@@ -174,8 +171,8 @@ describe('native speech IPC', () => {
 
   it('releases a cancelled Grok request for a fresh preview and ignores its late completion', async () => {
     const f = fixture()
-    let release!: (value: { audioBase64: string; mimeType: 'audio/wav' }) => void
-    f.grok.synthesize.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const { promise: heldRelease, resolve: release } = deferred<{ audioBase64: string; mimeType: 'audio/wav' }>()
+    f.grok.synthesize.mockReturnValueOnce(heldRelease)
     const old = f.invoke(AGENT_SPEECH, 'Old reply')
     await expect(f.invoke(AGENT_SPEECH, 'Duplicate')).rejects.toThrow('already being prepared')
     await f.invoke(AGENT_SPEECH_CANCEL)

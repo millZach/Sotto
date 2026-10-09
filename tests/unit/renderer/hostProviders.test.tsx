@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import { hostStatus, hostsBridgeFixture } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -160,7 +161,7 @@ it('stops the sign-in on the host when the dialog closes before the host has ans
   const user = userEvent.setup()
   let answer: (view: ProviderSignInView) => void = () => undefined
   const { bridge: hosts, signIn } = bridge(request => request.type === 'start'
-    ? new Promise<ProviderSignInView>(resolve => { answer = resolve }) : Promise.resolve(null))
+    ? (() => { const pending = deferred<ProviderSignInView>(); answer = pending.resolve; return pending.promise })() : Promise.resolve(null))
   render(<div className="hosts-settings"><HostProviders host={forge} bridge={hosts}
     providers={[status('codex', { connection: 'error', problem: 'signed-out', version: '0.155.1' })]} /></div>)
   await user.click(screen.getByRole('button', { name: 'Show providers on forge' }))

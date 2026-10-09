@@ -1,4 +1,4 @@
-import { ownedGitRepository } from '../../fixtures/gitRepository'
+import { ownedGitRepository, initializeBareGitRepository } from '../../fixtures/gitRepository'
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -155,7 +155,7 @@ describe('Branch changes: base...HEAD', () => {
     expect(chosen.files.map(item => item.path)).toEqual(['trail.txt'])
     expect(await f.service.review({ ...f.target, scope: { kind: 'branch', base: 'no-such-branch' } })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no-such-branch is not a branch') } })
 
-    const remote = join(f.root, 'remote.git'); git(f.root, 'init', '-q', '--bare', remote)
+    const remote = join(f.root, 'remote.git'); await initializeBareGitRepository(remote)
     git(f.repo, 'remote', 'add', 'origin', remote); git(f.repo, 'push', '-q', 'origin', 'main')
     git(f.repo, 'remote', 'set-head', 'origin', 'main')
     expect(unwrap(await f.service.review({ ...f.target, scope: { kind: 'branch', base: null } })).scope).toMatchObject({ base: 'origin/main', automatic: true })

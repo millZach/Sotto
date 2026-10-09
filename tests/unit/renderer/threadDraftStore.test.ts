@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentCommandSchema, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
@@ -5,11 +7,9 @@ import { ThreadDraftStore, UNCONFIRMED_SUBMISSION, queueAdmissionOpen, submissio
 type SaveCommand = Extract<AgentCommand, { type: 'save-thread-draft' }>
 
 function baseState(patch: Partial<AgentState> = {}): AgentState {
-  return {
-    host: { connected: true, name: 'Test', version: '', capabilities: {} as AgentState['host']['capabilities'], models: [], projects: [], threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
-    draft: '', draftThreadId: null, draftRequestId: null, threadDrafts: [], deliveries: [], deliveredDrafts: [], error: null,
-    ...patch,
-  } as AgentState
+  return threadsStateFixture({ cloneOverrides: false,
+    host: { connected: true, name: 'Test', version: '', capabilities: {}, models: [], projects: [], threads: [{ id: 'thread', projectId: 'project', title: 'Thread', modelId: 'model', status: 'idle', messages: [], requests: [] }] },
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, ...patch } , ...patch})
 }
 
 function uuids(): () => string {
@@ -20,7 +20,7 @@ function uuids(): () => string {
 /** A command whose save responses the test releases one at a time. */
 function heldCommand() {
   const calls: { readonly command: AgentCommand; readonly resolve: (state: AgentState | null) => void; readonly reject: (error: unknown) => void }[] = []
-  const command = vi.fn((request: AgentCommand) => new Promise<AgentState | null>((resolve, reject) => { calls.push({ command: request, resolve, reject }) }))
+  const command = vi.fn((request: AgentCommand) => { const pending = deferred<AgentState | null>(); calls.push({ command: request, resolve: pending.resolve, reject: pending.reject }); return pending.promise })
   return { command, calls, saves: () => calls.filter(call => call.command.type === 'save-thread-draft').map(call => call.command as SaveCommand) }
 }
 

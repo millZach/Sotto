@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -27,8 +28,10 @@ it.each(['before', 'during'] as const)('preserves a newer same-owner saved revis
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     // A snapshot's save runs once the code that accepted it has run on. Let it start, so the gate below holds the
     // save this test is about.
     await new Promise<void>(resolve => setImmediate(resolve))
@@ -57,8 +60,10 @@ it('keeps an edit made during Send with its explicit owner after queue progressi
     await f.command({ type: 'save-thread-draft', threadId: 'docs', draftId: '00000000-0000-4000-8000-000000000083', text: 'Retained Docs edit',
       requestId: 'docs-question', attachments: [image], skills: [{ name: 'docs', path: 'C:/synthetic/docs' }], files: [{ path: 'notes.md' }] })
     await f.command({ type: 'select-thread', threadId: target.threadId })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const execute = f.host.execute.bind(f.host)
     vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => { entered(); await gate; return execute(command) })
     sending = f.command({ type: 'send', draft: { threadId: target.threadId, text: 'Blue', attachments: [] } })
@@ -83,8 +88,10 @@ it.each([['local', false], ['socket', false], ['local', true], ['socket', true]]
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     f.host.event({ type: 'question', threadId: target.threadId, text: '', request: { ...request, delivery: undefined } })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     predecessor = f.command({ type: 'compose', ...(targetedPredecessor ? { threadId: target.threadId } : {}), text: '' }); await started
@@ -118,8 +125,10 @@ it.each([['local', 'queued'], ['socket', 'queued'], ['local', 'staging'], ['sock
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
     const image = await f.control.stageAttachment({ name: 'synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     if (timing === 'queued') { predecessor = f.command({ type: 'compose', text: 'Text with an image' }); await started }
@@ -141,9 +150,9 @@ it.each([false, true])('keeps the atomic socket staging outcome independent of a
   let sending: Promise<unknown> | undefined, other: Promise<unknown> | undefined
   try {
     await f.command({ type: 'assign', threadId: target.threadId, instruction: 'Work' })
-    let entered: () => void = () => undefined
-    const started = new Promise<void>(resolve => { entered = resolve })
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: gate, resolve: gateResolve } = deferred<void>()
+    release = gateResolve
     const control = f.control as unknown as { persist(): Promise<void> }, persist = control.persist.bind(control)
     vi.spyOn(control, 'persist').mockImplementationOnce(async () => {
       entered(); await gate
@@ -201,11 +210,12 @@ it.each([['answer', false], ['answer', true], ['send', false], ['send', true], [
       await f.command({ type: 'compose', text: 'Blue' })
     }
     const stale = await f.host.snapshot()
-    let readStarted: () => void = () => undefined, writeStarted: () => void = () => undefined
-    const reading = new Promise<void>(resolve => { readStarted = resolve })
-    const readGate = new Promise<void>(resolve => { releaseRead = resolve })
-    const writing = new Promise<void>(resolve => { writeStarted = resolve })
-    const writeGate = new Promise<void>(resolve => { releaseWrite = resolve })
+    const { promise: reading, resolve: readStarted } = deferred<void>()
+    const { promise: readGate, resolve: readGateResolve } = deferred<void>()
+    releaseRead = readGateResolve
+    const { promise: writing, resolve: writeStarted } = deferred<void>()
+    const { promise: writeGate, resolve: writeGateResolve } = deferred<void>()
+    releaseWrite = writeGateResolve
     Object.assign(f.host, { refreshThread: vi.fn(async (_id: string, purpose?: ThreadReadPurpose) => {
       if (purpose?.retryUncertainAnswers) { readStarted(); await readGate; return stale }
       return f.host.snapshot()

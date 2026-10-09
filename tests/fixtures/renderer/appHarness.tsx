@@ -11,12 +11,7 @@ import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 const OK = Object.freeze({ ok: true as const })
 
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((done, fail) => { resolve = done; reject = fail })
-  return { promise, reject, resolve }
-}
+
 
 function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
   return {
@@ -158,4 +153,6 @@ afterEach(() => {
   localStorage.clear()
 })
 
-export { OK, deferred, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }
+export { OK, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }
+
+export { deferred } from '../deferred'

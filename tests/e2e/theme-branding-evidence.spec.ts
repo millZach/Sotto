@@ -1,11 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import sharp from 'sharp'
-
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { themeBrand, widgetPaletteFor } from '../../src/shared/themeBranding'
 import { parseThemeRgb, rgbToOklch } from '../../src/shared/themes/color'
@@ -156,7 +153,7 @@ test.describe('theme branding evidence', () => {
 
   test('mark, sphere and widget wear Nocturne and contrasting themes, live, in both modes and after restart', async () => {
     await mkdir(evidenceRoot, { recursive: true })
-    const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-theme-branding-'))
+    const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-theme-branding-' })).directory
     let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [saffron] }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     await enableVoiceCoordinator(profile)
@@ -219,13 +216,13 @@ test.describe('theme branding evidence', () => {
     } finally {
       await writeFile(resolve(evidenceRoot, 'samples.json'), `${JSON.stringify(samples, null, 2)}\n`, 'utf8')
       if (launched !== undefined) await closeSotto(launched)
-      await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+      await removeOwnedE2EProfile(profile)
     }
   })
 
   test('a failed dictation keeps the theme error role, distinct from the accent', async () => {
     await mkdir(evidenceRoot, { recursive: true })
-    const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-theme-branding-error-'))
+    const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-theme-branding-error-' })).directory
     const settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'light', lightTheme: 'tropic', darkTheme: 'citrine' }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     let launched: LaunchedSotto | undefined
@@ -275,7 +272,7 @@ test.describe('theme branding evidence', () => {
       }
     } finally {
       if (launched !== undefined) await closeSotto(launched)
-      await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+      await removeOwnedE2EProfile(profile)
     }
   })
 })

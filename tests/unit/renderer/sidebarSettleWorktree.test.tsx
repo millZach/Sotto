@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React, { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -19,9 +20,9 @@ it('queues concurrent settle questions and asks for each folder acknowledgement 
   const preview = (thread: typeof first, name: string): typeof state => ({ ...state, worktreeReclaimPreview: {
     path: thread.worktree.path, branch: thread.worktree.branch, dirty: false, ignored: [name], items: [{ path: name, bytes: 12, fileCount: 1 }], repositories: [], untracked: [] } })
   const command = vi.fn((request: AgentCommand): Promise<typeof state> => {
-    if (request.type === 'settle-thread') return new Promise(resolve => { settles.set(request.threadId, resolve) })
+    if (request.type === 'settle-thread') return (() => { const pending = deferred<ReturnType<typeof preview>>(); settles.set(request.threadId, pending.resolve); return pending.promise })()
     if (request.type === 'preview-reclaim-thread-worktree') return request.threadId === first.id
-      ? Promise.resolve(preview(first, '.first-secret')) : new Promise(resolve => { previewSecond = resolve })
+      ? Promise.resolve(preview(first, '.first-secret')) : (() => { const pending = deferred<Parameters<typeof previewSecond>[0]>(); previewSecond = pending.resolve; return pending.promise })()
     return Promise.resolve(state)
   })
   openSidebarFolders(state)

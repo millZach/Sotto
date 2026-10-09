@@ -10,10 +10,11 @@ import { FollowupStore } from '../../../src/main/agents/followups'
 import type { AgentHostCommand } from '../../../src/main/agents/host'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { scriptedGitHub } from '../../fixtures/babysitGitHub'
+import { testCredentials } from '../../fixtures/testCredentials'
 
 /**
  * The switch at start (ADR-0061 decision 12 and its #824 amendment): turned off while Sotto was closed, it ends what
@@ -30,8 +31,8 @@ afterEach(async () => {
 
 async function runtime(agentTool: boolean, root?: string, host = new E2EAgentHost(), run: RunGitCommand = async () => { throw new Error('No gh in this test') }) {
   if (!root) { root = await mkdtemp(join(tmpdir(), 'sotto-runtime-babysitting-')); roots.push(root) }
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' })
-  await credentials.load()
+  const credentials = await testCredentials(root, { encryption: { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' } })
+
   return createAgentRuntime({
     directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, coordinatorEnabled: () => false, openExternal: async () => undefined, host, reasoner: e2eAgentReasoner,

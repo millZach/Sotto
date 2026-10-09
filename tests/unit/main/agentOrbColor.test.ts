@@ -7,6 +7,7 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const workspace = resolve('.')
 const roots: string[] = []
@@ -16,7 +17,7 @@ async function fixture(directory?: string) {
   const root = directory ?? await mkdtemp(join(workspace, '.tmp-agent-orb-color-'))
   if (directory === undefined) roots.push(root)
   const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
-  const control = new AgentControl({ schedule: immediatePublishScheduler,
+  const control = createAgentControl({ schedule: immediatePublishScheduler,
     directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
   })
   controls.add(control)

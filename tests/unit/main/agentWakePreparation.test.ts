@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { basename, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentWakeService } from '../../../src/main/agents/wake'
+import { deferred } from '../../fixtures/deferred'
 
 const mocks = vi.hoisted(() => ({
   hashes: {} as Record<string, string>,
@@ -67,7 +68,7 @@ describe('local wake preparation', () => {
 
   it('shares preparation while the model check is still pending', async () => {
     let release!: (path: string) => void
-    mocks.realpath.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    mocks.realpath.mockImplementationOnce(() => { const pending = deferred<string>(); release = pending.resolve; return pending.promise })
     const first = service.prepare(resolve('model'))
     const firstResult = expect(first).resolves.toBeUndefined()
     const second = service.prepare(resolve('model'))
@@ -94,8 +95,8 @@ describe('local wake preparation', () => {
   })
 
   it('keeps a newer setup when an older model check rejects', async () => {
-    let reject!: (error: Error) => void
-    mocks.realpath.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    const { promise: pending, reject } = deferred<string>()
+    mocks.realpath.mockImplementationOnce(() => pending)
     const old = service.prepare(resolve('old-model'))
     const rejected = expect(old).rejects.toThrow('unavailable')
     const current = service.prepare(resolve('model'))

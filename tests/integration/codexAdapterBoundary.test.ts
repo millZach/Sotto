@@ -1,10 +1,12 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { codexFixture, nativeRequestId, rolloutLine } from '../fixtures/codexFixture'
 import type { CodexProcess } from '../../src/main/agents/codexProcess'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
@@ -31,8 +33,8 @@ function threadChild(f: Awaited<ReturnType<typeof codexFixture>>, threadId: stri
   return (f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess }> }).runtimes.get(threadId)!.server['child']
 }
 async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
-  const credentials = new AgentCredentials(join(f.root, 'vault'), { isEncryptionAvailable: () => true, encryptString: v => Buffer.from(v), decryptString: v => v.toString() }); await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
+  const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' });
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials,
     reasoner: { intent: async () => ({ type: 'clarify', text: 'Choose a thread' }), decide: async () => ({ decision: 'human', text: 'Review' }) },
   })
   controls.push(control); await control.start(); await control.command({ type: 'connect' })

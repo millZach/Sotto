@@ -1,3 +1,4 @@
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
@@ -10,12 +11,7 @@ const evidence = evidenceDirectory('artifacts/git-settings')
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const host = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
-    host.setMinimumSize(800, 540)
-    host.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => [innerWidth, innerHeight])).toEqual([width, height])
+  await resizeContentWindow(launched, width, height, [800, 540])
 }
 
 async function shot(page: Page, name: string): Promise<void> {

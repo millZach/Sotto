@@ -1,3 +1,4 @@
+import { deferred } from '../../../../fixtures/deferred'
 import { baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -82,7 +83,7 @@ describe('SettingsView', () => {
   it('never brings back older custom instructions whose save failed after a newer save was sent', async () => {
     const user = userEvent.setup()
     const answers: Array<(saved: boolean) => void> = []
-    const update = vi.fn((patch: object) => 'gitWritingInstructions' in patch ? new Promise<boolean>(resolve => { answers.push(resolve) }) : Promise.resolve(true))
+    const update = vi.fn((patch: object) => 'gitWritingInstructions' in patch ? (() => { const pending = deferred<boolean>(); answers.push(pending.resolve); return pending.promise })() : Promise.resolve(true))
     render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })} />)
     await selectCategory('Git')
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })

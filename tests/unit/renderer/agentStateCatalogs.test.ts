@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
 import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
@@ -77,7 +78,7 @@ describe('wrapAgentBridge', () => {
 
   it('never delivers a broadcast kept during a successful recovery after the newer answer, but keeps its catalog', async () => {
     let resolveGet: (value: AgentState) => void = () => undefined
-    const { bridge, emit, get } = fakeBridge(() => new Promise<AgentState>(resolve => { resolveGet = resolve }))
+    const { bridge, emit, get } = fakeBridge(() => { const pending = deferred<AgentState>(); resolveGet = pending.resolve; return pending.promise })
     const delivered: AgentState[] = []
     wrapAgentBridge(bridge).onState(state => delivered.push(state))
     emit(broadcast({ revision: 3, omitted: true }))
@@ -100,7 +101,7 @@ describe('wrapAgentBridge', () => {
     let calls = 0
     const { bridge, emit, get } = fakeBridge(() => {
       calls += 1
-      if (calls === 1) return new Promise<AgentState>((_resolve, reject) => { rejectGet = reject })
+      if (calls === 1) return (() => { const pending = deferred<AgentState>(); rejectGet = pending.reject; return pending.promise })()
       return Promise.resolve(fullState([model('gpt-5')]))
     })
     const delivered: AgentState[] = []
@@ -285,7 +286,7 @@ describe('wrapAgentBridge', () => {
     it('never files a recovery for an older revision over the newer catalog the window holds', async () => {
       const newer = [model('gpt-5.1')]
       let resolveGet: (value: AgentState) => void = () => undefined
-      const { bridge, emit, get } = receiptBridge(() => new Promise<AgentState>(resolve => { resolveGet = resolve }), broadcast({ revision: 3, omitted: true }))
+      const { bridge, emit, get } = receiptBridge(() => { const pending = deferred<AgentState>(); resolveGet = pending.resolve; return pending.promise }, broadcast({ revision: 3, omitted: true }))
       const wrapped = wrapAgentBridge(bridge)
       const delivered: AgentState[] = []
       wrapped.onState(state => delivered.push(state))
@@ -308,7 +309,7 @@ describe('wrapAgentBridge', () => {
       const full = fullState(modelsA, [{ hostId: HOST, models: modelsA }, { hostId: hostB, models: modelsB }])
       // The selected host changes between two commands: each receipt names its own host's catalog at revision 1.
       const forB = broadcast({ revision: 1, omitted: true }) as AgentState
-      const { bridge, get } = receiptBridge(() => new Promise<AgentState>(resolve => { answers.push(resolve) }),
+      const { bridge, get } = receiptBridge(() => { const pending = deferred<AgentState>(); answers.push(pending.resolve); return pending.promise },
         broadcast({ revision: 1, omitted: true }), { ...forB, host: { ...forB.host, hostId: hostB } })
       const wrapped = wrapAgentBridge(bridge)
       const first = wrapped.command(voice)

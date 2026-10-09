@@ -1,6 +1,7 @@
+import { painted, near } from './support/terminal'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -19,7 +20,7 @@ const SHOTS = evidenceDirectory('artifacts/phase-three-ui-recovery')
 type Mode = 'dark' | 'light'
 
 async function ownedProfile(prefix: string): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'blue' }))
   return profile
 }
@@ -122,10 +123,9 @@ test('explains a page main refused to show, and shows it again on Try again once
     if (moved !== null) await rename(moved, moved.slice(0, -'-moved'.length)).catch(() => undefined)
     await closeSotto(launched)
     await new Promise(done => server.close(done))
-    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
   }
 })
-
 
 /** Nocturne's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
 function nocturneTerminal(mode: Mode): Record<string, string> {
@@ -158,18 +158,6 @@ async function paintTheme(page: Page, mode: Mode, themeId: string, values: Recor
 }
 
 /** The sRGB the page paints for a CSS colour, independently of the terminal's own resolver. */
-function painted(page: Page, css: string): Promise<string> {
-  return page.evaluate(css => {
-    const probe = document.body.appendChild(document.createElement('div'))
-    probe.style.background = css
-    const context = document.createElement('canvas').getContext('2d')!
-    context.fillStyle = getComputedStyle(probe).backgroundColor
-    probe.remove()
-    context.fillRect(0, 0, 1, 1)
-    const [r, g, b] = context.getImageData(0, 0, 1, 1).data
-    return `#${[r, g, b].map(channel => channel!.toString(16).padStart(2, '0')).join('')}`
-  }, css)
-}
 
 interface Selected { readonly background: string; readonly color: string; readonly contrast: number }
 
@@ -186,13 +174,6 @@ function readSelected(row: Element): Selected | null {
   const hex = (value: string): string => `#${channels(value).map(channel => channel.toString(16).padStart(2, '0')).join('')}`
   const [light = 0, dark = 0] = [luminance(style.color), luminance(style.backgroundColor)].sort((a, b) => b - a)
   return { background: hex(style.backgroundColor), color: hex(style.color), contrast: Math.round((light + 0.05) / (dark + 0.05) * 100) / 100 }
-}
-
-function near(actual: string | undefined, expected: string, tolerance = 3): boolean {
-  if (!actual) return false
-  const channels = (hex: string) => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16))
-  const a = channels(actual), b = channels(expected)
-  return a.every((value, index) => Math.abs(value - b[index]!) <= tolerance)
 }
 
 /** The most common colour in a capture of the element: for the terminal, the field behind its rows. */
@@ -275,6 +256,6 @@ test('repaints a running terminal with the DOM fallback for theme, same-mode col
     await expect.poll(async () => { const text = await screen.innerText(); return text.includes('SOTTOPROBE') && (text.match(/AFTERTHEME/gu) ?? []).length >= 2 }, { timeout: 20_000 }).toBe(true)
   } finally {
     await closeSotto(launched)
-    await rm(launched.userData, { recursive: true, force: true }).catch(() => undefined)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
   }
 })

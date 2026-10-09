@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Locator } from '@playwright/test'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
@@ -76,7 +76,7 @@ const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(aw
 
 async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
   options: { managed?: boolean; historyEnabled?: boolean } = {}) {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-question-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-question-' })).directory
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
   let setup: SocketHostService | undefined
   let launched: LaunchedSotto | undefined
@@ -128,14 +128,14 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
       async close() {
         await closeSotto(ownedApp)
         await ownedHost.close()
-        await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+        await removeOwnedE2EProfile(profile)
       },
     }
   } catch (error) {
     if (launched) await closeSotto(launched)
     await setup?.close()
     await host?.close()
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     throw error
   }
 }
@@ -177,7 +177,7 @@ for (const recovery of ['reconnect', 'restart'] as const) test(`managed remote e
     await expect.poll(() => composeCalls).toBe(1)
     for (const text of ['Fix the parser', 'Fix the parser and add', 'Fix the parser and add tests', latest]) await input.fill(text)
     await expect(input).toHaveValue(latest)
-    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(latest)
+    await expect.poll(async () => (await agentState(f.launched.page)).draft).toBe(latest)
     // The final edit is held off the wire: a host-only copy cannot make this test pass.
     expect(composeCalls).toBeLessThanOrEqual(2)
     expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === latest)).toBe(false)
@@ -287,7 +287,7 @@ test('reconnecting an unsaved laptop edit preserves a newer draft on Forge', asy
     await input.fill('Keep')
     await expect.poll(() => composeCalls).toBe(1)
     for (const text of ['Keep the', 'Keep the latest', laptopText]) await input.fill(text)
-    await expect.poll(async () => (await f.launched.page.evaluate(async () => window.sotto!.agents!.get())).draft).toBe(laptopText)
+    await expect.poll(async () => (await agentState(f.launched.page)).draft).toBe(laptopText)
     expect(f.host.service.shell().threadDrafts?.some(draft => draft.text === laptopText)).toBe(false)
     await f.launched.app.evaluate((_, id) => globalThis.sottoRemoteHostE2E!.disconnect(id, true), f.connection.hostId)
     release()

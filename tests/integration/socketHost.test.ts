@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -49,9 +50,10 @@ describe('authenticated host socket', () => {
     expect((await fetch(fixture.url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken,
       'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
     const actual = fixture.host.service.command.bind(fixture.host.service), calls: AgentCommand[] = []
-    let release: () => void = () => undefined, entered: () => void = () => undefined, sent: () => void = () => undefined
-    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
-    const sendAdmitted = new Promise<void>(resolve => { sent = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
+
+    const { promise: started, resolve: entered } = deferred<void>()
+    const { promise: sendAdmitted, resolve: sent } = deferred<void>()
     const pending: Promise<unknown>[] = []
     const spy = vi.spyOn(fixture.host.service, 'command').mockImplementation(async (...args) => {
       calls.push(structuredClone(args[0]))
@@ -94,8 +96,9 @@ describe('authenticated host socket', () => {
     const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
     const control = (fixture.host.service as unknown as { control: { persist(): Promise<void> } }).control
     const persist = control.persist.bind(control)
-    let release: () => void = () => undefined, entered: () => void = () => undefined
-    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
+
+    const { promise: started, resolve: entered } = deferred<void>()
     const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     const actual = fixture.host.service.command.bind(fixture.host.service), admitted: AgentCommand[] = []
     const command = vi.spyOn(fixture.host.service, 'command').mockImplementation((...args) => {
@@ -139,8 +142,9 @@ describe('authenticated host socket', () => {
     const image = await client.stageAttachment({ name: 'Synthetic.png', mimeType: 'image/png', bytes: PIXEL_PNG })
     const control = (fixture.host.service as unknown as { control: { persist(): Promise<void> } }).control
     const persist = control.persist.bind(control)
-    let release: () => void = () => undefined, entered: () => void = () => undefined
-    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
+
+    const { promise: started, resolve: entered } = deferred<void>()
     const held = vi.spyOn(control, 'persist').mockImplementationOnce(async () => { entered(); await gate; await persist() })
     const actual = fixture.host.service.command.bind(fixture.host.service), admitted: AgentCommand[] = []
     const command = vi.spyOn(fixture.host.service, 'command').mockImplementation((...args) => {
@@ -203,8 +207,9 @@ describe('authenticated host socket', () => {
     const before = JSON.parse(await readFile(join(fixture.root, 'agents.json'), 'utf8')).threadDrafts
     await second.readShell()
     const beforeShared = sharedFeedback(), beforeOther = otherFeedback()
-    let release: () => void = () => undefined, entered: () => void = () => undefined
-    const gate = new Promise<void>(resolve => { release = resolve }), started = new Promise<void>(resolve => { entered = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
+
+    const { promise: started, resolve: entered } = deferred<void>()
     const actual = fixture.host.service.command.bind(fixture.host.service)
     const held = vi.spyOn(fixture.host.service, 'command').mockImplementationOnce(async (...args) => { entered(); await gate; return actual(...args) })
     const editing = client.command({ type: 'compose', threadId, text: 'Revoked answer' })
@@ -522,8 +527,7 @@ describe('authenticated host socket', () => {
     expect((await fetch(fixture.url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
     fixture.native.event({ type: 'permission', threadId: 'workshop', requestId: 'permission-receipt', text: 'Build?' })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
-    let complete!: (delivered: boolean) => void
-    const completion = new Promise<boolean>(resolve => { complete = resolve })
+    const { promise: completion, resolve: complete } = deferred<boolean>()
     const execute = fixture.native.execute.bind(fixture.native)
     const spy = vi.spyOn(fixture.native, 'execute').mockImplementation(command => {
       if (command.type !== 'answer') return execute(command)
@@ -558,8 +562,7 @@ describe('authenticated host socket', () => {
     expect((await fetch(fixture.url + '/v1/admin/allow-answers', { method: 'POST', headers: { Authorization: 'Bearer ' + descriptor.adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: result.clientId }) })).status).toBe(200)
     fixture.native.event({ type: 'permission', threadId: 'workshop', requestId: 'permission-receipt', text: 'Build?' })
     await expect.poll(() => client.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
-    let release!: () => void
-    const gate = new Promise<void>(resolve => { release = resolve })
+    const { promise: gate, resolve: release } = deferred<void>()
     let started = false
     const execute = fixture.native.execute.bind(fixture.native)
     const spy = vi.spyOn(fixture.native, 'execute').mockImplementation(async command => {

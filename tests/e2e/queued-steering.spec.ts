@@ -1,3 +1,4 @@
+import { agentState } from './support/agentAccess'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -57,7 +58,7 @@ test('steers a queued message from the keyboard without consuming the newer draf
     await expect(queue).toContainText('Keep this queued')
     await expect(prompt).toHaveValue('Keep this newer draft')
     await expect(queue.getByRole('button', { name: /^Queued/ })).toBeFocused()
-    const state = await page.evaluate(() => window.sotto!.agents!.get())
+    const state = await agentState(page)
     const thread = state.host.threads.find(t => t.id === docs)!
     expect(thread.lastTurn?.id).toBe(turn)
     expect(await userMessageTexts(page, 'docs')).toEqual(['Start the work', 'Use the simpler approach'])

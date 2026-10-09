@@ -1,3 +1,7 @@
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { deferred } from '../../fixtures/deferred'
+import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,8 +12,7 @@ import type { AgentVoiceDependencies } from '../../../src/renderer/src/agents/vo
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { useAttentionReview } from '../../../src/renderer/src/agents/attentionReview'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -20,7 +23,10 @@ vi.mock('../../../src/renderer/src/e2e/agentVoiceEffects', () => ({ createE2EAge
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function stateFixture(): AgentState {
-  return { configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true }, connection: 'connected', host: structuredClone(EMPTY_AGENT_HOST), assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true }, reasoningAccounts: [],  }
+  return threadsStateFixture({ cloneOverrides: false,
+    configuration: { ...defaultAgentConfiguration(), enabled: true, speak: true },
+    host: structuredClone(EMPTY_AGENT_HOST),
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null } })
 }
 
 describe('speech interruption from the renderer', () => {
@@ -31,8 +37,7 @@ describe('speech interruption from the renderer', () => {
     let state = stateFixture()
     let receive!: (state: AgentState) => void
     let utterance!: (audio: Float32Array) => void
-    let finishRelease!: () => void
-    const release = new Promise<void>(resolve => { finishRelease = resolve })
+    const { promise: release, resolve: finishRelease } = deferred<void>()
     const start = vi.fn(async () => undefined)
     const stop = vi.fn(async () => { if (pending) await release })
     external.dependencies = {
@@ -72,8 +77,7 @@ describe('speech interruption from the renderer', () => {
   })
   it('waits for microphone release before restoring voice', async () => {
     const state = stateFixture()
-    let finishRelease!: () => void
-    const pendingRelease = new Promise<void>(resolve => { finishRelease = resolve })
+    const { promise: pendingRelease, resolve: finishRelease } = deferred<void>()
     const start = vi.fn(async () => undefined)
     const stopCapture = vi.fn(() => pendingRelease)
     external.dependencies = {
@@ -109,10 +113,10 @@ describe('speech interruption from the renderer', () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-review-context-'))
     const host = new E2EAgentHost()
     const execute = vi.spyOn(host, 'execute')
-    const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, })
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, })
     try {
-      await credentials.load(); await control.start(); await control.command({ type: 'connect' })
+      await control.start(); await control.command({ type: 'connect' })
       await control.command({ type: 'assign', threadId: 'workshop' })
       for (const requestId of ['a', 'b']) host.event({ type: 'permission', threadId: 'workshop', requestId, text: `Request ${requestId}` })
       const { result } = renderHook(() => {
@@ -206,8 +210,7 @@ describe('speech interruption from the renderer', () => {
     { type: 'configure', patch: { speak: true } },
   ] as const)('delivers immediate audio control %j while a normal command is pending', async request => {
     const state = stateFixture()
-    let release!: (state: AgentState) => void
-    const pending = new Promise<AgentState>(resolve => { release = resolve })
+    const { promise: pending, resolve: release } = deferred<AgentState>()
     const command = vi.fn<AgentBridge['command']>(request => request.type === 'connect' ? pending : Promise.resolve(state))
     const bridge: AgentBridge = { get: async () => state, onState: () => () => undefined, command }
     const { result } = renderHook(() => useAgentConnection(bridge))
@@ -224,7 +227,7 @@ describe('speech interruption from the renderer', () => {
     let state = stateFixture()
     let receive!: (state: AgentState) => void
     let finish: (() => void) | undefined
-    const speak = vi.fn(async () => { await new Promise<void>(resolve => { finish = resolve }) })
+    const speak = vi.fn(async () => { await (() => { const pending = deferred<void>(); finish = pending.resolve; return pending.promise })() })
     const stop = vi.fn(() => { finish?.(); finish = undefined })
     external.dependencies = {
       createWakeDetector: () => ({ load: async () => undefined, detect: async () => ({ detected: false, endSeconds: 0 }), dispose() {} }),
