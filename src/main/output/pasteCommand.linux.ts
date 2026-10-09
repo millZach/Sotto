@@ -14,6 +14,12 @@ const TERMINAL_CLASSES = new Set([
   'konsole', 'org.kde.konsole', 'ptyxis', 'org.gnome.ptyxis', 'xterm',
 ])
 
+export function sanitizeLinuxPasteText(text: string): string {
+  // Strip terminal controls, retaining the user's lines and indentation.
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000b-\u001f]/gu, '')
+}
+
 // is_key_down reads physical state. repl returns the Lua result; eval only returns "ok".
 export const MODIFIERS_HELD_QUERY = 'return hl.is_key_down("Super_L") or hl.is_key_down("Super_R") or hl.is_key_down("Control_L") or hl.is_key_down("Control_R") or hl.is_key_down("Shift_L") or hl.is_key_down("Shift_R") or hl.is_key_down("Alt_L") or hl.is_key_down("Alt_R")'
 

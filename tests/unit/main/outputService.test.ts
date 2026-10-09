@@ -9,6 +9,7 @@ import {
   type SpawnedProcessLike,
   type OutputServiceDependencies,
 } from '../../../src/main/output/outputService'
+import { sanitizeLinuxPasteText } from '../../../src/main/output/pasteCommand.linux'
 import { createPasteCommands, type PasteInvocation } from '../../../src/main/output/pasteCommand'
 
 const buildWindowsPasteInvocation = createPasteCommands('win32').oneShot
@@ -76,6 +77,37 @@ describe('OutputService', () => {
     expect(harness.clipboardText()).toBe(transcript)
     expect(harness.processInput()).toBeUndefined()
     expect(harness.events).toEqual(['clipboard'])
+  })
+
+  it('removes every C0 control except tabs and newlines before Linux automatic paste', async () => {
+    const controls = Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)).join('')
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    await expect(harness.service.deliver(`café 🚀${controls}\x1b[201~text`, {
+      autoPaste: true, pasteDelayMs: 50,
+    })).resolves.toBe('pasted')
+    expect(harness.clipboardText()).toBe('café 🚀\t\n[201~text')
+  })
+
+  it('leaves Linux user-initiated copy text intact', async () => {
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    const text = 'copy\x1b[201~\r\n\ttext'
+    await expect(harness.service.deliver(text, { autoPaste: false, pasteDelayMs: 0 })).resolves.toBe('copied')
+    expect(harness.clipboardText()).toBe(text)
+  })
+
+  it('sends no clipboard write or paste for Linux text containing only controls', async () => {
+    const harness = createHarness({ preparePasteText: sanitizeLinuxPasteText })
+    await expect(harness.service.deliver('\x00\x1b\x07', { autoPaste: true, pasteDelayMs: 0 })).resolves.toBe('empty')
+    expect(harness.events).toEqual([])
+  })
+
+  it.each(['win32', 'darwin'] as const)('keeps automatic paste bytes unchanged for %s', platform => {
+    const harness = createHarness({ buildPasteInvocation: createPasteCommands(platform).oneShot })
+    const text = 'unchanged\x1b[201~\r\n\ttext'
+    return harness.service.deliver(text, { autoPaste: true, pasteDelayMs: 0 }).then(result => {
+      expect(result).toBe('pasted')
+      expect(harness.clipboardText()).toBe(text)
+    })
   })
 
   it('holds the next clipboard write until a successful paste settles', async () => {

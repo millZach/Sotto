@@ -102,7 +102,7 @@ import {
   type AccessibilityTrustAdapter,
 } from './output/pasteAccessibility'
 import { createPasteCommands } from './output/pasteCommand'
-import { createHyprlandPasteAdapter } from './output/pasteCommand.linux'
+import { createHyprlandPasteAdapter, sanitizeLinuxPasteText } from './output/pasteCommand.linux'
 import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
@@ -1004,6 +1004,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     }),
     buildPasteInvocation: pasteCommands.oneShot,
     keepWidgetVisibleDuringPaste: platform === 'linux',
+    ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
   })
 
   const copyOutput = async (text: string): Promise<void> => {

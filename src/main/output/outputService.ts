@@ -22,6 +22,7 @@ export interface OutputServiceDependencies {
   readonly process: PasteProcessAdapter
   readonly buildPasteInvocation: () => PasteInvocation | null
   readonly keepWidgetVisibleDuringPaste?: boolean
+  readonly preparePasteText?: (text: string) => string
 }
 
 interface DeliveryOptions {
@@ -113,6 +114,9 @@ export class OutputService {
     text: string,
     options: DeliveryOptions,
   ): Promise<OutputOutcome> {
+    if (options.autoPaste && this.dependencies.preparePasteText) {
+      text = this.dependencies.preparePasteText(text)
+    }
     if (text.trim().length === 0) {
       return 'empty'
     }
