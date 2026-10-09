@@ -591,6 +591,17 @@ describe('a host restarting for an update (ADR-0040)', () => {
     local.state.clientUpdates = [reading]; own.add(local.connection)
     expect(own.shell().clientUpdates).toEqual([reading])
   })
+  it('marks the hosts that babysit pull requests, so the window offers Babysit pull request only on their threads (ADR-0061)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), older = fixture(LOCAL, 'remote'), newer = fixture(REMOTE, 'remote')
+    router.add(older.connection); router.add({ ...newer.connection, offersBabysitting: () => true })
+    const [first, second] = router.shell().host.clientHosts!
+    expect(first).not.toHaveProperty('pullRequestBabysit')
+    expect(second).toMatchObject({ pullRequestBabysit: true })
+    // The user's Stop babysitting reaches the thread's own host by its own thread ID, like every thread command.
+    const url = 'https://github.com/o/r/pull/42'
+    await router.command({ type: 'stop-babysitting', threadId: hostEntityKey(REMOTE, 'thread'), url }, desktopWindowClient())
+    expect(newer.command).toHaveBeenCalledWith({ type: 'stop-babysitting', threadId: 'thread', url }, desktopWindowClient())
+  })
 })
 
 describe('exact answer notice ownership', () => {

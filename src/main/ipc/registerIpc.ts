@@ -137,6 +137,7 @@ const settingKeys = [
   'showBrowserPreviews',
   'browserWithoutAsking',
   'visualsInThreads',
+  'babysitPullRequests',
   'voiceCoordinatorEnabled',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',

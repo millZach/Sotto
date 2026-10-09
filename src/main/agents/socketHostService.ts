@@ -453,9 +453,13 @@ export class SocketHostService implements HostService {
   async observe(threadIds: string[]): Promise<void> { this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
+  /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
+  get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.recoveryError = undefined
     const admitted = structuredClone(command)
+    // A host from before babysitting would refuse the command with no word of why; this says which side to update.
+    if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {

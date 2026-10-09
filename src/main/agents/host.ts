@@ -23,7 +23,9 @@ export type AgentHostCommand =
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
     /** The caller keeps history from the host's events, so the result's snapshot may leave every thread's messages out (`ThreadReadPurpose`, #368). */
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
-  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
+  | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null
+    /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
+    readonly wakeUp?: true }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }

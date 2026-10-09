@@ -83,6 +83,18 @@ const migrations = [{
     );
     CREATE INDEX visuals_thread ON visuals(thread_id, seq);
   `,
+}, {
+  // The messages babysitting sent a thread as wake-ups (ADR-0061 decision 8), by ID alone. Not thread events, for the
+  // reason visuals are not: a messages-reset rebuilds the projection from the provider's history, which knows nothing
+  // of which prompts were Sotto's. The thread's record names only the newest; this keeps every one.
+  version: 5,
+  sql: `
+    CREATE TABLE wake_ups (
+      thread_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      PRIMARY KEY (thread_id, message_id)
+    );
+  `,
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -159,6 +171,8 @@ export class ThreadStore {
   private durableRedactions: ThreadStore | undefined
   /** Each thread's visuals as last read or written, so a window read per publish costs no query. */
   private readonly visualCache = new Map<string, readonly StoredVisual[]>()
+  /** Each thread's wake-up message IDs as last read or written, for the same reason. */
+  private readonly wakeUpCache = new Map<string, ReadonlySet<string>>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string) {}
@@ -230,6 +244,7 @@ export class ThreadStore {
     this.activityRedactions.clear()
     this.redactionChecks.clear()
     this.visualCache.clear()
+    this.wakeUpCache.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -509,6 +524,7 @@ export class ThreadStore {
       this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
       this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
       this.statement('DELETE FROM visuals WHERE thread_id = ?').run(threadId)
+      this.statement('DELETE FROM wake_ups WHERE thread_id = ?').run(threadId)
       redactEvents(db, threadId)
       db.exec('COMMIT')
     } catch (error) {
@@ -517,6 +533,7 @@ export class ThreadStore {
     }
     this.activityStates.delete(threadId)
     this.visualCache.delete(threadId)
+    this.wakeUpCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
@@ -571,6 +588,37 @@ export class ThreadStore {
     }
     this.visualCache.set(threadId, visuals)
     return visuals
+  }
+
+  /** The IDs of every message babysitting sent this thread as a wake-up. */
+  wakeUps(threadId: string): ReadonlySet<string> {
+    const held = this.wakeUpCache.get(threadId)
+    if (held) return held
+    const ids = new Set(this.statement('SELECT message_id FROM wake_ups WHERE thread_id = ?').all(threadId).map(row => String(row.message_id)))
+    this.wakeUpCache.set(threadId, ids)
+    return ids
+  }
+
+  /** Keeps a wake-up's message ID with its thread. Throws when the store refuses it. */
+  addWakeUp(threadId: string, messageId: string): void {
+    const before = this.wakeUps(threadId)
+    if (before.has(messageId)) return
+    this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, messageId)
+    this.wakeUpCache.set(threadId, new Set([...before, messageId]))
+  }
+
+  /** Keeps every one of these wake-up message IDs with its thread, in one transaction. Throws when the store refuses them. */
+  addWakeUps(threadId: string, messageIds: readonly string[]): void {
+    const before = this.wakeUps(threadId)
+    const added = [...new Set(messageIds)].filter(id => !before.has(id))
+    if (!added.length) return
+    const db = this.requireOpen()
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const id of added) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      db.exec('COMMIT')
+    } catch (error) { db.exec('ROLLBACK'); throw error }
+    this.wakeUpCache.set(threadId, new Set([...before, ...added]))
   }
 
   /** Keeps one visual with its thread. Throws when the store refuses it, so nothing is shown that was not kept. */

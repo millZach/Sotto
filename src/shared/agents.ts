@@ -64,9 +64,13 @@ export type ProviderProblem = z.infer<typeof providerProblemSchema>
 const providerAccountSchema = z.string().min(1).max(80)
 
 const id = z.string().min(1).max(512)
+/** How many of a thread's newest wake-ups its record names (`wakeUpMessageIds`). */
+export const WAKE_UP_MESSAGE_IDS_MAX = 50
 // Scoped public model/project IDs include an encoded native identifier.
 const providerEntityId = z.string().min(1).max(6_144)
-const text = z.string().max(100_000)
+/** The longest text a message, a prompt or a follow-up carries. */
+export const AGENT_TEXT_MAX = 100_000
+const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -249,6 +253,12 @@ export const agentMessageSchema = z.object({
    * Either way the message is then its words alone: `isVisualMessage` says no.
    */
   visual: agentVisualSchema.optional().catch(undefined),
+  /**
+   * Set on a wake-up babysitting sent (ADR-0061 decision 8), from the host's own record of the send rather than the
+   * message's text, so it survives the history being read again from the provider. An older reader drops the field and
+   * shows the message as the user's.
+   */
+  wakeUp: z.literal(true).optional().catch(undefined),
 })
 /**
  * What the sidebar reads about a thread's history without holding that history. The shell stream
@@ -340,6 +350,9 @@ export const agentThreadSchema = z.object({
   /** The pull requests this thread babysits: which, who started each and since when (ADR-0061 decision 10). The
    * host keeps what the thread was last told; clients get only this. Absent when it babysits none, and from older hosts. */
   babysitting: z.array(agentBabysittingSchema).max(BABYSITTING_PER_THREAD_MAX).optional(),
+  /** The newest wake-ups babysitting sent this thread, by message ID, oldest first (ADR-0061 decision 8): the host's own
+   * record of what it sent, never read from a message's text, so a row can say Sotto sent its last message. */
+  wakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -475,7 +488,9 @@ export type ClientUpdateRun = z.infer<typeof clientUpdateRunSchema>
 export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
   capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional(),
   /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
-  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional() })
+  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
+  /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
+  pullRequestBabysit: z.literal(true).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -619,13 +634,19 @@ export const agentThreadDraftSchema = z.object({
   requestId: id.nullable(), updatedAt: z.string().datetime(),
 })
 export type AgentThreadDraft = z.infer<typeof agentThreadDraftSchema>
-/** User-authored follow-ups; independent of attention and dispatched outbox intent. */
+/**
+ * The follow-up queue's items: the user's own follow-ups, independent of attention and dispatched outbox intent, and
+ * at most one of Sotto's own, a `wakeUp` babysitting is holding until the thread is ready (ADR-0061 decision 8), after
+ * the user's items, removable and never editable. Its draft ID is its own, so an older reader still reads the queue;
+ * no draft or delivery receipt goes with it.
+ */
 export const agentFollowupSchema = z.object({
   id: z.uuid(), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema, skills: agentSkillReferencesSchema.optional(),
   files: agentFileReferencesSchema.optional(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']),
   error: z.string().optional(), commandId: id.optional(), messageId: id.optional(), resumeAfterTurnId: id.optional(),
+  wakeUp: z.literal(true).optional().catch(undefined),
 })
 export type AgentFollowup = z.infer<typeof agentFollowupSchema>
 export const agentDeliverySchema = z.object({
@@ -965,6 +986,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Link a pull request to the thread by a GitHub URL or `#42`, or take the link away again. */
   z.object({ type: z.literal('git-link-pull-request'), threadId: id, reference: z.string().min(1).max(2_048) }).strict(),
   z.object({ type: z.literal('git-unlink-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  /** The user's Babysit pull request and Stop babysitting, on a pull request the thread knows (ADR-0061 decision 3). */
+  z.object({ type: z.literal('babysit-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  z.object({ type: z.literal('stop-babysitting'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
   /** T3's Checkout pull request: `local` checks it out in the thread's folder with `gh pr checkout`; `worktree` fetches its
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),

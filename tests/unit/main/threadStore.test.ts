@@ -215,3 +215,22 @@ describe('thread store', () => {
     expect(f.store.readMessages('thread').messages).toEqual([])
   })
 })
+
+describe('wake-ups in the thread store', () => {
+  it('keeps every wake-up a thread was sent, by ID, through a messages-reset and a reopen, until the thread is forgotten', async () => {
+    const f = await store()
+    for (let index = 0; index < 80; index++) f.store.addWakeUp('thread', `wake-${index}`)
+    f.store.addWakeUp('thread', 'wake-0')
+    f.store.addWakeUp('other', 'wake-0')
+    f.store.replaceThreadMessages('thread', [message('wake-0', 'user', 'Sotto is babysitting a pull request for this thread.')], 'rebuilt')
+    f.store.rebuild()
+    expect(f.store.wakeUps('thread').size).toBe(80)
+    f.store.close()
+    const reopened = await store(f.root)
+    expect([...reopened.store.wakeUps('thread')]).toContain('wake-0')
+    expect(reopened.store.wakeUps('thread').size).toBe(80)
+    reopened.store.forget('thread')
+    expect(reopened.store.wakeUps('thread').size).toBe(0)
+    expect([...reopened.store.wakeUps('other')]).toEqual(['wake-0'])
+  })
+})

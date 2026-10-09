@@ -71,6 +71,11 @@ export interface BabysitStore {
    * Returns the function that stops it.
    */
   onPullRequestUnlinked?(listener: (threadId: string, url: string) => Promise<void>): () => void
+  /**
+   * Calls `listener` when a thread that babysits is settled or archived, so babysitting ends then rather than at the
+   * next pass (decision 9). Returns the function that stops it.
+   */
+  onBabysatThreadClosed?(listener: () => void): () => void
 }
 /**
  * Hands one thread its news about one pull request, resolving once it is sent or durably queued; a rejection leaves it
@@ -82,7 +87,17 @@ export type BabysitStart =
   | { readonly started: true; readonly babysitting: AgentBabysitting }
   /** `already`: it babysits this one, unchanged. The others started nothing. */
   | { readonly started: false; readonly reason: 'already'; readonly babysitting: AgentBabysitting }
-  | { readonly started: false; readonly reason: 'not-github' | 'unknown-thread' | 'closed-thread' | 'unknown-pull-request' | 'limit' }
+  /** `switched-off`: the agent's start, refused because Let agents babysit pull requests was turned off before it landed (decision 12). */
+  | { readonly started: false; readonly reason: 'not-github' | 'unknown-thread' | 'closed-thread' | 'unknown-pull-request' | 'limit' | 'switched-off' }
+/** Why nothing was started, in the words the user's control and the agent's tool both answer with (decision 5). */
+export const BABYSIT_REFUSALS: Readonly<Record<Exclude<Extract<BabysitStart, { started: false }>['reason'], 'already'>, string>> = {
+  'not-github': 'Sotto babysits pull requests on GitHub only. Nothing was started.',
+  'unknown-thread': 'This thread is not on this host any more. Nothing was started.',
+  'closed-thread': 'This thread is settled or archived. Restore it to babysit its pull request. Nothing was started.',
+  'unknown-pull-request': 'Link this pull request to the thread first. Nothing was started.',
+  limit: `This thread already babysits ${BABYSITTING_PER_THREAD_MAX} pull requests, the most one thread can. Stop one first. Nothing was started.`,
+  'switched-off': 'Let agents babysit pull requests is turned off in Sotto\'s Settings. Nothing was started.',
+}
 /** One pull request a thread babysits, as `list` gives it. */
 export interface BabysitListing extends AgentBabysitting { readonly threadId: string }
 
@@ -94,6 +109,12 @@ export interface BabysitterOptions {
   readonly run?: RunGitCommand
   readonly now?: () => number
   readonly log?: (event: BabysitEvent) => void
+  /**
+   * Told when babysitting a pull request ended, with why, once it is saved. A quiet ending (a stop, a settle, an
+   * unlink, the switch) takes back that pull request's part of a wake-up still waiting; one that ended with news has
+   * just handed its last wake-up over. The ending waits for what it returns, so a stop has taken back its wake-up when it resolves.
+   */
+  readonly ended?: (threadId: string, url: string, reason: BabysitEndReason) => void | Promise<void>
 }
 
 interface Target { readonly threadId: string; readonly record: BabysitRecord }
@@ -135,11 +156,18 @@ export class Babysitter {
   /** Whether this pass already logged a rate limit, so a paused pass logs it once. */
   private limitLogged = false
   private readonly stopListening: (() => void) | undefined
+  private readonly stopClosedListening: (() => void) | undefined
+  /** Ending what settled or archived threads babysat, and whether another thread closed while it ran. */
+  private endingClosed: Promise<void> | undefined
+  private closedAgain = false
+  /** Starts and stops, one at a time in the order asked, so a start never lands after a stop that should have ended it. */
+  private changes: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly options: BabysitterOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.now = options.now ?? (() => Date.now())
     this.stopListening = options.store.onPullRequestUnlinked?.((threadId, url) => this.unlinked(threadId, url))
+    this.stopClosedListening = options.store.onBabysatThreadClosed?.(() => { void this.endClosed() })
   }
 
   /** Starts the two-minute passes, the first at once, so what changed while the host was not reading is told now. */
@@ -154,6 +182,7 @@ export class Babysitter {
   async close(): Promise<void> {
     this.closed = true
     this.stopListening?.()
+    this.stopClosedListening?.()
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     await this.passing
@@ -162,9 +191,21 @@ export class Babysitter {
   /**
    * Starts babysitting a pull request the thread knows, for whoever asked. Asks nobody (decision 4) and reads nothing
    * now: the next pass takes its first look, telling what stands then (failing checks, a pass, a conflict) and the
-   * remarks written after this moment.
+   * remarks written after this moment. `allowed` is asked once it is this start's turn among starts and stops, so a
+   * start it refuses never lands after the switch's sweep (decision 12).
    */
-  async start(threadId: string, url: string, startedBy: BabysitStarter): Promise<BabysitStart> {
+  start(threadId: string, url: string, startedBy: BabysitStarter, options: { readonly allowed?: () => boolean } = {}): Promise<BabysitStart> {
+    return this.oneAtATime(() => {
+      if (options.allowed && !options.allowed()) return Promise.resolve<BabysitStart>({ started: false, reason: 'switched-off' })
+      return this.startNow(threadId, url, startedBy)
+    })
+  }
+  private oneAtATime<T>(change: () => Promise<T>): Promise<T> {
+    const task = this.changes.then(change)
+    this.changes = task.catch(() => undefined)
+    return task
+  }
+  private async startNow(threadId: string, url: string, startedBy: BabysitStarter): Promise<BabysitStart> {
     const address = pullRequestAddress(url)
     const key = pullRequestKey(url)
     if (!address || !key) return { started: false, reason: 'not-github' }
@@ -190,7 +231,10 @@ export class Babysitter {
    * Stops babysitting what the selector names: one pull request of a thread, all of a thread's, or, with no thread,
    * every thread's (the switch, with `startedBy: 'agent'`). Sends the thread nothing (decision 9). Resolves with how many stopped.
    */
-  async stop(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
+  stop(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
+    return this.oneAtATime(() => this.stopNow(selector, reason))
+  }
+  private async stopNow(selector: { readonly threadId?: string; readonly url?: string; readonly startedBy?: BabysitStarter }, reason: BabysitStopReason): Promise<number> {
     const key = selector.url === undefined ? undefined : pullRequestKey(selector.url)
     if (key === null) return 0
     const threads = selector.threadId === undefined ? this.options.store.babysatThreads() : [this.options.store.babysitThread(selector.threadId)].flatMap(thread => thread ? [thread] : [])
@@ -199,7 +243,7 @@ export class Babysitter {
       const matches = (record: BabysitRecord): boolean => (key === undefined || pullRequestKey(record.url) === key) && (selector.startedBy === undefined || record.startedBy === selector.startedBy)
       let removed: BabysitRecord[] = []
       await this.options.store.changeBabysitting(thread.id, records => { removed = records.filter(matches); return removed.length ? records.filter(record => !matches(record)) : records })
-      for (const record of removed) { this.seen.delete(recordKey(thread.id, record)); this.options.log?.(`babysit-ended-${STOPPED[reason]}`) }
+      for (const record of removed) { this.seen.delete(recordKey(thread.id, record)); await this.tellEnded(thread.id, record.url, STOPPED[reason]) }
       stopped += removed.length
     }
     return stopped
@@ -214,6 +258,25 @@ export class Babysitter {
     const thread = this.options.store.babysitThread(threadId)
     if (!key || !thread || thread.knows(url)) return
     for (const record of thread.records) if (pullRequestKey(record.url) === key) await this.endQuietly({ threadId, record }, 'unlinked')
+  }
+
+  /**
+   * Ends, quietly and at once, what every settled or archived thread babysits (decision 9): settling or archiving a
+   * thread sends it nothing, and takes back a wake-up still waiting for it. A pass would end them too; this is sooner.
+   */
+  endClosed(): Promise<void> {
+    if (this.closed) return Promise.resolve()
+    if (this.endingClosed) { this.closedAgain = true; return this.endingClosed }
+    this.endingClosed = (async () => {
+      do {
+        this.closedAgain = false
+        for (const thread of this.options.store.babysatThreads()) {
+          if (!thread.closed) continue
+          for (const record of thread.records) await this.endQuietly({ threadId: thread.id, record }, thread.closed)
+        }
+      } while (this.closedAgain && !this.closed)
+    })().catch(() => undefined).finally(() => { this.endingClosed = undefined })
+    return this.endingClosed
   }
 
   /** The pull requests babysat, by one thread or by every thread: which, who started each and since when. */
@@ -320,7 +383,7 @@ export class Babysitter {
       // Merged or closed is in the fingerprint itself: no more to read, and babysitting ends with the news.
       this.lastReads.delete(group.key)
       for (const target of group.targets) {
-        const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, head: fingerprint.head, changes: [], ended: fingerprint.state }
+        const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: fingerprint.head, changes: [], ended: fingerprint.state }
         await this.tellAndEnd(target, news, fingerprint.state)
       }
       return
@@ -362,7 +425,7 @@ export class Babysitter {
         if (!sameTold(finding.told, target.record.told)) landed = await this.record(target, finding.told) && landed
         continue
       }
-      const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, head: finding.told.head,
+      const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: finding.told.head,
         changes: finding.changes, ended: finding.exhausted ? 'comment-limit' : null }
       landed = (finding.exhausted ? await this.tellAndEnd(target, news, 'comment-limit') : await this.tell(target, news, finding.told)) && landed
     }
@@ -376,7 +439,7 @@ export class Babysitter {
     for (const target of group.targets) {
       const failedReads = target.record.told.failedReads + 1
       if (failedReads < FAILED_READ_LIMIT) { await this.record(target, { ...target.record.told, failedReads }); continue }
-      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, head: target.record.told.head, changes: [], ended: 'unreadable' }
+      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: target.record.told.head, changes: [], ended: 'unreadable' }
       // A wake-up that could not be handed over still counts the failure, so the next failed pass tries again.
       if (!await this.tellAndEnd(target, news, 'unreadable')) await this.record(target, { ...target.record.told, failedReads })
     }
@@ -413,8 +476,13 @@ export class Babysitter {
       })
     } catch { return false }
     this.seen.delete(recordKey(target.threadId, target.record))
-    if (removed) this.options.log?.(`babysit-ended-${reason}`)
+    if (removed) await this.tellEnded(target.threadId, target.record.url, reason)
     return true
+  }
+  /** Logs an ending and tells `ended`, waiting for it; what it does cannot undo the ending. */
+  private async tellEnded(threadId: string, url: string, reason: BabysitEndReason): Promise<void> {
+    this.options.log?.(`babysit-ended-${reason}`)
+    try { await this.options.ended?.(threadId, url, reason) } catch { /* Ended all the same. */ }
   }
   /** Records what the thread was told, on the record it was found for: a record stopped or started again since is left alone. */
   private async record(target: Target, told: BabysitTold): Promise<boolean> {

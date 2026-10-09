@@ -255,7 +255,8 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   // The card never repeats the sentence: it shows your latest prompt, or nothing.
   const lastUserAt = parse(lastUser?.createdAt)
   const lastMessage: ThreadLastMessage | undefined = lastUser === undefined || sentenceFromUser ? undefined : {
-    who: assignment?.ownMessageIds.includes(lastUser.id) ? 'Sotto' : 'You',
+    // Supervision's follow-ups and babysitting's wake-ups are Sotto's, by the record of who sent them, never by their text.
+    who: assignment?.ownMessageIds.includes(lastUser.id) || thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : 'You',
     at: Number.isFinite(lastUserAt) ? lastUserAt : activityAt,
     text: lastUser.text,
   }

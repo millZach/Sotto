@@ -13,7 +13,7 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 const NOW = E2E_THREADS_NOW
 const THREAD = 'grok-previews'
 const BASE: AgentCapabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
-const PAUSE = 'The last turn did not confirm completion. Review the thread and resume queued follow-ups when ready.'
+const PAUSE = 'The last turn did not confirm completion. Review the thread and resume its queue when ready.'
 
 function manualState({ running = false, capabilities = {} }: { readonly running?: boolean; readonly capabilities?: Partial<AgentCapabilities> } = {}): AgentState {
   const state = threadsStateFixture()

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { Babysitter, type BabysitEvent, type BabysitStore, type BabysitThread } from '../../../src/main/agents/babysitting'
-import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
+import { COMMENT_ONLY_LIMIT, FAILED_READ_LIMIT, wakeUpPartDue, type BabysitNews, type BabysitRecord } from '../../../src/main/agents/babysitNews'
 import { GitHubRateLimit } from '../../../src/main/agents/github'
 import { DETAIL_QUERY, fingerprintQuery } from '../../../src/main/agents/githubBabysitReads'
 import { pullRequestKey } from '../../../src/main/agents/gitPullRequests'
@@ -99,6 +99,25 @@ describe('starting, stopping and listing', () => {
     expect(h.babysitter.list()).toEqual([])
     expect(h.events).toEqual(['babysit-ended-stopped-by-user', 'babysit-ended-switched-off', 'babysit-ended-switched-off'])
     expect(h.delivered).toEqual([])
+  })
+
+  it('lets no agent\'s start land after the switch\'s sweep, whichever is asked first', async () => {
+    const h = harness([], { a: { links: [url(1), url(2)] } })
+    // A save that takes its time, as the workspace's does: the start is under way, its record not yet saved.
+    const change = h.memory.store.changeBabysitting
+    let saving = false
+    h.memory.store.changeBabysitting = async (id, apply) => { saving = true; await new Promise(resolve => setTimeout(resolve, 5)); await change(id, apply) }
+    let enabled = true
+    const allowed = () => enabled
+    const before = h.babysitter.start('a', url(1), 'agent', { allowed })
+    await expect.poll(() => saving).toBe(true)
+    enabled = false
+    const swept = h.babysitter.stop({ startedBy: 'agent' }, 'switch')
+    const after = h.babysitter.start('a', url(2), 'agent', { allowed })
+    await expect(before).resolves.toMatchObject({ started: true })
+    await expect(swept).resolves.toBe(1)
+    await expect(after).resolves.toEqual({ started: false, reason: 'switched-off' })
+    expect(h.babysitter.list()).toEqual([])
   })
 })
 
@@ -479,7 +498,7 @@ describe('when GitHub cannot be read', () => {
     // A pull request GitHub answers nothing for is a failed read too.
     pull.number = 99
     for (let index = 0; index < FAILED_READ_LIMIT; index++) await h.pass()
-    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', head: 'head-1', changes: [], ended: 'unreadable' }])
+    expect(h.delivered.map(item => item.news)).toEqual([{ pullRequest: { url: url(1), number: 1, title: null }, startedBy: 'agent', startedAt: at(0).replace('Z', '.000Z'), head: 'head-1', changes: [], ended: 'unreadable' }])
     expect(h.babysitter.list()).toEqual([])
     expect(h.events.filter(event => event === 'babysit-read-failed')).toHaveLength(2 * FAILED_READ_LIMIT - 1)
     expect(h.events.at(-1)).toBe('babysit-ended-unreadable')
@@ -592,5 +611,22 @@ describe('recording what a thread was told', () => {
     expect(h.github.count('fingerprint')).toBe(1)
     await h.babysitter.pass()
     expect(h.github.count('fingerprint')).toBe(1)
+  })
+})
+
+describe('whether a part of a wake-up may still go', () => {
+  const part = (patch: Partial<BabysitNews> = {}): BabysitNews => ({ pullRequest: { url: url(1), number: 1, title: 'One' }, startedBy: 'agent', head: null,
+    changes: [{ kind: 'conflicting', base: 'main' }], ended: null, startedAt: at(0), ...patch })
+  const standing = [{ url: url(1), number: 1, startedBy: 'agent' as const, startedAt: at(0) }]
+  it('sends nothing of babysitting an agent started once the switch is off, a last wake-up for a merge included', () => {
+    expect(wakeUpPartDue(part(), standing, false)).toBe(false)
+    expect(wakeUpPartDue(part({ changes: [], ended: 'merged' }), [], false)).toBe(false)
+  })
+  it('sends a last wake-up for an ending, and other news only while the same babysitting stands', () => {
+    expect(wakeUpPartDue(part({ changes: [], ended: 'merged' }), [], true)).toBe(true)
+    expect(wakeUpPartDue(part({ startedBy: 'user', changes: [], ended: 'closed' }), [], false)).toBe(true)
+    expect(wakeUpPartDue(part(), standing, true)).toBe(true)
+    expect(wakeUpPartDue(part(), [], true)).toBe(false)
+    expect(wakeUpPartDue(part(), [{ ...standing[0]!, startedAt: at(5) }], true)).toBe(false)
   })
 })

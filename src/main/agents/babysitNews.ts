@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentBabysittingSchema, type AgentBabysitting, type BabysitStarter } from '../../shared/babysitting'
 import { REMARKS_READ_MAX, type BabysitCheck, type BabysitRemark, type PullRequestFingerprint } from './githubBabysitReads'
+import { pullRequestKey } from './gitPullRequests'
 
 /**
  * What babysitting finds (ADR-0061 decision 6): the news in a read of a pull request, against what one thread was last
@@ -77,6 +78,11 @@ export interface BabysitNews {
   readonly pullRequest: { readonly url: string; readonly number: number; readonly title: string | null }
   /** Who started babysitting it, so the wake-up can say how to stop. */
   readonly startedBy: BabysitStarter
+  /**
+   * When the babysitting it is news of started, so a wake-up about to go can tell that babysitting from one started
+   * again since. Absent from news queued before it was kept.
+   */
+  readonly startedAt?: string | undefined
   /** The head commit the news is about, when it was read. */
   readonly head: string | null
   readonly changes: readonly BabysitChange[]
@@ -170,4 +176,18 @@ export function findNews(told: BabysitTold, reading: BabysitReading): BabysitFin
     told: { head, failedChecks, passed, remarksThrough, remarkIds, conflicting, commentOnly, failedReads: 0 },
     exhausted: commentsOnly && commentOnly >= COMMENT_ONLY_LIMIT,
   }
+}
+
+/**
+ * Whether a part of a wake-up may still go as it goes (ADR-0061 decisions 9 and 12). An agent's news never goes once the
+ * switch is off, a last one included, since the switch ends what agents started and sends nothing. Otherwise a last
+ * wake-up for an ending goes, and other news only while the babysitting it is of still stands: the same pull request,
+ * starter and start.
+ */
+export function wakeUpPartDue(news: BabysitNews, standing: readonly AgentBabysitting[], agentToolOn: boolean): boolean {
+  if (news.startedBy === 'agent' && !agentToolOn) return false
+  if (news.ended !== null) return true
+  const key = pullRequestKey(news.pullRequest.url)
+  return standing.some(item => pullRequestKey(item.url) === key && item.startedBy === news.startedBy
+    && (news.startedAt === undefined || item.startedAt === news.startedAt))
 }

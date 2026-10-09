@@ -1192,7 +1192,7 @@ export class DesktopHosts {
       detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
-      hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(),
+      hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), offersBabysitting: () => socket.supportsBabysitting,
       // A thread's Files, Changes and Agents, read on the host (ADR-0025, October 5 amendment).
       threadFiles: request => socket.threadFiles(request), threadFilePreview: request => socket.threadFilePreview(request),
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),

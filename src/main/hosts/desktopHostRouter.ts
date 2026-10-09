@@ -34,6 +34,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** Whether this host lists `client-updates`: only then do its client updates reach the window (#480). */
   offersClientUpdates?(): boolean
+  /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
+  offersBabysitting?(): boolean
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
@@ -198,6 +200,7 @@ export class DesktopHostRouter {
           ...(original.host.providers ? { providers: original.host.providers } : {}),
           ...(connection.offersClientUpdates?.() && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...(connection.offersClientUpdates?.() && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
+          ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
         })),
       },
       assignments: entries.flatMap(item => item.state.assignments), queue: entries.flatMap(item => item.state.queue),

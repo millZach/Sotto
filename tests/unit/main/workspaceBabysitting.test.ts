@@ -157,12 +157,29 @@ describe('babysitting on the thread\'s record', () => {
     // A provider's update keeps it: babysitting is Sotto's record, not the provider's.
     f.adapters.codex.emit()
     expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!.babysitting).toHaveLength(1)
-    // Settling the thread ends it quietly at the next pass.
+    // Settling the thread ends it quietly at once, without waiting for a pass.
     await f.host.setWorkspaceSettled('thread', 'local', true)
-    await babysitter.pass()
+    await expect.poll(() => events).toEqual(['babysit-started', 'babysit-ended-settled'])
     expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!.babysitting).toBeUndefined()
+    await babysitter.pass()
     expect(events).toEqual(['babysit-started', 'babysit-ended-settled'])
     unsubscribe()
+    await babysitter.close()
+  })
+
+  it('ends babysitting quietly at once when the provider archives the thread', async () => {
+    const f = await fixture()
+    await linkedThread(f)
+    const { babysitter, delivered, events } = babysitterOver(f.host, { number: 1 }, { now: () => START })
+    await babysitter.start('local', url, 'agent')
+    await f.host.execute({ type: 'send', commandId: 'first', threadId: 'local', messageId: 'first', text: 'Start.' })
+    const session = f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
+    session.archivedAt = new Date(START).toISOString()
+    f.adapters.codex.emit()
+    await expect.poll(() => babysitter.list()).toEqual([])
+    expect(events).toEqual(['babysit-started', 'babysit-ended-archived'])
+    expect(delivered).toEqual([])
+    await babysitter.close()
   })
 
   it('leaves the thread readable by a client that predates the field, and drops what a client was never meant to have', () => {

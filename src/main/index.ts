@@ -8,6 +8,7 @@ import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
 import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
+import { PullRequestToolServer } from './agents/pullRequestTools'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
 import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
@@ -657,6 +658,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled, coordinatorEnabled: () => agentVoiceCoordinatorEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
+    babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
     openExternal: url => shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
@@ -714,6 +716,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
+    offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
   })
@@ -765,7 +768,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const visualTools = new VisualToolServer({ enabled: () => workingCopySettings.visualsInThreads,
     admits: threadId => agentHost.admitsVisuals(threadId), add: (threadId, input) => agentHost.addVisual(threadId, input) })
   quitHandles.visualTools = visualTools
-  agentHost.useThreadTools([hostSetupTools, visualTools])
+  // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
+  // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
+  // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
+  // already ended what agents started, before its first pass.
+  const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
+    babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined })
+  quitHandles.pullRequestTools = pullRequestTools
+  agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -1101,11 +1111,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     },
     async onSettingsChanged(settings): Promise<void> {
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
+      const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       if (settings.frostedWindow !== workingCopySettings.frostedWindow) windows.setMainWindowFrosted(settings.frostedWindow)
       workingCopySettings = settings
       worktreeCleanup?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
+      if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
       agentVoiceCoordinatorEnabled = settings.voiceCoordinatorEnabled
       await cleanSettingsHistory(agentControl, async () => {

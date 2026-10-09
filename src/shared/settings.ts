@@ -127,6 +127,12 @@ export interface AppSettings {
   browserWithoutAsking: boolean
   /** On by default (ADR-0056): an agent in a project thread may draw a visual in that thread. Off, new launches get no visual tool and calls are refused; visuals already drawn stay. */
   visualsInThreads: boolean
+  /**
+   * On by default (ADR-0061 decision 12): an agent in a Claude Code, Codex or Grok Build project thread on this computer
+   * may babysit its pull requests with Sotto's tool. Off, new launches get no tool, calls are refused, and what agents
+   * started ends at once; what the user started from the Pull request surface stays.
+   */
+  babysitPullRequests: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -279,6 +285,7 @@ const fieldSchemas = {
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
+  babysitPullRequests: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -362,6 +369,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showBrowserPreviews: true,
   browserWithoutAsking: true,
   visualsInThreads: true,
+  babysitPullRequests: true,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -487,6 +495,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
+    babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

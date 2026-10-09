@@ -22,7 +22,8 @@ import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
-import { Babysitter, type BabysitDeliver, type BabysitEvent } from './babysitting'
+import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
+import { wakeUpPartDue, type BabysitNews } from './babysitNews'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
@@ -75,6 +76,13 @@ export interface AgentRuntimeOptions {
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
+  /**
+   * Babysitting (ADR-0061). `agentTool` is the desktop's switch, read live: while it is on, this computer's Claude Code,
+   * Codex and Grok Build threads have Sotto's pull request tools, so a wake-up tells the agent to stop with them. A
+   * headless host has none, and its wake-ups say the user stops babysitting from the Pull request surface (decision 11).
+   * `run` stands a test's scripted gh in for babysitting's reads alone.
+   */
+  babysitting?: { agentTool?: () => boolean; run?: RunGitCommand }
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
@@ -171,11 +179,22 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
   // Babysitting (ADR-0061): the thread's host reads each babysat pull request every two minutes, whether or not a
-  // window is in front, and hands each thread its news. #824 delivers it as a wake-up through the thread's send path;
-  // until then nothing can start babysitting, and this sends nothing and keeps nothing.
-  const deliverWakeUp: BabysitDeliver = async () => undefined
+  // window is in front, and hands each thread its news as a wake-up through the thread's own send path (decision 8).
+  // A quiet ending takes back what a waiting wake-up said of that pull request (decision 9).
+  const babysitTool = (threadId: string): boolean => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
+  const deliverWakeUp: BabysitDeliver = (threadId, news) => agentControl.deliverWakeUp(threadId, news, { tool: babysitTool(threadId) })
+  const QUIET_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(['stopped-by-agent', 'stopped-by-user', 'switched-off', 'settled', 'archived', 'unlinked', 'forgotten'])
+  const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
-    ...(gitRun ? { run: gitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}) }) : undefined
+    ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
+    ended: async (threadId, url, reason) => { if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined) } }) : undefined
+  // A part of a wake-up may go only while the babysitting it is news of still stands, and an agent's only while the
+  // switch is on, a last one included; a user's last wake-up for an ending goes. Asked as the wake-up goes, whatever
+  // withdrawal managed.
+  const wakeUpDue = (threadId: string, news: BabysitNews): boolean =>
+    babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
+  // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
+  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
@@ -200,14 +219,20 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     })()
     return closing
   }
-  try { await agentControl.start() } catch (error) {
+  // The switch turned off while Sotto was closed ends what agents started, and takes back the wake-ups they left
+  // waiting, before the queue can send anything and before the first pass reads anything (ADR-0061 decision 12); the
+  // desktop ends it again whenever the switch is saved off.
+  const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
+  try {
+    await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
+  } catch (error) {
     void babysitter?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.())])
     agentHost.dispose()
     throw error
   }
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads })
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }
 }
