@@ -322,6 +322,21 @@ describe('terminal agent run state', () => {
     hooked.requestClosed('a'); expect(hooked.state).toBe('needs-you')
     hooked.requestClosed('b'); expect(hooked.state).toBe('idle')
   })
+  it.each([
+    ['claude', header, work, idle], ['codex', codexTitle, codexWork, codexIdle],
+    ['grok', grokTitle, redraw('⠧ Thinking… 0.2s       0.2s [stop]', grokTitle), grokIdle],
+  ] as const)('does not re-read the invalidated %s failure screen before new work erases it', (provider, title, working, ready) => {
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started(); state.output(ready)
+    if (provider === 'claude') state.hook(event('session-start'))
+    state.input('old work\r'); state.output(working); state.input('\x03')
+    state.output(redraw(`Interrupted\r\n${ready.split('\r\n').slice(1).join('\r\n')}`, title))
+    expect(state.state).toBe('idle')
+    state.input('new work\r')
+    if (provider === 'claude') state.hook(event('working', { turnId: 'b', workPhase: 'submitted' }))
+    state.output(working + ready)
+    if (provider !== 'grok') state.hook(event('completed', { turnId: 'b' }))
+    expect(state.state).toBe('just-finished')
+  })
   it.each(['input', 'failure', 'error'] as const)('returning ready after %s earns no completion', reason => {
     const state = agent(); state.output(work)
     if (reason === 'input') state.input('\x03')

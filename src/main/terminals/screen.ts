@@ -99,6 +99,7 @@ export class TerminalAgentScreen {
       chunk = (this.pending + chunk).slice(end.index + end[0].length); this.pending = ''; this.discardedString = false
     }
     const data = this.pending + chunk; this.pending = ''
+    let frameWritten = false
     for (let index = 0; index < data.length;) {
       const char = data[index]!
       if (char === '\x1b') {
@@ -109,8 +110,12 @@ export class TerminalAgentScreen {
           // eslint-disable-next-line no-control-regex
           const match = /^\x1b\[([\x20-\x3f]*)([\x40-\x7e])/u.exec(data.slice(index))
           if (!match) { this.pending = data.slice(index, index + 256); if (data.length - index > 256) { this.pending = ''; this.valid = false }; break }
-          // ConPTY can coalesce several full redraws into one output event. Observe the prior frame before erasing it.
-          if (match[2] === 'J' && (/^(?:2|3)$/u.test(match[1]!) || /^(?:0)?$/u.test(match[1]!) && this.x === 0 && this.y === 0)) beforeRedraw?.()
+          // Observe frames written in this event before a coalesced clear erases them. The screen left by the
+          // previous event was already read and may since have been invalidated by input; do not resurrect it.
+          if (match[2] === 'J' && (/^(?:2|3)$/u.test(match[1]!) || /^(?:0)?$/u.test(match[1]!) && this.x === 0 && this.y === 0)) {
+            if (frameWritten) beforeRedraw?.()
+            frameWritten = false
+          }
           this.csi(match[1]!, match[2]!); index += match[0].length; continue
         }
         if ([']', 'P', '_', '^', 'X'].includes(next)) {
@@ -125,7 +130,7 @@ export class TerminalAgentScreen {
         else if (next === 'D') this.down()
         else if (next === 'E') { this.x = 0; this.down() }
         else if (next === 'M') { if (this.y > this.top) this.y--; else this.reverseScroll() }
-        else if (next === 'c') { beforeRedraw?.(); this.primary = this.blank(); this.alternate = undefined; this.primaryWrap.fill(false); this.alternateWrap = undefined; this.x = this.y = this.top = 0; this.bottom = this.rows - 1; this.valid = true }
+        else if (next === 'c') { if (frameWritten) beforeRedraw?.(); frameWritten = false; this.primary = this.blank(); this.alternate = undefined; this.primaryWrap.fill(false); this.alternateWrap = undefined; this.x = this.y = this.top = 0; this.bottom = this.rows - 1; this.valid = true }
         else if (['(', ')', '*', '+', '%', '#'].includes(next)) { if (index + 2 >= data.length) { this.pending = data.slice(index); break }; index++ }
         index += 2; continue
       }
@@ -135,6 +140,7 @@ export class TerminalAgentScreen {
       if (char === '\b') { this.x = Math.max(0, this.x - 1); continue }
       if (char === '\t') { this.x = Math.min(this.cols - 1, (Math.floor(this.x / 8) + 1) * 8); continue }
       if (char < ' ' || char === '\x7f') continue
+      frameWritten = true
       let printed = char
       if (/[\uD800-\uDBFF]/u.test(char)) {
         if (index === data.length) { this.pending = char; break }
