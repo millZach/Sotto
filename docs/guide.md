@@ -96,6 +96,12 @@ When the Codex app changes its connection, Sotto refreshes the thread's tools be
 
 In Terminal mode, **Close** releases the terminal's output and keeps its row on **Closed** until Sotto quits. **Reopen** starts the same command with fresh output. **Stop**, a command finishing, or hiding its pane keeps the output readable. Up to 64 terminals can be open at once; Closed rows do not count toward that limit.
 
+An agent starts in **Starting**, then shows **Working**, **Idle**, **Needs you** or **Exited**. Working stays working through silence. Needs you means a current approval or question: answer it in the native terminal. Its row moves to **Needs you** above all projects, with the project named on the right, and a thin edge marks that pane's header. **Working** comes next, followed by the remaining terminals under their projects and then Closed. Each state has its own shape as well as its name.
+
+A successful turn completed while its terminal is out of sight says **Just finished**, with the same dot and bold title as threads. Viewing its pane clears the mark. Every visible split pane counts, including one without focus. Zoomed-out panes and panes in a minimised, hidden or tray window do not count; a sidebar row alone does not count. Finishing on screen goes straight to Idle, and leaving afterwards creates no mark. New work, a request or exit clears an old mark. Marks last for this run only. Cancelling or failing a turn earns nothing.
+
+Claude Code's run-only hooks and Codex's completion notification report state locally. Bundled screen rules cover Claude Code 2.1.295, Codex 0.162.0 and Grok Build 1.0.50. Unknown versions fall back to output activity and say when state detection is unavailable. Such a fallback never invents Needs you or Just finished. Plain shells retain Running for recent output and Idle otherwise. Sotto changes no user or project CLI settings, saves no terminal output and sends no approval on your behalf. The Tools terminal and Terminal drawer keep their existing behaviour.
+
 ### Sending, steering and screenshots
 
 If a permission arrives while you type, the composer keeps focus and your draft. It becomes read-only until you allow or deny the request above. Tab still reaches the other controls.

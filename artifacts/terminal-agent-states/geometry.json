@@ -1,0 +1,606 @@
+[
+  {
+    "appearance": "dark",
+    "width": 1600,
+    "height": 1000,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 314,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 284,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 314,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 314,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 314,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 0,
+        "right": 955.5,
+        "bottom": 1000
+      },
+      {
+        "name": "terminal-pane",
+        "x": 964.5,
+        "y": 0,
+        "right": 1600,
+        "bottom": 1000
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "workshop",
+        "ratio": 7.758337497481045
+      },
+      {
+        "text": "Working1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Codex working",
+        "ratio": 10.433269358410795
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 5.060959248717703
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      }
+    ]
+  },
+  {
+    "appearance": "light",
+    "width": 1600,
+    "height": 1000,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 314,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 284,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 314,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 314,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 314,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 0,
+        "right": 955.5,
+        "bottom": 1000
+      },
+      {
+        "name": "terminal-pane",
+        "x": 964.5,
+        "y": 0,
+        "right": 1600,
+        "bottom": 1000
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "workshop",
+        "ratio": 6.25820861194014
+      },
+      {
+        "text": "Working1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Codex working",
+        "ratio": 12.377256256287074
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 5.28009949970759
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      }
+    ]
+  },
+  {
+    "appearance": "dark",
+    "width": 1280,
+    "height": 800,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 314,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 284,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 314,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 314,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 314,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 0,
+        "right": 795.5,
+        "bottom": 800
+      },
+      {
+        "name": "terminal-pane",
+        "x": 804.5,
+        "y": 0,
+        "right": 1280,
+        "bottom": 800
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "workshop",
+        "ratio": 7.758337497481045
+      },
+      {
+        "text": "Working1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Codex working",
+        "ratio": 10.433269358410795
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 5.060959248717703
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      }
+    ]
+  },
+  {
+    "appearance": "light",
+    "width": 1280,
+    "height": 800,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 314,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 284,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 314,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 314,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 314,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 0,
+        "right": 795.5,
+        "bottom": 800
+      },
+      {
+        "name": "terminal-pane",
+        "x": 804.5,
+        "y": 0,
+        "right": 1280,
+        "bottom": 800
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "workshop",
+        "ratio": 6.25820861194014
+      },
+      {
+        "text": "Working1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Codex working",
+        "ratio": 12.377256256287074
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 5.28009949970759
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      }
+    ]
+  },
+  {
+    "appearance": "dark",
+    "width": 820,
+    "height": 560,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 274,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 304,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 304,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 304,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 304,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 37,
+        "right": 820,
+        "bottom": 560
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 10.433269358410795
+      },
+      {
+        "text": "workshop",
+        "ratio": 5.060959248717703
+      },
+      {
+        "text": "Working1",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Codex working",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 7.758337497481045
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 15.993968911167878
+      },
+      {
+        "text": "Just finished",
+        "ratio": 11.122929370736944
+      }
+    ]
+  },
+  {
+    "appearance": "light",
+    "width": 820,
+    "height": 560,
+    "overflow": false,
+    "boxes": [
+      {
+        "name": "Claude approval",
+        "x": 5,
+        "y": 120,
+        "right": 274,
+        "bottom": 150
+      },
+      {
+        "name": "Codex working",
+        "x": 5,
+        "y": 189,
+        "right": 304,
+        "bottom": 219
+      },
+      {
+        "name": "Plain shell",
+        "x": 5,
+        "y": 258,
+        "right": 304,
+        "bottom": 288
+      },
+      {
+        "name": "Grok ready",
+        "x": 5,
+        "y": 291,
+        "right": 304,
+        "bottom": 321
+      },
+      {
+        "name": "Claude finished",
+        "x": 5,
+        "y": 368,
+        "right": 304,
+        "bottom": 398
+      },
+      {
+        "name": "terminal-pane",
+        "x": 320,
+        "y": 37,
+        "right": 820,
+        "bottom": 560
+      }
+    ],
+    "contrasts": [
+      {
+        "text": "Needs you1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude approval",
+        "ratio": 12.377256256287074
+      },
+      {
+        "text": "workshop",
+        "ratio": 5.28009949970759
+      },
+      {
+        "text": "Working1",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Codex working",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "sotto-site",
+        "ratio": 6.25820861194014
+      },
+      {
+        "text": "Plain shell",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Grok ready",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      },
+      {
+        "text": "Claude finished",
+        "ratio": 14.670074247573446
+      },
+      {
+        "text": "Just finished",
+        "ratio": 9.733718740492142
+      }
+    ]
+  }
+]

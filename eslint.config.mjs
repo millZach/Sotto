@@ -68,6 +68,7 @@ export default tseslint.config(
       'artifacts/working-creature/**',
       'artifacts/background-command/**',
       'artifacts/terminal-loading/**',
+      'artifacts/terminal-agent-states/**',
       'artifacts/thread-sidebar/**',
       'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',

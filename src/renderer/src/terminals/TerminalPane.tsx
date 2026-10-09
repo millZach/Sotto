@@ -71,19 +71,21 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     { id: 'restart', label: 'Restart', icon: <RotateCcw size={15} aria-hidden="true" />, disabled: busy || !bridge, run: () => { focusNext.current = id; void store.restart(bridge, id) } },
     ...(running ? [{ id: 'stop', label: 'Stop', icon: <Square size={15} aria-hidden="true" />, disabled: !bridge, run: () => void store.stop(bridge, id) }] : []),
   ]
-  return <div className="terminal-pane" data-focused={focused || undefined}>
+  const needsYou = terminal.status === 'running' && terminal.agentState === 'needs-you'
+  return <div className="terminal-pane" data-focused={focused || undefined} data-needs-you={needsYou || undefined}>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         {row.providerId ? <ProviderMark provider={row.providerId} name={row.provider} size={16} /> : <SquareTerminal size={16} aria-hidden="true" />}
         <h2>{terminal.title}</h2>
         <span className="thread-workspace__crumb">
           <span>{row.project?.title ?? row.provider} · {workingCopy}</span>
-          {!running ? <span className="thread-workspace__tag">{exitLabel(terminal)}</span> : null}
+          {!running && terminal.launch.provider === null ? <span className="thread-workspace__tag">{exitLabel(terminal)}</span> : null}
         </span>
       </div>
       <div className="thread-workspace__actions"><PaneMenu groups={[actions]} /></div>
     </header>
     <div className="terminal-pane__body" data-ended={!running || undefined}>
+      {running && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable' ? <p className="terminal-detection-note" role="status">State detection is unavailable. Answer in the terminal.</p> : null}
       {!running ? <div className="terminal-ended" role="status">
         <p><strong>{exitLabel(terminal)}.</strong> {exitNote(terminal)}</p>
         <button type="button" className="files-link tt-focusable" disabled={busy || !bridge} onClick={() => { focusNext.current = id; void store.restart(bridge, id) }}>

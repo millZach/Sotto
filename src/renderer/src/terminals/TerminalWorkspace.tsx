@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SquareTerminal } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { TerminalWorkspaceBridge } from '../../../shared/terminalWorkspace'
@@ -57,6 +57,15 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const [focusedId, setFocusedId] = useState<string | null>(() => layoutStore.get().focused)
   const lastFocused = useRef<string | null>(null)
   const focusNext = useRef<string | null>(null)
+  const publishedVisibility = useRef<{ readonly bridge: TerminalWorkspaceBridge | undefined; readonly key: string } | null>(null)
+  const publishVisibility = useCallback((ids: readonly string[]): void => {
+    const key = ids.join(',')
+    if (publishedVisibility.current?.key === key && publishedVisibility.current.bridge === bridge) return
+    const observation = { bridge, key }
+    publishedVisibility.current = observation
+    const failed = (): void => { if (publishedVisibility.current === observation) publishedVisibility.current = null }
+    void bridge?.visibility?.({ ids: [...ids] }).then(result => { if (!result.ok) failed() }, failed)
+  }, [bridge])
   const openTerminals = useMemo(() => workspace.terminals.filter(isOpenTerminal), [workspace.terminals])
   // Running against Idle needs a clock; it ticks only while a terminal is open.
   const now = useClock(fixedNow, 2_000, openTerminals.length > 0)
@@ -73,6 +82,12 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(injected, paneIds.length > 0)
 
   useEffect(() => { void store.activate(bridge) }, [store, bridge])
+  // Mode and page changes unmount this workspace. Main separately withdraws this client's observation
+  // while its window is hidden or minimised; a visible unfocused split pane counts exactly like a focused one.
+  useLayoutEffect(() => {
+    return () => { void bridge?.visibility?.({ ids: [] }).catch(() => {}); publishedVisibility.current = null }
+  }, [bridge])
+  useLayoutEffect(() => { if (!paneIds.length) publishVisibility([]) }, [paneIds.length, publishVisibility])
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
     if (focused === null || !isSplit(layout) || layout.panes.includes(focused)) lastFocused.current = focused
@@ -114,7 +129,7 @@ export function TerminalWorkspace({ state, command, mode, onMode, now: fixedNow,
       <div className="thread-workspace__body">
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} label="Terminal panes" focusedId={focused} dragging={dragging} renderPane={renderPane}
-            onFocusPane={setFocusedId} onLayoutChange={next => layoutStore.set(next)} onDrop={(id, target) => { setDragging(null); grid.onDrop(id, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
+            onFocusPane={setFocusedId} onLayoutChange={next => layoutStore.set(next)} onDrop={(id, target) => { setDragging(null); grid.onDrop(id, target) }} onClosePane={grid.close} onVisiblePaneIdsChange={publishVisibility} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
           : null}
         {!paneIds.length ? <div className="thread-workspace__empty"><SquareTerminal size={30} strokeWidth={1.3} aria-hidden="true" />
           <h2>{problem ?? (openTerminals.length ? 'Choose a terminal.' : 'No terminals open.')}</h2>

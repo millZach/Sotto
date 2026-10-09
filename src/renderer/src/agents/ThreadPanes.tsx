@@ -38,6 +38,8 @@ export interface ThreadPanesProps {
   readonly onDrop: (threadId: string, target: DropTarget) => void
   /** Close one pane's view. */
   readonly onClosePane: (threadId: string) => void
+  /** IDs actually on screen; retained panes hidden by zoom or the compact layout are excluded. */
+  readonly onVisiblePaneIdsChange?: ((ids: readonly string[]) => void) | undefined
   /** Test-only: a fixed pane-area size where layout measurement is unavailable. */
   readonly measuredWidth?: number | undefined
   readonly measuredHeight?: number | undefined
@@ -218,7 +220,7 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  * Every pane stays mounted in a stable order, so moving, hiding or resizing never loses its scroll position,
  * keyboard focus or draft, and the retained arrangement returns when there is room.
  */
-export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
+export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, onVisiblePaneIdsChange, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
   const app = useOptionalApp()
   const zoomShortcut = chordClaimed('ctrl+shift+m', app?.settings?.hotkey, app?.platform ?? 'win32')
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
@@ -233,6 +235,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const narrow = split && !fits
   const single = split && (narrow || layout.zoomed)
   const shownId = focusedId !== null && paneIds.includes(focusedId) ? focusedId : paneIds[0] ?? null
+  useLayoutEffect(() => { onVisiblePaneIdsChange?.(single ? shownId === null ? [] : [shownId] : paneIds) }, [single, shownId, paneIds, onVisiblePaneIdsChange])
   const shape = paneShape(layout)
   const shown = shownLayout(layout, width, height)
   const [shownRows, shownColumns] = gridSizes(shown)

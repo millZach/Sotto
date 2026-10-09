@@ -132,6 +132,7 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     read: vi.fn(async ({ id }) => ok({ terminal: find(id), output: '', sequence: 0 })),
     write: vi.fn(async () => ok(undefined)),
     resize: vi.fn(async () => ok(undefined)),
+    visibility: vi.fn(async () => ok(undefined)),
     interrupt: vi.fn(async () => ok(undefined)),
     stop: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async ({ id }) => {
@@ -147,10 +148,13 @@ function fakeBridge(initial: WorkspaceTerminal[]) {
     pasteImage: vi.fn(async () => ok({ path: 'C:\\workshop\\.sotto\\clipboard\\20260916-101010-abcdef12.png' })),
     onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
   }
-  const emit = (event: WorkspaceTerminalEvent): void => { for (const listener of [...listeners]) listener(event) }
+  const emit = (event: WorkspaceTerminalEvent): void => {
+    if (event.type === 'terminal') terminals = terminals.map(item => item.id === event.terminal.id ? event.terminal : item)
+    for (const listener of [...listeners]) listener(event)
+  }
   /** Main finishing a start: the process is up, the branch is known and the first line arrives. */
   const settle = (id: string): void => {
-    terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main' } : item)
+    terminals = terminals.map(item => item.id === id ? { ...item, status: 'running' as const, branch: 'main', ...(item.launch.provider === null ? {} : { agentState: 'idle' as const }) } : item)
     emit({ type: 'terminal', terminal: find(id) })
     emit({ type: 'output', id, data: 'Opened by Sotto at C:/workshop · claude\r\n', sequence: 1 })
   }
@@ -177,7 +181,7 @@ function fakeViews() {
   return { views, factory }
 }
 
-function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean } = {}) {
+function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'threads' | 'terminals'; readonly bridge?: boolean; readonly lazy?: boolean; readonly devinDefault?: boolean; readonly paneAreaWidth?: number } = {}) {
   localStorage.setItem(SIDEBAR_MODE_KEY, options.mode ?? 'terminals')
   const state = threadsStateFixture()
   if (options.devinDefault) {
@@ -193,7 +197,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
   const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
+  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={options.paneAreaWidth ?? WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
 
@@ -206,6 +210,79 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); localStorage.clear() })
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('Terminal mode', () => {
+  it('shows main-owned agent states in Variant B order and leaves the pane header state free', async () => {
+    const otherProject = threadsStateFixture().host.projects.find(project => project.id !== 'workshop')!
+    const view = mount([
+      terminal(ID_1, { title: 'Needs approval', projectId: otherProject.id, agentState: 'needs-you' }),
+      terminal(ID_2, { title: 'Build', agentState: 'working' }),
+      terminal('33333333-3333-4333-8333-333333333333', { title: 'Finished tests', agentState: 'just-finished' }),
+    ])
+    const needs = await within(sidebar()).findByRole('region', { name: 'Needs you' })
+    const working = within(sidebar()).getByRole('region', { name: 'Working' })
+    expect(needs.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(needs).getByRole('button', { name: 'Needs approval' })).toHaveTextContent(otherProject.title)
+    expect(within(working).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, workshop, Working')
+    const finished = within(sidebar()).getByRole('button', { name: 'Finished tests' })
+    expect(finished).toHaveTextContent('Just finished')
+    expect(finished.closest('li')).toHaveAttribute('data-unseen')
+    expect(finished.querySelector('.thread-nav__ring')).toHaveAttribute('data-unseen')
+
+    fireEvent.click(within(needs).getByRole('button', { name: 'Needs approval' }))
+    const pane = await screen.findByRole('region', { name: 'Needs approval' })
+    expect(pane.querySelector('.terminal-pane')).toHaveAttribute('data-needs-you')
+    expect(pane.querySelector('header')).not.toHaveTextContent('Needs you')
+    expect(within(pane).queryByRole('button', { name: 'Yes' })).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'No' })).toBeNull()
+    // Output is presentation only. An animated native prompt cannot move a main-owned Needs you state.
+    await act(async () => { view.emit({ type: 'output', id: ID_1, data: 'More output\r\n', sequence: 1 }) })
+    expect(view.store.terminal(ID_1)?.agentState).toBe('needs-you')
+  })
+
+  it('reports every on-screen pane including an unfocused split, excludes zoomed panes, and withdraws on mode change', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1, ID_2] }))
+    expect(screen.getByRole('region', { name: 'Tests' })).toHaveAttribute('data-focused')
+    const calls = vi.mocked(view.bridge.visibility).mock.calls.length
+    fireEvent.pointerDown(within(screen.getByRole('region', { name: 'Build' })).getByRole('heading', { name: 'Build' }))
+    expect(vi.mocked(view.bridge.visibility).mock.calls).toHaveLength(calls)
+    fireEvent.click(within(screen.getByRole('region', { name: 'Build' })).getByRole('button', { name: 'Zoom Build pane' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    fireEvent.click(modeSwitch().getByRole('radio', { name: 'Threads' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [] }))
+  })
+
+  it('excludes a retained pane hidden by the compact layout from the visibility observation', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'working' }), terminal(ID_2, { title: 'Tests', agentState: 'working' })], { paneAreaWidth: 650 })
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Open Tests beside' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_2] }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    expect(document.querySelector(`[data-thread-id='${ID_2}']`)).toHaveAttribute('data-hidden')
+  })
+
+  it('shows conservative detection fallback in the terminal detail and keeps agent Idle as Idle', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle', stateDetection: 'unavailable' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    expect(await screen.findByText('State detection is unavailable. Answer in the terminal.')).toBeInTheDocument()
+    await act(async () => { view.emit({ type: 'output', id: ID_1, data: 'Would you like to allow an old example?\r\n', sequence: 1 }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, Idle')
+    expect(screen.getByRole('region', { name: 'Build' }).querySelector('.terminal-pane')).not.toHaveAttribute('data-needs-you')
+  })
+
+  it('asks main to observe a shown completion without clearing the mark locally', async () => {
+    const view = mount([terminal(ID_1, { title: 'Build', agentState: 'just-finished' })])
+    fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
+    await waitFor(() => expect(view.bridge.visibility).toHaveBeenLastCalledWith({ ids: [ID_1] }))
+    expect(within(sidebar()).getByRole('button', { name: 'Build' }).closest('li')).toHaveAttribute('data-unseen')
+    await act(async () => { view.emit({ type: 'terminal', terminal: terminal(ID_1, { title: 'Build', agentState: 'idle' }) }) })
+    expect(within(sidebar()).getByRole('button', { name: 'Build' }).closest('li')).not.toHaveAttribute('data-unseen')
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, Idle')
+  })
+
   it('forgets closed output and ignores an old pending read after the same terminal reopens', async () => {
     const store = new TerminalWorkspaceStore()
     const fake = fakeBridge([terminal(ID_1)])
@@ -332,7 +409,7 @@ describe('Terminal mode', () => {
 
     await act(async () => { view.settle(ID_1) })
     expect(within(pane).getByText('main')).toBeInTheDocument()
-    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Running')
+    expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveTextContent('Idle')
     await waitFor(() => expect(view.views[0]!.written).toEqual(['<reset>', 'Opened by Sotto at C:/workshop · claude\r\n']))
     expect(view.views[0]!.input.at(-1)).toBe(true)
     expect(view.views[0]!.focused).toBe(1)

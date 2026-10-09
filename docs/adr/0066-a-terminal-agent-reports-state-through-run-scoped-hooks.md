@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 9, 2026, for [#882](https://github.com/millZach/Sotto/issues/882). This is a decision for the desktop states and iPhone work that follows, not an implemented feature. ADR-0066 was free on `origin/main` and in open pull request diffs on October 9; #880 already uses ADR-0065. Check the number again before merge, as [domain.md](../agents/domain.md) requires.
+Decided October 9, 2026, for [#882](https://github.com/millZach/Sotto/issues/882). The desktop states are implemented by [#883](https://github.com/millZach/Sotto/issues/883); the iPhone extension below remains proposed work. ADR-0066 was free on `origin/main` and in open pull request diffs on October 9; #880 already uses ADR-0065. Check the number again before merge, as [domain.md](../agents/domain.md) requires.
 
 ## Context
 

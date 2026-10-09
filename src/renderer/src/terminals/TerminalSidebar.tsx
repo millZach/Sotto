@@ -10,8 +10,8 @@ import { SIDEBAR_STATE, isOpenTerminal, terminalStateLabel, type TerminalFolder,
 type Section = 'open' | 'closed'
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 
-/** The states a row spells out instead of showing its clock: a terminal that stopped is one that wants you. */
-const ATTENTION: ReadonlySet<TerminalRowState> = new Set<TerminalRowState>(['exited'])
+/** Quiet completion and process exit are useful facts where the row's clock was. */
+const ATTENTION: ReadonlySet<TerminalRowState> = new Set<TerminalRowState>(['needs-you', 'just-finished', 'exited'])
 
 /** What the workspace offers a row: a place beside the focused terminal, and the terminal's own actions. */
 export interface TerminalPaneActions {
@@ -39,9 +39,10 @@ function RowTime({ row, live }: { readonly row: TerminalRow; readonly live: bool
   return <time ref={ref} className="thread-nav__time" title={`Opened ${at.toLocaleString()}`} dateTime={at.toISOString()}>{row.since}</time>
 }
 
-function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, panes }: {
+function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, panes, showProject = false }: {
   readonly row: TerminalRow; readonly state: TerminalRowState; readonly current: boolean; readonly open: boolean; readonly busy: boolean
   readonly liveClock: boolean; readonly onOpen: (id: string) => void; readonly panes: TerminalPaneActions
+  readonly showProject?: boolean
 }): ReactNode {
   const { terminal } = row
   const title = terminal.title
@@ -49,20 +50,23 @@ function TerminalNavRow({ row, state, current, open, busy, liveClock, onOpen, pa
   const besideAvailable = panes.currentId !== null && !current && !closed
   const status = terminalStateLabel(terminal, state, panes.lastLineOf(terminal.id))
   const statusId = useId()
-  return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+  const unseen = state === 'just-finished'
+  return <li className="thread-nav__row terminal-nav__row" data-terminal-state={state} data-unseen={unseen || undefined} data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <button type="button" className="thread-nav__item tt-focusable" aria-label={title} aria-describedby={statusId} aria-current={current ? 'page' : undefined} draggable={!closed} disabled={closed}
       aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(terminal.id); else onOpen(terminal.id) }}
       onKeyDown={event => { if (besideAvailable && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); panes.onOpenBeside(terminal.id) } }}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, terminal.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragTerminal(terminal.id) }}
       onDragEnd={() => panes.onDragTerminal(null)}>
-      <span className="thread-nav__ring" data-state={SIDEBAR_STATE[state]} aria-hidden="true" />
+      <span className="thread-nav__ring terminal-nav__mark" data-state={state === 'starting' ? 'starting' : SIDEBAR_STATE[state]} data-terminal-state={state} data-unseen={unseen || undefined} aria-hidden="true" />
       <span className="thread-nav__title">{title}</span>
       {/* A terminal that stopped on its own says so where the clock was; while it runs, the clock is the useful fact. */}
-      {ATTENTION.has(state)
-        ? <span className="thread-nav__needs" aria-hidden="true">{status}</span>
+      {showProject
+        ? <span className="terminal-nav__project" title={row.project?.title ?? 'Project'} aria-hidden="true">{row.project?.title ?? 'Project'}</span>
+        : ATTENTION.has(state)
+        ? <span className="thread-nav__needs" data-terminal-state={state} aria-hidden="true">{status}</span>
         : <RowTime row={row} live={liveClock} />}
-      <span id={statusId} className="thread-nav__status tt-visually-hidden" data-state={SIDEBAR_STATE[state]} title={terminal.command}><span className="tt-visually-hidden">{row.provider}, </span>{status}</span>
+      <span id={statusId} className="thread-nav__status tt-visually-hidden" data-state={SIDEBAR_STATE[state]} title={terminal.command}>{[row.provider, ...(showProject ? [row.project?.title ?? 'Project'] : []), status].join(', ')}</span>
     </button>
     <span className="thread-nav__row-actions">
       {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Open ${title} beside`} title="Open beside" onClick={() => panes.onOpenBeside(terminal.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
@@ -99,12 +103,12 @@ function FolderView({ folder, section, panes, stateOf, expanded, liveClock, onTo
     {expanded ? <ul className="thread-folder__rows" id={listId}>
       {folder.rows.map(row => <TerminalNavRow key={row.terminal.id} row={row} state={stateOf(row.terminal.id)} current={panes.currentId === row.terminal.id} open={panes.openIds.includes(row.terminal.id)}
         busy={busy} liveClock={liveClock} onOpen={onOpen} panes={panes} />)}
-      {!folder.rows.length ? <li className="thread-nav__empty">No open terminals.</li> : null}
+      {!folder.rows.length ? <li className="thread-nav__empty">No other open terminals.</li> : null}
     </ul> : null}
   </div>
 }
 
-/** The Terminal sidebar: the Threads sidebar's frame, with terminals under their projects and the Closed shelf. */
+/** Variant B: Needs you across projects, Working, the remaining project folders, then Closed. */
 export function TerminalSidebar({ state, command, organization, query, stateOf, liveClock = true, busy, mode, onMode, onQuery, onOpen, onNewTerminal, ...panes }: TerminalPaneActions & {
   readonly state: AgentState
   readonly command: AgentConnection['command']
@@ -132,12 +136,19 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
     return <FolderView key={key} folder={folder} section={section} panes={panes} stateOf={stateOf} liveClock={liveClock}
       expanded={searching || !collapsed.has(key)} onToggle={() => toggle(key)} onOpen={onOpen} onNewTerminal={onNewTerminal} busy={busy} command={command} globalLaneBusy={state.globalLaneBusy} />
   }
-  const { open, closed } = organization
+  const { needsYou, working, open, closed } = organization
+  const stateGroup = (label: string, groupRows: readonly TerminalRow[]): ReactNode => groupRows.length ? <section aria-label={label} className="terminal-nav__group">
+    <h2 className="terminal-nav__group-label"><span>{label}</span><span className="terminal-nav__count">{groupRows.length}</span></h2>
+    <ul className="thread-folder__rows">{groupRows.map(row => <TerminalNavRow key={row.terminal.id} row={row} state={stateOf(row.terminal.id)} current={panes.currentId === row.terminal.id} open={panes.openIds.includes(row.terminal.id)}
+      busy={busy} liveClock={liveClock} onOpen={onOpen} panes={panes} showProject />)}</ul>
+  </section> : null
   const closedCount = closed.reduce((count, folder) => count + folder.rows.length, 0)
   const closedShown = closedOpen || searching
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Terminal sidebar" query={query} searchPlaceholder="Search terminals" onQuery={onQuery}
     // A plus, not a second terminal glyph beside the room switch's: the same relation New thread's pen has to Threads.
     onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquarePlus}>
+      {stateGroup('Needs you', needsYou)}
+      {stateGroup('Working', working)}
       <section aria-label="Projects">
         {open.map(folderView('open'))}
         {!open.length ? <p className="thread-nav__empty">{searching ? 'No matching open terminals.' : state.host.projects.length ? 'No terminals open.' : 'Add a project folder to start.'}</p> : null}

@@ -99,6 +99,7 @@ export default defineConfig({
       index: resolve(__dirname, 'src/main/index.ts'),
       wakeWorker: resolve(__dirname, 'src/main/agents/wakeWorker.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
+      terminalAgentHook: resolve(__dirname, 'src/main/terminals/helper.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

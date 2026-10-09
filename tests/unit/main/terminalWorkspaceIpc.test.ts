@@ -12,13 +12,13 @@ describe('terminal workspace IPC and preload boundary', () => {
     const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
     const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
     const cleanup = registerTerminalWorkspaceIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, service, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(10)
+    expect(handlers.size).toBe(11)
     for (const handler of handlers.values()) {
       expect(() => handler({ sender, senderFrame: { parent: {}, url } }, {})).toThrow('TERMINALS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
       handler({ sender, senderFrame: mainFrame }, {})
     }
-    expect(operation).toHaveBeenCalledTimes(10)
+    expect(operation).toHaveBeenCalledTimes(11)
     cleanup()
     expect(handlers.size).toBe(0)
     expect(service.dispose).toHaveBeenCalledOnce()

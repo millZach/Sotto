@@ -67,6 +67,8 @@ Escape dismisses a saved host's SSH question. While SSH is still waiting, **Answ
 
 Terminal mode keeps closed terminals on its Closed shelf until you quit. Reopen starts the same command with fresh output; Stop keeps the output readable.
 
+Terminal mode also shows what each agent is doing. **Needs you** comes first across projects, then **Working**, then other terminals by project. Answer an approval or question in the terminal itself. A turn completed out of sight says **Just finished**, with a dot and bold title, until you view it. Every pane on screen counts, focused or not; a minimised or hidden window does not. Plain shells keep **Running** and **Idle**.
+
 ## Install
 
 You need Windows 10 or 11 (x64), or an Apple silicon Mac with macOS 12 or newer.

@@ -43,6 +43,7 @@ async function fixture(options: Partial<Pick<TerminalWorkspaceDependencies, 'env
       projects: () => [{ id: 'p1', title: 'Project', path: project }], worktrees, git, spawn, platform: 'win32',
       env: { SystemRoot: 'C:\\Windows', PATH: 'C:\\bin', ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--inspect' }, executableExists: async () => false,
       emit: event => events.push(event), ...options,
+      prepareHooks: async () => ({ runId: 'unit-run', args: [], env: {}, answer: () => false, dispose() {} }),
     })
     cleanup.push(async () => service.dispose())
     return service
