@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerQuitDrain } from '../../../src/main/app/quitDrain'
+import { NativeRuntimeController } from '../../../src/main/app/bootstrap'
 import { LinuxDictationShell } from '../../../src/main/hotkeys/linuxDictationShell'
 import { DictationSocket } from '../../../src/main/hotkeys/dictationSocket'
 import { ShellWidgetMonitor } from '../../../src/main/windows/shellWidgetMonitor'
 import { DEFAULT_WIDGET_PALETTE } from '../../../src/shared/themeBranding'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
 describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', () => {
   let runtime: string
@@ -24,6 +26,40 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
       async () => true, () => 'top', vi.fn(), exitSource)
   })
   afterEach(() => { shell.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); rmSync(runtime, { recursive: true, force: true }) })
+
+  it.each([undefined, 'relative-runtime'])('opens Sotto without commands or shell state when the runtime path is %s', async runtimeDirectory => {
+    shell.dispose()
+    const dispatch = vi.fn(async () => true)
+    const stateFailure = vi.fn()
+    shell = new LinuxDictationShell(runtimeDirectory,
+      new ShellWidgetMonitor('linux', runtime, vi.fn()),
+      dispatch, () => 'top', stateFailure, exitSource)
+    const windows = { createWindows: vi.fn(async () => undefined), showMain: vi.fn(async () => undefined),
+      showWidget: vi.fn(async () => undefined), beginQuit: vi.fn(), dispose: vi.fn() }
+    const log = vi.fn()
+    const controller = new NativeRuntimeController({
+      windows, dictationCommands: shell, log,
+      settings: { get: async () => ({ ...DEFAULT_SETTINGS, startMinimized: false }) },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      startup: { set: vi.fn() }, tray: { update: vi.fn(), dispose: vi.fn() },
+      installPermissions: () => vi.fn(), registerIpc: () => vi.fn(),
+    })
+    const startSocket = vi.spyOn(DictationSocket.prototype, 'start')
+    await expect(controller.start()).resolves.toBeUndefined()
+    expect(windows.createWindows).toHaveBeenCalledOnce()
+    expect(windows.showMain).toHaveBeenCalledOnce()
+    expect(log.mock.calls).toEqual([['native-dictation-command-start-failed']])
+    expect(startSocket).not.toHaveBeenCalled()
+    expect(dispatch).not.toHaveBeenCalled()
+    shell.publish({ status: 'idle', theme: 'system', palette: DEFAULT_WIDGET_PALETTE,
+      reducedMotion: 'system', shortcut: 'F9', cancellable: false })
+    expect(existsSync(statePath)).toBe(false)
+    expect(stateFailure).not.toHaveBeenCalled()
+    controller.dispose()
+    await shell.start()
+    expect(startSocket).not.toHaveBeenCalled()
+    expect(exitSource.listenerCount('exit')).toBe(0)
+  })
 
   it('unlinks listening state on the forced quit timeout without runtime disposal', async () => {
     const disposeMonitor = vi.spyOn(ShellWidgetMonitor.prototype, 'dispose')

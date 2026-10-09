@@ -56,6 +56,10 @@ Ticket review: the implementation follows the owner’s #850 decisions and [vers
 
 ## Kept-failure copy
 
+## Re-review: unavailable runtime directory
+
+Socket construction now runs inside `LinuxDictationShell.start()`, reached through the controller's guarded command-service startup. An unset or relative `XDG_RUNTIME_DIR` rejects that service, logs only `native-dictation-command-start-failed` and leaves shell state unpublished while Sotto continues opening. Stopped checks still precede construction and follow the socket await; disposal tolerates an unconstructed socket. Regression tests use the real shell owner and runtime controller for both invalid paths, assert main-window creation and reveal, no socket startup or command dispatch, no state publication, the stable event and safe disposal. The lifecycle file passes all 5 tests, including held startup and forced-exit cleanup. The final gates and built-app startup proof are recorded below after they run.
+
 Commit `91b373a5`. Every known error and the unknown-code fallback is checked with and without a kept recording. All details are under 60 characters, and every kept detail says “Recording kept.” The shell buttons provide Try again and Discard; key and credit failures keep the step needed before retry. The transcription reasons follow the Windows widget’s titles and kept-failure wording, shortened to fit the shell.
 
 | Failure | Before | After (`kept: true`) | Characters |

@@ -12,7 +12,7 @@ interface ExitSource {
 
 /** Constructed only on Linux. Process exit also covers Electron's forced app.exit(). */
 export class LinuxDictationShell {
-  private readonly socket: DictationSocket
+  private socket: DictationSocket | null = null
   private stateFile: DictationStateFile | null = null
   private stopped = false
   private disposed = false
@@ -25,18 +25,20 @@ export class LinuxDictationShell {
   constructor(
     private readonly runtimeDirectory: string | undefined,
     private readonly monitor: ShellWidgetMonitor,
-    dispatch: (command: CompositorDictationCommand) => Promise<boolean>,
+    private readonly dispatch: (command: CompositorDictationCommand) => Promise<boolean>,
     private readonly edge: () => WidgetEdge,
     private readonly onFailure: () => void,
     private readonly exitSource: ExitSource = process,
   ) {
-    this.socket = new DictationSocket(runtimeDirectory, dispatch)
     this.exitSource.on('exit', this.onExit)
     this.monitor.start()
   }
 
   async start(): Promise<void> {
     if (this.stopped) return
+    // Runtime validation belongs to the controller's guarded command startup,
+    // so an unavailable compositor endpoint cannot prevent Sotto from opening.
+    this.socket = new DictationSocket(this.runtimeDirectory, this.dispatch)
     await this.socket.start()
     if (this.stopped) return
     this.stateFile = new DictationStateFile(this.runtimeDirectory, this.edge(), this.onFailure)
@@ -51,7 +53,7 @@ export class LinuxDictationShell {
     this.stopped = true
     this.removeStateFile()
     this.monitor.dispose()
-    this.socket.dispose()
+    this.socket?.dispose()
     this.exitSource.off('exit', this.onExit)
   }
 
