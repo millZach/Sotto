@@ -11,19 +11,10 @@ import { join } from 'node:path'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
+import { closeSotto, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
 
 test.skip(process.platform !== 'win32', 'WS_EX_TOPMOST probe is Windows-only')
 test.describe.configure({ timeout: 120_000 })
-
-async function reachFinalOnboardingStep(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await expect(page.getByText(/connect your openrouter key/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-}
 
 interface NativeTopmostProbe {
   readonly topmost: boolean
@@ -106,7 +97,7 @@ async function triggerShortcut(page: Page): Promise<void> {
 test('revealed widget stays above other windows via WS_EX_TOPMOST', async () => {
   const launched = await launchSotto()
   try {
-    await reachFinalOnboardingStep(launched.page)
+    await reachFirstRunStep(launched.page, 'shortcut', { microphone: 'test' })
     await launched.page.getByLabel('Paste test').focus()
     await triggerShortcut(launched.page)
     const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
@@ -124,8 +115,7 @@ test('revealed widget stays above other windows via WS_EX_TOPMOST', async () => 
 test('idle widget returns after auto-paste and stays WS_EX_TOPMOST', async () => {
   const launched = await launchSotto()
   try {
-    await reachFinalOnboardingStep(launched.page)
-    await launched.page.getByRole('button', { name: /finish setup/i }).click()
+    await finishFirstRunSetupFrom(launched.page, 'welcome', { microphone: 'test' })
     await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByRole('button', { name: 'Start dictation', exact: true })).toBeVisible()
 

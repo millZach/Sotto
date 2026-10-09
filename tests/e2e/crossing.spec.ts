@@ -1,17 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { launchSottoWithVoice, openPage, openThreads, closeSotto } from './support/sottoLaunch'
+import { closeSotto, completeFirstRunSetup, launchSottoWithVoice, openPage, openThreads } from './support/sottoLaunch'
 
 test('Crossing keeps dictation, history, settings and sessions usable', async () => {
   const launched = await launchSottoWithVoice()
   const { page } = launched
   page.setDefaultTimeout(5_000)
   try {
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(page.getByText(/microphone ready/i)).toBeVisible()
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: 'Continue' }).click()
-    await page.getByRole('button', { name: /finish setup/i }).click()
+    await completeFirstRunSetup(page, { microphone: 'test' })
     // Onboarding hands over to Threads now, so dictation is a deliberate stop.
     await openPage(page, 'Dictate')
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/dictate.png' })
@@ -50,7 +45,7 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await expect(page.getByRole('searchbox', { name: 'Search transcripts' })).toBeFocused()
     await page.getByRole('tab', { name: 'Agents', exact: true }).click()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    await page.getByRole('button', { name: 'Connect providers', exact: true }).click()
+    // First-run setup's own Coding agents step already connected this computer's provider.
     await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeEnabled()
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agents.png' })
     // The sphere wears the theme; there is no separate orb colour to choose.
@@ -78,14 +73,12 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
     await openThreads(page)
     await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/threads.png' })
     await page.getByRole('button', { name: 'New thread', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: 'New thread', exact: true })).toBeVisible()
-    await page.getByRole('dialog', { name: 'New thread', exact: true }).getByRole('button', { name: /^Sotto test / }).click()
-    await page.getByRole('dialog', { name: 'New thread', exact: true }).locator('summary').click()
-    await page.getByLabel('Thread name', { exact: true }).fill('Design follow-up')
-    await page.getByRole('dialog', { name: 'New thread' }).getByLabel('Thread model', { exact: true }).click()
-    await page.getByRole('option', { name: 'Claude Test', exact: true }).click()
-    await page.getByRole('button', { name: 'Create thread', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Design follow-up', exact: true })).toBeVisible()
+    const newThread = page.getByRole('dialog', { name: 'New thread', exact: true })
+    await expect(newThread).toBeVisible()
+    // Choosing the project opens the thread at once, on the defaults from Settings → Agents, with no form after it (#347).
+    await newThread.getByRole('button', { name: /^Sotto test / }).click()
+    await expect(newThread).toHaveCount(0)
+    await expect(page.locator('form.thread-prompt').first()).toBeVisible()
     // The page still names itself for assistive technology; the heading is no longer drawn.
     await expect(page.getByRole('heading', { name: 'Threads', exact: true })).toBeAttached()
   } catch (error) {
