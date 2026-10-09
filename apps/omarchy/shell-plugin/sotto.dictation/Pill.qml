@@ -36,6 +36,7 @@ PanelWindow {
   readonly property int gap: Style.gapsOut
   readonly property string edge: service.edge
   readonly property bool upright: Model.verticalEdge(edge)
+  readonly property int maxLength: Model.maxLength(edge, area, gap)
   readonly property var rest: Model.restingPosition(edge, area, frame.width, frame.height, gap)
 
   property bool pressed: false
@@ -103,8 +104,9 @@ PanelWindow {
   // its own move to another edge.
   BorderSurface {
     readonly property bool ghostUpright: Model.verticalEdge(win.candidateEdge)
-    readonly property int ghostWidth: ghostUpright ? card.height : card.width
-    readonly property int ghostHeight: ghostUpright ? card.width : card.height
+    readonly property int ghostLength: Math.min(card.width, Model.maxLength(win.candidateEdge, win.area, win.gap))
+    readonly property int ghostWidth: ghostUpright ? card.height : ghostLength
+    readonly property int ghostHeight: ghostUpright ? ghostLength : card.height
     readonly property var place: Model.restingPosition(win.candidateEdge, win.area, ghostWidth, ghostHeight, win.gap)
 
     visible: win.dragging && win.candidateEdge !== ""
@@ -159,6 +161,7 @@ PanelWindow {
       anchors.centerIn: parent
       service: win.service
       upright: win.upright
+      maxLength: win.maxLength
       rotation: win.upright ? 90 : 0
     }
   }

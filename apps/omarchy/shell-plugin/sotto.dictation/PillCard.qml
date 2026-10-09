@@ -13,6 +13,9 @@ BorderSurface {
   // On a left or right edge the card is turned upright; its glyph is turned
   // back so it still stands the right way up.
   property bool upright: false
+  // The longest the card may be along its edge, so its buttons stay on the
+  // screen; 0 for no limit.
+  property int maxLength: 0
 
   readonly property var dictation: service.dictation
   readonly property string status: dictation.status
@@ -23,8 +26,12 @@ BorderSurface {
   readonly property color ink: Color.popups.text
   readonly property int pad: Style.space(12)
   // Room for Sotto's longest failure sentence, about 60 characters, on one
-  // line. Longer words, such as a command that did not get through, wrap.
-  readonly property int maxMessageWidth: Style.space(470)
+  // line, where the screen has it. Longer words wrap.
+  readonly property int fixedLength: Math.ceil(card.borderLeft + card.pad + lead.implicitWidth + row.spacing
+    + (buttonRow.visible ? row.spacing + buttonRow.implicitWidth : 0) + card.pad + card.borderRight)
+  readonly property int maxMessageWidth: card.maxLength > 0
+    ? Model.messageWidth(card.maxLength, card.fixedLength, Style.space(470), Style.space(120))
+    : Style.space(470)
 
   color: Util.alpha(Color.background, 0.97)
   borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
@@ -54,67 +61,76 @@ BorderSurface {
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(12)
 
-    Item {
-      width: Style.space(20)
-      height: Style.space(20)
+    // The glyph and what goes with it: the level bars and timer while Sotto
+    // listens, the track while it transcribes.
+    Row {
+      id: lead
       anchors.verticalCenter: parent.verticalCenter
+      spacing: row.spacing
 
-      Glyph {
-        anchors.centerIn: parent
-        rotation: card.upright ? -90 : 0
-        name: card.look.glyph
-        color: card.look.tone === "error" ? Color.urgent : card.ink
-        fontFamily: Style.font.family
-        size: name === "sotto" || name === "retry" ? Style.space(22) : Style.font.iconLarge
+      Item {
+        width: Style.space(20)
+        height: Style.space(20)
+        anchors.verticalCenter: parent.verticalCenter
+
+        Glyph {
+          anchors.centerIn: parent
+          rotation: card.upright ? -90 : 0
+          name: card.look.glyph
+          color: card.look.tone === "error" ? Color.urgent : card.ink
+          fontFamily: Style.font.family
+          size: name === "sotto" || name === "retry" ? Style.space(22) : Style.font.iconLarge
+        }
       }
-    }
 
-    LevelBars {
-      visible: card.live
-      anchors.verticalCenter: parent.verticalCenter
-      listening: card.status === "listening"
-      moving: listening && card.service.motion
-      color: Color.accent
-    }
-
-    Text {
-      visible: card.live
-      width: Math.max(implicitWidth, Style.space(38))
-      anchors.verticalCenter: parent.verticalCenter
-      textFormat: Text.PlainText
-      text: card.dictation.elapsed
-      color: card.ink
-      font.family: Style.font.family
-      font.pixelSize: Style.font.body
-    }
-
-    Rectangle {
-      id: track
-      visible: card.service.notice === "" && card.status === "transcribing" && card.service.motion
-      width: Style.space(142)
-      height: Math.max(Style.space(6), Style.spacing.sm)
-      anchors.verticalCenter: parent.verticalCenter
-      color: Util.alpha(card.ink, 0.45)
-      clip: true
-
-      // Sotto reports no progress, so the fill travels rather than grows.
-      Rectangle {
-        width: Math.round(track.width * 0.4)
-        height: parent.height
+      LevelBars {
+        visible: card.live
+        anchors.verticalCenter: parent.verticalCenter
+        listening: card.status === "listening"
+        moving: listening && card.service.motion
         color: Color.accent
+      }
 
-        NumberAnimation on x {
-          running: track.visible
-          loops: Animation.Infinite
-          from: -track.width * 0.4
-          to: track.width
-          duration: 1200
-          easing.type: Easing.InOutSine
+      Text {
+        visible: card.live
+        width: Math.max(implicitWidth, Style.space(38))
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: card.dictation.elapsed
+        color: card.ink
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+
+      Rectangle {
+        id: track
+        visible: card.service.notice === "" && card.status === "transcribing" && card.service.motion
+        width: Style.space(142)
+        height: Math.max(Style.space(6), Style.spacing.sm)
+        anchors.verticalCenter: parent.verticalCenter
+        color: Util.alpha(card.ink, 0.45)
+        clip: true
+
+        // Sotto reports no progress, so the fill travels rather than grows.
+        Rectangle {
+          width: Math.round(track.width * 0.4)
+          height: parent.height
+          color: Color.accent
+
+          NumberAnimation on x {
+            running: track.visible
+            loops: Animation.Infinite
+            from: -track.width * 0.4
+            to: track.width
+            duration: 1200
+            easing.type: Easing.InOutSine
+          }
         }
       }
     }
 
     Text {
+      id: messageText
       visible: card.look.message !== ""
       width: Math.min(Math.ceil(messageMetrics.advanceWidth), card.maxMessageWidth)
       anchors.verticalCenter: parent.verticalCenter
@@ -128,6 +144,7 @@ BorderSurface {
     }
 
     Row {
+      id: buttonRow
       visible: card.buttonList !== ""
       anchors.verticalCenter: parent.verticalCenter
       leftPadding: Style.space(4)

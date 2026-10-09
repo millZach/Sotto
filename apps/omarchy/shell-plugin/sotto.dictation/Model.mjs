@@ -246,11 +246,27 @@ export function verticalEdge(edge) {
   return edge === "left" || edge === "right"
 }
 
+// The longest the pill may be along its edge, a gap clear of each end: the
+// work area's width on the top and bottom, its height on the sides, where
+// the pill stands upright.
+export function maxLength(edge, area, gap) {
+  var room = verticalEdge(edge) ? area.height : area.width
+  return Math.max(0, Math.floor(room - 2 * gap))
+}
+
+// How long the pill's words may run on one line: what its length leaves
+// after the glyph and buttons, `fixed`, at most `preferred`, and at least
+// `minimum`. Longer words wrap.
+export function messageWidth(length, fixed, preferred, minimum) {
+  return Math.max(minimum, Math.min(preferred, Math.floor(length - fixed)))
+}
+
 // Centred on its edge, `gap` in from the work area, as the Windows pill is
-// centred on its edge of the work area.
+// centred on its edge of the work area. A pill longer than the room starts
+// at the area's start, so its glyph and words stay on screen.
 export function restingPosition(edge, area, width, height, gap) {
-  var centreX = area.x + Math.round((area.width - width) / 2)
-  var centreY = area.y + Math.round((area.height - height) / 2)
+  var centreX = area.x + Math.max(0, Math.round((area.width - width) / 2))
+  var centreY = area.y + Math.max(0, Math.round((area.height - height) / 2))
   switch (edge) {
   case "bottom": return { x: centreX, y: area.y + area.height - height - gap }
   case "left": return { x: area.x + gap, y: centreY }
