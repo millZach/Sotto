@@ -96,16 +96,34 @@ describe('independent thread providers', () => {
     expect(events).toHaveLength(1)
     off?.(); host.disconnect()
   })
-  it('keeps Codex when it is installed and switches to Claude Code when it is not', () => {
+  it('turns on every installed client the user has not turned off, keeping Codex as the default while it is installed', () => {
     const codex = { ...defaultAgentConfiguration(), enabledProviders: ['codex' as const] }
-    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders(codex, ['codex', 'claude'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'claude'] })
+    expect(selectInstalledProviders(codex, ['devin', 'grok', 'claude', 'codex'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'claude', 'grok', 'devin'] })
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['claude', 'codex'] }, ['codex', 'claude'])).toBeNull()
     expect(selectInstalledProviders(codex, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'grok'] })
     expect(selectInstalledProviders(codex, [])).toBeNull()
-    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toBeNull()
+    expect(selectInstalledProviders({ ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'] }, ['codex', 'claude'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'codex'] })
+    // A client already on stays on while it is missing for a moment, as during an update.
+    expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'grok'] }, ['codex', 'claude'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'grok', 'claude'] })
     expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude', 'devin'] })
+    expect(selectInstalledProviders(codex, ['codex', 'devin'])).toEqual({ provider: 'codex', enabledProviders: ['codex', 'devin'] })
     expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['claude', 'grok'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
     expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['grok'] }, ['grok'])).toBeNull()
     expect(selectInstalledProviders({ ...codex, enabledProviders: ['codex', 'devin'], disconnectedProviders: ['devin'] }, ['claude', 'devin'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+    expect(selectInstalledProviders({ ...codex, disconnectedProviders: ['codex'], enabledProviders: ['claude'], provider: 'codex' }, ['codex', 'claude'])).toEqual({ provider: 'claude', enabledProviders: ['claude'] })
+  })
+  it('connects every installed client on a Connect providers press and says which it found', async () => {
+    const f = await fixture()
+    f.configuration({ ...defaultAgentConfiguration(), enabledProviders: ['codex'] })
+    const control = await coordinator(f, async () => ({ decision: 'human', text: 'Review' }), async () => ['codex', 'claude', 'grok'])
+    await control.command({ type: 'configure', patch: { enabledProviders: ['codex'] } })
+    const state = await control.command({ type: 'connect' })
+    expect(state.configuration.provider).toBe('codex')
+    expect(state.configuration.enabledProviders).toEqual(['codex', 'claude', 'grok'])
+    expect(state.installedProviders).toEqual(['codex', 'claude', 'grok'])
+    expect(state.host.providers?.filter(provider => provider.connection === 'connected').map(provider => provider.id)).toEqual(['codex', 'claude', 'grok'])
+    expect(state.error).toBeNull()
   })
   it('connects Claude Code when the saved provider is Codex and Codex is not installed', async () => {
     const f = await fixture()
