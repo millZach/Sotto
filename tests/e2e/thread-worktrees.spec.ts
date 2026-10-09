@@ -726,7 +726,10 @@ test('clean submodule branch and tag history is listed and requires the tick in 
   }
 })
 
-/** Every run writes here (ignored); the images the verification note names are copied to artifacts/worktree-origin-fallback/. */
+/**
+ * The images the verification note names are copied to artifacts/worktree-origin-fallback/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
 const ORIGIN_SHOTS = evidenceDirectory('artifacts/worktree-origin-fallback-run')
 test('a new worktree with Start from origin on starts from the local branch when origin does not have it, and says so', async () => {
   test.setTimeout(120_000)

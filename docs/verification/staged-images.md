@@ -1,6 +1,6 @@
 # A screenshot is staged once and its draft carries a handle (#320)
 
-Checked on September 26, 2026, on Windows, in the built app driven by `tests/e2e/staged-images.spec.ts` (`npm run build`, then `npx playwright test tests/e2e/staged-images.spec.ts`: 1 passed). The provider is the e2e fixture host. The captures cited here are in `artifacts/staged-images/`; every capture the run takes lands in the ignored `artifacts/staged-images-run/`. The decision is [ADR-0031](../adr/0031-images-are-staged-once-and-carried-by-handle.md).
+Checked on September 26, 2026, on Windows, in the built app driven by `tests/e2e/staged-images.spec.ts` (`npm run build`, then `npx playwright test tests/e2e/staged-images.spec.ts`: 1 passed). The provider is the e2e fixture host. The captures cited here are in `artifacts/staged-images/`. Current runs put every capture in ignored `artifacts/e2e-runs/staged-images-run/` by default, or `artifacts/staged-images-run/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence) for the root override. The decision is [ADR-0031](../adr/0031-images-are-staged-once-and-carried-by-handle.md).
 
 The chip looks as it did. What changed is where its picture comes from and what the draft holds, so this note is mostly about what is not there any more.
 

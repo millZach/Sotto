@@ -79,12 +79,16 @@ Playwright config under `tests/` must have an npm runner;
 ## E2e evidence
 
 E2e specs and the four opt-in native evidence probes use `tests/fixtures/evidence.ts`.
-Ordinary runs write to ignored `test-results/e2e-evidence/<basename(defaultDirectory)>/`.
-For example, appearance captures go to `test-results/e2e-evidence/phase-1-appearance/`.
-Both Git and ESLint ignore `test-results/`.
+Ordinary runs write to ignored `artifacts/e2e-runs/<name>/`. The name is the default
+directory's path relative to `artifacts/`, including any subdirectories; a default
+directory outside `artifacts/` is rejected. For example, appearance captures go to
+`artifacts/e2e-runs/verification/phase-1-appearance/`, and the two Electron review
+folders stay separate as `review-381/electron/` and `review-389/electron/`.
+Both Git and ESLint ignore `artifacts/e2e-runs/`. It sits outside Playwright's
+`test-results/` output, so starting another Playwright command keeps earlier evidence.
 
-`SOTTO_E2E_ARTIFACT_ROOT` takes precedence and puts each named evidence folder
-under that root, including when publication is requested. Without that override,
+`SOTTO_E2E_ARTIFACT_ROOT` takes precedence and puts that same relative path
+under the chosen root, including when publication is requested. Without that override,
 `SOTTO_E2E_EVIDENCE=publish` writes to the historical `artifacts/` folder instead.
 Set it only to refresh committed evidence on purpose, then inspect the working
 tree and keep only the captures the verification note cites. Existing artifact
@@ -397,7 +401,7 @@ $env:SOTTO_CODEX_COMPUTER_USE_LIVE = '1'
 npx vitest run tests/integration/codexComputerUseLive.test.ts --maxWorkers=1
 ```
 
-Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/native-tool-ownership.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `test-results/e2e-evidence/agent-browser/` by default. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
+Build and run `npx playwright test tests/e2e/agent-browser.spec.ts tests/e2e/tools-sidecar.spec.ts tests/e2e/native-tool-ownership.spec.ts` to exercise the real Electron browser, permission continuation, feedback drafts and the Tools pane. The agent test uses a local page and test-only provider entry point; it needs no provider account. Screenshots and a geometry report are written to ignored `artifacts/e2e-runs/agent-browser/` by default. Native-provider compatibility and actual desktop results are recorded separately in `docs/verification/`.
 
 ## Manual Windows desktop check
 
@@ -405,7 +409,7 @@ After `npm ci`, run `npm run test:desktop-smoke` from the release checkout on an
 
 The command runs `test:recovery`, which checks focused real application boundaries, builds once and drives receipt, queued-steering and completed-dictation recovery. It then uses that same build for both daily-workspace cases and the Settings index journey. The daily check drives actual keyboard input through a Windows shell, verifies the changed file, reads its diff, commits and pushes only to an owned temporary bare repository; its GitHub client is scripted. The restart case checks drafts and queues, while Settings checks real saves, failure feedback, keyboard navigation, themes and persistence.
 
-Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory; the runner does not modify or restore committed captures. Standalone spec runs use ignored `test-results/e2e-evidence/` by default; `SOTTO_E2E_EVIDENCE=publish` deliberately refreshes their historical evidence folders. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
+Electron journeys run serially with one worker. Do not run another Electron journey on the same desktop concurrently. The wrapper refuses other platforms, clears live-provider and timing-benchmark flags and any alternate Electron entry point, and supplies a verified absent owned performance-data path. Fixtures create and remove only their owned temporary profiles. `SOTTO_E2E_ARTIFACT_ROOT` routes the selected journeys' screenshots and proof files into ignored `artifacts/review-393/desktop-run/`, each in its own named subdirectory using its path relative to `artifacts/`; the runner does not modify or restore committed captures. The wrapper's selected specs use single-segment names, so their layout stays the same. Standalone spec runs use ignored `artifacts/e2e-runs/` by default; `SOTTO_E2E_EVIDENCE=publish` deliberately refreshes their historical evidence folders. Inspect the emitted screenshots after a UI change and keep only selected evidence. A failed stage stops the command and blocks the release check; investigate its assertion before rerunning. Record the source commit, actual test counts and platform in the release evidence. A local Windows pass does not establish macOS execution.
 
 ## Recovery through application boundaries
 

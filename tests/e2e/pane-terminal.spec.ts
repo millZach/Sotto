@@ -8,7 +8,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
  * The terminal drawer in a thread pane: its own shells in the thread's working copy, apart from the Tools
  * panel's terminal, kept running while hidden, and Ctrl+J from inside the shell and back. With
  * SOTTO_PANE_TERMINAL_EVIDENCE=1 it also saves the drawer at the three verified window sizes, in dark and light,
- * to test-results/e2e-evidence/pane-terminal/. SOTTO_E2E_EVIDENCE=publish also refreshes the committed
+ * to artifacts/e2e-runs/pane-terminal/ by default. SOTTO_E2E_EVIDENCE=publish refreshes the committed
  * artifacts/pane-terminal/ (unless SOTTO_E2E_ARTIFACT_ROOT overrides the destination).
  */
 const evidence = process.env.SOTTO_PANE_TERMINAL_EVIDENCE === '1'
