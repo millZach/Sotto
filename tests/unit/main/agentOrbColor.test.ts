@@ -1,28 +1,23 @@
+import { testCredentials } from '../../fixtures/testCredentials'
 // @vitest-environment node
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials, type CredentialEncryption } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentCommandSchema, agentConfigurationSchema, defaultAgentConfiguration } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
 
 const workspace = resolve('.')
 const roots: string[] = []
 const controls = new Set<AgentControl>()
-const encryption: CredentialEncryption = {
-  isEncryptionAvailable: () => true,
-  encryptString: value => Buffer.from(Buffer.from(value).map(byte => byte ^ 0xa5)),
-  decryptString: value => Buffer.from(value.map(byte => byte ^ 0xa5)).toString('utf8'),
-}
 
 async function fixture(directory?: string) {
   const root = directory ?? await mkdtemp(join(workspace, '.tmp-agent-orb-color-'))
   if (directory === undefined) roots.push(root)
-  const credentials = new AgentCredentials(join(root, 'vault'), encryption)
-  await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler,
+  const credentials = await testCredentials(join(root, 'vault'), { mode: 'xor' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler,
     directory: root, host: new E2EAgentHost(), credentials, reasoner: e2eAgentReasoner,
   })
   controls.add(control)

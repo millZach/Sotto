@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ import { ThreadsView, type ThreadToolsProps, type ThreadsViewProps } from '../..
 import {
   LAYOUT_STORAGE_KEY, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE, threadPromptId,
 } from '../../../src/renderer/src/agents/splitLayout'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -32,7 +33,7 @@ function mount(options: { readonly width?: number; readonly height?: number; rea
       return live.publish({ activeThreadId: thread.id, activeProjectId: thread.projectId })
     }
     if (!holdSelection) return apply()
-    return new Promise(resolve => { held.push({ threadId: request.threadId, release: () => resolve(apply()) }) })
+    const pending = deferred<AgentState | null>(); held.push({ threadId: request.threadId, release: () => pending.resolve(apply()) }); return pending.promise
   })
   vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), command }))
   const store = options.store ?? new SplitLayoutStore()

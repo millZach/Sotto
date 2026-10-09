@@ -2,6 +2,8 @@
 
 Branch: `feat/terminal-search-links-zoom`, based on `e7e853235dceabc5356c94c23d1f844d81f8081c` from `origin/main`.
 
+After the PR opened, main's test splits and then fixture refactor landed. The first conflicts were avoided by relocating feature additions. The second refactor was integrated from `cc732e398c95989497c0cb54787009ca467bf4b5` on this feature branch so the shared terminal fixture could gain image paste. The PR remains open; the integrated revision receives the required gates again.
+
 The issue and the supplied `terminal-agent-state-prototype.html` settle the look: a compact Find field, match count, previous, next and Close, inside the terminal at the top right. The reference's search bar is identical in every variant. Its markup was inspected; the prototype stays outside this branch. The background source is `2026-10-09-herdr-terminals.md` in the same supplied thread checkout.
 
 ## Deliverables and acceptance

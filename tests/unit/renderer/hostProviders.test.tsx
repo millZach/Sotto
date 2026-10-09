@@ -1,3 +1,5 @@
+import { deferred } from '../../fixtures/deferred'
+import { hostStatus, hostsBridgeFixture } from '../../fixtures/renderer/hostBridges'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -10,7 +12,7 @@ import type { HostSignInRequest, ProviderSignInView } from '../../../src/shared/
 afterEach(cleanup)
 const HOST = '22222222-2222-4222-8222-222222222222'
 const SIGN_IN = '33333333-3333-4333-8333-333333333333'
-const forge: HostStatus = { id: HOST, hostId: HOST, name: 'forge', target: 'forge', identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: 'connected', enabled: true }
+const forge: HostStatus = hostStatus({ id: HOST, hostId: HOST, name: 'forge', target: 'forge' })
 const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 const status = (id: ProviderId, patch: Partial<AgentProviderStatus>): AgentProviderStatus => ({ id, name: id, version: '', connection: 'disconnected', capabilities, ...patch })
 /** forge on September 28: Claude Code installed and signed out, Codex connected with ChatGPT, Grok Build signed out, Devin not installed. */
@@ -23,7 +25,7 @@ const FORGE = [
 function bridge(signIn: (request: HostSignInRequest) => Promise<ProviderSignInView | null> = async () => null) {
   const providerAction = vi.fn<HostsBridge['providerAction']>(async () => ({}))
   const signInMock = vi.fn<HostsBridge['signIn']>(signIn)
-  const value = { providerAction, signIn: signInMock } as unknown as HostsBridge
+  const value = hostsBridgeFixture({ commands: { providerAction, signIn: signInMock } }).bridge
   return { bridge: value, providerAction, signIn: signInMock }
 }
 
@@ -159,7 +161,7 @@ it('stops the sign-in on the host when the dialog closes before the host has ans
   const user = userEvent.setup()
   let answer: (view: ProviderSignInView) => void = () => undefined
   const { bridge: hosts, signIn } = bridge(request => request.type === 'start'
-    ? new Promise<ProviderSignInView>(resolve => { answer = resolve }) : Promise.resolve(null))
+    ? (() => { const pending = deferred<ProviderSignInView>(); answer = pending.resolve; return pending.promise })() : Promise.resolve(null))
   render(<div className="hosts-settings"><HostProviders host={forge} bridge={hosts}
     providers={[status('codex', { connection: 'error', problem: 'signed-out', version: '0.155.1' })]} /></div>)
   await user.click(screen.getByRole('button', { name: 'Show providers on forge' }))

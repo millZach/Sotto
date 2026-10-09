@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/terminal-loading')
+const SHOTS = evidenceDirectory('artifacts/terminal-loading')
 
 for (const surface of ['tools', 'workspace'] as const) {
   test(`${surface} terminal recovers a failed view without restarting its shell or losing a draft`, async () => {

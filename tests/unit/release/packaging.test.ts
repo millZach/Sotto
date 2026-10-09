@@ -34,6 +34,7 @@ interface BuilderConfig {
   asarUnpack: string[]
   extraResources: BuilderResource[]
   win: { target: BuilderTarget[] }
+  linux: { target: BuilderTarget[]; executableName: string; icon: string; category: string; artifactName: string }
   mac: {
     identity: string | null
     target: BuilderTarget[]
@@ -64,6 +65,13 @@ const releaseContracts = [
     outDir: 'release/mac-arm64',
     installer: `release/Sotto-${packageManifest.version}-arm64.dmg`,
   },
+  {
+    platform: 'Linux',
+    scripts: ['package:linux'],
+    distributableScript: 'package:linux',
+    outDir: 'release/linux-unpacked',
+    installer: `release/Sotto-${packageManifest.version}-linux-x64.tar.gz`,
+  },
 ]
 
 describe.each(releaseContracts)(
@@ -85,6 +93,16 @@ describe.each(releaseContracts)(
 )
 
 describe('release contract', () => {
+  it('scopes Linux rebuilding and archive settings to the Linux command and block', () => {
+    expect(packageManifest.scripts['package:linux']).toContain('--linux tar.gz --x64 --config.npmRebuild=true --publish never')
+    expect(builderConfig.linux).toEqual({
+      executableName: 'sotto', icon: 'build/icon.png', category: 'Utility',
+      target: [{ target: 'tar.gz', arch: ['x64'] }], artifactName: '${productName}-${version}-linux-${arch}.${ext}',
+    })
+    expect(builderConfig.npmRebuild).toBe(false)
+    expect(packageManifest.scripts['package:win']).not.toContain('--config.npmRebuild=true')
+    expect(packageManifest.scripts['package:dir']).not.toContain('--config.npmRebuild=true')
+  })
   it('ships the Windows PTY prebuild and rebuilds native dependencies on macOS', () => {
     expect(builderConfig.npmRebuild).toBe(false)
     // Returning false from beforeBuild also disables dependency collection.

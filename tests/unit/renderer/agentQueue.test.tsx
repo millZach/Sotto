@@ -1,3 +1,5 @@
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { testCredentials } from '../../fixtures/testCredentials'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -6,7 +8,6 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/re
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { agentShell, type AgentBridge } from '../../../src/shared/agents'
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
@@ -32,16 +33,12 @@ async function finishCommands(): Promise<void> {
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-answer-ui-'))
   directories.push(directory)
-  const credentials = new AgentCredentials(directory, {
-    isEncryptionAvailable: () => true,
-    encryptString: value => Buffer.from(value),
-    decryptString: value => value.toString('utf8'),
-  })
-  await credentials.load()
+  const credentials = await testCredentials(directory, { mode: 'plain' })
+
   const host = new E2EAgentHost()
   let control: AgentControl
   const start = async (): Promise<void> => {
-    control = new AgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner,
+    control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, reasoner: e2eAgentReasoner,
     })
     controls.push(control)
     await control.start()

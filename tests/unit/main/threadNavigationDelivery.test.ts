@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
-import { AgentCredentials } from '../../../src/main/agents/credentials'
+
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import type { AgentIntent } from '../../../src/main/agents/reasoning'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -13,6 +13,9 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { agentCommandSchema, type AgentHostSnapshot, type AgentState } from '../../../src/shared/agents'
 import { handleOf, PIXEL_PNG, pngOfSize, stageInto } from '../../fixtures/stagedImages'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { deferred } from '../../fixtures/deferred'
 
 const roots: string[] = []
 const controls = new Set<AgentControl>()
@@ -32,11 +35,7 @@ afterEach(async () => {
 function outboxHasSend(value: unknown): boolean {
   return (value as { outbox?: { type?: string }[] } | null)?.outbox?.some(item => item.type === 'send') === true
 }
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 const image = handleOf(PIXEL_PNG, 'image', 'same.png')
 const OTHER_PNG = pngOfSize(64, 3)
 class FixtureHost extends E2EAgentHost {
@@ -54,10 +53,10 @@ async function fixture(receiptIds: string[] = []) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-navigation-delivery-')); roots.push(root)
   const host = new FixtureHost()
   const reasoner = { ...e2eAgentReasoner, intent: vi.fn(e2eAgentReasoner.intent) }
-  const credentials = new AgentCredentials(root, { isEncryptionAvailable: () => false, encryptString: text => Buffer.from(text), decryptString: value => value.toString() })
-  await credentials.load()
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+
   const create = () => {
-    const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, }); controls.add(control); return control
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner, }); controls.add(control); return control
   }
   let control = create()
   await control.start(); await stageInto(control, PIXEL_PNG, OTHER_PNG); await control.command({ type: 'connect' })

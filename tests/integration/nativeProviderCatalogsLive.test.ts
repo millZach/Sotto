@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Zero model turns. Isolated native config and Git working copies; no user settings are changed.
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,7 +21,7 @@ it.skipIf(process.env.SOTTO_PHASE3_CATALOG_LIVE !== '1')('Claude native catalog 
   await skill(join(project, '.claude'), 'sotto-manual', 'description: Manual\ndisable-model-invocation: true')
   await writeFile(join(project, '.claude', 'settings.json'), JSON.stringify({ skillOverrides: { 'sotto-off': 'off' } }))
   const git = (args: string[]) => promisify(execFile)('git', args, { cwd: project, windowsHide: true })
-  await git(['init', '-b', 'main']); await git(['add', '.']); await git(['-c', 'user.name=Sotto synthetic', '-c', 'user.email=sotto@example.invalid', 'commit', '-m', 'Synthetic native catalog'])
+  await initializeGitRepository(project, { files: {}, message: 'Synthetic native catalog', identity: { name: 'Sotto synthetic', email: 'sotto@example.invalid' } })
   await git(['worktree', 'add', '-b', 'catalog', worktree])
   await skill(join(worktree, '.claude'), 'sotto-worktree-only', 'description: Worktree only')
   const client = new ClaudeSubscriptionClient(root); const executable = await client.findExecutable(); expect(executable).toBeTruthy()

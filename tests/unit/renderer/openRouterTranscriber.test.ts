@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenRouterTranscriber, TranscriptionError, type TranscribeOptions, type TranscriptionBridge } from '../../../src/renderer/src/transcription/openRouterTranscriber'
 import { transcriptionTimeoutMs, type TranscriptionFailureReason } from '../../../src/shared/contracts'
@@ -38,8 +39,7 @@ describe('OpenRouterTranscriber', () => {
   })
 
   it('cancels a session and ignores its late reply', async () => {
-    let resolve!: (result: { ok: true; text: string }) => void
-    const response = new Promise<{ ok: true; text: string }>((done) => { resolve = done })
+    const { promise: response, resolve: resolve } = deferred<{ ok: true; text: string }>()
     const { client, bridge } = harness({ transcribe: vi.fn(() => response) })
     const pending = client.transcribe(options())
     const rejection = expect(pending).rejects.toMatchObject({ reason: 'cancelled' })
@@ -64,7 +64,7 @@ describe('OpenRouterTranscriber', () => {
 
   it('bounds stalled IPC and requests cancellation', async () => {
     vi.useFakeTimers()
-    const { client, bridge } = harness({ transcribe: vi.fn(() => new Promise<never>(() => undefined)) })
+    const { client, bridge } = harness({ transcribe: vi.fn(() => deferred<never>().promise) })
     const request = options()
     const pending = client.transcribe(request)
     const rejection = expect(pending).rejects.toMatchObject({ reason: 'timeout' })

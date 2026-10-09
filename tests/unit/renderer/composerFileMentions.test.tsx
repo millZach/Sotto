@@ -14,7 +14,7 @@ import {
   retainFileReferences, searchFileEntries, unmentionableCount, type FileEntry,
 } from '../../../src/renderer/src/agents/composerFiles'
 import { FilePicker, type FilePickerModel } from '../../../src/renderer/src/agents/FilePicker'
-import { liveAgentState, threadsStateFixture } from './liveAgentState'
+import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 

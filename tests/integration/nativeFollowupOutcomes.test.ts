@@ -1,8 +1,9 @@
 // @vitest-environment node
+import { createAgentControl } from '../fixtures/agentControlFixture'
+import { testCredentials } from '../fixtures/testCredentials'
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
-import { AgentCredentials } from '../../src/main/agents/credentials'
+
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
@@ -10,8 +11,8 @@ import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 
 it.each([{ name: 'Claude', create: () => claudeFixture() }, { name: 'Grok', create: () => grokFixture() }])('$name dispatches a queued follow-up only after native completion and refuses native steering', async ({ create }) => {
   const f = await create(); const threadId = randomUUID()
-  const credentials = new AgentCredentials(f.root, { isEncryptionAvailable: () => false, encryptString: t => Buffer.from(t), decryptString: t => t.toString() }); await credentials.load()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
+  const credentials = await testCredentials(f.root, { mode: 'unavailable' });
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials, reasoner: e2eAgentReasoner,
   })
   try {
     await f.host.connect()

@@ -1,5 +1,7 @@
 # Phase 3 theme branding: mark, voice sphere and widget
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 Owner: `work/phase3-theme-branding` (exact Claude Opus 5), from main `b8995d8`. User request: the selected theme must also colour the Sotto icon and the voice sphere, and the widget must follow too. This supersedes the frozen widget palette.
 
 Target: Windows Electron desktop. Main window and the floating widget, light and dark, system-following widget, reduced motion. No real audio, no provider calls.
@@ -37,7 +39,7 @@ Main is authoritative for widget presentation. It stamps `theme`, `palette` and 
 
 ## Evidence
 
-`tests/e2e/phase-three-theme-branding.spec.ts` (opt-in `SOTTO_THEME_BRANDING_EVIDENCE=1` after `npm run build`) passes in the real Windows Electron app. The captures and sampled colours (`samples.json`) are in `artifacts/phase-three-theme-branding/`.
+`tests/e2e/theme-branding-evidence.spec.ts` (opt-in `SOTTO_THEME_BRANDING_EVIDENCE=1` after `npm run build`) passes in the real Windows Electron app. The captures and sampled colours (`samples.json`) are in `artifacts/phase-three-theme-branding/`.
 
 1. **Ocean dark.** Covers the app mark, the Agents room orb, the widget idle hover and the widget listening capsule.
 2. **Iris selected mid-session.** The main room repaints and the same listening session's widget repaints, with no new session.
@@ -68,8 +70,8 @@ Other checks:
 
 Focused Vitest, 17 files: 508 passed, 2 failed. The two failures are already on `b8995d8` and unrelated to this change:
 
-- `tests/integration/ipc.test.ts › typed preload bridge › creates a frozen main-only surface…`: the bridge keys now include browser, gitChanges, personalChats, terminal and themes.
-- `tests/integration/ipc.test.ts › IPC validation and lifecycle › validates a settings patch…`: it expects `webLinkDestination`.
+- `tests/integration/preloadBridge.test.ts › typed preload bridge › creates a frozen main-only surface…`: the bridge keys now include browser, gitChanges, personalChats, terminal and themes.
+- `tests/integration/settingsHistoryIpc.test.ts › IPC validation and lifecycle › validates a settings patch…`: it expects `webLinkDestination`.
 
 New or extended:
 
@@ -80,9 +82,9 @@ New or extended:
   - It compensates for the light ink filter.
   - Gamut-limited ink colours keep their hue for every built-in.
   - `AgentAppearance` has no orb chooser.
-- `tests/unit/renderer/widgetApp.test.tsx`: the mark wears the painted palette; the live palette repaints within a session; system scheme changes flip the painted half; the root is cleaned up.
+- `tests/unit/renderer/widget/widgetAppearance.test.tsx`, `tests/unit/renderer/widget/widgetEntry.test.tsx`: the mark wears the painted palette; the live palette repaints within a session; system scheme changes flip the painted half; the root is cleaned up.
 - `tests/unit/main/nativeDictationLifecycle.test.ts`: main stamps override the renderer, repaint mid-session, no-op when idle, and renderer-gone keeps the palette.
-- `tests/unit/renderer/dictationController.test.ts`: publishes the palette in force now and keeps the session shortcut.
+- `tests/unit/renderer/features/dictation/dictationLifecycle.test.ts`: publishes the palette in force now and keeps the session shortcut.
 
 Node and web typecheck pass. ESLint passes on changed files, except the `z` unused import in `src/main/index.ts`, which predates this change and root already removed on main (`bc5b22a`).
 
@@ -93,4 +95,4 @@ Node and web typecheck pass. ESLint passes on changed files, except the `z` unus
 - The appearance contrast and glass sliders affect the main window's painted roles only. The widget receives the theme's canonical roles, not the contrast-adjusted tokens.
 - A saturated accent can match the error hue, as with a red custom theme. The error state stays distinguishable by its icon, copy and missing live rim, not by hue alone.
 - In the light room, very saturated orb colours lose some chroma to fit through the ink filter. Hue holds, and perceived lightness can shift up to about 0.1 OKLCH L.
-- `design-capture.spec.ts` (opt-in) screenshots of the widget and Agents room were not regenerated and will show the themed colours.
+- `tests/e2e/design-capture-threads.spec.ts`, `tests/e2e/design-capture-appearance.spec.ts`, `tests/e2e/design-capture-voice-widget.spec.ts` (opt-in) screenshots of the widget and Agents room were not regenerated and will show the themed colours.

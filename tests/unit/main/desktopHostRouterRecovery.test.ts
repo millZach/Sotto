@@ -7,17 +7,14 @@ import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/a
 import type { RequestDraft, RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
+import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
 const REMOTE_A = '22222222-2222-4222-8222-222222222222'
 const REMOTE_B = '33333333-3333-4333-8333-333333333333'
 const questions = [{ id: 'question', question: 'Where?', multiSelect: false, allowFreeText: true, options: [] }]
 const answers = { question: { optionIds: [], text: 'Saved answer' } }
-function deferred() {
-  let resolve!: () => void
-  const promise = new Promise<void>(done => { resolve = done })
-  return { promise, resolve }
-}
+
 function host(hostId: string, kind: 'local' | 'remote') {
   const state = emptyDesktopState(hostId)
   state.host.connected = true; state.connection = 'connected'

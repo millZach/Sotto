@@ -1,15 +1,16 @@
-import { execFileSync } from 'node:child_process'
-import { isBuiltin } from 'node:module'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { initializeGitRepository } from '../fixtures/gitRepository'
+import { buildSshHost } from './support/sshHost'
+import { ownedE2EProfile } from './support/e2eProfile'
+
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type ElectronApplication } from '@playwright/test'
-import { build } from 'vite'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/remote-thread-tools')
+const SHOTS = evidenceDirectory('artifacts/remote-thread-tools')
 
 async function resize(app: ElectronApplication, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, size) => {
@@ -27,21 +28,17 @@ async function resize(app: ElectronApplication, width: number, height: number): 
 test('a thread on a paired host shows its files, changes and agents in Tools', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-remote-tools-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-tools-' })).directory
   const root = join(profile, 'ssh-root')
   const folder = join(root, '~', 'code', 'Space Race')
   await mkdir(join(folder, 'moondust'), { recursive: true })
-  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Sotto e2e', '-c', 'user.email=e2e@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: folder, stdio: 'pipe' })
-  git('init', '-q', '-b', 'master')
   await writeFile(join(folder, 'README.md'), '# Moondust\n\nA pencil-notebook short about the Space Race.\n')
   await writeFile(join(folder, 'moondust', 'score.mjs'), "export const theme = ['D5', 'A5', 'F#5']\n")
-  git('add', '-A'); git('commit', '-q', '-m', 'Start the score')
+  await initializeGitRepository(folder, { branch: 'master', files: {}, message: 'Start the score', identity: { name: 'Sotto e2e', email: 'e2e@example.invalid' } })
   await writeFile(join(folder, 'moondust', 'score.mjs'), "export const theme = ['D5', 'A5', 'F#5', 'B5', 'A5']\nexport const coda = 204\n")
   await writeFile(join(folder, 'moondust', 'storyboard.md'), '1. Contact\n2. Earthrise\n')
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/e2eSshHost.ts'), target: 'node24', outDir: install, emptyOutDir: false,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
+  await buildSshHost(install)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: true, reducedMotion: 'on', appearance: 'dark' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')

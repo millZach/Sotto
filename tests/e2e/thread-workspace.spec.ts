@@ -1,13 +1,16 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { agentState } from './support/agentAccess'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { designThreadsFixture } from '../../src/shared/e2e'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/crossing')
 
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
@@ -40,8 +43,8 @@ test('a saved draft elsewhere does not close the manual composer, including whil
     const queue = page.getByRole('region', { name: 'Queued messages' })
     await expect(queue).toContainText('Prepare the next message while Docs runs.')
     await expect(prompt).toHaveValue('')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-foreign-draft.png' })
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-foreign-draft.png') })
+    const state = await agentState(page)
     expect(state).toMatchObject({ draft: 'Keep this saved draft in Workshop.', draftThreadId: key('workshop'), assignments: [] })
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
     expect(state.followups).toEqual([expect.objectContaining({ threadId: key('docs'), text: 'Prepare the next message while Docs runs.', status: 'queued' })])
@@ -109,16 +112,16 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     await expect(queue.getByRole('listitem')).toHaveCount(2)
     await queue.getByRole('button', { name: 'Move queued message 2 up', exact: true }).click()
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
-    const queued = await page.evaluate(async () => window.sotto!.agents!.get())
+    const queued = await agentState(page)
     expect(queued.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
     expect(await userMessageTexts(page, 'docs')).toHaveLength(1)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-queue.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-queue.png') })
 
     await page.reload()
     await openThreads(page)
     await page.getByRole('button', { name: 'Docs', exact: true }).click()
     await expect(queue.getByRole('listitem').first()).toContainText('Then post the preview link.')
-    const reloaded = await page.evaluate(async () => window.sotto!.agents!.get())
+    const reloaded = await agentState(page)
     expect(reloaded.followups!.map(item => [item.text, item.skills ?? []])).toEqual([['Then post the preview link.', []], ['Then run $deploy for staging.', [skill]]])
 
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'docs', text: 'The long job is done.' }))
@@ -131,7 +134,7 @@ test('a queued follow-up keeps its skill reference and order through a reload, s
     // The fixture thread is not a Codex thread, so the host refuses the selected skill. The item stays, with its reference, for review.
     await expect(queue).toContainText('Not sent')
     await expect(queue).toContainText('Selected skills are unavailable or belong to another provider. Refresh this draft’s skill catalog.')
-    const done = await page.evaluate(async () => window.sotto!.agents!.get())
+    const done = await agentState(page)
     expect(await userMessageTexts(page, 'docs'))
       .toEqual(['Start the long job.', 'Then post the preview link.'])
     expect(done.followups).toEqual([expect.objectContaining({ text: 'Then run $deploy for staging.', skills: [skill], status: 'failed' })])
@@ -156,7 +159,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByLabel('Thread transcript')).toContainText('Explain the next small change.')
     // Visible pending text precedes native confirmation; wait for the matching receipt to clear the draft.
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
-    const state = await page.evaluate(async () => window.sotto!.agents!.get())
+    const state = await agentState(page)
     expect(state.assignments).toHaveLength(0)
     await expect.poll(() => userMessageTexts(page, 'workshop')).toHaveLength(1)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
@@ -169,7 +172,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('')
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue('Keep this draft in Workshop.')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-manual.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-manual.png') })
     await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'manual-permission', text: 'Allow the manual test step?' }))
     await page.getByRole('button', { name: 'Allow', exact: true }).click()
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)!.requests.length, workshop)).toBe(0)
@@ -179,7 +182,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
 })
 
 test('settled work stays off attention and session pills, with real timestamps and an expandable shelf', async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-workspace-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-workspace-' })).directory
   const fixture = designThreadsFixture()
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
@@ -216,7 +219,7 @@ test('settled work stays off attention and session pills, with real timestamps a
     const releaseNotes = (await hostKeys(page))('release-notes')
     await expect(page.getByRole('heading', { name: 'Release notes 1.4', exact: true })).toBeVisible()
     await expect(page.getByLabel('Thread transcript')).toContainText('Release notes are in the draft release.')
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/thread-workspace-settled.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'thread-workspace-settled.png') })
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Start a new manual task in this thread.')
     await page.getByRole('button', { name: 'Send prompt', exact: true }).click()
     await expect(page.getByLabel('Thread transcript')).toContainText('Start a new manual task in this thread.')
@@ -232,9 +235,9 @@ test('settled work stays off attention and session pills, with real timestamps a
     })
     expect(scrollbar.thumb).not.toBe('')
     expect(scrollbar.actual).toBe(`${scrollbar.thumb} rgba(0, 0, 0, 0)`)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agent-configuration-scrollbar.png' })
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'agent-configuration-scrollbar.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })

@@ -1,13 +1,16 @@
+import { startMonitoredThread, monitorGeometry } from './support/monitoredThread'
+import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
-const evidence = resolve('artifacts/held-action')
+const evidence = evidenceDirectory('artifacts/held-action')
 /** Mirrors HELD_AFTER_MS. A copy, so a change to the rule has to be made deliberately here too. */
 const HELD_AFTER_MS = 20_000
 const command = 'npm test -- --maxWorkers=2'
@@ -46,25 +49,11 @@ async function idle(page: Page): Promise<void> {
 }
 
 async function start(launched: LaunchedSotto): Promise<void> {
-  await launched.page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' })
-    await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } })
-    await window.sotto!.agents!.command({ type: 'connect' })
-  })
-  await launched.page.reload()
-  await hostKeys.read(launched.page)
-  await openThreads(launched.page)
-  await launched.page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: 'Workshop', exact: true }).click()
-  await expect(pane(launched.page)).toBeVisible()
+  await startMonitoredThread(launched, hostKeys.read, pane)
 }
 
 async function contentSize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
-    const main = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().endsWith('/index.html'))!
-    main.setMinimumSize(700, 500)
-    main.setContentSize(width, height)
-  }, [width, height] as const)
-  await expect.poll(() => launched.page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe(`${width}x${height}`)
+  await resizeContentWindow(launched, width, height, [700, 500])
 }
 
 /**
@@ -116,21 +105,7 @@ async function sandFrames(page: Page): Promise<number> {
 }
 
 async function expectWhole(page: Page): Promise<void> {
-  const facts = await pane(page).evaluate(element => {
-    const monitor = element.querySelector('.thread-monitor')!
-    const composer = element.querySelector('.thread-prompt, .agent-composer')!
-    const rect = (target: Element): { left: number; right: number; top: number; bottom: number } => {
-      const value = target.getBoundingClientRect()
-      return { left: value.left, right: value.right, top: value.top, bottom: value.bottom }
-    }
-    return {
-      width: innerWidth, height: innerHeight, monitor: rect(monitor), composer: rect(composer),
-      creature: rect(monitor.querySelector('.thread-monitor__creature')!),
-      task: rect(monitor.querySelector('.thread-monitor__task')!),
-      overflow: element.scrollWidth - element.clientWidth,
-      extraControls: monitor.querySelectorAll('button, input, textarea, select, a[href], [tabindex="0"]').length,
-    }
-  })
+  const facts = await monitorGeometry(pane(page))
   expect(facts.creature.right).toBeLessThanOrEqual(facts.task.left + 2)
   expect(Math.abs(facts.creature.bottom - facts.composer.top)).toBeLessThanOrEqual(1)
   expect(facts.extraControls).toBe(0)

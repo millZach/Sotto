@@ -3,16 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type SubscriptionAccount } from '../../../src/shared/agents'
 import { AgentCredentials } from '../../../src/main/agents/credentials'
 import { ConfiguredAgentReasoner } from '../../../src/main/agents/reasoning'
+import { deferred } from '../../fixtures/deferred'
+import { plainCredentialEncryption } from '../../fixtures/testCredentials'
 
-function deferred() {
-  let release!: () => void
-  return { promise: new Promise<void>(resolve => { release = resolve }), release }
-}
 function credentials() {
-  return new AgentCredentials('unused-reasoning-test-directory', {
-    isEncryptionAvailable: () => true,
-    encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
-  })
+  return new AgentCredentials('unused-reasoning-test-directory', plainCredentialEncryption())
 }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -20,8 +15,8 @@ describe('reasoning runtime shutdown', () => {
   it('aborts the running native call, skips queued decisions and waits for native cleanup', async () => {
     const started = deferred(), cancelled = deferred(), cleanup = deferred()
     const complete = vi.fn(async (_system: string, _input: unknown, _model: string, _effort?: string, signal?: AbortSignal) => {
-      started.release()
-      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.release(); resolve() }, { once: true }))
+      started.resolve()
+      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.resolve(); resolve() }, { once: true }))
       await cleanup.promise
       throw new Error('Native reasoning cancelled.')
     })
@@ -38,7 +33,7 @@ describe('reasoning runtime shutdown', () => {
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(closed).toBe(false)
     expect(complete).toHaveBeenCalledTimes(1)
-    cleanup.release()
+    cleanup.resolve()
     await closing
     expect((await results).map(result => result.status)).toEqual(['rejected', 'rejected'])
     await expect(reasoner.transformText('Return JSON.', {})).rejects.toThrow('Sotto reasoning stopped.')
@@ -49,8 +44,8 @@ describe('reasoning runtime shutdown', () => {
   it('cancels account discovery and drains it before reporting closure', async () => {
     const started = deferred(), cancelled = deferred(), cleanup = deferred()
     const status = vi.fn(async (signal?: AbortSignal): Promise<SubscriptionAccount> => {
-      started.release()
-      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.release(); resolve() }, { once: true }))
+      started.resolve()
+      await new Promise<void>(resolve => signal!.addEventListener('abort', () => { cancelled.resolve(); resolve() }, { once: true }))
       await cleanup.promise
       // Native status adapters may report unavailable after a canceled probe. The reasoner
       // still rejects the stale observation instead of publishing it after shutdown.
@@ -65,7 +60,7 @@ describe('reasoning runtime shutdown', () => {
     await cancelled.promise
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(closed).toBe(false)
-    cleanup.release()
+    cleanup.resolve()
     await closing
     await rejected
     await expect(reasoner.account('grok')).rejects.toThrow('Sotto reasoning stopped.')
@@ -78,7 +73,7 @@ describe('reasoning runtime shutdown', () => {
     const fetch = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
       const signal = init.signal!
       signal.addEventListener('abort', () => reject(signal.reason), { once: true })
-      started.release()
+      started.resolve()
     }))
     vi.stubGlobal('fetch', fetch)
     const reasoner = new ConfiguredAgentReasoner(() => ({ ...defaultAgentConfiguration(), reasoning: 'openrouter', reasoningModel: 'fixture-model' }), credentials())

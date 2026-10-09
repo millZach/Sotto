@@ -1,12 +1,11 @@
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
 import { join, resolve } from 'node:path'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
+import { writeFile } from 'node:fs/promises'
 import { closeSotto, enableVoiceCoordinator, launchSotto } from './support/sottoLaunch'
 
 for (const mode of ['resting', 'hidden', 'expanded', 'expanded-hidden'] as const) test(`dictation hotkey preserves the native text target and caret from ${mode}`, async () => {
-  const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-focus-'))
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-focus-' })).directory
   await writeFile(join(profile, 'widget-placement.json'), JSON.stringify({ version: 3, placement: { edge: 'right' } }))
   await enableVoiceCoordinator(profile)
   const launched = await launchSotto('success', profile)
@@ -55,5 +54,5 @@ for (const mode of ['resting', 'hidden', 'expanded', 'expanded-hidden'] as const
     await page.evaluate(() => window.sottoE2E!.triggerShortcut())
     await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'success')
     expect(await focusState()).toEqual({ focused: true, caret: { hasFocus: true, start: 7, end: 7, blurEvents: 0 } })
-  } finally { await targetApp?.close(); await closeSotto(launched); await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true }) }
+  } finally { await targetApp?.close(); await closeSotto(launched); await removeOwnedE2EProfile(profile) }
 })

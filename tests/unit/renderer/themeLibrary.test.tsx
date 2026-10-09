@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -120,12 +121,10 @@ describe('theme library writer', () => {
   it('runs writes one at a time, each from the library the previous write left', async () => {
     let settings: AppSettings = { ...DEFAULT_SETTINGS, customThemes: [theme('One', 'dark'), theme('Two', 'dark')] }
     const releases: Array<() => void> = []
-    const save = vi.fn((patch: SettingsPatch) => new Promise<boolean>(resolve => {
-      releases.push(() => {
+    const save = vi.fn((patch: SettingsPatch) => { const pending = deferred<boolean>(); releases.push(() => {
         settings = { ...settings, ...patch } as AppSettings
-        resolve(true)
-      })
-    }))
+        pending.resolve(true)
+      }); return pending.promise })
     const writer = new ThemeLibraryWriter(save, () => settings)
     const first = writer.run(state => ({ patch: removeThemesPatch(state, ['one']) }))
     const second = writer.run(state => ({ patch: removeThemesPatch(state, ['two']) }))

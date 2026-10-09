@@ -1,3 +1,4 @@
+import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -29,12 +30,7 @@ async function advanceToFinish(user: ReturnType<typeof userEvent.setup>): Promis
   }
 }
 
-function deferred<Value>() {
-  let resolve!: (value: Value) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((done, fail) => { resolve = done; reject = fail })
-  return { promise, reject, resolve }
-}
+
 
 describe('first-run onboarding', () => {
   it.each(['idle', 'requesting', 'denied', 'missing', 'error'] as const)('keeps %s at the microphone step until the user explicitly skips', async microphoneState => {

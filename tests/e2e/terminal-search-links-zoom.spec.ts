@@ -1,11 +1,12 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 import { forceDomTerminalRenderer, terminalOutput } from './support/terminal'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Run after npm run build. These journeys use real ConPTYs; only external browser opening is stubbed.
-const SHOTS = resolve('artifacts/terminal-search-links-zoom')
+const SHOTS = evidenceDirectory('artifacts/terminal-search-links-zoom')
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGOQnFbxH4QZYAwASEIImVOee9IAAAAASUVORK5CYII='
 
 /** Where the DOM renderer drew `text` in the first row containing `row`. */

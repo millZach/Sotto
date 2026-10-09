@@ -3,16 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerToolsIpc } from '../../../src/main/tools/ipc'
 import { createToolsBridges } from '../../../src/preload/tools'
 import { safeBrowserUrl } from '../../../src/shared/browser'
-import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
+
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 
 describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
     const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
-    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-    const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
-    const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
+    const registry = ipcRegistry()
+    const { ipc, handlers } = registry
+    const { main } = registry
+    const { url, webContents: sender } = main
+    const { mainFrame } = sender
+    const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
     expect(handlers.size).toBe(35)
     for (const [channel, handler] of handlers) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
@@ -108,9 +112,12 @@ describe('tools IPC and preload boundary', () => {
     const hostedGitChanges = { list: vi.fn().mockResolvedValue(answer), review: vi.fn().mockResolvedValue(answer), copyPath: vi.fn().mockResolvedValue(answer) }
     const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture']),
       gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']), hostedGitChanges } as unknown as Parameters<typeof registerToolsIpc>[1]
-    const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-    const url = 'file:///main.html', mainFrame = { parent: null, url }, sender = { mainFrame, getURL: () => url, isDestroyed: () => false }
-    const cleanup = registerToolsIpc({ handle: (channel, fn) => { handlers.set(channel, fn) }, removeHandler: channel => { handlers.delete(channel) } }, services, () => [{ role: 'main', url, webContents: sender }])
+    const registry = ipcRegistry()
+    const { ipc, handlers } = registry
+    const { main } = registry
+    const { url, webContents: sender } = main
+    const { mainFrame } = sender
+    const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
     const call = (method: string, payload: unknown) => handlers.get(`sotto:git-changes:${method}`)!({ sender, senderFrame: mainFrame }, payload)
     const target = { threadId: 'host:22222222-2222-4222-8222-222222222222:thread', workspaceId: 'a'.repeat(64) }
     await expect(call('list', target)).resolves.toBe(answer)

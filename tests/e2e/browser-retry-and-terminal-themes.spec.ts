@@ -1,0 +1,261 @@
+import { painted, near } from './support/terminal'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { createServer } from 'node:http'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import sharp from 'sharp'
+import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { BUILT_IN_THEMES, getThemeColorsForMode } from '../../src/shared/themes/library'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { forceDomTerminalRenderer } from './support/terminal'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+// Recovery states of the tools workspace in the complete app. AppShell, renderer, preload, IPC and production browser
+// and terminal services are real. Coding providers use the unpackaged E2E fixtures; no native account runs.
+// The browser's working folder is moved away to produce its refusal. The terminal selection check writes explicit Nocturne roles to isolate color conversion
+// and contrast. tools-footer-and-terminal-themes.spec.ts separately verifies the retained terminal through real theme controls.
+
+const SHOTS = evidenceDirectory('artifacts/phase-three-ui-recovery')
+type Mode = 'dark' | 'light'
+
+async function ownedProfile(prefix: string): Promise<string> {
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'blue' }))
+  return profile
+}
+
+async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
+  await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {
+    BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.setContentSize(width, height)
+  }, [width, height] as const)
+  await expect.poll(() => launched.page.evaluate(([width, height]) => window.innerWidth === width && Math.abs(window.innerHeight - height) <= 2, [width, height] as const)).toBe(true)
+}
+
+async function appearance(page: Page, mode: Mode): Promise<void> {
+  await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), mode)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
+}
+
+async function shoot(page: Page, name: string, modes: readonly Mode[] = ['dark', 'light']): Promise<void> {
+  await mkdir(SHOTS, { recursive: true })
+  for (const mode of modes) {
+    await appearance(page, mode)
+    await page.screenshot({ path: join(SHOTS, `${name}-${mode}.png`), animations: 'disabled' })
+  }
+  await appearance(page, 'dark')
+}
+
+async function hostViews(app: ElectronApplication): Promise<{ url: string; bounds: Electron.Rectangle }[]> {
+  return app.evaluate(({ BrowserWindow, WebContentsView }) => {
+    const host = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
+    return host.contentView.children.filter(view => view instanceof WebContentsView).map(view => ({ url: (view as Electron.WebContentsView).webContents.getURL(), bounds: view.getBounds() }))
+  })
+}
+
+async function workshop(launched: LaunchedSotto): Promise<{ folder: string; panel: Locator }> {
+  const { page } = launched
+  const folder = await page.evaluate(async () => {
+    const agents = window.sotto!.agents!
+    await agents.command({ type: 'configure', patch: { enabled: true, speak: false } })
+    const state = await agents.command({ type: 'connect' })
+    const thread = state.host.threads.find(item => item.id.replace(/^host:[0-9a-f-]+:/iu, '') === 'workshop')!
+    return state.host.projects.find(project => project.id === thread.projectId)!.path
+  })
+  expect(folder.startsWith(launched.userData)).toBe(true)
+  await resize(launched, 1280, 860)
+  await openThreads(page)
+  await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Tools', exact: true }).click()
+  return { folder, panel: page.getByRole('complementary', { name: 'Tools' }) }
+}
+
+test('explains a page main refused to show, and shows it again on Try again once the folder is back', async () => {
+  test.setTimeout(180_000)
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' })
+    response.end('<!doctype html><title>Atlas preview</title><body style="margin:0;font:600 28px system-ui;background:#1f6feb;color:white;display:grid;place-items:center;height:100vh">Atlas local app</body>')
+  })
+  await new Promise<void>(done => server.listen(0, '127.0.0.1', done))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('The local page has no port.')
+  const url = `http://127.0.0.1:${address.port}/`
+  const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-refused-'))
+  const { app, page } = launched
+  let moved: string | null = null
+  try {
+    const { folder, panel } = await workshop(launched)
+    await panel.getByRole('tab', { name: 'Browser' }).click()
+    await panel.getByRole('textbox', { name: 'Address for a new page' }).fill(url)
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await hostViews(app)).filter(view => view.url === url).length, { timeout: 20_000 }).toBe(1)
+
+    // The folder goes away, and the panel's rectangle changes: main refuses to place the page and says why.
+    moved = `${folder}-moved`
+    await rename(folder, moved)
+    await resize(launched, 1200, 860)
+    const refused = panel.locator('.browser-page').getByRole('alert')
+    await expect(refused).toContainText('This page could not be shown.', { timeout: 15_000 })
+    await expect(refused).toContainText('The working folder is not available.')
+    await expect(refused).not.toContainText('Files')
+    await expect(refused.getByRole('button', { name: 'Try again' })).toBeVisible()
+    await expect(refused.getByRole('button', { name: 'Open in system browser' })).toBeVisible()
+    // No native page is left over the explanation, so the page capture shows what is on screen.
+    expect(await hostViews(app)).toEqual([])
+    await shoot(page, 'browser-refused-1200')
+    await resize(launched, 820, 560)
+    await expect(refused.getByRole('button', { name: 'Try again' })).toBeInViewport()
+    await shoot(page, 'browser-refused-820x560', ['dark'])
+    // Still refused at a new size: the refusal holds until the reader asks again.
+    expect(await hostViews(app)).toEqual([])
+
+    await rename(moved, folder)
+    moved = null
+    await refused.getByRole('button', { name: 'Try again' }).click()
+    await expect(panel.locator('.browser-page').getByRole('alert')).toHaveCount(0)
+    const viewport = await panel.locator('.browser-viewport').evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return { x: Math.round(box.left), y: Math.round(box.top), width: Math.round(box.right) - Math.round(box.left), height: Math.round(box.bottom) - Math.round(box.top) }
+    })
+    await expect.poll(() => hostViews(app), { timeout: 15_000 }).toEqual([{ url, bounds: viewport }])
+  } finally {
+    if (moved !== null) await rename(moved, moved.slice(0, -'-moved'.length)).catch(() => undefined)
+    await closeSotto(launched)
+    await new Promise(done => server.close(done))
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
+  }
+})
+
+/** Nocturne's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
+function nocturneTerminal(mode: Mode): Record<string, string> {
+  const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, mode)!
+  return {
+    '--theme-terminal-background': colors.terminalBackground, '--theme-terminal-foreground': colors.terminalForeground,
+    '--theme-terminal-cursor': colors.terminalCursor, '--theme-terminal-selection': colors.terminalSelection,
+    '--theme-terminal-scrollbar': colors.terminalScrollbar, '--theme-terminal-scrollbar-hover': colors.terminalScrollbarHover,
+    '--theme-contrast-target': mode === 'dark' ? 'white' : 'black',
+  }
+}
+const NOCTURNE: Record<Mode, Record<string, string>> = { dark: nocturneTerminal('dark'), light: nocturneTerminal('light') }
+/** The semantic terminal variables exactly as tokens.css derives them. */
+const ROLES = {
+  '--tt-terminal-background': 'var(--theme-terminal-background)',
+  '--tt-terminal-foreground': 'color-mix(in oklab, color-mix(in oklab, var(--theme-terminal-foreground) var(--theme-contrast-base), var(--theme-terminal-background)), var(--theme-contrast-target) var(--theme-contrast-boost))',
+  '--tt-terminal-cursor': 'var(--theme-terminal-cursor)',
+  '--tt-terminal-selection': 'var(--theme-terminal-selection)',
+  '--tt-terminal-scrollbar': 'var(--theme-terminal-scrollbar)',
+  '--tt-terminal-scrollbar-hover': 'var(--theme-terminal-scrollbar-hover)',
+}
+
+async function paintTheme(page: Page, mode: Mode, themeId: string, values: Record<string, string>): Promise<void> {
+  await page.evaluate(([mode, themeId, values]) => {
+    const root = document.documentElement
+    root.dataset.theme = mode
+    root.dataset.themeId = themeId
+    for (const [name, value] of Object.entries(values)) root.style.setProperty(name, value)
+  }, [mode, themeId, values] as const)
+}
+
+/** The sRGB the page paints for a CSS colour, independently of the terminal's own resolver. */
+
+interface Selected { readonly background: string; readonly color: string; readonly contrast: number }
+
+/** The first selected cell's colours in a terminal row, as xterm rendered them, or null when nothing there is selected. */
+function readSelected(row: Element): Selected | null {
+  const cell = [...row.querySelectorAll<HTMLElement>('span')].find(span => span.style.backgroundColor !== '')
+  if (!cell) return null
+  const style = getComputedStyle(cell)
+  const channels = (value: string): number[] => (value.match(/\d+(?:\.\d+)?/gu) ?? []).slice(0, 3).map(Number)
+  const luminance = (value: string): number => {
+    const [r = 0, g = 0, b = 0] = channels(value).map(channel => { const c = channel / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const hex = (value: string): string => `#${channels(value).map(channel => channel.toString(16).padStart(2, '0')).join('')}`
+  const [light = 0, dark = 0] = [luminance(style.color), luminance(style.backgroundColor)].sort((a, b) => b - a)
+  return { background: hex(style.backgroundColor), color: hex(style.color), contrast: Math.round((light + 0.05) / (dark + 0.05) * 100) / 100 }
+}
+
+/** The most common colour in a capture of the element: for the terminal, the field behind its rows. */
+async function fieldColor(locator: Locator): Promise<string> {
+  const { data, info } = await sharp(await locator.screenshot({ animations: 'disabled' })).raw().toBuffer({ resolveWithObject: true })
+  const counts = new Map<string, number>()
+  for (let index = 0; index < data.length; index += info.channels) {
+    const key = `#${[data[index]!, data[index + 1]!, data[index + 2]!].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0]
+}
+
+test('repaints a running terminal with the DOM fallback for theme, same-mode colour and contrast changes, with selected text readable', async () => {
+  test.setTimeout(180_000)
+  const launched = await launchSotto('success', await ownedProfile('sotto-e2e-phase3-ui-terminal-theme-'))
+  const { page } = launched
+  try {
+    await forceDomTerminalRenderer(page)
+    const { panel } = await workshop(launched)
+    await panel.getByRole('tab', { name: 'Terminal' }).click()
+    await panel.getByRole('button', { name: 'Start terminal' }).click()
+    const screen = panel.locator('.xterm-rows')
+    await expect(screen).toBeVisible()
+    await panel.locator('.xterm').click()
+    await page.keyboard.type('echo SOTTOPROBE')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => ((await screen.innerText()).match(/SOTTOPROBE/gu) ?? []).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
+    await panel.locator('.xterm').evaluate(element => { element.dataset.probe = 'same-terminal' })
+    const tab = await panel.locator('.terminal-tabs__tab[aria-selected="true"]').getAttribute('id')
+    const view = panel.locator('.terminal-view')
+    const row = panel.locator('.xterm-rows > div').filter({ hasText: /^SOTTOPROBE\s*$/u }).last()
+    await mkdir(SHOTS, { recursive: true })
+
+    /** The field and selection match the theme; xterm may raise foreground contrast to keep text readable. */
+    const expectSelection = async (): Promise<Selected> => {
+      const want = { background: await painted(page, 'var(--tt-terminal-selection)'), color: await painted(page, 'var(--tt-terminal-foreground)'), field: await painted(page, 'var(--tt-terminal-background)') }
+      await expect.poll(async () => near(await fieldColor(view), want.field), { message: `field ${want.field}` }).toBe(true)
+      let seen: Selected | null = null
+      await expect.poll(async () => {
+        seen = await row.evaluate(readSelected)
+        return near(seen?.background, want.background) && (seen?.contrast ?? 0) >= 4.5
+      }, { message: `selection ${JSON.stringify(want)}` }).toBe(true)
+      return seen!
+    }
+    const box = (await row.locator('span').first().boundingBox())!
+    const select = () => page.mouse.dblclick(box.x + 30, box.y + box.height / 2)
+
+    // Nocturne dark, as the theme engine applies it.
+    await paintTheme(page, 'dark', 'nocturne', { ...NOCTURNE.dark, '--theme-contrast-base': '100%', '--theme-contrast-boost': '0%', ...ROLES })
+    await select()
+    const dark = await expectSelection()
+    expect(dark.contrast, JSON.stringify(dark)).toBeGreaterThanOrEqual(4.5)
+    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-dark.png'), animations: 'disabled' })
+
+    // Same mode and theme, editor changes with the word still selected: field and selection, foreground, then contrast.
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-background': 'oklch(0.2 0.03 160)', '--theme-terminal-selection': 'oklch(0.5 0.09 160)' })
+    await expectSelection()
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-foreground': 'oklch(0.72 0.02 160)' })
+    const dimmer = await expectSelection()
+    await paintTheme(page, 'dark', 'nocturne', { '--theme-contrast-boost': '60%' })
+    const boosted = await expectSelection()
+    // Both colors can reach the same minimum-contrast floor; the boost must not reduce readability.
+    expect(boosted.contrast, `${JSON.stringify(dimmer)} -> ${JSON.stringify(boosted)}`).toBeGreaterThanOrEqual(dimmer.contrast)
+    await view.screenshot({ path: join(SHOTS, 'terminal-edited-selected-dark.png'), animations: 'disabled' })
+
+    // Nocturne light.
+    await paintTheme(page, 'light', 'nocturne', { ...NOCTURNE.light, '--theme-contrast-boost': '0%' })
+    const light = await expectSelection()
+    expect(light.contrast, JSON.stringify(light)).toBeGreaterThanOrEqual(4.5)
+    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(SHOTS, 'terminal-nocturne-panel-1280-light.png'), animations: 'disabled' })
+
+    // The same xterm and shell throughout: its element, its tab, its earlier output, and it still runs commands.
+    await expect(panel.locator('.xterm')).toHaveAttribute('data-probe', 'same-terminal')
+    expect(await panel.locator('.terminal-tabs__tab[aria-selected="true"]').getAttribute('id')).toBe(tab)
+    await panel.locator('.xterm').click()
+    await page.keyboard.type('echo AFTERTHEME')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => { const text = await screen.innerText(); return text.includes('SOTTOPROBE') && (text.match(/AFTERTHEME/gu) ?? []).length >= 2 }, { timeout: 20_000 }).toBe(true)
+  } finally {
+    await closeSotto(launched)
+    await removeOwnedE2EProfile(launched.userData).catch(() => undefined)
+  }
+})

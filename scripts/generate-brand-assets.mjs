@@ -2,11 +2,13 @@
 // into the binary brand assets electron-builder consumes: icon.png, icon.ico,
 // installer-sidebar.bmp and the macOS menu-bar template PNGs. It also renders
 // the phone apps' icons from build/icon.svg: the iPhone app icon and Android's
-// square and round launcher icons.
+// square and round launcher icons, plus Linux's 48, 128 and 256px hicolor icons.
 // Run after editing any SVG: node scripts/generate-brand-assets.mjs
+// On forge, regenerate only hicolor icons with --linux; the Windows sidebar needs its Windows fonts.
 import { Buffer } from 'node:buffer'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { log } from 'node:console'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import sharp from 'sharp'
@@ -132,6 +134,14 @@ async function trayTemplate() {
 }
 
 const iconSvg = await readFile(path.join(buildDir, 'icon.svg'))
+for (const size of [48, 128, 256]) {
+  await sharp(iconSvg, { density: 768 }).resize(size, size).png()
+    .toFile(path.join(repoRoot, 'apps/omarchy', `sotto-${size}.png`))
+}
+if (process.argv.includes('--linux')) {
+  log('Wrote apps/omarchy/sotto-48.png, sotto-128.png and sotto-256.png')
+  process.exit(0)
+}
 await sharp(iconSvg, { density: 768 }).resize(1024, 1024).png().toFile(path.join(buildDir, 'icon.png'))
 await writeFile(path.join(buildDir, 'icon.ico'), await buildIco(iconSvg))
 
@@ -168,5 +178,5 @@ async function phoneIcons() {
 await phoneIcons()
 
 log(
-  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png, the iPhone app icon and the Android launcher icons',
+  'Wrote build/icon.png, build/icon.ico, build/installer-sidebar.bmp, resources/tray/sottoTemplate.png, resources/tray/sottoTemplate@2x.png, the Linux hicolor icons, the iPhone app icon and the Android launcher icons',
 )

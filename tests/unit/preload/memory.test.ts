@@ -1,12 +1,13 @@
 // @vitest-environment node
+import { preloadElectron } from '../../fixtures/preloadElectron'
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { MEMORY_CHANGED, MEMORY_COMMAND, MEMORY_GET, type MemoryCommand } from '../../../src/shared/memory'
 
 describe('memory preload bridge', () => {
   it('exposes validated memory only to main and validates replies and events', async () => {
-    const ipc = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = preloadElectron().ipcRenderer
     const memory = createSottoBridge(ipc, 'win32').memory!
     expect('memory' in createSottoWidgetBridge(ipc, 'win32')).toBe(false)
     const snapshot = { available: true, questionnaireCompletedAt: null, memories: [], policies: [] }

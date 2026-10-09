@@ -1,5 +1,7 @@
 # Stop while the microphone is connecting (#613)
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 The owner's decision is that Stop during connection is remembered and cancels
 dictation as soon as the microphone is ready. The controller's old test pinned
 ignoring a second shortcut press during startup.
@@ -10,7 +12,7 @@ controller entered listening. After the fix, both cancel without entering
 listening, playing recording cues, finalizing audio, transcribing a segment,
 delivering text or adding history. A subsequent dictation still finishes normally.
 
-`npx vitest run tests/unit/renderer/dictationController.test.ts tests/unit/renderer/audioRecorder.test.ts --maxWorkers=2`
+`npx vitest run tests/unit/renderer/features/dictation/dictationLifecycle.test.ts tests/unit/renderer/features/dictation/dictationOutput.test.ts tests/unit/renderer/features/dictation/dictationPrewarm.test.ts tests/unit/renderer/features/dictation/dictationRecovery.test.ts tests/unit/renderer/audio/audioCaptureWorklet.test.ts tests/unit/renderer/audio/audioRecorder.test.ts tests/unit/renderer/audio/audioRecorderSegmentation.test.ts --maxWorkers=2`
 passed all 114 tests.
 
 After `npm run build`, Playwright passed all 22 tests in `app.spec.ts`,

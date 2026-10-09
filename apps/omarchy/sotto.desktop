@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Sotto
+Comment=Dictation and voice development coordinator
+Exec=sotto %U
+Icon=sotto
+Terminal=false
+Categories=Utility;
+StartupWMClass=sotto

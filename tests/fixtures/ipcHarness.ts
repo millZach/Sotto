@@ -4,6 +4,7 @@ import {
   registerIpc,
   type IpcInvocationEvent,
   type IpcMainAdapter,
+  type TrustedIpcSender,
 } from '../../src/main/ipc/registerIpc'
 import {
   type BrowserWindowLike,
@@ -56,6 +57,26 @@ export class FakeIpcMain implements IpcMainAdapter {
       return Promise.reject(new Error(`missing handler: ${channel}`))
     }
     return Promise.resolve(handler(event, ...args))
+  }
+}
+
+/** Fresh identity and top-level frame. Tests can navigate or destroy it without changing another sender. */
+export function trustedIpcSender(role: 'main' | 'widget', url = `file:///${role}.html`): TrustedIpcSender {
+  return { role, url, webContents: { mainFrame: { parent: null, url }, getURL: () => url, isDestroyed: () => false } }
+}
+
+/** Registry only: the test chooses which IPC service to register and keeps hostile events visible. */
+export function ipcRegistry(options: { mainUrl?: string; widgetUrl?: string } = {}) {
+  const main = trustedIpcSender('main', options.mainUrl)
+  const widget = trustedIpcSender('widget', options.widgetUrl)
+  const event = (source = main): IpcInvocationEvent => ({ sender: source.webContents, senderFrame: source.webContents.mainFrame })
+  const mainEvent = event()
+  const widgetEvent = event(widget)
+  const ipc = new FakeIpcMain(mainEvent)
+  return { ipc, handlers: ipc.handlers, main, widget, mainEvent, widgetEvent, event,
+    trustedSenders: () => [main, widget],
+    invoke: async (channel: string, args: readonly unknown[] = [], source = mainEvent) => ipc.invokeArgs(channel, args, source),
+    dispose: () => { ipc.handlers.clear() },
   }
 }
 

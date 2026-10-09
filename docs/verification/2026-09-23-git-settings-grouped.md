@@ -18,10 +18,10 @@ The prototype's example rewrote the subject from custom instructions with a few 
 ## Unit
 
 ```powershell
-npx vitest run tests/unit/renderer/settingsView.test.tsx tests/unit/renderer/themeTokens.test.ts tests/unit/release/designCaptureMatrix.test.ts
+npx vitest run tests/unit/renderer/features/settings/settingsNavigation.test.tsx tests/unit/renderer/features/settings/settingsMicrophone.test.tsx tests/unit/renderer/features/settings/settingsCaptureOutput.test.tsx tests/unit/renderer/features/settings/settingsGit.test.tsx tests/unit/renderer/features/settings/settingsAppearance.test.tsx tests/unit/renderer/features/settings/settingsTranscriptionKey.test.tsx tests/unit/renderer/features/settings/settingsUpdatesPrivacy.test.tsx tests/unit/renderer/features/settings/projectThreadDefaults.test.tsx tests/unit/renderer/features/settings/settingsDictionary.test.tsx tests/unit/renderer/themeTokens.test.ts tests/unit/release/designCaptureMatrix.test.ts
 ```
 
-`settingsView.test.tsx` checks the ten sections and their keyboard order, the four groups and the controls in each, that Application and Cleanup keep none of the moved rows, every save, each description before and after its value changes, the example for all three styles, the note shown when both Generated switches are off, and that custom instructions typed just before the style changes are still saved once.
+`tests/unit/renderer/features/settings/settingsNavigation.test.tsx`, `tests/unit/renderer/features/settings/settingsGit.test.tsx` check the ten sections and their keyboard order, the four groups and the controls in each, that Application and Cleanup keep none of the moved rows, every save, each description before and after its value changes, the example for all three styles, the note shown when both Generated switches are off, and that custom instructions typed just before the style changes are still saved once.
 
 ## In the built app
 

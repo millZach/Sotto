@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpenRouterTranscriptionService } from '../../../src/main/asr/openRouterTranscriptionService'
 import { TRANSCRIPTION_MODEL, transcriptionTimeoutMs } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { deferred } from '../../fixtures/deferred'
 
 function setup(patch: Partial<AppSettings> = {}) {
   // Ephemeral test credential; no saved credential or literal API key is used.
@@ -168,8 +169,8 @@ describe('OpenRouter transcription', () => {
 
   it('lets the newest request with the same id win and cancels without retry', async () => {
     const { service, fetchFn } = setup()
-    let firstStarted!: () => void
-    const started = new Promise<void>((resolve) => { firstStarted = resolve })
+
+    const { promise: started, resolve: firstStarted } = deferred<void>()
     fetchFn.mockImplementationOnce(async (_url, options) => new Promise<Response>((_resolve, reject) => {
       options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
       firstStarted()
@@ -184,8 +185,8 @@ describe('OpenRouter transcription', () => {
 
   it('dispose aborts uploads and unknown cancellation is a no-op', async () => {
     const { service, fetchFn } = setup()
-    let started!: () => void
-    const ready = new Promise<void>((resolve) => { started = resolve })
+
+    const { promise: ready, resolve: started } = deferred<void>()
     fetchFn.mockImplementationOnce(async (_url, options) => new Promise<Response>((_resolve, reject) => {
       options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
       started()
@@ -321,8 +322,8 @@ describe('rate-limited transcription', () => {
 
   it('cancels while waiting out a rate limit without another attempt', async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(providerLimited())
-    let waiting!: () => void
-    const waited = new Promise<void>((resolve) => { waiting = resolve })
+
+    const { promise: waited, resolve: waiting } = deferred<void>()
     const service = new OpenRouterTranscriptionService({
       getSettings: async () => ({ ...DEFAULT_SETTINGS, llmApiKey: randomUUID() }),
       fetchFn,

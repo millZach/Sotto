@@ -9,6 +9,7 @@ import { TerminalService, type TerminalDependencies } from '../../../src/main/to
 import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
+import { deferred } from '../../fixtures/deferred'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -75,7 +76,7 @@ describe('persistent terminal service', () => {
     const f = await fixture()
     const first = unwrap(await f.service.create(f.target)), other = unwrap(await f.service.create(f.target))
     const request = { ...f.target, sessionId: first.session.id }
-    const release = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>()
+    const release = deferred<void>(), entered = deferred<void>()
     const resolved = await f.files.resolveWorkspace('a')
     if (!resolved.ok) throw new Error(resolved.error.message)
     const owner = resolved.value
@@ -97,7 +98,7 @@ describe('persistent terminal service', () => {
   it('does not send held or queued input after the old terminal closes', async () => {
     const f = await fixture(), first = unwrap(await f.service.create(f.target))
     const request = { ...f.target, sessionId: first.session.id }
-    const release = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>()
+    const release = deferred<void>(), entered = deferred<void>()
     const original = f.files.resolveWorkspace.bind(f.files)
     vi.spyOn(f.files, 'resolveWorkspace').mockImplementationOnce(async (...args) => { entered.resolve(); await release.promise; return original(...args) })
     const pending = f.service.write({ ...request, data: 'old' })

@@ -1,18 +1,21 @@
+import { agentState } from './support/agentAccess'
+import { resizeWindow } from './support/sottoWindow'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
-import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { bareEntityId, closeSotto, firstSottoWindow, launchSotto, openThreads, type LaunchedSotto, userMessageTexts } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const ARTIFACTS = 'artifacts/phase1-workspace'
+const ARTIFACTS = evidenceDirectory('artifacts/phase1-workspace')
 // A 1x1 PNG: enough for the real attachment validation path.
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
 async function ownedProfile(prefix: string): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   return profile
 }
@@ -28,12 +31,11 @@ async function connectAndOpenThreads(page: Page): Promise<void> {
 }
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
+  await launched.app.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setMinimumSize(760, 600); window.setSize(size.width, size.height)
-  }, { width, height })
-  // Fractional display scaling rounds the CSS viewport by a pixel or two.
-  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
+    window.setMinimumSize(760, 600)
+  })
+  await resizeWindow(launched, width, height)
 }
 
 /** Nothing on the Threads page scrolls sideways or clips its status line at this width. */
@@ -240,7 +242,7 @@ test('project folders hold several threads, settle and restore threads and proje
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'projects-760.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
     await rm(folder, { recursive: true, force: true })
   }
 })
@@ -276,7 +278,7 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
     await mkdir(ARTIFACTS, { recursive: true })
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'delivery-unconfirmed.png') })
     // Enter on newer text does not start a second send while the first is unconfirmed.
-    const afterEnter = await page.evaluate(async () => window.sotto!.agents!.get())
+    const afterEnter = await agentState(page)
     expect(afterEnter.deliveries!.filter(delivery => bareEntityId(delivery.threadId) === 'docs').map(delivery => delivery.status).sort()).toEqual(['accepted', 'uncertain'])
     expect(afterEnter.followups ?? []).toEqual([])
     expect(await userMessageTexts(page, 'docs')).toEqual(['First, delivered.'])
@@ -295,7 +297,7 @@ test('delivery states stay truthful: an unconfirmed send is never repeated and a
 })
 
 async function designProfile(prefix: string, settings: Record<string, unknown> = {}): Promise<string> {
-  const profile = await mkdtemp(join(tmpdir(), prefix))
+  const profile = (await ownedE2EProfile({ prefix: prefix })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false }, assignments: [], queue: [],
@@ -364,7 +366,7 @@ test('status rings stay recognizable at 3:1 or more on the dark and light sideba
     await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, 'provider-marks-light-probe.png') })
   } finally {
     await closeSotto(launched)
-    await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+    await removeOwnedE2EProfile(profile)
   }
 })
 
@@ -394,7 +396,7 @@ for (const scale of [125, 150]) {
       await page.screenshot({ animations: 'disabled', path: join(ARTIFACTS, `design-threads-760-${scale}.png`) })
     } finally {
       await closeSotto(launched)
-      await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })
+      await removeOwnedE2EProfile(profile)
     }
   })
 }

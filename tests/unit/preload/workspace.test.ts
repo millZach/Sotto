@@ -1,26 +1,28 @@
+import { preloadElectron } from '../../fixtures/preloadElectron'
+import { threadsStateFixture } from '../../fixtures/agentState'
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => {
+  const { preloadElectron } = await import('../../fixtures/preloadElectron')
+  return preloadElectron()
+})
 import { createSottoBridge } from '../../../src/preload'
 import { AGENT_COMMAND, AGENT_STATE, EMPTY_AGENT_HOST, defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 
-const state: AgentState = {
-  configuration: defaultAgentConfiguration(), connection: 'disconnected',
-  host: { ...EMPTY_AGENT_HOST,
-    projects: [{ id: 'project', title: 'Project', path: 'D:/project', workspaceSettledAt: '2026-09-12T12:00:00.000Z' }],
-    threads: [{ id: 'thread', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, workspaceSettledAt: null }] },
-  assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null,
-  composing: false, pendingRequest: '', globalLaneBusy: false, notice: '', error: null,
-  speech: { id: 0, text: '' }, voice: { status: 'off', error: null, action: 'none', revision: 0 },
-  credentials: { reasoning: false, grokSpeech: false, secure: false }, reasoningAccounts: [],
-
-}
+const state: AgentState = threadsStateFixture({
+  configuration: defaultAgentConfiguration(), host: EMPTY_AGENT_HOST,
+  projects: [{ id: 'project', title: 'Project', path: 'D:/project', workspaceSettledAt: '2026-09-12T12:00:00.000Z' }],
+  threads: [{ id: 'thread', projectId: 'project', title: 'Task', modelId: 'model', status: 'idle', messages: [], requests: [], nativeSessionStarted: false, workspaceSettledAt: null }],
+  topLevel: { connection: 'disconnected', assignments: [], queue: [], activeThreadId: null, activeProjectId: null,
+    threadDrafts: undefined, deliveries: undefined, deliveredDrafts: undefined,
+    credentials: { reasoning: false, grokSpeech: false, secure: false } },
+})
 
 describe('workspace preload contract', () => {
   it('passes settlement commands and preserves organization/native-start metadata in replies and events', async () => {
     // A command answers with a receipt, its catalog named by revision (issue #323).
     const receipt = { ...state, host: { ...state.host, models: { revision: 1, omitted: true } } }
-    const ipc = { invoke: vi.fn().mockResolvedValue(receipt), on: vi.fn(), removeListener: vi.fn() }
+    const ipc = ({ ...preloadElectron().ipcRenderer, invoke: vi.fn().mockResolvedValue(receipt) })
     const bridge = createSottoBridge(ipc, 'win32').agents!
     for (const command of [
       { type: 'settle-thread', threadId: 'thread' }, { type: 'restore-thread', threadId: 'thread' },

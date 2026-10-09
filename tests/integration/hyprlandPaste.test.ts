@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { parseProviderRecords } from '../fixtures/providerRecords'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
@@ -38,7 +39,7 @@ describe.skipIf(process.platform !== 'linux')('Hyprland process transport over a
     )
     expect(clipboard).toBe(text)
     expect(copyToPrimary).toHaveBeenCalledTimes(target === 'terminal' ? 1 : 0)
-    const args = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    const args = parseProviderRecords(await readFile(log, 'utf8'), { keepEmptyLines: true })
     const mods = target === 'terminal' ? 'SHIFT' : 'CTRL'
     const key = target === 'terminal' ? 'Insert' : 'V'
     expect(args).toEqual([

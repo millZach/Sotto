@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { mkdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
@@ -65,7 +65,7 @@ async function capture(page: Page, name: string): Promise<void> {
 
 test('browses real working folders in the shared tools panel, following focus or pinned', async () => {
   test.setTimeout(120_000)
-  const root = await mkdtemp(join(tmpdir(), 'sotto-e2e-files-'))
+  const root = (await ownedE2EProfile({ prefix: 'sotto-e2e-files-' })).directory
   const workshop = await project(root, 'workshop', {
     'README.md': '# Workshop\n\nA **small** fixture with a [safe link](https://example.com) and a remote image:\n\n![remote](https://example.com/tracker.png)\n\n- Browse folders\n- Preview files\n\n```ts\nexport const answer = 42\n```\n',
     'src/app.ts': "import { answer } from './answer'\n\nexport function main(): number {\n  return answer\n}\n",
@@ -216,6 +216,6 @@ test('browses real working folders in the shared tools panel, following focus or
     await page.screenshot({ path: `${SHOTS}/reduced-motion-1280-at-${Math.round(scale * 100)}-dark.png`, animations: 'disabled' })
   } finally {
     await closeSotto(launched)
-    await rm(root, { recursive: true, force: true })
+    await removeOwnedE2EProfile(root)
   }
 })
