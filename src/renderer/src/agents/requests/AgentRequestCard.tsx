@@ -4,7 +4,7 @@ import type { AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import {
-  answerProgress, blocksSending, EMPTY_SELECTION, hasNoSendableChoice, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
+  answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
@@ -24,7 +24,6 @@ export interface AgentRequestCardProps {
   /** A free-text question with no structure is answered in the composer. */
   readonly onWriteAnswer?: () => void
   /** A line under the choices, such as the voice phrases. */
-  readonly hint?: ReactNode
   readonly store?: RequestAnswerStore
   /** Thread questions sit above the composer; other hosts keep their existing placement. */
   readonly placement?: 'composer' | undefined
@@ -34,7 +33,7 @@ export interface AgentRequestCardProps {
  * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, hint, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
@@ -148,7 +147,6 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
         : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
           : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
-      {hint && !locked && !hasNoSendableChoice(request) ? <span className="agent-request__hint">{hint}</span> : null}
     </div>
   </section>
 }

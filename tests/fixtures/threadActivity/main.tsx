@@ -109,4 +109,4 @@ const params = new URLSearchParams(location.search)
 publishFixtureState(state((params.get('scenario') as Scenario | null) ?? 'settled'))
 window.activityFixture = { show: scenario => publishFixtureState(state(scenario)) }
 
-createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadsView onOpenAgents={() => undefined} now={E2E_THREADS_NOW} /></div>)
+createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadsView now={E2E_THREADS_NOW} /></div>)

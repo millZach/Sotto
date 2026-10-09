@@ -54,7 +54,7 @@ function mount() {
   state.activeThreadId = THREAD
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
 }
 

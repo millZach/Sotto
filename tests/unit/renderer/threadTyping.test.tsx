@@ -35,7 +35,7 @@ it('keeps typing within the composer once the draft has content', () => {
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === state.activeThreadId)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   fireEvent.change(input, { target: { value: 'a' } })
   const before = renders.transcript
@@ -65,7 +65,7 @@ it('does not process a closed model picker catalog while typing or deleting', ()
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === thread.id)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   fireEvent.change(input, { target: { value: 'a' } })
   const before = namesRead
@@ -85,7 +85,7 @@ it('sends the latest text after edits that did not render the surrounding contro
   vi.mocked(useAgents).mockImplementation(live.useLive)
   const row = describeThreads(state, E2E_THREADS_NOW).find(row => row.thread.id === state.activeThreadId)!
   const store = new ThreadDraftStore(live.command)
-  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} onOpenThread={vi.fn()} />)
+  render(<ThreadPane row={row} state={state} command={live.command} store={store} focused promptId="prompt" error={null} />)
   const input = screen.getByRole('textbox', { name: 'Prompt' })
   fireEvent.change(input, { target: { value: 'First' } })
   const before = renders.options

@@ -5,7 +5,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import type { AgentState, ProviderId } from '../../src/shared/agents'
 import { PROVIDER_LABELS } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { enableVoiceCoordinator, firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { firstSottoWindow, openThreads } from './support/sottoLaunch'
 
 // Opt in separately from the single-provider smoke. Exactly three native turns;
 // restore-only mode never creates a thread or sends another prompt.
@@ -101,7 +101,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await mkdir(profile); await mkdir(project)
     // Prevent legacy-profile migration; all provider connections use the real UI.
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ onboardingComplete: true }))
-    await enableVoiceCoordinator(profile)
   }
   const artifacts = resolve('artifacts/multi-provider-live')
   await mkdir(artifacts, { recursive: true })
@@ -223,10 +222,8 @@ test('three native providers coexist independently of Sotto reasoning and surviv
 
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
-    const configuration = page.locator('#settings-agents')
     for (const coordinator of ['codex', 'claude'] as const) {
-      await configuration.getByRole('combobox', { name: 'Reasoning account', exact: true }).selectOption(coordinator)
-      await expect.poll(async () => (await state(page!)).configuration.reasoning).toBe(coordinator)
+      await page.evaluate(provider => window.sotto!.agents!.command({ type: 'configure', patch: { reasoning: provider } }), coordinator)
       const changed = await state(page)
       expect(identities(changed)).toEqual(expectedIdentities)
       expect(connections(changed)).toEqual(allConnected)
@@ -235,21 +232,6 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     }
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'independent-coordinator.png') })
 
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
-    const agentControl = page.getByRole('dialog', { name: 'Agent configuration', exact: true })
-    if (!(await state(page)).configuration.enabled) {
-      await agentControl.getByRole('button', { name: 'Enable agent control', exact: true }).click()
-      await expect.poll(async () => (await state(page!)).configuration.enabled).toBe(true)
-    }
-    await agentControl.getByRole('button', { name: 'Turn off agent control', exact: true }).click()
-    await expect.poll(async () => (await state(page!)).configuration.enabled).toBe(false)
-    expect(connections(await state(page))).toEqual(allConnected)
-    expect(identities(await state(page))).toEqual(expectedIdentities)
-    await page.screenshot({ animations: 'disabled', path: join(artifacts, 'coordinator-off.png') })
-    await agentControl.getByRole('button', { name: 'Close Agent configuration', exact: true }).click()
-    evidence.coordinatorOffPreservesProviders = true
 
 
     // Disconnect only a completed provider; other native connections and all

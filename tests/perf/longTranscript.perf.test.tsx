@@ -128,7 +128,7 @@ describe('long transcript cost', async () => {
     let commits = 0
     let committed = 0
     const view = (): ReactNode => <Profiler id="threads" onRender={(_id, _phase, actual) => { commits++; committed += actual }}>
-      <ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} paneAreaHeight={800} />
+      <ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} paneAreaHeight={800} />
     </Profiler>
 
     vi.mocked(useAgents).mockImplementation(connection)

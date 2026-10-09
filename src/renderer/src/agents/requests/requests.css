@@ -43,7 +43,7 @@
 .agent-request__footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .agent-request__count { margin-right: auto; color: var(--tt-text-muted); font-size: 13px; }
 
-.agent-request__status, .agent-request__hint { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.agent-request__status { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .agent-request__error { margin: 0; color: var(--tt-error-text); font-size: 14px; overflow-wrap: anywhere; }
 .agent-request__hold { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .agent-request__hold p { margin: 0; flex: 1 1 260px; font-size: 14px; color: var(--tt-text-2); }

@@ -43,18 +43,16 @@ function savedDraftOffer(state: AgentState): SavedDraftOffer {
 
 /**
  * The Threads page with no pane open. It says what to do next and, when the coordinator holds a draft, keeps it
- * in sight with a way to finish it or let it go. It shows with voice off too (ADR-0012): the draft is text the
+ * in sight with a way to finish it or let it go. The draft is text the
  * user typed, which a send from a thread's own composer leaves here, and this page is the only place it shows.
  */
-export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThreadWithDraft, onOpenThread, onOpenAgents, error }: {
+export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDraft, onOpenThread, error }: {
   readonly state: AgentState
   readonly command: AgentConnection['command']
-  readonly voice: boolean
   readonly onNewThread: () => void
   /** Settles once the new thread has opened or failed to; the button waits for it, so one press moves the draft once. */
   readonly onNewThreadWithDraft: (draft: CarriedDraft) => Promise<void>
   readonly onOpenThread: (threadId: string) => void
-  readonly onOpenAgents: () => void
   readonly error?: string | null
 }): ReactNode {
   const [confirming, setConfirming] = useState(false)
@@ -107,7 +105,6 @@ export function EmptyWorkspace({ state, command, voice, onNewThread, onNewThread
     <div className="thread-workspace__empty-actions">
       {page.action}
       {page.discardable ? <Button variant="danger" disabled={state.globalLaneBusy || moving} onClick={() => setConfirming(true)}>Discard draft</Button> : null}
-      {voice ? <Button variant="ghost" onClick={onOpenAgents}>Open Agents</Button> : null}
     </div>
     {confirming ? <ConfirmationDialog title="Discard this draft?" description="The draft is deleted and cannot be brought back."
       confirmLabel="Discard draft" cancelLabel="Keep draft" onConfirm={discard} onCancel={() => setConfirming(false)} fallbackFocusRef={headingRef}

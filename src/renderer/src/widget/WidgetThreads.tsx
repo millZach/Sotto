@@ -1,10 +1,8 @@
+import type { AgentState } from '../../../shared/agents'
 import React, { type ReactNode } from 'react'
 
-import { capabilitiesForThread, isThreadProviderConnected, supportsAgentSupervision, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
-import { isLiveAttention } from '../../../shared/agentAttention'
 import type { AgentConnection } from '../agents/AgentContext'
-import { AgentComposer, AgentLatestResponse, AgentManualNotice, AgentQueue } from '../agents/AgentView'
 
 /** An explicitly opened extension of the pill, never a replacement widget. */
 export function WidgetThreads({ state, command }: {
@@ -12,10 +10,8 @@ export function WidgetThreads({ state, command }: {
   readonly command: AgentConnection['command']
 }): ReactNode {
   const active = state.host.threads.find(thread => thread.id === state.activeThreadId)
-  const assignment = state.assignments.find(entry => entry.threadId === active?.id)
   const unsettled = state.host.threads.filter(thread => !isThreadClosed(thread))
   const settled = state.host.threads.filter(isThreadClosed)
-  const visibleState = { ...state, queue: state.queue.filter(item => isLiveAttention(item, state.host.threads)) }
   const threadList = (threads: typeof unsettled): ReactNode => threads.map(thread => (
     <button type="button" className="widget-threads__thread" key={thread.id}
       aria-pressed={thread.id === state.activeThreadId}
@@ -34,17 +30,10 @@ export function WidgetThreads({ state, command }: {
     </div>
     {state.connection !== 'connected' && <p className="agent-muted">Connect your thread provider in Sotto.</p>}
     {state.error && <p className="agent-error" role="alert">{state.error}</p>}
-    <AgentQueue state={visibleState} command={command} compact />
     {active && <div className="widget-threads__detail">
       <h2>{active.title}</h2>
-      <AgentLatestResponse thread={active} compact />
-      {!isThreadClosed(active) && <>
-        <AgentManualNotice state={visibleState} command={command} />
-        {assignment === undefined && <button type="button" className="tt-button tt-button--secondary"
-          disabled={state.globalLaneBusy || !isThreadProviderConnected(state.host, active) || !supportsAgentSupervision(capabilitiesForThread(state.host, active))}
-          onClick={() => { void command({ type: 'assign', threadId: active.id }) }}>Manage this thread</button>}
-        <AgentComposer state={visibleState} command={command} compact />
-      </>}
+      <p>{active.summary?.lastAssistant?.text ?? active.messages.findLast(message => message.role === 'assistant')?.text}</p>
+      <p className="agent-muted">Open Sotto to continue this thread.</p>
     </div>}
   </section>
 }

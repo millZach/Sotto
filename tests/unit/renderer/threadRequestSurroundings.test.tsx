@@ -29,7 +29,7 @@ function permissionState(choices: typeof CHOICES | [] | undefined): AgentState {
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  return { live, view: render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />) }
+  return { live, view: render(<ThreadsView now={E2E_THREADS_NOW} />) }
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset() })

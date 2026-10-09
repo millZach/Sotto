@@ -69,7 +69,7 @@ describe('native folder project resolution', () => {
     await browse()
     await waitFor(() => expect(view.onCreated).toHaveBeenCalledOnce())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', projectId: actual.id, title: 'New thread', modelId: 'codex:model', managed: false, workingCopy: 'shared', titleSource: 'default' }))
+    expect(command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'create-thread', projectId: actual.id, title: 'New thread', modelId: 'codex:model', workingCopy: 'shared', titleSource: 'default' }))
   })
 
   it('uses the Agents model even when an older saved thread default and model order prefer Grok', async () => {
@@ -242,73 +242,5 @@ describe('working copy default', () => {
     expect(screen.getByRole('button', { name: 'Close new thread dialog' })).toBeDisabled()
     finish(fixture([actual]))
     await waitFor(() => expect(command).toHaveBeenCalledOnce())
-  })
-})
-
-// The Agents room's managed flow keeps its name, model, reasoning and permission form, unchanged from before
-// issue #347: only the Threads page's own flow (above) opens a thread at once on Settings defaults.
-describe('the managed flow’s own form', () => {
-  function setupManaged(command: (command: AgentCommand) => Promise<AgentState | null>, state = fixture([actual])) {
-    vi.stubGlobal('sotto', { agents: { chooseProjectDirectory: vi.fn(async () => path) } })
-    const onCreated = vi.fn()
-    const view = render(<NewThreadDialog state={state} command={command} onCreated={onCreated} onClose={vi.fn()} managed />)
-    return { ...view, onCreated }
-  }
-
-  it('keeps the form after choosing a project, instead of opening the thread at once', async () => {
-    const state = fixture([actual])
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
-    setupManaged(command, state)
-    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
-    expect(await screen.findByRole('textbox', { name: 'Thread name' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Create thread' })).toBeInTheDocument()
-    expect(command).not.toHaveBeenCalled()
-  })
-
-  it('submits the typed name and chosen options, and sends managed: true', async () => {
-    const state = fixture([actual])
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
-    const view = setupManaged(command, state)
-    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Thread name' }), { target: { value: 'Spike the flake' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
-    await waitFor(() => expect(view.onCreated).toHaveBeenCalledOnce())
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', projectId: actual.id, title: 'Spike the flake', titleSource: 'user', modelId: 'codex:model', managed: true }))
-  })
-
-  it('starts managed threads on the saved new-thread model too', async () => {
-    const state = fixture([actual])
-    state.host.models.push({ id: 'codex:other', name: 'Other model', provider: 'Codex', providerId: 'codex', ready: true })
-    state.configuration.newThreadModelId = 'codex:other'
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
-    const view = setupManaged(command, state)
-    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
-    await screen.findByRole('textbox', { name: 'Thread name' })
-    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
-    await waitFor(() => expect(view.onCreated).toHaveBeenCalledOnce())
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', modelId: 'codex:other' }))
-  })
-
-  it('names it "New thread" and says so when no name is typed', async () => {
-    const state = fixture([actual])
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)
-    const view = setupManaged(command, state)
-    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
-    await screen.findByRole('textbox', { name: 'Thread name' })
-    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
-    await waitFor(() => expect(view.onCreated).toHaveBeenCalledOnce())
-    expect(command).toHaveBeenCalledWith(expect.objectContaining({ title: 'New thread', titleSource: 'default' }))
-  })
-
-  it('keeps the choices and shows the refusal when the provider rejects creation', async () => {
-    const state = fixture([actual])
-    const command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => ({ ...state, error: 'Send or clear your draft before creating another thread.' }))
-    const view = setupManaged(command, state)
-    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Thread name' }), { target: { value: 'Keep me' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create thread' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Send or clear your draft before creating another thread.'))
-    expect(view.onCreated).not.toHaveBeenCalled()
-    expect(screen.getByRole('textbox', { name: 'Thread name' })).toHaveValue('Keep me')
   })
 })

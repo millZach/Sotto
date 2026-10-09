@@ -9,8 +9,10 @@ import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
-import { AgentComposer } from '../../src/renderer/src/agents/AgentView'
-import { agentAssignmentSchema, type AgentCommand, type AgentState } from '../../src/shared/agents'
+import { ThreadComposer } from '../../src/renderer/src/agents/ThreadComposer'
+import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
+import { describeThreads } from '../../src/renderer/src/agents/threadFacts'
+import { type AgentCommand, type AgentState } from '../../src/shared/agents'
 import { RetainedDraftStore } from '../../src/main/agents/retainedDraftStore'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { requestQuestionsDigest } from '../../src/main/agents/requestDrafts'
@@ -18,10 +20,10 @@ import { requestDraftQuestions } from '../../src/shared/requestDrafts'
 
 afterEach(cleanup)
 
-function legacyComposerState(state: AgentState): AgentState {
-  const threadId = state.draftThreadId ?? state.activeThreadId
-  return { ...state, assignments: threadId === null ? [] : [agentAssignmentSchema.parse({ threadId, mode: 'manual', instruction: '',
-    followups: 0, paused: false, seenMessageIds: [], ownMessageIds: [], handledRequestIds: [], lastFailure: '' })] }
+function manualComposer(state: AgentState, command: (request: AgentCommand) => Promise<AgentState | null>, store: ThreadDraftStore, threadId: string) {
+  store.receive(state)
+  const row = describeThreads(state, Date.now()).find(row => row.thread.id === threadId)!
+  return <ThreadComposer row={row} state={state} command={command} store={store} onSend={() => undefined} />
 }
 
 async function remoteDraftFixture() {
@@ -219,7 +221,7 @@ it('keeps a missing recovered image visible and refuses to send the stripped hos
   } finally { writes.mockRestore(); await f.close() }
 })
 
-it('expires a confirmed empty managed revision before a new native question and sends the newly bound answer', async () => {
+it('expires a confirmed empty saved revision before a new native question and sends the newly bound answer', async () => {
   const f = await remoteDraftFixture(), writes = vi.spyOn(f.native, 'execute')
   try {
     await f.policy(true)
@@ -351,7 +353,7 @@ it('keeps a newer off-wire local revision when another client accepts the earlie
   } finally { await f.close() }
 })
 
-it('retains the latest managed edit when a held autosave loses its connection', async () => {
+it('retains the latest manual edit when a held autosave loses its connection', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
   const host = await startHeadlessHost({ dataDirectory: root, port: 0,
     providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
@@ -372,7 +374,7 @@ it('retains the latest managed edit when a held autosave loses its connection', 
     const received: AgentCommand[] = []
     const spy = vi.spyOn(host.service, 'command').mockImplementation(async (...args) => {
       const result = await original(...args)
-      if (args[0].type === 'compose') { received.push(args[0]); await held }
+      if (args[0].type === 'save-thread-draft') { received.push(args[0]); await held }
       return result
     })
     const writes: Promise<unknown>[] = []
@@ -381,29 +383,32 @@ it('retains the latest managed edit when a held autosave loses its connection', 
       writes.push(task)
       return task
     }
-    const view = render(<AgentComposer state={legacyComposerState(client.shell())} command={command} />)
-    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={legacyComposerState(state)} command={command} />) })
+    const store = new ThreadDraftStore(command)
+    const view = render(manualComposer(client.shell(), command, store, thread.id))
+    const unsubscribe = client.subscribe(state => { view.rerender(manualComposer(state, command, store, thread.id)) })
     try {
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix' } })
         await expect.poll(() => received.length).toBe(1)
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Fix the parser and add tests' } })
       })
-      expect(received).toEqual([expect.objectContaining({ type: 'compose', threadId: thread.id, text: 'Fix' })])
+      expect(received).toEqual([expect.objectContaining({ type: 'save-thread-draft', threadId: thread.id, text: 'Fix' })])
       await act(async () => { await client!.close(); await Promise.all(writes) })
       release(); spy.mockRestore()
       await act(async () => { await client!.connect() })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Fix the parser and add tests')
       expect(host.service.shell().assignments).toEqual([])
       expect(host.service.threadDetail(thread.id)!.messages.filter(message => message.role === 'user')).toHaveLength(0)
-    } finally { unsubscribe(); view.unmount(); spy.mockRestore() }
+    } finally { unsubscribe(); store.flushAll(); view.unmount(); spy.mockRestore() }
   } finally { release(); await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
 })
 
-it('keeps successive socket edits active in the managed composer and sends the picked draft', async () => {
+it('keeps successive socket edits active in the manual composer and sends the picked draft', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
+  const native = new E2EAgentHost()
+  const writes = vi.spyOn(native, 'execute')
   const host = await startHeadlessHost({ dataDirectory: root, port: 0,
-    providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+    providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
   let client: SocketHostService | undefined
   try {
     const url = 'http://127.0.0.1:' + host.descriptor!.port
@@ -418,15 +423,17 @@ it('keeps successive socket edits active in the managed composer and sends the p
     const remote = opened.host.threads.find(thread => thread.title === 'Remote thread')!
     expect(host.service.shell()).toMatchObject({ composing: false, draftThreadId: null })
     await client.command({ type: 'select-thread', threadId: remote!.id })
+    await client.command({ type: 'observe-threads', threadIds: [remote.id] })
     const calls: { type: string; error: string | null }[] = []
     const command = async (input: AgentCommand) => { const result = await client!.command(input); calls.push({ type: input.type, error: result.error }); return result }
-    const view = render(<AgentComposer state={legacyComposerState(client.shell())} command={command} />)
-    const unsubscribe = client.subscribe(state => { view.rerender(<AgentComposer state={legacyComposerState(state)} command={command} />) })
+    const store = new ThreadDraftStore(command)
+    const view = render(manualComposer(client.shell(), command, store, remote.id))
+    const unsubscribe = client.subscribe(state => { view.rerender(manualComposer(state, command, store, remote.id)) })
     try {
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'First edit' } })
-        await expect.poll(() => calls.filter(call => call.type === 'compose').length).toBe(1)
-        expect(client!.shell().draft).toBe('First edit')
+        await expect.poll(() => calls.filter(call => call.type === 'save-thread-draft').length).toBe(1)
+        expect(client!.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: remote.id, text: 'First edit' }))
       })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).not.toHaveAttribute('readonly')
       expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument()
@@ -434,20 +441,21 @@ it('keeps successive socket edits active in the managed composer and sends the p
       await act(async () => { await host.service.command({ type: 'compose', text: 'Host draft' }, desktopWindowClient()) })
       await act(async () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Second edit' } })
-        await expect.poll(() => calls.filter(call => call.type === 'compose').length).toBe(2)
-        expect(client!.shell().draft).toBe('Second edit')
+        await expect.poll(() => calls.filter(call => call.type === 'save-thread-draft').length).toBe(2)
+        expect(client!.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: remote.id, text: 'Second edit' }))
       })
       expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Second edit')
       await act(async () => {
-        expect(screen.getByRole('button', { name: 'Send it' })).not.toBeDisabled()
-        fireEvent.click(screen.getByRole('button', { name: 'Send it' }))
-        await expect.poll(() => calls.some(call => call.type === 'send')).toBe(true)
-        expect(calls).toEqual(expect.arrayContaining([{ type: 'send', error: null }]))
-        expect(host.service.threadDetail(remote!.id)!.messages).toContainEqual(expect.objectContaining({ role: 'user', text: 'Second edit' }))
+        expect(screen.getByRole('button', { name: 'Send prompt' })).not.toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+        await expect.poll(() => calls.some(call => call.type === 'manual-send')).toBe(true)
+        expect(calls).toEqual(expect.arrayContaining([{ type: 'manual-send', error: null }]))
+        await expect.poll(() => host.service.shell().deliveries).toContainEqual(expect.objectContaining({ threadId: remote.id, status: 'accepted' }))
+        expect(writes.mock.calls.filter(([command]) => command.type === 'send')).toHaveLength(1)
+        expect(writes.mock.calls.find(([command]) => command.type === 'send')?.[0]).toMatchObject({ type: 'send', text: 'Second edit' })
       })
       expect(host.service.shell()).toMatchObject({ draft: 'Host draft', draftThreadId: local!.id })
       expect(host.service.shell().assignments).toEqual([])
-      expect(host.service.shell().threadDrafts).toContainEqual(expect.objectContaining({ threadId: local!.id, text: 'Host draft' }))
     } finally { unsubscribe(); view.unmount() }
   } finally { await client?.close(); await host.close(); await rm(root, { recursive: true, force: true }) }
 })

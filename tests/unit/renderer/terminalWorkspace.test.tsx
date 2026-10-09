@@ -193,7 +193,7 @@ function mount(initial: WorkspaceTerminal[] = [], options: { readonly mode?: 'th
   const { views, factory } = fakeViews()
   const store = new TerminalWorkspaceStore()
   const terminals = { store, bridge: options.bridge === false ? undefined : fake.bridge, ...(options.lazy ? {} : { viewFactory: factory }), layoutStore: new SplitLayoutStore(), platform: 'win32' }
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={WIDE} terminals={terminals} />)
   return { ...fake, views, store, command }
 }
 

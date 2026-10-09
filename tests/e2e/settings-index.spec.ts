@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSottoWithVoice, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from './support/evidence'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
@@ -32,8 +32,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance')
   test.setTimeout(240_000)
   await mkdir(evidence, { recursive: true })
-  // With voice on: the Agents category shows its voice settings only for the beta's hidden coordinator.
-  const launched = await launchSottoWithVoice('hotkey-conflict')
+  const launched = await launchSotto('hotkey-conflict')
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

@@ -43,7 +43,7 @@ describe('saved answer recovery in its owner view', () => {
     const thread = state.host.threads.find(item => item.id === 'visual-gate')!
     thread.requests = [current]
     vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)
-    render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+    render(<ThreadsView now={E2E_THREADS_NOW} />)
     const recovered = await screen.findByRole('region', { name: 'Saved answer' })
     expect(within(recovered).getByText('Other: Recovered after restart')).toBeVisible()
     expect(within(recovered).queryByRole('button', { name: /send/iu })).toBeNull()

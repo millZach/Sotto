@@ -1,20 +1,20 @@
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, launchSottoWithVoice, openPage } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads } from './support/sottoLaunch'
 
 async function snapshot(page: Page) { return page.evaluate(() => window.sotto!.memory!.get()) }
 
 test('remembers working preferences across restart, retains supersession history and keeps policies separate', async () => {
-  const original = await launchSottoWithVoice()
+  const original = await launchSotto()
   let launched = original
   try {
     let page = launched.page
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, memoryEnabled: true }))
     await page.reload()
-    // Sotto opens on Threads now, so Dictate is a deliberate stop; the questionnaire belongs to the Agents room alone.
     await openPage(page, 'Dictate')
     await expect(page.getByRole('tab', { name: 'Dictate', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toHaveCount(0)
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('link', { name: 'Memory', exact: true }).click()
+    await page.getByRole('button', { name: 'Set working preferences', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toBeFocused()
     expect(await page.getByRole('region', { name: 'Working preferences' }).ariaSnapshot()).toContain('Question 1 of 9')
     await expect(page.locator('.memory-progress')).toHaveAttribute('aria-hidden', 'true')
@@ -58,7 +58,7 @@ test('remembers working preferences across restart, retains supersession history
     await launched.app.close()
     launched = await launchSotto('success', original.userData)
     page = launched.page
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await openThreads(page)
     await expect(page.getByRole('heading', { name: 'How should Sotto keep you in the loop?' })).toHaveCount(0)
     await page.getByRole('link', { name: 'Memory', exact: true }).click()
     const edited = page.getByRole('article', { name: 'Give detailed replies with the reasoning behind each decision.', exact: true })
@@ -88,11 +88,11 @@ test('remembers working preferences across restart, retains supersession history
 })
 
 test('keeps an unsaved correction when another edit supersedes its memory', async () => {
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   try {
     const originalId = await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, memoryEnabled: true })
       const saved = await window.sotto!.memory!.command({ type: 'complete-questionnaire',
         answers: ['communication', 'autonomy', 'verification', 'git', 'agents', 'workflow', 'privacy'].map(topic => ({ topic, content: `${topic}: no preference` })) as { topic: 'communication' | 'autonomy' | 'verification' | 'git' | 'agents' | 'workflow' | 'privacy'; content: string }[], boundaries: [],
       })

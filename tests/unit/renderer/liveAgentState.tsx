@@ -21,7 +21,7 @@ export function threadsStateFixture(): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: E2E_THREADS_NOW })),
+    assignments: [],
     queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(E2E_THREADS_NOW).toISOString(), deferred: false }],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false, threadDrafts: [], deliveries: [], deliveredDrafts: [],

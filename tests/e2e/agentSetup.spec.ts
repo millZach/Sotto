@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
-import { closeSotto, launchSottoWithVoice } from './support/sottoLaunch'
+import { closeSotto, launchSotto } from './support/sottoLaunch'
 
 test('failed connection leaves one actionable error and allows a successful retry', async () => {
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   try {
     await page.getByRole('button', { name: 'Continue' }).click()
@@ -12,8 +12,7 @@ test('failed connection leaves one actionable error and allows a successful retr
     await page.getByRole('button', { name: 'Continue' }).click()
     await page.getByRole('button', { name: 'Continue' }).click()
     await page.getByRole('button', { name: /finish setup/i }).click()
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
+    await page.getByRole('tab', { name: 'Threads', exact: true }).click()
     const error = 'Codex could not be found. Install it and sign in, then reconnect.'
     await page.evaluate(async message => {
       await (globalThis as unknown as { sottoE2E: SottoE2EBridge }).sottoE2E.agentEvent?.({ type: 'connect-reject', threadId: '', text: message })

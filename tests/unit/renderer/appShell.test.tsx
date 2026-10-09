@@ -7,12 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell, roomFor } from '../../../src/renderer/src/components/AppShell'
 
-// The switch asks settings whether the voice coordinator is on; the beta ships
-// it off, so the default here is off and one test turns it on.
-const voice = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({
-  useVoiceCoordinatorEnabled: () => voice.enabled,
-}))
 // Memory is off for the beta the same way; its page link comes and goes with it.
 const memory = vi.hoisted(() => ({ enabled: false }))
 vi.mock('../../../src/renderer/src/state/memoryFeature', () => ({
@@ -21,7 +15,6 @@ vi.mock('../../../src/renderer/src/state/memoryFeature', () => ({
 
 afterEach(() => {
   cleanup()
-  voice.enabled = false
   memory.enabled = false
 })
 
@@ -105,18 +98,6 @@ describe('AppShell', () => {
     expect(screen.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('tabindex', '0')
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
-  })
-
-  it('adds the Agents room to the switch only when the voice coordinator is on', () => {
-    voice.enabled = true
-    render(<AppShell {...chrome} navigation="agents"><p /></AppShell>)
-    const tablist = screen.getByRole('tablist', { name: 'Mode' })
-    expect(tablist.querySelectorAll('[role="tab"]')).toHaveLength(3)
-    for (const name of ['Dictate', 'Agents', 'Threads']) {
-      expect(screen.getByRole('tab', { name })).toBeVisible()
-    }
-    expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('tabindex', '0')
   })
 
   it('moves between the rooms with the pointer and the arrow, Home and End keys', async () => {
@@ -208,7 +189,6 @@ describe('AppShell', () => {
 
   it('maps pages to the room they light', () => {
     expect(roomFor('home')).toBe('dictate')
-    expect(roomFor('agents')).toBe('agents')
     expect(roomFor('threads')).toBe('threads')
     expect(roomFor('memory')).toBe('threads')
     expect(roomFor('history')).toBeNull()
@@ -251,12 +231,12 @@ describe('AppShell', () => {
 
   it('keeps the room mounted when a page hands the window over and another takes the strip back', () => {
     // The memory surface lives inside the room and remembers a dismissed questionnaire only while mounted,
-    // so the Threads page (page layout) and the Agents room (strip layout) must share one room element.
+    // so the Threads page (page layout) and the Memory page (strip layout) must share one room element.
     const mounts = vi.fn()
     function Room(): React.ReactNode { React.useEffect(() => { mounts() }, []); return <p>room</p> }
     const { rerender } = render(<AppShell {...chrome} navigation="threads" layout="page"><Room /></AppShell>)
     expect(screen.queryByRole('tablist', { name: 'Mode' })).not.toBeInTheDocument()
-    rerender(<AppShell {...chrome} navigation="agents" layout="strip"><Room /></AppShell>)
+    rerender(<AppShell {...chrome} navigation="memory" layout="strip"><Room /></AppShell>)
     expect(screen.getByRole('tablist', { name: 'Mode' })).toBeVisible()
     rerender(<AppShell {...chrome} navigation="threads" layout="page"><Room /></AppShell>)
     expect(mounts).toHaveBeenCalledTimes(1)

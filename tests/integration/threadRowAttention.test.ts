@@ -34,14 +34,14 @@ for (const kind of ['question', 'permission'] as const) it(`says a Claude thread
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === threadId)?.requests.map(request => request.kind),
       { message: `the ${kind} never reached thread.requests, so the composer has nothing to show` }).toEqual([kind])
     const state = control.get()
+    const request = state.host.threads.find(thread => thread.id === threadId)!.requests[0]!
     expect(state.assignments.some(assignment => assignment.threadId === threadId), 'the thread is one you started, not one Sotto manages').toBe(false)
     // The coordinator's queue is not where the row learns this: it stays empty for a thread Sotto does not manage.
     expect(state.queue.filter(item => item.threadId === threadId)).toEqual([])
     expect(row(state), `thread.requests holds the ${kind} and the composer answers it, but the sidebar row does not say so`).toMatchObject(kind === 'question'
-      ? { state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', request: { kind, threadId } }
-      : { state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval', request: { kind, threadId } })
+      ? { state: 'needs', waitingFor: 'question', stateLabel: 'Needs your answer', request: { kind, requestId: request.id, text: request.text } }
+      : { state: 'needs', waitingFor: 'approval', stateLabel: 'Needs your approval', request: { kind, requestId: request.id, text: request.text } })
 
-    const request = state.host.threads.find(thread => thread.id === threadId)!.requests[0]!
     const choice = request.permissionChoices?.find(entry => entry.kind === 'allow-once')
     await control.command(kind === 'question'
       ? { type: 'answer', threadId, requestId: request.id, answer: '', questionAnswers: { '0': { optionIds: [], text: 'Blue' } } }

@@ -41,11 +41,6 @@ for (const [id, category, state] of [
   ['dictate-pasted', 'dictate', 'success-pasted'],
   ['dictate-processing', 'dictate', 'processing'],
   ['dictate-error', 'dictate', 'error'],
-  ['agents-room', 'agents', 'overview'],
-  ['agents-wake', 'agents', 'wake'],
-  ['agents-listening', 'agents', 'listening'],
-  ['agents-attention', 'agents', 'attention'],
-  ['agents-session', 'agents', 'session'],
   ['history-populated', 'history', 'populated-feedback'],
   ['history-empty', 'history', 'empty-feedback'],
   ['history-search', 'history', 'search'],
@@ -81,14 +76,13 @@ for (const [id, category, state, focusTarget] of [
 ]) add({ id, category, state, focusTarget })
 
 // The light room repeats every surface family, its feedback and error states,
-// the orb, native selects and provider controls.
+// native selects and provider controls.
 for (const [id, category, state] of [
   ['onboarding-step-3-openrouter-light', 'onboarding', 'openrouter-key'],
   ['dictate-ready-light', 'dictate', 'ready'],
   ['dictate-listening-light', 'dictate', 'listening'],
   ['dictate-pasted-light', 'dictate', 'success-pasted'],
   ['dictate-error-light', 'dictate', 'error'],
-  ['agents-room-light', 'agents', 'overview'],
   ['history-populated-light', 'history', 'populated-feedback'],
   ['settings-feedback-light', 'settings', 'saved-feedback'],
   ['settings-providers-light', 'settings', 'providers'],
@@ -130,7 +124,6 @@ for (const theme of DESIGN_CAPTURE_APP_THEMES) {
 for (const theme of DESIGN_CAPTURE_APP_THEMES) {
   for (const [surface, state] of [
     ['dictate', 'dictate-ready'],
-    ['agents', 'agents-overview'],
     ['settings', 'settings-full'],
   ]) add({ id: `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-${surface}-${theme}`, category: 'width', state: `${state}-${DESIGN_CAPTURE_MINIMUM_WIDTH}`, theme })
 }

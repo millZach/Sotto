@@ -5,11 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { designThreadsFixture, E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { AgentView } from '../../../src/renderer/src/agents/AgentView'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, groupThreads, listThreads, providerKey } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, openSidebarFolders } from './liveAgentState'
-import { paneMenuItem } from './paneMenu'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { draftThreads } from '../../../src/renderer/src/agents/draftThreads'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
@@ -18,11 +16,6 @@ import type { AgentAttachmentStageRequest } from '../../../src/shared/agents'
 import { agentContextFixture } from '../../fixtures/agentContext'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
-
-// The coordinator is hidden for the beta (ADR-0012), and ThreadsView is rendered here without an
-// AppProvider, so the flag is stated per test: off is the beta, on is what a managed thread needs.
-const voice = vi.hoisted(() => ({ enabled: false }))
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 
@@ -37,7 +30,7 @@ function stateFixture(): AgentState {
       capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true },
       models: [...fixture.models], projects: [...fixture.projects], threads: structuredClone(fixture.threads) as AgentState['host']['threads'],
     },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: NOW })),
+    assignments: [],
     queue: [{ id: 'visual-gate:visual-gate-permission:permission', threadId: 'visual-gate', kind: 'permission', text: 'Run a command in workshop\nnpm test -- --run tests/unit/agents', requestId: 'visual-gate-permission', createdAt: new Date(NOW).toISOString(), deferred: false }],
     activeThreadId: 'visual-gate', activeProjectId: 'workshop',
     draft: '', draftThreadId: null, draftRequestId: null, composing: false,
@@ -57,14 +50,13 @@ function connection(state: AgentState | null, command = vi.fn(async () => state)
 }
 
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
-  const onOpenAgents = vi.fn()
   vi.mocked(useAgents).mockReturnValue(connection(state, command))
-  const view = render(<ThreadsView onOpenAgents={onOpenAgents} now={NOW} />)
-  return { ...view, command, onOpenAgents }
+  const view = render(<ThreadsView now={NOW} />)
+  return { ...view, command }
 }
 
 beforeEach(() => {
-  vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap(); voice.enabled = false
+  vi.mocked(useAgents).mockReset(); connectionStores = new WeakMap()
   for (const thread of stateFixture().host.threads) requestAnswerStore.prune(thread.id, [])
 })
 afterEach(cleanup)
@@ -78,19 +70,19 @@ describe('thread grouping and states from Sotto state', () => {
     ])
   })
 
-  it('derives the state of a row from the queue, the assignment and the thread status, never from the provider', () => {
+  it('derives the state of a row from requests and the thread status, never from the provider', () => {
     const state = stateFixture()
     const rows = describeThreads(state, NOW)
     const byTitle = (title: string) => rows.find(entry => entry.thread.title === title)!
-    expect(byTitle('Visual gate flake')).toMatchObject({ state: 'needs', stateLabel: 'Needs your approval', waitingFor: 'approval', provider: 'Claude', providerKey: 'claude', management: 'managed', attention: true })
+    expect(byTitle('Visual gate flake')).toMatchObject({ state: 'needs', stateLabel: 'Needs your approval', waitingFor: 'approval', provider: 'Claude', providerKey: 'claude', attention: true })
     expect(byTitle('Visual gate flake').request?.requestId).toBe('visual-gate-permission')
     expect(byTitle('Footer links')).toMatchObject({ state: 'working', stateLabel: 'Working', provider: 'Codex', providerKey: 'codex', attention: false })
-    expect(byTitle('Streaming WAV stall')).toMatchObject({ state: 'stopped', stateLabel: 'Stopped', management: 'stopped' })
-    expect(byTitle('Streaming WAV stall').sentence).toMatch(/^Stopped at the follow-up limit\./u)
+    expect(byTitle('Streaming WAV stall')).toMatchObject({ state: 'needs', stateLabel: 'Needs attention' })
+    expect(byTitle('Streaming WAV stall').sentence).toContain('playback test')
     expect(byTitle('Release notes 1.4')).toMatchObject({ state: 'done', stateLabel: 'Settled' })
-    expect(byTitle('Notes cleanup')).toMatchObject({ state: 'done', management: 'none', assignment: undefined, providerKey: 'grok' })
+    expect(byTitle('Notes cleanup')).toMatchObject({ state: 'done', providerKey: 'grok' })
     // The card under an open row is your side of the thread: the sentence already carries the provider's.
-    expect(byTitle('Weekly note').lastMessage).toMatchObject({ who: 'Sotto', text: expect.stringMatching(/^It is Friday\./u) })
+    expect(byTitle('Weekly note').lastMessage).toMatchObject({ who: 'You', text: expect.stringMatching(/^It is Friday\./u) })
     expect(byTitle('Footer links').lastMessage).toMatchObject({ who: 'You', at: Date.UTC(2026, 6, 12, 19, 38) })
     // A thread with no user message yet has no card.
     const weekly = state.host.threads.find(entry => entry.id === 'weekly-note')!
@@ -113,43 +105,18 @@ describe('thread grouping and states from Sotto state', () => {
     expect(visual).toMatchObject({ provider: 'Acme', providerKey: 'other' })
   })
 
-  it('ranks a manual takeover above a stale stop so the row never reads as stopped once you took over', () => {
-    const state = stateFixture()
-    const taken = state.assignments.find(entry => entry.threadId === 'wav-stall')!
-    taken.mode = 'manual'
-    const row = describeThreads(state, NOW).find(entry => entry.thread.id === 'wav-stall')!
-    expect(row).toMatchObject({ state: 'done', stateLabel: 'Done', management: 'manual' })
-    expect(row.sentence).not.toMatch(/stopped/iu)
-    expect(row.facts.rest).toMatch(/^You took over in Codex; Sotto is watching, 5 of 5 follow-ups used\./u)
-  })
-
   it('lists attention rows regardless of the query and matches the whole row otherwise', () => {
     const rows = describeThreads(stateFixture(), NOW)
     const titles = (entries: readonly { readonly thread: { readonly title: string } }[]) => entries.map(entry => entry.thread.title)
     const sotto = listThreads(rows, 'sotto-site')
     expect(titles(sotto.matching)).toEqual(['Footer links'])
     expect(titles(sotto.listed)).toEqual(['Visual gate flake', 'Footer links'])
-    // The facts line and the last message text count as part of the row.
-    expect(titles(listThreads(rows, 'typed prompt').matching)).toEqual(['Weekly note', 'Grok voice previews', 'Thread routing'])
+    // The model and the last message text count as part of the row.
     expect(titles(listThreads(rows, 'GPT-5.4').matching)).toEqual(['Footer links', 'Release notes 1.4', 'Streaming WAV stall'])
     expect(titles(listThreads(rows, 'Tidy the notes folder').matching)).toEqual(['Notes cleanup'])
     expect(titles(listThreads(rows, 'deploy').matching)).toEqual([])
     expect(titles(listThreads(rows, 'deploy').listed)).toEqual(['Visual gate flake'])
     expect(listThreads(rows, '  ').listed).toHaveLength(9)
-  })
-
-  it('treats a blocked queue item as needing you and a user pause as paused, and a manual assignment as yours', () => {
-    const state = stateFixture()
-    state.host.threads.find(thread => thread.id === 'release-notes')!.settledOverride = 'active'
-    state.queue.push({ id: 'release-notes:release-notes-2:blocked', threadId: 'release-notes', kind: 'blocked', text: 'Scope changed. Decide whether to keep going.', createdAt: new Date(NOW).toISOString(), deferred: false })
-    const paused = state.assignments.find(entry => entry.threadId === 'grok-previews')!
-    paused.paused = true
-    const manual = state.assignments.find(entry => entry.threadId === 'thread-routing')!
-    manual.mode = 'manual'
-    const rows = describeThreads(state, NOW)
-    expect(rows.find(entry => entry.thread.id === 'release-notes')).toMatchObject({ state: 'needs', sentence: 'Scope changed. Decide whether to keep going.', request: undefined })
-    expect(rows.find(entry => entry.thread.id === 'grok-previews')).toMatchObject({ state: 'done', stateLabel: 'Paused', management: 'paused' })
-    expect(rows.find(entry => entry.thread.id === 'thread-routing')).toMatchObject({ management: 'manual' })
   })
 })
 
@@ -167,7 +134,7 @@ describe('ThreadsView workspace', () => {
     const state = stateFixture(); state.assignments = []; state.activeThreadId = 'grok-previews'
     const live = liveAgentState(state)
     vi.mocked(useAgents).mockImplementation(live.useLive)
-    render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    render(<ThreadsView now={NOW} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Show this pending message immediately.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Show this pending message immediately.')
@@ -199,7 +166,7 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'My next prompt' } })
     state.host.threads.find(thread => thread.id === 'grok-previews')!.status = 'running'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('My next prompt')
     // A running thread queues the next prompt instead of refusing it.
@@ -236,7 +203,7 @@ describe('ThreadsView workspace', () => {
       await screen.findAllByRole('img', { name: 'same-name.png' })
     }
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(edited ? 'And review this too' : ''))
     expect(screen.queryAllByRole('img', { name: 'same-name.png' })).toHaveLength(edited ? 1 : 0)
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
@@ -254,12 +221,12 @@ describe('ThreadsView workspace', () => {
     fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'moving.png', { type: 'image/png' })] } })
     // The user moves on before the screenshot has been read.
     state.activeThreadId = 'release-notes'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await waitFor(() => expect(drafts.draft('grok-previews').attachments).toEqual([expect.objectContaining({ name: 'moving.png' })]))
     expect(drafts.draft('release-notes').attachments).toEqual([])
     expect(screen.queryByRole('img', { name: 'moving.png' })).not.toBeInTheDocument()
     state.activeThreadId = 'grok-previews'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     // The chip names the image while its thumbnail is drawn, then shows the thumbnail under the same name.
     await waitFor(() => expect(screen.getByRole('img', { name: 'moving.png' })).toBeVisible())
   })
@@ -284,9 +251,9 @@ describe('ThreadsView workspace', () => {
       fireEvent.change(screen.getByRole('textbox', { name: /prompt/i }), { target: { value: 'Look at this' } })
       fireEvent.change(screen.getByLabelText('Screenshot files'), { target: { files: [new File([new Uint8Array(64)], 'moving.png', { type: 'image/png' })] } })
       state.activeThreadId = 'release-notes'
-      rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+      rerender(<ThreadsView now={NOW} />)
       state.activeThreadId = 'grok-previews'
-      rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+      rerender(<ThreadsView now={NOW} />)
       // Back on the thread with the screenshot still being read: the text alone must not go out without it.
       expect(await screen.findByText('Adding screenshots...')).toBeVisible()
       expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
@@ -297,7 +264,7 @@ describe('ThreadsView workspace', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('reconciles a late manual receipt while a managed thread has unmounted its composer', async () => {
+  it('reconciles a late manual receipt after leaving its composer', async () => {
     const state = stateFixture(); state.activeThreadId = 'grok-previews'
     state.assignments = state.assignments.filter(assignment => assignment.threadId === 'footer-links')
     let draftId = ''
@@ -312,12 +279,12 @@ describe('ThreadsView workspace', () => {
     await screen.findByRole('button', { name: 'Check again' })
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     state.activeThreadId = 'footer-links'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument()
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, activeThreadId: 'grok-previews', deliveredDrafts: [{ threadId: 'grok-previews', draftId }] }, command))
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(''))
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
     expect(command.mock.calls.filter(([request]) => (request as AgentCommand).type === 'manual-send')).toHaveLength(1)
@@ -331,7 +298,7 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading messages')
     expect(screen.queryByText('What is next for this thread?')).not.toBeInTheDocument()
     thread.historyStatus = 'error'; thread.historyError = 'Connection interrupted'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted')
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading messages' }))
     expect(command).toHaveBeenCalledWith({ type: 'refresh' })
@@ -397,24 +364,11 @@ describe('ThreadsView workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /Settled 4/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Release notes 1.4' }))
     state.activeThreadId = 'release-notes'
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await screen.findByRole('heading', { name: 'Release notes 1.4' })
     expect(screen.getByLabelText('Thread transcript')).toHaveTextContent('Release notes are in the draft release.')
     expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'select-thread', threadId: 'release-notes' })
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
-  })
-
-  it('follows the coordinator selection and protects a saved draft from another thread', () => {
-    voice.enabled = true
-    const state = stateFixture()
-    const view = renderThreads(state)
-    state.activeThreadId = 'footer-links'
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    expect(screen.getByRole('heading', { name: 'Footer links' })).toBeVisible()
-    state.draft = 'Bound to the first thread'; state.draftThreadId = 'visual-gate'
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    expect(screen.queryByRole('textbox', { name: 'Prompt' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open draft thread' })).toBeVisible()
   })
 
   it('keeps an unconfirmed manual prompt in its message, with the composer empty and blocked', async () => {
@@ -430,9 +384,8 @@ describe('ThreadsView workspace', () => {
   })
 
   it('offers New thread without submitting or assigning any work', () => {
-    const { command, onOpenAgents } = renderThreads(stateFixture())
+    const { command } = renderThreads(stateFixture())
     fireEvent.click(screen.getByRole('button', { name: 'New thread' }))
-    expect(onOpenAgents).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: 'New thread' })).toBeVisible()
     expect(command).not.toHaveBeenCalled()
   })
@@ -465,7 +418,7 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Install Codex and sign in before connecting this provider.')
     expect(screen.getByRole('button', { name: 'Connect providers' })).toBeEnabled()
     state.connection = 'connecting'; state.error = null
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('button', { name: 'Connecting...' })).toBeDisabled()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -485,8 +438,6 @@ describe('ThreadsView workspace', () => {
     ['Allow', 'Approved', true],
     ['Deny', 'Denied', false],
   ] as const)('sends %s once and keeps permission decisions disabled while busy', async (choice, answer, approved) => {
-    // With the coordinator on, the busy lane must also hold the pane menu's management item.
-    voice.enabled = true
     const state = stateFixture()
     const { command, rerender } = renderThreads(state)
     fireEvent.click(screen.getByRole('button', { name: choice }))
@@ -497,9 +448,9 @@ describe('ThreadsView workspace', () => {
     expect(command).toHaveBeenCalledTimes(1)
     await act(async () => { await Promise.resolve() })
     vi.mocked(useAgents).mockReturnValue(connection({ ...state, globalLaneBusy: true }, command))
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled()
-    expect(paneMenuItem(document.body, 'Pause managing')).toBeDisabled()
+    expect(screen.queryByRole('menuitem', { name: /manag/i })).toBeNull()
   })
 
   it('writes an answer in the selected workspace without changing pages', () => {
@@ -507,11 +458,10 @@ describe('ThreadsView workspace', () => {
     state.assignments = []
     state.queue[0] = { ...state.queue[0]!, kind: 'question', text: 'Which direction?' }
     state.host.threads.find(thread => thread.id === state.activeThreadId)!.requests = [{ id: 'visual-gate-permission', kind: 'question', text: 'Which direction?', options: [] }]
-    const { command, onOpenAgents } = renderThreads(state)
+    const { command } = renderThreads(state)
     fireEvent.click(screen.getByRole('button', { name: 'Write an answer' }))
     expect(screen.getByRole('textbox', { name: 'Your answer' })).toHaveFocus()
     expect(command).not.toHaveBeenCalled()
-    expect(onOpenAgents).not.toHaveBeenCalled()
   })
 })
 
@@ -534,7 +484,7 @@ describe('a thread created without a round trip', () => {
       return request.type === 'create-thread' ? creating : state
     })
     const observed: string[][] = []
-    const view = (): React.ReactElement => <ThreadsView onOpenAgents={vi.fn()} now={NOW} onPaneThreadsChange={ids => observed.push([...ids])} />
+    const view = (): React.ReactElement => <ThreadsView now={NOW} onPaneThreadsChange={ids => observed.push([...ids])} />
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
     const { rerender } = render(view())
     createThread()
@@ -543,7 +493,7 @@ describe('a thread created without a round trip', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toBeEnabled()
     const request = await waitFor(() => { const found = createRequest(command); expect(found).toBeDefined(); return found! })
-    expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', managed: false, threadId: expect.any(String) })
+    expect(request).toMatchObject({ type: 'create-thread', projectId: 'workshop', title: 'New thread', titleSource: 'default', threadId: expect.any(String) })
     const threadId = request.threadId!
     fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Start on the failing test.' } })
     const arrived: AgentState['host']['threads'][number] = { id: threadId, projectId: 'workshop', title: 'New thread', modelId: 'claude:sonnet',
@@ -614,7 +564,7 @@ describe('a thread created without a round trip', () => {
       const reusedState: AgentState = { ...state, activeThreadId: 'reusable', host: { ...state.host, threads: [...state.host.threads, { ...newThread, id: 'reusable', titleSource: 'default' }] } }
       act(() => store.edit('reusable', { text: 'Already here.' }))
       vi.mocked(useAgents).mockReturnValue(connection(reusedState, command))
-      view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+      view.rerender(<ThreadsView now={NOW} />)
     }
     createThread()
     await screen.findByRole('heading', { name: 'New thread' })
@@ -641,7 +591,7 @@ describe('a thread created without a round trip', () => {
     const creating = new Promise<AgentState | null>(resolve => { settle = resolve })
     const command = vi.fn(async (...args: unknown[]) => (args[0] as AgentCommand).type === 'create-thread' ? creating : state)
     vi.mocked(useAgents).mockReturnValue(connection(state, command))
-    const { rerender } = render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    const { rerender } = render(<ThreadsView now={NOW} />)
     createThread()
     await screen.findByRole('heading', { name: 'New thread' })
     const threadId = createRequest(command)!.threadId!
@@ -649,7 +599,7 @@ describe('a thread created without a round trip', () => {
     const published = { ...state, activeThreadId: threadId, host: { ...state.host, threads: [...state.host.threads, arrived] } }
     const connected = connection(published, command)
     vi.mocked(useAgents).mockReturnValue(connected)
-    rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    rerender(<ThreadsView now={NOW} />)
     await waitFor(() => expect(draftThreads.get()).toEqual([]))
     connected.threadDrafts.edit(threadId, { text: 'Already sent to the live thread.' })
     connected.threadDrafts.submit(threadId, NOW)
@@ -749,25 +699,14 @@ describe('Ctrl+Shift+N opens a new thread (issue #347)', () => {
   })
 })
 
-describe('Agents room link', () => {
-  it('offers All threads beside the room controls', () => {
-    const state = stateFixture()
-    const onOpenThreads = vi.fn()
-    vi.mocked(useAgents).mockReturnValue(connection(state))
-    render(<AgentView onOpenThreads={onOpenThreads} />)
-    fireEvent.click(screen.getByRole('button', { name: 'All threads' }))
-    expect(onOpenThreads).toHaveBeenCalledTimes(1)
-  })
-})
 
 describe('sidebar foot rooms', () => {
-  it('offers Dictate and Threads for the beta, and Agents only with the voice coordinator on', () => {
+  it('offers Dictate and Threads for the beta, without an Agents room', () => {
     const view = renderThreads(stateFixture())
     const rooms = () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab').map(tab => tab.textContent)
     expect(rooms()).toEqual(['Dictate', 'Threads'])
-    voice.enabled = true
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
-    expect(rooms()).toEqual(['Dictate', 'Agents', 'Threads'])
+    view.rerender(<ThreadsView now={NOW} />)
+    expect(rooms()).toEqual(['Dictate', 'Threads'])
   })
 })
 
@@ -788,16 +727,16 @@ describe('monitoring in the thread composer', () => {
     const creature = view.container.querySelector('.thread-monitor__creature')
     expect(creature).not.toBeNull()
     thread.monitoring[0]!.label = 'Waiting for build completion'
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(view.container.querySelector('.thread-monitor__creature')).toBe(creature)
     expect(screen.getByText('Waiting for build completion')).toBeVisible()
     thread.monitoring = []
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(view.container.querySelector('.thread-monitor')).toBeNull()
     expect(prompt).toHaveValue('Keep my draft')
   })
 
-  it.each(['unconfirmed', 'disconnected', 'settled', 'archived', 'error', 'permission', 'question', 'blocked'] as const)(
+  it.each(['unconfirmed', 'disconnected', 'settled', 'archived', 'error', 'permission', 'question'] as const)(
     'hides the creature for %s even if old evidence is present', reason => {
       const state = stateFixture(); state.assignments = []; state.activeThreadId = 'footer-links'
       const thread = state.host.threads.find(item => item.id === 'footer-links')!
@@ -807,7 +746,6 @@ describe('monitoring in the thread composer', () => {
       if (reason === 'settled') thread.settledOverride = 'settled'
       if (reason === 'archived') thread.archivedAt = new Date(NOW).toISOString()
       if (reason === 'error') thread.status = 'error'
-      if (reason === 'blocked') state.queue.push({ id: 'monitor-blocked', threadId: thread.id, kind: 'blocked', text: 'Your decision is needed.', createdAt: new Date(NOW).toISOString(), deferred: false })
       if (reason === 'permission' || reason === 'question') thread.requests = [{ id: 'monitor-attention', kind: reason, text: 'Your answer is needed.', options: [] }]
       const view = renderThreads(state)
       expect(view.container.querySelector('.thread-monitor')).toBeNull()
@@ -852,11 +790,11 @@ describe('background work in the thread composer', () => {
     expect(ornament(view)!.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Agent 1\nAgent 2\nAgent 3')
     expect(ornament(view)!.querySelectorAll('.thread-monitor__mini')).toHaveLength(3)
     thread.backgroundWork = work(9)
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)!.querySelector('.thread-monitor__status')).toHaveTextContent('Working · 9 agents')
     expect(ornament(view)!.querySelectorAll('.thread-monitor__mini')).toHaveLength(6)
     thread.backgroundWork = []
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)).toBeNull()
   })
 
@@ -873,10 +811,10 @@ describe('background work in the thread composer', () => {
     expect(view.container.querySelectorAll('.thread-monitor')).toHaveLength(1)
     expect(ornament(view)!.dataset.ornament).toBe('monitoring')
     thread.monitoring = []
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)!.dataset.ornament).toBe('working')
     thread.backgroundWork = []
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)!.dataset.ornament).toBe('held')
   })
 
@@ -894,11 +832,11 @@ describe('background work in the thread composer', () => {
     expect(node.querySelector('.thread-monitor__label')).toHaveTextContent('Run all CI gates')
     expect(node.querySelector('.thread-monitor__status')).toHaveTextContent('Waiting · 4m 12s')
     thread.backgroundWork = [command('Run all CI gates'), command('Watch the dev server', 1)]
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)!.querySelector('.thread-monitor__status')).toHaveTextContent('Waiting · 2 commands · 4m 12s')
     expect(ornament(view)!.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Run all CI gates\nWatch the dev server')
     thread.backgroundWork = []
-    view.rerender(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+    view.rerender(<ThreadsView now={NOW} />)
     expect(ornament(view)).toBeNull()
   })
 
@@ -923,7 +861,7 @@ describe('background work in the thread composer', () => {
     expect(node.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Agent 1\nAgent 2\nRun all CI gates')
   })
 
-  it.each(['disconnected', 'settled', 'archived', 'error', 'permission', 'question', 'blocked'] as const)(
+  it.each(['disconnected', 'settled', 'archived', 'error', 'permission', 'question'] as const)(
     'hides the working creature for %s even though the work is still reported', reason => {
       const { state, thread } = watched()
       thread.backgroundWork = work(2)
@@ -931,7 +869,6 @@ describe('background work in the thread composer', () => {
       if (reason === 'settled') thread.settledOverride = 'settled'
       if (reason === 'archived') thread.archivedAt = new Date(NOW).toISOString()
       if (reason === 'error') thread.status = 'error'
-      if (reason === 'blocked') state.queue.push({ id: 'working-blocked', threadId: thread.id, kind: 'blocked', text: 'Your decision is needed.', createdAt: new Date(NOW).toISOString(), deferred: false })
       if (reason === 'permission' || reason === 'question') thread.requests = [{ id: 'working-attention', kind: reason, text: 'Your answer is needed.', options: [] }]
       const view = renderThreads(state)
       expect(ornament(view)).toBeNull()

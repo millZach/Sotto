@@ -222,7 +222,6 @@ export class ThreadDraftStore {
   private readonly returnedPrompts = new Set<string>()
   private readonly legacyIds = new Map<string, string>()
   private readonly pendingSaves = new Map<string, Set<Promise<void>>>()
-  private readonly handoffs = new Map<string, Promise<AgentState | null>>()
   private readonly reads = new Map<string, ScreenshotReads>()
   private readonly answers = new Map<string, ComposerAnswerState>()
   private submissionList: readonly Submission[] = []
@@ -542,39 +541,6 @@ export class ThreadDraftStore {
     const saves = this.pendingSaves.get(threadId) ?? new Set<Promise<void>>()
     this.pendingSaves.set(threadId, saves); saves.add(task)
     void task.finally(() => { saves.delete(task); if (!saves.size) this.pendingSaves.delete(threadId) })
-    return task
-  }
-
-  /** Flush the latest revision and all earlier saves before the explicit Manage/Resume action.
-   * Callers await success before focusing the managed composer; null retains local edits and saveError.
-   * Keep competing composer/management actions disabled for this thread while this promise is pending.
-   */
-  handoffToManagement(threadId: string, action: 'assign' | 'resume'): Promise<AgentState | null> {
-    const existing = this.handoffs.get(threadId)
-    if (existing) return existing
-    const task = (async (): Promise<AgentState | null> => {
-      try {
-        for (;;) {
-          const revision = this.draft(threadId).draftId
-          await this.flushPending(threadId)
-          await Promise.all(this.pendingSaves.get(threadId) ?? [])
-          if (this.draft(threadId).draftId !== revision) continue
-          if (!this.entries.get(threadId)?.saved && revision) throw new Error(this.snapshot(threadId).saveError ?? SAVE_ERROR)
-          const result = await this.command({ type: action, threadId, expectedDraftId: revision || null })
-          if (result === null || result.error) throw new Error(result?.error ?? 'Management handoff could not be confirmed. Your draft is retained.')
-          if (!result.assignments.some(item => item.threadId === threadId && item.mode === 'managed')) throw new Error('Management did not take this thread. Your draft is retained.')
-          this.receive(result)
-          return result
-        }
-      } catch (error) {
-        const entry = this.entries.get(threadId) ?? { draft: EMPTY, observed: true, saved: true, saving: null, error: null, superseded: [] }
-        entry.error = error instanceof Error ? error.message : SAVE_ERROR
-        this.entries.set(threadId, entry); this.emit(new Set([threadId]))
-        return null
-      }
-    })()
-    this.handoffs.set(threadId, task)
-    void task.finally(() => this.handoffs.delete(threadId))
     return task
   }
 

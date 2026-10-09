@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 
 const ARTIFACTS = 'artifacts/effort-slider'
 
@@ -45,7 +45,7 @@ async function endlessAnimations(page: Page): Promise<number> {
 test('the effort card previews a drag, saves on release, plays the arrival at the top and dresses the composer, across window sizes', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -226,7 +226,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
 test('the card holds its height through the levels and keeps a gradient colourway’s word painted while the arrival plays', async () => {
   test.setTimeout(120_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -309,7 +309,7 @@ test('the card holds its height through the levels and keeps a gradient colourwa
 test('Settings → Appearance offers the effort colourways, paints the pick at once and carries it to the composer', async () => {
   test.setTimeout(90_000)
   await mkdir(ARTIFACTS, { recursive: true })
-  const launched = await launchSottoWithVoice()
+  const launched = await launchSotto()
   const { page } = launched
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

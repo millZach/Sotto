@@ -1,4 +1,4 @@
-import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentAssignment, type AgentModel, type AgentProject, type AgentQueueItem, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
@@ -6,7 +6,7 @@ const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
 
 /** What the Threads page says a thread is doing; every value derives from Sotto's own state. */
-export type ThreadRowState = 'needs' | 'working' | 'stopped' | 'done'
+export type ThreadRowState = 'needs' | 'working' | 'done'
 
 /** The badge tint for a provider; `other` is the neutral badge for a provider Sotto has no colour for. */
 export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'other'
@@ -17,17 +17,16 @@ export interface ThreadLastMessage {
   readonly text: string
 }
 
-export interface ThreadFactsLine {
-  /** "Started 12:32 pm from a voice prompt." or empty when the assignment has no start time. */
-  readonly lead: string
-  readonly rest: string
+export interface ThreadRequestView {
+  readonly requestId: string
+  readonly kind: 'question' | 'permission'
+  readonly text: string
 }
 
 export interface ThreadRow {
   readonly thread: AgentThread
   readonly project: AgentProject | undefined
   readonly model: AgentModel | undefined
-  readonly assignment: AgentAssignment | undefined
   /** "Claude, in workshop": the model's provider name, or the connected provider when the model is unknown. */
   readonly provider: string
   readonly providerKey: ProviderKey
@@ -43,9 +42,9 @@ export interface ThreadRow {
   readonly stateLabel: string
   /** What a row that needs you is waiting for: a permission to allow or deny, or a question to answer. */
   readonly waitingFor: 'approval' | 'question' | null
-  /** What the row is waiting on you to decide: the attention queue's item, or else the thread's first pending request in its shape. */
-  readonly request: AgentQueueItem | undefined
-  /** In the attention queue: a pending request or any queue entry. Search never hides these rows. */
+  /** The first pending request, with permissions ahead of questions. */
+  readonly request: ThreadRequestView | undefined
+  /** A pending request. Search never hides these rows. */
   readonly attention: boolean
   /** One sentence of what is happening now. */
   readonly sentence: string
@@ -55,12 +54,8 @@ export interface ThreadRow {
   readonly when: string
   /** When the run on screen started, for the sidebar's live clock; NaN when the thread is not working. */
   readonly workingSince: number
-  /** The facts line under an open row: how it started, who is managing, follow-ups, the model. */
-  readonly facts: ThreadFactsLine
   /** Your side of the thread, shown under an open row; the sentence already carries the provider's. */
   readonly lastMessage: ThreadLastMessage | undefined
-  /** Whether the thread is managing/managed and what the detail's buttons should offer. */
-  readonly management: 'none' | 'managed' | 'paused' | 'manual' | 'stopped'
 }
 
 export interface ThreadGroup {
@@ -122,50 +117,6 @@ export function workingLabel(since: number, now: number): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-function startOfDay(at: number): number {
-  const date = new Date(at)
-  date.setHours(0, 0, 0, 0)
-  return date.valueOf()
-}
-
-/** A clock for today, otherwise the weekday and clock, so "Started" reads right from any group. */
-function startedLabel(at: number, now: number): string {
-  const clock = clockLabel(at)
-  if (at >= startOfDay(now)) return clock
-  if (at >= startOfDay(now) - DAY_MS) return `yesterday ${clock}`
-  return `${new Date(at).toLocaleDateString(undefined, { weekday: 'long' })} ${clock}`
-}
-
-function originLabel(origin: AgentAssignment['origin']): string {
-  return origin === 'voice' ? 'a voice prompt' : origin === 'typed' ? 'a typed prompt' : 'a prompt'
-}
-
-/** Why Sotto stopped managing, as the clause after "stopped": "at the follow-up limit", "because…", "after an error". */
-function stopReasonLabel(reason: AgentAssignment['stopReason']): string {
-  return reason === 'limit' ? 'at the follow-up limit'
-    : reason === 'repeat' ? 'because the same failure kept repeating'
-      : 'after an error'
-}
-
-function factsLine(assignment: AgentAssignment | undefined, model: AgentModel | undefined, provider: string,
-  management: ThreadRow['management'], followupLimit: number, now: number): ThreadFactsLine {
-  const startedAt = parse(assignment?.startedAt)
-  const lead = assignment !== undefined && Number.isFinite(startedAt)
-    ? `Started ${startedLabel(startedAt, now)} from ${originLabel(assignment.origin)}.`
-    : ''
-  const parts: string[] = []
-  if (assignment === undefined) parts.push('Sotto is not managing this thread.')
-  else {
-    const used = `${assignment.followups} of ${followupLimit} follow-ups used`
-    if (management === 'stopped') parts.push(`Sotto stopped it ${stopReasonLabel(assignment.stopReason)}, ${used}.`)
-    else if (management === 'manual') parts.push(`You took over in ${provider}; Sotto is watching, ${used}.`)
-    else if (management === 'paused') parts.push(`Managing is paused, ${used}.`)
-    else parts.push(`Sotto is managing it, ${used}.`)
-  }
-  if (model !== undefined) parts.push(`${model.name} from ${model.provider}.`)
-  return { lead, rest: parts.join(' ') }
-}
-
 /** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
 function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
   // The shell stream carries the running turn's start in the summary; a full state still has the record.
@@ -176,30 +127,15 @@ function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: numbe
 function describe(state: AgentState, thread: AgentThread, now: number): ThreadRow {
   const project = state.host.projects.find(entry => entry.id === thread.projectId)
   const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
-  const assignment = state.assignments.find(entry => entry.threadId === thread.id)
   const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the
   // messages, and a thread whose messages did arrive derives exactly the same thing.
   const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
   const closed = isThreadClosed(thread)
-  const queued = closed ? undefined : state.queue.find(item => item.threadId === thread.id && (item.kind === 'question' || item.kind === 'permission'))
-  // The attention queue holds requests only for threads with an assignment, and not a question supervision is still
-  // deciding. The provider's request is pending all the same, and the composer answers it from the thread.
-  const pending = closed || queued !== undefined ? undefined : thread.requests[0]
-  const decision: AgentQueueItem | undefined = queued ?? (pending === undefined ? undefined : {
-    id: `${thread.id}:${pending.id}`, threadId: thread.id, requestId: pending.id, kind: pending.kind, text: pending.text, createdAt: '', deferred: false,
-  })
-  const blocked = state.queue.find(item => item.threadId === thread.id && item.kind === 'blocked')
-  const attention = !closed && (thread.requests.length > 0 || state.queue.some(item => item.threadId === thread.id))
-  // Once you take over, Sotto's earlier stop is history: manual outranks stopped.
-  const management: ThreadRow['management'] = assignment === undefined ? 'none'
-    : assignment.mode === 'manual' ? 'manual'
-      : assignment.stopReason !== 'none' ? 'stopped'
-        : assignment.paused ? 'paused' : 'managed'
-  const stopped = assignment !== undefined && management === 'stopped'
-  const stoppedAt = parse(assignment?.stoppedAt)
-  const startedAt = parse(assignment?.startedAt)
-  const activityAt = [parse(thread.updatedAt), parse(thread.settledAt), parse(thread.archivedAt), stoppedAt, startedAt,
+  const pending = closed ? undefined : thread.requests.find(request => request.kind === 'permission') ?? thread.requests[0]
+  const decision: ThreadRequestView | undefined = pending === undefined ? undefined : { requestId: pending.id, kind: pending.kind, text: pending.text }
+  const attention = !closed && thread.requests.length > 0
+  const activityAt = [parse(thread.updatedAt), parse(thread.settledAt), parse(thread.archivedAt),
     parse(lastMessageAt)]
     .reduce((latest, at) => Number.isFinite(at) && (!Number.isFinite(latest) || at > latest) ? at : latest, Number.NaN)
 
@@ -212,21 +148,16 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     state_ = 'done'
     stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
     sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
-  } else if (decision !== undefined || (blocked !== undefined && !stopped) || thread.status === 'error') {
+  } else if (decision !== undefined || thread.status === 'error') {
     state_ = 'needs'
     // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
     const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
     waitingFor = kinds.includes('permission') ? 'approval' : kinds.includes('question') ? 'question' : null
     stateLabel = waitingFor === 'approval' ? 'Needs your approval' : waitingFor === 'question' ? 'Needs your answer'
-      : thread.status === 'error' && decision === undefined && blocked === undefined ? 'Needs attention' : 'Waiting on you'
+      : thread.status === 'error' && decision === undefined ? 'Needs attention' : 'Waiting on you'
     sentence = decision !== undefined
       ? (lastAssistant?.text ?? decision.text)
-      : blocked !== undefined ? blocked.text : (lastAssistant?.text ?? 'The agent reported an error. Open the transcript to see what happened.')
-  } else if (stopped) {
-    state_ = 'stopped'
-    stateLabel = 'Stopped'
-    const detail = assignment.stopReason === 'error' ? blocked?.text ?? lastAssistant?.text : lastAssistant?.text
-    sentence = `Stopped ${stopReasonLabel(assignment.stopReason)}. ${detail ?? ''}`.trim()
+      : (lastAssistant?.text ?? 'The agent reported an error. Open the transcript to see what happened.')
   } else if (thread.compaction?.status === 'running') {
     // Compaction keeps the thread running without the agent working, so the row says which of the two it is.
     state_ = 'working'
@@ -246,7 +177,7 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
     sentence = lastAssistant?.text ?? 'Working in the background.'
   } else {
     state_ = 'done'
-    stateLabel = management === 'paused' ? 'Paused' : 'Done'
+    stateLabel = 'Done'
     if (lastAssistant !== undefined) sentence = lastAssistant.text
     else if (lastUser !== undefined) { sentence = `Waiting to start on “${lastUser.text}”.`; sentenceFromUser = true }
     else sentence = 'Ready for your next prompt.'
@@ -255,8 +186,8 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   // The card never repeats the sentence: it shows your latest prompt, or nothing.
   const lastUserAt = parse(lastUser?.createdAt)
   const lastMessage: ThreadLastMessage | undefined = lastUser === undefined || sentenceFromUser ? undefined : {
-    // Supervision's follow-ups and babysitting's wake-ups are Sotto's, by the record of who sent them, never by their text.
-    who: assignment?.ownMessageIds.includes(lastUser.id) || thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : 'You',
+    // Babysitting's wake-ups are Sotto's, by the record of who sent them, never by their text.
+    who: thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : 'You',
     at: Number.isFinite(lastUserAt) ? lastUserAt : activityAt,
     text: lastUser.text,
   }
@@ -266,13 +197,12 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const settledBy: ThreadRow['settledBy'] = isWorkspaceThreadSettled({ workspaceSettledAt: null }, project) ? 'project'
     : isWorkspaceThreadSettled(thread) ? 'thread' : closed ? 'provider' : null
   return {
-    thread, project, model, assignment, provider, providerKey: key, state: state_, stateLabel, waitingFor, request: decision, attention,
+    thread, project, model, provider, providerKey: key, state: state_, stateLabel, waitingFor, request: decision, attention,
     providerId: thread.providerId ?? model?.providerId ?? (key === 'other' ? undefined : key),
     connected: isThreadProviderConnected(state.host, thread), reconnecting: thread.clientReconnecting === true, settledBy,
     sentence, activityAt,
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
-    facts: factsLine(assignment, model, provider, management, state.configuration.followupLimit, now),
-    lastMessage, management,
+    lastMessage,
   }
 }
 
@@ -281,17 +211,17 @@ export function describeThreads(state: AgentState, now: number): ThreadRow[] {
   return state.host.threads.map(thread => describe(state, thread, now))
 }
 
-/** A row matches when the query appears anywhere in it: title, project, provider, sentence, facts or your last message. */
+/** A row matches when the query appears anywhere in it: title, project, provider, sentence or your last message. */
 function matchesThreadQuery(row: ThreadRow, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase()
   if (needle === '') return true
-  return [row.thread.title, row.project?.title ?? '', row.provider, row.sentence, row.facts.lead, row.facts.rest, row.lastMessage?.text ?? '']
+  return [row.thread.title, row.project?.title ?? '', row.provider, row.model?.name ?? '', row.sentence, row.lastMessage?.text ?? '']
     .some(field => field.toLocaleLowerCase().includes(needle))
 }
 
 /**
  * The rows a search leaves on the page. `matching` is what the query found;
- * `listed` adds the attention queue, which stays visible whatever you type.
+ * `listed` adds pending requests, which stay visible whatever you type.
  */
 export function listThreads(rows: readonly ThreadRow[], query: string): { readonly matching: ThreadRow[]; readonly listed: ThreadRow[] } {
   const matching = rows.filter(row => matchesThreadQuery(row, query))

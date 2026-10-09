@@ -20,7 +20,7 @@ it.each([
   { selected: 'remote', mayAnswer: false, settingsPending: false },
   { selected: 'local', mayAnswer: true, settingsPending: false },
   { selected: 'remote', mayAnswer: true, settingsPending: true },
-])('opening $selected with voice disabled and answer authority=$mayAnswer while settingsPending=$settingsPending does not produce the remote permission banner', async ({ selected, mayAnswer, settingsPending }) => {
+])('opening $selected after voice removal and answer authority=$mayAnswer while settingsPending=$settingsPending does not produce the remote permission banner', async ({ selected, mayAnswer, settingsPending }) => {
   const hostId = '22222222-2222-4222-8222-222222222222'
   const state = emptyDesktopState(hostId)
   state.host.connected = true
@@ -51,18 +51,14 @@ it.each([
   let agents!: ReturnType<typeof useAgents>
   function Room() { agents = useAgents(); return <div role="alert">{agents.state?.error}</div> }
   try {
-    render(<AgentProvider settings={settingsPending ? null : { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: false }} dictation={{ status: 'idle' }}><Room /></AgentProvider>)
+    render(<AgentProvider settings={settingsPending ? null : { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: false }}><Room /></AgentProvider>)
     await waitFor(() => expect(agents.state).not.toBeNull())
     expect(agents.state?.error).toBeNull()
     if (selected === 'remote') {
       await act(async () => { await agents.command({ type: 'select-thread', threadId: hostEntityKey(hostId, 'thread') }) })
     }
-    await act(async () => {
-      agents.stopSpeech()
-      agents.muteVoice()
-      agents.retryVoice()
-    })
-    expect(agents.voice.status).toBe('off')
+    expect(agents).not.toHaveProperty('voice')
+    expect(agents).not.toHaveProperty('attention')
     expect(sent.filter(type => type === 'voice' || type === 'local:voice')).toEqual([])
     expect(sent.filter(type => type.endsWith(':voice-state') || type === 'voice-state')).toEqual([])
     expect(agents.state?.error).toBeNull()

@@ -40,7 +40,7 @@ function manualState({ running = false, capabilities = {} }: { readonly running?
 function mount(state: AgentState, options: Parameters<typeof liveAgentState>[1] = {}) {
   const live = liveAgentState(state, options)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  const view = render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  const view = render(<ThreadsView now={NOW} />)
   return { live, view, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
 }
 

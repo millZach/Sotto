@@ -1,5 +1,5 @@
 /*
- * Theme branding: the Sotto mark, the agent orb and the floating widget take
+ * Theme branding: the Sotto mark and the floating widget take
  * their colours from the selected theme's canonical roles, so a theme change
  * repaints the brand in both windows. Nothing here holds a palette of its own;
  * every colour is read from, or solved against, a theme role.
@@ -10,15 +10,12 @@ import { z } from 'zod'
 import {
   contrastRatio,
   isCanonicalThemeColor,
-  mapOklchToSrgbGamut,
   mixRgb,
   oklchToRgb,
   parseThemeColor,
   parseThemeRgb,
   readableForeground,
   rgbToHex,
-  rgbToOklch,
-  type ThemeOklch,
   type ThemeRgb,
 } from './themes/color'
 import { DEFAULT_THEME_ID, resolveThemeFor, type ThemeSelection } from './themes/library'
@@ -85,14 +82,12 @@ export const DEFAULT_WIDGET_PALETTE: WidgetPalette = widgetPaletteFor({
   customThemes: [],
 })
 
-/** The brand as painted: hex, because the orb's canvas maths and SVG stops both take it directly. */
+/** The brand as painted: hex for SVG paint. */
 export interface ThemeBrand {
   /** The mark's rounded tile: the theme's accent. */
   readonly tile: string
   /** The mark's bar and wave, readable on the tile. */
   readonly glyph: string
-  /** The orb's two colours as they should appear: top-left, then bottom-right. */
-  readonly orb: readonly [string, string]
 }
 
 export type ThemeBrandRoles = Pick<ThemeColors, 'canvas' | 'accent' | 'accentForeground'>
@@ -114,8 +109,6 @@ export function wearsAppIcon(themeId: string): boolean {
 /** The mark's glyph must read on its tile at least this well, as body text would. */
 export const MARK_GLYPH_CONTRAST = 4.5
 
-const hexOf = (color: ThemeOklch): string => rgbToHex(oklchToRgb(mapOklchToSrgbGamut(color)))
-
 /** A role as an opaque colour: a translucent accent is seen over the canvas. */
 function opaqueRole(value: string, under: ThemeRgb): ThemeRgb | null {
   const parsed = parseThemeColor(value)
@@ -127,9 +120,7 @@ function opaqueRole(value: string, under: ThemeRgb): ThemeRgb | null {
  * Derive the brand from a theme's roles. The tile is the accent, or the app
  * icon's teal when `appIcon` is set; the glyph is the icon's black then, and
  * otherwise the theme's own accent foreground when it reads on the tile, else
- * the most readable foreground. The orb keeps the accent's hue: on a dark room a pale
- * tint runs into a deep tone, as the original teal orb did; on a light room
- * the orb is drawn as ink, so it runs from a deep tone into a softer one.
+ * the most readable foreground.
  */
 export function themeBrand(roles: ThemeBrandRoles, appearance: ThemeAppearance, options: { readonly appIcon?: boolean } = {}): ThemeBrand {
   const fallback = DEFAULT_WIDGET_PALETTE[appearance]
@@ -142,20 +133,7 @@ export function themeBrand(roles: ThemeBrandRoles, appearance: ThemeAppearance, 
     ? parseThemeRgb(APP_ICON_BRAND.glyph, tile)
     : ownGlyph !== null && contrastRatio(ownGlyph, tile) >= MARK_GLYPH_CONTRAST ? ownGlyph : readableForeground(tile)
 
-  const accent = rgbToOklch(tile)
-  // A near-grey accent has no meaningful hue; keep it grey rather than inventing one.
-  const hue = Number.isFinite(accent.h) ? accent.h : 0
-  const chroma = accent.C < 0.02 ? 0 : accent.C
-  const orb: readonly [string, string] = appearance === 'dark'
-    ? [
-        hexOf({ L: 0.9, C: Math.min(chroma * 0.75, 0.13), h: hue }),
-        hexOf({ L: Math.min(0.6, Math.max(0.45, accent.L - 0.12)), C: Math.min(chroma * 1.1, 0.2), h: hue }),
-      ]
-    : [
-        hexOf({ L: 0.36, C: Math.min(chroma, 0.15), h: hue }),
-        hexOf({ L: 0.7, C: Math.min(chroma * 0.8, 0.13), h: hue }),
-      ]
-  return { tile: rgbToHex(tile), glyph: rgbToHex(glyph), orb }
+  return { tile: rgbToHex(tile), glyph: rgbToHex(glyph) }
 }
 
 export interface WidgetPresentationSettings extends ThemeSelection {

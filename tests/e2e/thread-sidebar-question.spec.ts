@@ -1,7 +1,7 @@
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import type { AgentRequest, AgentState } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import { closeSotto, launchSotto, launchSottoWithVoice, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto,  openThreads, type LaunchedSotto } from './support/sottoLaunch'
 
 // A provider's question or permission on a thread with no assignment never enters the coordinator's attention
 // queue, which holds requests only for threads with one. The sidebar row still has to say the thread is waiting on you,
@@ -125,7 +125,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
 
 test('shows a permission the same way with the voice coordinator on, at the minimum window in light', async () => {
   test.setTimeout(120_000)
-  launched = await launchSottoWithVoice()
+  launched = await launchSotto()
   const { page, app } = launched
   await prepare(page, 'light')
   await resize(app, page, 820, 560)

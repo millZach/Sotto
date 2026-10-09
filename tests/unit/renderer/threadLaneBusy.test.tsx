@@ -11,9 +11,6 @@ import { liveAgentState, threadsStateFixture } from './liveAgentState'
 import { openPaneMenu } from './paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
-// Management belongs to the voice coordinator, which the beta hides; these tests are about the lanes, so it is on.
-const voice = vi.hoisted(() => ({ enabled: true }))
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({ useVoiceCoordinatorEnabled: () => voice.enabled }))
 
 const NOW = E2E_THREADS_NOW
 const BUSY = { id: 'grok-previews', title: 'Grok voice previews' }
@@ -33,7 +30,7 @@ function mountBothPanes(state: AgentState = laneState()) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
   // A fresh arrangement per test: the shared one outlives the page, and would already hold both panes.
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1600} paneAreaHeight={900} />)
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1600} paneAreaHeight={900} />)
   fireEvent.click(screen.getByRole('button', { name: `Open ${IDLE.title} beside` }))
   const pane = (title: string): HTMLElement => screen.getByRole('region', { name: title })
   return { live, pane, busyPane: () => pane(BUSY.title), idlePane: () => pane(IDLE.title) }
@@ -68,12 +65,10 @@ describe('a busy thread beside an idle one in the same window', () => {
   })
 
   it('still shows the global lane where provider and project work is shown, and only there', () => {
-    const { live, busyPane, idlePane } = mountBothPanes()
+    const { live, idlePane } = mountBothPanes()
     act(() => { live.publish({ globalLaneBusy: true }) })
     // Settling a whole project moves every thread of it at once, so it waits on the global lane.
     expect(screen.getByRole('button', { name: 'Settle project workshop' })).toBeDisabled()
-    // Management moves assignment authority and the single composer draft: also global-lane work.
-    expect(within(openPaneMenu(busyPane())).getByRole('menuitem', { name: 'Manage' })).toBeDisabled()
     // A thread's own actions are untouched by the global lane.
     expect(within(openPaneMenu(idlePane())).getByRole('menuitem', { name: 'Settle' })).toBeEnabled()
     expect(screen.getByRole('button', { name: `Settle ${IDLE.title}` })).toBeEnabled()

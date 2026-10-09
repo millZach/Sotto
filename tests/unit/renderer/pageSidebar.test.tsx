@@ -62,7 +62,7 @@ describe('the Threads sidebar beside another page', () => {
   })
 
   it('lights Threads for the Agents page while the coordinator is off, since that page is the Threads page', () => {
-    mount(threadsStateFixture(), 'agents')
+    mount(threadsStateFixture(), 'threads')
     expect(within(sidebar()).getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
   })
 

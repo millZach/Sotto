@@ -7,7 +7,7 @@ import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { designThreadsFixture } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, enableVoiceCoordinator, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 test('a saved draft elsewhere does not close the manual composer, including while the thread runs', async () => {
   const launched = await launchSotto()
@@ -178,33 +178,19 @@ test('workspace sends a manual prompt to the selected thread without granting ma
   } finally { await closeSotto(launched) }
 })
 
-test('settled work stays off attention and session pills, with real timestamps and an expandable shelf', async () => {
+test('settled work stays off the active shelf, with real timestamps and an expandable shelf', async () => {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-workspace-'))
   const fixture = designThreadsFixture()
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, speak: false },
-    assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: Date.now() })),
+    assignments: [],
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],
     activeThreadId: 'release-notes', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', outbox: [],
   }))
-  await enableVoiceCoordinator(profile)
   const launched = await launchSotto('design-threads', profile)
   const { page } = launched
   try {
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await page.getByRole('button', { name: 'Not now', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'Open Footer links', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Open Release notes 1.4', exact: true })).toHaveCount(0)
-    await expect(page.getByText('Old closed thread update.', { exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Later', exact: true }).click()
-    const mute = page.getByRole('button', { name: 'Enable spoken replies', exact: true })
-    await expect(mute).toHaveAttribute('title', 'Enable spoken replies')
-    await expect(mute.locator('svg')).toHaveClass(/lucide-volume-x/)
-    await mute.click()
-    const speak = page.getByRole('button', { name: 'Mute spoken replies', exact: true })
-    await expect(speak.locator('svg')).toHaveClass(/lucide-volume-2/)
-    await speak.click()
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await expect(sidebar.getByRole('region', { name: 'Projects', exact: true }).locator('.thread-nav__row')).toHaveCount(5)
@@ -223,16 +209,6 @@ test('settled work stays off attention and session pills, with real timestamps a
     await expect.poll(() => page.evaluate(async id => (await window.sotto!.agents!.get()).assignments.some(assignment => assignment.threadId === id), releaseNotes)).toBe(false)
     await page.getByRole('button', { name: 'Stop agent', exact: true }).click()
 
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /Needs your attention/ })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
-    const scrollbar = await page.locator('.side-sheet__body').evaluate(node => {
-      const style = getComputedStyle(node)
-      return { actual: style.scrollbarColor, thumb: style.getPropertyValue('--tt-scrollbar').trim() }
-    })
-    expect(scrollbar.thumb).not.toBe('')
-    expect(scrollbar.actual).toBe(`${scrollbar.thumb} rgba(0, 0, 0, 0)`)
-    await page.screenshot({ animations: 'disabled', path: 'artifacts/crossing/agent-configuration-scrollbar.png' })
   } finally {
     await closeSotto(launched)
     await rm(requireOwnedE2EProfile(profile), { recursive: true, force: true })

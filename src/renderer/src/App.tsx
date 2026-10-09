@@ -19,7 +19,6 @@ import {
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
 import { useMemoryEnabled } from './state/memoryFeature'
-import { useVoiceCoordinatorEnabled } from './state/voiceCoordinator'
 import { SettingsView } from './features/settings/SettingsView'
 import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
@@ -32,7 +31,6 @@ import { AgentProvider } from './agents/AgentContext'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
-import { AgentAppearance, AgentRoom } from './agents/AgentRoom'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
 import { MemorySurface } from './features/memory/MemorySurface'
@@ -104,7 +102,6 @@ function FooterStatus({ navigation, settings, historyKept }: {
   readonly historyKept: boolean
 }): ReactNode {
   switch (navigation) {
-    case 'agents': return <AgentAppearance />
     case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
@@ -117,13 +114,11 @@ function FooterStatus({ navigation, settings, historyKept }: {
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }: AppProps): ReactNode {
   const app = useApp()
-  const voiceCoordinator = useVoiceCoordinatorEnabled()
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearOpen, setHistoryClearOpen] = useState(false)
-  const [agentSheet, setAgentSheet] = useState<'session' | 'new' | 'settings' | null>(null)
   const [historySearchRequest, setHistorySearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
@@ -355,20 +350,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
   } else {
     const navigation = app.navigation
     const updateControl = <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
-    // With the voice coordinator off there is no Agents room to open, so the
-    // page that would have shown it shows Threads, and the controls that led
-    // into its settings lead to Settings instead.
-    // The same goes for Memory while memory is hidden.
-    const threadsPage = navigation === 'threads' || (navigation === 'agents' && !voiceCoordinator) || (navigation === 'memory' && !memoryEnabled)
+    const threadsPage = navigation === 'threads' || (navigation === 'memory' && !memoryEnabled)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
     const statusText = <FooterStatus navigation={navigation} settings={app.settings} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
     const threadWorkspace = (
       <ThreadWorkspace
-        onOpenAgents={voiceCoordinator
-          ? () => { setAgentSheet('session'); app.actions.navigate('agents') }
-          : () => app.actions.navigate('settings')}
         updateControl={updateControl}
         now={captureNow}
       />
@@ -378,11 +366,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     switch (navigation) {
       case 'memory':
         view = memoryEnabled ? null : threadWorkspace
-        break
-      case 'agents':
-        view = voiceCoordinator
-          ? <AgentRoom initialSheet={agentSheet} onOpenThreads={() => app.actions.navigate('threads')} />
-          : threadWorkspace
         break
       case 'threads':
         view = threadWorkspace
@@ -458,7 +441,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
             sidebar={layout === 'sidebar' ? <PageSidebar now={captureNow} /> : undefined}
             statusText={statusText}
             updateControl={updateControl}
-            onNavigate={destination => { if (destination === 'agents') setAgentSheet(null); app.actions.navigate(destination) }}
+            onNavigate={app.actions.navigate}
             onMinimize={app.actions.minimizeApp}
             onMaximize={app.actions.toggleMaximizeApp}
             maximized={app.windowMaximized}
@@ -506,7 +489,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest() }
     && app.settings.onboardingComplete && app.navigation !== 'onboarding'
 
   return (
-    <AgentProvider settings={app.settings} dictation={app.dictation}>
+    <AgentProvider settings={app.settings}>
       {management ? content : (
         <AppShell
           navigation={null}

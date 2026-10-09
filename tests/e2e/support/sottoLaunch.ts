@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -155,43 +155,6 @@ export async function openPage(page: Page, name: SottoPageName): Promise<void> {
 }
 
 /**
- * Turns the voice coordinator, and memory with it, on in a profile before its
- * window opens. The beta hides the Agents room, the wake phrase and every "let
- * Sotto manage" control behind `voiceCoordinatorEnabled`, and the Memory page
- * with the questionnaire that greets the Agents room behind `memoryEnabled`, so
- * a spec that still exercises them has to seed the settings. Whatever else the spec already wrote is kept; a profile with
- * no settings file yet gets one holding only the flag, which the main process
- * fills out from the defaults when it reads it.
- */
-export async function enableVoiceCoordinator(userData: string): Promise<void> {
-  const file = join(userData, 'settings.json')
-  let persisted: Record<string, unknown> = {}
-  try {
-    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) persisted = parsed as Record<string, unknown>
-  } catch {
-    // No settings file yet, or one this profile is about to replace anyway.
-  }
-  await mkdir(userData, { recursive: true })
-  await writeFile(file, `${JSON.stringify({ ...persisted, voiceCoordinatorEnabled: true, memoryEnabled: true }, null, 2)}\n`, 'utf8')
-}
-
-/**
- * Launches with the voice coordinator already on, in a throwaway profile this
- * module still owns, so the spec's own cleanup removes it as usual.
- */
-export async function launchSottoWithVoice(scenario: E2EScenario = 'success'): Promise<LaunchedSotto> {
-  return launchSotto(scenario, undefined, {
-    ...defaultDependencies,
-    createProfile: async () => {
-      const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-voice-'))
-      await enableVoiceCoordinator(profile)
-      return profile
-    },
-  })
-}
-
-/**
  * The texts of a thread's user messages, read through the thread-detail bridge: the shell that
  * `agents.get()` answers with summarises every history instead of carrying it.
  */
@@ -204,7 +167,7 @@ export async function userMessageTexts(page: Page, threadId: string): Promise<st
 
 /**
  * Runs one of a pane's More-menu actions. The pane header keeps a single menu
- * button now; Rename, Manage, Reconnect, Settle and their kin sit behind it.
+ * button now; Rename, Reconnect, Settle and their kin sit behind it.
  * Scoped to a pane locator when several panes are open, or to the page when
  * one pane is.
  */

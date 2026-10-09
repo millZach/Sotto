@@ -26,7 +26,7 @@ function mount(activities: AgentActivity[]): { transcript: HTMLElement } {
   state.host.connected = true
   Object.assign(state.host.threads.find(item => item.id === THREAD)! as AgentThread, { status: 'idle' as const, activities })
   vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 

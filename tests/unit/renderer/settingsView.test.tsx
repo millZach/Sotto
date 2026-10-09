@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SettingsView, type SettingsViewProps } from '../../../src/renderer/src/features/settings/SettingsView'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
-import { useVoiceCoordinatorEnabled } from '../../../src/renderer/src/state/voiceCoordinator'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
 import { defaultAgentConfiguration, type AgentState } from '../../../src/shared/agents'
 import {
@@ -25,18 +24,11 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal =>
   useOptionalAgents: vi.fn(),
 }))
 
-// Settings is rendered without the app provider the real hook reads, so the
-// beta's voice gate is stated here rather than inferred from a context.
-vi.mock('../../../src/renderer/src/state/voiceCoordinator', () => ({
-  useVoiceCoordinatorEnabled: vi.fn(() => false),
-}))
-
 afterEach(() => {
   cleanup()
   delete document.documentElement.dataset.reducedMotion
   appearancePreview.reset()
   vi.mocked(useOptionalAgents).mockReset()
-  vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(false)
 })
 
 function createMediaDevices(devices: MediaDeviceInfo[] = []): Pick<MediaDevices, 'enumerateDevices' | 'addEventListener' | 'removeEventListener'> {
@@ -1276,7 +1268,7 @@ describe('SettingsView', () => {
     expect(replace).toHaveBeenCalledWith('Control+Shift+Space')
   })
 
-  it('places Hosts, Phones and Agents after Providers and exposes Reasoning account inline', async () => {
+  it('places Hosts, Phones and Agents after Providers and keeps new-thread defaults inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
@@ -1295,11 +1287,11 @@ describe('SettingsView', () => {
     ])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
-    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
+    expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Agent configuration' })).toBeNull()
   })
 
-  it('leaves the reasoning account in Agents but no voice or wake settings while the coordinator is hidden', async () => {
+  it('preserves saved defaults without dormant reasoning, voice or wake controls', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = {
       configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' }, connection: 'disconnected',
@@ -1313,15 +1305,16 @@ describe('SettingsView', () => {
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
     await selectCategory('Agents')
     const agents = container.querySelector('#settings-agents') as HTMLElement
-    expect(within(agents).getByText('Reasoning, new threads & projects')).toBeInTheDocument()
+    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
+    expect(within(agents).queryByRole('textbox', { name: 'Automatic follow-up limit' })).toBeNull()
+    expect(within(agents).queryByLabelText('Reasoning API key')).toBeNull()
     expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
-    expect(within(agents).getByRole('combobox', { name: 'Reasoning account' })).toHaveValue('claude')
-    // Nothing is deleted: turning the coordinator on brings the same controls back.
-    vi.mocked(useVoiceCoordinatorEnabled).mockReturnValue(true)
-    rerender(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true } })} />)
-    expect(within(agents).getByText('Reasoning, voice, new threads & projects')).toBeInTheDocument()
-    expect(within(agents).getByText('Advanced wake settings')).toBeInTheDocument()
+    expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
+    // A legacy flag cannot restore the removed controls.
+      rerender(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true } })} />)
+    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
+    expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
   })
 })
 

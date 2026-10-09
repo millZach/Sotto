@@ -132,4 +132,4 @@ function show(scenario: Scenario): void {
 show((new URLSearchParams(location.search).get('scenario') as Scenario | null) ?? 'compose')
 window.phaseTwoFixture = { show }
 
-createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadWorkspace onOpenAgents={() => undefined} /></div>)
+createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadWorkspace /></div>)

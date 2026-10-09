@@ -89,7 +89,7 @@ describe('independent provider settings', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude' }))
     expect(state.host.providers![0]!.connection).toBe('connected')
   })
-  it('shows only the selected provider catalog and keeps coordinator choices in Agents settings', () => {
+  it('shows only the selected provider catalog and keeps new-thread defaults in Agents settings', () => {
     provide()
     const view = render(<ProvidersSettings />)
     fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
@@ -100,7 +100,8 @@ describe('independent provider settings', () => {
     expect(screen.queryByLabelText('Reasoning account')).toBeNull()
     view.unmount()
     render(<AgentSetupFields />)
-    expect(screen.getByLabelText('Reasoning account')).toHaveValue('claude')
+    expect(screen.queryByLabelText('Reasoning account')).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('coordinator-model')
     expect(screen.queryByLabelText('Thread provider')).toBeNull()
   })
   it('keeps existing thread model choices in its provider and disables them when that provider is offline', () => {

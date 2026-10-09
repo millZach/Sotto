@@ -82,7 +82,7 @@ describe('thread draft recovery through the real connection and disk', () => {
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
       expect((await f.disk()).deliveries).toContainEqual(expect.objectContaining({ draftId: oldId, status: 'uncertain' }))
       vi.stubGlobal('sotto', { agents: agentWireBridge(f.bridge) })
-      render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><ThreadsView onOpenAgents={() => undefined} /></AgentProvider>)
+      render(<AgentProvider settings={null}><ThreadsView /></AgentProvider>)
       const check = await screen.findByRole('button', { name: 'Check again' })
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Original unconfirmed prompt')
       expect(screen.getByLabelText('Pending message')).not.toHaveTextContent('Independent newer draft')
@@ -174,7 +174,7 @@ describe('thread draft recovery through the real connection and disk', () => {
     const image = handleOf(PIXEL_PNG, 'retained-image', 'pixel.png')
     let controls!: ReturnType<typeof useAgents>
     function Observer() { controls = useAgents(); return null }
-    const page = (shown: boolean) => <AgentProvider settings={null} dictation={{ status: 'idle' }}><Observer />{shown ? <ThreadsView onOpenAgents={() => undefined} /> : null}</AgentProvider>
+    const page = (shown: boolean) => <AgentProvider settings={null}><Observer />{shown ? <ThreadsView /> : null}</AgentProvider>
     let spy: ReturnType<typeof vi.spyOn> | undefined
     try {
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
@@ -348,7 +348,7 @@ describe('thread navigation through the real renderer connection and controller'
       await f.control.command({ type: 'select-thread', threadId: 'workshop' })
       f.host.event({ type: 'manual', threadId: 'workshop', text: 'Start the long job' })
       vi.stubGlobal('sotto', { agents: agentWireBridge(f.bridge) })
-      render(<AgentProvider settings={null} dictation={{ status: 'idle' }}><Observer /><ThreadsView onOpenAgents={() => undefined} /></AgentProvider>)
+      render(<AgentProvider settings={null}><Observer /><ThreadsView /></AgentProvider>)
       const prompt = await screen.findByRole('textbox', { name: 'Prompt' })
       await screen.findByRole('button', { name: 'Stop agent' })
       act(() => controls.threadDrafts.edit('workshop', { text: 'Then run $deploy', skills: [skill] }))

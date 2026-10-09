@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { designThreadsFixture } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
@@ -29,10 +28,9 @@ async function withProfile(
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-palettes-'))
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, ...settings }), 'utf8')
   if (threads) {
-    const fixture = designThreadsFixture()
     await writeFile(join(profile, 'agents.json'), JSON.stringify({
       configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet', followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '', reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-      assignments: fixture.assignments.map(assignment => ({ ...assignment, contextUpdatedAt: Date.now() })),
+      assignments: [],
       queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
     }), 'utf8')
   }

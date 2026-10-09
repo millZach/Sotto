@@ -38,7 +38,7 @@ function mount(catalog: AgentSkillCatalog) {
   state.host.capabilities = BASE
   const live = liveAgentState(state, { catalog: () => catalog })
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { live, prompt: () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement }
 }
 

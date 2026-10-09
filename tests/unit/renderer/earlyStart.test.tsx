@@ -20,7 +20,7 @@ function mount(open: boolean) {
   state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'idle' as const, ...(open ? { providerSessionOpen: true as const } : {}) } : thread) }
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} />)
   const prompt = () => screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement
   const type = (text: string) => { for (let end = 1; end <= text.length; end++) fireEvent.change(prompt(), { target: { value: text.slice(0, end) } }) }
   const starts = () => live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'start-thread-session')

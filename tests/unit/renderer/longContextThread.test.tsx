@@ -25,7 +25,7 @@ function mount() {
   state.queue = []
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(() => live.useLive())
-  render(<ThreadsView onOpenAgents={vi.fn()} now={E2E_THREADS_NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} />)
+  render(<ThreadsView now={E2E_THREADS_NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} />)
   return screen.getByRole('region', { name: 'Grok voice previews' })
 }
 

@@ -18,7 +18,7 @@ import {
 } from '../../scripts/design-capture-matrix.mjs'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
-import { designThreadsFixture, type E2EScenario } from '../../src/shared/e2e'
+import { type E2EScenario } from '../../src/shared/e2e'
 import type { HistoryEntry } from '../../src/shared/history'
 import { DEFAULT_SETTINGS, type Appearance } from '../../src/shared/settings'
 import {
@@ -53,7 +53,7 @@ type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'dictate' | 'agents' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
+  readonly category: 'onboarding' | 'dictate' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -125,13 +125,12 @@ type DesignAgentsProfile = 'design-threads' | 'design-threads-empty'
  * windows read the real clock, so context stamps are taken now; the page
  * itself reads the fixed E2E_THREADS_NOW.
  */
-function designAgentsState(profile: DesignAgentsProfile): Record<string, unknown> {
-  const fixture = designThreadsFixture()
+function designAgentsState(): Record<string, unknown> {
   return {
     configuration: { provider: 'codex', enabled: true, projectsDirectory: '', defaultModelId: 'claude:sonnet',
       followupLimit: 5, speak: false, speechProvider: 'system', speechVoice: 'F1', grokSpeechVoice: 'ara', wakeModelDirectory: '', wakeRuntimeDirectory: '',
       reasoning: 'none', reasoningModel: '', reasoningEffort: '', },
-    assignments: profile === 'design-threads' ? fixture.assignments.map((assignment) => ({ ...assignment, contextUpdatedAt: Date.now() })) : [],
+    assignments: [],
     queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false,
     pendingRequest: '', contextSavedAt: Date.now(), outbox: [],
   }
@@ -146,7 +145,7 @@ async function createProfile(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
-    readonly voice?: boolean
+    readonly memory?: boolean
   },
 ): Promise<string> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-design-'))
@@ -158,16 +157,11 @@ async function createProfile(
     appearance: options.appearance ?? DEFAULT_SETTINGS.appearance,
     lightTheme: options.lightTheme ?? DEFAULT_SETTINGS.lightTheme,
     darkTheme: options.darkTheme ?? DEFAULT_SETTINGS.darkTheme,
-    // The Agents room, the wake phrase and the orb are hidden for the beta, so the captures that record them ask for
-    // the coordinator by name. Everything else is captured the way an install ships.
-    voiceCoordinatorEnabled: options.voice === true,
-    // Memory comes on with the coordinator, as `enableVoiceCoordinator` does: the Agents room's questionnaire is
-    // the memory feature's, and the captures that greet it with Not now need it there (ADR-0013).
-    memoryEnabled: options.voice === true,
+    memoryEnabled: options.memory === true,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
-  if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(options.agents), null, 2)}\n`, 'utf8')
+  if (options.agents !== undefined) await writeFile(join(profile, 'agents.json'), `${JSON.stringify(designAgentsState(), null, 2)}\n`, 'utf8')
   return profile
 }
 
@@ -182,7 +176,7 @@ async function withSotto(
     readonly appearance?: Appearance
     readonly lightTheme?: string
     readonly darkTheme?: string
-    readonly voice?: boolean
+    readonly memory?: boolean
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {
@@ -772,7 +766,7 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-4-shortcut.png', { category: 'onboarding', state: 'shortcut-paste' })
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
       await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       // Dictate seats the Threads sidebar beside the room; the switch lives in the sidebar foot, not a strip.
@@ -781,8 +775,8 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
       await capturePage(page, 'dictate-ready.png', { category: 'dictate', state: 'ready' })
 
-      const agentsTab = page.getByRole('tab', { name: 'Agents' })
-      await assertFocusPresentation(agentsTab)
+      const threadsTab = page.getByRole('tab', { name: 'Threads' })
+      await assertFocusPresentation(threadsTab)
       await capturePage(page, 'focus-switch-tab.png', { focusTarget: 'tab', focus: true })
 
       const historyNavigation = page.getByRole('link', { name: 'History' })
@@ -821,13 +815,6 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'dictate-reduced-motion.png', { category: 'dictate', state: 'listening-reduced-motion', reducedMotion: true })
     })
 
-    await withSotto({ voice: true, onboardingComplete: true }, async ({ page }) => {
-      await page.getByRole('tab', { name: 'Agents' }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
-      await expect(page.locator('.agent-orb')).toBeVisible()
-      await expect(page.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')
-      await capturePage(page, 'agents-room.png', { category: 'agents', state: 'overview' })
-    })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory }, async ({ page }) => {
       await page.getByRole('link', { name: 'History' }).click()
@@ -885,7 +872,7 @@ test.describe('authoritative design-review captures', () => {
         await expect(section).toHaveCount(1)
         if (state === 'agents') {
           await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
-          await expect(section.getByLabel('Reasoning account', { exact: true })).toBeVisible()
+          await expect(section.getByLabel('Default projects directory', { exact: true })).toBeVisible()
           await expect(page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute('aria-selected', 'true')
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue
@@ -923,11 +910,7 @@ test.describe('authoritative design-review captures', () => {
         await toggle.scrollIntoViewIfNeeded()
       }
       await open('Visual gate flake')
-      // The coordinator queues the fixture's permission request once it has connected; the beta answers it in the
-      // thread's own pane rather than in a queue of its own on the page.
       await expect(page.getByRole('button', { name: 'Allow' })).toBeVisible()
-      // The fixture still hands these threads to the coordinator, but the beta hides every managing control, so the
-      // captures must show a thread that reads the same whether or not Sotto is managing it.
       await expect(page.getByRole('button', { name: 'Pause managing' })).toHaveCount(0)
       await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 
@@ -942,7 +925,7 @@ test.describe('authoritative design-review captures', () => {
 
       await page.getByRole('searchbox', { name: 'Search threads' }).fill('codex')
       await expect(page.getByRole('button', { name: /Settled/ })).toHaveAttribute('aria-expanded', 'true')
-      // The attention queue stays listed whatever the query; a Codex-only result set follows it.
+      // Pending requests stay listed whatever the query; a Codex-only result set follows them.
       await expect(page.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Release notes 1.4', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Weekly note', exact: true })).toHaveCount(0)
@@ -1004,12 +987,12 @@ test.describe('authoritative design-review captures', () => {
       await captureSection(page, onboarding, 'onboarding-step-3-openrouter-light.png', { theme: 'light' })
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
       await openPage(page, 'Dictate')
       await assertDictateState(page, 'idle', /ready when you are/i)
       await assertRenderedRoom(page, 'light')
       await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
-      await assertFocusPresentation(page.getByRole('tab', { name: 'Agents' }))
+      await assertFocusPresentation(page.getByRole('tab', { name: 'Threads' }))
       await capturePage(page, 'focus-switch-tab-light.png', { focusTarget: 'tab', focus: true, theme: 'light' })
       await assertFocusPresentation(page.getByRole('link', { name: 'History' }))
       await capturePage(page, 'focus-navigation-light.png', { focusTarget: 'navigation', focus: true, theme: 'light' })
@@ -1036,12 +1019,6 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'dictate-reduced-motion-light.png', { reducedMotion: true, theme: 'light' })
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, appearance: 'light' }, async ({ page }) => {
-      await page.getByRole('tab', { name: 'Agents' }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
-      await expect(page.locator('.agent-orb')).toBeVisible()
-      await capturePage(page, 'agents-room-light.png', { theme: 'light' })
-    })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
       await page.getByRole('link', { name: 'History' }).click()
@@ -1116,7 +1093,7 @@ test.describe('authoritative design-review captures', () => {
       }
     })
 
-    await withSotto({ voice: true, onboardingComplete: true, history: populatedHistory }, async (launched) => {
+    await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory }, async (launched) => {
       const { page } = launched
       await openPage(page, 'Dictate')
       await setMainWindowWidth(launched, DESIGN_CAPTURE_MINIMUM_WIDTH)
@@ -1125,42 +1102,9 @@ test.describe('authoritative design-review captures', () => {
         await page.getByRole('tab', { name: 'Dictate', exact: true }).click()
         await assertDictateState(page, 'idle', /ready when you are/i)
         await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-dictate-${theme}.png`, { theme })
-        await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-        const notNow = page.getByRole('button', { name: 'Not now', exact: true })
-        if (await notNow.isVisible()) await notNow.click()
-        await expect(page.locator('.agent-orb')).toBeVisible()
-        await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-agents-${theme}.png`, { theme })
         await page.getByRole('link', { name: 'Settings' }).click()
         await captureFullSurface(page, page.locator('.settings-view'), `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-settings-${theme}.png`, /^Application$/i, { theme })
       }
-    })
-  })
-
-  test('orb and session states follow the voice and permission journeys', async () => {
-    await withSotto({ voice: true, onboardingComplete: true }, async ({ page }) => {
-      await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, speak: false } }); await window.sotto!.agents!.command({ type: 'connect' }) })
-      await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-      await page.getByRole('button', { name: 'Not now', exact: true }).click()
-      await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'wake')
-      await capturePage(page, 'agents-wake.png')
-      await page.evaluate(() => window.dispatchEvent(new CustomEvent('sotto:e2e:microphone', { detail: 'Hey Sotto' })))
-      await expect(page.locator('.agent-orb')).toHaveAttribute('data-state', 'listening')
-      await capturePage(page, 'agents-listening.png')
-      const threadId = await page.evaluate(async () => {
-        const state = await window.sotto!.agents!.get()
-        const id = state.host.threads[0]!.id
-        await window.sotto!.agents!.command({ type: 'assign', threadId: id })
-        await window.sotto!.agents!.command({ type: 'select-thread', threadId: id })
-        await window.sottoE2E!.agentEvent!({ type: 'permission', threadId: id, text: 'Allow the agent to update the project files?', requestId: 'crossing-permission' })
-        return id
-      })
-      await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
-      await capturePage(page, 'agents-attention.png')
-      await page.getByRole('button', { name: 'Open Workshop', exact: true }).click()
-      await expect(page.getByRole('dialog', { name: 'Workshop' })).toBeVisible()
-      await capturePage(page, 'agents-session.png')
-      await page.keyboard.press('Escape')
-      expect(await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)?.requests.length, threadId)).toBe(1)
     })
   })
 

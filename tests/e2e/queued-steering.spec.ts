@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from './support/evidence'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, userMessageTexts } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts } from './support/sottoLaunch'
 
 test('steers a queued message from the keyboard without consuming the newer draft', async () => {
-  const launched = await launchSottoWithVoice('queued-steering')
+  const launched = await launchSotto('queued-steering')
   const { page } = launched
   try {
     await page.evaluate(async () => {

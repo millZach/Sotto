@@ -30,7 +30,7 @@ function stateWith(patch: Partial<AgentThread>): AgentState {
 
 function mount(state: AgentState) {
   vi.mocked(useAgents).mockImplementation(liveAgentState(state).useLive)
-  render(<ThreadsView onOpenAgents={vi.fn()} now={NOW} />)
+  render(<ThreadsView now={NOW} />)
   return { transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 
