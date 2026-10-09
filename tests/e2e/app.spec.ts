@@ -52,13 +52,14 @@ async function snapshot(page: Page): Promise<E2ESnapshot> {
 }
 
 async function closeMainToTray(app: ElectronApplication, page: Page): Promise<void> {
-  if (process.platform === 'linux') {
-    // Linux has no close button; a compositor request arrives as a native close event.
+  if (process.platform === 'win32') {
+    await page.getByRole('button', { name: 'Close Sotto to tray' }).click()
+  } else {
+    // Only Windows draws a close button. macOS closes through its traffic light and Linux through the
+    // compositor (Super+W), and both arrive as the window's native close event.
     await app.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.close()
     })
-  } else {
-    await page.getByRole('button', { name: 'Close Sotto to tray' }).click()
   }
 }
 
@@ -360,10 +361,11 @@ test('keeps the real main window frameless, with a strip while onboarding and th
     await finishOnboarding(launched.page)
 
     // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
-    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours.
+    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours, and
+    // Linux draws none, because Hyprland closes windows itself (#849).
     await expect(launched.page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
     await expect(launched.page.locator('header.app-strip')).toHaveCount(0)
-    await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'darwin' ? 0 : 1)
+    await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'win32' ? 1 : 0)
   } finally {
     await closeSotto(launched)
   }
