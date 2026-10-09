@@ -24,6 +24,7 @@ import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitComm
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
 import { GitActions } from './gitActions'
 import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
+import { wakeUpPartDue, type BabysitNews } from './babysitNews'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
@@ -193,6 +194,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       if (SAID_ENDINGS.has(reason)) await agentHost.recordBabysitEnded(threadId, url, reason as BabysitEndedReason).catch(() => undefined)
       if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined)
     } }) : undefined
+  // A part of a wake-up may go only while the babysitting it is news of still stands, and an agent's only while the
+  // switch is on, a last one included; a user's last wake-up for an ending goes. Asked as the wake-up goes, whatever
+  // withdrawal managed.
+  const wakeUpDue = (threadId: string, news: BabysitNews): boolean =>
+    babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
+  // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
+  if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool })
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
     closing ??= (async () => {
@@ -230,7 +238,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.dispose()
     throw error
   }
-  if (babysitter) agentControl.useBabysitting(babysitter)
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined })
   babysitter?.begin()
   return { agentHost, agentControl, threadRegistry, turns, hostService, shortTextWriter, worktreeCleanup, babysitter, close }

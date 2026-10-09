@@ -37,6 +37,7 @@ const changeSchema = z.discriminatedUnion('kind', [
 export const babysitNewsSchema = z.object({
   pullRequest: z.object({ url, number: z.number().int().positive(), title: line.nullable() }),
   startedBy: babysitStarterSchema,
+  startedAt: z.string().max(40).optional(),
   head: z.string().max(100).nullable(),
   changes: z.array(changeSchema).max(8),
   ended: z.enum(['merged', 'closed', 'comment-limit', 'unreadable']).nullable(),
@@ -67,6 +68,7 @@ function foldPart(earlier: BabysitNews, later: BabysitNews): BabysitNews {
   return {
     pullRequest: { ...later.pullRequest, title: later.pullRequest.title ?? earlier.pullRequest.title },
     startedBy: later.startedBy,
+    ...later.startedAt ?? earlier.startedAt ? { startedAt: later.startedAt ?? earlier.startedAt } : {},
     head: later.head ?? earlier.head,
     changes: [
       ...checks.size ? [{ kind: 'checks-failed' as const, checks: [...checks.values()].slice(-CHECKS_MAX) }] : [],

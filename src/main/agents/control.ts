@@ -131,6 +131,19 @@ const MAX_SEEN_MESSAGE_IDS = 2000
 /** A write handed to the store: the state it carries, serialized and by outbox, and its landing. */
 type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promise<void> }
 class SupersededSupervision extends Error {}
+/** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
+class WakeUpNoLongerDue extends Error {
+  constructor() { super('Babysitting ended before this wake-up went, so what it said of that pull request was taken out.') }
+}
+/**
+ * What the coordinator asks of babysitting before a wake-up goes (ADR-0061 decision 9): whether each part may still go,
+ * and whether the thread has Sotto's tool, which the wording names.
+ */
+export interface WakeUpGuard {
+  /** False once the babysitting the news is of ended quietly or by the switch; a last wake-up for an ending still goes. */
+  due(threadId: string, news: BabysitNews): boolean
+  tool(threadId: string): boolean
+}
 class RefusedInterrupt extends Error {}
 const PRIVACY_CLEANUP_ERROR = 'Could not finish applying history privacy. Sotto will retry when local storage is available.'
 const PROMPT_NOT_SAVED = 'Could not save this prompt, so it was not sent. Check access to local storage and send it again.'
@@ -220,6 +233,7 @@ const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose =>
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private babysitting: Pick<Babysitter, 'start' | 'stop'> | undefined
+  private wakeUpGuard: WakeUpGuard | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -1682,8 +1696,24 @@ export class AgentControl {
     this.publish()
     return this.shell()
   }
-  /** The reader that babysits this host's threads' pull requests (ADR-0061), once the runtime has made it. */
-  useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>): void { this.babysitting = babysitting }
+  /**
+   * The reader that babysits this host's threads' pull requests (ADR-0061), and what the queue asks it before each
+   * wake-up goes. Given before `start`, so no wake-up restored from the queue can go unasked.
+   */
+  useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void { this.babysitting = babysitting; this.wakeUpGuard = guard }
+  /**
+   * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
+   * order a stop, the switch and the queue run in, a babysitting ended quietly or by the switch sends nothing after.
+   */
+  private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
+    const guard = this.wakeUpGuard
+    return guard !== undefined && item.wakeUp === true && (item.news ?? []).some(news => !guard.due(threadId, news))
+  }
+  private pruneWakeUp(threadId: string, id: string): Promise<void> {
+    const guard = this.wakeUpGuard
+    if (!guard) return Promise.resolve()
+    return this.followupStore.pruneWakeUp(id, news => guard.due(threadId, news), items => wakeUpText(items, { tool: guard.tool(threadId) }))
+  }
   /**
    * The user's Babysit pull request and Stop babysitting on the Pull request surface (ADR-0061 decision 3), from this
    * computer's window or a paired client. A refusal says why and that nothing was started.
@@ -2258,7 +2288,17 @@ export class AgentControl {
       }
       const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       if (!confirmed && (first.status !== 'queued' || !this.followupReady(threadId))) continue
+      if (!confirmed && this.wakeUpOutdated(threadId, first)) {
+        // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.
+        this.pumping.add(threadId)
+        let pruned = false
+        void this.pruneWakeUp(threadId, first.id).then(() => { pruned = true })
+          .catch(() => { this.state.error = 'Could not save the follow-up queue. The wake-up was not sent.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (pruned) this.pumpFollowups() })
+        continue
+      }
       this.pumping.add(threadId)
+      let requeued = false
       void (async () => {
         if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
         let claimed = false
@@ -2285,6 +2325,8 @@ export class AgentControl {
               || this.state.assignments.some(a => a.threadId === threadId && a.mode === 'managed')) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
             this.canAct(threadId)
             validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
+            // Asked again right before the provider hears it: a stop or the switch may have come while it was read.
+            if (this.wakeUpOutdated(threadId, item)) throw new WakeUpNoLongerDue()
           }
           validate()
           this.sendStages(turn)?.addRead(readMs)
@@ -2294,14 +2336,15 @@ export class AgentControl {
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
-          if (claimed) {
+          if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUp(threadId, first.id); requeued = true }
+          else if (claimed) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
             await this.followupStore.settle(first.id, accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed', failure)
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
-        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
+        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
     }
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {

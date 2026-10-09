@@ -177,6 +177,22 @@ export class FollowupStore {
       else state.items = state.items.filter(item => item !== waiting)
     })
   }
+  /**
+   * Drops from a wake-up about to go every part `due` says may no longer go, because its babysitting ended quietly or
+   * by the switch since it was told, and the item when nothing is left. One that had started to send goes back to
+   * waiting, since nothing was sent. A wake-up without its news is left as it is.
+   */
+  pruneWakeUp(id: string, due: (news: BabysitNews) => boolean, word: WordWakeUp): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item?.wakeUp || !item.news || (item.status !== 'queued' && item.status !== 'dispatching')) return false
+      const kept = item.news.filter(due)
+      if (kept.length === item.news.length && item.status === 'queued') return false
+      if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
+      Object.assign(item, { news: kept, text: word(kept), status: 'queued', updatedAt: new Date().toISOString() })
+      delete item.commandId; delete item.messageId; delete item.error
+    })
+  }
   pause(threadId: string, error: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error })

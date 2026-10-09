@@ -163,6 +163,39 @@ describe('a wake-up', () => {
     expect(sends(f.host)).toHaveLength(0)
   })
 
+  it('sends nothing of babysitting the switch ended before its sweep came, while a last wake-up for a merge the user started still goes', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    let switchedOn = true
+    // The runtime's rule (wakeUpPartDue): an agent's news goes only while the switch is on; the user's last wake-up goes.
+    f.control.useBabysitting({ start: async () => { throw new Error('unused') }, stop: async () => 0 }, { due: (_threadId, item) => item.startedBy === 'user' || switchedOn, tool: () => true })
+    await f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(2, { startedBy: 'user', changes: [], ended: 'merged' }), { tool: true })
+    // The switch is off, and the sweep that withdraws what agents started has not reached this thread yet.
+    switchedOn = false
+    complete(f.host)
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    expect(sends(f.host)[0]!.text).toContain('Pull request #2')
+    expect(sends(f.host)[0]!.text).not.toContain('Pull request #1')
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+  })
+
+  it('takes out, right before it goes, what babysitting ended while the thread was read for it', async () => {
+    const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
+    let stopped = false
+    f.control.useBabysitting({ start: async () => { throw new Error('unused') }, stop: async () => 0 }, { due: (_threadId, item) => item.ended !== null || !stopped, tool: () => true })
+    await f.control.deliverWakeUp('workshop', news(1), { tool: true })
+    await f.control.deliverWakeUp('workshop', news(2, { changes: [], ended: 'merged' }), { tool: true })
+    // The wake-up is claimed and its thread read; babysitting #1 stops during that read, after any withdrawal could act.
+    const snapshot = f.host.snapshot.bind(f.host)
+    f.host.snapshot = async () => { if (f.control.get().followups?.some(item => item.status === 'dispatching')) stopped = true; return snapshot() }
+    complete(f.host)
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    expect(sends(f.host)[0]!.text).toContain('Pull request #2')
+    expect(sends(f.host)[0]!.text).not.toContain('Pull request #1')
+    expect(stopped).toBe(true)
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+  })
+
   it('does not put the thread in the watched set or hold its working copy while only Sotto\'s item waits', async () => {
     const f = await fixture(); f.host.update('workshop', { status: 'running', lastTurn: { id: 'turn', status: 'running' } })
     f.host.observed.length = 0

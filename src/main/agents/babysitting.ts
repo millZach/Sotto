@@ -383,7 +383,7 @@ export class Babysitter {
       // Merged or closed is in the fingerprint itself: no more to read, and babysitting ends with the news.
       this.lastReads.delete(group.key)
       for (const target of group.targets) {
-        const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, head: fingerprint.head, changes: [], ended: fingerprint.state }
+        const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: fingerprint.head, changes: [], ended: fingerprint.state }
         await this.tellAndEnd(target, news, fingerprint.state)
       }
       return
@@ -425,7 +425,7 @@ export class Babysitter {
         if (!sameTold(finding.told, target.record.told)) landed = await this.record(target, finding.told) && landed
         continue
       }
-      const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, head: finding.told.head,
+      const news: BabysitNews = { pullRequest: this.pullRequestOf(target, fingerprint), startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: finding.told.head,
         changes: finding.changes, ended: finding.exhausted ? 'comment-limit' : null }
       landed = (finding.exhausted ? await this.tellAndEnd(target, news, 'comment-limit') : await this.tell(target, news, finding.told)) && landed
     }
@@ -439,7 +439,7 @@ export class Babysitter {
     for (const target of group.targets) {
       const failedReads = target.record.told.failedReads + 1
       if (failedReads < FAILED_READ_LIMIT) { await this.record(target, { ...target.record.told, failedReads }); continue }
-      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, head: target.record.told.head, changes: [], ended: 'unreadable' }
+      const news: BabysitNews = { pullRequest: { url: target.record.url, number: target.record.number, title: null }, startedBy: target.record.startedBy, startedAt: target.record.startedAt, head: target.record.told.head, changes: [], ended: 'unreadable' }
       // A wake-up that could not be handed over still counts the failure, so the next failed pass tries again.
       if (!await this.tellAndEnd(target, news, 'unreadable')) await this.record(target, { ...target.record.told, failedReads })
     }
