@@ -37,6 +37,38 @@ describe('Wayland clipboard', () => {
     expect(h.notice).not.toHaveBeenCalled()
   })
 
+  it('mirrors the exact desktop text to PRIMARY on stdin without a shell or stdout pipe', async () => {
+    const h = harness()
+    const text = '-café\n"$(no)"; `no` 🚀'
+    const write = h.clipboard.writeText(text)
+    h.child.emit('close', 0, null)
+    await write
+    const primaryChild = new ChildProcess()
+    primaryChild.stdin = new PassThrough()
+    const input: Buffer[] = []
+    primaryChild.stdin.on('data', chunk => input.push(chunk))
+    h.spawn.mockReturnValueOnce(primaryChild)
+    const primary = h.clipboard.copyToPrimary()
+    expect(h.spawn).toHaveBeenLastCalledWith('wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], {
+      shell: false, stdio: ['pipe', 'ignore', 'ignore'],
+    })
+    expect(Buffer.concat(input).toString('utf8')).toBe(text)
+    expect(primaryChild.stdin.writableEnded).toBe(true)
+    primaryChild.emit('close', 0, null)
+    await primary
+  })
+
+  it('refuses PRIMARY after fallback instead of reusing a previous successful transcript', async () => {
+    const h = harness()
+    const write = h.clipboard.writeText('previous')
+    h.child.emit('close', 0, null)
+    await write
+    h.spawn.mockImplementation(() => { throw new Error('missing') })
+    await h.clipboard.writeText('new')
+    await expect(h.clipboard.copyToPrimary()).rejects.toThrow('Desktop clipboard unavailable')
+    expect(h.spawn).toHaveBeenCalledTimes(2)
+  })
+
   it('reads the desktop clipboard with wl-paste without adding or dropping a newline', async () => {
     const h = harness()
     const read = h.clipboard.readText()

@@ -43,6 +43,7 @@ export function createHyprlandPasteAdapter(
   run: (invocation: PasteInvocation, timeoutMs?: number) => Promise<string> = runHyprctl,
   delay: (milliseconds: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now: () => number = () => performance.now(),
+  copyToPrimary: () => Promise<void> = async () => { throw new Error('Primary selection unavailable') },
 ): PasteProcessAdapter {
   return {
     async run(invocation): Promise<boolean> {
@@ -72,6 +73,7 @@ export function createHyprlandPasteAdapter(
         }
         // Query after Sotto's paste delay and modifier release, as close to dispatch as possible.
         const chord = hyprlandPasteChord(JSON.parse(await run(invocation)))
+        if (chord.mods === 'SHIFT') await copyToPrimary()
         // Modifier polling and target lookup can outlast the initial lock check.
         // Fail closed immediately before down, but never gate its matching up.
         if (JSON.parse(await run({ executable: 'hyprctl', args: ['locked', '-j'] })).locked !== false) return false

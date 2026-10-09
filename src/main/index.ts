@@ -943,6 +943,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
   const runtimeSource = runtimeVerification === null ? null : await runtimeVerification
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
+  const linuxClipboard = e2eState === null && platform === 'linux'
+    ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
+    : null
   const pasteCommands = createPasteCommands(platform)
   const warmPaste = e2eConfiguration === null && pasteCommands.helper !== null
     ? createWarmPasteAdapter({
@@ -973,7 +976,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             log: logOperational,
           })
         : platform === 'linux'
-          ? createHyprlandPasteAdapter()
+          ? createHyprlandPasteAdapter(undefined, undefined, undefined, () => linuxClipboard!.copyToPrimary())
           : createSpawnProcessAdapter((executable, args, options) => spawn(executable, args, options)))
     : createE2EPasteProcess(e2eState!, e2eConfiguration.scenario, (text) => {
         const mainWindow = BrowserWindow.getAllWindows().find(
@@ -987,9 +990,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       : ALWAYS_TRUSTED_ACCESSIBILITY
   const output = new OutputService({
     clipboard: e2eState === null
-      ? platform === 'linux'
-        ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
-        : clipboard
+      ? linuxClipboard ?? clipboard
       : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
     widget: windows,
     delay: (milliseconds) =>

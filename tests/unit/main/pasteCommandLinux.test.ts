@@ -20,7 +20,8 @@ function harness(tags: unknown = []) {
     }
   })
   const delay = vi.fn(async (ms: number) => { clock += ms })
-  return { run, delay, adapter: createHyprlandPasteAdapter(run, delay, () => clock), advance: (ms: number) => { clock += ms } }
+  const copyToPrimary = vi.fn(async () => undefined)
+  return { run, delay, copyToPrimary, adapter: createHyprlandPasteAdapter(run, delay, () => clock, copyToPrimary), advance: (ms: number) => { clock += ms } }
 }
 
 const dispatched = (run: ReturnType<typeof harness>['run']) => run.mock.calls
@@ -50,6 +51,26 @@ describe('Hyprland paste', () => {
       args: ['dispatch', `hl.dsp.send_key_state({ mods = "${chord.mods}", key = "${chord.key}", state = "${state}" })`],
     })))
     expect(h.delay.mock.calls).toEqual([[50]])
+  })
+
+  it.each([[], ['terminal']])('prepares PRIMARY only for terminal tags %j before the final lock check', async (...tags) => {
+    const h = harness(tags.flat())
+    const base = h.run.getMockImplementation()!
+    h.run.mockImplementation(async i => {
+      if (i.args[0] === 'dispatch') expect(h.copyToPrimary).toHaveBeenCalledTimes(tags.flat().length)
+      return base(i)
+    })
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(true)
+    if (tags.flat().length) {
+      expect(h.copyToPrimary.mock.invocationCallOrder[0]).toBeLessThan(h.run.mock.invocationCallOrder[3]!)
+    }
+  })
+
+  it('leaves text copied without keys if PRIMARY cannot be updated', async () => {
+    const h = harness(['terminal'])
+    h.copyToPrimary.mockRejectedValue(new Error('unavailable'))
+    await expect(h.adapter.run(buildLinuxPasteInvocation())).resolves.toBe(false)
+    expect(dispatched(h.run)).toEqual([])
   })
 
   it('waits briefly for physical modifiers to be released before querying the target', async () => {

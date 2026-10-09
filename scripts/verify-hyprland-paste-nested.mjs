@@ -133,13 +133,17 @@ try {
 
   const footFile = join(out, 'foot.txt')
   const alacrittyFile = join(out, 'alacritty.txt')
+  const stockFootFile = join(out, 'stock-foot.txt')
+  const stockFootReady = join(out, 'stock-foot-ready')
   const footReady = join(out, 'foot-ready')
   const alacrittyReady = join(out, 'alacritty-ready')
-  for (const file of [footReady, alacrittyReady]) rmSync(file, { force: true })
+  for (const file of [footReady, alacrittyReady, stockFootReady]) rmSync(file, { force: true })
   writeFileSync(footFile, '')
   writeFileSync(alacrittyFile, '')
+  writeFileSync(stockFootFile, '')
   const catArgs = (file, ready) => ['sh', '-c', 'stty raw -echo; : > "$2"; exec cat > "$1"', 'proof-cat', file, ready]
   const foot = owned.start('foot', 'foot', ['-a', 'foot', '-e', ...catArgs(footFile, footReady)], { env: nested, stdio: 'ignore' })
+  const stockFoot = owned.start('stock foot', 'foot', ['-c', '/dev/null', '-a', 'foot', '-T', 'stock foot', '-e', ...catArgs(stockFootFile, stockFootReady)], { env: nested, stdio: 'ignore' })
   // A missing system executable can be extracted into this checkout's ignored cache.
   // Alacritty from PATH; SOTTO_ALACRITTY points at another build, such as an unpacked Arch package.
   const alacrittyExecutable = process.env.SOTTO_ALACRITTY ?? 'alacritty'
@@ -169,7 +173,8 @@ try {
     return clients.some(client => client.class === 'foot' && owned.owns(client.pid, foot))
       && clients.some(client => client.class === 'Alacritty' && owned.owns(client.pid, alacritty))
       && clients.some(client => client.title === 'pastebox' && owned.owns(client.pid, chromium))
-      && existsSync(footReady) && existsSync(alacrittyReady)
+      && clients.some(client => client.title === 'stock foot' && owned.owns(client.pid, stockFoot))
+      && existsSync(footReady) && existsSync(alacrittyReady) && existsSync(stockFootReady)
   }, chromium)
 
   const [portText, browserPath] = await poll('Chromium debugger startup', () => {
@@ -235,12 +240,24 @@ try {
     console.log(`${label} received:`, JSON.stringify(receivedText))
   }
   await deliver('foot', foot, client => client.class === 'foot', ['terminal*'], 'Sotto pasted into foot — café 🚀', () => readFileSync(footFile, 'utf8'))
+  const stalePrimary = 'Different PRIMARY selection: never paste this'
+  await new Promise((resolve, reject) => {
+    const child = owned.start('Primary sentinel', 'wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], { env: nested, stdio: ['pipe', 'ignore', 'ignore'] })
+    const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Primary seed deadline')) }, 5000)
+    child.once('error', error => { clearTimeout(timeout); reject(error) })
+    child.stdin.once('error', error => { clearTimeout(timeout); child.kill('SIGTERM'); reject(error) })
+    child.once('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error('Primary seed failed')) })
+    child.stdin.end(stalePrimary, 'utf8')
+  })
+  assert.equal(execFileSync('wl-paste', ['--primary', '--no-newline'], { env: nested, encoding: 'utf8', timeout: 5000 }), stalePrimary)
+  console.log('stock foot PRIMARY before:', JSON.stringify(stalePrimary))
+  await deliver('stock foot', stockFoot, client => client.title === 'stock foot', ['terminal*'], 'Sotto pasted into stock foot — café 🚀', () => readFileSync(stockFootFile, 'utf8'))
   await deliver('Alacritty', alacritty, client => client.class === 'Alacritty', ['terminal*'], 'Sotto pasted into Alacritty — café 🚀', () => readFileSync(alacrittyFile, 'utf8'))
   await deliver('Chromium', chromium, client => client.title === 'pastebox', [], 'Sotto pasted into Chromium — naïve façade ✓', readChromium)
   execFileSync('grim', [join(out, 'nested.png')], { env: nested, timeout: 5000 })
   console.log('screenshot:', join(out, 'nested.png'))
   writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n')
-  console.log('PASS: exact paste into foot, Alacritty and Chromium')
+  console.log('PASS: exact paste into foot, stock foot with seeded PRIMARY, Alacritty and Chromium')
 } finally {
   await lifecycle.cleanup()
 }

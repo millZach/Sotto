@@ -10,13 +10,19 @@ interface TextClipboard extends ClipboardAdapter {
   readText(): string | Promise<string>
 }
 
+interface WaylandClipboard extends TextClipboard {
+  /** Mirror the last successful desktop write for terminals using Shift+Insert. */
+  copyToPrimary(): Promise<void>
+}
+
 /** wl-copy forks its selection owner. Only wait for the parent, never its stdout. */
 export function createWaylandClipboard(
   fallback: TextClipboard,
   onFallback: () => void,
   spawnProcess: ClipboardSpawn = spawn,
-): TextClipboard {
+): WaylandClipboard {
   let desktopClipboardWritten = false
+  let desktopText: string | undefined
   let fallbackReported = false
   const reportFallback = (): void => {
     if (fallbackReported) return
@@ -82,14 +88,20 @@ export function createWaylandClipboard(
   return {
     async writeText(text): Promise<void> {
       desktopClipboardWritten = false
+      desktopText = undefined
       try {
         await run('wl-copy', ['--type', 'text/plain;charset=utf-8'], text)
         desktopClipboardWritten = true
+        desktopText = text
         fallbackReported = false
       } catch {
         reportFallback()
         await fallback.writeText(text)
       }
+    },
+    async copyToPrimary(): Promise<void> {
+      if (desktopText === undefined) throw new Error('Desktop clipboard unavailable')
+      await run('wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], desktopText)
     },
     canPaste: () => desktopClipboardWritten,
     async readText(): Promise<string> {
