@@ -24,6 +24,16 @@
 set -euo pipefail
 
 out=$(realpath -m -- "${1:?usage: verify-omarchy-shell-plugin.sh <out-dir>}")
+# The captures and logs never go into the live session's own folders.
+# realpath follows every link that already exists, in the destination and
+# in these folders alike, so a link into one of them is refused too.
+for live_dir in "$HOME/.config/omarchy" "$HOME/.config/hypr" "$HOME/.local/state/omarchy"; do
+  live_dir=$(realpath -m -- "$live_dir")
+  if [[ $out == "$live_dir" || $out == "$live_dir"/* ]]; then
+    echo "verify-omarchy-shell-plugin.sh: refusing to write into $live_dir, which the live session uses: $out" >&2
+    exit 2
+  fi
+done
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 omarchy_dir=$(cd -- "$here/../apps/omarchy" && pwd -P)
 omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
