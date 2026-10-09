@@ -1,4 +1,4 @@
-// Usage: node tools/verify-linux-platform.mjs <isolated-config-folder>; requires forge's Hyprland session.
+// Usage: node scripts/verify-linux-platform.mjs <isolated-config-folder>; needs a running Hyprland session on this machine.
 /* global WebSocket, fetch */
 import assert from 'node:assert/strict'
 import { log } from 'node:console'
