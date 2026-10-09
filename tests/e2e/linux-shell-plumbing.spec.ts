@@ -16,9 +16,11 @@ test('publishes private shell state, retries and discards, remembers placement a
   test.skip(process.platform !== 'linux', 'Omarchy shell plumbing')
   test.setTimeout(90_000)
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-'))
+  const home = join(profile, 'home')
   const config = join(profile, 'config')
-  const plugin = join(config, 'omarchy/plugins/sotto.dictation')
+  const plugin = join(home, '.config/omarchy/plugins/sotto.dictation')
   const statePath = join(profile, 'sotto/dictation-state.json')
+  await mkdir(home)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, autoPaste: false, successDisplayMs: 5_000 }))
   let launched: LaunchedSotto | undefined
   let rawApp: ChildProcess | undefined
@@ -26,7 +28,7 @@ test('publishes private shell state, retries and discards, remembers placement a
   const launch = async (scenario: E2EScenario): Promise<LaunchedSotto> => {
     const app = await launchSotto(scenario, profile, {
       createProfile: async () => { throw new Error('Use the owned profile') },
-      launch: options => electron.launch({ ...options, env: { ...options?.env, XDG_CONFIG_HOME: config } }),
+      launch: options => electron.launch({ ...options, env: { ...options?.env, HOME: home, XDG_CONFIG_HOME: config } }),
       firstWindow: firstSottoWindow,
       removeProfile: path => rm(requireOwnedE2EProfile(path), { recursive: true, force: true }),
     })
@@ -116,9 +118,13 @@ test('publishes private shell state, retries and discards, remembers placement a
     console.log('unsafe edge and unknown verb: refused')
     await expect.poll(widgetVisible).toBe(true)
     await capture('widget-before-plugin.png', true)
+    await mkdir(join(config, 'omarchy/plugins/sotto.dictation'), { recursive: true })
+    // Leave the decoy installed throughout the HOME-folder transitions.
+    await expect.poll(widgetVisible).toBe(true)
+    console.log('plugin under alternate XDG_CONFIG_HOME: Electron widget visible=true')
     await mkdir(plugin, { recursive: true })
     await expect.poll(widgetVisible).toBe(false)
-    console.log('plugin created: Electron widget visible=false')
+    console.log(`plugin created under isolated HOME/.config (${plugin}): Electron widget visible=false`)
     await capture('plugin-present.png', false)
     await command('start')
     await showState('start with plugin', 'listening')
@@ -183,7 +189,7 @@ const timer = setInterval(() => {
 }, 25)
 `)
     rawApp = spawn(join(process.cwd(), 'node_modules/electron/dist/electron'), [exitHook], {
-      env: { ...e2eEnvironment('success', profile), XDG_CONFIG_HOME: config }, stdio: 'ignore',
+      env: { ...e2eEnvironment('success', profile), HOME: home, XDG_CONFIG_HOME: config }, stdio: 'ignore',
     })
     const forcedPid = rawApp.pid
     rawAppClosed = new Promise<number | null>((resolve, reject) => {

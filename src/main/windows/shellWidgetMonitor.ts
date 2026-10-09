@@ -11,8 +11,9 @@ export class ShellWidgetMonitor {
   private present: boolean | null = null
   private running = false
 
-  constructor(private readonly platform: SottoPlatform, configHome: string | undefined, home: string, private readonly changed: (present: boolean) => void) {
-    this.path = join(configHome || join(home, '.config'), 'omarchy', 'plugins', 'sotto.dictation')
+  constructor(private readonly platform: SottoPlatform, home: string, private readonly changed: (present: boolean) => void) {
+    // Omarchy's PluginRegistry uses HOME directly, regardless of XDG_CONFIG_HOME.
+    this.path = join(home, '.config', 'omarchy', 'plugins', 'sotto.dictation')
   }
 
   start(): void {

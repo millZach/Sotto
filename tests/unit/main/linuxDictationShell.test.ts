@@ -20,7 +20,7 @@ describe.skipIf(process.platform !== 'linux')('Linux shell resource lifecycle', 
     statePath = join(runtime, 'sotto/dictation-state.json')
     exitSource = new EventEmitter()
     shell = new LinuxDictationShell(runtime,
-      new ShellWidgetMonitor('linux', join(runtime, 'config'), runtime, vi.fn()),
+      new ShellWidgetMonitor('linux', runtime, vi.fn()),
       async () => true, () => 'top', vi.fn(), exitSource)
   })
   afterEach(() => { shell.dispose(); vi.restoreAllMocks(); vi.useRealTimers(); rmSync(runtime, { recursive: true, force: true }) })

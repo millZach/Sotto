@@ -1231,7 +1231,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     linuxDictationShell = new LinuxDictationShell(
       e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
       new ShellWidgetMonitor(
-        platform, process.env.XDG_CONFIG_HOME, homedir(),
+        platform, homedir(),
         present => { void windows.setWidgetSuppressed(present).catch(() => logOperational('native-widget-show-failed')) },
       ),
       async command => {
