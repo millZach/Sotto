@@ -404,7 +404,7 @@ describe('SettingsView', () => {
 
     view.rerender(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, babysitPullRequests: false } })} />)
     expect(screen.getByRole('switch', { name: 'Let agents babysit pull requests' })).toHaveAccessibleDescription(
-      'Agents are not offered babysitting, and none an agent started goes on. You can still babysit a pull request from the Pull request surface.')
+      'Agents cannot start babysitting, and Sotto stops what they started. You can still babysit a pull request from the Pull request surface.')
   })
 
   it("offers the off switches for generated text and no writing model, since each thread's own model writes", async () => {

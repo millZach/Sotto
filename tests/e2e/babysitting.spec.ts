@@ -318,7 +318,7 @@ test('a thread babysits its pull request from the surface, gets a wake-up as Sot
     await capture(page, 'c-settings-row-1280x800-dark')
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect(toggle).toHaveAccessibleDescription(/^Agents are not offered babysitting/u)
+    await expect(toggle).toHaveAccessibleDescription(/^Agents cannot start babysitting, and Sotto stops what they started\./u)
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-checked', 'true')
     expect((await readState()).calls.some(call => call.includes('BabysitFingerprint'))).toBe(true)
