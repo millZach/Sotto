@@ -163,6 +163,8 @@ cleanup() {
 }
 trap cleanup EXIT
 cp -R -- "$source_dir/." "$staging/"
+# Model.d.mts types the model for the tests; the shell has no use for it.
+rm -f -- "$staging"/*.d.mts
 chmod -R u+rwX,go+rX,go-w -- "$staging"
 if [[ -e $target || -L $target ]]; then
   previous=$(mktemp -u "$plugins_dir/.$id.previous.XXXXXX")

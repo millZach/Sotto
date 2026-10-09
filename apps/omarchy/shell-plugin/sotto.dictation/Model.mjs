@@ -178,6 +178,8 @@ export function buttonsFor(state, record) {
 // The pill's words and buttons for one state. A notice takes the words and
 // keeps the state's buttons, so a command that did not get through can be
 // pressed again; a notice that Sotto quit, `lost`, has only Dismiss.
+// Sotto's `detail` is shown word for word, and says whether a failed
+// recording was kept; the plugin's own words, used without one, say so too.
 export function pillFor(state, record, notice, lost) {
   if (notice) return { glyph: "alert", tone: "error", message: notice, buttons: lost ? ["dismiss"] : buttonsFor(state, record) }
   var buttons = buttonsFor(state, record)
