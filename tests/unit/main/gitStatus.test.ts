@@ -1,29 +1,27 @@
+import { gitRepositorySeed } from '../../fixtures/gitRepository'
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 
-const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
+const repositories: Awaited<ReturnType<Awaited<ReturnType<typeof gitRepositorySeed>>['copy']>>[] = []
+let seed: Awaited<ReturnType<typeof gitRepositorySeed>>
+beforeAll(async () => { seed = await gitRepositorySeed({ files: { 'work.txt': 'first\n' }, message: 'First' }) })
+afterAll(async () => { await seed?.dispose() })
+afterEach(async () => { for (const repo of repositories.splice(0)) await repo.dispose() })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8' }).trim()
 const commit = (cwd: string, message: string) => { execFileSync('git', ['add', '.'], { cwd, windowsHide: true }); git(cwd, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', message) }
 
 /** A repository on `main`, pushed to an owned bare remote, with a second clone that can move the remote under it. */
 async function fixture(options: { remote?: boolean; fetchIntervalMs?: number; gh?: (args: readonly string[]) => Promise<string>; before?: (command: 'git' | 'gh', args: readonly string[]) => Promise<void> } = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'sotto-git-status-')); roots.push(root)
-  const repo = join(root, 'repo'), remote = join(root, 'remote.git'), other = join(root, 'other')
-  await mkdir(repo)
-  git(repo, 'init', '-q', '-b', 'main'); git(repo, 'config', 'user.name', 'Fixture'); git(repo, 'config', 'user.email', 'fixture@example.invalid'); git(repo, 'config', 'commit.gpgSign', 'false'); git(repo, 'config', 'core.autocrlf', 'false')
-  await writeFile(join(repo, 'work.txt'), 'first\n'); commit(repo, 'First')
+  const owned = await seed.copy({ remote: options.remote !== false, secondClone: options.remote !== false })
+  repositories.push(owned)
+  const { root, repo, remote, other } = owned
   if (options.remote !== false) {
-    git(root, 'init', '--bare', '-q', '-b', 'main', remote); git(repo, 'remote', 'add', 'origin', remote)
-    git(repo, 'push', '-q', '-u', 'origin', 'main'); git(repo, 'remote', 'set-head', 'origin', 'main')
     // origin is written as GitHub's URL and Git rewrites it to the owned remote, so gh is asked about o/r.
     git(repo, 'config', `url.${remote}.insteadOf`, 'https://github.com/o/r'); git(repo, 'remote', 'set-url', 'origin', 'https://github.com/o/r')
-    git(root, 'clone', '-q', '-b', 'main', remote, other); git(other, 'config', 'user.name', 'Fixture'); git(other, 'config', 'user.email', 'fixture@example.invalid'); git(other, 'config', 'commit.gpgSign', 'false'); git(other, 'config', 'core.autocrlf', 'false')
   }
   const calls: string[][] = []
   /** Where each command ran. */

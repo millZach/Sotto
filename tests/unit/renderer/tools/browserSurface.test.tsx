@@ -1,8 +1,9 @@
+import { browserBridgeFixture, browserPage } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserBridge, BrowserEvent, BrowserPage } from '../../../../src/shared/browser'
+import type { BrowserPage } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
@@ -17,13 +18,12 @@ const workspace = { threadId: 'visual-gate', projectId: 'workshop', workingDirec
 const PAGE_1 = '11111111-1111-4111-8111-111111111111'
 const PAGE_2 = '22222222-2222-4222-8222-222222222222'
 const page = (id: string, patch: Partial<BrowserPage> = {}): BrowserPage =>
-  ({ id, workspace, url: 'http://localhost:5173/', title: 'Vite App', status: 'ready', error: null, canGoBack: false, canGoForward: false, ...patch })
+  browserPage(workspace, { id, ...patch })
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeBrowser(initial: BrowserPage[] = []) {
   let pages = initial
-  const listeners = new Set<(event: BrowserEvent) => void>()
-  const bridge: BrowserBridge = {
+  const published = browserBridgeFixture({ workspace, commands: {
     tasks: vi.fn(async () => ok([])),
     share: vi.fn(async ({ pageId, enabled }) => ok(page(pageId, { sharedOrigin: enabled ? 'http://localhost:5173' : null }))),
     viewport: vi.fn(async request => ok(page(request.pageId, { viewport: 'reset' in request ? null : { width: request.width, height: request.height } }))),
@@ -39,9 +39,8 @@ function fakeBrowser(initial: BrowserPage[] = []) {
     mount: vi.fn(async () => ok(undefined)),
     openLink: vi.fn(async ({ url, destination }) => destination === 'external'
       ? ok({ destination: 'external' as const }) : ok({ destination: 'embedded' as const, page: page(PAGE_2, { url, title: 'Docs' }) })),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: BrowserEvent) => { for (const listener of [...listeners]) listener(event) } }
+  } })
+  return { ...published, emit: published.publish }
 }
 
 beforeEach(() => {

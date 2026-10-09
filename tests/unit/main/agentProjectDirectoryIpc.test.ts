@@ -1,7 +1,8 @@
+import { ipcRegistry } from '../../fixtures/ipcHarness'
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
-import type { IpcInvocationEvent, IpcMainAdapter, TrustedIpcSender } from '../../../src/main/ipc/registerIpc'
+import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, type AgentState } from '../../../src/shared/agents'
 
 const native = vi.hoisted(() => ({
@@ -29,14 +30,9 @@ afterEach(() => {
 })
 
 function fixture() {
-  const handlers = new Map<string, (event: IpcInvocationEvent, ...args: unknown[]) => unknown>()
-  const ipc: IpcMainAdapter = { handle: (channel, handler) => { handlers.set(channel, handler) }, removeHandler: channel => { handlers.delete(channel) } }
-  const sender = (role: 'main' | 'widget'): TrustedIpcSender => {
-    const url = `file:///${role}.html`
-    const mainFrame = { parent: null, url }
-    return { role, url, webContents: { mainFrame, getURL: () => url, isDestroyed: () => false } }
-  }
-  const main = sender('main'), widget = sender('widget')
+  const registry = ipcRegistry()
+  const { ipc, main, widget, handlers } = registry
+
   const control = { get: vi.fn<() => AgentState>(), shell: vi.fn<() => AgentState>(), threadDetail: vi.fn(() => null), command: vi.fn(), attachmentPreview: vi.fn(() => null) }
   const parent = { isDestroyed: () => false }
   native.fromWebContents.mockReturnValue(parent)
@@ -45,7 +41,7 @@ function fixture() {
   const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], 'win32', { status: vi.fn(), download: vi.fn() }, { synthesize: vi.fn(), voices: vi.fn(), cancel: vi.fn() }, { synthesize: vi.fn(), cancel: vi.fn() }, { voiceCoordinatorEnabled: true, wakeControl: { configuration: vi.fn() }, encodeReceipt: new AgentStateBroadcaster().encodeReceipt, workingCopyOptions })
   disposables.push(dispose)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
-  const invoke = async (source = event, ...args: unknown[]) => handlers.get(AGENT_CHOOSE_PROJECT_DIRECTORY)!(source, ...args)
+  const invoke = async (source = event, ...args: unknown[]) => registry.invoke(AGENT_CHOOSE_PROJECT_DIRECTORY, args, source)
   return { invoke, event, main, widget, parent, control, handlers, dispose, workingCopyOptions }
 }
 

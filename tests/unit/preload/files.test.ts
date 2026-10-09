@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('electron', () => ({ contextBridge: { exposeInMainWorld: vi.fn() }, ipcRenderer: { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn() } }))
+vi.mock('electron', async () => {
+  const { preloadElectron } = await import('../../fixtures/preloadElectron')
+  return preloadElectron()
+})
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
 import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, type FileListRequest, type FileRequest } from '../../../src/shared/files'
 

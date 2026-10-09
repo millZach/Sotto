@@ -1,3 +1,4 @@
+import { cloudIphoneBridgeFixture, cloudStatus, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -30,22 +31,17 @@ function fakeEmptyBrowser(): BrowserBridge {
   }
 }
 
-const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
-  id: '11111111-1111-4111-8111-111111111111', threadId: 'visual-gate', workspaceId: 'workspace',
-  status: 'active', description: 'Checking the Needs you list', buildPath: 'apps/ios/build/Sotto.app.zip', buildBytes: 41_000_000,
-  device: 'iPhone 16 · iOS 18', expiresAt: null, startedAt: Date.now(), endedAt: null, endReason: null, minutes: 3,
-  problem: null, steps: [], summary: null, unchecked: [], ...patch,
-})
-const status = (patch: Partial<CloudIphoneStatus> = {}): CloudIphoneStatus => ({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [], ...patch })
+const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSession({ threadId: 'visual-gate', status: 'active', device: 'iPhone 16 \u00b7 iOS 18', expiresAt: null, startedAt: Date.now(), minutes: 3, ...patch })
+const status = cloudStatus
 
 function fakeCloudBridge(initialSessions: CloudSession[], initialStatus: CloudIphoneStatus) {
-  const bridge: CloudIphoneBridge = {
+  const published = cloudIphoneBridgeFixture({ commands: {
     status: vi.fn(async () => ok(initialStatus)), setKey: vi.fn(),
     sessions: vi.fn(async () => ok(initialSessions)),
     answer: vi.fn(), end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended' }))),
-    mount: vi.fn(async () => ok(undefined)), onEvent: vi.fn(() => () => undefined),
-  }
-  return bridge
+    mount: vi.fn(async () => ok(undefined)),
+  } })
+  return published.bridge
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

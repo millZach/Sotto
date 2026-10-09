@@ -1,3 +1,4 @@
+import { deferred as createDeferred } from '../../fixtures/deferred'
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
@@ -24,15 +25,7 @@ function createAdapter(
   }
 }
 
-function createDeferred<Value>() {
-  let resolve!: (value: Value | PromiseLike<Value>) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, reject, resolve }
-}
+// Gates share the same fresh promise implementation as the window and bootstrap fixtures.
 
 describe('createMicrophoneAccessGate', () => {
   it('allows an already granted microphone without prompting', async () => {

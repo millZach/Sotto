@@ -1,35 +1,27 @@
+import { cloudIphoneBridgeFixture, cloudStatus, cloudSession } from '../../../fixtures/renderer/cloudIphoneBridge'
 import React from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CloudEvent, CloudIphoneBridge, CloudIphoneStatus, CloudSession } from '../../../../src/shared/cloudIphone'
+import type { CloudIphoneBridge, CloudSession } from '../../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { CloudIphoneStore, useCloudSession, useCloudStatus } from '../../../../src/renderer/src/tools/cloudIphoneStore'
 
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
-const session = (patch: Partial<CloudSession> = {}): CloudSession => ({
-  id: '11111111-1111-4111-8111-111111111111', threadId: 'workshop', workspaceId: 'workspace',
-  status: 'asking', description: 'Checking the Needs you list', buildPath: 'apps/ios/build/Sotto.app.zip', buildBytes: 41_000_000,
-  device: null, expiresAt: Date.now() + 300_000, startedAt: null, endedAt: null, endReason: null, minutes: 0,
-  problem: null, steps: [], summary: null, unchecked: [], ...patch,
-})
+const session = cloudSession
 
-const status = (patch: Partial<CloudIphoneStatus> = {}): CloudIphoneStatus => ({
-  keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [], ...patch,
-})
+const status = cloudStatus
 
 function fakeBridge(initialSessions: CloudSession[] = []) {
-  const listeners = new Set<(event: CloudEvent) => void>()
-  const bridge: CloudIphoneBridge = {
+  const published = cloudIphoneBridgeFixture({ commands: {
     status: vi.fn(async () => ok(status())),
     setKey: vi.fn(async ({ value }) => ok(value ? { saved: true, problem: null } : { saved: true, problem: null })),
     sessions: vi.fn(async () => ok(initialSessions)),
     answer: vi.fn(async ({ sessionId, allow }) => ok(session({ id: sessionId, status: allow ? 'starting' : 'denied' }))),
     end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended', endReason: 'user' }))),
     mount: vi.fn(async () => ok(undefined)),
-    onEvent: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
-  }
-  return { bridge, emit: (event: CloudEvent) => { for (const listener of [...listeners]) listener(event) } }
+  } })
+  return { ...published, emit: published.publish }
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

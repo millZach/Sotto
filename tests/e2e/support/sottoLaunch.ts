@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { ownedE2EProfile } from './e2eProfile'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -59,7 +59,7 @@ export async function firstSottoWindow(application: ElectronApplication): Promis
 }
 
 const defaultDependencies: LaunchDependencies = {
-  createProfile: () => mkdtemp(join(tmpdir(), 'sotto-e2e-')),
+  createProfile: async () => (await ownedE2EProfile()).directory,
   launch: (options) => electron.launch(options),
   firstWindow: firstSottoWindow,
   removeProfile: removeOwnedProfile,
@@ -88,29 +88,8 @@ export async function launchSotto(
   }
 }
 
-/** Resize the main window and wait for the page to see the new width; fractional display scaling rounds it by a pixel or two. */
-export async function resizeWindow(launched: LaunchedSotto, width: number, height: number): Promise<void> {
-  await launched.app.evaluate(({ BrowserWindow }, size) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))!
-    window.setSize(size.width, size.height)
-  }, { width, height })
-  await expect.poll(async () => Math.abs(await launched.page.evaluate(() => innerWidth) - width)).toBeLessThanOrEqual(2)
-}
-
-/**
- * The main window as it is drawn on screen, through Electron's own capture of its composited frame. Playwright's
- * screenshot of the page composes a `<webview>` guest (an interactive visual's page, ADR-0060) at the wrong scale on a
- * scaled display, 1.5 times too large and cut off at 150%, though the screen shows it right; a capture that shows one
- * is taken here instead.
- */
-export async function captureWindow(application: ElectronApplication, path: string): Promise<void> {
-  const png = await application.evaluate(async ({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().endsWith('/index.html'))
-    if (!window) throw new Error('No main window to capture.')
-    return (await window.webContents.capturePage()).toPNG().toString('base64')
-  })
-  await writeFile(path, Buffer.from(png, 'base64'))
-}
+export { resizeWindow } from './sottoWindow'
+export { captureWindow } from './sottoCapture'
 
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
@@ -254,9 +233,9 @@ export async function launchSottoWithVoice(scenario: E2EScenario = 'success'): P
   return launchSotto(scenario, undefined, {
     ...defaultDependencies,
     createProfile: async () => {
-      const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-voice-'))
-      await enableVoiceCoordinator(profile)
-      return profile
+      const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-voice-' })
+      const profile = owner.directory
+      try { await enableVoiceCoordinator(profile); return profile } catch (error) { await owner.dispose(); throw error }
     },
   })
 }

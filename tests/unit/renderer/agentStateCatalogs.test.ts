@@ -1,3 +1,4 @@
+import { threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
 import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentModel, type AgentState, type AgentWireBridge } from '../../../src/shared/agents'
@@ -10,18 +11,14 @@ const HOST = 'aaaaaaaa-0000-4000-8000-000000000000'
 
 /** A minimal, schema-shaped AgentState for a `get()` recovery reply. */
 function fullState(models: AgentModel[], clientHosts?: { hostId: string; models: AgentModel[] }[]): AgentState {
-  return {
-    configuration: defaultAgentConfiguration(), connection: 'connected',
-    host: { ...structuredClone(EMPTY_AGENT_HOST), hostId: HOST, models,
+  return threadsStateFixture({
+    cloneOverrides: false,
+    configuration: defaultAgentConfiguration(),
+    host: { ...EMPTY_AGENT_HOST, hostId: HOST, models,
       ...(clientHosts ? { clientHosts: clientHosts.map(client => ({ hostId: client.hostId, connected: true, models: client.models, capabilities: EMPTY_AGENT_HOST.capabilities })) } : {}) },
-    assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
-    draftRequestId: null, draftAttachments: [], deliveredDrafts: [], threadDrafts: [], deliveries: [], pendingRequest: '',
-    globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-    voice: { status: 'off', error: null, action: 'none', revision: 0 },
-    credentials: { reasoning: false, grokSpeech: false, secure: false },
-    reasoningAccounts: [],
-     clientScoped: true,
-  }
+    topLevel: { assignments: [], queue: [], activeThreadId: null, activeProjectId: null, draftAttachments: [],
+      credentials: { reasoning: false, grokSpeech: false, secure: false }, clientScoped: true },
+  })
 }
 
 /** A raw broadcast payload, as it would cross the wire once encoded by AgentStateBroadcaster. */
