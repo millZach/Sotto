@@ -3,7 +3,7 @@ import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { createWaylandClipboard, CLIPBOARD_PROCESS_TIMEOUT_MS, CLIPBOARD_TERMINATE_GRACE_MS } from '../../../src/main/output/waylandClipboard'
-import { OutputClipboardError, OutputService } from '../../../src/main/output/outputService'
+import { OutputService } from '../../../src/main/output/outputService'
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
 
 function harness() {
@@ -134,15 +134,15 @@ describe('Wayland clipboard', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('keeps a failed fallback write in the existing completed-text recovery path', async () => {
+  it.each([false, true])('reports desktop unavailability when Electron fallback also fails with autoPaste=%s', async autoPaste => {
     const h = harness()
     h.fallback.writeText.mockImplementation(() => { throw new Error('private') })
     const service = new OutputService({
       clipboard: h.clipboard, widget: { hideWidget: vi.fn(), showWidget: vi.fn() },
       delay: vi.fn(), process: { run: vi.fn() }, buildPasteInvocation: createPasteCommands('linux').oneShot,
     })
-    const delivery = service.deliver('dictation', { autoPaste: false, pasteDelayMs: 80 })
-    const assertion = expect(delivery).rejects.toEqual(new OutputClipboardError())
+    const delivery = service.deliver('dictation', { autoPaste, pasteDelayMs: 80 })
+    const assertion = expect(delivery).resolves.toBe('clipboard-unavailable')
     await vi.waitFor(() => expect(h.spawn).toHaveBeenCalledOnce())
     h.child.emit('error', new Error('missing'))
     await assertion

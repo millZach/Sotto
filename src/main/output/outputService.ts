@@ -129,6 +129,8 @@ export class OutputService {
     try {
       await this.dependencies.clipboard.writeText(text)
     } catch {
+      // Wayland availability still matters if Electron's own fallback also fails.
+      if (this.dependencies.clipboard.canPaste?.() === false) return 'clipboard-unavailable'
       throw new OutputClipboardError()
     }
 
