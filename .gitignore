@@ -181,7 +181,9 @@ artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/failed-stop-keeps-pill.png
 !artifacts/omarchy-shell-plugin/nested-proof.txt
 !artifacts/omarchy-shell-plugin/notices.png
+!artifacts/omarchy-shell-plugin/read-failure-keeps-pill.png
 !artifacts/omarchy-shell-plugin/rule-a-after-copied.png
+!artifacts/omarchy-shell-plugin/rule-a-coalesced.png
 !artifacts/omarchy-shell-plugin/rule-a-two-displays.png
 !artifacts/omarchy-shell-plugin/sotto-quit.png
 !artifacts/omarchy-shell-plugin/states-catppuccin-latte.png

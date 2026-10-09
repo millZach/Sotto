@@ -1,12 +1,12 @@
 live: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1 (untouched)
-nested A: efb50993780079460b0cbed1363e2166a2de1d9f_1791565286_1687236626 on wayland-2, PID 987483; nested B: efb50993780079460b0cbed1363e2166a2de1d9f_1791565286_983233994 on wayland-3, PID 987513
+nested A: efb50993780079460b0cbed1363e2166a2de1d9f_1791567808_1101105238 on wayland-2, PID 1288116; nested B: efb50993780079460b0cbed1363e2166a2de1d9f_1791567808_2090872892 on wayland-3, PID 1288146
 PASS: B has two displays, 1600x1000 and 1280x800
 PASS: the nested shell's IPC lives in the isolated runtime folder
 --- install
-  install: Copied the plugin to /tmp/sotto-shell-proof.BzXYZ1/home/.config/omarchy/plugins/sotto.dictation.
-  install: There is another copy of the plugin in /tmp/sotto-shell-proof.BzXYZ1/home/xdg-elsewhere/omarchy/plugins/sotto.dictation. Omarchy's shell does not load it, since it reads plugins only from /tmp/sotto-shell-proof.BzXYZ1/home/.config/omarchy/plugins, so you can delete that copy.
+  install: Copied the plugin to /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/plugins/sotto.dictation.
+  install: There is another copy of the plugin in /tmp/sotto-shell-proof.eXHJY1/home/xdg-elsewhere/omarchy/plugins/sotto.dictation. Omarchy's shell does not load it, since it reads plugins only from /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/plugins, so you can delete that copy.
   install: sotto.dictation is on the bar
-  install: Sotto's glyph runs /tmp/sotto-shell-proof.BzXYZ1/checkout/apps/omarchy/sotto.
+  install: Sotto's glyph runs /tmp/sotto-shell-proof.eXHJY1/checkout/apps/omarchy/sotto.
 PASS: the plugin was copied to $HOME/.config/omarchy/plugins whatever XDG_CONFIG_HOME says, without the tests' types
 PASS: the script says a copy under XDG_CONFIG_HOME is not loaded
 PASS: no staging folder was left behind
@@ -23,7 +23,7 @@ PASS: failed-plain: the pill is centred under the bar (416x44 at 592,31)
 PASS: delivered: the pill shows Pasted
 PASS: delivered: the pill is gone after its hold
 --- the bar glyph
-PASS: a click on the bar glyph runs: /tmp/sotto-shell-proof.BzXYZ1/checkout/apps/omarchy/sotto dictation toggle
+PASS: a click on the bar glyph runs: /tmp/sotto-shell-proof.eXHJY1/checkout/apps/omarchy/sotto dictation toggle
 --- the pill's buttons
 PASS: Cancel runs: sotto dictation cancel
 PASS: Stop runs: sotto dictation stop
@@ -51,11 +51,23 @@ PASS: six seconds later the pill, its words and its buttons are still there
 PASS: its Cancel can still be pressed, and a Cancel that does not get through keeps the pill too
 PASS: once the command works again, Stop reaches Sotto
 --- Sotto quits
-PASS: a dictation shows while the Sotto it names runs (PID 993539)
+PASS: a dictation shows while the Sotto it names runs (PID 1293884)
 PASS: within a few seconds of Sotto quitting, the pill says the dictation was lost (424x52)
 PASS: its Dismiss puts the notice away and runs nothing
 PASS: a kept recording whose Sotto has quit is shown as lost, with Dismiss rather than Discard (455x52)
+PASS: a file whose PID now belongs to a process started at another time says Sotto quit, from its first read (424x52)
+PASS: the process with that PID is still running
+PASS: a state file with pid and no pidStart is checked by its PID alone
 PASS: a state file without pid, from an older Sotto, is taken at its word
+--- a state file that cannot be read
+PASS: a state file that cannot be read keeps the pill and its buttons, and says so (602x44 at 499,31)
+PASS: its Stop still runs: sotto dictation stop
+PASS: five seconds later the pill and its notice are still there
+PASS: once the file can be read again, the notice goes and the dictation shows as before (284x44)
+PASS: when Sotto quits while its file cannot be read, the pill says the dictation was lost (424x52)
+PASS: after Dismiss no pill shows, and the glyph still says the file cannot be read
+PASS: once the file is gone, the glyph is back at rest
+PASS: a file that cannot be read from the first shows no pill, only the glyph in the urgent colour
 --- rule A: the display focused when dictation starts
 PASS: the pointer on the second display focuses it
 PASS: the pill opens on the focused second display only
@@ -68,6 +80,11 @@ PASS: copied: a new dictation started meanwhile opens on the focused second disp
 PASS: kept: the result shows on the first display, where its dictation started, with the pointer on the second
 PASS: kept: a new dictation started meanwhile opens on the focused second display
 PASS: when Sotto quits, its notice stays on the display the dictation was on (424x52)
+--- rule A: two dictations' states written as one
+PASS: named: A's starting shows on the first display, with the pointer now on the second
+PASS: B's listening, under its own identifier, opens on the focused second display
+PASS: unnamed: A's starting shows on the first display, with the pointer now on the second
+PASS: without identifiers, as from an older Sotto, the pair reads as one dictation and stays on the first display
 --- an upright failure on a small display, then a scaled one
 PASS: small: the pointer focuses the 820x560 display at 1x
 PASS: small: the upright failure pill fits the display beside the bar, buttons and all (52x447 at 4,71 of 820x560)
@@ -88,17 +105,20 @@ PASS: light: a drag to the left snaps upright
 --- uninstall
   uninstall-without-shell: install-shell-plugin.sh: Sotto's glyph is on the bar, and only a running Omarchy shell can take it off. Nothing was removed. Run this again in your desktop session.
 PASS: without a running shell --uninstall fails and removes nothing
+  uninstall-unreadable: install-shell-plugin.sh: Could not read /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/shell.json to see whether Sotto's glyph is on the bar: Could not open file /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/shell.json: Permission denied. Nothing was removed. Fix or restore that file, then run this again.
+PASS: with shell.json unreadable, --uninstall keeps the plugin folder and says why
+PASS: the glyph is still on the bar after that
   uninstall: Took Sotto's glyph off the bar.
-  uninstall: Removed Sotto's shell plugin from /tmp/sotto-shell-proof.BzXYZ1/home/.config/omarchy/plugins.
+  uninstall: Removed Sotto's shell plugin from /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/plugins.
 PASS: --uninstall takes the glyph off the bar, then removes the plugin folder
 PASS: an orphaned glyph is on the bar with no plugin folder
   uninstall-orphan: Took Sotto's glyph off the bar.
-  uninstall-orphan: Its plugin folder had already gone from /tmp/sotto-shell-proof.BzXYZ1/home/.config/omarchy/plugins.
+  uninstall-orphan: Its plugin folder had already gone from /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/plugins.
 PASS: --uninstall takes the orphaned glyph off the bar
-  uninstall-again: Sotto's shell plugin is not installed in /tmp/sotto-shell-proof.BzXYZ1/home/.config/omarchy/plugins, and its glyph is not on the bar.
+  uninstall-again: Sotto's shell plugin is not installed in /tmp/sotto-shell-proof.eXHJY1/home/.config/omarchy/plugins, and its glyph is not on the bar.
 PASS: a second --uninstall finds nothing left to remove
 --- composites
-PASS: 71 checks
+PASS: 88 checks
 no process outlived the proof
 instance folders after cleanup: efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 
 live shell.json unchanged
