@@ -58,6 +58,14 @@ final class RequestTextTests: XCTestCase {
         XCTAssertTrue(WebLinks.find(in: ["No link here.", ""]).isEmpty)
     }
 
+    /// One block for the whole request: a Codex form's own message, every question, and choices without questions.
+    func testARequestGathersTheLinksInItsTextQuestionsAndChoices() throws {
+        let form = try request(#"{"id":"f","kind":"question","text":"The variants are at https://example.com/form","options":[],"questions":[{"id":"q","question":"Which? See https://example.com/q","options":[{"id":"x","label":"X","description":"https://example.com/x"}],"multiSelect":false,"allowFreeText":false}]}"#)
+        XCTAssertEqual(WebLinks.find(in: form).map(\.absoluteString), ["https://example.com/form", "https://example.com/q", "https://example.com/x"])
+        let legacy = try request(#"{"id":"l","kind":"question","text":"Pick one","options":[{"id":"a","label":"A","description":"https://example.com/a"}]}"#)
+        XCTAssertEqual(WebLinks.find(in: legacy).map(\.absoluteString), ["https://example.com/a"])
+    }
+
     func testARowShowsTheHostAndPath() throws {
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://laptop.tail5728ca.ts.net/terminal-states/"))), "laptop.tail5728ca.ts.net/terminal-states/")
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com/"))), "example.com")

@@ -1423,22 +1423,26 @@ private struct ReplyDock: View, Equatable {
     }
 }
 
-/// The thread's queued messages over the reply box, in order: two at most, and a count of the rest.
+/// The thread's queued messages over the reply box, in order: two, and a press on the count of the rest shows them all.
 private struct FollowupStack: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
+    @State private var all = false
     var body: some View {
         let items = model.followups(ref)
         if !items.isEmpty {
+            let hidden = items.count - FollowupQueue.shownCards
             VStack(alignment: .leading, spacing: Space.s2) {
-                ForEach(Array(items.prefix(FollowupQueue.shownCards))) { item in
+                ForEach(Array(all ? items[...] : items.prefix(FollowupQueue.shownCards))) { item in
                     FollowupCard(ref: ref, item: item)
                 }
-                if items.count > FollowupQueue.shownCards {
-                    Text("\(items.count - FollowupQueue.shownCards) more queued")
-                        .font(.sotto(.small))
-                        .foregroundStyle(Palette.muted)
+                if hidden > 0 {
+                    Button(all ? "Show fewer" : "\(hidden) more queued") { all.toggle() }
+                        .font(.sotto(.small, .semibold))
+                        .foregroundStyle(Palette.accentText)
+                        .frame(minHeight: 44)
                         .padding(.horizontal, Space.s4)
+                        .accessibilityLabel(all ? "Show fewer queued messages" : "Show \(hidden) more queued messages")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1589,6 +1593,12 @@ private struct RequestSheet: View {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
         }
+        // Every link in a question, together above its choices. Opening one answers nothing, so it shows on an iPhone
+        // that can't answer too.
+        if !permission {
+            let links = WebLinks.find(in: current)
+            if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
+        }
         if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
             if let cwd = context.cwd { runsIn(cwd) }
@@ -1716,8 +1726,6 @@ private struct RequestSheet: View {
             if let questions = current.questions, !questions.isEmpty {
                 ForEach(questions) { item in questionField(item, showsTitle: questions.count > 1, enabled: enabled) }
             } else {
-                let links = WebLinks.find(in: [current.text])
-                if !links.isEmpty { LinkRows(links: links) }
                 Group {
                     if !current.options.isEmpty {
                         VStack(spacing: Space.s2) {
@@ -1741,15 +1749,13 @@ private struct RequestSheet: View {
     }
 
     private func questionField(_ item: Question, showsTitle: Bool, enabled: Bool) -> some View {
-        let links = WebLinks.find(in: item)
-        return VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: Space.s2) {
             if showsTitle {
                 Text(item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
             }
             if let reason = item.unavailableReason {
                 Text(reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
-            if !links.isEmpty { LinkRows(links: links) }
             choices(item).disabled(!enabled)
         }
     }

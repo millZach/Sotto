@@ -48,8 +48,15 @@ public enum WebLinks {
     }
 
     /// The links in one question: in its prompt, its header, and each choice's label and description.
-    public static func find(in question: Question) -> [URL] {
-        find(in: [question.question, question.header ?? ""] + question.options.flatMap { [$0.label, $0.description ?? ""] })
+    public static func find(in question: Question) -> [URL] { find(in: texts(question)) }
+
+    /// Every link in a request: its own words, then each question's, then any choices it carries without questions.
+    public static func find(in request: AgentRequest) -> [URL] {
+        find(in: [request.text] + (request.questions ?? []).flatMap(texts) + request.options.flatMap { [$0.label, $0.description ?? ""] })
+    }
+
+    private static func texts(_ question: Question) -> [String] {
+        [question.question, question.header ?? ""] + question.options.flatMap { [$0.label, $0.description ?? ""] }
     }
 
     /// Where a link goes, as its row shows it: the host and path, without the scheme.

@@ -532,8 +532,9 @@ struct HeldDetail {
     }
     /// A reply, answer or stop still on its way, as opposed to one its computer couldn't confirm.
     func isSending(_ item: PendingOperation) -> Bool { dispatchingOperations.keys.contains(item.id) || receiptFollowers[item.id] != nil }
+    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer or a removal never holds it.
     func canInterrupt(_ ref: ThreadRef) -> Bool {
-        online(ref.hostID) && pending(for: ref).allSatisfy { $0.kind == "reply" || $0.kind == "queue" }
+        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove"].contains($0.kind) }
             && thread(ref)?.status == "running" && (capabilities(for: ref)?.interrupt ?? false)
     }
     /// The thread's follow-up queue, in order, as the reply box shows it.
