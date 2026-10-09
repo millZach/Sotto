@@ -559,6 +559,11 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
   codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
 }
+/** The provider a model's `provider` label names, by the provider's id or its name in any case; undefined for any other label. */
+export function providerIdOfLabel(label: string): ProviderId | undefined {
+  const name = label.trim().toLowerCase()
+  return providerIdSchema.options.find(id => id === name || PROVIDER_LABELS[id].toLowerCase() === name)
+}
 const ORB_COLORS = ['teal', 'violet', 'ice', 'amber', 'mono'] as const
 const orbColorSchema = z.enum(ORB_COLORS)
 export type OrbColor = z.infer<typeof orbColorSchema>

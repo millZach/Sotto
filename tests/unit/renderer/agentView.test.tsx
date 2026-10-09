@@ -65,6 +65,16 @@ it.each(['listening', 'wake', 'muted'] as const)('reveals prompt dictation and t
   expect(command).toHaveBeenCalledWith({ type: 'pause-draft' })
 })
 
+it('tints a thread badge in the coordinator room by its provider, not by the words of its label', () => {
+  const state = stateFixture()
+  state.host.models = [{ id: 'model', name: 'Available model', provider: 'Claude Code', ready: true }]
+  vi.mocked(useAgents).mockReturnValue({ ...connection(state), attention: { items: [], show: false, dismiss: vi.fn(), next: vi.fn(), reopen: vi.fn() } } as unknown as ReturnType<typeof useAgents>)
+  render(<AgentRoom onOpenThreads={vi.fn()} />)
+  const badge = screen.getByRole('button', { name: 'Open Build game' }).querySelector('.agent-session__badge')
+  expect(badge).toHaveAttribute('data-provider', 'claude')
+  expect(badge).toHaveTextContent('C')
+})
+
 describe('one pill with agent controls', () => {
   // Voice is hidden for the beta, so a pill only carries agent controls where
   // the snapshot says the coordinator is shown.
