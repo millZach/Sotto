@@ -837,6 +837,8 @@ describe('independent working-copy allocation', () => {
     }
     await expect(lstat(childDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   }, 60_000)
+  // These cases create and inspect real nested repositories, like the reclaim cases above.
+  // Keep their Git allowance generous; elapsed time is not what the assertions prove.
   it.each(['clean', 'recursive', 'dirty-hidden'])('reclaims initialized submodules safely (%s)', async mode => {
     const recursive = mode === 'recursive'
     const f = await fixture()
@@ -870,7 +872,7 @@ describe('independent working-copy allocation', () => {
     }
     expect((await f.service.reclaimFacts(a)).repositories).toEqual([])
     expect((await f.service.reclaim(a, { automatic: true })).reclaimedAt).toBeTruthy()
-  })
+  }, 60_000)
   it('lists a bare repository hidden inside dependencies and requires the tick', async () => {
     const f = await fixture(); const a = await f.service.ensure(await f.service.allocate(f.project, 'independent'))
     await writeFile(join(a.path!, '.gitignore'), 'node_modules/\n')
@@ -882,7 +884,7 @@ describe('independent working-copy allocation', () => {
     expect(facts.repositories).toEqual([{ path: 'node_modules/local.git/', changeCount: 0, unpushedCommitCount: 0, kind: 'repository' }])
     await expect(f.service.reclaim(a, { automatic: true })).rejects.toThrow('besides installed dependencies')
     expect((await f.service.reclaim(a, { confirmedItems: facts.items, confirmedIgnored: facts.ignored, confirmedRepositories: facts.repositories })).reclaimedAt).toBeTruthy()
-  })
+  }, 60_000)
   it('resolves authoritative cwd before project fallback and blocks unresolved setup', () => {
     expect(resolveThreadWorkingDirectory({ workingDirectory: '/actual' }, { path: '/project' })).toBe('/actual')
     expect(resolveThreadWorkingDirectory({}, { path: '/legacy' })).toBe('/legacy')
