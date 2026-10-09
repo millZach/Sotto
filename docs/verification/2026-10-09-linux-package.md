@@ -4,7 +4,7 @@ Verified on forge, October 9, 2026, for #841, under the accepted Linux desktop d
 
 ## What was checked
 
-`npm ci`, `node node_modules/electron/install.js` and `npm run runtime:prepare` were run through `mise exec node@24.21.0 --`. Builds and test suites ran one at a time; Vitest used two workers and Playwright one. The shared electron-builder keys, Windows block and macOS block compare equal to the base. `npmRebuild` remains false; only the Linux command adds `--config.npmRebuild=true`. Main changes are confined to login items and startup, including passing Linux's powerMonitor to the existing quit drain as ADR-0062 requires. No shell plugin files changed.
+`npm ci`, `node node_modules/electron/install.js` and `npm run runtime:prepare` were run through `mise exec node@24.21.0 --`. Builds and test suites ran one at a time; Vitest used two workers and Playwright one. The shared electron-builder keys, Windows block and macOS block compare equal to the base. `npmRebuild` remains false; only the Linux command adds `--config.npmRebuild=true`. Main changes are confined to login items and startup; the quit-drain registration is byte-for-byte the same as origin/main. No shell plugin files changed.
 
 The final four gates and the main/preload external allowlist output are retained in [gates.txt](../../artifacts/linux-package/gates.txt). Typecheck and lint passed. Vitest passed 627 files and 9,289 tests, with 50 files and 182 tests skipped (677 files, 9,471 tests total), in 507.67 seconds. Notices verification checked 174 components, and the external allowlist printed `allowlist check: PASS`. A final build-input comparison matched the packaged digest. The normal unit gate covers the Linux profile, isolated smoke environment, complete archive comparison, a tarball missing its WASM resource while its ASAR is unchanged, packaged autostart write/remove and disabled development startup. Existing Windows/macOS profiles and the false shared rebuild setting remain pinned.
 
@@ -64,6 +64,8 @@ The owner can install from the laptop:
 ```sh
 ssh -t zach@forge 'sudo pacman -U /home/zach/Projects/Sotto/.worktrees/linux-package/apps/omarchy/sotto-bin-0.1.34-1-x86_64.pkg.tar.zst'
 ```
+
+Linux shutdown drain is deferred to #871, which needs a Linux handler that requests logind’s delay.
 
 Real pacman installation, a fresh sign-in, dictation with an OpenRouter key and AUR/release publication remain owner release actions. The optional install helper was syntax checked only. It installs a local package, a repository package or the eventual AUR package, then offers bindings and separate shell-plugin instructions. Shell plugin delivery is #850's work.
 

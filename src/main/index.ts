@@ -710,7 +710,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' || platform === 'linux' ? powerMonitor : undefined)
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform === 'darwin' ? powerMonitor : undefined)
   let browserService: BrowserService | undefined
   let cloudIphoneService: CloudIphoneService | undefined
   const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
