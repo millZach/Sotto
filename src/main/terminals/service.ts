@@ -85,7 +85,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   private snapshot(record: LiveTerminal): WorkspaceTerminalSnapshot { return { terminal: { ...record.terminal }, output: record.output, sequence: record.sequence } }
   private syncAgent(record: LiveTerminal): void {
     if (!record.agent || this.disposed) return
-    const agentState = record.agent.state, stateDetection = record.agent.detection
+    const agentState = record.agent.state, stateDetection = record.agent.compatibility
     if (record.terminal.agentState === agentState && record.terminal.stateDetection === stateDetection) return
     record.terminal = { ...record.terminal, agentState, stateDetection }
     this.publish(record)
@@ -142,7 +142,7 @@ export class TerminalWorkspaceService extends ToolOperations {
       terminal: {
         id: randomUUID(), projectId: project.id, title: request.title, launch: request.launch, workingCopy: worktree?.mode ?? 'shared', ...(worktree ? { worktree } : {}),
         workingDirectory, branch: null, command: launcher.command, status: 'starting', cols: request.cols ?? 80, rows: request.rows ?? 24, exitCode: null, openedAt: this.now(), closedAt: null,
-        ...(request.launch.provider ? { agentState: 'starting' as const, stateDetection: 'unavailable' as const } : {}),
+        ...(request.launch.provider ? { agentState: 'starting' as const, stateDetection: 'available' as const } : {}),
       },
       output: '', sequence: 0, subscriptions: [], generation: 0,
     }
@@ -324,10 +324,10 @@ export class TerminalWorkspaceService extends ToolOperations {
         record.pty = undefined
         this.releaseAgentRun(record)
         record.terminal = { ...record.terminal, status: 'exited', exitCode }
-        if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.detection }
+        if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.compatibility }
         this.publish(record)
       }))
-      if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.detection }
+      if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.compatibility }
       this.publish(record)
     } catch (error) {
       if (this.disposed || generation !== record.generation) throw error
@@ -389,7 +389,7 @@ export class TerminalWorkspaceService extends ToolOperations {
     const generation = ++record.generation
     this.end(record)
     record.agent = undefined
-    record.terminal = { ...record.terminal, ...(record.terminal.launch.provider ? { agentState: 'starting' as const, stateDetection: 'unavailable' as const } : {}) }
+    record.terminal = { ...record.terminal, ...(record.terminal.launch.provider ? { agentState: 'starting' as const, stateDetection: 'available' as const } : {}) }
     const restarting = (async () => {
       try {
         const launcher = await this.launcher(record.terminal.launch)

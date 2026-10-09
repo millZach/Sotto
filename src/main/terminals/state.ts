@@ -34,9 +34,18 @@ export class TerminalAgentStateMachine {
   private hooksKnown = false
   private pendingSubmission = false
   private awaitingSubmissionHook = false
+  private unversioned = false
   constructor(readonly runId: string, private readonly provider: TerminalProvider, cols: number, rows: number, providerSessionId?: string) {
     this.screen = new TerminalAgentScreen(cols, rows); this.rules = new TerminalScreenRules(provider)
     this.providerSessionId = providerSessionId
+  }
+  /**
+   * What the pane tells the user: whether the bundled rules can read this CLI at all. `detection` is per frame and
+   * misses on every draft keystroke, resize or streamed reply; publishing that would flicker a note in the pane.
+   */
+  get compatibility(): 'available' | 'unavailable' {
+    const supported = this.rules.supported
+    return supported === false || supported === undefined && this.unversioned ? 'unavailable' : 'available'
   }
   started(): void { this.live = true; this.reconcile() }
   setVisible(visible: boolean): void { this.visible = visible; if (visible && (this.completion || this.readyForCompletion)) this.completionViewed = true; if (visible && this.state === 'just-finished') this.state = 'idle' }
@@ -46,6 +55,7 @@ export class TerminalAgentStateMachine {
     this.screen.write(chunk); this.fresh = true
     this.evidence = this.rules.read(this.screen); this.detection = this.evidence.detection
     if (this.evidence.unsupportedVersion) this.awaitingReady = false
+    if (this.evidence.unresolvedVersion) this.unversioned = true
     if (this.evidence.state) this.inputReady = this.evidence.state === 'idle'
     if (this.evidence.state === 'idle' && !this.draftStarted) this.localCommand = false
     if (this.evidence.failed) { this.interrupted = true; this.completion = false; this.readyForCompletion = false; this.continuingWork = false }

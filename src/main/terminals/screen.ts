@@ -177,6 +177,8 @@ export const TERMINAL_SCREEN_RULES = { claude: '2.1.295', codex: '0.162.0', grok
 export class TerminalScreenRules {
   private version: string | undefined
   constructor(private readonly provider: TerminalProvider) {}
+  /** Whether the CLI's own banner named the version these rules were checked against; undefined until a banner names one. */
+  get supported(): boolean | undefined { return this.version === undefined ? undefined : this.version === TERMINAL_SCREEN_RULES[this.provider] }
   read(screen: TerminalAgentScreen): TerminalScreenEvidence {
     const all = screen.logicalLines()
     const header = all.join('\n')

@@ -72,6 +72,8 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     ...(running ? [{ id: 'stop', label: 'Stop', icon: <Square size={15} aria-hidden="true" />, disabled: !bridge, run: () => void store.stop(bridge, id) }] : []),
   ]
   const needsYou = terminal.status === 'running' && terminal.agentState === 'needs-you'
+  // Sits in the status line, not above the screen: a note that comes and goes there would resize the terminal under the CLI.
+  const unread = terminal.status === 'running' && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable'
   return <div className="terminal-pane" data-focused={focused || undefined} data-needs-you={needsYou || undefined}>
     <header className="thread-workspace__head">
       <div className="thread-workspace__title">
@@ -85,7 +87,6 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
       <div className="thread-workspace__actions"><PaneMenu groups={[actions]} /></div>
     </header>
     <div className="terminal-pane__body" data-ended={!running || undefined}>
-      {running && terminal.launch.provider !== null && terminal.stateDetection === 'unavailable' ? <p className="terminal-detection-note" role="status">State detection is unavailable. Answer in the terminal.</p> : null}
       {!running ? <div className="terminal-ended" role="status">
         <p><strong>{exitLabel(terminal)}.</strong> {exitNote(terminal)}</p>
         <button type="button" className="files-link tt-focusable" disabled={busy || !bridge} onClick={() => { focusNext.current = id; void store.restart(bridge, id) }}>
@@ -100,6 +101,8 @@ export function TerminalPane({ row, store, bridge, viewFactory, viewFailed, focu
     </div>
     <p className="terminal-status">
       <span className="terminal-status__branch" title={terminal.workingDirectory}><GitBranch size={13} aria-hidden="true" />{terminal.branch ?? (starting ? 'Starting…' : 'No branch')}</span>
+      {unread ? <span className="terminal-status__note" title={`Sotto has no screen rules for this ${row.provider} version, so it cannot show Needs you or Just finished. Watch the terminal for questions.`}>
+        Sotto can't tell when this {row.provider} version needs you</span> : null}
       <span className="terminal-status__hints">{modifier}+C copies a selection or interrupts · {modifier}+V pastes text or an image</span>
     </p>
   </div>

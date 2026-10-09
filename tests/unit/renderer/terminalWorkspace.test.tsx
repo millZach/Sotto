@@ -268,10 +268,13 @@ describe('Terminal mode', () => {
     expect(document.querySelector(`[data-thread-id='${ID_2}']`)).toHaveAttribute('data-hidden')
   })
 
-  it('shows conservative detection fallback in the terminal detail and keeps agent Idle as Idle', async () => {
+  it('says in the status line when the screen rules cannot read the CLI, and keeps agent Idle as Idle', async () => {
     const view = mount([terminal(ID_1, { title: 'Build', agentState: 'idle', stateDetection: 'unavailable' })])
     fireEvent.click(await within(sidebar()).findByRole('button', { name: 'Build' }))
-    expect(await screen.findByText('State detection is unavailable. Answer in the terminal.')).toBeInTheDocument()
+    const note = await screen.findByText("Sotto can't tell when this Claude Code version needs you")
+    // In the status line rather than above the screen, so it never resizes the terminal; and it announces nothing.
+    expect(note.closest('.terminal-status')).not.toBeNull()
+    expect(note.closest('[role="status"]')).toBeNull()
     await act(async () => { view.emit({ type: 'output', id: ID_1, data: 'Would you like to allow an old example?\r\n', sequence: 1 }) })
     expect(within(sidebar()).getByRole('button', { name: 'Build' })).toHaveAccessibleDescription('Claude Code, Idle')
     expect(screen.getByRole('region', { name: 'Build' }).querySelector('.terminal-pane')).not.toHaveAttribute('data-needs-you')
