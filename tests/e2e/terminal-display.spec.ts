@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
-const SHOTS = resolve('artifacts/terminal-display')
+const SHOTS = evidenceDirectory('artifacts/terminal-display')
 
 /** Pixel assertion on the rendered grid, independent of DOM/WebGL implementation details. */
 async function orangeCoverage(page: Page, png: Buffer): Promise<number> {

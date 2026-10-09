@@ -1,11 +1,12 @@
 import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Settings → Git, the owner's pick B (grouped by moment), in the built app: every size and both rooms, the
 // keyboard path through the section, the example under the style, and saves that read back.
-const evidence = resolve('artifacts/git-settings')
+const evidence = evidenceDirectory('artifacts/git-settings')
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {

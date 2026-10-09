@@ -7,10 +7,11 @@ import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { hostKeys } from './support/hostKeys'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 // Three, four and five thread panes across projects on the real app: snapping, row arrangement, dividers by pointer
 // and keyboard, moving panes, zoom, compact windows, and restoring the arrangement after a restart. Providers are fixtures.
-const SHOTS = 'artifacts/phase-three-layout'
+const SHOTS = evidenceDirectory('artifacts/phase-three-layout')
 
 async function size(launched: LaunchedSotto, width: number, height: number): Promise<void> {
   await launched.app.evaluate(({ BrowserWindow }, [width, height]) => {

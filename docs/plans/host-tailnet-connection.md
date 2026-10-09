@@ -109,7 +109,7 @@ Dependency order: 1, then 2 and 3 (in parallel), then 4, then 5, then 6, then 7 
    - Tests:
      - `hostPhoneAccess.test.ts` with the Tailscale stand-in: with phones off and desktops on, a phone's session is refused and `/v1/pair` gets 403, while a recorded desktop gets the full features; a client paired with `--pairing-code` and in neither file is treated as a phone; an unreadable `desktop-clients.json` counts nobody as a desktop;
      - launch-script tests that every SSH connect records the desktop, including one paired before the file existed;
-     - `socketServer` unit tests for the observation and receipt fixes;
+     - `tests/integration/socketServer.test.ts` for the observation and receipt fixes;
      - `hostListener.test.ts` still asserts loopback only.
    - Docs: `docs/host-protocol.md`.
 3. **Keep the admin SSH apart from a host's socket connection**

@@ -6,9 +6,10 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const LEFTOVER = 'The release notes page still links the old download host. Change every link in docs/release and the README to the new releases repository, keep the anchors as they are, and run the docs link check.'
-const ARTIFACTS = 'artifacts/empty-page-saved-draft'
+const ARTIFACTS = evidenceDirectory('artifacts/empty-page-saved-draft')
 
 /**
  * A profile whose coordinator saved state holds LEFTOVER, written for `draftThreadId`, beside the design fixture's

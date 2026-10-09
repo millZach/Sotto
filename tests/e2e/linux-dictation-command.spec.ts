@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
+import { evidenceDirectory } from '../fixtures/evidence'
 import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 
 const run = promisify(execFile)
@@ -27,7 +28,7 @@ async function checkOnboardingLayout(page: Page, words: RegExp, buttonName: stri
 test('compositor commands reach Linux dictation and Settings explains the bindings', async () => {
   test.skip(process.platform !== 'linux', 'Linux compositor commands')
   const launched = await launchSotto('success')
-  const captures = join(process.cwd(), 'artifacts/linux-hyprland-paste')
+  const captures = evidenceDirectory('artifacts/linux-hyprland-paste')
   await mkdir(captures, { recursive: true })
   const { page, userData } = launched
   const capture = async (name: string): Promise<void> => {

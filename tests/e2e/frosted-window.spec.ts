@@ -8,17 +8,18 @@ import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { designThreadsFixture } from '../../src/shared/e2e'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The Frosted window setting (ADR-0048): the native window and the room agree. Where the system draws a frosted
  * material the window is clear over it and the room's canvas lets it through; where it cannot (Windows before
  * 11 22H2, the CI runner among them) the switch says so and nothing changes.
  *
- * SOTTO_FROST_EVIDENCE=1 also captures the window from the screen, so the desktop behind it shows, into
- * artifacts/frosted-window, which git ignores: the captures show the desktop behind the window, which is the owner's.
+ * SOTTO_FROST_EVIDENCE=1 also captures the window from the screen, so the desktop behind it shows. Publication uses
+ * artifacts/frosted-window, which git ignores; ordinary runs use disposable evidence. The desktop shown is the owner's.
  */
 const evidence = process.env.SOTTO_FROST_EVIDENCE === '1'
-const evidenceRoot = resolve(process.cwd(), 'artifacts/frosted-window')
+const evidenceRoot = evidenceDirectory('artifacts/frosted-window')
 
 async function withProfile(settings: Partial<AppSettings>, run: (launched: LaunchedSotto) => Promise<void>): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'sotto-e2e-frost-'))

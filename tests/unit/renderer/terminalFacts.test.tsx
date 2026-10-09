@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceTerminal } from '../../../src/shared/terminalWorkspace'
 import { SIDEBAR_STATE, describeTerminals, isOpenTerminal, lastNotableLine, organizeTerminals, terminalState, terminalStateLabel } from '../../../src/renderer/src/terminals/terminalFacts'
-import { threadsStateFixture } from './liveAgentState'
+import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const NOW = 1_700_000_000_000
 const ID = (n: number): string => `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`

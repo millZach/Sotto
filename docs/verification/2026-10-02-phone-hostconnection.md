@@ -5,7 +5,7 @@ The phone reconnect and Remove validate ready host health against the saved comp
 ## Local Windows checks
 
 - `npm run typecheck`, `npm run lint`, `npm run notices:verify`: passed; 174 notice components.
-- `tests/integration/socketHost.test.ts` and `tests/unit/main/socketServer.test.ts`: 64 passed. New cursor regressions failed before their fixes and passed afterward.
+- `tests/integration/socketHost.test.ts` and `tests/integration/socketServer.test.ts`: 64 passed. New cursor regressions failed before their fixes and passed afterward.
 - `npm run build` and `npx playwright test tests/e2e/phones.spec.ts --workers=1`: passed, one journey. It covers listener setup, pairing, the named phone row, answer authority and revocation. Its fixture supplies the phone name; this does not establish what iOS exposes.
 - Inspected the paired-phone captures at minimum width in dark and light: [dark](../../artifacts/pkg-17-hostconnection/phones-paired-820-dark.png), [light](../../artifacts/pkg-17-hostconnection/phones-paired-820-light.png). The desktop layout is unchanged. The journey also captures 1280 and 1600 widths. No baselines were regenerated.
 - The first full two-worker suite hit the recursive initialized-submodule test's 15-second deadline. The isolated `threadWorktrees.test.ts` rerun passed all 68 tests. Full-suite totals are recorded in the PR.
