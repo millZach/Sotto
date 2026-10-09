@@ -9,6 +9,9 @@ import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
 import { closeSotto, enableVoiceCoordinator, launchSotto, launchSottoWithVoice, userMessageTexts } from './support/sottoLaunch'
 import { completeVoiceJourneySetup, openVoiceJourneyAgents } from './support/voiceJourney'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/voice-journey')
 
 type BrowserGlobals = { sotto: SottoBridge; sottoE2E: SottoE2EBridge }
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0] & {
@@ -168,7 +171,7 @@ test('retains a typed question answer across queue navigation, widget edits, and
     await expect(widget.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout')
     await widget.getByLabel('Your answer', { exact: true }).fill('Keep the existing layout and controls.')
     await expect(launched.page.getByLabel('Your answer', { exact: true })).toHaveValue('Keep the existing layout and controls.')
-    await widget.screenshot({ animations: 'disabled', path: 'artifacts/voice-journey/widget-answer-draft.png' })
+    await widget.screenshot({ animations: 'disabled', path: join(evidence, 'widget-answer-draft.png') })
 
     await launched.page.getByRole('button', { name: 'Close Workshop', exact: true }).click()
     await launched.page.getByRole('button', { name: 'Open Docs', exact: true }).click()

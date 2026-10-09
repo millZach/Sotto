@@ -22,7 +22,7 @@ mise exec node@24.21.0 -- npm run build
 mise exec node@24.21.0 -- node scripts/verify-shell-plumbing.mjs tests/e2e/linux-dictation-command.spec.ts tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-shell-plumbing.spec.ts
 ```
 
-The wrapper creates one short owned `/tmp/sp-XXXXXX` folder with mode `0700`. Profiles and their isolated HOME folders, caches, Playwright transforms and test results, the nested compositor config and `TMPDIR` all live there, so Unix socket paths stay short regardless of the checkout path. Cleanup stops the owned processes before removing that folder, including on interruption, and prints the removed path. No root ignores conceal proof debris. The journey waits for published idle state before sending to a restarted app, rather than treating window readiness as socket readiness. The other Linux specs regenerate their existing captures; restore those incidental changes when the look was not changed on purpose. This change does not update design baselines.
+The wrapper creates one short owned `/tmp/sp-XXXXXX` folder with mode `0700`. Profiles and their isolated HOME folders, caches, Playwright transforms and test results, the nested compositor config and `TMPDIR` all live there, so Unix socket paths stay short regardless of the checkout path. Cleanup stops the owned processes before removing that folder, including on interruption, and prints the removed path. No root ignores conceal proof debris. The journey waits for published idle state before sending to a restarted app, rather than treating window readiness as socket readiness. The other Linux specs use the shared evidence directory and write run captures under ignored `artifacts/e2e-runs/` by default. The shell proof refreshes its captures; restore those incidental changes when the look was not changed on purpose. This change does not update design baselines.
 
 ## What was driven
 
@@ -36,10 +36,10 @@ The state publisher takes only widget snapshots and reviewed static copy. It rec
 | --- | --- |
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS |
-| `npm test -- --maxWorkers=2` | PASS, 629 files and 9,400 tests; 50 files and 182 tests skipped |
+| `npm test -- --maxWorkers=2` | PASS, 732 files and 9,435 tests; 51 files and 182 tests skipped |
 | `npm run notices:verify` | PASS, 174 components |
 | `npm run build` | PASS |
-| Three Linux Playwright specs in the nested session | PASS, 7 tests in 28.2 s |
+| Three Linux Playwright specs in the nested session | PASS, 7 tests in 27.4 s |
 | Built main/preload external dependency inventories | `allowlist check: PASS` |
 
 ## Review
@@ -214,3 +214,30 @@ Unit regressions cover each edge on an offset display, a bottom/top tie with the
 The final bot-fix gates passed typecheck, lint, the full two-worker suite (629 files / 9,400 tests passed; 50 files / 182 tests skipped; 507.11 s), 174 notices, build and the main/preload allowlist. The focused lifecycle/state/monitor run passed 69 tests across three files; placement passed 144 tests in one file. All seven Linux e2e tests in three specs passed through `scripts/verify-shell-plumbing.mjs` in 28.2 s. The e2e polling accepts an absent state file during startup, then asserts the published state and edge. The later proof edits affect only e2e, which the full Vitest gate excludes; typecheck and lint were rerun after them. Production source and build output did not change.
 
 The final nested proof stopped Hyprland PID `2218576`, Playwright PID `2218620` and its proof slice. Recorded PIDs, cgroup processes and owned processes remaining were all `[]`; prior Hyprland instances were preserved, and `/tmp/sp-bmrplP` was removed. The socket-held capture was opened and inspected: the Electron widget shows Click to try again and its discard control, and Dictate retains both actions. Fresh plugin-present and widget-returned captures were also inspected; the look was unchanged, so existing captures and incidental Linux output captures were restored. The checkout root contains no generated proof profiles, caches or test results. Standards review and review against both bot findings found no unresolved finding. No plugin source, runtime import, dependency, host, key, permission or Windows/macOS execution path changed.
+
+
+## Merge main's test splits and Linux package
+
+Merged `origin/main` at `2342e7d2` into the branch starting at `2752bab2`. Main's #866 and #878 split the oversized suites and moved real-Git cases into integration; #875 adds the Linux package. The two deleted monolithic files remain deleted. Every branch-added test body, assertion and parameter row is preserved verbatim, using main's shared `tests/fixtures/windowManager.ts` and `tests/fixtures/renderer/dictationControllerHarness.ts`. These nine named tests cover 17 cases:
+
+| Test name | Cases | New home |
+| --- | --- | --- |
+| resolves a suppressed legacy point to $edge once and shares it with the returning widget | top, bottom, left, right | `tests/unit/main/widgetPlacement.test.ts` |
+| uses the idle footprint and existing tie order for a suppressed legacy point | 1 | `tests/unit/main/widgetPlacement.test.ts` |
+| defaults to the top on Linux and applies a saved shell edge to an already-created widget | 1 | `tests/unit/main/widgetPlacement.test.ts` |
+| steps aside, refuses other reveals and returns when the plugin goes away | 1 | `tests/unit/main/widgetVisibility.test.ts` |
+| keeps a pending reveal hidden when the plugin arrives during widget creation | 1 | `tests/unit/main/widgetVisibility.test.ts` |
+| does not resurrect a widget hidden by its normal visibility policy | 1 | `tests/unit/main/widgetVisibility.test.ts` |
+| leaves %s reveals and the bottom default unchanged | win32, darwin | `tests/unit/main/widgetVisibility.test.ts` |
+| publishes a missing microphone before capture on %s | linux, win32, darwin | `tests/unit/renderer/features/dictation/dictationLifecycle.test.ts` |
+| publishes a microphone lost after capture on %s without keeping its parts | linux, win32, darwin | `tests/unit/renderer/features/dictation/dictationLifecycle.test.ts` |
+
+The live-publication gate cases already live in `tests/unit/main/linuxDictationShell.test.ts` and remain intact. `tests/e2e/linux-dictation-command.spec.ts` exactly matches main: it keeps the `evidenceDirectory` import, accepts Continue or Skip for now at the shortcut step, follows main's remaining onboarding walk, and retains all dictation assertions.
+
+All required gates passed under mise Node 24.21.0, with one suite at a time: typecheck, lint, 732 passing Vitest files / 9,435 passing tests and 51 skipped files / 182 skipped tests in 524.29 seconds, 174 notice components, build, and `allowlist check: PASS`. The pre-merge branch passed 9,400 tests with 182 skipped (9,582 total); the merged branch has 9,617 total, an increase of 35 with no drop. [Main's Gates (Windows) at the merged commit](https://github.com/millZach/Sotto/actions/runs/37984877866/job/114005173455) passed 9,266 tests with 228 skipped in 727 passing / 52 skipped files (9,494 total). The merged suite has 123 more cases than main; the Windows/Linux skip difference accounts for another 46 passing cases in this Linux run.
+
+**VERIFIED on forge:** all seven tests in the same three Linux specs passed through `scripts/verify-shell-plumbing.mjs` in 27.4 seconds. The built app exercised onboarding, compositor commands, clipboard recovery, all shell states and verbs, retry/discard, saved and legacy placement, widget handoff, an occupied socket, restart, and graceful and forced quit cleanup. Every state JSON excludes transcript text; the folder/file modes remain 700/600. The latest verbatim output is retained in `artifacts/linux-shell-plumbing/real-check.txt`.
+
+The fresh socket-held, plugin-present and widget-returned captures were opened and inspected, along with the new ignored 820x560 light onboarding capture. The existing curated images are retained because this merge does not change the look or capture baselines. Nested Hyprland PID `2438135`, Playwright PID `2438149` and the owned proof slice were stopped; all recorded, cgroup and owned process arrays were empty. Prior Hyprland instances were preserved, and `/tmp/sp-qU2iqR` was removed. No input went to the live session.
+
+Standards review against AGENTS.md and review against the merge brief found no remaining issue. The diff against main contains only the branch's intended shell-plumbing source, docs, evidence and coverage, with the tests in their new homes. It preserves main's test reorganisation and Linux package. No plugin source, runtime dependency, host, key, permission or Windows/macOS execution path was added by the resolution.

@@ -3,12 +3,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, finishFirstRunSetupFrom, firstRunForwardButton, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
+import { evidenceDirectory } from '../fixtures/evidence'
+import { closeSotto, firstRunForwardButton, launchSotto, openPage, reachFirstRunStep, skipThreadsTour } from './support/sottoLaunch'
 
 const run = promisify(execFile)
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 
-async function checkOnboardingLayout(page: Page, words: RegExp, buttonName: string): Promise<void> {
+async function checkOnboardingLayout(page: Page, words: RegExp, buttonName: string | RegExp): Promise<void> {
   for (const appearance of ['dark', 'light'] as const) {
     await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
     await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
@@ -27,7 +28,7 @@ async function checkOnboardingLayout(page: Page, words: RegExp, buttonName: stri
 test('compositor commands reach Linux dictation and Settings explains the bindings', async () => {
   test.skip(process.platform !== 'linux', 'Linux compositor commands')
   const launched = await launchSotto('success')
-  const captures = join(process.cwd(), 'artifacts/linux-hyprland-paste')
+  const captures = evidenceDirectory('artifacts/linux-hyprland-paste')
   await mkdir(captures, { recursive: true })
   const { page, userData } = launched
   const capture = async (name: string): Promise<void> => {
@@ -52,15 +53,16 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-command-e2e')
     await page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
     await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
-    await firstRunForwardButton(page).click()
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
-    await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, 'Continue')
+    await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, /^(Continue|Skip for now)$/)
     await page.setViewportSize({ width: 820, height: 560 })
     await capture('onboarding-820x560-light.png')
     await page.setViewportSize({ width: 1280, height: 800 })
-    await firstRunForwardButton(page).focus()
+    for (let step = 0; step < 4; step++) await firstRunForwardButton(page).click()
+    await page.getByRole('button', { name: 'Finish setup' }).focus()
     await page.keyboard.press('Enter')
-    await finishFirstRunSetupFrom(page, 'agents', { microphone: 'skip' })
+    await skipThreadsTour(page)
     await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false }))
     await openPage(page, 'Dictate')
     const room = page.getByRole('region', { name: 'Dictation', exact: true })

@@ -9,11 +9,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AdapterSessionOptions } from './adapterContract'
-import { claudeFixture } from '../fixtures/claudeFixture'
-import { fakeClaudeExited, fakeClaudeLaunch, fakeClaudeLaunches, fakeClaudeRecords, fakeClaudeSessionFiles, fakeClaudeSessionFolder } from '../fixtures/fakeClaudeRecords'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import type { AdapterSessionOptions } from '../fixtures/adapterFixture'
+import { claudeFixture } from '../fixtures/claudeFixture'
+import { fakeClaudeExited, fakeClaudeLaunch, fakeClaudeLaunches, fakeClaudeRecords, fakeClaudeSessionFiles, fakeClaudeSessionFolder } from '../fixtures/fakeClaudeRecords'
 
 type Fixture = Awaited<ReturnType<typeof claudeFixture>>
 const cleanup: (() => Promise<void>)[] = []

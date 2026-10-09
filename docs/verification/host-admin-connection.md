@@ -1,5 +1,7 @@
 # Admin connection and Forget verification
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 October 5, 2026. Plan `docs/plans/host-tailnet-connection.md`, pull request 3, on `feat/host-admin-connection` from `main` at 418dd00f. The decision is [ADR-0053](../adr/0053-a-desktop-reaches-a-host-over-its-tailnet-first.md), "Admin connections" and "Forget", and its October 5 amendment, "the admin connection and Forget as built".
 
 ## What was run
@@ -22,13 +24,13 @@ In `artifacts/host-admin-connection/`:
 
 ## What the tests cover that the app run does not
 
-- A host on its SSH connection: Phones, an update step and Stop host go over that connection and start no second ssh; Forget revokes over it before the stop (`tests/integration/desktopHosts.test.ts`).
+- A host on its SSH connection: Phones, an update step and Stop host go over that connection and start no second ssh; Forget revokes over it before the stop (`tests/integration/desktopHostAdmin.test.ts`).
 - A host on no SSH connection: one admin connection, opened with `start: false`, carries both of Forget's presses. One that finds its host stopped, or is refused the revoke, still removes the host and clears its credential, and its notice says which; a host Sotto started that refused is left running; `revoked: false` counts as revoked. Every not-revoked notice stays until its own Dismiss, whatever later Forgets do. Stopping Forget's sign-in while SSH asks its question sends nothing and keeps the host. Phones and an update step on a host whose socket is on no SSH connection share one admin connection that starts nothing, and an update's restart that cannot open one says it never went. An admin connection's SSH question and Tailscale approval reach the row, the question's answer goes to that connection, and **Open approval page** opens Tailscale's page.
 - A drop keeps the host's threads and the selection on the page, reading Reconnecting, until the next connection takes their place; a final failure or Disconnect takes them away.
 - The admin connection itself (`tests/unit/main/adminConnection.test.ts`): shared by every press while open, closed 60 seconds after the last press finishes and never while one runs, including a request it sends through the forward, opened again after a failed connect, after Stop host and after a drop, and closed when idle even after a press on a dropped connection ends late. A sign-in the user stops fails its press with nothing sent.
 - Phones over a real admin connection (`tests/unit/main/hostPhones.test.ts`): the open dialog's reads every couple of seconds keep one connection open for three times the idle time, with one sign-in, and it closes a minute after the dialog closes. A read nobody asked for never signs in.
-- The Hosts page (`tests/unit/renderer/hostsSettings.test.tsx`): one notice per forgotten host with the sentence for its cause, Copied going back to Copy command, the command selected and focused when it cannot be copied, Keep host stopping Forget's sign-in, SSH's question in Forget's dialog with **Answer**, and an admin connection's question saying it is for a change the user asked for, with **Stop signing in**.
+- The Hosts page (`tests/unit/renderer/features/settings/hostConnectionDialogs.test.tsx`): one notice per forgotten host with the sentence for its cause, Copied going back to Copy command, the command selected and focused when it cannot be copied, Keep host stopping Forget's sign-in, SSH's question in Forget's dialog with **Answer**, and an admin connection's question saying it is for a change the user asked for, with **Stop signing in**.
 - The launch script (`tests/integration/sshLauncher.test.ts`): `start: false` fails with `host-not-running` and writes nothing for a host that is not running, and otherwise finds the host, its token and the Node it ran under.
-- The socket client (`tests/unit/main/socketHostService.test.ts`): a feature is used only when hello lists it, and a pairing code goes only to a loopback address.
+- The socket client (`tests/integration/socketHostCompatibility.test.ts`): a feature is used only when hello lists it, and a pairing code goes only to a loopback address.
 
 Not run: a real Tailscale approval for an admin connection, and an admin connection for a host on its tailnet connection, which needs pull request 4. The check on forge is pull request 8.

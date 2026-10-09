@@ -16,8 +16,8 @@ import { changesChord } from '../../../../src/renderer/src/tools/changesShortcut
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
-import { threadsStateFixture } from '../liveAgentState'
-import { TOKEN_A, fakeFilesBridge, text } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
 // Outside the app provider the diff settings are their defaults; a test that needs another says so.
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({

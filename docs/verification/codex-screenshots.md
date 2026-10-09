@@ -20,7 +20,7 @@ September 19, 2026. Local Windows build; not installed or released.
 
 ## Cause and fix
 
-`CodexAppServerHost` marked every discovered model `supportsImages: false`. Both send and steer validated attachments but constructed only text and skill inputs. The initial regression command, `npx vitest run tests/unit/main/codexHost.test.ts -t 'allows a screenshot' --maxWorkers=2`, failed with `This model does not advertise image support` before the fix and passed afterward.
+`CodexAppServerHost` marked every discovered model `supportsImages: false`. Both send and steer validated attachments but constructed only text and skill inputs. The initial regression command, `npx vitest run tests/integration/codexAdapterBoundary.test.ts -t 'allows a screenshot' --maxWorkers=2`, failed with `This model does not advertise image support` before the fix and passed afterward.
 
 The adapter now reads `inputModalities`, sends validated data URLs as native image inputs, and retains attachment references in message origins. Preview bytes stay in the existing Sotto preview store; no image bytes or prompt text are added to adapter logs or origin records. Claude image support stays enabled for every catalog entry. Screenshot-only Claude sends now omit the empty text block that was previously appended after image blocks.
 

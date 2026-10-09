@@ -1,5 +1,7 @@
 # Voice listening diagnosis
 
+Test citations use the current split files. Recorded counts and outcomes are from the original runs.
+
 User report: intermittent “Hey Sotto” activation and no reply while the home screen says “Sotto is listening.” Baseline `046d793`; Windows desktop target from the supplied screenshot. Preserve existing user screenshots and all live drafts.
 
 ## Acceptance checklist
@@ -7,7 +9,7 @@ User report: intermittent “Hey Sotto” activation and no reply while the home
 - [x] Inspect the running development app and recent voice turn records without exposing credentials.
 - [x] Reproduce hidden composition: live state was composing with a 74-character draft; three successfully transcribed questions were appended without invoking reasoning.
 - [x] Red renderer regression: `npx vitest run tests/unit/renderer/agentView.test.tsx -t 'reveals active prompt'` fails because the home screen hides draft mode.
-- [x] Red routing regression: `npx vitest run tests/unit/main/agentControlRecovery.test.ts -t 'returns from hidden prompt'` fails for both button and spoken exit; the spoken exit itself is appended to the draft.
+- [x] Red routing regression: `npx vitest run tests/unit/main/agentCompositionNavigation.test.ts -t 'returns from hidden prompt'` fails for both button and spoken exit; the spoken exit itself is appended to the draft.
 - [x] Expose prompt ownership and a reversible return to coordinator conversation; preserve saved text across restart and review.
 - [x] Verify quiet command capture through the shipped worklet and actual local detector replay; distinguish synthetic evidence from physical wake accuracy.
 - [x] Focused regression suites, typecheck, lint, build, and rendered desktop journey.

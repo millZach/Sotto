@@ -16,7 +16,7 @@ import {
   type Mode,
   type PaintOptions,
   type Rgba,
-} from './themeTokenResolver'
+} from '../../fixtures/renderer/themeTokenResolver'
 
 const combinations = MODES.flatMap(mode => THEME_IDS.map(id => [mode, id] as const))
 

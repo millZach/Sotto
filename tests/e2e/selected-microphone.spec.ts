@@ -1,8 +1,10 @@
 import { mkdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { closeSotto, launchSotto, resizeWindow } from './support/sottoLaunch'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
+
+const evidence = evidenceDirectory('artifacts/review-383')
 
 interface MediaFixture {
   requests: MediaStreamConstraints[]
@@ -17,7 +19,6 @@ test('Settings tests the selected input and clears its result when the choice ch
   test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page } = launched
-  const evidence = evidenceDirectory('artifacts/review-383')
   await mkdir(evidence, { recursive: true })
   try {
     await page.evaluate(async () => {
@@ -67,7 +68,7 @@ test('Settings tests the selected input and clears its result when the choice ch
         await expect(choice).toBeInViewport()
         await expect(page.getByRole('button', { name: 'Stop test' })).toBeInViewport()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        await page.screenshot({ path: resolve(evidence, `microphone-${width}-${appearance}.png`) })
+        await page.screenshot({ path: join(evidence, `microphone-${width}-${appearance}.png`) })
       }
     }
     await expect.poll(async () => Number(await page.getByRole('meter', { name: 'Microphone level' }).getAttribute('aria-valuenow'))).toBeGreaterThan(0.02)
@@ -76,14 +77,14 @@ test('Settings tests the selected input and clears its result when the choice ch
     await expect(state).toHaveAttribute('data-state', 'closed')
     await expect(state).toContainText('Sotto heard you. The microphone is closed.')
     await expect(page.getByRole('button', { name: 'Test again' })).toBeEnabled()
-    await page.screenshot({ path: resolve(evidence, 'microphone-closed.png') })
+    await page.screenshot({ path: join(evidence, 'microphone-closed.png') })
     expect(await page.evaluate(() => window.selectedMicrophoneFixture.streams[0]!.getTracks().every(track => track.readyState === 'ended'))).toBe(true)
     await page.evaluate(() => { window.selectedMicrophoneFixture.audible = false })
     await page.getByRole('button', { name: 'Test again' }).click()
     await expect(state).toHaveAttribute('data-state', 'ready')
     await page.getByRole('button', { name: 'Stop test' }).click()
     await expect(state).toContainText('Sotto did not hear anything. Check that the microphone is not muted.')
-    await page.screenshot({ path: resolve(evidence, 'microphone-silent.png') })
+    await page.screenshot({ path: join(evidence, 'microphone-silent.png') })
     expect(await page.evaluate(() => window.selectedMicrophoneFixture.streams.at(-1)!.getTracks().every(track => track.readyState === 'ended'))).toBe(true)
     await page.getByRole('button', { name: 'Test again' }).click()
     await expect(state).toHaveAttribute('data-state', 'ready')
@@ -108,7 +109,7 @@ test('Settings tests the selected input and clears its result when the choice ch
     })
     await expect(state).toContainText('The chosen microphone is not connected. Plug it in or choose another.')
     expect(await page.evaluate(() => window.selectedMicrophoneFixture.streams.at(-1)!.getTracks().every(track => track.readyState === 'ended'))).toBe(true)
-    await page.screenshot({ path: resolve(evidence, 'microphone-unplugged.png') })
+    await page.screenshot({ path: join(evidence, 'microphone-unplugged.png') })
     for (const id of ['missing', 'denied']) {
       await choice.selectOption(id)
       await expect(state).toHaveAttribute('data-state', 'idle')

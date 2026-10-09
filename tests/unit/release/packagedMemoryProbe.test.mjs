@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@playwright/test', () => ({ _electron: { launch: vi.fn() } }))
-// Electron is scripted here. Use the Windows package fixture on Linux without adding a Linux release profile.
+// Electron is scripted here. Keep this Windows probe fixture independent of the host platform.
 vi.mock('../../../scripts/release-platform-profile.mjs', async importOriginal => {
   const original = await importOriginal()
   return { ...original, releasePlatformProfile: (platform = process.platform, arch) =>

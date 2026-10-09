@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSottoWithVoice, type LaunchedSotto } from './support/sottoLaunch'
-import { evidenceDirectory } from './support/evidence'
+import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
 const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Agents', 'Output', 'Appearance', 'Application', 'Git'] as const

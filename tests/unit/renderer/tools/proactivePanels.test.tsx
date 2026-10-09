@@ -9,8 +9,8 @@ import { useDiffPreferences, useMergeMethod } from '../../../../src/renderer/src
 import { ProactiveChangesWatch, useProactiveChanges } from '../../../../src/renderer/src/tools/proactivePanels'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { threadsStateFixture } from '../liveAgentState'
-import { fakeFilesBridge } from './fakeFilesBridge'
+import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
+import { fakeFilesBridge } from '../../../fixtures/renderer/fakeFilesBridge'
 
 vi.mock('../../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/AppContext')>(),
