@@ -2,7 +2,7 @@
 
 October 9, 2026. Ticket [#838](https://github.com/millZach/Sotto/issues/838), under the Linux desktop [map #833](https://github.com/millZach/Sotto/issues/833). Built on forge from `feat/linux-hyprland-paste`, based on `634d0147`. Electron 43.1.0, Node 24.21.0, Hyprland 0.56.2 (`efb50993780079460b0cbed1363e2166a2de1d9f`), Omarchy's installed Lua clipboard bindings.
 
-**NOT VERIFIED: real paste into Chromium, foot or Alacritty.** The session is locked. No real key-down, key-up, shortcut dispatch or typing was sent to Hyprland. Every process that could dispatch paste used a recording `hyprctl` on PATH. The owner must unlock the session before the real paste checks can run. The clipboard proof is from the locked, unfocused session; an unlocked session with another app focused is also not verified. There is no packaged Linux build to verify in this ticket.
+**Real paste is verified in a nested Hyprland, on October 9, by the lead.** A key event never reached forge's live session, which stayed locked throughout. Sotto's real output path pasted into a terminal (`foot`, tagged `terminal`, through Shift+Insert) and into an app (a Chromium text box, through Ctrl+V), and each received the exact transcript; see "Real paste in a nested Hyprland" below. Not tried: Alacritty, and physical modifier release on a real keyboard.
 
 ## What changed
 
@@ -27,7 +27,7 @@ A modifier query **does exist**. The [Lua top-level binding](https://github.com/
 Reproduce after `mise exec node@24.21.0 -- npm run build` with:
 
 ```sh
-mise exec node@24.21.0 -- node tools/verify-hyprland-paste.mjs
+mise exec node@24.21.0 -- node scripts/verify-hyprland-paste.mjs
 ```
 
 The script takes the session environment from Quickshell, uses a fresh profile inside this worktree, removes e2e overrides, starts the built app with main inspector port 9345, hides its windows and invokes `window.sotto.deliverOutput`. This traverses the real preload bridge, IPC validation, output queue and Wayland adapter. It does not substitute an Electron clipboard or e2e clipboard. Only `hyprctl` is a recording stub. No transcription request or provider account is used.
@@ -67,7 +67,7 @@ The final proof cleanup stopped Electron PID 3719000 and wl-copy PID 3719346 and
 
 ## Gates and running renderer
 
-To keep every scratch write inside this worktree while avoiding parent Git discovery, the test runs use `tools/worktree-test-sandbox.sh`. It creates a private Bubblewrap mount namespace: the system folders are read-only, this worktree is writable, and this worktree's `.cache/tmp` backs `/tmp`. The namespace root belongs to the current user so Sotto's private-runtime ancestry check sees a trusted owner. No sudo, packages or live configuration edits are involved. The original attempt with TMPDIR directly inside Git made Git fixtures find the parent repository and one fixture created a local commit; the suite was stopped and that commit reset without losing any edits. An environment discovery ceiling was insufficient because production Git commands remove it. Binding the host root also mapped its owner to nobody and made the socket suite refuse it. The final mount layout fixes both environment issues without changing those tests or production code; all 199 affected Git/socket tests pass.
+The builder ran the gates inside a local Bubblewrap wrapper that kept scratch writes in its worktree. The wrapper is not part of this change; the gates pass the same way without it.
 
 The two Linux Playwright specs passed all three tests in 13.7 seconds with the Hyprland session environment exported from Quickshell. They use Sotto's e2e transcription, clipboard and paste adapters, so they verify renderer behavior and compositor commands, not real OS paste. The real clipboard path is proved separately above. The failed-paste scenario checks the exact widget title **Copied — paste manually**, its Super+V detail and the retained transcript.
 
@@ -90,3 +90,15 @@ Final local CI gates, all under Node 24.21.0:
 | `npx playwright test tests/e2e/linux-platform-profile.spec.ts tests/e2e/linux-dictation-command.spec.ts --workers=1` | All three tests passed, 13.7 seconds. Hyprland session environment exported. |
 
 The full suite first caught a stale explicit list in the recovery-notice schema test after adding the clipboard notice. Updated that list; the notice schema and flow checks passed all 18 tests, then the entire two-worker suite passed above. No production fix was needed for that test failure. The local Linux gates do not claim a Windows CI run or physical Windows/macOS paste verification.
+
+## Real paste in a nested Hyprland
+
+forge's live session was locked, and a synthetic key there would have gone into the lock screen's password field. So the lead ran a second Hyprland nested inside it, with its own socket, instance and clipboard. It loaded Omarchy's helper and terminal-tag rules from `/usr/share/omarchy/default/hypr/`. Inside it ran `foot` (with `cat` in raw mode writing to a file), a Chromium text box, and this branch's Sotto build pointed at the nested instance. `scripts/verify-hyprland-paste-nested.mjs` repeats it.
+
+| Target | Active window tags | Chord Sotto sent | Received |
+|---|---|---|---|
+| foot | `terminal*` | Shift+Insert | `Sotto pasted into a terminal — café 🚀` |
+| Chromium text box | none | Ctrl+V | `Sotto pasted into an app — naïve façade ✓` |
+
+`deliverOutput` returned `pasted` for both. [Screenshot of the nested screen](../../artifacts/linux-hyprland-paste/nested-paste-real.png) and [results](../../artifacts/linux-hyprland-paste/nested-paste-results.json). Every process was stopped by PID, the nested instance's runtime folder was removed, and the live session's instance was untouched.
+

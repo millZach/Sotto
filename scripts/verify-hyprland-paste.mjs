@@ -1,4 +1,5 @@
-// Locked-screen proof: mise exec node@24.21.0 -- node tools/verify-hyprland-paste.mjs
+// Locked-screen clipboard proof: mise exec node@24.21.0 -- node scripts/verify-hyprland-paste.mjs
+/* global WebSocket, fetch */
 // Uses the built app's real preload/output path. All key dispatch goes to a recording stub.
 import assert from 'node:assert/strict'
 import console from 'node:console'

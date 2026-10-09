@@ -1,0 +1,16 @@
+{
+  "terminal": {
+    "focused": "foot",
+    "tags": [
+      "terminal*"
+    ],
+    "result": "pasted"
+  },
+  "app": {
+    "focused": "chrome-_text_html,_title_pastebox__title__textarea_id=t_autofocus_style=_width_95vw;height_90vh____textarea_-Default",
+    "tags": [],
+    "result": "pasted"
+  },
+  "terminalText": "Sotto pasted into a terminal — café 🚀",
+  "appText": "Sotto pasted into an app — naïve façade ✓"
+}

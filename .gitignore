@@ -159,4 +159,11 @@ artifacts/forge-question-ack/
 artifacts/show-thinking/
 
 # Hyprland clipboard proof and Linux copy captures; retain only cited evidence.
-artifacts/linux-hyprland-paste/
+artifacts/linux-hyprland-paste/*
+!artifacts/linux-hyprland-paste/clipboard-proof.txt
+!artifacts/linux-hyprland-paste/hyprctl-arguments.jsonl
+!artifacts/linux-hyprland-paste/onboarding-820x560-light.png
+!artifacts/linux-hyprland-paste/settings-820x560-dark.png
+!artifacts/linux-hyprland-paste/dictate-820x560-light.png
+!artifacts/linux-hyprland-paste/nested-paste-real.png
+!artifacts/linux-hyprland-paste/nested-paste-results.json

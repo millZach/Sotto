@@ -5,5 +5,3 @@ artifacts/design/app-review/manifest.json text eol=lf
 # The executable launcher must retain its Unix shebang in Windows checkouts too.
 apps/omarchy/sotto text eol=lf
 
-# Keep the Linux verification helper executable after a Windows checkout.
-tools/worktree-test-sandbox.sh text eol=lf
