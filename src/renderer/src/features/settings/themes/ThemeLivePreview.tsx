@@ -3,6 +3,7 @@ import { AudioLines, Eye } from 'lucide-react'
 
 import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
 import { SottoMark } from '../../../components/SottoMark'
+import { VoiceWave } from '../../../components/VoiceWave'
 import type { AppearanceChoice } from '../../../state/appearance'
 import { EffortColorSample } from './EffortColor'
 
@@ -38,7 +39,7 @@ export function ThemeLivePreview({ shown, systemDark, system, still = false }: {
       <div className="theme-live-preview__window">
         <div className="theme-live-preview__titlebar"><SottoMark /><strong>Sotto</strong><span>Dictate</span></div>
         <div className="theme-live-preview__body">
-          <SottoMark className="theme-live-preview__mark" aria-hidden="true" />
+          <VoiceWave stage="idle" value={0} label="" size="preview" />
           <strong>Ready when you are</strong>
           <div className="theme-live-preview__composer" aria-hidden="true"><AudioLines size={18} /><span /><span /></div>
         </div>

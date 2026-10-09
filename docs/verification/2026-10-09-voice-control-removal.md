@@ -14,7 +14,7 @@ October 9, 2026, on Windows 11 with Electron 43, at `e7b410df9` on `command-cent
 - **Nothing announces itself.** A connection Sotto makes at start leaves no notice; one the user asks for says it connected (`agentControlRecovery.test.ts`, red without `6daa2de1c`).
 - **The look changed only where it should.** 47 baselines change, each checked against `main`'s copy with the capture test's own pixel rule. Every change is one of six, by intent:
   - the switch reads Dictate and Threads with no Agents (Dictate, focus, Settings and the 760-wide captures; the 125% Dictate capture moves by one pixel);
-  - the theme preview in Settings, Appearance shows the Sotto mark where the voice orb was;
+  - the theme preview in Settings, Appearance shows the Dictate room's resting wave where the voice orb was, as Zach chose on October 9;
   - the OpenRouter key field says it is "Used for transcription and AI cleanup", without Kokoro voice (onboarding and Settings);
   - Settings, Agents is "New threads & projects", without the reasoning account and the automatic follow-up limit;
   - the design fixture's "Streaming WAV stall" thread failed rather than being stopped by Sotto at its follow-up limit, a state that no longer exists, so its row reads Needs attention;
@@ -26,7 +26,7 @@ October 9, 2026, on Windows 11 with Electron 43, at `e7b410df9` on `command-cent
 
 In `artifacts/voice-control-removal/`, each `main` on the left and this branch on the right:
 
-- `settings-appearance-before-after.png`: the theme preview, orb then Sotto mark.
+- `settings-appearance-before-after.png`: the theme preview, `main`'s orb then the Dictate wave.
 - `settings-agents-before-after.png`: Settings, Agents before and after the dead reasoning controls were hidden.
 
 The design baselines themselves are in `artifacts/design/app-review/baseline/`.

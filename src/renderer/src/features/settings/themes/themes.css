@@ -289,7 +289,6 @@
 .theme-live-preview__titlebar > span { margin-left: auto; color: var(--tt-text-muted); }
 .theme-live-preview__body { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 25px 12px; }
 .theme-live-preview__body > strong { font-size: 16px; font-weight: 600; text-align: center; }
-.theme-live-preview__mark { width: 76px; height: 76px; }
 .theme-live-preview__composer { display: flex; align-items: center; gap: 7px; width: 72%; padding: 10px 14px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-glass); backdrop-filter: var(--tt-glass-filter); color: var(--tt-accent-text); }
 .theme-live-preview__composer > span { flex: 1; height: 3px; border-radius: 2px; background: var(--tt-hairline); }
 .theme-live-preview__parts { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-top: 20px; }
