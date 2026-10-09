@@ -5,7 +5,9 @@ import "Model.mjs" as Model
 
 // Follows Sotto's dictation state file. Sotto writes it atomically, never
 // with the transcript in it; a missing file means Sotto is idle or not
-// running, and the plugin shows nothing but the bar glyph.
+// running, and the plugin shows nothing but the bar glyph. A file that
+// outlives Sotto's process was left by a crash: what it shows is not
+// happening, so it is put away and `lost` says what went with it.
 Item {
   id: root
   visible: false
@@ -26,6 +28,19 @@ Item {
 
   function dismiss() {
     dismissedKey = Model.key(record)
+  }
+
+  signal lost(string notice)
+
+  // Sotto's process, while the file shows a dictation and names it. An
+  // older Sotto names none, and its file is taken at its word.
+  readonly property bool watching: Model.watchesProcess(record) && dismissedKey !== Model.key(record)
+
+  function checkProcess(stat) {
+    if (!watching || !Model.processGone(stat, record.pid)) return
+    var notice = Model.lostNotice(record)
+    dismissedKey = Model.key(record)
+    if (notice !== "") lost(notice)
   }
 
   function refresh() {
@@ -62,6 +77,25 @@ Item {
     repeat: true
     running: root.path !== "" && !file.loaded
     onTriggered: file.reload()
+  }
+
+  // A cheap read of /proc, never a shell, when the file names a process and
+  // every few seconds after.
+  FileView {
+    id: processFile
+    path: root.watching ? "/proc/" + root.record.pid + "/stat" : ""
+    printErrors: false
+    onLoaded: root.checkProcess(text())
+    onLoadFailed: function(error) {
+      if (error === FileViewError.FileNotFound) root.checkProcess(null)
+    }
+  }
+
+  Timer {
+    interval: Model.PROCESS_CHECK_MS
+    repeat: true
+    running: root.watching
+    onTriggered: processFile.reload()
   }
 
   Timer {

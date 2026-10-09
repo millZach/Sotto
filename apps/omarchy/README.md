@@ -70,10 +70,11 @@ How it behaves:
 - It starts top centre, just under the bar. Drag it, and on release it snaps to the nearest edge of the screen, centred on that edge; Sotto saves the edge with `sotto dictation place <edge>`. On the left and right edges the pill stands upright and its words read top to bottom.
 - Stop, Cancel, Try again and Discard run `sotto dictation stop`, `cancel`, `retry` and `discard`. A failure with nothing kept shows Dismiss, which only hides the pill.
 - If a command does not get through, the pill says so and what to do, and keeps its buttons so you can press again. The dictation stays on screen until Sotto moves on, since after a Stop that did not get through the recording may still be running. A notice with no dictation behind it lasts five seconds.
+- If Sotto quits while the pill shows a dictation, the pill says so within a few seconds, and whether a recording was lost with it; Sotto keeps recordings only in memory. Dismiss puts it away. An older Sotto that does not name its process in the state file is taken at its word.
 - The pill never takes keyboard focus. From the keyboard, use the bindings above, Escape in Sotto's window, or a cancel binding of your own.
 - With Hyprland's animations turned off, the pill holds still.
 
-The plugin follows `$XDG_RUNTIME_DIR/sotto/dictation-state.json`, which Sotto writes and which never carries what you said; a missing file means there is nothing to show. It runs the dictation command with its own arguments, never through a shell, and opens no network connection.
+The plugin follows `$XDG_RUNTIME_DIR/sotto/dictation-state.json`, which Sotto writes and which never carries what you said; a missing file means there is nothing to show. While the file shows a dictation, the plugin reads `/proc/<pid>/stat` for the Sotto process it names every few seconds. It runs the dictation command with its own arguments, never through a shell, and opens no network connection.
 
 To remove it:
 

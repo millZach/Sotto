@@ -43,7 +43,9 @@ Item {
   // dictation still on screen keeps the pill and its buttons, and stays
   // until Sotto writes another state or the user presses again; any other
   // lasts a few seconds. A failed command never puts a dictation away.
+  // A notice that Sotto quit stays until it is dismissed or Sotto is back.
   property string notice: ""
+  property bool noticeLost: false
   property string noticeShownFor: ""
 
   readonly property bool shown: dictation.active || notice !== ""
@@ -122,14 +124,23 @@ Item {
   function showNotice(verb, started) {
     var state = dictation.status
     noticeShownFor = Model.key(dictation.record)
+    noticeLost = false
     notice = Model.failureNotice(verb, started, state)
     if (Model.noticeHolds(verb, state)) noticeTimer.stop()
     else noticeTimer.restart()
   }
 
+  function showLost(text) {
+    noticeTimer.stop()
+    noticeShownFor = Model.key(dictation.record)
+    noticeLost = true
+    notice = text
+  }
+
   function endNotice() {
     noticeTimer.stop()
     noticeShownFor = ""
+    noticeLost = false
     notice = ""
   }
 
@@ -138,6 +149,7 @@ Item {
     function onRecordChanged() {
       if (root.notice !== "" && Model.key(root.dictation.record) !== root.noticeShownFor) root.endNotice()
     }
+    function onLost(text) { root.showLost(text) }
   }
 
   DictationState {

@@ -14,6 +14,8 @@ export const ACTIVE = ["starting", "listening", "transcribing", "failed"]
 // from staying on screen if that write never comes.
 export const HOLD_MS = { delivered: 1500, copied: 4000 }
 export const NOTICE_MS = 5000
+// How often to look for Sotto's process while the file shows a dictation.
+export const PROCESS_CHECK_MS = 3000
 
 export const GLYPH = {
   sand: String.fromCodePoint(0xF051F),
@@ -23,7 +25,7 @@ export const GLYPH = {
 }
 
 export function idle(edge) {
-  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top" }
+  return { state: "idle", since: 0, updatedAt: 0, detail: "", kept: false, edge: validEdge(edge) ? edge : "top", pid: 0 }
 }
 
 export function validEdge(edge) {
@@ -33,6 +35,12 @@ export function validEdge(edge) {
 export function finiteNumber(value) {
   var n = Number(value)
   return typeof value === "number" && isFinite(n) ? n : 0
+}
+
+// Sotto's main process, or 0 when the file names none, as an older Sotto's
+// does not.
+export function processId(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0
 }
 
 // JSON or null. Only a malformed file is expected; anything else is a fault.
@@ -47,7 +55,7 @@ function parseJson(text) {
 
 // Schema v1. Anything else, a version this plugin does not know included,
 // reads as idle, so a newer Sotto never leaves a pill on screen that the
-// plugin cannot explain.
+// plugin cannot explain. Fields it does not know are ignored.
 export function parse(text) {
   var data = parseJson(text)
   if (!data || typeof data !== "object" || data.version !== 1) return idle()
@@ -59,7 +67,8 @@ export function parse(text) {
     updatedAt: finiteNumber(data.updatedAt),
     detail: detail,
     kept: data.kept === true,
-    edge: validEdge(data.edge) ? data.edge : "top"
+    edge: validEdge(data.edge) ? data.edge : "top",
+    pid: processId(data.pid)
   }
 }
 
@@ -84,6 +93,42 @@ export function nextExpiry(record, now) {
   if (hold === undefined) return 0
   var at = record.since + hold
   return at > now ? at : 0
+}
+
+// Whether to look for Sotto's process: while the file shows anything but
+// idle and names the process.
+export function watchesProcess(record) {
+  return !!record && record.state !== "idle" && record.pid > 0
+}
+
+// Whether Sotto's process has gone, from `/proc/<pid>/stat`: null when that
+// file does not exist, or its text. A process that has exited but not been
+// reaped yet is gone too. Text that names another process, or that cannot
+// be read, decides nothing.
+export function processGone(stat, pid) {
+  if (stat === null || stat === undefined) return true
+  var text = String(stat)
+  if (text.indexOf(String(pid) + " (") !== 0) return false
+  var close = text.lastIndexOf(")")
+  var state = close === -1 ? "" : text.charAt(close + 2)
+  return state === "Z" || state === "X" || state === "x"
+}
+
+// What to say when Sotto's process is gone but the file still shows a
+// dictation. Audio lives only in Sotto's memory, so a recording went with
+// it. A finished dictation was already delivered and goes quietly.
+export function lostNotice(record) {
+  switch (record ? record.state : "idle") {
+  case "starting":
+  case "listening":
+  case "transcribing":
+    return "Sotto quit. This dictation was lost. Open Sotto to dictate again."
+  case "failed":
+    return record.kept
+      ? "Sotto quit. The kept recording was lost. Open Sotto to dictate again."
+      : "Sotto quit. Open Sotto to dictate again."
+  }
+  return ""
 }
 
 export function formatElapsed(since, now) {
@@ -111,9 +156,9 @@ export function buttonsFor(state, record) {
 
 // The pill's words and buttons for one state. A notice takes the words and
 // keeps the state's buttons, so a command that did not get through can be
-// pressed again.
-export function pillFor(state, record, notice) {
-  if (notice) return { glyph: "alert", tone: "error", message: notice, buttons: buttonsFor(state, record) }
+// pressed again; a notice that Sotto quit, `lost`, has only Dismiss.
+export function pillFor(state, record, notice, lost) {
+  if (notice) return { glyph: "alert", tone: "error", message: notice, buttons: lost ? ["dismiss"] : buttonsFor(state, record) }
   var buttons = buttonsFor(state, record)
   switch (state) {
   case "starting":

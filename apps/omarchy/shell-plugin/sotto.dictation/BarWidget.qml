@@ -17,8 +17,8 @@ BarWidget {
   readonly property var dictation: service ? service.dictation : (ownState.item || null)
   readonly property string status: dictation ? dictation.status : "idle"
   readonly property var record: dictation ? dictation.record : Model.idle()
-  // Without the service there is no pill to say a command failed, so the
-  // glyph says it for a few seconds instead.
+  // Without the service there is no pill to say a command failed or Sotto
+  // quit, so the glyph says it for a few seconds instead.
   property string notice: ""
   readonly property var look: notice !== ""
     ? { glyph: "alert", alert: true, time: false, tooltip: notice }
@@ -66,6 +66,14 @@ BarWidget {
     command: root.commandSetting
     onFailed: function(verb, started) {
       root.notice = Model.failureNotice(verb, started, root.status)
+      noticeTimer.restart()
+    }
+  }
+
+  Connections {
+    target: ownState.item
+    function onLost(text) {
+      root.notice = text
       noticeTimer.restart()
     }
   }

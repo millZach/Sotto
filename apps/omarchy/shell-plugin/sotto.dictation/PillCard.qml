@@ -16,7 +16,7 @@ BorderSurface {
 
   readonly property var dictation: service.dictation
   readonly property string status: dictation.status
-  readonly property var look: Model.pillFor(status, dictation.record, service.notice)
+  readonly property var look: Model.pillFor(status, dictation.record, service.notice, service.noticeLost)
   readonly property bool live: service.notice === "" && (status === "starting" || status === "listening")
   readonly property string buttonList: look.buttons.join(" ")
 
