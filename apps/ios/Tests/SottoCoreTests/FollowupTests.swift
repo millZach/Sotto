@@ -12,8 +12,8 @@ final class FollowupTests: XCTestCase {
     private func thread(status: String = "running", requests: String = "[]", _ extra: String = "") throws -> ThreadSummary {
         try decode(ThreadSummary.self, #"{"id":"t","projectId":"p","title":"Thread","status":"\#(status)","requests":\#(requests)\#(extra)}"#)
     }
-    private func item(_ id: String, status: String = "queued", thread: String = "t", _ extra: String = "") -> String {
-        #"{"id":"\#(id)","threadId":"\#(thread)","draftId":"\#(draft)","text":"Use the screenshots too.","attachments":[],"createdAt":"\#(stamp)","updatedAt":"\#(stamp)","status":"\#(status)"\#(extra)}"#
+    private func item(_ id: String, status: String = "queued", thread: String = "t", attachments: String = "[]", _ extra: String = "") -> String {
+        #"{"id":"\#(id)","threadId":"\#(thread)","draftId":"\#(draft)","text":"Use the screenshots too.","attachments":\#(attachments),"createdAt":"\#(stamp)","updatedAt":"\#(stamp)","status":"\#(status)"\#(extra)}"#
     }
     private func shell(followups: String = "[]", _ extra: String = "") throws -> Shell {
         try decode(Shell.self, #"{"hostId":"h","host":{"name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"steer":true,"compact":true}},"followups":\#(followups)\#(extra)}"#)
@@ -51,7 +51,7 @@ final class FollowupTests: XCTestCase {
     // MARK: Reading the queue
 
     func testAShellCarriesTheQueueAndTheNewThreadFields() throws {
-        let refused = item(second, status: "failed", #","error":"The provider refused it.","wakeUp":true,"attachments":[{"id":"a"}]"#)
+        let refused = item(second, status: "failed", attachments: #"[{"id":"a"}]"#, #","error":"The provider refused it.","wakeUp":true"#)
         let read = try shell(followups: "[\(item(first)),\(refused)]", #","followupReceipts":[{"threadId":"t","draftId":"\#(draft)"}]"#)
         let items = try XCTUnwrap(read.followups)
         XCTAssertEqual(items.map(\.id), [first, second])
