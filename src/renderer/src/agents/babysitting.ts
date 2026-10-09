@@ -125,7 +125,8 @@ export function babysitLine(options: {
 
 /**
  * The pose's readout: the pull request's number and title over "Babysitting since 2:02 pm" (`since` is the time, empty
- * when it cannot be read), and every one by name on hover.
+ * when it cannot be read), and on hover every one by name with its own "Babysitting since", which stays whole where the
+ * visible line drops the time.
  */
 export interface BabysitReadout { readonly label: string; readonly since: string; readonly title: string }
 export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>, now = new Date()): BabysitReadout | undefined {
@@ -140,7 +141,10 @@ export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRe
   return {
     label: [named(first), ...babysat.slice(1).map(item => `#${item.number}`)].join(', '),
     since: babysitClock(first.startedAt, now),
-    title: babysat.map(named).join('\n'),
+    title: babysat.map(item => {
+      const since = babysitClock(item.startedAt, now)
+      return `${named(item)}\n${since ? `Babysitting since ${since}` : 'Babysitting'}`
+    }).join('\n'),
   }
 }
 

@@ -37,10 +37,15 @@ const thread = (numbers: number[]): Pick<AgentThread, 'babysitting' | 'pullReque
 })
 
 describe('what the pose says', () => {
-  it('names the pull request and its title over since when, and every one on hover', () => {
-    expect(babysitReadout(thread([74]), NOW)).toEqual({ label: '#74 Greet the reviewer', since: '2:02 pm', title: '#74 Greet the reviewer' })
+  it('names the pull request and its title over since when, and every one with its time on hover', () => {
+    expect(babysitReadout(thread([74]), NOW)).toEqual({ label: '#74 Greet the reviewer', since: '2:02 pm', title: '#74 Greet the reviewer\nBabysitting since 2:02 pm' })
     expect(babysitReadout(thread([74, 76]), NOW)).toEqual({ label: '#74 Greet the reviewer, #76', since: '2:02 pm',
-      title: '#74 Greet the reviewer\n#76 Mention the greeting in the README' })
+      title: '#74 Greet the reviewer\nBabysitting since 2:02 pm\n#76 Mention the greeting in the README\nBabysitting since 2:02 pm' })
+    // Where the visible line drops an earlier day's time, the hover title still says it whole (ADR-0061's amendment).
+    const startedAt = (iso: string) => ({ ...thread([74]), babysitting: [{ ...thread([74]).babysitting![0]!, startedAt: iso }] })
+    expect(babysitReadout(startedAt(new Date(2026, 9, 7, 12, 55).toISOString()), NOW)?.title).toBe('#74 Greet the reviewer\nBabysitting since Oct 7, 12:55 pm')
+    // A start time that cannot be read is left out rather than said wrong.
+    expect(babysitReadout(startedAt('not a time'), NOW)?.title).toBe('#74 Greet the reviewer\nBabysitting')
     // A pull request the thread has no title for is named by its number alone.
     expect(babysitReadout(thread([80]), NOW)?.label).toBe('#80')
     expect(babysitReadout(thread([]), NOW)).toBeUndefined()
@@ -54,6 +59,7 @@ describe('what the pose says', () => {
     expect(ornament).toHaveAttribute('data-ornament', 'babysitting')
     expect(ornament).not.toHaveAttribute('aria-live')
     expect(ornament).toHaveTextContent('#74 Greet the reviewerBabysitting since 2:02 pm')
+    expect(ornament.querySelector('.thread-monitor__task')).toHaveAttribute('title', '#74 Greet the reviewer\nBabysitting since 2:02 pm')
     // The time is one piece, so where it does not fit it drops whole rather than ending in an ellipsis.
     expect(container.querySelector('.thread-monitor__status--babysitting .thread-monitor__since')).toHaveTextContent(/^since 2:02 pm$/u)
     // Nothing in it moves: no element is driven by a frame loop, so reduced motion shows the same pose.
