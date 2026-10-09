@@ -2,14 +2,14 @@ import { expect, it, vi } from 'vitest'
 import { Terminal } from '@xterm/xterm'
 import { terminalSearch } from '../../../../src/renderer/src/tools/terminalSearch'
 
-it('keeps the selected search match when a grid resize clears xterm selection before the next key', async () => {
+it.each(['needle', 'NEEDLE'])('keeps the selected %s match when a grid resize clears xterm selection before the next key', async match => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }))
   const terminal = new Terminal({ allowProposedApi: true, cols: 40, rows: 8 })
   const element = document.body.appendChild(document.createElement('div'))
   const search = terminalSearch(terminal, element, () => '#123456')
   try {
     terminal.open(element)
-    await new Promise<void>(resolve => terminal.write('alpha needle one\r\nbeta needle two\r\ngamma needle three', resolve))
+    await new Promise<void>(resolve => terminal.write(`alpha ${match} one\r\nbeta ${match} two\r\ngamma ${match} three`, resolve))
     search.mount(); search.open()
     const field = element.querySelector('input')!
     field.value = 'needle'; field.dispatchEvent(new Event('input'))

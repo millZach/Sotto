@@ -39,7 +39,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   let selected: { marker: IMarker; column: number; length: number; term: string } | undefined
   const rememberSelection = (): void => {
     const range = terminal.getSelectionPosition()
-    if (!range || terminal.getSelection() !== input.value) return
+    if (!range || terminal.getSelection().toLowerCase() !== input.value.toLowerCase()) return
     selected?.marker.dispose()
     selected = { marker: terminal.registerMarker(range.start.y - terminal.buffer.active.baseY - terminal.buffer.active.cursorY), column: range.start.x,
       length: (range.end.y - range.start.y) * terminal.cols + range.end.x - range.start.x, term: input.value }
@@ -48,7 +48,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     if (!selected || selected.marker.isDisposed || selected.term !== input.value || terminal.getSelectionPosition()) return
     terminal.select(selected.column, selected.marker.line, selected.length)
     // A width change or repaint can replace the cells; never preserve an unrelated selection.
-    if (terminal.getSelection() !== selected.term) terminal.clearSelection()
+    if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
   const resultChanges = addon.onDidChangeResults(result => {
     const total = `${result.resultCount}${result.resultCount >= HIGHLIGHT_LIMIT ? '+' : ''}`
