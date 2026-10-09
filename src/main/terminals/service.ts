@@ -338,6 +338,8 @@ export class TerminalWorkspaceService extends ToolOperations {
   }) }
 
   private async reclaim(record: LiveTerminal, preparation: Promise<void> | undefined): Promise<void> {
+    const metadata = record.terminal.worktree
+    if (!metadata || metadata.mode !== 'independent' || metadata.reused) return
     try {
       await preparation
       const prepared = await record.folder
