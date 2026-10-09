@@ -114,3 +114,9 @@ During final Playwright verification, one bounds read returned the previous comp
 The finishing pass ran `npm ci` first and ran the full suite once near the end, after the final source changes and app checks. The 36 cited screenshots were retaken by the passing Playwright run and inspected as paired light/dark contact sheets, including full-size minimum-window views. Search never covered output or its matches; focused link choices stayed inside the window. All captures have reduced motion enabled. Existing `review-384` and `terminal-display` images were restored after their specs. No design baseline changed.
 
 All required local gates passed. This evidence covers local build/app verification, not a packaged installer or GitHub CI.
+
+## Compatibility with main after publication
+
+The initial PR reported three conflicts with main's later test/evidence cleanup: concurrent additions in `.gitignore` and `docs/ci.md`, plus the deleted monolithic `tests/integration/ipc.test.ts`. The terminal ignore and guide sections were moved outside those competing hunks. The unchanged font-size IPC assertion now lives in `tests/integration/terminalPreferencesIpc.test.ts`, using the exact shared `tests/fixtures/ipcHarness.ts` already on main. The old IPC file is unchanged from this branch's base, so main's split can delete it normally. No branch merge, rebase or application change was needed.
+
+The full-suite and native-app results above cover the final application code, before this test relocation. The relocated IPC case, test discovery and tracked-file encoding checks passed afterward: `npx vitest run tests/integration/terminalPreferencesIpc.test.ts tests/unit/release/testDiscovery.test.ts tests/unit/release/trackedFileEncoding.test.ts --maxWorkers=2`, exit 0, 3 files and 4 tests passed. Typecheck, lint and notices were repeated for the final revision. The full suite was not repeated for an unchanged application and assertion.

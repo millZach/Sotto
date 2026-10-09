@@ -2,6 +2,12 @@
 
 `.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
 
+## Terminal interaction verification
+
+After a build, run `npx playwright test tests/e2e/terminal-search-links-zoom.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-loading.spec.ts tests/e2e/terminal-closed-output.spec.ts`. The interaction spec drives real Windows ConPTYs in Terminal mode, the pane drawer and Tools. It checks output search, safe modifier-click links through a stubbed external opener, font size and PTY resize, size persistence through a full app restart, and native clipboard image paste. Terminal mode first searches on WebGL, then falls back to DOM after a simulated context loss; drawers and Tools use DOM. The display spec separately checks WebGL colours and contiguous glyphs.
+
+The interaction spec writes light and dark search-bar captures at 1600x1000, 1280x800 and 820x560 with reduced motion on into ignored `artifacts/terminal-search-links-zoom/`. Selected captures cited in the verification note are committed explicitly. It needs no provider account or network page and runs serially under the existing one-worker Playwright configuration. This is local desktop verification, not a new CI gate.
+
 ## When each job runs
 
 Gates (Windows) runs for every push to `main` and every pull request, and is the check a merge waits for. A push to `main` also runs the other three jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether the three slower jobs are needed:
@@ -75,12 +81,6 @@ over a split pane at 1600x900, 1280x800 and 1280x560, the queue composer at the
 folder keeping its draft. Every separate
 Playwright config under `tests/` must have an npm runner;
 `tests/unit/release/testDiscovery.test.ts` checks that boundary.
-
-## Terminal interaction verification
-
-After a build, run `npx playwright test tests/e2e/terminal-search-links-zoom.spec.ts tests/e2e/terminal-display.spec.ts tests/e2e/pane-terminal.spec.ts tests/e2e/terminal-loading.spec.ts tests/e2e/terminal-closed-output.spec.ts`. The interaction spec drives real Windows ConPTYs in Terminal mode, the pane drawer and Tools. It checks output search, safe modifier-click links through a stubbed external opener, font size and PTY resize, size persistence through a full app restart, and native clipboard image paste. Terminal mode first searches on WebGL, then falls back to DOM after a simulated context loss; drawers and Tools use DOM. The display spec separately checks WebGL colours and contiguous glyphs.
-
-The interaction spec writes light and dark search-bar captures at 1600x1000, 1280x800 and 820x560 with reduced motion on into ignored `artifacts/terminal-search-links-zoom/`. Selected captures cited in the verification note are committed explicitly. It needs no provider account or network page and runs serially under the existing one-worker Playwright configuration. This is local desktop verification, not a new CI gate.
 
 ## Opt-in appearance and theme captures
 
