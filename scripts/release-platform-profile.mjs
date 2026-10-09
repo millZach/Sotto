@@ -133,7 +133,7 @@ function linuxProfile() {
     openDistributable: async (distributablePath, open) => {
       const extractionRoot = await mkdtemp(join(tmpdir(), 'sotto-tarball-'))
       try {
-        await execFileAsync('tar', ['-xzf', distributablePath, '-C', extractionRoot], { maxBuffer: 4 * 1024 * 1024 })
+        await execFileAsync('tar', ['-xzpf', distributablePath, '-C', extractionRoot], { maxBuffer: 4 * 1024 * 1024 })
         // electron-builder prefixes tar archives with the artifact name, without .tar.gz.
         const root = join(extractionRoot, distributablePath.split(/[\\/]/u).at(-1).replace(/\.tar\.gz$/u, ''))
         return await open(join(root, 'resources', 'app.asar'), root)

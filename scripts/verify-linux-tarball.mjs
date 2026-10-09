@@ -3,20 +3,20 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
 async function inventory(root, prefix = '') {
-  const result = {}
+  // Compare the nine access bits; sandbox ownership and setuid are a separate package check.
+  const result = { [prefix || '.']: { directory: true, permissions: (await lstat(join(root, prefix))).mode & 0o777 } }
   for (const name of (await readdir(join(root, prefix))).sort()) {
     const path = prefix ? `${prefix}/${name}` : name
     const fullPath = join(root, path)
     const info = await lstat(fullPath)
     if (info.isDirectory()) {
-      result[path] = { directory: true }
       Object.assign(result, await inventory(root, path))
     } else if (info.isSymbolicLink()) {
       result[path] = { link: await readlink(fullPath) }
     } else if (info.isFile()) {
       result[path] = {
         bytes: info.size,
-        executable: (info.mode & 0o111) !== 0,
+        permissions: info.mode & 0o777,
         sha256: createHash('sha256').update(await readFile(fullPath)).digest('hex'),
       }
     } else throw new Error(`tarball contains an unsupported file: ${path}`)
