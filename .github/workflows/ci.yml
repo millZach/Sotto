@@ -41,7 +41,8 @@ jobs:
             echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # A pull request checks out its merge commit; its first parent is the base branch.
-          files=$(git diff --name-only HEAD^1 HEAD)
+          # --no-renames lists a moved file at both paths, so moving one into a skipped area still counts its old area.
+          files=$(git diff --no-renames --name-only HEAD^1 HEAD)
           if [ -z "$files" ]; then
             echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
@@ -51,8 +52,10 @@ jobs:
           if grep -qvE '^(src/renderer/|src/preload/|apps/ios/|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' <<< "$files" \
             || grep -qxE 'THIRD_PARTY_NOTICES\.md' <<< "$files"; then host=true; fi
           if grep -qE '^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)' <<< "$files"; then ios=true; fi
-          # Packaging reads everything but the documents, the tests and the native phone clients.
-          if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files"; then package=true; fi
+          # Packaging reads everything but the documents, the tests and the native phone clients, except the documents the
+          # package ships (the root README, licence and notices) and the notice the renderer bundles from docs/notices/.
+          if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files" \
+            || grep -qE '^(README\.md|LICENSE\.md|THIRD_PARTY_NOTICES\.md|docs/notices/)' <<< "$files"; then package=true; fi
           echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"
           echo "Host job: $host. iOS job: $ios. Package job: $package."
 
@@ -135,8 +138,36 @@ jobs:
       - name: Prepare runtime assets
         run: npm run runtime:prepare
 
+      # runtime:prepare rewrites resources/runtime/manifest.lock.json from what npm ci installed, and package:dir
+      # verifies the runtime against that rewrite. A clean install reproduces the committed lock exactly, so a
+      # difference means the lockfile moved the runtime without the committed lock following it.
+      - name: Check the prepared runtime matches the committed lock
+        shell: bash
+        run: git diff --exit-code -- resources/runtime/manifest.lock.json
+
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
+
+  # A skipped job counts as passing for a required check, and Package (Windows) is skipped whenever Changed areas
+  # does not ask for it, including when Changed areas itself failed. A ruleset requires this job instead: it fails
+  # unless Changed areas finished and Package (Windows) passed whenever it was asked for.
+  package-result:
+    name: Package result
+    needs: [changes, package]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Changed areas and Package (Windows)
+        shell: bash
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          WANTED: ${{ needs.changes.outputs.package }}
+          PACKAGE: ${{ needs.package.result }}
+        run: |
+          if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided whether to package."; exit 1; fi
+          if [ "$WANTED" = "true" ] && [ "$PACKAGE" != "success" ]; then echo "Package (Windows) was needed and ended $PACKAGE."; exit 1; fi
+          echo "Package (Windows) needed: $WANTED. Result: $PACKAGE."
 
   host:
     name: Host archive and socket contract (Linux)

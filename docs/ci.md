@@ -8,6 +8,12 @@ Gates (Windows) runs for every push to `main` and every pull request, and is the
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
 - **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run runtime:prepare` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
+
+  Changed areas also runs it when a document the package carries changes: the root `README.md`, `LICENSE.md` and `THIRD_PARTY_NOTICES.md`, and `docs/notices/`, whose Supertonic licence the renderer bundles. The file list is read with rename detection off, so a file moved into a skipped area still counts its old path.
+
+  Before packaging, the job checks that `npm run runtime:prepare` reproduced the committed `resources/runtime/manifest.lock.json`. Prepare rewrites the lock from what `npm ci` installed and packaging verifies the runtime against that rewrite, so without this step a lockfile change that moved the ONNX runtime would pass unnoticed.
+
+  **Package result** is a short Linux job that always runs after it. It fails if Changed areas did not finish, or if Package (Windows) was needed and did not pass. A skipped job counts as passing for a required check, so a ruleset that requires packaging names Package result, not Package (Windows).
 - **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.
 
 A job that is not needed reports as skipped, not failed. A change that should have run a skipped job still gets it on the push to `main` after merging.
