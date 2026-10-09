@@ -5,8 +5,10 @@
   widget variant (A, B, C) and one chrome variant (1, 2, 3), for example "B and 2".
 
   Every combination is a link: #widget=a|b|c&state=idle|listening|transcribing|delivered|copied
-  &chrome=1|2|3&theme=dark|light, plus page=threads|dictate, rest=bar (B rests in the bar only),
-  motion=reduced and outline=1 (draw the widget's surface).
+  &chrome=1|2|3&theme=dark|light&page=threads|dictate&rest=pill|bar (bar: B rests in the bar only)
+  &motion=auto|reduced&outline=0|1 (1: draw the widget's surface). The page writes every key. A key
+  that is missing or has a value it does not know takes the default (widget=a, state=listening,
+  chrome=3, theme=dark, page=threads, rest=pill, motion=auto, outline=0); case does not matter.
 
   Sotto's colours are the Sotto theme's roles (src/shared/themes/palettes.ts), Ink in the dark half;
   the widget pill is widget.css at its real sizes. Omarchy's colours are Tokyo Night and Catppuccin
@@ -360,7 +362,6 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
 :root[data-motion=reduced] .wa-bars i{height:11px}
 :root[data-motion=reduced] .wb-bars i{height:12px}
 :root[data-motion=reduced] .sw-wave[data-stage=listening] i{height:28px}
-@media (prefers-reduced-motion:reduce){.play{display:none}}
 :root[data-motion=reduced] .wa-spinner{border-top-color:color-mix(in srgb,var(--tt-accent) 60%,var(--tt-text))}
 </style>
 </head>
@@ -450,7 +451,7 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
   <section class="notes" aria-label="Trade-offs and notes">
     <h2>Widget trade-offs</h2>
     <div class="trade" data-trade="a"><h3>A · Today's widget, placed by a rule</h3><p>Looks like Sotto rather than Omarchy: rounded, Manrope, Sotto's teal. Nothing to build but a rule. A Wayland window cannot place itself, so the rule places it once and the pill grows from that corner unless Sotto keeps one footprint, whose clear margin then catches clicks meant for the window below. Dragging it to another edge goes away.</p></div>
-    <div class="trade" data-trade="b"><h3>B · A shell plugin, pill and bar</h3><p>Looks like Omarchy: square corners, the shell's font, the theme's accent as its border, repainted on every theme switch. A layer-shell surface is never a window, never takes focus and sits above full-screen apps. Costs a QML plugin under <code>apps/omarchy/</code> and a state file Sotto writes for it, on a plugin API Omarchy can change.</p></div>
+    <div class="trade" data-trade="b"><h3>B · A shell plugin, pill and bar</h3><p>Looks like Omarchy: square corners, the shell's font, the theme's accent as its border, repainted on every theme switch. A layer-shell surface is never a window, never takes focus and sits above full-screen apps. Costs a QML plugin under <code>apps/omarchy/</code>, on a plugin API Omarchy can change, and a path each way between the plugin and Sotto. Sotto writes a state file the plugin follows. The pill's buttons answer back through the dictation command from #837 over Sotto's socket: Click to dictate runs <code>sotto dictation start</code>, and Stop and Cancel run <code>sotto dictation stop</code> and <code>sotto dictation cancel</code>.</p></div>
     <div class="trade" data-trade="c"><h3>C · Bar only, with the OSD</h3><p>The quietest and the least to build: a bar widget, and the shell's own OSD for the moments that matter. Nothing covers your work at rest. But the OSD takes no clicks, so Stop, Cancel and Try again live only in the bar, at the top of the screen, away from where you are writing. A hidden bar shows nothing while the microphone is on.</p></div>
 
     <h2>Chrome trade-offs</h2>
@@ -639,8 +640,8 @@ ${bottom}
 
 <span class="grn">●</span> A bar widget watches a file and redraws when it changes. The
   Agents widget reads <span class="cyn">~/.local/state/omarchy/agents/usage/*.json</span>
-  this way, so Sotto can write one state file and a plugin can
-  follow it without a socket.
+  this way, so Sotto can write one state file for a plugin to
+  follow. The pill's buttons answer with <span class="cyn">sotto dictation stop</span>.
 
 <span class="grn">●</span> The Dictation indicator does the same with a process: it runs
   <span class="cyn">omarchy-voxtype-status</span> and reads one JSON line per change.
@@ -720,24 +721,22 @@ function deskHTML(s) {
 const frame = document.getElementById('frame')
 const loupes = [...document.querySelectorAll('[data-loupe]')]
 
+/* A link says everything: a missing key or a value the page does not know takes the default, not what is on screen. */
+const DEFAULTS = { widget: 'a', state: 'listening', chrome: '3', theme: 'dark', page: 'threads', rest: false, motion: false, outline: false }
+const CHOICES = { widget: ['a', 'b', 'c'], state: STATES, chrome: ['1', '2', '3'], theme: ['dark', 'light'], page: ['threads', 'dictate'] }
+const FLAGS = { rest: ['pill', 'bar'], motion: ['auto', 'reduced'], outline: ['0', '1'] }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1))
-  const pick = (key, allowed) => (allowed.includes(p.get(key)) ? p.get(key) : null)
-  S.widget = pick('widget', ['a', 'b', 'c']) ?? S.widget
-  S.state = pick('state', STATES) ?? S.state
-  S.chrome = pick('chrome', ['1', '2', '3']) ?? S.chrome
-  S.theme = pick('theme', ['dark', 'light']) ?? S.theme
-  S.page = pick('page', ['threads', 'dictate']) ?? S.page
-  S.rest = p.get('rest') === 'bar'
-  S.motion = p.get('motion') === 'reduced'
-  S.outline = p.get('outline') === '1'
+  const get = (key) => (p.get(key) ?? '').trim().toLowerCase()
+  const patch = {}
+  for (const [key, allowed] of Object.entries(CHOICES)) patch[key] = allowed.includes(get(key)) ? get(key) : DEFAULTS[key]
+  for (const [key, values] of Object.entries(FLAGS)) patch[key] = values.includes(get(key)) ? get(key) === values[1] : DEFAULTS[key]
+  return patch
 }
 function writeHash() {
-  const p = new URLSearchParams({ widget: S.widget, state: S.state, chrome: S.chrome, theme: S.theme })
-  if (S.page !== 'threads') p.set('page', S.page)
-  if (S.rest) p.set('rest', 'bar')
-  if (S.motion) p.set('motion', 'reduced')
-  if (S.outline) p.set('outline', '1')
+  const p = new URLSearchParams()
+  for (const key of Object.keys(CHOICES)) p.set(key, S[key])
+  for (const [key, [off, on]] of Object.entries(FLAGS)) p.set(key, S[key] ? on : off)
   history.replaceState(null, '', `#${p}`)
 }
 function syncControls() {
@@ -793,13 +792,18 @@ function set(patch) {
 
 for (const input of document.querySelectorAll('.opts input')) {
   input.addEventListener('change', () => { if (input.checked) set({ [input.name]: input.value }) })
+  /* A radio that is already checked fires no change, and Space on it no click, so picking what Play is showing stops Play here. */
+  const freeze = () => { if (playing() && S[input.name] === input.value) set({ [input.name]: input.value }) }
+  input.addEventListener('click', freeze)
+  input.addEventListener('keyup', (e) => { if (e.key === ' ') freeze() })
 }
 for (const button of document.querySelectorAll('.pick-set button')) button.addEventListener('click', () => set({ [button.dataset.set]: button.dataset.value }))
 for (const select of document.querySelectorAll('.pick-more select')) select.addEventListener('change', () => set({ [select.dataset.set]: select.value }))
 document.getElementById('rest').addEventListener('change', (e) => set({ rest: e.target.checked }))
 document.getElementById('motion').addEventListener('change', (e) => set({ motion: e.target.checked }))
 document.getElementById('outline').addEventListener('change', (e) => set({ outline: e.target.checked }))
-window.addEventListener('hashchange', () => { readHash(); syncControls(); render() })
+/* A link, Back or Forward stops Play and resets the clock and progress as the controls do. replaceState fires no hashchange. */
+window.addEventListener('hashchange', () => set(readHash()))
 new ResizeObserver(layout).observe(document.querySelector('.stage'))
 
 /* The listening clock ticks; nothing else depends on it. */
@@ -812,6 +816,7 @@ setInterval(() => {
 /* Play a dictation: idle, listening, transcribing, delivered, idle again. */
 const playButton = document.getElementById('play')
 let playTimers = []
+const playing = () => playButton.getAttribute('aria-pressed') === 'true'
 function stopPlay() {
   playTimers.forEach(clearTimeout)
   playTimers = []
@@ -823,7 +828,7 @@ function step(state, extra = {}) {
   writeHash(); syncControls(); render()
 }
 playButton.addEventListener('click', () => {
-  if (playButton.getAttribute('aria-pressed') === 'true') { stopPlay(); return }
+  if (playing()) { stopPlay(); return }
   stopPlay()
   playButton.setAttribute('aria-pressed', 'true')
   playButton.textContent = 'Stop playing'
@@ -838,9 +843,7 @@ playButton.addEventListener('click', () => {
   at(8400, () => { step('idle'); stopPlay() })
 })
 
-readHash()
-syncControls()
-render()
+set(readHash())
 </script>
 </body>
 </html>
