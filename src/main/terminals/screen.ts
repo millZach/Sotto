@@ -201,7 +201,8 @@ export class TerminalScreenRules {
       const work = /(?:esc to interrupt|ctrl\+c to interrupt)/iu.test(text) && /^[✶✻✽✢·*]\s+\S.+/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
       if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
-      const choices = /^❯\s*1\.\s+Yes(?:,|$)/mu.test(text) && /^\s*[2-9]\.\s+No(?:,|$)/mu.test(text)
+      const choices = /^(?:❯\s*)?1\.\s+Yes(?:,|$)/mu.test(text) && /^(?:❯\s*)?[2-9]\.\s+No(?:,|$)/mu.test(text)
+        && /^❯\s*[1-9]\.\s+\S.+/mu.test(text)
       const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
       const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(footer)
       if (choices && prompt && controls) return { detection: 'available', state: 'needs-you' }
@@ -215,7 +216,8 @@ export class TerminalScreenRules {
       if (work) return { detection: 'available', state: 'working', failed }
       if (bottom.slice(-4).some(line => /^›\s*(?:Ask Codex to do anything)?$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
-      const choices = /^›\s*1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^\s*[2-9]\.\s+No, and tell Codex .+/mu.test(text)
+      const choices = /^(?:›\s*)?1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^(?:›\s*)?[2-9]\.\s+No, and tell Codex .+/mu.test(text)
+        && /^›\s*[1-9]\.\s+\S.+/mu.test(text)
       const controls = /^Press enter to confirm or esc to cancel$/iu.test(footer)
       if (prompt && choices && controls) return { detection: 'available', state: 'needs-you' }
       // Codex rust-v0.162.0 request_user_input has a progress header, selected choice/freeform input, and its own submission footer.

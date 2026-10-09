@@ -284,6 +284,23 @@ describe('terminal agent run state', () => {
     state.output(idle); expect(state.state).toBe('idle')
     state.hook(event('notification', { notificationType: 'permission_prompt' })); expect(state.state).toBe('idle')
   })
+  it.each(['claude', 'codex'] as const)('keeps a screen-only %s approval open at every selection position', provider => {
+    const mark = provider === 'claude' ? '❯' : '›'
+    const title = provider === 'claude' ? header : codexTitle
+    const prompt = provider === 'claude' ? 'Do you want to proceed?' : 'Would you like to run the following command?'
+    const choices = provider === 'claude' ? ['1. Yes', '2. Yes, and do not ask again', '3. No']
+      : ['1. Yes, proceed (y)', '2. Yes, and do not ask again (a)', '3. No, and tell Codex what to do differently (esc)']
+    const controls = provider === 'claude' ? 'Enter to confirm · Esc to cancel' : 'Press enter to confirm or esc to cancel'
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started()
+    state.output(provider === 'claude' ? idle : codexIdle); state.output(provider === 'claude' ? work : codexWork)
+    for (let selected = 0; selected < choices.length; selected++) {
+      state.input('\x1b[B')
+      state.output(redraw(`${prompt}\r\n${choices.map((choice, index) => `${index === selected ? mark : ' '} ${choice}`).join('\r\n')}\r\n${controls}`, title))
+      expect(state.state).toBe('needs-you')
+    }
+    state.input('\r'); state.output(provider === 'claude' ? idle : codexIdle)
+    expect(state.state).toBe('idle')
+  })
   it('withdraws screen-only requests immediately on resize without output, while retaining every live hook request', () => {
     const screenOnly = agent(); screenOnly.output(request); expect(screenOnly.state).toBe('needs-you')
     screenOnly.resize(80, 20); expect(screenOnly.state).toBe('idle'); expect(screenOnly.detection).toBe('unavailable')
