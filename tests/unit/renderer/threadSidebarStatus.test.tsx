@@ -266,6 +266,23 @@ describe('a thread that babysits a pull request', () => {
     expect(status('Footer links')).toHaveTextContent('Babysitting #74 and #76')
   })
 
+  it('says the same in the collapsed rail, whose title would otherwise read Done', () => {
+    // Collapsing is remembered, so the width record is cleared either side of the test, even when it fails.
+    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+    try {
+      const live = mount(threadsStateFixture(), NOW)
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'idle')) })
+      act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+      const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Footer links"]')!
+      expect(rail).toHaveAttribute('title', 'Footer links · Babysitting #74')
+      expect(rail).toHaveAccessibleDescription('Footer links · Babysitting #74')
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'idle', true)) })
+      expect(rail).toHaveAttribute('title', 'Footer links · Just finished')
+      act(() => { live.publish(babysat(live.state, 'footer-links', 'running')) })
+      expect(rail).toHaveAttribute('title', 'Footer links · Working')
+    } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
+  })
+
   it('gives way to a request waiting on you, and to settling', () => {
     const state = threadsStateFixture()
     Object.assign(state, babysat(state, 'visual-gate', 'idle'))

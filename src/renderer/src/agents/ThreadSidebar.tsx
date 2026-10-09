@@ -273,7 +273,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError}
-    collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === currentThreadId)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${row.stateLabel}`} aria-current={currentThreadId === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === currentThreadId)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={currentThreadId === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
     </button>)}</nav>}>
       <section aria-label="Projects">
