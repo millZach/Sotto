@@ -4,18 +4,15 @@ import { join } from 'node:path'
 import type { SottoBridge } from '../../src/shared/contracts'
 import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { closeSotto, completeFirstRunSetup, launchSottoWithVoice, openThreads, paneMenuAction, userMessageTexts } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/agent-control-smoke')
 
 async function setup(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: 'Continue' }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
+  // First-run setup's own Coding agents step already connects every provider this computer has, the way Connect
+  // providers does, so the real Agents room opens already connected.
+  await completeFirstRunSetup(page, { microphone: 'test' })
   await page.getByRole('tab', { name: 'Agents', exact: true }).click()
   await page.getByRole('button', { name: 'Not now', exact: true }).click()
 }
@@ -88,6 +85,9 @@ test('configures Grok API speech, recovers from a rejected key, and previews a c
   const { page } = launched
   try {
     await setup(page)
+    // The Coding agents step in first-run setup already connected this computer's one provider, which auto-enables
+    // agent control for a single-provider host; this test's own precondition is agents off.
+    await page.evaluate(() => (globalThis as unknown as { sotto: SottoBridge }).sotto.agents?.command({ type: 'configure', patch: { enabled: false } }))
     await page.getByRole('button', { name: 'Configure agents', exact: true }).click()
     await page.getByLabel('Speech voice', { exact: true }).selectOption('grok')
     await expect(page.getByRole('button', { name: 'Use and preview voice', exact: true })).toBeDisabled()
@@ -167,8 +167,6 @@ test('collects an explicit prompt, queues ready threads, and yields only the dir
   const { page } = launched
   try {
     await setup(page)
-    await page.getByRole('button', { name: 'Connect providers' }).click()
-    await expect(page.getByRole('status')).toHaveText('Codex connected')
     const key = await hostKeys(page)
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
@@ -225,7 +223,6 @@ test('keeps agent settings and widget prompts usable at the minimum window size'
       const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       main.setBounds({ ...main.getBounds(), width: 820, height: 560 })
     })
-    await page.getByRole('button', { name: 'Connect providers' }).click()
     await openThreads(page)
     await page.getByRole('button', { name: 'Workshop', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Workshop', exact: true })).toBeVisible()

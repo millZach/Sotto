@@ -2,6 +2,7 @@ import React from 'react'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
+import { HostDialog } from '../../../src/renderer/src/features/settings/HostDialog'
 import { HostsSettings } from '../../../src/renderer/src/features/settings/HostsSettings'
 import { HostQuestionDialog } from '../../../src/renderer/src/features/settings/HostQuestionDialog'
 import type { HostSetupChoice, HostSetupState, HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../src/shared/hosts'
@@ -104,6 +105,16 @@ it('keeps Add it as the one choice when no agent can set up a host, and says why
   expect(within(dialog).getByRole('radio', { name: 'Add it' })).toHaveProperty('checked', true)
   expect(within(dialog).getByText(/needs the local host/)).toBeTruthy()
   expect(within(dialog).queryByRole('combobox', { name: 'Model' })).toBeNull()
+  expect(within(dialog).getByRole('button', { name: 'Add host' })).toBeTruthy()
+})
+
+it('offers only Add it where Threads cannot be reached to answer a setup thread, as in first-run setup', async () => {
+  const { bridge } = fixture()
+  render(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={await bridge.get()} agentSetup={false} onClose={() => undefined} />)
+  const dialog = await screen.findByRole('dialog', { name: 'Add host' })
+  expect(within(dialog).queryByRole('radiogroup', { name: 'How to add the host' })).toBeNull()
+  expect(within(dialog).queryByText('Have my agent set this up')).toBeNull()
+  expect(within(dialog).queryByRole('button', { name: 'Start setup' })).toBeNull()
   expect(within(dialog).getByRole('button', { name: 'Add host' })).toBeTruthy()
 })
 

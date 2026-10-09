@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { E2E_TRANSCRIPT, E2E_PRESERVED_CLIPBOARD } from '../../src/shared/e2e'
-import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
+import { closeSotto, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
 
 const captures = evidenceDirectory('artifacts/linux-hyprland-paste')
 
@@ -17,14 +17,11 @@ test('Linux clipboard failure keeps text in Dictate while the main window is hid
     env: { ...process.env, XDG_RUNTIME_DIR: launched.userData },
   })
   try {
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Skip for now' }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await reachFirstRunStep(page, 'key', { microphone: 'skip' })
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-clipboard-e2e')
     await page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
     await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Finish setup' }).click()
+    await finishFirstRunSetupFrom(page, 'key', { microphone: 'skip' })
     await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false, autoPaste: true, historyEnabled: false }))
     await openPage(page, 'Dictate')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!.hide())
@@ -77,18 +74,15 @@ test('Linux saves a key during onboarding and explains Hyprland paste', async ()
   const launched = await launchSotto('success')
   const { page } = launched
   try {
-    await expect(page.getByRole('heading', { name: 'Dictation, ready when you are' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
     expect(await page.evaluate(() => window.sotto!.platform)).toBe('linux')
     expect(await page.evaluate(() => window.sotto!.canFrostWindow)).toBe(false)
     await expect(page.locator('.app-controls')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Skip for now' }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await reachFirstRunStep(page, 'key', { microphone: 'skip' })
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-e2e-storage-check')
     await page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
     await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await page.getByRole('button', { name: 'Finish setup' }).click()
+    await finishFirstRunSetupFrom(page, 'key', { microphone: 'skip' })
     await expect(page.getByRole('complementary', { name: 'Thread sidebar', exact: true })).toBeVisible()
     await expect(page.locator('.app-controls, .threads-view__winctl')).toHaveCount(0)
     expect(await page.locator('.threads-view').evaluate(element => getComputedStyle(element).getPropertyValue('--threads-winctl-inset').trim())).toBe('0px')
@@ -119,15 +113,12 @@ test('Linux keeps the transcript and names universal paste when paste fails', as
   test.skip(process.platform !== 'linux', 'Linux desktop profile')
   const launched = await launchSotto('paste-failure')
   try {
-    await expect(launched.page.getByRole('heading', { name: 'Dictation, ready when you are' })).toBeVisible()
-    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await launched.page.getByRole('button', { name: 'Skip for now' }).click()
-    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await expect(launched.page.getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
+    await reachFirstRunStep(launched.page, 'key', { microphone: 'skip' })
     await launched.page.getByLabel('OpenRouter API key', { exact: true }).fill('sotto-linux-paste-fallback-e2e')
     await launched.page.getByRole('heading', { name: 'Connect your OpenRouter key' }).click()
     await expect(launched.page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute('placeholder', 'Key saved')
-    await launched.page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await launched.page.getByRole('button', { name: 'Finish setup' }).click()
+    await finishFirstRunSetupFrom(launched.page, 'key', { microphone: 'skip' })
     await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar', exact: true })).toBeVisible()
     await launched.page.evaluate(async () => window.sotto!.updateSettings({
       microphoneSkipped: false, autoPaste: true,

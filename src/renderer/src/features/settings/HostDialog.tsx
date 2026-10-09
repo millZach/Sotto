@@ -38,10 +38,15 @@ export type HostDialogMode = { readonly kind: 'add' } | { readonly kind: 'edit';
  * Have my agent fix this. Edit connection saves how Sotto connects and the SSH settings, both checked by main before either
  * is written; a host that is on connects again the way it says.
  */
-export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
+export function HostDialog({ mode, bridge, state, tailscale, agentSetup = true, onClose }: {
   readonly mode: HostDialogMode; readonly bridge: HostsBridge; readonly state: HostsState | null
   /** Tailscale on this computer, shared with the Hosts page's row. */
   readonly tailscale?: TailscaleControl | undefined
+  /**
+   * False where the user cannot reach Threads to answer a host setup thread, as in first-run setup: the dialog offers
+   * only Add it, and no Have my agent set this up or fix this.
+   */
+  readonly agentSetup?: boolean
   readonly onClose: () => void
 }): ReactNode {
   const editing = mode.kind === 'edit' ? mode.host : undefined
@@ -77,7 +82,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
   const [tailnetPress, setTailnetPress] = useState<{ readonly running: boolean; readonly error?: string } | null>(null)
   // Have my agent set this up: the choice, its model, and the setup this dialog started or was opened to show.
   const choice = state?.setupChoice
-  const agentAvailable = choice !== undefined && !choice.unavailable && choice.models.length > 0
+  const agentAvailable = agentSetup && choice !== undefined && !choice.unavailable && choice.models.length > 0
   const [how, setHow] = useState<HostAddChoice>(agentAvailable ? 'agent' : 'self')
   const howChosen = useRef(false)
   const [modelId, setModelId] = useState('')
@@ -353,7 +358,7 @@ export function HostDialog({ mode, bridge, state, tailscale, onClose }: {
           : <>A host name, an alias from your SSH configuration or user@server. <button type="button" className="hosts-devices__back tt-focusable" disabled={fieldsDisabled} onClick={chooseFromDevices}>Choose from your devices</button></>}</p>
       </div> : <DevicePicker devices={devices?.devices ?? null} failed={devices?.failed === true} tailscale={tailscale?.summary ?? devices?.tailscale ?? null} saved={saved} value={picked}
         onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} />}
-      {!editing ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
+      {!editing && agentSetup ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
         onModel={setModelId} disabled={fieldsDisabled} /> : null}
       {serveShown ? <p className="tt-field__description" id={serveId}>Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</p> : null}
       {typing ? <div className="hosts-dialog__pair">

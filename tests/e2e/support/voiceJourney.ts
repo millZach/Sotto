@@ -1,12 +1,9 @@
-import { expect, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+import { finishFirstRunSetupFrom } from './sottoLaunch'
 
 export async function completeVoiceJourneySetup(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await page.getByRole('button', { name: /test microphone/i }).click()
-  await expect(page.getByText(/microphone ready/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await page.getByRole('button', { name: /finish setup/i }).click()
+  await finishFirstRunSetupFrom(page, 'welcome', { microphone: 'test' })
 }
 
 /**
