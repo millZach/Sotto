@@ -23,7 +23,7 @@ export class TerminalAgentStateMachine {
   private requests = new Set<string>()
   private candidateSession: string | undefined
   private conflictingSession = false
-  private completedTurns = new Set<string>()
+  private inactiveTurns = new Set<string>()
   private activeTurn: string | undefined
   private fresh = false
   private awaitingReady = true
@@ -33,6 +33,7 @@ export class TerminalAgentStateMachine {
   private draftStarted = false
   private hooksKnown = false
   private pendingSubmission = false
+  private awaitingSubmissionHook = false
   constructor(readonly runId: string, private readonly provider: TerminalProvider, cols: number, rows: number, providerSessionId?: string) {
     this.screen = new TerminalAgentScreen(cols, rows); this.rules = new TerminalScreenRules(provider)
     this.providerSessionId = providerSessionId
@@ -57,8 +58,11 @@ export class TerminalAgentStateMachine {
     if (this.inputReady && !this.draftStarted && data.charCodeAt(0) >= 32) { this.localCommand = data.trimStart().startsWith('/'); this.draftStarted = true }
     const cancel = data.includes('\x03') || this.provider !== 'grok' && data === '\x1b' && this.state === 'working'
     this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'
-    if (cancel) { this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false }
+    if (cancel) { this.interrupted = true; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false }
     if (submitted && !cancel && !this.localCommand) {
+      // Enter starts new work before its helper can bind it. Neither the prior turn's Stop nor an unbound Stop may settle this new submission.
+      this.retireTurn(this.activeTurn); this.activeTurn = undefined
+      this.awaitingSubmissionHook = this.provider === 'claude' && this.hooksKnown
       this.state = 'working'; this.knownWork = true; this.interrupted = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.inputReady = false; this.finishedObserved = false
       // A PTY can echo into its old ready screen before drawing the new turn. Only a current work frame or admitted completion ends this reservation.
       this.pendingSubmission = true
@@ -78,9 +82,13 @@ export class TerminalAgentStateMachine {
     switch (event.kind) {
       case 'session-start': this.hooksKnown = true; this.awaitingReady = true; break // SessionStart precedes the actual live input prompt.
       case 'working':
-        if (event.turnId && this.completedTurns.has(event.turnId)) break
+        if (event.turnId && this.inactiveTurns.has(event.turnId)) break
         if (event.workPhase !== 'submitted' && event.turnId && this.activeTurn && this.activeTurn !== event.turnId) break
-        if (event.workPhase !== 'submitted' && this.finishedObserved && this.fresh && this.evidence.state === 'idle') break // A delayed tool hook cannot create a second unseen finish.
+        if (event.workPhase !== 'submitted' && event.workPhase !== 'continuing' && this.finishedObserved && this.fresh && this.evidence.state === 'idle') break // A delayed tool hook cannot create a second unseen finish.
+        if (event.workPhase === 'submitted') {
+          if (this.activeTurn !== event.turnId) this.retireTurn(this.activeTurn)
+          this.activeTurn = event.turnId; this.awaitingSubmissionHook = false
+        }
         if (event.workPhase === 'submitted' || event.workPhase === 'continuing') {
           this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = event.workPhase === 'continuing'
           this.pendingSubmission = event.workPhase === 'submitted'
@@ -94,15 +102,13 @@ export class TerminalAgentStateMachine {
         this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
         if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
-        if (event.turnId && (this.completedTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
+        if (this.awaitingSubmissionHook) break
+        if (event.turnId && (this.inactiveTurns.has(event.turnId) || this.activeTurn && this.activeTurn !== event.turnId)) break
         if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') { this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false }
-        if (event.turnId) {
-          this.completedTurns.add(event.turnId)
-          if (this.completedTurns.size > 512) this.completedTurns.delete(this.completedTurns.values().next().value!)
-        }
+        this.retireTurn(event.turnId)
         break
       case 'cancelled': case 'ended':
-        this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.requests.clear(); this.pendingSubmission = false; break
+        this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.requests.clear(); this.pendingSubmission = false; this.awaitingSubmissionHook = false; break
       case 'notification':
         // Delayed notifications corroborate a *current* screen, never invent a request/completion.
         if (event.notificationType !== 'idle_prompt' && this.fresh && this.evidence.state === 'needs-you') this.state = 'needs-you'
@@ -112,9 +118,14 @@ export class TerminalAgentStateMachine {
   }
   requestClosed(requestId: string): void { if (this.requests.delete(requestId)) this.reconcile() }
   unavailable(): void { this.requests.clear(); this.detection = 'unavailable'; this.reconcile() }
-  exit(): void { this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.providerSessionId = undefined; this.pendingSubmission = false }
+  exit(): void { this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.completion = false; this.completionViewed = false; this.readyForCompletion = false; this.continuingWork = false; this.providerSessionId = undefined; this.pendingSubmission = false; this.awaitingSubmissionHook = false }
   /** Output activity may settle only work inferred by the compatibility fallback, never known silent work. */
   quiet(): void { if (this.live && !this.knownWork && this.requests.size === 0 && this.evidence.state === undefined && this.state === 'working') this.state = 'idle' }
+  private retireTurn(turnId: string | undefined): void {
+    if (!turnId) return
+    this.inactiveTurns.add(turnId)
+    if (this.inactiveTurns.size > 512) this.inactiveTurns.delete(this.inactiveTurns.values().next().value!)
+  }
   private reconcile(): void {
     if (this.state === 'exited' || !this.live) return
     if (this.requests.size > 0 || this.fresh && this.evidence.state === 'needs-you') { this.screenWork = false; this.completion = false; this.readyForCompletion = false; this.pendingSubmission = false; this.state = 'needs-you'; return }
