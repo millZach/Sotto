@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<!-- THROWAWAY MOCK-UP. Not shipped.
+     The question: what should Sotto's command center look like, and where does it live? The command center is
+     one typed thread per computer, on the user's own Claude Code, Codex or Grok Build, given Sotto tools to list,
+     read, start, send to, stop and settle every other thread, here and on connected hosts. It never answers a
+     thread's question or permission; it links to the request card instead.
+     Four variants, switchable with the bottom bar, the left and right arrow keys, or ?variant=A2|A|B|C:
+       A2 · Overview in the sidebar   Zach's pick from round one (A) with one change: the overview moves into the
+                             real sidebar on the left, the page takes the Threads page's shell (no strip, window
+                             controls at the top right) and the sidebar foot gains a third room, Command center.
+                             The default. ?page=threads|dictate shows the same foot on those pages.
+       A · Its own room      a third state of the switch, conversation in the centre, overview as a rail beside it.
+       B · Its own window    a smaller desktop window beside the main window, conversation first, counts on top.
+       C · Board first       its own room whose page is a board of every thread grouped by what you need to do,
+                             with the conversation docked at the bottom.
+     Other parameters: theme=light|dark, size=1280|820, open=1 (B: overview open, C: conversation open).
+     Colour comes only from the real --tt-* tokens; the stage and the prototype bar use literals, as the
+     provider-updates mock-up does. Same sample data in all three. -->
+<html lang="en" data-theme="dark" data-theme-id="sotto" data-brand="app-icon">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — command center (prototype)</title>
+<link rel="stylesheet" href="../../src/renderer/src/styles/tokens.css">
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; src: url(data:font/woff2;base64,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) format('woff2'); }
+/* ---------- stage (not the app) ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-height: 100vh; background: #0e0f12; color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+:root[data-theme='light'] body { background: #cdc9c0; }
+button, input, textarea { font: inherit; color: inherit; }
+.wrap { position: relative; margin: 20px auto 0; }
+.desk { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.notes { width: min(1080px, calc(100vw - 48px)); margin: 22px auto 120px; color: #a3a3ae; font-size: 13px; line-height: 1.6; }
+.notes b { color: #ececf1; font-weight: 600; }
+.notes p { margin: 0 0 8px; }
+:root[data-theme='light'] .notes { color: #3d3b35; }
+:root[data-theme='light'] .notes b { color: #1b1915; }
+.bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 999px; background: #17171d; border: 1px solid #34343f; color: #f2f2f5; font-size: 12px; box-shadow: 0 14px 40px rgb(0 0 0 / 55%); white-space: nowrap; }
+.bar button { border: 1px solid #3d3d49; border-radius: 999px; background: #22222a; color: #f2f2f5; font: inherit; font-size: 11.5px; padding: 4px 10px; cursor: pointer; }
+.bar button:hover { border-color: #6a6a78; }
+.bar button[aria-pressed='true'] { background: #f2f2f5; color: #17171d; border-color: #f2f2f5; }
+.bar button:focus-visible { outline: 2px solid #7fd8cc; outline-offset: 2px; }
+.bar .sep { width: 1px; height: 18px; background: #3d3d49; margin: 0 3px; }
+.bar .name { min-width: 196px; text-align: center; font-weight: 600; font-size: 12.5px; }
+.bar [hidden] { display: none; }
+.toast { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 60; padding: 8px 14px; border-radius: 10px; background: #17171d; border: 1px solid #34343f; color: #f2f2f5; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity 160ms; }
+.toast[data-on] { opacity: 1; }
+
+/* ---------- shared app pieces ---------- */
+.win { position: absolute; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 8px; background: var(--tt-canvas); color: var(--tt-text); box-shadow: var(--tt-shadow-lg); }
+.win :focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.ic { flex: none; display: block; }
+.sotto-mark { flex: none; display: block; }
+.sotto-mark__tile { fill: var(--tt-accent); }
+.sotto-mark__glyph { fill: var(--tt-provider-ink); }
+.sotto-mark__wave { fill: none; stroke: var(--tt-provider-ink); stroke-width: 7.5; stroke-linecap: round; }
+.pm { flex: none; display: block; fill: currentColor; }
+.pm[data-provider='codex'] { color: var(--tt-provider-codex); }
+.pm[data-provider='claude'] { color: var(--tt-provider-claude); }
+.pm[data-provider='grok'] { color: var(--tt-provider-grok); }
+.pm[data-provider='devin'] { color: var(--tt-provider-devin); }
+:root[data-theme='light'] .pm[data-provider='codex'] { color: color-mix(in srgb, var(--tt-provider-codex) 50%, var(--tt-text)); }
+:root[data-theme='light'] .pm[data-provider='claude'] { color: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text)); }
+:root[data-theme='light'] .pm[data-provider='grok'] { color: color-mix(in srgb, var(--tt-provider-grok) 50%, var(--tt-text)); }
+:root[data-theme='light'] .pm[data-provider='devin'] { color: color-mix(in srgb, var(--tt-provider-devin) 50%, var(--tt-text)); }
+code, .code { padding: 0 5px; border: 1px solid var(--tt-code-border); border-radius: 5px; background: var(--tt-code-bg); color: var(--tt-code-text); font-family: var(--tt-font-mono); font-size: .88em; white-space: nowrap; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The strip: mark, switch, window controls (the pages that still wear one). */
+.strip { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 54px; padding-left: 18px; user-select: none; }
+.brand { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+.switch { display: inline-flex; padding: 4px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-track); }
+.switch button { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 15px 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.switch button:hover:not([aria-selected='true']) { color: var(--tt-text); }
+.switch button[aria-selected='true'] { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.switch button:focus-visible { outline-offset: -3px; }
+.wave { display: inline-flex; align-items: center; gap: 2px; height: 14px; }
+.wave i { display: block; width: 2px; border-radius: 2px; background: currentColor; }
+.wave i:nth-child(1), .wave i:nth-child(5) { height: 4px; } .wave i:nth-child(2), .wave i:nth-child(4) { height: 8px; } .wave i:nth-child(3) { height: 12px; }
+.controls { justify-self: end; align-self: stretch; display: flex; }
+.controls button { display: grid; place-items: center; width: 46px; border: 0; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.controls button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.controls button:focus-visible { outline-offset: -3px; }
+
+/* The footer under a strip: page links, footer status, the update control. */
+.footer { flex: none; display: flex; align-items: center; gap: 22px; height: 40px; padding: 0 12px 0 22px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.footer nav { display: flex; gap: 22px; }
+.footer a { color: var(--tt-text-2); text-decoration: none; }
+.footer a:hover { color: var(--tt-text); }
+.footer__status { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer__update { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+
+/* Buttons, after global.css. */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.btn:hover { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.btn--sm { min-height: 26px; padding: 0 10px; font-size: 12.5px; }
+.btn--answer { border-color: color-mix(in srgb, var(--tt-attention) 55%, transparent); color: var(--tt-attention); }
+.btn--answer:hover { border-color: var(--tt-attention); color: var(--tt-attention); background: var(--tt-warning-surface); }
+.btn--stop { border-color: var(--tt-error-border); color: var(--tt-error); }
+.btn--stop:hover { border-color: var(--tt-error); color: var(--tt-error); background: var(--tt-error-surface); }
+.iconbtn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.iconbtn:hover, .iconbtn[aria-pressed='true'] { background: var(--tt-hover); color: var(--tt-text); }
+
+/* The in-flight limit the app enforces: four cells, one per thread the command center may run at once. */
+.meter { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meter__cells { display: inline-flex; gap: 3px; }
+.meter__cells i { width: 6px; height: 14px; border: 1px solid var(--tt-border); border-radius: 2px; }
+.meter__cells i[data-on] { border-color: transparent; background: var(--tt-accent); }
+
+/* Status rings, after the sidebar's. */
+.ring { display: block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--tt-border); border-radius: 50%; }
+.ring[data-tone='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.ring[data-tone='needs'] { border: 2px solid var(--tt-attention); }
+.ring[data-tone='failed'] { border: 2px solid var(--tt-error); }
+.ring[data-tone='ready'], .ring[data-tone='landing'] { border: 0; background: var(--tt-success); }
+.ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }
+.tone { white-space: nowrap; }
+.tone[data-tone='needs'] { color: var(--tt-attention); }
+.tone[data-tone='failed'] { color: var(--tt-error); }
+.tone[data-tone='working'] { color: var(--tt-activity); }
+.tone[data-tone='ready'], .tone[data-tone='landing'] { color: var(--tt-success); }
+.tone[data-tone='quiet'], .tone[data-tone='idle'] { color: var(--tt-text-muted); }
+.add { color: var(--tt-success); } .del { color: var(--tt-error); }
+
+/* A thread card: the thread the command center started or sent to, under that message. Pressing it opens the thread. */
+.tcard { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 2px; padding: 10px 12px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+.tcard:hover { border-color: var(--tt-border-faint); background: color-mix(in srgb, var(--tt-surface-elevated) 70%, var(--tt-surface)); }
+.tcard[data-tone='needs'], .tcard[data-tone='failed'] { box-shadow: inset 3px 0 0 var(--tt-attention); }
+.tcard[data-tone='failed'] { box-shadow: inset 3px 0 0 var(--tt-error); }
+.tcard__title { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; font-size: 14px; font-weight: 500; line-height: 1.35; }
+.tcard__open { min-width: 0; overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.tcard__open::after { content: ''; position: absolute; inset: 0; border-radius: 12px; }
+.tcard__open:focus-visible { outline: 0; }
+.tcard__open:focus-visible::after { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.tcard__go { color: var(--tt-text-muted); opacity: 0; transition: opacity 120ms; }
+.tcard:hover .tcard__go, .tcard:focus-within .tcard__go { opacity: 1; }
+.tcard__state { font-size: 12.5px; font-weight: 500; }
+.tcard__meta { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.tcard__meta > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tcard__meta > span + span::before { content: '·'; margin-right: 2px; color: var(--tt-text-muted); }
+.tcard__line { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+.tcard__line > span { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.tcard__line .btn, .tcard .btn { position: relative; z-index: 1; }
+.tcard__note { grid-column: 2 / -1; display: flex; align-items: flex-start; gap: 7px; margin-top: 6px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.tcard__note .ic { margin-top: 2px; color: var(--tt-text-muted); }
+.cctag { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-muted); }
+/* What Sotto saw, kept apart from what the thread said. */
+.ev { grid-column: 2 / -1; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--tt-hairline); font-size: 12.5px; line-height: 1.45; }
+.ev dt { color: var(--tt-text-muted); }
+.ev dd { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0; color: var(--tt-text-2); }
+.ev dd > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ev dd > span .ic { color: var(--tt-text-muted); }
+.ev dd > span .ic[data-ok] { color: var(--tt-success); }
+.ev dd > span .ic[data-bad] { color: var(--tt-error); }
+.ev dd.said { color: var(--tt-text-muted); font-style: italic; }
+.cards { display: grid; gap: 8px; margin: 12px 0 0; }
+
+/* Transcript: the thread page's own messages. */
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 24px max(24px, calc((100% - 720px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.msg { margin: 0 0 26px; }
+.msg > header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg .who { display: inline-flex; align-items: center; gap: 7px; color: var(--tt-text-2); font-weight: 500; }
+.msg time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.msg p { margin: 0 0 8px; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; }
+.msg p:last-child { margin-bottom: 0; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 13px 17px; border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); }
+.msg[data-role='user'] p { color: var(--tt-bubble-text); }
+.msg[data-role='sotto'] { padding: 2px 0 2px 14px; border-left: 2px solid var(--tt-border-faint); }
+.msg[data-role='sotto'] p { font-size: 14px; }
+.tag { padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 11.5px; line-height: 18px; }
+.tlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font-weight: 500; text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-link) 40%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.tlink:hover { text-decoration-color: currentColor; }
+.delivered { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.delivered .ic { color: var(--tt-success); }
+/* The roll-up: counts first, then exceptions, each line linked to its thread. */
+.rollup { display: grid; gap: 10px; margin-top: 10px; }
+.rollup section { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 4px 14px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.rollup h5 { display: flex; align-self: start; align-items: center; gap: 8px; margin: 0; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 500; line-height: 1.6; }
+.rollup ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; }
+.rollup .ev { margin: 4px 0 0; padding-top: 0; border: 0; }
+.rollup .btn { margin-left: 4px; vertical-align: 1px; }
+
+/* The composer, after the thread composer: field, option chips, send disc. */
+.compose { flex: none; padding: 8px max(24px, calc((100% - 720px) / 2)) 18px; }
+.prompt { position: relative; display: grid; padding: 12px 14px 10px; border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt:focus-within { border-color: var(--tt-field-border-focus); }
+.prompt textarea { display: block; width: 100%; min-height: 50px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt__foot { display: flex; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 220px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.attach { display: grid; place-items: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.attach:hover { color: var(--tt-text); background: var(--tt-hover); }
+.send { display: grid; place-items: center; flex: none; width: 28px; height: 28px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--tt-activity); color: var(--tt-on-accent); cursor: pointer; }
+.compose__note { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 4px 0; color: var(--tt-text-muted); font-size: 12px; }
+
+/* Overview rows (A's rail, B's drop-down). */
+.ogroups { display: grid; gap: 0; padding: 0 0 10px; }
+.ogroup__head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 26px; margin: 6px 0 0; padding: 0 14px 0 16px; border: 0; background: transparent; color: var(--side-muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; text-align: left; cursor: pointer; }
+.ogroup__head:hover { color: var(--side-text); }
+.ogroup__head .count { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ogroup__head[data-tone='needs'] { color: var(--tt-attention); }
+.ogroup ul { margin: 0; padding: 0 6px; list-style: none; }
+.orow { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 1px; padding: 5px 10px; border-radius: 8px; }
+.orow:hover { background: var(--side-hover); }
+.orow__open { min-width: 0; overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--side-text); font-size: 13px; font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.orow__open::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
+.orow__open:focus-visible { outline: 0; }
+.orow__open:focus-visible::after { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.orow__time { color: var(--side-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.orow__line { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--side-muted); font-size: 12px; }
+.orow__line > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orow__line .tone { overflow: visible; }
+.orow__line code { font-size: 11.5px; }
+.orow__act { grid-column: 2 / -1; justify-self: start; margin-top: 4px; }
+
+/* ---------- A · its own room ---------- */
+.a-room { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--rail, 320px); border-top: 1px solid var(--tt-hairline); }
+.conv { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.conv__head { flex: none; display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 14px 0 20px; }
+.conv__title { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 0 auto 0 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; }
+.conv__title .ic { color: var(--tt-text-muted); }
+.conv__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-overflow: ellipsis; }
+.conv__crumb::before { content: '/'; }
+.rail { --side-text: var(--tt-sidebar-text); --side-muted: var(--tt-sidebar-text-muted); --side-hover: var(--tt-sidebar-row-hover); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--tt-sidebar-border); background: var(--tt-sidebar); color: var(--side-text); }
+.rail__head { flex: none; display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 8px 0 16px; }
+.rail__head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.rail__short { display: none; }
+.win[data-size='s'] .rail__count { display: none; }
+.win[data-size='s'] .rail__short { display: inline; }
+.rail__fresh { margin-left: auto; color: var(--side-muted); font-size: 12px; white-space: nowrap; }
+.rail__head .iconbtn { color: var(--side-muted); }
+.rail__head .iconbtn:hover { background: var(--tt-sidebar-row-hover); color: var(--side-text); }
+.rail__scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.rail__sum { margin: 0 16px 4px; color: var(--side-muted); font-size: 12.5px; }
+.rail .btn { border-color: var(--tt-sidebar-border); color: var(--side-text); }
+.rail .btn--answer { border-color: color-mix(in srgb, var(--tt-attention) 55%, transparent); color: var(--tt-attention); }
+
+/* ---------- B · its own window ---------- */
+.dim { opacity: .42; filter: saturate(.7); }
+.cc-top { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding-left: 14px; user-select: none; }
+.cc-top__title { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.cc-top .controls button { width: 40px; }
+.cc-top .controls { height: 44px; }
+.counts { flex: none; position: relative; padding: 0 10px 8px; border-bottom: 1px solid var(--tt-hairline); }
+.counts__toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; width: 100%; min-height: 34px; padding: 4px 8px 4px 10px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); color: var(--tt-text-2); font-size: 12.5px; text-align: left; cursor: pointer; }
+.counts__toggle:hover { border-color: var(--tt-border-faint); }
+.counts__toggle b { color: var(--tt-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cnt { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.cnt[data-tone='needs'], .cnt[data-tone='needs'] b { color: var(--tt-attention); }
+.counts__chev { margin-left: auto; color: var(--tt-text-muted); transition: transform 140ms; }
+.counts__toggle[aria-expanded='true'] .counts__chev { transform: rotate(180deg); }
+.ccbody { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ccbody[data-open]::before { content: ''; position: absolute; inset: 0; z-index: 4; background: var(--tt-overlay); }
+.counts__drop { --side-text: var(--tt-text); --side-muted: var(--tt-text-muted); --side-hover: var(--tt-hover); position: absolute; top: 6px; left: 10px; right: 10px; bottom: 4px; z-index: 5; overflow-y: auto; border: 1px solid var(--tt-border-faint); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); scrollbar-width: thin; }
+.counts__drop .rail__fresh { display: block; margin: 10px 16px 0; }
+.ccwin .transcript { padding: 18px 16px 6px; }
+.ccwin .msg p { font-size: 14.5px; }
+.ccwin .msg[data-role='user'] { margin-left: 36px; }
+.ccwin .compose { padding: 6px 12px 12px; }
+.ccwin .rollup section { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.ccwin .rollup ul { font-size: 13.5px; }
+.ccwin .tcard__meta { font-size: 12px; }
+.hint { position: absolute; display: flex; align-items: center; gap: 8px; color: #a8a8b3; font-size: 12.5px; white-space: nowrap; }
+:root[data-theme='light'] .hint { color: #3d3b35; }
+.hint kbd { padding: 1px 6px; border: 1px solid currentColor; border-radius: 5px; font: inherit; font-size: 11.5px; }
+
+/* The Threads page drawn behind B (dimmed, not interactive). */
+.tp { display: grid; grid-template-columns: var(--side-w, 264px) minmax(0, 1fr); flex: 1; min-height: 0; }
+.tp-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-sidebar-border); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.tp-top { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px 0 14px; font-size: 14px; font-weight: 600; }
+.tp-top .sp { margin-right: auto; display: flex; align-items: center; gap: 8px; }
+.tp-top .ic { color: var(--tt-sidebar-text-muted); margin: 0 4px; }
+.tp-search { display: flex; align-items: center; gap: 8px; height: 32px; margin: 0 8px 8px; padding: 0 10px; border: 1px solid var(--tt-sidebar-border); border-radius: 8px; color: var(--tt-sidebar-text-muted); font-size: 13px; }
+.tp-list { flex: 1; min-height: 0; overflow: hidden; padding: 0 4px; }
+.tp-folder { display: flex; align-items: center; gap: 7px; padding: 8px 8px 4px; color: var(--tt-sidebar-text); font-size: 13px; font-weight: 500; }
+.tp-folder .n { margin-left: auto; color: var(--tt-sidebar-text-muted); font-size: 12px; }
+.tp-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; padding: 5px 10px 5px 10px; border: 1px solid transparent; border-radius: 7px; font-size: 13px; }
+.tp-row[data-current] { border-color: var(--tt-selected-border); background: var(--tt-sidebar-row-selected); }
+.tp-row b { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.tp-row small { color: var(--tt-sidebar-text-muted); font-size: 12px; white-space: nowrap; }
+.tp-foot { display: grid; gap: 8px; padding: 8px; }
+.tp-seg { display: flex; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); font-size: 12.5px; }
+.tp-seg span { flex: 1; padding: 4px; border-radius: 6px; color: var(--tt-sidebar-text-muted); text-align: center; }
+.tp-seg span[data-on] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.tp-icons { display: flex; gap: 14px; padding: 2px 6px; color: var(--tt-sidebar-text-muted); }
+.tp-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tp-head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 0 0 18px; font-size: 15px; font-weight: 500; white-space: nowrap; }
+.tp-head .crumb { color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; }
+.tp-head .controls { margin-left: auto; height: 44px; }
+.tp-body { flex: 1; min-height: 0; overflow: hidden; padding: 20px max(24px, calc((100% - 680px) / 2)) 0; }
+.request { margin: 0 0 18px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-left: 3px solid var(--tt-attention); border-radius: 12px; }
+.request h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.request pre { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--tt-code-border); border-radius: 8px; background: var(--tt-code-bg); font-family: var(--tt-font-mono); font-size: 13px; }
+.request .btns { display: flex; gap: 8px; }
+.request .btns span { padding: 5px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; font-size: 13px; font-weight: 500; }
+.request .btns span + span { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); }
+.tp-follow { margin: 0 12px -1px; padding: 9px 14px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--tt-surface); color: var(--tt-text-muted); font-size: 13px; }
+.tp-follow b { color: var(--tt-text); font-weight: 500; }
+
+/* ---------- C · board first ---------- */
+.c-room { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--tt-hairline); }
+.board__head { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 20px 10px 24px; }
+.board__head h1 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.25px; white-space: nowrap; }
+.board__head h1 .ic { color: var(--tt-text-muted); }
+.board__head .meter { margin-left: auto; }
+.board__sub { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.board { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); align-items: start; gap: 18px; padding: 4px 24px 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.bcol { display: grid; gap: 18px; min-width: 0; }
+.bgroup { display: grid; gap: 8px; min-width: 0; }
+.bgroup__head { display: flex; align-items: baseline; min-width: 0; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
+.bgroup__head .ring { align-self: center; }
+.bgroup__head .count { color: var(--tt-text-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.bgroup__head[data-tone='needs'] { color: var(--tt-attention); }
+.bgroup__hint { min-width: 0; margin-left: 4px; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.dock { flex: none; position: relative; z-index: 4; padding: 0 24px 16px; }
+.dock__last { display: flex; align-items: center; gap: 10px; margin: 0 auto 8px; max-width: 860px; padding: 8px 8px 8px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; }
+.dock__last > span { display: -webkit-box; min-width: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.45; }
+.dock__last .who { color: var(--tt-text); font-weight: 500; }
+.dock__last .btn { margin-left: auto; }
+.dock__bar { display: flex; align-items: center; gap: 6px; max-width: 860px; margin: 0 auto; padding: 7px 8px 7px 14px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm); }
+.dock__bar:focus-within { border-color: var(--tt-field-border-focus); }
+.dock__bar input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 15px; }
+.dock__bar input::placeholder { color: var(--tt-text-muted); }
+.dock__bar > .ic { color: var(--tt-text-muted); }
+.panel { position: absolute; left: 12px; right: 12px; bottom: 0; z-index: 6; display: flex; flex-direction: column; height: min(78%, 600px); border: 1px solid var(--tt-border-faint); border-bottom: 0; border-radius: 16px 16px 0 0; background: var(--tt-canvas); box-shadow: var(--tt-shadow-overlay); }
+.panel__head { flex: none; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.panel__head h2 { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.panel__head h2 small { color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; }
+.panel .transcript { padding-top: 18px; }
+
+/* ---------- A2 · overview in the sidebar: the Threads page's own shell, after threadSidebar.css and threadsChrome.css ---------- */
+.shell { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: var(--side, 320px) minmax(0, 1fr); }
+.nav { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-text); }
+.nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; user-select: none; }
+.nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -.1px; }
+.nav__action { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.nav__action:hover { background: var(--tt-hover); color: var(--tt-text); }
+.nav__seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.nav__seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.nav__seg button:hover { color: var(--tt-text); }
+.nav__seg button[aria-selected='true'], .nav__seg button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.nav__seg button:focus-visible { outline-offset: -2px; }
+.nav__seg--icons button { padding: 0 7px; }
+.nav__search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13px; }
+.nav__search input::placeholder { color: var(--tt-text-muted); }
+.nav__search:focus-within { border-color: var(--tt-field-border-focus); }
+.nav__search { display: flex; flex: none; align-items: center; gap: 8px; height: 32px; margin: 0 8px 8px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text-muted); font-size: 13px; }
+.nav__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.nav__label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 4px 4px 10px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+.nav__label .fresh { margin-left: auto; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
+.nav__label .nav__action { width: 24px; height: 24px; }
+/* Groups are drawn as the sidebar's folder heads; the Needs you head keeps the attention colour. */
+.grp__head { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; margin-top: 4px; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.grp__head:hover { background: var(--tt-hover); }
+.grp__head .ic { color: var(--tt-text-muted); transition: transform 120ms; }
+.grp__head[aria-expanded='false'] .chev { transform: rotate(-90deg); }
+.grp__head[data-tone='needs'] { color: var(--tt-attention); }
+.grp__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.grp ul { margin: 0; padding: 0; list-style: none; }
+.row { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 5px; margin: 1px 0; padding: 9px 10px; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--tt-hover); }
+.row[data-current] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
+.row__open { min-width: 0; overflow: hidden; padding: 0; min-height: 0; border: 0; background: transparent; color: var(--tt-text-2); font-size: 14px; font-weight: 500; line-height: 1.4; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.row[data-current] .row__open { color: var(--tt-text); }
+.row__open::after { content: ''; position: absolute; inset: 0; border-radius: 7px; }
+.row__open:focus-visible { outline: 0; }
+.row__open:focus-visible::after { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.row__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.row__proj { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row__meta .tone { margin-left: auto; flex: none; }
+/* On the selected row the tinted surface is lighter (light mode) than the sidebar, so a status colour leans toward the text to keep 4.5:1. */
+:root[data-theme='light'] .row[data-current] .btn--answer,
+:root[data-theme='light'] .row[data-current] .tone:not([data-tone='idle']):not([data-tone='quiet']) { color: color-mix(in oklab, currentColor 72%, var(--tt-text)); }
+.row__ask { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--tt-text-2); font-size: 12.5px; }
+.row__ask code { font-size: 11.5px; }
+.row__ask .btn { position: relative; z-index: 1; }
+.nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin-top: auto; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
+.nav__foot .nav__seg { display: flex; flex: 1 0 100%; }
+/* The one change to the real foot: three rooms. Each segment keeps an equal share but never drops below its own
+   label, so Command center stays one line at the switch's 12.5px; Dictate and Threads give up the difference. */
+.nav__foot .nav__seg button { flex: 1 1 0; min-width: max-content; padding: 0 9px; }
+.nav__pages { display: flex; align-items: center; }
+.nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; }
+.nav__page:hover { background: var(--tt-hover); color: var(--tt-text); }
+.nav__update { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.nav__update:hover { background: var(--tt-hover); color: var(--tt-text); }
+/* The window's own controls, once, at the page's top-right corner; the pane header pads itself clear of them. */
+.winctl { position: absolute; top: 0; right: 0; z-index: 6; display: flex; align-items: center; gap: 0; height: 44px; padding-right: 6px; }
+.winctl button { display: grid; place-items: center; width: 34px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.winctl button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 122px 0 18px; }
+.pane__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin: 0 auto 0 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; }
+.pane__title .ic { color: var(--tt-text-muted); }
+.pane__crumb { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-overflow: ellipsis; }
+.pane__crumb::before { content: '/'; }
+.pane .transcript { padding: 28px max(24px, calc((100% - 760px) / 2)) 8px; }
+.pane .compose { padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+.pane .prompt__foot { flex-wrap: wrap; row-gap: 6px; }
+.pane__empty { display: grid; justify-items: center; gap: 6px; margin: 80px auto 0; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+.pane__empty b { color: var(--tt-text); font-size: 15px; font-weight: 500; }
+.request .btns .btn--deny { border-color: var(--tt-hairline); }
+.request .btns .btn--allow { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.followups { margin: 0 12px -1px; padding: 9px 14px; border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--tt-surface); color: var(--tt-text-muted); font-size: 13px; }
+.followups b { color: var(--tt-text); font-weight: 500; }
+.dictate { flex: 1; display: grid; align-content: center; justify-items: center; gap: 22px; min-height: 0; padding: 44px 24px 24px; }
+.dictate__wave { display: flex; align-items: center; gap: 8px; height: 46px; }
+.dictate__wave i { display: block; width: 12px; border-radius: 999px; background: var(--tt-accent); }
+.dictate h2 { margin: 0; font-size: 40px; font-weight: 500; letter-spacing: -1px; }
+.dictate__go { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; color: var(--tt-text-muted); font-size: 13.5px; }
+.dictate__go .btn--primary { min-height: 44px; padding: 0 24px; border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-size: 15px; font-weight: 600; }
+.dictate kbd { padding: 3px 7px; border: 1px solid var(--tt-hairline); border-radius: 6px; color: var(--tt-text-2); font: inherit; font-size: 12px; }
+.win[data-size='s'] .row { grid-template-columns: 10px minmax(0, 1fr); }
+.win[data-size='s'] .row__time { display: none; }
+.win[data-size='s'] .pane__crumb { display: none; }
+.win[data-size='s'] .pane__head { padding-left: 14px; }
+.win[data-size='s'] .dictate h2 { font-size: 30px; }
+
+/* A2 with a thread beside the conversation: the Threads page's split (each pane at least 400px, a 9px divider, the
+   focused pane's top edge in the accent), or its one-pane-at-a-time tabs where two will not fit. */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 9px minmax(0, 1fr); min-width: 0; min-height: 0; }
+.split__divider { position: relative; cursor: col-resize; }
+.split__divider::before { content: ''; position: absolute; inset: 0 4px; background: var(--tt-hairline); }
+.split__divider:hover::before { inset: 0 3px; background: var(--tt-activity); }
+.split > .pane[data-focused] { box-shadow: inset 0 2px 0 var(--tt-activity); }
+.split > .pane:not([data-focused]) .pane__title { color: var(--tt-text-2); }
+.split .pane__crumb, .tabbed .pane__crumb { display: none; }
+.split .pane--cc .pane__head { padding-right: 10px; }
+.split .transcript { padding: 20px 20px 8px; }
+.split .compose { padding: 8px 16px 14px; }
+.split .msg p, .tabbed .msg p { font-size: 14.5px; }
+.split .msg[data-role='user'], .tabbed .msg[data-role='user'] { margin-left: 32px; }
+.split .rollup section, .tabbed .rollup section { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.pane__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pane__title .pane__crumb { flex: 0 100 auto; }
+.pane__title:focus { outline: 0; }
+.pane__title:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; border-radius: 4px; }
+.tabbed { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tabbed > .pane { flex: 1; min-height: 0; }
+.tabbed .pane__head { padding-right: 10px; }
+.tabs { display: flex; flex: none; gap: 2px; padding: 2px 128px 0 10px; overflow-x: auto; border-bottom: 1px solid var(--tt-hairline); scrollbar-width: none; }
+.tab { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 7px; min-width: 0; max-width: 260px; min-height: 34px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--tt-text-muted); font-size: 13px; font-weight: 500; cursor: pointer; }
+.tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab:hover { color: var(--tt-text-2); }
+.tab[aria-selected='true'] { border-bottom-color: var(--tt-activity); color: var(--tt-text); }
+.tab:focus-visible { outline-offset: -3px; }
+.answered { display: flex; align-items: center; gap: 8px; margin: 0 0 24px; padding: 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; color: var(--tt-text-2); font-size: 13.5px; }
+.answered .ic { color: var(--tt-success); }
+.answered time { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.activity { display: flex; align-items: center; gap: 9px; margin: 0 0 24px; color: var(--tt-text-2); font-size: 14px; }
+
+/* ---------- the minimum size, 820x560 ---------- */
+.win[data-size='s'] .strip { height: 48px; }
+.win[data-size='s'] .switch button { height: 28px; padding: 0 12px 0 10px; font-size: 13px; }
+.win[data-size='s'] .footer { height: 34px; gap: 16px; font-size: 12.5px; }
+.win[data-size='s'] .footer nav { gap: 16px; }
+.win[data-size='s'] .conv__head { height: 44px; }
+.win[data-size='s'] .conv__crumb { display: none; }
+.win[data-size='s'] .transcript { padding: 16px 20px 6px; }
+.win[data-size='s'] .msg[data-role='user'] { margin-left: 24px; }
+.win[data-size='s'] .msg p { font-size: 14.5px; }
+.win[data-size='s'] .compose { padding: 6px 20px 12px; }
+.win[data-size='s'] .prompt { padding: 10px 12px 8px; }
+.win[data-size='s'] .prompt textarea { min-height: 26px; }
+.win[data-size='s'] .rollup section { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.win[data-size='s'] .rail__head { height: 44px; }
+.win[data-size='s'] .rail__fresh { font-size: 11.5px; }
+.win[data-size='s'] .orow__open { white-space: normal; }
+.win[data-size='s'] .rail :is(.orow__proj, .orow__sep) { display: none; }
+.win[data-size='s'] .orow__line { align-items: flex-start; }
+.win[data-size='s'] .orow__line > .pm { margin-top: 2px; }
+.win[data-size='s'] .orow__line > span { white-space: normal; }
+.win[data-size='s'] .orow__time { align-self: start; }
+.win[data-size='s'] .orow > .ring { align-self: start; margin-top: 5px; }
+.win[data-size='s'] .meter__more { display: none; }
+.win[data-size='s'] .board__head { padding: 10px 16px 8px; }
+.win[data-size='s'] .board__sub { display: none; }
+.win[data-size='s'] .board { gap: 14px; padding: 2px 16px 16px; }
+.win[data-size='s'] .bcol { gap: 14px; }
+.win[data-size='s'] .bgroup__hint { display: none; }
+.win[data-size='s'] .dock { padding: 0 16px 10px; }
+.win[data-size='s'] .dock__last { display: none; }
+.win[data-size='s'] .panel { height: calc(100% - 8px); left: 0; right: 0; border-radius: 12px 12px 0 0; }
+.win[data-size='s'] .counts__toggle { gap: 2px 10px; }
+.ccwin[data-size='s'] .pin { display: none; }
+.ccwin[data-size='s'] .meter__cells { display: none; }
+.ccwin[data-size='s'] .cc-top { gap: 6px; padding-left: 12px; }
+.ccwin[data-size='s'] .cc-top .controls button { width: 34px; }
+.ccwin[data-size='s'] .btn--stop { padding: 0 10px; }
+.ccwin[data-size='s'] .transcript { padding: 14px 12px 6px; }
+.ccwin[data-size='s'] .msg[data-role='user'] { margin-left: 20px; }
+.ccwin[data-size='s'] .compose { padding: 6px 10px 10px; }
+.ccwin[data-size='s'] .chip--perm { display: none; }
+.win[data-size='s'] .tp-body { padding: 14px 20px 0; }
+.win[data-size='s'] .tp-head .crumb { display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="wrap"><div class="desk" id="desk"></div></div>
+<div class="notes" id="notes"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" type="button" aria-label="Previous variant">←</button>
+  <span class="name" id="name" aria-live="polite"></span>
+  <button id="next" type="button" aria-label="Next variant">→</button>
+  <span class="sep"></span>
+  <button id="mode" type="button">Light</button>
+  <span class="sep"></span>
+  <button type="button" data-size="l" aria-label="Show the window at 1280 by 800">1280 × 800</button>
+  <button type="button" data-size="s" aria-label="Show the window at the 820 by 560 minimum">820 × 560</button>
+  <span class="sep" id="open-sep"></span>
+  <button type="button" id="open" aria-pressed="false"></button>
+  <button type="button" id="beside" aria-pressed="false" hidden>Thread beside</button>
+</div>
+
+<script>
+/* ---------- icons (Lucide shapes) and marks ---------- */
+const ICON = {
+  chevDown: '<path d="m6 9 6 6 6-6"/>',
+  chevRight: '<path d="m9 18 6-6-6-6"/>',
+  arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  go: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
+  min: '<path d="M5 12h14"/>',
+  max: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  pr: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>',
+  merge: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  checkCircle: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  x: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  term: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  diff: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/>',
+  threads: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  center: '<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  stop: '<circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+  square: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3L12.4 14.6a2 2 0 0 1-.85.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  chevUp: '<path d="m18 15-6-6-6 6"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  termSquare: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  panelClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+}
+const ic = (name, size = 16, extra = '', cls = '') => `<svg class="ic${cls ? ' ' + cls : ''}" ${extra} width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON[name]}</svg>`
+const MARKS = {
+  codex: { vb: '0 0 256 260', d: 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z' },
+  claude: { vb: '0 0 256 257', d: 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z' },
+  grok: { vb: '0 0 24 24', d: 'M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257' },
+  devin: { vb: '48 48 330 330', d: 'M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z' },
+}
+const pm = (p, size = 14) => `<svg class="pm" data-provider="${p}" width="${size}" height="${size}" viewBox="${MARKS[p].vb}" aria-hidden="true" focusable="false"><path d="${MARKS[p].d}"/></svg>`
+const sottoMark = (size = 20) => `<svg class="sotto-mark" width="${size}" height="${size}" viewBox="0 0 96 96" aria-hidden="true" focusable="false"><rect class="sotto-mark__tile" width="96" height="96" rx="22"/><rect class="sotto-mark__glyph" x="26" y="20" width="9" height="56" rx="4.5"/><path class="sotto-mark__wave" d="M44 48c4.5-15 9-15 13.5 0s9 15 13.5 0"/></svg>`
+const PROVIDER = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
+
+/* ---------- sample data: the same nine threads in every variant ---------- */
+const T = {
+  checkout: { title: 'Fix checkout total rounding', project: 'storefront', provider: 'codex', model: 'GPT-6.1 Sol', tone: 'needs', state: 'Needs you', time: '4 min', copy: 'New worktree', by: true,
+    short: () => `Asks to run <code>npm run migrate</code>` },
+  hostlock: { title: 'Flaky host-lock test', project: 'Sotto', provider: 'claude', model: 'Opus 5.5', tone: 'failed', state: 'Failed', time: '22 min', copy: 'New worktree', by: true,
+    short: () => `<code>npm test</code> exited 1, 3 failing` },
+  babysit: { title: 'Babysit #845 release notes', project: 'Sotto', provider: 'claude', model: 'Opus 5.5', tone: 'ready', state: 'Ready for review', time: '31 min',
+    short: () => `PR #845 · 7 of 7 checks · <span class="add">+212</span> <span class="del">−40</span>` },
+  android: { title: 'Add Android share sheet', project: 'Sotto', provider: 'claude', model: 'Opus 5.5', tone: 'working', state: 'Working', time: '6 min', copy: 'Project checkout', by: true,
+    short: () => `Working for 6 min` },
+  folder: { title: 'Folder browser keyboard path', project: 'Sotto', provider: 'grok', model: 'Grok 4.6', tone: 'working', state: 'Working', time: '14 min',
+    short: () => `Working for 14 min` },
+  webhook: { title: 'Payment webhook retries', project: 'storefront', provider: 'codex', model: 'GPT-6.1 Sol', tone: 'working', state: 'Working', time: '29 min', copy: 'New worktree', by: true, takeover: true,
+    short: () => `You took it over` },
+  devin: { title: 'Tighten Devin prompt evidence', project: 'Sotto', provider: 'devin', model: 'Devin', tone: 'landing', state: 'Landing', time: '1 h',
+    short: () => `PR #813 approved · auto-merge on` },
+  backup: { title: 'Nightly backup rotation', project: 'forge-infra', host: 'forge', provider: 'grok', model: 'Grok 4.6', tone: 'quiet', state: 'Quiet', time: '24 min',
+    short: () => `No activity for 24 min` },
+  rename: { title: 'Rename settings rows', project: 'Sotto', provider: 'codex', model: 'GPT-6.1 Sol', tone: 'idle', state: 'Idle', time: '2 h',
+    short: () => `Finished 2 h ago` },
+}
+const GROUPS = [
+  { id: 'needs', name: 'Needs you', hint: 'Questions, permissions and failures', ids: ['checkout', 'hostlock'], tone: 'needs' },
+  { id: 'review', name: 'Ready for review', hint: 'A pull request is open', ids: ['babysit'], tone: 'ready' },
+  { id: 'working', name: 'Working', hint: 'Running now', ids: ['android', 'folder', 'webhook'], tone: 'working' },
+  { id: 'landing', name: 'Landing', hint: 'Approved or merging', ids: ['devin'], tone: 'landing' },
+  { id: 'quiet', name: 'Quiet', hint: 'Working, nothing new for 20 min', ids: ['backup'], tone: 'quiet' },
+  { id: 'idle', name: 'Idle', hint: 'Finished, nothing waiting', ids: ['rename'], tone: 'idle' },
+]
+const RUNNING = 2, LIMIT = 4
+
+/* ---------- pieces ---------- */
+const openName = (t) => `Open ${t.title} on the Threads page`
+const tlink = (id) => `<button type="button" class="tlink" data-open="${id}" aria-label="${openName(T[id])}">${T[id].title}</button>`
+const hostLabel = (t) => t.host ? `<span>${ic('server', 12)}on ${t.host}</span>` : ''
+const meter = (n = RUNNING) => `<span class="meter" role="meter" aria-valuemin="0" aria-valuemax="${LIMIT}" aria-valuenow="${n}" aria-label="The command center is running ${n} of the ${LIMIT} threads it may run at once"><span class="meter__cells" aria-hidden="true">${Array.from({ length: LIMIT }, (_, i) => `<i ${i < n ? 'data-on' : ''}></i>`).join('')}</span><span class="meter__label">${n} of ${LIMIT}<span class="meter__more"> running</span></span></span>`
+const stopAll = () => `<button type="button" class="btn btn--stop" data-act="stop" aria-label="Stop all: stop the command center and the ${RUNNING} threads it is running" title="Stops the command center's turn and every thread it started that is still working">${ic('stop', 14)}Stop all</button>`
+const answerBtn = (id, label = 'Open to answer') => `<button type="button" class="btn btn--sm btn--answer" data-open="${id}" data-answer aria-label="${label}: open ${T[id].title} at its request">${label}</button>`
+
+function evidence(id) {
+  if (id === 'babysit') return `<dl class="ev"><dt>Sotto saw</dt><dd><span>${ic('pr', 13)}PR #845 open</span><span>${ic('checkCircle', 13, 'data-ok')}7 of 7 checks passing</span><span>${ic('diff', 13)}<span class="add">+212</span> <span class="del">−40</span> in 6 files</span></dd><dt>It said</dt><dd class="said">“Release notes are written and every changelog link resolves.”</dd></dl>`
+  if (id === 'hostlock') return `<dl class="ev"><dt>Sotto saw</dt><dd><span>${ic('term', 13)}<code>npm test</code> exited 1</span><span>${ic('x', 13, 'data-bad')}3 failing in hostLock.test.ts</span></dd><dt>It said</dt><dd class="said">“The lock is released before the second host connects.”</dd></dl>`
+  if (id === 'devin') return `<dl class="ev"><dt>Sotto saw</dt><dd><span>${ic('merge', 13)}PR #813 approved</span><span>${ic('checkCircle', 13, 'data-ok')}Auto-merge on, 1 check running</span></dd></dl>`
+  return ''
+}
+
+/* A card: title, project, host if not this computer, provider mark and model, state, what it waits on. */
+function card(id, o = {}) {
+  const t = T[id]
+  const meta = [`<span>${t.project}</span>`, hostLabel(t), `<span>${pm(t.provider, 13)}${t.model}</span>`, o.copy && t.copy ? `<span>${t.copy}</span>` : '', o.by && t.by ? `<span class="cctag" title="Started by the command center">${ic('center', 12)}<span class="vh">Started by the </span>Command center</span>` : ''].filter(Boolean).join('')
+  let line = ''
+  if (t.tone === 'needs') line = `<div class="tcard__line"><span>Asks to run <code>npm run migrate</code></span>${answerBtn(id)}</div>`
+  const ev = o.evidence === false ? '' : evidence(id)
+  const notes = (o.notes || []).map(n => `<div class="tcard__note">${n}</div>`).join('')
+  const takeover = t.takeover ? `<div class="tcard__note">${ic('user', 13)}<span>You took it over at 9:14 am. The command center stopped sending to it.</span></div>` : ''
+  const right = t.tone === 'working' ? `${t.state} · ${t.time}` : t.tone === 'quiet' ? 'No activity for 24 min' : t.tone === 'idle' ? 'Finished 2 h ago' : t.state
+  return `<article class="tcard" data-tone="${t.tone}">
+    <span class="ring" data-tone="${t.tone}" aria-hidden="true"></span>
+    <h4 class="tcard__title"><button type="button" class="tcard__open" data-open="${id}" aria-label="${openName(t)}">${t.title}</button>${ic('go', 13, '', 'tcard__go')}</h4>
+    <span class="tcard__state tone" data-tone="${t.tone}">${right}</span>
+    <div class="tcard__meta">${meta}</div>
+    ${line}${ev}${takeover}${notes}
+  </article>`
+}
+
+function orow(id, o = {}) {
+  const t = T[id]
+  const act = t.tone === 'needs' ? `<span class="orow__act">${answerBtn(id)}</span>` : ''
+  const line = t.tone === 'needs' || t.tone === 'failed' || t.takeover || t.tone === 'quiet'
+    ? `<span class="tone" data-tone="${t.takeover ? 'idle' : t.tone}">${t.takeover ? ic('user', 12) : ''}</span><span>${t.short()}</span>`
+    : `<span>${t.short()}</span>`
+  return `<li class="orow">
+    <span class="ring" data-tone="${t.tone}" aria-hidden="true"></span>
+    <button type="button" class="orow__open" data-open="${id}" aria-label="${openName(t)}">${t.title}</button>
+    <span class="orow__time">${t.time}</span>
+    <span class="orow__line">${pm(t.provider, 12)}<span class="orow__proj">${t.project}${t.host ? ` on ${t.host}` : ''}</span><span class="orow__sep" aria-hidden="true">·</span>${line}</span>
+    ${act}
+  </li>`
+}
+const ogroups = () => `<div class="ogroups">${GROUPS.map(g => `<section class="ogroup">
+    <button type="button" class="ogroup__head" data-tone="${g.tone}" aria-expanded="true" aria-label="${g.name}, ${g.ids.length}. Collapse">${ic('chevDown', 13)}${g.name}<span class="count">${g.ids.length}</span></button>
+    <ul>${g.ids.map(id => orow(id)).join('')}</ul></section>`).join('')}</div>`
+
+const user = (time, text) => `<article class="msg" data-role="user"><header><span class="who">You</span><time>${time}</time></header><p>${text}</p></article>`
+const cc = (time, body) => `<article class="msg" data-role="cc"><header><span class="who">${ic('center', 14)}Command center</span><time>${time}</time></header>${body}</article>`
+const sotto = (time, tag, body) => `<article class="msg" data-role="sotto"><header><span class="who">${sottoMark(14)}Sotto</span><span class="tag">${tag}</span><time>${time}</time></header>${body}</article>`
+
+function rollup() {
+  return `<p><strong>9 threads.</strong> 2 need you, 3 working, 1 quiet, 1 ready for review, 1 landing, 1 idle.</p>
+  <div class="rollup">
+    <section><h5><span class="ring" data-tone="needs" aria-hidden="true"></span>Needs you</h5><ul>
+      <li>${tlink('checkout')} in storefront asks to run <code>npm run migrate</code>. I can't answer that for you. ${answerBtn('checkout', 'Open it to answer')}</li>
+      <li>${tlink('hostlock')} in Sotto failed: <code>npm test</code> exited 1, 3 failing.</li></ul></section>
+    <section><h5><span class="ring" data-tone="quiet" aria-hidden="true"></span>Quiet</h5><ul>
+      <li>${tlink('backup')} in forge-infra on forge has shown nothing for 24 min.</li></ul></section>
+    <section><h5><span class="ring" data-tone="ready" aria-hidden="true"></span>Ready for review</h5><ul>
+      <li>${tlink('babysit')} in Sotto.${evidence('babysit')}</li></ul></section>
+    <section><h5><span class="ring" data-tone="landing" aria-hidden="true"></span>Landing</h5><ul>
+      <li>${tlink('devin')}: PR #813 approved, auto-merge on.</li></ul></section>
+    <section><h5><span class="ring" data-tone="working" aria-hidden="true"></span>Working</h5><ul>
+      <li>${tlink('android')}, 6 min. ${tlink('folder')}, 14 min. ${tlink('webhook')}, which you took over.</li></ul></section>
+    <section><h5><span class="ring" data-tone="idle" aria-hidden="true"></span>Idle</h5><ul>
+      <li>${tlink('rename')}, finished 2 h ago.</li></ul></section>
+  </div>`
+}
+
+function transcript() {
+  return [
+    user('9:02 am', 'Start threads for the three bugs in issues #851, #852 and #853, Codex for the first two and Claude Code for the third. Worktrees for each.'),
+    cc('9:02 am', `<p>Started three threads, each in a new worktree with its issue as the brief. 3 of 4 running.</p><div class="cards">${card('checkout', { copy: true, evidence: false })}${card('webhook', { copy: true })}${card('hostlock', { copy: true, evidence: false })}</div>`),
+    sotto('9:14 am', 'Takeover', `<p>You typed in ${tlink('webhook')} yourself, so the command center stopped sending to it.</p>`),
+    sotto('9:21 am', 'Wake-up', `<p>${tlink('hostlock')} failed: <code>npm test</code> exited 1, 3 failing.</p><div class="cards">${card('hostlock')}</div>`),
+    cc('9:21 am', `<p>It stopped on three failing tests in <code>hostLock.test.ts</code>. I haven't sent it anything. Tell me if it should try again.</p>`),
+    user('9:35 am', 'Start one for the Android share sheet in Sotto too, Claude Code.'),
+    cc('9:35 am', `<p>Started <em>Add Android share sheet</em> in Sotto, in the project checkout. 2 of 4 running.</p><div class="cards">${card('android', { copy: true })}</div>`),
+    user('9:41 am', 'What’s everyone doing?'),
+    cc('9:41 am', rollup()),
+    user('9:43 am', 'Tell the checkout thread the totals must round half-even.'),
+    cc('9:43 am', `<p>Sent to <em>Fix checkout total rounding</em> in storefront. It's waiting on your permission first, so it will read this after you answer.</p><div class="cards">${card('checkout')}</div><p class="delivered">${ic('check', 14)}Sotto put it in the thread's follow-ups at 9:43 am.</p>`),
+  ].join('')
+}
+
+function composer(o = {}) {
+  const ph = o.placeholder || 'Ask about your threads, or say what to start or send'
+  return `<div class="prompt">
+    <label class="vh" for="cc-input-${o.key || 'x'}">Message the command center</label>
+    <textarea id="cc-input-${o.key || 'x'}" rows="2" placeholder="${ph}"></textarea>
+    <div class="prompt__foot">
+      <button type="button" class="attach" aria-label="Attach an image">${ic('clip', 15)}</button>
+      <button type="button" class="chip" aria-label="Model: Claude Code, Opus 5.5. Change the model">${pm('claude', 13)}<span>Opus 5.5</span>${ic('chevDown', 13)}</button>
+      <button type="button" class="chip" aria-label="Effort: High. Change the effort"><span>High</span>${ic('chevDown', 13)}</button>
+      <button type="button" class="chip chip--perm" aria-label="Permission: Ask for approval. Change the permission"><span>Ask for approval</span>${ic('chevDown', 13)}</button>
+      <button type="button" class="send" aria-label="Send to the command center">${ic('arrowUp', 15)}</button>
+    </div>
+  </div>`
+}
+
+const windowControls = (closeLabel = 'Close to tray') => `<div class="controls"><button type="button" aria-label="Minimize">${ic('min', 16)}</button><button type="button" aria-label="Maximize">${ic('max', 14)}</button><button type="button" aria-label="${closeLabel}">${ic('close', 16)}</button></div>`
+const strip = () => `<header class="strip">
+    <span class="brand">${sottoMark(20)}<span>Sotto</span></span>
+    <div class="switch" role="tablist" aria-label="Room">
+      <button type="button" role="tab" aria-selected="false"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Dictate</button>
+      <button type="button" role="tab" aria-selected="false">${ic('threads', 15)}Threads</button>
+      <button type="button" role="tab" aria-selected="true">${ic('center', 15)}Command center</button>
+    </div>
+    ${windowControls()}
+  </header>`
+const footer = (status) => `<footer class="footer"><nav aria-label="Pages"><a href="#history">History</a><a href="#settings">Settings</a><a href="#help">Help</a></nav><span class="footer__status">${status}</span><button type="button" class="footer__update" aria-label="Check for updates">${ic('refresh', 14)}</button></footer>`
+
+/* ---------- A · its own room ---------- */
+function variantA(size) {
+  const W = size === 's' ? 820 : 1280, H = size === 's' ? 560 : 800
+  return { w: W, h: H, html: `<section class="win" data-size="${size}" style="left:0;top:0;width:${W}px;height:${H}px;--rail:${size === 's' ? 252 : 320}px" aria-label="Sotto main window">
+    ${strip()}
+    <div class="a-room">
+      <section class="conv" aria-label="Command center conversation">
+        <div class="conv__head">
+          <h1 class="conv__title">${ic('center', 16)}Command center<span class="conv__crumb">Every thread on this computer and forge</span></h1>
+          ${meter()}${stopAll()}
+          <button type="button" class="iconbtn" aria-label="More command center actions">${ic('more', 16)}</button>
+        </div>
+        <div class="transcript" tabindex="0" aria-label="Conversation">${transcript()}</div>
+        <div class="compose">${composer({ key: 'a' })}</div>
+      </section>
+      <aside class="rail" aria-label="Overview">
+        <div class="rail__head"><h2>Overview</h2><span class="rail__fresh"><span class="rail__count">9 threads · checked</span><span class="rail__short">Checked</span> 20 s ago</span><button type="button" class="iconbtn" aria-label="Check every thread again">${ic('refresh', 14)}</button></div>
+        <div class="rail__scroll">${ogroups()}</div>
+      </aside>
+    </div>
+    ${footer('Runs on Claude Code · Opus 5.5')}
+  </section>` }
+}
+
+/* ---------- B · its own window ---------- */
+function threadsPage(size) {
+  const row = (id, cur) => { const t = T[id]; const word = { needs: 'Needs your approval', failed: 'Failed', working: 'Working', ready: 'PR open', landing: 'Merging', quiet: 'Quiet', idle: 'Done' }[t.tone]
+    return `<div class="tp-row" ${cur ? 'data-current' : ''}><span class="ring" data-tone="${t.tone}"></span><b>${t.title}</b><small class="tone" data-tone="${t.tone}">${word}</small></div>` }
+  return `<div class="tp" style="--side-w:${size === 's' ? 224 : 264}px">
+    <aside class="tp-side">
+      <div class="tp-top"><span class="sp">${sottoMark(18)}Sotto</span>${ic('threads', 15)}${ic('pen', 15)}${ic('panel', 15)}</div>
+      <div class="tp-search">${ic('search', 14)}Search threads</div>
+      <div class="tp-list">
+        <div class="tp-folder">${ic('chevDown', 12)}${ic('folder', 14)}storefront<span class="n">2</span></div>
+        ${row('checkout', true)}${row('webhook')}
+        <div class="tp-folder">${ic('chevDown', 12)}${ic('folder', 14)}Sotto<span class="n">6</span></div>
+        ${row('android')}${row('hostlock')}${row('babysit')}${row('devin')}${row('folder')}${row('rename')}
+        <div class="tp-folder">${ic('chevDown', 12)}${ic('folder', 14)}forge-infra ${ic('server', 12)}<span class="n">1</span></div>
+        ${row('backup')}
+      </div>
+      <div class="tp-foot"><div class="tp-seg"><span>Dictate</span><span data-on>Threads</span></div><div class="tp-icons">${ic('history', 15)}${ic('gear', 15)}${ic('help', 15)}</div></div>
+    </aside>
+    <section class="tp-pane">
+      <div class="tp-head">${pm('codex', 15)}Fix checkout total rounding <span class="crumb">/ storefront</span><span class="crumb">${ic('branch', 12)}</span><span class="crumb">sotto/checkout-rounding</span>${windowControls()}</div>
+      <div class="tp-body">
+        <article class="msg" data-role="user"><header><span class="who">${ic('center', 13)}Command center</span><time>9:02 am</time></header><p>Fix #851. Totals round each line before summing, so a cart of three or more items can be a cent out. Round once, at the total, and add a test for a three-item cart.</p></article>
+        <article class="msg"><header><span class="who">Codex</span><time>9:39 am</time></header><p>Rounding now happens once, in <code>cart/totals.ts</code>. Stored totals were written the old way, so I need to run the migration that recomputes them.</p></article>
+        <div class="request"><h4>Run a command in storefront</h4><pre>npm run migrate</pre><div class="btns"><span>Deny</span><span>Allow</span></div></div>
+      </div>
+      <div class="compose" style="padding-top:0">
+        <div class="tp-follow"><b>1 follow-up</b> · From the command center: The totals must round half-even.</div>
+        <div class="prompt"><textarea rows="2" placeholder="Allow or deny the request above to continue." tabindex="-1"></textarea><div class="prompt__foot"><span class="chip">${pm('codex', 13)}<span>GPT-6.1 Sol</span></span><span class="chip"><span>Medium</span></span><span class="send">${ic('square', 12)}</span></div></div>
+      </div>
+    </section>
+  </div>`
+}
+function variantB(size, open) {
+  const MW = size === 's' ? 820 : 1280, MH = size === 's' ? 560 : 800
+  const CW = size === 's' ? 400 : 520, CH = size === 's' ? 540 : 760
+  const gap = 28, top = size === 's' ? 10 : 20
+  const W = MW + gap + CW, H = Math.max(MH, top + CH) + 30
+  return { w: W, h: H, html: `
+  <section class="win dim" data-size="${size}" style="left:0;top:0;width:${MW}px;height:${MH}px" aria-hidden="true" inert>${threadsPage(size)}</section>
+  <section class="win ccwin" data-size="${size}" style="left:${MW + gap}px;top:${top}px;width:${CW}px;height:${CH}px" aria-label="Command center window">
+    <header class="cc-top">
+      <h1 class="cc-top__title">${sottoMark(16)}Command center</h1>
+      ${meter()}${stopAll()}
+      <div class="controls"><button type="button" class="pin" aria-pressed="true" aria-label="Keep on top of other windows" title="Keep on top">${ic('pin', 14)}</button><button type="button" aria-label="Minimize">${ic('min', 16)}</button><button type="button" aria-label="Close the command center window">${ic('close', 16)}</button></div>
+    </header>
+    <div class="counts">
+      <button type="button" class="counts__toggle" id="counts" aria-expanded="${open}" aria-controls="cc-overview" aria-label="${open ? 'Hide' : 'Show'} the overview: 2 need you, 1 ready for review, 3 working, 1 landing, 1 quiet, 1 idle">
+        <span class="cnt" data-tone="needs"><span class="ring" data-tone="needs"></span><b>2</b> need you</span>
+        <span class="cnt"><b>1</b> ready</span><span class="cnt"><b>3</b> working</span><span class="cnt"><b>1</b> landing</span><span class="cnt"><b>1</b> quiet</span><span class="cnt"><b>1</b> idle</span>
+        ${ic('chevDown', 14, '', 'counts__chev')}
+      </button>
+    </div>
+    <div class="ccbody" ${open ? 'data-open' : ''}><div class="transcript" tabindex="0" aria-label="Conversation">${transcript()}</div>
+      ${open ? `<div class="counts__drop" id="cc-overview" role="region" aria-label="Overview"><span class="rail__fresh">9 threads · checked 20 s ago</span>${ogroups()}</div>` : ''}</div>
+    <div class="compose">${composer({ key: 'b', placeholder: 'Ask about your threads, or say what to start' })}</div>
+  </section>
+  <p class="hint" style="left:${MW + gap + 4}px;top:${top + CH + 8}px">Opens from the tray or a shortcut. Stays beside the main window.</p>` }
+}
+
+/* ---------- C · board first ---------- */
+function variantC(size, open) {
+  const W = size === 's' ? 820 : 1280, H = size === 's' ? 560 : 800
+  const cols = size === 's' ? [['needs', 'review', 'landing'], ['working', 'quiet', 'idle']] : [['needs'], ['review', 'landing'], ['working', 'quiet', 'idle']]
+  const extra = {
+    checkout: [`${ic('center', 13)}<span>From the command center, 9:43 am: “The totals must round half-even.” Waiting in its follow-ups until you answer.</span>`],
+  }
+  const group = (gid) => { const g = GROUPS.find(x => x.id === gid)
+    return `<section class="bgroup" aria-label="${g.name}, ${g.ids.length}">
+      <h3 class="bgroup__head" data-tone="${g.tone}"><span class="ring" data-tone="${g.tone === 'needs' ? 'needs' : g.tone}" aria-hidden="true"></span>${g.name}<span class="count">${g.ids.length}</span><span class="bgroup__hint">${g.hint}</span></h3>
+      ${g.ids.map(id => card(id, { by: true, notes: extra[id] })).join('')}
+    </section>` }
+  return { w: W, h: H, html: `<section class="win" data-size="${size}" style="left:0;top:0;width:${W}px;height:${H}px" aria-label="Sotto main window">
+    ${strip()}
+    <div class="c-room">
+      <div class="board__head">
+        <h1>${ic('center', 17)}Command center</h1>
+        <span class="board__sub">9 threads on this computer and forge · checked 20 s ago</span>
+        ${meter()}${stopAll()}
+      </div>
+      <div class="board" style="--cols:${cols.length}" aria-label="Every thread, by what you need to do">${cols.map(c => `<div class="bcol">${c.map(group).join('')}</div>`).join('')}</div>
+      <div class="dock">
+        <div class="dock__last"><span><span class="who">Command center</span> · Sent to <em>Fix checkout total rounding</em> in storefront. It's waiting on your permission first, so it will read this after you answer.</span><button type="button" class="btn btn--sm" data-act="dock" aria-label="Open the command center conversation">Open conversation</button></div>
+        <div class="dock__bar">${ic('center', 16)}<label class="vh" for="dock-input">Ask the command center</label><input id="dock-input" placeholder="Ask the command center…" autocomplete="off">
+          <button type="button" class="chip" aria-label="Model: Claude Code, Opus 5.5. Change the model">${pm('claude', 13)}<span>Opus 5.5</span>${ic('chevDown', 13)}</button>
+          <button type="button" class="send" aria-label="Send to the command center">${ic('arrowUp', 15)}</button></div>
+      </div>
+      ${open ? `<section class="panel" role="dialog" aria-label="Command center conversation">
+        <div class="panel__head"><h2>${ic('center', 15)}Command center <small>Claude Code · Opus 5.5</small></h2>${size === 's' ? meter() + stopAll() : ''}<button type="button" class="iconbtn" data-act="dock" aria-label="Hide the conversation (Escape)">${ic('chevDown', 16)}</button></div>
+        <div class="transcript" tabindex="0" aria-label="Conversation">${transcript()}</div>
+        <div class="compose">${composer({ key: 'c' })}</div>
+      </section>` : ''}
+    </div>
+    ${footer('Runs on Claude Code · Opus 5.5')}
+  </section>` }
+}
+
+/* ---------- A2 · overview in the sidebar ---------- */
+/* Rows read like the Threads sidebar's: title and time, then the provider mark, the project (the overview is not
+   grouped by project, so the row names it) and the status word the sidebar already uses. */
+const STATUS = { needs: 'Needs your approval', failed: 'Failed', ready: 'PR open', landing: 'Merging', working: 'Working', quiet: 'Quiet', idle: 'Done' }
+const CLOCK = { checkout: '9:39 am', hostlock: '9:21 am', babysit: '9:12 am', android: '6m 02s', folder: '14m 10s', webhook: '29m 40s', devin: '8:44 am', backup: '41m 05s', rename: '7:40 am' }
+const statusWord = (id) => T[id].takeover ? 'You took it over' : STATUS[T[id].tone]
+function navRow(id, o = {}) {
+  const t = T[id]
+  const ask = !o.ask ? '' : t.tone === 'needs' ? `<div class="row__ask"><span>Asks to run <code>npm run migrate</code></span>${answerBtn(id)}</div>`
+    : t.tone === 'failed' ? `<div class="row__ask"><span><code>npm test</code> exited 1, 3 failing</span></div>` : ''
+  return `<li class="row" ${o.current ? 'data-current' : ''}>
+    <span class="ring" data-tone="${t.tone}" aria-hidden="true"></span>
+    <button type="button" class="row__open" data-open="${id}" aria-label="${openName(t)}">${t.title}</button>
+    <span class="row__time">${CLOCK[id]}</span>
+    <span class="row__meta">${pm(t.provider, 14)}${o.project ? `<span class="row__proj">${t.project}${t.host ? ` on ${t.host}` : ''}</span>` : ''}<span class="tone" data-tone="${t.takeover ? 'idle' : t.tone}">${statusWord(id)}</span></span>
+    ${ask}
+  </li>`
+}
+function navTop(threads) {
+  return `<div class="nav__top"><span class="nav__brand" aria-label="Sotto application">${sottoMark(18)}<span>Sotto</span></span>
+    ${threads ? `<div class="nav__seg nav__seg--icons" role="radiogroup" aria-label="Sidebar mode"><button type="button" role="radio" aria-checked="true" aria-label="Threads" title="Threads">${ic('threads', 15)}</button><button type="button" role="radio" aria-checked="false" aria-label="Terminal" title="Terminal">${ic('termSquare', 15)}</button></div>
+    <button type="button" class="nav__action" aria-label="Add project" title="Add project">${ic('folderPlus', 16)}</button>
+    <button type="button" class="nav__action" aria-label="New thread" title="New thread">${ic('pen', 16)}</button>` : ''}
+    <button type="button" class="nav__action" aria-label="Collapse sidebar" title="Collapse sidebar">${ic('panelClose', 16)}</button></div>`
+}
+/* The sidebar foot, as SidebarFrame draws it, with Command center as the switch's third room. */
+function navFoot(room) {
+  const rooms = [['dictate', 'Dictate'], ['threads', 'Threads'], ['cc', 'Command center']]
+  return `<div class="nav__foot">
+    <div class="nav__seg" role="tablist" aria-label="Page">${rooms.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" aria-selected="${id === room}" tabindex="${id === room ? 0 : -1}">${label}</button>`).join('')}</div>
+    <nav class="nav__pages" aria-label="Pages">${[['history', 'History'], ['gear', 'Settings'], ['help', 'Help']].map(([icon, label]) => `<a href="#${label.toLowerCase()}" class="nav__page" title="${label}">${ic(icon, 16)}<span class="vh">${label}</span></a>`).join('')}</nav>
+    <button type="button" class="nav__update" aria-label="Check for updates" title="Check for updates">${ic('refresh', 15)}</button>
+  </div>`
+}
+const navGroup = (head, ids, rowOptions) => `<section class="grp">${head}<ul>${ids.map(id => navRow(id, rowOptions(id))).join('')}</ul></section>`
+function overviewNav() {
+  return `<aside class="nav" aria-label="Overview">
+    ${navTop(false)}
+    <div class="nav__scroll">
+      <p class="nav__label">Overview<span class="fresh">9 threads · checked 20 s ago</span><button type="button" class="nav__action" aria-label="Check every thread again" title="Check every thread again">${ic('refresh', 13)}</button></p>
+      ${GROUPS.map(g => navGroup(`<button type="button" class="grp__head" data-tone="${g.tone}" aria-expanded="true" aria-label="${g.name}, ${g.ids.length}. Collapse">${ic('chevDown', 14, '', 'chev')}<span>${g.name}</span><span class="grp__count">${g.ids.length}</span></button>`, g.ids, (id) => ({ project: true, ask: true, current: state.beside === id }))).join('')}
+    </div>
+    ${navFoot('cc')}
+  </aside>`
+}
+function threadsNav(room, current) {
+  const folder = (name, ids, host) => navGroup(`<button type="button" class="grp__head" aria-expanded="true" aria-label="${name}, ${ids.length} threads. Collapse">${ic('chevDown', 14, '', 'chev')}${ic('folder', 15)}<span>${name}</span>${host ? ic('server', 13) : ''}<span class="grp__count">${ids.length}</span></button>`, ids, (id) => ({ current: room === 'threads' && id === current }))
+  return `<aside class="nav" aria-label="Threads">
+    ${navTop(true)}
+    <label class="nav__search">${ic('search', 15)}<span class="vh">Search threads</span><input placeholder="Search threads" autocomplete="off"></label>
+    <div class="nav__scroll">
+      ${folder('storefront', ['checkout', 'webhook'])}
+      ${folder('Sotto', ['android', 'hostlock', 'babysit', 'devin', 'folder', 'rename'])}
+      ${folder('forge-infra', ['backup'], true)}
+    </div>
+    ${navFoot(room)}
+  </aside>`
+}
+const winctl = () => `<div class="winctl"><button type="button" aria-label="Minimize">${ic('min', 16)}</button><button type="button" aria-label="Maximize">${ic('max', 14)}</button><button type="button" aria-label="Close to tray">${ic('close', 16)}</button></div>`
+function ccPane(o = {}) {
+  return `<section class="pane pane--cc" aria-label="Command center" ${o.focused ? 'data-focused' : ''}>
+    <div class="pane__head"><h1 class="pane__title">${ic('center', 16)}Command center<span class="pane__crumb">Every thread on this computer and forge</span></h1>${meter()}${stopAll()}<button type="button" class="iconbtn" aria-label="More command center actions">${ic('more', 16)}</button></div>
+    <div class="transcript" tabindex="0" aria-label="Conversation" data-scroll-key="cc">${transcript()}</div>
+    <div class="compose">${composer({ key: 'a2' })}</div>
+  </section>`
+}
+
+/* Each thread's own pane, as the Threads page draws it: what started it, its latest reply, and what it is doing. */
+const WHO = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin' }
+const STORY = {
+  checkout: { cc: true, at: '9:02 am', brief: 'Fix #851. Totals round each line before summing, so a cart of three or more items can be a cent out. Round once, at the total, and add a test for a three-item cart.', replyAt: '9:39 am', reply: 'Rounding now happens once, in <code>cart/totals.ts</code>. Stored totals were written the old way, so I need to run the migration that recomputes them.' },
+  hostlock: { cc: true, at: '9:02 am', brief: 'Fix #853. The host-lock test fails about one run in five. Find why and make it pass every time.', replyAt: '9:21 am', reply: 'Three tests in <code>hostLock.test.ts</code> still fail. The lock is released before the second host connects.', after: '<p class="activity" data-tone="failed"><span class="ring" data-tone="failed"></span><code>npm test</code> exited 1, 3 failing</p>' },
+  babysit: { at: '8:20 am', brief: 'Write the release notes for #845 and babysit the pull request until the checks pass.', replyAt: '9:12 am', reply: 'Release notes are written and every changelog link resolves. All 7 checks pass.' },
+  android: { cc: true, at: '9:35 am', brief: 'Add an Android share sheet, so a phone can send a link or some text into a new thread.', replyAt: '9:38 am', reply: 'Reading the iOS share extension first, then adding the Android intent filter beside it.', doing: 'Editing AndroidManifest.xml' },
+  folder: { at: '9:27 am', brief: 'Give the folder browser a full keyboard path: arrows to move, Enter to open, Backspace to go up.', replyAt: '9:39 am', reply: 'Arrow keys and Enter work. Adding Backspace now.', doing: 'Running the folder browser tests' },
+  webhook: { cc: true, at: '9:02 am', brief: 'Fix #852. Payment webhooks retry forever on a 409. Stop retrying on conflicts.', mine: ['9:14 am', 'I will take it from here. Keep the retry for 5xx only.'], replyAt: '9:16 am', reply: 'Retrying only on 5xx now; 409 and 422 stop at once.', doing: 'Updating the webhook tests' },
+  devin: { at: '7:55 am', brief: 'Make the Devin prompt carry the evidence lines.', replyAt: '8:44 am', reply: 'PR #813 is approved and set to merge when its last check passes.' },
+  backup: { at: '9:02 am', brief: 'Rotate the nightly backups on forge: keep 7 daily and 4 weekly.', replyAt: '9:19 am', reply: 'The rotation script is in place. Running a dry run against last week’s backups.', doing: 'Dry run, no output for 24 min' },
+  rename: { at: '7:20 am', brief: 'Rename the settings rows to match the glossary.', replyAt: '7:40 am', reply: 'Renamed 14 rows. The settings tests pass.' },
+}
+function threadBody(id) {
+  const t = T[id], s = STORY[id]
+  const parts = [`<article class="msg" data-role="user"><header><span class="who">${s.cc ? ic('center', 13) + 'Command center' : 'You'}</span><time>${s.at}</time></header><p>${s.brief}</p></article>`]
+  if (s.mine) parts.push(`<article class="msg" data-role="user"><header><span class="who">You</span><time>${s.mine[0]}</time></header><p>${s.mine[1]}</p></article>`)
+  parts.push(`<article class="msg"><header><span class="who">${WHO[t.provider]}</span><time>${s.replyAt}</time></header><p>${s.reply}</p></article>`)
+  if (id === 'checkout' && !state.resolved) parts.push(`<div class="request" role="group" aria-label="Request: run a command in storefront"><h4>Run a command in storefront</h4><pre>npm run migrate</pre><div class="btns"><button type="button" class="btn btn--deny" data-act="deny" aria-label="Deny: do not run npm run migrate">Deny</button><button type="button" class="btn btn--allow" data-act="allow" aria-label="Allow: run npm run migrate">Allow</button></div></div>`)
+  if (id === 'checkout' && state.resolved) parts.push(`<p class="answered">${ic('check', 14)}<span>You ${state.resolved === 'allow' ? 'allowed' : 'denied'} <code>npm run migrate</code></span><time>9:44 am</time></p>`,
+    `<article class="msg" data-role="user"><header><span class="who">${ic('center', 13)}Command center</span><span class="tag">Follow-up</span><time>9:44 am</time></header><p>The totals must round half-even.</p></article>`,
+    `<p class="activity"><span class="ring" data-tone="working"></span>${state.resolved === 'allow' ? 'Running the migration' : 'Looking for a way that needs no migration'}</p>`)
+  if (s.after) parts.push(s.after)
+  if (s.doing && id !== 'checkout') parts.push(`<p class="activity"><span class="ring" data-tone="${t.tone}"></span>${s.doing}</p>`)
+  return parts.join('')
+}
+function threadCompose(id, key) {
+  const t = T[id], waiting = id === 'checkout' && !state.resolved, busy = waiting || t.tone === 'working' || t.tone === 'quiet'
+  const placeholder = waiting ? 'Allow or deny the request above to continue.' : busy ? `${WHO[t.provider]} is working. Write a follow-up to queue it.` : 'What would you like to do next?'
+  return `<div class="compose" style="padding-top:0">${waiting ? '<div class="followups"><b>1 follow-up</b> · From the command center: The totals must round half-even.</div>' : ''}
+    <div class="prompt"><label class="vh" for="tp-${key}">Message ${t.title}</label><textarea id="tp-${key}" rows="2" placeholder="${placeholder}"></textarea>
+      <div class="prompt__foot"><button type="button" class="attach" aria-label="Attach an image">${ic('clip', 15)}</button><button type="button" class="chip" aria-label="Model: ${PROVIDER[t.provider]}, ${t.model}. Change the model">${pm(t.provider, 13)}<span>${t.model}</span>${ic('chevDown', 13)}</button><button type="button" class="chip" aria-label="Effort: Medium. Change the effort"><span>Medium</span>${ic('chevDown', 13)}</button><button type="button" class="chip chip--perm" aria-label="Permission: Ask for approval. Change the permission"><span>Ask for approval</span>${ic('chevDown', 13)}</button>${busy ? `<button type="button" class="send" aria-label="Stop ${t.title}'s turn">${ic('square', 12)}</button>` : `<button type="button" class="send" aria-label="Send to ${t.title}">${ic('arrowUp', 15)}</button>`}</div></div>
+  </div>`
+}
+/* mode: 'page' on the Threads page; 'beside' to the right of the command center; 'tab' when the room shows one pane at a time. */
+function threadPane(id, mode = 'page') {
+  const t = T[id], key = `${mode}-${id}`
+  const controls = mode === 'page'
+    ? `<button type="button" class="iconbtn" aria-label="Show the Tools panel">${ic('panel', 16)}</button><button type="button" class="iconbtn" aria-label="More thread actions">${ic('more', 16)}</button>`
+    : `<button type="button" class="iconbtn" data-act="open-threads" aria-label="Open in Threads: show ${t.title} on the Threads page" title="Open in Threads">${ic('go', 16)}</button><button type="button" class="iconbtn" aria-label="More thread actions" title="More">${ic('more', 16)}</button><button type="button" class="iconbtn" data-act="close-beside" aria-label="Close ${t.title} (Escape)" title="Close (Escape)">${ic('close', 16)}</button>`
+  return `<section class="pane pane--thread" data-mode="${mode}" aria-labelledby="title-${key}" ${mode !== 'page' ? 'data-focused' : ''}>
+    <div class="pane__head"><h2 class="pane__title" id="title-${key}" tabindex="-1">${pm(t.provider, 15)}<span class="pane__name">${t.title}</span><span class="pane__crumb">${t.project}${t.host ? ` on ${t.host}` : ''}</span></h2>${controls}</div>
+    <div class="transcript" tabindex="0" aria-label="${t.title} conversation" data-scroll-key="thread-${id}">${threadBody(id)}</div>
+    ${threadCompose(id, key)}
+  </section>`
+}
+const dictateRoom = () => `<section class="pane" aria-label="Dictate"><div class="dictate"><div class="dictate__wave" aria-hidden="true">${[12, 22, 34, 46, 34, 22, 12].map(h => `<i style="height:${h}px"></i>`).join('')}</div><h2>Ready when you are.</h2><div class="dictate__go"><button type="button" class="btn btn--primary">Start dictation</button><span>or press</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd><span>in any app</span></div></div></section>`
+/* Answering a request happens in the thread; the overview and the command center's cards then read the new state. */
+function applyAnswer() {
+  const done = state.variant === 'A2' && !!state.resolved
+  Object.assign(T.checkout, done
+    ? { tone: 'working', state: 'Working', time: '1 min', short: () => 'Working for 1 min' }
+    : { tone: 'needs', state: 'Needs you', time: '4 min', short: () => 'Asks to run <code>npm run migrate</code>' })
+  GROUPS[0].ids = done ? ['hostlock'] : ['checkout', 'hostlock']
+  GROUPS[2].ids = done ? ['checkout', 'android', 'folder', 'webhook'] : ['android', 'folder', 'webhook']
+  CLOCK.checkout = done ? '0m 40s' : '9:39 am'
+}
+/* The room: the conversation alone, the conversation and a thread side by side (each pane at least 400px, as the
+   Threads page's split keeps them), or, where two will not fit, the Threads page's one-pane-at-a-time tabs. */
+function a2Room(size, side) {
+  if (!state.beside) return ccPane()
+  const roomWidth = (size === 's' ? 820 : 1280) - side
+  if (roomWidth >= 2 * 400 + 9) return `<div class="split">${ccPane()}<div class="split__divider" role="separator" aria-orientation="vertical" aria-label="Resize panes"></div>${threadPane(state.beside, 'beside')}</div>`
+  const t = T[state.beside], showThread = state.tab !== 'cc'
+  return `<div class="tabbed"><div class="tabs" role="tablist" aria-label="Open panes">
+      <button type="button" role="tab" class="tab" data-act="tab" data-tab="cc" aria-selected="${!showThread}" tabindex="${showThread ? -1 : 0}">${ic('center', 14)}<span>Command center</span></button>
+      <button type="button" role="tab" class="tab" data-act="tab" data-tab="thread" aria-selected="${showThread}" tabindex="${showThread ? 0 : -1}">${pm(t.provider, 13)}<span>${t.title}</span></button></div>
+    ${showThread ? threadPane(state.beside, 'tab') : ccPane()}</div>`
+}
+function variantA2(size) {
+  const W = size === 's' ? 820 : 1280, H = size === 's' ? 560 : 800
+  const side = Math.min(480, Math.max(260, Number(params.get('side')) || 320))
+  const nav = state.page === 'cc' ? overviewNav() : threadsNav(state.page, state.thread)
+  const room = state.page === 'cc' ? a2Room(size, side) : state.page === 'threads' ? threadPane(state.thread) : dictateRoom()
+  return { w: W, h: H, html: `<section class="win" data-size="${size}" style="left:0;top:0;width:${W}px;height:${H}px" aria-label="Sotto main window">
+    <div class="shell" style="--side:${side}px">${nav}${room}${winctl()}</div></section>` }
+}
+
+/* ---------- the prototype frame ---------- */
+const VARIANTS = {
+  A2: { name: 'A2 · Overview in the sidebar', build: variantA2, open: 'Threads page',
+    note: '<b>A2 · Overview in the sidebar.</b> A, with the overview moved into the real sidebar on the left and the page laid out like the Threads page: no strip, the window controls once at the top right, and the same sidebar foot as every other page. The foot switch gains a third room, Command center. Press Threads or Dictate in the foot (or Threads page on this bar) to see the same foot on those pages; Open to answer, a card or an overview row opens that thread beside the conversation (Thread beside on this bar). Answer its request there and the row leaves Needs you. Open in Threads, in its header, goes to the Threads page. At 820 the two panes become tabs, as the Threads page does when a pane would be under 400px.' },
+  A: { name: 'A · Its own room', build: variantA, open: null,
+    note: '<b>A · Its own room.</b> A third state of the switch: Dictate, Threads, Command center. The conversation sits in the middle with a card under every message that started or sent to a thread; the overview is a rail on the right, grouped by what you need to do. The limit and Stop all sit in the conversation header. The Threads sidebar is not here, so the thread you are reading and the command center are never on screen together; pressing a card or Open to answer switches rooms.' },
+  B: { name: 'B · Its own window', build: variantB, open: 'Overview open',
+    note: '<b>B · Its own window.</b> A small window that opens from the tray or a shortcut and stays beside the main window, so you can answer a request in the Threads page and keep the command center in view. Conversation first; the overview is one line of counts that opens into the grouped list (try Overview open). Costs a second window to place, and at its 400px minimum the permission chip goes and the roll-up wraps.' },
+  C: { name: 'C · Board first', build: variantC, open: 'Conversation open',
+    note: '<b>C · Board first.</b> A room whose page is the board: every thread as a card under what you need to do, with what Sotto saw on the card itself (checks, diff, exit codes) apart from what the thread said. The conversation docks at the bottom: type into it, or open it (try Conversation open). A receipt lands on the card it touched. The board is the primary affordance; the conversation is one step away.' },
+}
+const keys = Object.keys(VARIANTS)
+const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+/* ?beside= takes a thread id (checkout) or the start of its title as a slug (fix-checkout). */
+function threadFromParam(value) { if (!value) return null; if (Object.hasOwn(T, value)) return value; return Object.keys(T).find(id => slug(T[id].title).startsWith(value)) ?? null }
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: keys.includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A2',
+  page: ['threads', 'dictate'].includes(params.get('page')) ? params.get('page') : 'cc',
+  thread: Object.hasOwn(T, params.get('thread') || '') ? params.get('thread') : 'checkout',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  size: params.get('size') === '820' || params.get('size') === 's' ? 's' : 'l',
+  open: params.get('open') === '1',
+  beside: threadFromParam(params.get('beside')),
+  tab: params.get('tab') === 'cc' ? 'cc' : 'thread',
+  resolved: ['allow', 'deny'].includes(params.get('answered')) ? params.get('answered') : null,
+  opener: null,
+}
+let dims = { w: 1280, h: 800 }
+
+function syncUrl() {
+  const p = new URLSearchParams({ variant: state.variant })
+  if (state.theme === 'light') p.set('theme', 'light')
+  if (state.size === 's') p.set('size', '820')
+  if (state.open) p.set('open', '1')
+  if (state.variant === 'A2' && state.page !== 'cc') p.set('page', state.page)
+  if (state.variant === 'A2' && state.beside) p.set('beside', slug(T[state.beside].title))
+  if (state.variant === 'A2' && state.beside && state.tab === 'cc') p.set('tab', 'cc')
+  if (state.variant === 'A2' && state.resolved) p.set('answered', state.resolved)
+  history.replaceState(null, '', `?${p}`)
+}
+function fit() {
+  const desk = document.getElementById('desk'), wrap = document.getElementById('wrap')
+  const s = Math.min(1, (innerWidth - 32) / dims.w, (innerHeight - 100) / dims.h)
+  desk.style.transform = `scale(${s})`
+  desk.style.width = `${dims.w}px`; desk.style.height = `${dims.h}px`
+  wrap.style.width = `${dims.w * s}px`; wrap.style.height = `${dims.h * s}px`
+  document.getElementById('notes').style.marginTop = `${Math.max(24, innerHeight - 20 - dims.h * s)}px`
+}
+function render() {
+  const v = VARIANTS[state.variant]
+  document.documentElement.dataset.theme = state.theme
+  applyAnswer()
+  const kept = {}
+  if (render.last === state.variant) for (const el of document.querySelectorAll('.desk [data-scroll-key]')) kept[el.dataset.scrollKey] = el.scrollTop + el.clientHeight >= el.scrollHeight - 4 ? 'end' : el.scrollTop
+  render.last = state.variant
+  const built = v.build(state.size, state.open)
+  dims = { w: built.w, h: built.h }
+  document.getElementById('desk').innerHTML = built.html
+  document.getElementById('name').textContent = v.name
+  document.getElementById('notes').innerHTML = `<p>${v.note}</p><p>Same nine threads and the same conversation in every variant. Nothing here answers a request: Open to answer opens the thread at its request card. The limit counts the threads the command center started that are working or waiting (a thread you took over leaves it).</p>`
+  const mode = document.getElementById('mode')
+  mode.textContent = state.theme === 'dark' ? 'Light' : 'Dark'
+  mode.setAttribute('aria-label', `Switch to ${state.theme === 'dark' ? 'light' : 'dark'}`)
+  for (const b of document.querySelectorAll('.bar [data-size]')) b.setAttribute('aria-pressed', String(b.dataset.size === state.size))
+  const open = document.getElementById('open')
+  open.hidden = !v.open; document.getElementById('open-sep').hidden = !v.open
+  if (v.open) { open.textContent = v.open; open.setAttribute('aria-pressed', String(state.variant === 'A2' ? state.page === 'threads' : state.open)) }
+  const scroll = params.get('scroll')
+  for (const t of document.querySelectorAll('.desk .transcript')) { const was = kept[t.dataset.scrollKey]; t.scrollTop = typeof was === 'number' ? was : scroll === 'top' ? 0 : scroll && !Number.isNaN(Number(scroll)) ? Number(scroll) : t.scrollHeight }
+  const beside = document.getElementById('beside')
+  beside.hidden = state.variant !== 'A2'
+  beside.setAttribute('aria-pressed', String(!!state.beside))
+  syncUrl(); fit()
+}
+function cycle(step) { state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]; state.open = false; state.page = 'cc'; state.beside = null; state.tab = 'thread'; state.resolved = null; render() }
+/* A2: a thread opens beside the conversation; focus moves into it, and back to what opened it when it closes. */
+function openBeside(target) {
+  const all = [...document.querySelectorAll('.desk [data-open]')]
+  state.opener = target ? { id: target.dataset.open, index: all.indexOf(target), answer: target.hasAttribute('data-answer') } : null
+  state.beside = target ? target.dataset.open : 'checkout'; state.tab = 'thread'; state.page = 'cc'
+  render(); document.querySelector('.pane--thread .pane__title')?.focus()
+}
+function closeBeside() {
+  const opener = state.opener
+  state.beside = null; state.tab = 'thread'; state.opener = null; render()
+  let el = null
+  if (opener) { const at = [...document.querySelectorAll('.desk [data-open]')][opener.index]; el = at && at.dataset.open === opener.id && at.hasAttribute('data-answer') === opener.answer ? at : document.querySelector(`.nav [data-open="${opener.id}"]`) }
+  ;(el ?? document.getElementById('cc-input-a2'))?.focus()
+}
+/* A2: a room chosen in the foot switch; focus stays on the tab, as it does in the app. */
+function goPage(page, focusTab) { state.page = page; render(); if (focusTab) document.querySelector(`.nav__seg [data-page="${page}"]`)?.focus() }
+function toast(text) { const el = document.getElementById('toast'); el.textContent = text; el.dataset.on = ''; clearTimeout(toast.t); toast.t = setTimeout(() => delete el.dataset.on, 1800) }
+
+document.getElementById('prev').addEventListener('click', () => cycle(-1))
+document.getElementById('next').addEventListener('click', () => cycle(1))
+document.getElementById('mode').addEventListener('click', () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render() })
+for (const b of document.querySelectorAll('.bar [data-size]')) b.addEventListener('click', () => { state.size = b.dataset.size; render() })
+document.getElementById('open').addEventListener('click', () => { if (state.variant === 'A2') { goPage(state.page === 'threads' ? 'cc' : 'threads'); return } state.open = !state.open; render() })
+document.getElementById('beside').addEventListener('click', () => { if (state.beside) closeBeside(); else openBeside(null) })
+document.getElementById('desk').addEventListener('click', (event) => {
+  const target = event.target.closest('button, a')
+  if (!target) return
+  if (target.id === 'counts' || target.dataset.act === 'dock') { state.open = !state.open; render(); return }
+  if (target.classList.contains('ogroup__head')) { const on = target.getAttribute('aria-expanded') !== 'true'; target.setAttribute('aria-expanded', String(on)); target.nextElementSibling.hidden = !on; target.querySelector('svg').style.transform = on ? '' : 'rotate(-90deg)'; target.setAttribute('aria-label', target.getAttribute('aria-label').replace(/(Collapse|Expand)$/, on ? 'Collapse' : 'Expand')); return }
+  if (target.dataset.page) { goPage(target.dataset.page, true); return }
+  if (target.classList.contains('grp__head')) { const on = target.getAttribute('aria-expanded') !== 'true'; target.setAttribute('aria-expanded', String(on)); target.nextElementSibling.hidden = !on; target.setAttribute('aria-label', target.getAttribute('aria-label').replace(/(Collapse|Expand)$/, on ? 'Collapse' : 'Expand')); return }
+  if (state.variant === 'A2') {
+    const act = target.dataset.act
+    if (act === 'close-beside') { closeBeside(); return }
+    if (act === 'open-threads') { state.thread = state.beside; state.beside = null; state.opener = null; goPage('threads'); document.querySelector('.pane--thread .pane__title')?.focus(); return }
+    if (act === 'allow' || act === 'deny') { state.resolved = act; render(); document.querySelector('.pane--thread .pane__title')?.focus(); return }
+    if (act === 'tab') { state.tab = target.dataset.tab; render(); document.querySelector(`.tab[data-tab="${state.tab}"]`)?.focus(); return }
+    if (target.dataset.open) { event.preventDefault(); if (state.page === 'threads') { state.thread = target.dataset.open; render() } else openBeside(target); return }
+  }
+  if (target.dataset.act === 'stop') { toast('Would ask first, then stop the command center and the 2 threads it is running.'); return }
+  if (target.dataset.open) { event.preventDefault(); toast(`Would open ${T[target.dataset.open].title} on the Threads page${target.hasAttribute('data-answer') ? ', at its request card' : ''}.`); return }
+  if (target.tagName === 'A') event.preventDefault()
+})
+document.getElementById('desk').addEventListener('focusin', (event) => {
+  const pane = event.target.closest?.('.split > .pane')
+  if (pane) for (const p of pane.parentElement.querySelectorAll(':scope > .pane')) p.toggleAttribute('data-focused', p === pane)
+  if (event.target.id === 'dock-input' && !state.open) { state.open = true; render(); document.getElementById('cc-input-c')?.focus() }
+})
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.variant === 'A2' && state.beside && state.page === 'cc') { event.preventDefault(); closeBeside(); return }
+  if (event.key === 'Escape' && state.open) { state.open = false; render(); return }
+  if (event.target.closest?.('input, textarea, [contenteditable]')) return
+  const paneTab = event.target.closest?.('.tabs [role=tab]')
+  if (paneTab && ['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); state.tab = state.tab === 'cc' ? 'thread' : 'cc'; render(); document.querySelector(`.tab[data-tab="${state.tab}"]`)?.focus(); return }
+  const tab = event.target.closest?.('.nav__foot [role=tab]')
+  if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault()
+    const tabs = [...tab.parentElement.children], at = tabs.indexOf(tab)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (at + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+    goPage(tabs[next].dataset.page, true); return
+  }
+  if (event.key === 'ArrowLeft') cycle(-1)
+  if (event.key === 'ArrowRight') cycle(1)
+})
+addEventListener('resize', fit)
+render()
+
+/* ?check=1: measure every visible text run in the window against the surface under it (WCAG ratio).
+   The dimmed main window behind B is decorative and skipped. */
+function rgbaOf(color) {
+  const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d')
+  x.clearRect(0, 0, 1, 1); x.fillStyle = '#000'; x.fillStyle = color; x.fillRect(0, 0, 1, 1)
+  const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]
+}
+const lum = ([r, g, b]) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
+function surfaceOf(el) {
+  const layers = []
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const bg = rgbaOf(getComputedStyle(n).backgroundColor); if (bg[3] > 0) { layers.push(bg); if (bg[3] >= 1) break } }
+  let out = layers.length && layers[layers.length - 1][3] >= 1 ? layers.pop() : rgbaOf(getComputedStyle(document.body).backgroundColor)
+  while (layers.length) { const t = layers.pop(); out = [0, 1, 2].map(i => t[i] * t[3] + out[i] * (1 - t[3])).concat(1) }
+  return out
+}
+function check() {
+  const rows = []
+  for (const el of document.querySelectorAll('.desk .win:not(.dim) *')) {
+    if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue
+    if (el.closest('.vh, [hidden]') || !el.getClientRects().length) continue
+    const fg = rgbaOf(getComputedStyle(el).color), bg = surfaceOf(el)
+    const mixed = [0, 1, 2].map(i => fg[i] * fg[3] + bg[i] * (1 - fg[3]))
+    const a = lum(mixed), b = lum(bg), ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    const text = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join(' ').slice(0, 40)
+    rows.push({ ratio, text, cls: typeof el.className === 'string' ? el.className : el.tagName })
+  }
+  rows.sort((p, q) => p.ratio - q.ratio)
+  const low = rows.filter(r => r.ratio < 4.5)
+  const out = document.createElement('pre'); out.id = 'contrast'
+  out.style.cssText = 'position:fixed;top:0;left:0;z-index:99;max-height:100vh;overflow:auto;margin:0;padding:10px;background:#000;color:#fff;font:12px/1.4 monospace'
+  out.textContent = 'checked ' + rows.length + ' text runs, ' + low.length + ' under 4.5:1\n' + rows.slice(0, 16).map(r => r.ratio.toFixed(2) + '  ' + r.cls + '  "' + r.text + '"').join('\n')
+  const press = (key, target = document.body) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+  if (state.variant === 'A2') {
+    const lit = () => document.querySelector('.nav__foot [aria-selected="true"]')
+    const pages = [state.page + ' (' + lit()?.textContent + ')']
+    press('ArrowLeft', lit()); pages.push(state.page + ' (' + lit()?.textContent + ', focused: ' + (document.activeElement === lit()) + ')')
+    press('ArrowLeft', lit()); pages.push(state.page + ' (' + lit()?.textContent + ')')
+    document.querySelector('.nav__foot [data-page="cc"]').click(); pages.push(state.page + ' (' + lit()?.textContent + ')')
+    out.textContent += '\nfoot switch: ' + pages.join(' > ')
+    const answer = document.querySelector('.nav [data-answer]')
+    if (answer && !state.resolved) {
+    answer.focus(); answer.click()
+    const opened = 'beside ' + state.beside + ', focus on ' + (document.activeElement?.id || document.activeElement?.className)
+    press('Escape', document.activeElement)
+    const closed = 'closed ' + (state.beside === null) + ', focus back on ' + document.activeElement?.className + ' ' + document.activeElement?.dataset.open
+    document.querySelector('.nav [data-answer]').click(); document.querySelector('[data-act="allow"]').click()
+    const answered = 'after Allow: needs you ' + GROUPS[0].ids.length + ', checkout ' + T.checkout.state + ', card says ' + document.querySelector('.pane--cc .tcard[data-tone] .tcard__state:not(:empty)')?.textContent
+    out.textContent += '\nbeside: ' + [opened, closed, answered].join(' | ')
+    }
+  }
+  const seen = [state.variant]; press('ArrowRight'); seen.push(state.variant); press('ArrowRight'); seen.push(state.variant); press('ArrowLeft'); seen.push(state.variant)
+  const field = document.querySelector('.desk textarea, .desk input'); const before = state.variant; press('ArrowRight', field); seen.push(state.variant === before ? '(ignored in a field)' : 'MOVED IN A FIELD')
+  press('ArrowLeft')
+  out.textContent += '\narrow keys: ' + seen.join(' > ')
+  document.body.append(out)
+}
+if (params.get('check') === '1') setTimeout(check, 300)
+</script>
+</body>
+</html>
