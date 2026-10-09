@@ -1,7 +1,7 @@
 import React, { StrictMode } from 'react'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App, applyDocumentPreferences } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
@@ -239,8 +239,18 @@ function renderApp(
 }
 
 async function reachMicrophoneStep(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
+  await waitFor(() => expect(screen.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible())
+  await user.click(screen.getByRole('button', { name: /get started/i }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: /choose how sotto looks/i })).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: /check your microphone/i })).toBeVisible())
+}
+
+/** Clicks whichever of Continue or Skip for now is offered until Finish setup is reached, without pressing it. */
+async function finishRemainingSteps(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  while (screen.queryByRole('button', { name: 'Finish setup' }) === null) {
+    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
+  }
 }
 
 async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -249,7 +259,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await waitFor(() => expect(screen.getByText(/microphone ready/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
   await waitFor(() => expect(screen.getByText(/connect your openrouter key/i)).toBeVisible())
-  await user.click(screen.getByRole('button', { name: /continue/i }))
+  await finishRemainingSteps(user)
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }
 
@@ -283,7 +293,7 @@ describe('shared main-window frame', () => {
     {
       name: 'onboarding',
       createStateBridge: () => createBridge(),
-      stateText: /dictation, ready when you are/i,
+      stateText: /talk to your computer and your coding agents/i,
     },
   ])('renders exactly one strip and both window controls in the $name state', async ({
     createStateBridge,
@@ -495,7 +505,7 @@ describe('Sotto application onboarding integration', () => {
     })
     renderApp(bridge)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /dictation, ready when you are/i })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible())
     // The heading commits with the settings render; the preferences land in an
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
@@ -640,7 +650,7 @@ describe('Sotto application onboarding integration', () => {
     await openPage('home')
 
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /ready when you are/i })).toBeVisible())
-    expect(screen.queryByText(/step 1 of 4/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/step 1 of 9/i)).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tab', { name: /agents/i })).not.toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Pages' })).toBeInTheDocument()
@@ -847,8 +857,7 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(screen.getByText(/no microphone was found/i)).toBeVisible())
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await finishRemainingSteps(user)
     await user.click(screen.getByRole('button', { name: /finish setup/i }))
 
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ onboardingComplete: true, microphoneSkipped: true }))
@@ -881,14 +890,14 @@ describe('Sotto application onboarding integration', () => {
 
     await completeReadySetup(user)
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i))
-    expect(screen.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
+    expect(screen.getByRole('heading', { name: /answer your threads from your iphone/i })).toBeVisible()
     expect(document.body).not.toHaveTextContent('private storage detail')
   })
 
   it('uses the saved dictation input when testing during onboarding', async () => {
     const microphone = { start: vi.fn(async () => 'ready' as const), stop: vi.fn(async () => undefined) }
     renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, microphoneId: 'saved-headset' })) }), () => microphone)
-    await userEvent.click(await screen.findByRole('button', { name: /continue/i }))
+    await reachMicrophoneStep(userEvent.setup())
     await userEvent.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(microphone.start).toHaveBeenCalledWith(expect.any(Function), 'saved-headset', expect.any(Function)))
   })
@@ -907,7 +916,8 @@ describe('Sotto application onboarding integration', () => {
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     expect(microphone.start).toHaveBeenCalledOnce()
     expect(screen.getByText('Run a quick input-level test.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Test microphone' }))
     await screen.findByText(/Microphone ready/i)
@@ -945,7 +955,8 @@ describe('Sotto application onboarding integration', () => {
     expect(screen.getByText('No microphone was found.')).toBeVisible()
     expect(screen.queryByRole('meter', { name: 'Microphone level' })).not.toBeInTheDocument()
     expect(document.querySelector('.onboarding-microphone-test .voice-wave')).toHaveAttribute('data-stage', 'idle')
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'Try microphone again' }))
     await screen.findByText(/Microphone ready/i)
     act(() => ended[0]!('missing'))
@@ -992,14 +1003,13 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /retest microphone/i }))
     await waitFor(() => expect(active.stop).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
     stopped.resolve()
 
     await screen.findByRole('heading', { name: /connect your openrouter key/i })
     await act(async () => undefined)
     expect(createMicrophoneTest).toHaveBeenCalledOnce()
     expect(replacement.start).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await finishRemainingSteps(user)
     expect(screen.getByRole('button', { name: /finish setup/i })).toBeEnabled()
   })
 
@@ -1083,7 +1093,6 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('button', { name: /test microphone/i }))
     await waitFor(() => expect(microphone.start).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', { name: /skip for now/i }))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
     await waitFor(() => expect(microphone.stop).toHaveBeenCalledOnce())
     started.resolve('ready')
 
@@ -1093,6 +1102,72 @@ describe('Sotto application onboarding integration', () => {
   })
 
 
+})
+
+describe('SSH questions during first-run setup', () => {
+  it('asks a saved host’s SSH question while setup is showing', async () => {
+    const asking = {
+      id: '33333333-3333-4333-8333-333333333333', name: 'forge', target: 'zach@forge', identityFile: '', installPath: '~/.local/share/sotto-host',
+      dataDirectory: '~/.sotto', enabled: true, phase: 'connecting' as const, prompt: { id: 'passphrase-prompt', kind: 'passphrase' as const, text: 'Enter passphrase for key' },
+    }
+    const state = { localHostEnabled: true, localHostRunning: true, hosts: [asking] }
+    const hosts = { get: vi.fn(async () => state), command: vi.fn(async () => state), onChanged: vi.fn(() => () => undefined) }
+    // The question dialog reads the hosts bridge the preload puts on the window.
+    Object.assign(window, { sotto: { hosts } })
+    try {
+      renderApp(createBridge())
+      await screen.findByRole('heading', { level: 1, name: 'Talk to your computer and your coding agents' })
+      expect(await screen.findByRole('dialog')).toHaveTextContent('forge')
+    } finally {
+      Reflect.deleteProperty(window, 'sotto')
+    }
+  })
+})
+
+describe('Threads tour after first-run setup', () => {
+  // jsdom lays nothing out, and the tour passes over a part with no box, so every element reports one here.
+  let layout: { mockRestore: () => void } | undefined
+  beforeEach(() => {
+    layout = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 20, left: 20, width: 200, height: 40, right: 220, bottom: 60, x: 20, y: 20, toJSON: () => ({}) } as DOMRect)
+  })
+  afterEach(() => layout?.mockRestore())
+
+  it('opens the Threads tour on the Threads page right after setup finishes', async () => {
+    const user = userEvent.setup()
+    renderApp(createBridge())
+    await completeReadySetup(user)
+    await waitFor(() => expect(shell.navigation).toBe('threads'))
+    const dialog = await screen.findByRole('dialog', { name: 'Projects and threads' })
+    expect(dialog).toBeVisible()
+  })
+
+  it('ends the Threads tour from its note', async () => {
+    const user = userEvent.setup()
+    renderApp(createBridge())
+    await completeReadySetup(user)
+    const note = await screen.findByRole('dialog', { name: 'Projects and threads' })
+    // This page has no agents bridge, so the tour may have only the parts it can show: Skip tour, or Done on its last stop.
+    await user.click(within(note).getByRole('button', { name: /^(Skip tour|Done)$/ }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('dismisses the Threads tour with Escape', async () => {
+    const user = userEvent.setup()
+    renderApp(createBridge())
+    await completeReadySetup(user)
+    await screen.findByRole('dialog', { name: 'Projects and threads' })
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('never shows the Threads tour for a profile that is already onboarded', async () => {
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })) }))
+    await openPage('home')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    act(() => shell.navigate('threads'))
+    await waitFor(() => expect(shell.navigation).toBe('threads'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })
 
 describe('transcription pipeline prewarm', () => {
