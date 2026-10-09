@@ -51,7 +51,7 @@ Check the saved snippet with `luac -p ~/.config/hypr/sotto-bindings.lua`, then c
 
 ## Shell plugin
 
-`shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed, Sotto does not show its own floating widget on Linux.
+`shell-plugin/sotto.dictation/` is Sotto's dictation in the Omarchy shell (#850): Sotto's glyph in the bar and, while you dictate, a pill in the shell's own style with Stop and Cancel. When a transcription fails and the recording is kept, the pill offers Try again and Discard. It takes its colours and font from the Omarchy theme and repaints when the theme changes. While the plugin is installed and Sotto's dictation socket has started with a live state file, Sotto does not show its own floating widget on Linux. If either is unavailable, its own widget stays available.
 
 Install it from your desktop session, with the Omarchy shell running:
 
@@ -61,7 +61,7 @@ apps/omarchy/install-shell-plugin.sh --checkout   # runs this checkout's apps/om
 apps/omarchy/install-shell-plugin.sh --command /absolute/path/to/sotto
 ```
 
-The script copies the plugin to `$HOME/.config/omarchy/plugins/sotto.dictation/` and puts the glyph on the bar after Omarchy's indicators with `omarchy bar put`. That folder is the one Omarchy's shell loads plugins from: its `PluginRegistry` builds the path from `$HOME` and ignores `XDG_CONFIG_HOME`, so the script and Sotto, which hides its own widget while the folder exists, do the same. If `XDG_CONFIG_HOME` points elsewhere and holds a copy of the plugin, the script says the shell does not load it. `--command` saves the launcher in the plugin's settings with `omarchy bar set sotto.dictation command <path>`; you can run that yourself later. Run the script again after updating Sotto. A running shell keeps the plugin code it loaded first, so restart it afterwards with `omarchy restart shell`.
+The script copies the plugin to `$HOME/.config/omarchy/plugins/sotto.dictation/` and puts the glyph on the bar after Omarchy's indicators with `omarchy bar put`. That folder is the one Omarchy's shell loads plugins from: its `PluginRegistry` builds the path from `$HOME` and ignores `XDG_CONFIG_HOME`, so the installer and Sotto's folder watch both use it. If `XDG_CONFIG_HOME` points elsewhere and holds a copy of the plugin, the script says the shell does not load it. `--command` saves the launcher in the plugin's settings with `omarchy bar set sotto.dictation command <path>`; you can run that yourself later. Run the script again after updating Sotto. A running shell keeps the plugin code it loaded first, so restart it afterwards with `omarchy restart shell`.
 
 How it behaves:
 

@@ -1,123 +1,126 @@
-Temporary root /tmp/ssi-PxwJnM: mode 700
+Temporary root /tmp/ssi-khLmDI: mode 700
 Live efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923 on wayland-1: no input or config writes
-Checkout e941ef896afb86be87164d96089a448760b2530e; Electron 43.1.0
-Built out/main/index.js: sha256 679030e6d4bf16058819088734f571a8486f540f190d36818016ee0149b6c95f
+Live shell PID 3044: 6 long-running process identities recorded
+Checkout dccd581f588b76722a356419f01487a588b6a1eb; Electron 43.1.0
+Built out/main/index.js: sha256 963b788309c38de1daead44cc63dccd3d66f32fbaf7f87999e548a0a71e6af54
 Built out/main/dictationClient.js: sha256 d3a477efb4a13fd4f7377e7db09b751a5ab1c992a784f52af26e52266fdac851
-Built out/preload/index.js: sha256 ceb0bca0e2567741fc895c4b8a024eaf95cc43786869529f321bc8d1c79db933
-Built out/renderer/index.html: sha256 7b662dce65dbacd3a9f7b13ba2869f4ac11aa19466b8f4859afad5b180c5e912
-Started sizing Hyprland A PID 1435929 in sotto-proof-a6a4ed83ec3049b4a4894cf0def54365-0.scope
-sizing Hyprland A PID 1435929: efb50993780079460b0cbed1363e2166a2de1d9f_1791569866_1094300472 on wayland-2
-Started session Hyprland B PID 1435943 in sotto-proof-a6a4ed83ec3049b4a4894cf0def54365-1.scope
-session Hyprland B PID 1435943: efb50993780079460b0cbed1363e2166a2de1d9f_1791569867_1031972786 on wayland-3
+Built out/preload/index.js: sha256 4dfa77750a3c5940658d1b411fbc5c87d11aa25fbb855de14e3adb74f1d4289a
+Built out/renderer/index.html: sha256 ddde2d9f7c283489607090d7d77cd7b2d4d3bb193dbd2be0378a3d9666536de3
+Started sizing Hyprland A PID 2467463 in sotto-proof-eb1f5deccc0642a7be0620b43463a5e7-0.scope
+sizing Hyprland A PID 2467463: efb50993780079460b0cbed1363e2166a2de1d9f_1791580635_1132692126 on wayland-2
+Started session Hyprland B PID 2467477 in sotto-proof-eb1f5deccc0642a7be0620b43463a5e7-1.scope
+session Hyprland B PID 2467477: efb50993780079460b0cbed1363e2166a2de1d9f_1791580635_423335168 on wayland-3
 Nested configerrors: empty; B outputs WAYLAND-1=1600x1000 and WAYLAND-2=1280x800
-Started nested Omarchy shell PID 1436201 in sotto-proof-a6a4ed83ec3049b4a4894cf0def54365-2.scope
-Install: Copied the plugin to /tmp/ssi-PxwJnM/home/.config/omarchy/plugins/sotto.dictation.
+Nested disabled plugins: omarchy.polkit, omarchy.lock, omarchy.idle, omarchy.nightlight, omarchy.weather, omarchy.system-update, omarchy.clipboard, omarchy.battery
+Started nested Omarchy shell PID 2467736 in sotto-proof-eb1f5deccc0642a7be0620b43463a5e7-2.scope
+Install: Copied the plugin to /tmp/ssi-khLmDI/home/.config/omarchy/plugins/sotto.dictation.
 sotto.dictation is on the bar
-Sotto's glyph runs /home/zach/Projects/Sotto/.worktrees/shell-integration/apps/omarchy/sotto.
-Started real app integration journey PID 1437235 in sotto-proof-a6a4ed83ec3049b4a4894cf0def54365-3.scope
-Built Sotto PID 1437293; pidStart 177604180; scenario success; one HOME and runtime
-STATE launch-success: {"version":1,"pid":1437293,"pidStart":177604180,"dictation":null,"state":"idle","since":1791569869812,"updatedAt":1791569869812,"detail":null,"kept":false,"edge":"top"}
+Sotto's glyph runs /home/zach/Projects/Sotto/.worktrees/shell-plugin/apps/omarchy/sotto.
+Started real app integration journey PID 2468836 in sotto-proof-eb1f5deccc0642a7be0620b43463a5e7-3.scope
+Built Sotto PID 2468850; pidStart 178681124; scenario success; one HOME and runtime
+STATE launch-success: {"version":1,"pid":2468850,"pidStart":178681124,"dictation":null,"state":"idle","since":1791580639389,"updatedAt":1791580639389,"detail":null,"kept":false,"edge":"top"}
 CAPTURE base-WAYLAND-1: raw/base-WAYLAND-1.png (WAYLAND-1)
 CAPTURE base-WAYLAND-2: raw/base-WAYLAND-2.png (WAYLAND-2)
-STATE a-plugin-present-widget-unmapped: {"version":1,"pid":1437293,"pidStart":177604180,"dictation":null,"state":"idle","since":1791569869812,"updatedAt":1791569869812,"detail":null,"kept":false,"edge":"top"}
+STATE a-plugin-present-widget-unmapped: {"version":1,"pid":2468850,"pidStart":178681124,"dictation":null,"state":"idle","since":1791580639389,"updatedAt":1791580639389,"detail":null,"kept":false,"edge":"top"}
 CAPTURE a-idle: raw/a-idle.png (WAYLAND-1)
 Pointer click: b-toggle: bar glyph (real toggle) at 800,13
-STATE b-toggle: {"version":1,"pid":1437293,"pidStart":177604180,"dictation":"9cbfc5a5305b08da433a34914552bf23cf8b6589d03794d9cdbaa680187c5560","state":"listening","since":1791569873211,"updatedAt":1791569873211,"detail":null,"kept":false,"edge":"top"}
+STATE b-toggle: {"version":1,"pid":2468850,"pidStart":178681124,"dictation":"3ae6d034e5603efb794a84b330ff1e6421403e9f506bcf441fedd7536a9658b1","state":"listening","since":1791580643006,"updatedAt":1791580643006,"detail":null,"kept":false,"edge":"top"}
 CAPTURE b-listening: raw/b-listening.png (WAYLAND-1)
 BOUNDS b-listening: 284x44 at 658,31
 BOUNDS b-listening: 284x44 at 658,31
 Pointer click: b-listening: Stop (real stop) at 839,53
-STATE c-stop-copied: {"version":1,"pid":1437293,"pidStart":177604180,"dictation":"9cbfc5a5305b08da433a34914552bf23cf8b6589d03794d9cdbaa680187c5560","state":"copied","since":1791569874890,"updatedAt":1791569874890,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
+STATE c-stop-copied: {"version":1,"pid":2468850,"pidStart":178681124,"dictation":"3ae6d034e5603efb794a84b330ff1e6421403e9f506bcf441fedd7536a9658b1","state":"copied","since":1791580644725,"updatedAt":1791580644725,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
 Scripted output observed: clipboard equals the fixture; pasteAttempts=0 (text omitted)
 CAPTURE c-copied: raw/c-copied.png (WAYLAND-1)
-STATE c-pill-expired: {"version":1,"pid":1437293,"pidStart":177604180,"dictation":"9cbfc5a5305b08da433a34914552bf23cf8b6589d03794d9cdbaa680187c5560","state":"copied","since":1791569874890,"updatedAt":1791569874890,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
+STATE c-pill-expired: {"version":1,"pid":2468850,"pidStart":178681124,"dictation":"3ae6d034e5603efb794a84b330ff1e6421403e9f506bcf441fedd7536a9658b1","state":"copied","since":1791580644725,"updatedAt":1791580644725,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
 CAPTURE c-expired: raw/c-expired.png (WAYLAND-1)
-Graceful quit PID 1437293: state file absent; process stopped
-Built Sotto PID 1437513; pidStart 177605233; scenario transcription-turned-away-once; one HOME and runtime
-STATE launch-transcription-turned-away-once: {"version":1,"pid":1437513,"pidStart":177605233,"dictation":null,"state":"idle","since":1791569880261,"updatedAt":1791569880261,"detail":null,"kept":false,"edge":"top"}
+Graceful quit PID 2468850: state file absent; process stopped
+Built Sotto PID 2469235; pidStart 178682225; scenario transcription-turned-away-once; one HOME and runtime
+STATE launch-transcription-turned-away-once: {"version":1,"pid":2469235,"pidStart":178682225,"dictation":null,"state":"idle","since":1791580650236,"updatedAt":1791580650236,"detail":null,"kept":false,"edge":"top"}
 Pointer click: d-start-for-retry: bar glyph (real toggle) at 800,13
-STATE d-start-for-retry: {"version":1,"pid":1437513,"pidStart":177605233,"dictation":"4c0f10706979aea0c9931532d651cc3dc0a50c07d2b447f15fe3fc82a67674c7","state":"listening","since":1791569880900,"updatedAt":1791569880900,"detail":null,"kept":false,"edge":"top"}
+STATE d-start-for-retry: {"version":1,"pid":2469235,"pidStart":178682225,"dictation":"45afbcc7ab5f7e7bd04611d378e7dab2dc1e230d2ccaafc9d554156087c9ffc4","state":"listening","since":1791580650852,"updatedAt":1791580650852,"detail":null,"kept":false,"edge":"top"}
 CAPTURE d-listening: raw/d-listening.png (WAYLAND-1)
 BOUNDS d-listening: 284x44 at 658,31
 Pointer click: d-listening: Stop at 839,53
-STATE d-failed-kept: {"version":1,"pid":1437513,"pidStart":177605233,"dictation":"4c0f10706979aea0c9931532d651cc3dc0a50c07d2b447f15fe3fc82a67674c7","state":"failed","since":1791569882477,"updatedAt":1791569882477,"detail":"The transcription service is busy. Recording kept.","kept":true,"edge":"top"}
+STATE d-failed-kept: {"version":1,"pid":2469235,"pidStart":178682225,"dictation":"45afbcc7ab5f7e7bd04611d378e7dab2dc1e230d2ccaafc9d554156087c9ffc4","state":"failed","since":1791580652485,"updatedAt":1791580652485,"detail":"The transcription service is busy. Recording kept.","kept":true,"edge":"top"}
 CAPTURE d-failed-kept: raw/d-failed-kept.png (WAYLAND-1)
 BOUNDS d-failed-kept: 618x44 at 491,31
 Pointer click: d-failed-kept: Try again (real retry) at 983,53
-STATE d-retry-copied: {"version":1,"pid":1437513,"pidStart":177605233,"dictation":"4c0f10706979aea0c9931532d651cc3dc0a50c07d2b447f15fe3fc82a67674c7","state":"copied","since":1791569884036,"updatedAt":1791569884036,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
+STATE d-retry-copied: {"version":1,"pid":2469235,"pidStart":178682225,"dictation":"45afbcc7ab5f7e7bd04611d378e7dab2dc1e230d2ccaafc9d554156087c9ffc4","state":"copied","since":1791580654091,"updatedAt":1791580654091,"detail":"Copied — paste with Super+V","kept":false,"edge":"top"}
 CAPTURE d-retry-copied: raw/d-retry-copied.png (WAYLAND-1)
-Graceful quit PID 1437513: state file absent; process stopped
-Built Sotto PID 1437752; pidStart 177605784; scenario transcription-turned-away-once; one HOME and runtime
-STATE launch-transcription-turned-away-once: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":null,"state":"idle","since":1791569885789,"updatedAt":1791569885789,"detail":null,"kept":false,"edge":"top"}
+Graceful quit PID 2469235: state file absent; process stopped
+Built Sotto PID 2469499; pidStart 178682792; scenario transcription-turned-away-once; one HOME and runtime
+STATE launch-transcription-turned-away-once: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":null,"state":"idle","since":1791580655896,"updatedAt":1791580655896,"detail":null,"kept":false,"edge":"top"}
 Pointer click: d-start-for-discard: bar glyph (real toggle) at 800,13
-STATE d-start-for-discard: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":"c1165bbcefe0be7125d52f47df0d50cd5aae41866aef4f4bf27bd3dca85d5151","state":"listening","since":1791569886414,"updatedAt":1791569886414,"detail":null,"kept":false,"edge":"top"}
+STATE d-start-for-discard: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":"28ae2b385703f0cdabda1e3c90e4e4c9c9be67d5552df2eb617f77bfc66e18fc","state":"listening","since":1791580656502,"updatedAt":1791580656502,"detail":null,"kept":false,"edge":"top"}
 CAPTURE d-discard-listening: raw/d-discard-listening.png (WAYLAND-1)
 BOUNDS d-discard-listening: 284x44 at 658,31
 Pointer click: d-discard-listening: Stop at 839,53
-STATE d-failed-before-discard: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":"c1165bbcefe0be7125d52f47df0d50cd5aae41866aef4f4bf27bd3dca85d5151","state":"failed","since":1791569887993,"updatedAt":1791569887993,"detail":"The transcription service is busy. Recording kept.","kept":true,"edge":"top"}
+STATE d-failed-before-discard: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":"28ae2b385703f0cdabda1e3c90e4e4c9c9be67d5552df2eb617f77bfc66e18fc","state":"failed","since":1791580658097,"updatedAt":1791580658097,"detail":"The transcription service is busy. Recording kept.","kept":true,"edge":"top"}
 CAPTURE d-before-discard: raw/d-before-discard.png (WAYLAND-1)
 BOUNDS d-before-discard: 618x44 at 491,31
 Pointer click: d-before-discard: Discard (real discard) at 1062,53
-STATE d-discard-idle: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":null,"state":"idle","since":1791569889543,"updatedAt":1791569889543,"detail":null,"kept":false,"edge":"top"}
+STATE d-discard-idle: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":null,"state":"idle","since":1791580659698,"updatedAt":1791580659698,"detail":null,"kept":false,"edge":"top"}
 CAPTURE d-discarded: raw/d-discarded.png (WAYLAND-1)
 Pointer click: e-start-for-drag: bar glyph (real toggle) at 800,13
-STATE e-start-for-drag: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":"94a2c2ff415aa743afbb70b790ce8227cc30976986f6c2bf01b380a02120cccb","state":"listening","since":1791569890577,"updatedAt":1791569890577,"detail":null,"kept":false,"edge":"top"}
+STATE e-start-for-drag: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":"34bd7fa1e6ebe62047dc1b0dce91cfd2aa04a810fee1a7aa14228100d3f833cd","state":"listening","since":1791580660766,"updatedAt":1791580660766,"detail":null,"kept":false,"edge":"top"}
 CAPTURE e-before-drag: raw/e-before-drag.png (WAYLAND-1)
 BOUNDS e-before-drag: 284x44 at 658,31
 CAPTURE e-dragging: raw/e-dragging.png (WAYLAND-1)
-STATE e-place-left: {"version":1,"pid":1437752,"pidStart":177605784,"dictation":"94a2c2ff415aa743afbb70b790ce8227cc30976986f6c2bf01b380a02120cccb","state":"listening","since":1791569890577,"updatedAt":1791569893808,"detail":null,"kept":false,"edge":"left"}
+STATE e-place-left: {"version":1,"pid":2469499,"pidStart":178682792,"dictation":"34bd7fa1e6ebe62047dc1b0dce91cfd2aa04a810fee1a7aa14228100d3f833cd","state":"listening","since":1791580660766,"updatedAt":1791580664042,"detail":null,"kept":false,"edge":"left"}
 CAPTURE e-snapped-left: raw/e-snapped-left.png (WAYLAND-1)
 BOUNDS e-snapped-left: 44x284 at 5,371
-Graceful quit PID 1437752: state file absent; process stopped
-Built Sotto PID 1438035; pidStart 177606776; scenario success; one HOME and runtime
-STATE launch-success: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":null,"state":"idle","since":1791569895687,"updatedAt":1791569895687,"detail":null,"kept":false,"edge":"left"}
-STATE e-relaunch-saved-left: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":null,"state":"idle","since":1791569895687,"updatedAt":1791569895687,"detail":null,"kept":false,"edge":"left"}
+Graceful quit PID 2469499: state file absent; process stopped
+Built Sotto PID 2469965; pidStart 178683802; scenario success; one HOME and runtime
+STATE launch-success: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":null,"state":"idle","since":1791580665978,"updatedAt":1791580665978,"detail":null,"kept":false,"edge":"left"}
+STATE e-relaunch-saved-left: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":null,"state":"idle","since":1791580665978,"updatedAt":1791580665978,"detail":null,"kept":false,"edge":"left"}
 Pointer click: e-restart-dictation: bar glyph (real toggle) at 800,13
-STATE e-restart-dictation: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":"104be1758e66393f66653a896e29acf6786c5999fba4818c216b69c2ca845993","state":"listening","since":1791569896317,"updatedAt":1791569896317,"detail":null,"kept":false,"edge":"left"}
-STATE e-restarted-left: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":"104be1758e66393f66653a896e29acf6786c5999fba4818c216b69c2ca845993","state":"listening","since":1791569896317,"updatedAt":1791569896317,"detail":null,"kept":false,"edge":"left"}
+STATE e-restart-dictation: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":"128f18090aa7889ef81e74ead5360ab1d92887ec72d15d8b5a289bf1f1e19965","state":"listening","since":1791580666621,"updatedAt":1791580666621,"detail":null,"kept":false,"edge":"left"}
+STATE e-restarted-left: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":"128f18090aa7889ef81e74ead5360ab1d92887ec72d15d8b5a289bf1f1e19965","state":"listening","since":1791580666621,"updatedAt":1791580666621,"detail":null,"kept":false,"edge":"left"}
 CAPTURE e-restarted-left: raw/e-restarted-left.png (WAYLAND-1)
 BOUNDS e-restarted-left: 44x284 at 5,371
 BOUNDS e-restarted-left: 44x284 at 5,371
 Pointer click: e-restarted-left: upright Cancel at 27,611
-STATE e-cancel-after-restart: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":null,"state":"idle","since":1791569897998,"updatedAt":1791569897998,"detail":null,"kept":false,"edge":"left"}
+STATE e-cancel-after-restart: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":null,"state":"idle","since":1791580668294,"updatedAt":1791580668294,"detail":null,"kept":false,"edge":"left"}
 Pointer click: f-before-kill: bar glyph (real toggle) at 800,13
-STATE f-before-kill: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":"086f6d121061161e727c597d3734ba38885069a323e11660a305fa4b6f26ea5b","state":"listening","since":1791569898564,"updatedAt":1791569898564,"detail":null,"kept":false,"edge":"left"}
+STATE f-before-kill: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":"601547de5abe30d1a86b3a5391cac49c1f54cbd5030f451c8f3eec9d214b5cca","state":"listening","since":1791580668871,"updatedAt":1791580668871,"detail":null,"kept":false,"edge":"left"}
 CAPTURE f-before-kill: raw/f-before-kill.png (WAYLAND-1)
-STATE f-killed-stale-listening: {"version":1,"pid":1438035,"pidStart":177606776,"dictation":"086f6d121061161e727c597d3734ba38885069a323e11660a305fa4b6f26ea5b","state":"listening","since":1791569898564,"updatedAt":1791569898564,"detail":null,"kept":false,"edge":"left"}
-SIGKILL real main PID 1438035; pidStart 177606776; stale file retained
+STATE f-killed-stale-listening: {"version":1,"pid":2469965,"pidStart":178683802,"dictation":"601547de5abe30d1a86b3a5391cac49c1f54cbd5030f451c8f3eec9d214b5cca","state":"listening","since":1791580668871,"updatedAt":1791580668871,"detail":null,"kept":false,"edge":"left"}
+SIGKILL real main PID 2469965; pidStart 178683802; stale file retained
 CAPTURE f-sotto-quit: raw/f-sotto-quit.png (WAYLAND-1)
 BOUNDS f-sotto-quit: 52x424 at 5,301
-Built Sotto PID 1438238; pidStart 177607660; scenario success; one HOME and runtime
-STATE launch-success: {"version":1,"pid":1438238,"pidStart":177607660,"dictation":null,"state":"idle","since":1791569904545,"updatedAt":1791569904545,"detail":null,"kept":false,"edge":"left"}
+Built Sotto PID 2470357; pidStart 178684709; scenario success; one HOME and runtime
+STATE launch-success: {"version":1,"pid":2470357,"pidStart":178684709,"dictation":null,"state":"idle","since":1791580675061,"updatedAt":1791580675061,"detail":null,"kept":false,"edge":"left"}
 Pointer click: g: output 2 glyph (real toggle) at 2240,13
-STATE g-output2-listening: {"version":1,"pid":1438238,"pidStart":177607660,"dictation":"36f877996238a044245b12378b0e2e40e56acddf9006b5116a50a90bb4e3c350","state":"listening","since":1791569905466,"updatedAt":1791569905466,"detail":null,"kept":false,"edge":"left"}
+STATE g-output2-listening: {"version":1,"pid":2470357,"pidStart":178684709,"dictation":"b4da4894859cd00303eb88f3696c16ec2df14ae313ddd243dbf7946d2c48fd2a","state":"listening","since":1791580675996,"updatedAt":1791580675996,"detail":null,"kept":false,"edge":"left"}
 CAPTURE g-output1-start: raw/g-output1-start.png (WAYLAND-1)
 CAPTURE g-output2-start: raw/g-output2-start.png (WAYLAND-2)
-STATE g-pointer-moved-pill-stays: {"version":1,"pid":1438238,"pidStart":177607660,"dictation":"36f877996238a044245b12378b0e2e40e56acddf9006b5116a50a90bb4e3c350","state":"listening","since":1791569905466,"updatedAt":1791569905466,"detail":null,"kept":false,"edge":"left"}
+STATE g-pointer-moved-pill-stays: {"version":1,"pid":2470357,"pidStart":178684709,"dictation":"b4da4894859cd00303eb88f3696c16ec2df14ae313ddd243dbf7946d2c48fd2a","state":"listening","since":1791580675996,"updatedAt":1791580675996,"detail":null,"kept":false,"edge":"left"}
 CAPTURE g-output1-moved: raw/g-output1-moved.png (WAYLAND-1)
 CAPTURE g-output2-stays: raw/g-output2-stays.png (WAYLAND-2)
 Rule A: focused output changed to WAYLAND-1; only WAYLAND-2 has sotto-dictation overlay
 Uninstall: Took Sotto's glyph off the bar.
-Removed Sotto's shell plugin from /tmp/ssi-PxwJnM/home/.config/omarchy/plugins.
-STATE h-plugin-removed-widget-mapped: {"version":1,"pid":1438238,"pidStart":177607660,"dictation":"36f877996238a044245b12378b0e2e40e56acddf9006b5116a50a90bb4e3c350","state":"listening","since":1791569905466,"updatedAt":1791569905466,"detail":null,"kept":false,"edge":"left"}
+Removed Sotto's shell plugin from /tmp/ssi-khLmDI/home/.config/omarchy/plugins.
+STATE h-plugin-removed-widget-mapped: {"version":1,"pid":2470357,"pidStart":178684709,"dictation":"b4da4894859cd00303eb88f3696c16ec2df14ae313ddd243dbf7946d2c48fd2a","state":"listening","since":1791580675996,"updatedAt":1791580675996,"detail":null,"kept":false,"edge":"left"}
 CAPTURE h-widget-returned: raw/h-widget-returned.png (WAYLAND-1)
 CAPTURE h-output2-no-pill: raw/h-output2-no-pill.png (WAYLAND-2)
 Electron widget visible=true and compositor mapped=true; plugin absent; no shell pill on either output
-Graceful quit PID 1438238: state file absent; process stopped
+Graceful quit PID 2470357: state file absent; process stopped
 Curated eight captures from the real nested-output frames
 PASS: all eight integrated steps
-Stopped sizing Hyprland A PID 1435929
-Stopped session Hyprland B PID 1435943
-Stopped nested Omarchy shell PID 1436201
-Stopped real app integration journey PID 1437235
-Stopped proof slice app-sottoproofa6a4ed83ec3049b4a4894cf0def54365.slice
+Stopped sizing Hyprland A PID 2467463
+Stopped session Hyprland B PID 2467477
+Stopped nested Omarchy shell PID 2467736
+Stopped real app integration journey PID 2468836
+Stopped proof slice app-sottoproofeb1f5deccc0642a7be0620b43463a5e7.slice
 Recorded PIDs still running: []
 Proof cgroup processes after cleanup: []
 Owned processes still running: []
-Removed owned Hyprland folder efb50993780079460b0cbed1363e2166a2de1d9f_1791569866_1094300472
-Removed owned Hyprland folder efb50993780079460b0cbed1363e2166a2de1d9f_1791569867_1031972786
+Removed owned Hyprland folder efb50993780079460b0cbed1363e2166a2de1d9f_1791580635_1132692126
+Removed owned Hyprland folder efb50993780079460b0cbed1363e2166a2de1d9f_1791580635_423335168
 Prior Hyprland instances preserved: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
 Live /home/zach/.config/omarchy unchanged
 Live /home/zach/.config/hypr unchanged
 Live /home/zach/.local/state/omarchy unchanged
-Temporary root removed: /tmp/ssi-PxwJnM
+Live shell long-running process identities unchanged: 6
+Temporary root removed: /tmp/ssi-khLmDI
