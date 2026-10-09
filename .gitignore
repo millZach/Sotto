@@ -215,3 +215,15 @@ artifacts/linux-shell-plumbing/*
 !artifacts/linux-shell-plumbing/plugin-present.png
 !artifacts/linux-shell-plumbing/plugin-socket-held.png
 !artifacts/linux-shell-plumbing/widget-returned.png
+
+# Real Sotto and Omarchy shell proof; retain the note's curated evidence only.
+artifacts/omarchy-shell-integration/*
+!artifacts/omarchy-shell-integration/proof.txt
+!artifacts/omarchy-shell-integration/a-idle.png
+!artifacts/omarchy-shell-integration/b-listening.png
+!artifacts/omarchy-shell-integration/c-copied-expired.png
+!artifacts/omarchy-shell-integration/d-retry-discard.png
+!artifacts/omarchy-shell-integration/e-drag-restart.png
+!artifacts/omarchy-shell-integration/f-sotto-quit.png
+!artifacts/omarchy-shell-integration/g-two-outputs.png
+!artifacts/omarchy-shell-integration/h-widget-returned.png

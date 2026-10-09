@@ -1,0 +1,78 @@
+# Sotto and its Omarchy shell plugin together
+
+October 9, 2026. [#850](https://github.com/millZach/Sotto/issues/850), including both version-1 contract addenda. Local branch `integration/omarchy-shell`, joining the plumbing from PR #877 and the plugin at `33a0cd6d`. The final proof runs after sandbox correction `bbe2b1ae` and scripted retry fixture `e941ef89`. Nothing was pushed.
+
+**VERIFIED on forge:** the built, unpackaged Sotto 0.1.34, Electron 43.1.0, and the installed `sotto.dictation` plugin running together in the real Omarchy 4.0.4 shell, under Hyprland 0.56.2 and Quickshell 0.3.1. All eight requested steps passed. There are 26 actual state-file observations and 24 nested-output captures. Every frame was inspected, including the eight curated images below.
+
+The microphone, transcription service and output effects use Sotto's existing development-only e2e boundary. The added `transcription-turned-away-once` scenario refuses the first request with the existing rate-limit error and accepts the next. Sotto's controller, kept recording, shell-state publisher, socket, checkout launcher, placement store, plugin folder watch, Quickshell service, bar and pill are real. No state file is seeded or edited by the proof. Dictation starts, stops, retries, discards, cancels and placement changes come exclusively from pointer presses and dragging in the plugin. App quit and SIGKILL are lifecycle operations from the harness; its Electron connection otherwise only observes windows and the scripted output.
+
+This establishes the two sides' integration. It does not establish a physical microphone, a paid transcription provider, actual Wayland clipboard delivery or automatic paste, a packaged release, physical displays or a physical mouse. Those effects are scripted here, as in the plumbing proof. The earlier plugin note retains its light, small-display and motion checks; this integration run uses Tokyo Night with nested animations disabled and adds no design baseline.
+
+## Results
+
+The state file is `$XDG_RUNTIME_DIR/sotto/dictation-state.json`. The harness checks every observation against exactly `version`, `pid`, `pidStart`, `dictation`, `state`, `since`, `updatedAt`, `detail`, `kept` and `edge`. It checks folder mode 0700 and file mode 0600, compares `pid` to the actual Electron main PID and `pidStart` to `/proc/<pid>/stat` field 22 after the last `)`, and refuses the fixture transcript in any state. Every new dictation has a new opaque identifier; Retry and an edge-only change keep that identifier. Idle carries null. The complete JSON observations and process evidence are in [proof.txt](../../artifacts/omarchy-shell-integration/proof.txt); the line numbers below identify each result's actual state.
+
+| Step | Result | Capture | State-file observation in proof.txt |
+| --- | --- | --- | --- |
+| a | Installed with `--command` naming this checkout's actual `apps/omarchy/sotto`. Electron reports its widget hidden; Hyprland has no mapped Sotto Widget. The glyph rests and there is no pill. | [a-idle.png](../../artifacts/omarchy-shell-integration/a-idle.png) | Line 22: `idle`, `dictation:null`, `edge:"top"`, PID 1437293, start 177604180. |
+| b | A glyph click runs real `toggle`. The pill has Stop and Cancel on focused output 1, 284×44 at 658,31, centred under the bar. The Electron widget remains unmapped. | [b-listening.png](../../artifacts/omarchy-shell-integration/b-listening.png) | Line 25: `listening`, a new non-null dictation, PID 1437293. |
+| c | Stop produces `copied`, with actual detail `Copied — paste with Super+V`. The scripted clipboard equals the fixture and no paste was attempted; the text is omitted from the evidence. The shell pill expires after its copied hold while the published copied result remains. | [c-copied-expired.png](../../artifacts/omarchy-shell-integration/c-copied-expired.png), before and after expiry | Lines 30 and 33: `copied`, `kept:false`, same dictation as b. |
+| d | Stop fails with `The transcription service is busy. Recording kept.` The pill shows it word for word with Try again and Discard. One Try again succeeds, preserving the dictation identifier. After relaunching the same one-refusal fixture, another Stop fails and Discard clears the kept recording and pill. | [d-retry-discard.png](../../artifacts/omarchy-shell-integration/d-retry-discard.png), failure, retry success, second failure, discarded | Lines 43, 47, 57 and 61: `failed/true`, `copied/false`, `failed/true`, then `idle/false` with null dictation. |
+| e | Dragging previews the left edge, then snaps upright at 5,371, 44×284. Real `place left` changes both the state and placement record v3. After quit and relaunch in the same profile, the next glyph click opens at that same edge. Upright Cancel also returns to idle. | [e-drag-restart.png](../../artifacts/omarchy-shell-integration/e-drag-restart.png), drag, snap, restarted pill | Line 68: `listening`, `edge:"left"`, identifier unchanged by place. Line 77: `listening`, `edge:"left"`, new main PID 1438035 and a new dictation. |
+| f | A new dictation starts, then real main PID 1438035 is killed with SIGKILL. The stale file remains. The plugin replaces recording controls with `Sotto quit. This dictation was lost. Open Sotto to dictate again.` and Dismiss, on the original output. | [f-sotto-quit.png](../../artifacts/omarchy-shell-integration/f-sotto-quit.png) | Line 86: stale `listening`, PID 1438035, `pidStart:177606776`; line 87 records the kill. This JSON is evidence of the dead process, not an ongoing recording. |
+| g | The pointer focuses output 2 and clicks its glyph. Only that output gets the pill. Moving the pointer back to output 1 changes Hyprland focus, while the same pill stays on output 2. | [g-two-outputs.png](../../artifacts/omarchy-shell-integration/g-two-outputs.png), output 1 then 2 in each row; before then after the move | Lines 93 and 96: unchanged `listening` and dictation, PID 1438238. Layer observations establish which output owns the pill. |
+| h | The real uninstall script takes the glyph off the bar and removes the plugin folder. Sotto's Electron widget becomes visible and mapped during the existing dictation; neither output retains the shell pill. | [h-widget-returned.png](../../artifacts/omarchy-shell-integration/h-widget-returned.png) | Line 102: unchanged `listening`, PID 1438238, `edge:"left"`. |
+
+The Electron fallback's position and border in h belong to the nested compositor: an Electron window cannot place itself on Wayland. This proof checks its return and mapping, not a new fallback placement design. Registry rescanning also reloads Omarchy's background. An early h capture caught the blank reload frame; the final harness waits until an actual wallpaper pixel matches the original desktop before retaining h.
+
+## Reproduce
+
+Run from this checkout, without root:
+
+```sh
+mise exec node@24.21.0 -- npm ci
+mise exec node@24.21.0 -- node node_modules/electron/install.js
+mise exec node@24.21.0 -- npm run runtime:prepare
+mise exec node@24.21.0 -- npm run build
+mise exec node@24.21.0 -- node --input-type=module -e "import { readFileSync } from 'node:fs'; import { verifyExternalDependencyInventories } from './scripts/release-external-dependencies.mjs'; verifyExternalDependencyInventories({ main: JSON.parse(readFileSync('out/main/external-dependencies.json','utf8')), preload: JSON.parse(readFileSync('out/preload/external-dependencies.json','utf8')) }, ['node-pty','zod','electron']); console.log('allowlist check: PASS')"
+mise exec node@24.21.0 -- node scripts/verify-omarchy-shell-integration.mjs
+```
+
+The [script](../../scripts/verify-omarchy-shell-integration.mjs) reuses `owned-proof-processes.mjs` and the compiled `omarchy-nested-pointer.c` helper. It requires the existing Omarchy installation, Hyprland/hyprctl, Quickshell, grim, ImageMagick, a C compiler with Wayland client headers, D-Bus and user systemd. It refuses evidence destinations containing links. It generates the eight curated captures on every successful run, alongside ignored raw frames, and copies evidence only after process cleanup. `--curate` regenerates the curated images from the retained raw frames without launching anything.
+
+## Isolation and cleanup
+
+All app, shell and input scenes run together in session Hyprland B, with one HOME and one private runtime under a mode-0700 `/tmp/ssi-*` root outside the checkout. Sotto's existing e2e boundary uses its profile as the command runtime, so this same private runtime is also its test profile. Its other XDG folders and temporary files live under the private root too. Sotto starts minimised; Electron stays running while its main window is hidden, as it does for dictation from another app.
+
+Sizing Hyprland A is only a host for B's two Wayland outputs. The locked live compositor chooses A's size; A floats B's outputs at exact 1600×1000 and 1280×800 sizes. No sizing, focus or input request reaches the live compositor. Both owned compositor identities are discovered by their actual PIDs, and the pointer refuses the live signature and Wayland socket taken from the live Quickshell process. Every long-lived process and its descendants stay in this run's systemd slice. Scope creation uses the user manager's runtime; the command switches to the private runtime after entering the scope. Nested shell IPC uses only that private runtime and its own D-Bus session.
+
+**Sandbox defect found and corrected, plugin branch:** `bbe2b1ae`, Keep nested shell proofs away from live clipboard watchers. Omarchy's unrelated clipboard service starts with a global `pkill` matching clipboard watchers. The first integrated shell attempt loaded it, restarted the live shell's watchers and advanced the empty live `clipboard-images` folder's timestamp. No key or pointer input was sent to the live session, and live configuration files were not changed. The corrected verifier disables this service before the shell starts, in addition to polkit, lock, idle and night light. The same correction is applied to the older stand-in verifier; its 88-check journey was not rerun here. Every subsequent integrated cleanup checked all three live configuration/state trees unchanged, including file and directory identities, sizes and modification times.
+
+No production plumbing or plugin fix was needed. `e941ef89`, Script one transcription refusal before a successful retry, is a development fixture for this proof and belongs with it on the plugin branch. It adds no runtime dependency, provider contact, setting, permission or product decision. README, guide, CONTEXT and ADRs remain accurate. The standards review checked privacy, Linux confinement, ownership and cleanup; the ticket review checked each owner decision and both addenda against the actual journey.
+
+The final run stopped sizing compositor PID 1435929, session compositor PID 1435943, nested shell PID 1436201 and journey PID 1437235, along with all descendants, then removed only the owned compositor folders. [proof.txt](../../artifacts/omarchy-shell-integration/proof.txt) ends with:
+
+```text
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+Prior Hyprland instances preserved: ["efb50993780079460b0cbed1363e2166a2de1d9f_1789793874_889692923"]
+Live /home/zach/.config/omarchy unchanged
+Live /home/zach/.config/hypr unchanged
+Live /home/zach/.local/state/omarchy unchanged
+Temporary root removed: /tmp/ssi-PxwJnM
+```
+
+## Gates
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` | PASS, all three TypeScript projects |
+| `npm run lint` | PASS, zero errors or warnings |
+| `npm test -- --maxWorkers=2` | PASS, 631 files and 9,446 tests; 50 files and 182 tests skipped; 529.32 s |
+| `npm run notices:verify` | PASS, 174 components |
+| `npm run build` | PASS |
+| Built main/preload dependency allowlist | `allowlist check: PASS` |
+| Integrated built-app journey | PASS, eight steps, 26 state observations, 24 raw frames |
+
+Typecheck and the complete suite each ran once at the end. The first lint run found one missing explicit `Buffer` import in the new Node script; after adding the builtin import, only lint was repeated and passed. No test deadlines, worker limits or skip conditions changed. The final gate-results edit is documentation only.
