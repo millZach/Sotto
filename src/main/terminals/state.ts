@@ -17,7 +17,8 @@ export class TerminalAgentStateMachine {
   private screenWork = false
   private interrupted = false
   private completion = false
-  private request: string | undefined
+  private completionViewed = false
+  private requests = new Set<string>()
   private candidateSession: string | undefined
   private conflictingSession = false
   private completedTurns = new Set<string>()
@@ -35,8 +36,8 @@ export class TerminalAgentStateMachine {
     this.providerSessionId = providerSessionId
   }
   started(): void { this.live = true; this.reconcile() }
-  setVisible(visible: boolean): void { this.visible = visible; if (visible && this.state === 'just-finished') this.state = 'idle' }
-  resize(cols: number, rows: number): void { this.screen.resize(cols, rows); this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable' }
+  setVisible(visible: boolean): void { this.visible = visible; if (visible && this.completion) this.completionViewed = true; if (visible && this.state === 'just-finished') this.state = 'idle' }
+  resize(cols: number, rows: number): void { this.screen.resize(cols, rows); this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'; this.reconcile() }
   output(chunk: string): void {
     if (this.state === 'exited') return
     this.screen.write(chunk); this.fresh = true
@@ -50,18 +51,18 @@ export class TerminalAgentStateMachine {
   /** Input invalidates a screen-only request. Ctrl+C cancels; Grok's Escape deliberately does not. */
   input(data: string): void {
     if (this.state === 'exited') return
-    const submitted = /[\r\n]/u.test(data) && this.inputReady && !this.request
+    const submitted = /[\r\n]/u.test(data) && this.inputReady && this.requests.size === 0
     if (this.inputReady && !this.draftStarted && data.charCodeAt(0) >= 32) { this.localCommand = data.trimStart().startsWith('/'); this.draftStarted = true }
     const cancel = data.includes('\x03') || this.provider !== 'grok' && data === '\x1b' && this.state === 'working'
     this.fresh = false; this.evidence = { detection: 'unavailable' }; this.detection = 'unavailable'
-    if (cancel) { this.interrupted = true; this.completion = false; this.knownWork = false; this.screenWork = false; this.request = undefined; this.pendingSubmission = false }
+    if (cancel) { this.interrupted = true; this.completion = false; this.completionViewed = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.pendingSubmission = false }
     if (submitted && !cancel && !this.localCommand) {
-      this.state = 'working'; this.knownWork = true; this.interrupted = false; this.completion = false; this.inputReady = false; this.finishedObserved = false
+      this.state = 'working'; this.knownWork = true; this.interrupted = false; this.completion = false; this.completionViewed = false; this.inputReady = false; this.finishedObserved = false
       // A PTY can echo into its old ready screen before drawing the new turn. Only a current work frame or admitted completion ends this reservation.
       this.pendingSubmission = true
     }
     if (submitted || cancel) { this.draftStarted = false; this.localCommand = false }
-    else if (!this.request && this.state === 'needs-you') this.state = this.knownWork ? 'working' : 'idle'
+    else if (this.requests.size === 0 && this.state === 'needs-you') this.state = this.knownWork ? 'working' : 'idle'
   }
   hook(event: TerminalAgentHookEvent): void {
     if (this.state === 'exited' || event.runId !== this.runId || this.seen.has(event.eventId)) return
@@ -70,7 +71,7 @@ export class TerminalAgentStateMachine {
     if (this.provider === 'codex' && event.providerSessionId) {
       if (this.candidateSession && this.candidateSession !== event.providerSessionId) this.conflictingSession = true
       this.candidateSession ??= event.providerSessionId
-      if (this.conflictingSession) this.providerSessionId = undefined
+      if (this.conflictingSession) { this.providerSessionId = undefined; this.completion = false }
     }
     switch (event.kind) {
       case 'session-start': this.hooksKnown = true; this.awaitingReady = true; break // SessionStart precedes the actual live input prompt.
@@ -82,18 +83,19 @@ export class TerminalAgentStateMachine {
         this.knownWork = true; this.interrupted = false; this.completion = false; this.awaitingReady = false; this.finishedObserved = false
         this.fresh = false; this.state = 'working'; break
       case 'permission':
-        if (this.interrupted) break
-        this.request = event.requestId; this.completion = false; this.pendingSubmission = false; this.state = 'needs-you'; break
+        if (this.interrupted || !event.requestId) break
+        this.requests.add(event.requestId); this.completion = false; this.completionViewed = false; this.pendingSubmission = false; this.state = 'needs-you'; break
       case 'completed':
+        if (this.provider === 'codex' && this.conflictingSession) break // A conflicted run uses only its current screen for completion.
         if (event.turnId && (this.completedTurns.has(event.turnId) || this.provider === 'codex' && this.activeTurn && this.activeTurn !== event.turnId)) break
-        if (!this.interrupted && !this.finishedObserved && !this.request && this.evidence.state !== 'needs-you') { this.completion = true; this.pendingSubmission = false }
+        if (!this.interrupted && !this.finishedObserved && this.requests.size === 0 && this.evidence.state !== 'needs-you') { this.completion = true; this.completionViewed ||= this.visible; this.pendingSubmission = false }
         if (event.turnId) {
           this.completedTurns.add(event.turnId)
           if (this.completedTurns.size > 512) this.completedTurns.delete(this.completedTurns.values().next().value!)
         }
         break
       case 'cancelled': case 'ended':
-        this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.request = undefined; this.pendingSubmission = false; break
+        this.interrupted = true; this.knownWork = false; this.screenWork = false; this.completion = false; this.completionViewed = false; this.requests.clear(); this.pendingSubmission = false; break
       case 'notification':
         // Delayed notifications corroborate a *current* screen, never invent a request/completion.
         if (event.notificationType !== 'idle_prompt' && this.fresh && this.evidence.state === 'needs-you') this.state = 'needs-you'
@@ -101,22 +103,25 @@ export class TerminalAgentStateMachine {
     }
     this.reconcile()
   }
-  requestClosed(requestId: string): void { if (this.request === requestId) { this.request = undefined; this.reconcile() } }
-  unavailable(): void { this.request = undefined; this.detection = 'unavailable'; this.reconcile() }
-  exit(): void { this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.request = undefined; this.completion = false; this.providerSessionId = undefined; this.pendingSubmission = false }
+  requestClosed(requestId: string): void { if (this.requests.delete(requestId)) this.reconcile() }
+  unavailable(): void { this.requests.clear(); this.detection = 'unavailable'; this.reconcile() }
+  exit(): void { this.state = 'exited'; this.live = false; this.knownWork = false; this.screenWork = false; this.requests.clear(); this.completion = false; this.completionViewed = false; this.providerSessionId = undefined; this.pendingSubmission = false }
   /** Output activity may settle only work inferred by the compatibility fallback, never known silent work. */
-  quiet(): void { if (this.live && !this.knownWork && !this.request && this.evidence.state === undefined && this.state === 'working') this.state = 'idle' }
+  quiet(): void { if (this.live && !this.knownWork && this.requests.size === 0 && this.evidence.state === undefined && this.state === 'working') this.state = 'idle' }
   private reconcile(): void {
     if (this.state === 'exited' || !this.live) return
-    if (this.request || this.fresh && this.evidence.state === 'needs-you') { this.screenWork = false; this.completion = false; this.pendingSubmission = false; this.state = 'needs-you'; return }
-    if (this.fresh && this.evidence.state === 'working') { if (this.state === 'idle' || this.state === 'just-finished') { this.interrupted = false; this.finishedObserved = false }; this.knownWork = true; this.screenWork = true; this.pendingSubmission = false; this.awaitingReady = false; this.state = 'working'; return }
+    if (this.requests.size > 0 || this.fresh && this.evidence.state === 'needs-you') { this.screenWork = false; this.completion = false; this.pendingSubmission = false; this.state = 'needs-you'; return }
+    if (this.fresh && this.evidence.state === 'working') { if (!this.completion) this.completionViewed = false; if (this.state === 'idle' || this.state === 'just-finished') { this.interrupted = false; this.finishedObserved = false }; this.knownWork = true; this.screenWork = true; this.pendingSubmission = false; this.awaitingReady = false; this.state = 'working'; return }
     if (this.fresh && this.evidence.state === 'idle') {
       this.awaitingReady = false
       if (this.pendingSubmission) { this.state = 'working'; return }
       if (this.provider === 'codex' && this.candidateSession && !this.conflictingSession) this.providerSessionId = this.candidateSession
-      const finished = !this.interrupted && (this.completion || this.screenWork && (this.provider !== 'claude' || !this.hooksKnown))
+      const completed = !this.interrupted && (this.completion || this.screenWork && (this.provider !== 'claude' || !this.hooksKnown))
+      // Ready output and the admitted callback can arrive in either order. Preserve visibility while they reconcile, until fresh work invalidates it.
+      if (this.visible && (this.knownWork || this.screenWork || this.completion)) this.completionViewed = true
+      const finished = completed && !this.completionViewed
       this.knownWork = false; this.screenWork = false; this.completion = false; this.activeTurn = undefined
-      if (finished) { this.finishedObserved = true; this.state = this.visible ? 'idle' : 'just-finished' }
+      if (completed) { this.finishedObserved = true; this.state = finished && !this.visible ? 'just-finished' : 'idle' }
       else if (this.state !== 'just-finished') this.state = 'idle'
       return
     }

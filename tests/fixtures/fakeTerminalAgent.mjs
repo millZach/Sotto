@@ -79,13 +79,13 @@ function screen(state) {
   let body
   if (provider === 'grok') {
     body = state === 'working' ? '⠧ Thinking… 0.2s        0.2s [stop]\r\n│>\r\n└─ Grok 4.7 (xhigh) ─┘\r\nGrok 4.7 (xhigh) · auto-review\r\nCtrl+C:cancel'
-      : state === 'permission' ? 'Allow once\r\nReject\r\nTab/Space: permission'
-      : state === 'question' ? 'Choose a colour.\r\n1 (○) Blue\r\n2 (○) Green\r\nOther (type your own answer)\r\nTab/Space: question'
+      : state === 'permission' ? '┃  Allow Execute?\r\n┃  1 (●) Yes, proceed\r\n┃  2 (○) No, reject (type to add feedback)\r\n1/2:select  │  Tab:next option  │  Ctrl+c:cancel'
+      : state === 'question' ? '┃  Choose a colour.\r\n┃  1 (○) Blue\r\n┃  2 (○) Green\r\n┃  (○) Other (type your own answer)\r\nTab:next answer  │  Esc:scrollback  │  X:dismiss'
       : '│>\r\n└─ Grok 4.7 (xhigh) ─┘\r\nGrok 4.7 (xhigh) · auto-review\r\nUse Shift+Tab to cycle between modes like Plan mode.'
   } else if (state === 'question') body = provider === 'claude'
     ? 'Choose a colour.\r\n❯ 1. Blue\r\n2. Green\r\n3. Type something.\r\nEnter to select · ↑/↓ to navigate · Esc to cancel'
     : 'Question 1/1 (1 unanswered)\r\nChoose a colour.\r\n› 1. Blue\r\n2. Green\r\ntab to add notes | enter to submit answer | esc to interrupt'
-  else if (state === 'working') body = provider === 'claude' ? '✻ Working… (esc to interrupt)' : '• Working (esc to interrupt)'
+  else if (state === 'working') body = provider === 'claude' ? '✻ Working… (esc to interrupt)' : '• Working (0s • esc to interrupt)'
   else if (state === 'permission') body = provider === 'claude'
     ? 'Do you want to make this edit to marker.txt?\r\n❯ 1. Yes\r\n  2. No\r\nEsc to cancel · Tab to amend'
     : 'Would you like to run the following command?\r\n› 1. Yes, proceed (y)\r\n  2. No, and tell Codex what to do differently (esc)\r\nPress enter to confirm or esc to cancel'

@@ -322,7 +322,7 @@ export class TerminalWorkspaceService extends ToolOperations {
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
         record.pty = undefined
-        record.agent?.exit(); record.hooks?.dispose(); record.hooks = undefined; clearTimeout(record.activityTimer)
+        this.releaseAgentRun(record)
         record.terminal = { ...record.terminal, status: 'exited', exitCode }
         if (record.agent) record.terminal = { ...record.terminal, agentState: record.agent.state, stateDetection: record.agent.detection }
         this.publish(record)
@@ -453,9 +453,12 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
   private kill(record: LiveTerminal): void {
     const pty = record.pty; record.pty = undefined
-    record.agent?.exit(); record.hooks?.dispose(); record.hooks = undefined; clearTimeout(record.activityTimer)
+    this.releaseAgentRun(record)
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }
+  }
+  private releaseAgentRun(record: LiveTerminal): void {
+    record.agent?.exit(); record.hooks?.dispose(); record.hooks = undefined; clearTimeout(record.activityTimer)
   }
   dispose(): void {
     this.disposed = true

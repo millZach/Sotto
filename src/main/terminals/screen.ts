@@ -31,6 +31,12 @@ export class TerminalAgentScreen {
       this.wraps.splice(this.top, 1); this.wraps.splice(this.bottom, 0, false)
     }
   }
+  private reverseScroll(count = 1): void {
+    for (let n = 0; n < Math.min(count, this.rows); n++) {
+      this.cells.splice(this.bottom, 1); this.cells.splice(this.top, 0, Array<string>(this.cols).fill(' '))
+      this.wraps.splice(this.bottom, 1); this.wraps.splice(this.top, 0, false)
+    }
+  }
   private down(): void { if (this.y === this.bottom) this.scroll(); else this.y = Math.min(this.rows - 1, this.y + 1) }
   private eraseLine(mode: number): void {
     const row = this.cells[this.y]!
@@ -73,7 +79,7 @@ export class TerminalAgentScreen {
       case 'P': this.cells[this.y]!.splice(this.x, count); while (this.cells[this.y]!.length < this.cols) this.cells[this.y]!.push(' '); break
       case '@': this.cells[this.y]!.splice(this.x, 0, ...Array<string>(Math.min(count, this.cols)).fill(' ')); this.cells[this.y]!.length = this.cols; break
       case 'S': this.scroll(count); break
-      case 'T': for (let n = 0; n < Math.min(count, this.rows); n++) { this.cells.splice(this.bottom, 1); this.cells.splice(this.top, 0, Array<string>(this.cols).fill(' ')); this.wraps.splice(this.bottom, 1); this.wraps.splice(this.top, 0, false) }; break
+      case 'T': this.reverseScroll(count); break
       case 'L': for (let n = 0; n < Math.min(count, this.rows); n++) { this.cells.splice(this.y, 0, Array<string>(this.cols).fill(' ')); this.cells.splice(this.bottom + 1, 1); this.wraps.splice(this.y, 0, false); this.wraps.splice(this.bottom + 1, 1) }; break
       case 'M': for (let n = 0; n < Math.min(count, this.rows); n++) { this.cells.splice(this.y, 1); this.cells.splice(this.bottom, 0, Array<string>(this.cols).fill(' ')); this.wraps.splice(this.y, 1); this.wraps.splice(this.bottom, 0, false) }; break
       case 'r': this.top = Math.max(0, Math.min(this.rows - 1, count - 1)); this.bottom = Math.max(this.top, Math.min(this.rows - 1, (args[1] || this.rows) - 1)); this.x = 0; this.y = this.top; break
@@ -116,7 +122,7 @@ export class TerminalAgentScreen {
         else if (next === '8') { this.x = this.saved.x; this.y = this.saved.y }
         else if (next === 'D') this.down()
         else if (next === 'E') { this.x = 0; this.down() }
-        else if (next === 'M') { if (this.y > this.top) this.y--; else { this.cells.splice(this.bottom, 1); this.cells.splice(this.top, 0, Array<string>(this.cols).fill(' ')); this.wraps.splice(this.bottom, 1); this.wraps.splice(this.top, 0, false) } }
+        else if (next === 'M') { if (this.y > this.top) this.y--; else this.reverseScroll() }
         else if (next === 'c') { this.primary = this.blank(); this.alternate = undefined; this.primaryWrap.fill(false); this.alternateWrap = undefined; this.x = this.y = this.top = 0; this.bottom = this.rows - 1; this.valid = true }
         else if (['(', ')', '*', '+', '%', '#'].includes(next)) { if (index + 2 >= data.length) { this.pending = data.slice(index); break }; index++ }
         index += 2; continue
@@ -190,6 +196,7 @@ export class TerminalScreenRules {
     if (this.provider === 'claude') {
       const work = /(?:esc to interrupt|ctrl\+c to interrupt)/iu.test(text) && /^[✶✻✽✢·*]\s+\S.+/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
+      if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const choices = /^❯\s*1\.\s+Yes(?:,|$)/mu.test(text) && /^\s*[2-9]\.\s+No(?:,|$)/mu.test(text)
       const prompt = /^(?:Do you want to proceed\?|Allow .+\?|Do you want to .+\?)$/mu.test(text)
       const controls = /(?:Enter to confirm|Esc to cancel|esc to cancel)/u.test(text)
@@ -198,10 +205,11 @@ export class TerminalScreenRules {
       const questionChoices = /^❯\s*\d+\.\s+\S.+/mu.test(text) && /^\d+\.\s+(?:Type something\.?|Chat about this)$/mu.test(text)
       const questionControls = /enter to select/iu.test(text) && /(?:↑\/↓ to navigate|Tab\/Arrow keys to navigate)/iu.test(text) && /(?:esc|escape) to cancel/iu.test(text)
       if (questionChoices && questionControls) return { detection: 'available', state: 'needs-you' }
-      if (bottom.slice(-4).some(line => /^❯\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+[·|].*)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
     } else if (this.provider === 'codex') {
-      const work = /^.+\(esc to interrupt\)$/imu.test(text) || /^.+esc to interrupt[)\s·]/imu.test(text)
+      // The native status row owns an elapsed clock and interrupt hint. Reduced motion omits its leading activity bullet.
+      const work = /^(?:•\s+)?[\p{L}\p{N}][^()>\r\n]*\((?:\d+h \d{2}m \d{2}s|\d+m \d{2}s|\d+s) • esc to interrupt\)(?: • \S.*)?$/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
+      if (bottom.slice(-4).some(line => /^›\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
       const prompt = /^(?:Would you like to run the following command\?|Would you like to make the following edits\?|Would you like to apply these changes\?)$/mu.test(text)
       const choices = /^›\s*1\.\s+Yes, proceed(?:\s|$)/mu.test(text) && /^\s*[2-9]\.\s+No, and tell Codex .+/mu.test(text)
       const controls = /^Press enter to confirm or esc to cancel$/imu.test(text)
@@ -211,20 +219,27 @@ export class TerminalScreenRules {
       const questionInput = /^›\s*(?:\d+\.\s+\S.+|Type your answer \(optional\))$/mu.test(text)
       const questionControls = /(?:enter|⌃\w(?: enter)?) to submit (?:answer|all)/iu.test(text) && /(?:esc|⌃c) to interrupt/iu.test(text)
       if (questionHeader && questionInput && questionControls) return { detection: 'available', state: 'needs-you' }
-      if (bottom.slice(-4).some(line => /^›\s*$/u.test(line)) && /(?:^|\s)\? for shortcuts(?:\s+\d+% context left)?$/iu.test(bottom.at(-1) ?? '')) return { detection: 'available', state: 'idle', failed }
     } else {
       // Grok 1.0.50's prompt is a bordered input, with its model/mode footer. Escape never cancels work.
       // The current turn_status widget has a braille spinner, phase timer and [stop] button; historical Thinking blocks lack this chrome.
       const work = /^[\u2801-\u28ff]\s+(?:Thinking…|Responding…|Verifying…|Waiting…|Run command)\s+\d+(?:\.\d+)?s\s+.*\[stop\]$/mu.test(text)
       if (work) return { detection: 'available', state: 'working', failed }
-      const choices = /^.*Allow once\s*$/mu.test(text) && /^.*Reject\s*$/mu.test(text)
-      if (choices && /Tab\/Space: permission/u.test(text)) return { detection: 'available', state: 'needs-you' }
-      // Native question cards have numbered radio/checkbox answer rows, Other input and the pinned return-to-question hint.
-      const questionChoices = /^\d+\s+(?:\([○●•]\)|\[[ x]\])\s+\S.+/mu.test(text)
-      const questionInput = /^(?:\d+\s+(?:\([○●•]\)|\[[ x]\])\s+)?Other \(type your own answer\)$/mu.test(text)
-      if (questionChoices && questionInput && /Tab\/Space:\s*question/u.test(text)) return { detection: 'available', state: 'needs-you' }
       const prompt = bottom.some(line => /^[│┃]\s*>\s*[│┃]?$/u.test(line))
-      if (prompt && /^Grok .+\s·\s(?:auto-review|ask|always-approve|plan)/imu.test(text)) return { detection: 'available', state: 'idle', failed }
+      if (prompt && bottom.slice(-2).some(line => /^Grok .+\s·\s(?:auto-review|ask|always-approve|plan)/iu.test(line))) return { detection: 'available', state: 'idle', failed }
+      // Blocking cards have a native accent rail; the final shortcuts row contains complete key:label hints separated by light rails.
+      const hints = (bottom.at(-1) ?? '').split(/\s+│\s+/u)
+      const nativeHints = hints.every(hint => /^[\p{L}\p{N}↑↓←→?/][^:\s>│]*:\s*[^>│\s][^>│]*$/u.test(hint))
+      const permissionHint = nativeHints && (hints.some(hint => /^Tab\/Space:\s*permission$/u.test(hint))
+        || hints.some(hint => /^1\/[1-9]:\s*select$/u.test(hint)) && hints.some(hint => /^Tab:\s*next option$/u.test(hint)))
+      const permissionTitle = /^[│┃]\s+Allow \S.+\?$/mu.test(text)
+      const choices = /^[│┃]\s+[1-9]\s+\([○●•]\)\s+(?:Yes(?:, (?:proceed|allow once|send once))?|allow once)$/imu.test(text)
+        && /^[│┃]\s+[1-9]\s+\([○●•]\)\s+No, reject \(type to add feedback\)$/mu.test(text)
+      if (permissionTitle && choices && permissionHint) return { detection: 'available', state: 'needs-you' }
+      // Native question cards share that rail, with shortcut/radio/checkbox answer rows and the installed Other input label.
+      const questionChoices = /^[│┃]\s+[1-9a-z]\s+(?:\([○●•]\)|\[[ x]\])\s+\S.+/mu.test(text)
+      const questionInput = /^[│┃]\s+(?:(?:[1-9a-z]\s+)?(?:\([○●•]\)|\[[ x]\])\s+)?Other \(type your own answer\)$/mu.test(text)
+      const questionHint = nativeHints && hints.some(hint => /^(?:Tab\/Space:\s*question|Tab:\s*next answer)$/u.test(hint))
+      if (questionChoices && questionInput && questionHint) return { detection: 'available', state: 'needs-you' }
     }
     return { detection: 'unavailable', failed }
   }

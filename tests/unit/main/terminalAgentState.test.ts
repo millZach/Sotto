@@ -3,12 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { TerminalAgentStateMachine } from '../../../src/main/terminals/state'
 import { TerminalAgentScreen, TerminalScreenRules } from '../../../src/main/terminals/screen'
 import type { TerminalAgentHookEvent } from '../../../src/main/terminals/hooks'
+import { normalizeTerminalHook } from '../../../src/main/terminals/hooksNormalizer'
 
 const header = 'Claude Code v2.1.295'
 const redraw = (body: string, title = header) => `\x1b[2J\x1b[H${title}\r\n${body}`
 const idle = redraw('❯ \r\n? for shortcuts')
 const work = redraw('✻ Working… (esc to interrupt)')
 const request = redraw('Do you want to make this edit to marker.txt?\r\n❯ 1. Yes\r\n  2. No\r\nEsc to cancel · Tab to amend')
+const codexTitle = 'OpenAI Codex (v0.162.0)'
+const codexIdle = redraw('› \r\n? for shortcuts', codexTitle)
+const codexWork = redraw('• Working (0s • esc to interrupt)', codexTitle)
+const grokTitle = 'Grok Build  1.0.50'
+const grokIdle = redraw('│>\r\n└─ Grok 4.7 (xhigh) ─┘\r\nGrok 4.7 (xhigh) · auto-review', grokTitle)
+const grokPermission = '┃  Allow Execute?\r\n┃  1 (●) Yes, proceed\r\n┃  2 (○) No, reject (type to add feedback)\r\nTab/Space:permission'
 const event = (kind: TerminalAgentHookEvent['kind'], values: Partial<TerminalAgentHookEvent> = {}): TerminalAgentHookEvent => ({ terminalId: 'terminal', runId: 'run', eventId: `${kind}-${Math.random()}`, kind, state: kind === 'working' ? 'working' : 'idle', ...values })
 const agent = () => { const state = new TerminalAgentStateMachine('run', 'claude', 100, 30, 'session'); state.started(); state.output(idle); return state }
 
@@ -60,6 +67,35 @@ describe('terminal agent run state', () => {
     state.hook(event('completed')); expect(state.state).toBe('just-finished')
     state.setVisible(true); state.setVisible(false); state.hook(event('working')); state.hook(event('completed')); expect(state.state).toBe('idle')
   })
+  it.each(['ready-first', 'stop-first', 'stop-first-queued-work'])('remembers a visible Claude completion with %s delivery, while admitting the next unseen turn', order => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle); state.setVisible(true)
+    state.hook(event('working', { turnId: 'first' })); state.output(work)
+    if (order === 'ready-first') state.output(idle); else state.hook(event('completed', { turnId: 'first' }))
+    state.setVisible(false)
+    if (order === 'stop-first-queued-work') state.output(work)
+    if (order === 'ready-first') state.hook(event('completed', { turnId: 'first' })); else state.output(idle)
+    expect(state.state).toBe('idle')
+    state.input('a new turn\r'); state.hook(event('working', { turnId: 'next' })); state.output(work); state.output(idle)
+    expect(state.state).toBe('idle')
+    state.hook(event('completed', { turnId: 'next' })); expect(state.state).toBe('just-finished')
+  })
+  it.each([
+    ['continuing', { stop_hook_active: true }],
+    ['background', { background_tasks: [{}] }],
+  ] as const)('admits fresh hidden continuation after visible readiness when a %s Stop supplies no completion', (reason, extra) => {
+    const state = agent(); state.hook(event('session-start')); state.output(idle); state.setVisible(true)
+    state.hook(event('working', { turnId: 'turn' })); state.output(work)
+    const binding = { terminalId: 'terminal', runId: 'run' }
+    const payload = { hook_event_name: 'Stop', session_id: 'session', prompt_id: 'turn' }
+    expect(normalizeTerminalHook('claude', 'Stop', { ...payload, ...extra }, binding), `${reason} Stop cannot emit completion`).toBeNull()
+    state.quiet(); expect(state.state).toBe('working')
+    state.output(idle)
+    // Continuing/background Stop is rejected by the helper; only idle corroboration reaches this run.
+    state.hook(event('notification', { notificationType: 'idle_prompt' })); expect(state.state).toBe('idle')
+    state.setVisible(false); state.hook(event('working', { turnId: 'turn' })); expect(state.state).toBe('working')
+    state.output(work); state.hook(normalizeTerminalHook('claude', 'Stop', payload, binding)!.event); expect(state.state).toBe('working')
+    state.output(idle); expect(state.state).toBe('just-finished')
+  })
   it('keeps a live permission ahead of out-of-order Working, completion and a ready screen', () => {
     const state = agent(); state.hook(event('working')); state.hook(event('permission', { requestId: 'r' }))
     state.hook(event('working')); state.hook(event('completed')); state.output(idle)
@@ -67,11 +103,35 @@ describe('terminal agent run state', () => {
     state.requestClosed('another'); expect(state.state).toBe('needs-you')
     state.requestClosed('r'); expect(state.state).toBe('idle')
   })
+  it.each(['a', 'b'])('keeps concurrent blocking requests until both close, with %s closing first', first => {
+    const state = agent(); state.hook(event('working'))
+    state.hook(event('permission', { requestId: 'a' })); state.hook(event('permission', { requestId: 'b' }))
+    state.hook(event('working')); state.output(idle); state.requestClosed(first)
+    state.hook(event('completed')); state.quiet(); expect(state.state).toBe('needs-you')
+    state.requestClosed(first === 'a' ? 'b' : 'a'); expect(state.state).toBe('idle')
+  })
+  it.each(['cancelled', 'ended', 'exited'] as const)('clears every concurrent request on %s', end => {
+    const state = agent(); state.hook(event('working'))
+    state.hook(event('permission', { requestId: 'a' })); state.hook(event('permission', { requestId: 'b' }))
+    if (end === 'exited') state.exit(); else state.hook(event(end))
+    state.output(idle); state.requestClosed('a'); state.requestClosed('b')
+    expect(state.state).toBe(end === 'exited' ? 'exited' : 'idle')
+  })
   it('recognises a current native request and invalidates it on input/redraw without inventing completion', () => {
     const state = agent(); state.output(work); state.output(request); expect(state.state).toBe('needs-you')
     state.input('2'); expect(state.state).toBe('working')
     state.output(idle); expect(state.state).toBe('idle')
     state.hook(event('notification', { notificationType: 'permission_prompt' })); expect(state.state).toBe('idle')
+  })
+  it('withdraws screen-only requests immediately on resize without output, while retaining every live hook request', () => {
+    const screenOnly = agent(); screenOnly.output(request); expect(screenOnly.state).toBe('needs-you')
+    screenOnly.resize(80, 20); expect(screenOnly.state).toBe('idle'); expect(screenOnly.detection).toBe('unavailable')
+    const working = agent(); working.output(work); working.output(request); working.resize(80, 20)
+    expect(working.state).toBe('working'); working.quiet(); expect(working.state).toBe('working')
+    const hooked = agent(); hooked.hook(event('permission', { requestId: 'a' })); hooked.hook(event('permission', { requestId: 'b' }))
+    hooked.resize(80, 20); expect(hooked.state).toBe('needs-you')
+    hooked.requestClosed('a'); expect(hooked.state).toBe('needs-you')
+    hooked.requestClosed('b'); expect(hooked.state).toBe('idle')
   })
   it.each(['input', 'failure', 'error'] as const)('returning ready after %s earns no completion', reason => {
     const state = agent(); state.output(work)
@@ -93,11 +153,32 @@ describe('terminal agent run state', () => {
   })
   it('binds Codex identity only on ready and permanently clears conflicting provider sessions', () => {
     const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started()
-    state.output(redraw('• Working (esc to interrupt)', 'OpenAI Codex (v0.162.0)'))
+    state.output(codexWork)
     state.hook(event('completed', { providerSessionId: 'first', turnId: 'a' })); expect(state.providerSessionId).toBeUndefined()
     state.output(redraw('› \r\n? for shortcuts', 'OpenAI Codex (v0.162.0)')); expect(state.providerSessionId).toBe('first')
     state.hook(event('completed', { providerSessionId: 'companion', turnId: 'b' })); expect(state.providerSessionId).toBeUndefined()
     state.output(redraw('› \r\n? for shortcuts', 'OpenAI Codex (v0.162.0)')); expect(state.providerSessionId).toBeUndefined()
+  })
+  it('withdraws queued and future Codex notify completion after an identity conflict, then uses observed screen work', () => {
+    const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started(); state.output(codexIdle)
+    state.output(redraw('Unmatched new widget', codexTitle))
+    state.hook(event('completed', { providerSessionId: 'first', turnId: 'a' }))
+    state.hook(event('completed', { providerSessionId: 'companion', turnId: 'b' }))
+    state.output(codexIdle); expect(state.state).toBe('idle'); expect(state.providerSessionId).toBeUndefined()
+    state.hook(event('completed', { providerSessionId: 'first', turnId: 'c' })); expect(state.state).toBe('idle')
+    state.output(codexWork); expect(state.state).toBe('working')
+    state.hook(event('completed', { providerSessionId: 'companion', turnId: 'd' })); expect(state.state).toBe('working')
+    state.output(codexIdle); expect(state.state).toBe('just-finished'); expect(state.providerSessionId).toBeUndefined()
+  })
+  it.each([
+    ['codex', codexTitle, '> Example (esc to interrupt)', codexIdle],
+    ['codex', codexTitle, '> • Working (0s • esc to interrupt)', codexIdle],
+    ['grok', grokTitle, '> Allow once\r\n> Reject\r\n> Tab/Space: permission', grokIdle],
+    ['grok', grokTitle, grokPermission.split('\r\n').map(line => `> ${line}`).join('\r\n'), grokIdle],
+  ] as const)('never creates %s request/work evidence or an unread mark from a quoted example followed by ready', (provider, title, quoted, ready) => {
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started(); state.output(ready)
+    state.output(redraw(quoted, title)); expect(state.detection).toBe('unavailable'); expect(state.state).not.toBe('needs-you')
+    state.output(ready); expect(state.state).toBe('idle')
   })
   it('uses output activity for unsupported versions without creating requests or completions', () => {
     const state = new TerminalAgentStateMachine('run', 'codex', 100, 30); state.started()
@@ -116,6 +197,12 @@ describe('bounded active terminal screen', () => {
     screen.write('\x1b[?1049l'); expect(screen.lines()).toEqual(['new', '', '', ''])
     screen.write('\rwrong\r\x1b[2Kright'); expect(screen.lines()[0]).toBe('right')
   })
+  it.each(['\x1b[T', '\x1bM'])('keeps screen cells and soft-wrap metadata together through reverse scroll %s', control => {
+    const screen = new TerminalAgentScreen(8, 4)
+    screen.write('123456789\r\nlast\x1b[H' + control)
+    expect(screen.lines()).toEqual(['', '12345678', '9', 'last'])
+    expect(screen.logicalLines()).toEqual(['', '123456789', 'last'])
+  })
   it('never inspects saved scrollback, discarded OSC/BEL, or quoted permission examples', () => {
     const screen = new TerminalAgentScreen(100, 8), rules = new TerminalScreenRules('claude')
     screen.write(request); expect(rules.read(screen).state).toBe('needs-you')
@@ -123,6 +210,18 @@ describe('bounded active terminal screen', () => {
     screen.write(redraw('Quoted example:\r\n> Do you want to proceed?\r\n> ❯ 1. Yes\r\n> 2. No\r\n> Esc to cancel'))
     expect(rules.read(screen).state).toBeUndefined()
     screen.write('\x1b]9;Do you want to proceed?\x07'); expect(rules.read(screen).state).toBeUndefined()
+  })
+  it.each([
+    ['claude', header, 'Do you want to proceed?\r\n❯ 1. Yes\r\n2. No\r\nEsc to cancel', '❯ \r\n? for shortcuts'],
+    ['codex', codexTitle, 'Would you like to run the following command?\r\n› 1. Yes, proceed (y)\r\n2. No, and tell Codex what to do differently (esc)\r\nPress enter to confirm or esc to cancel', '› \r\n? for shortcuts'],
+    ['grok', grokTitle, grokPermission, '│>\r\nGrok 4.7 (xhigh) · auto-review'],
+  ] as const)('recognises current %s Ready controls below historical approval examples', (provider, title, example, ready) => {
+    const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules(provider)
+    screen.write(redraw(`Example of the native menu:\r\n${example}\r\n${ready}`, title))
+    expect(rules.read(screen).state).toBe('idle')
+    const state = new TerminalAgentStateMachine('run', provider, 120, 30); state.started()
+    state.output(redraw(`Example of the native menu:\r\n${example}\r\n${ready}`, title))
+    expect(state.state).toBe('idle')
   })
   it('requires a new redraw at the resized dimensions and handles streamed Unicode', () => {
     const screen = new TerminalAgentScreen(100, 30), rules = new TerminalScreenRules('claude')
@@ -145,12 +244,41 @@ describe('bounded active terminal screen', () => {
     ['claude', header, 'Choose a colour.\r\n❯ 1. Blue\r\n2. Green\r\n3. Type something.\r\nEnter to select · ↑/↓ to navigate · Esc to cancel'],
     ['codex', 'OpenAI Codex (v0.162.0)', 'Question 1/1 (1 unanswered)\r\nChoose a colour.\r\n› 1. Blue\r\n2. Green\r\ntab to add notes | enter to submit answer | esc to interrupt'],
     ['codex', 'OpenAI Codex (v0.162.0)', 'Question 1/1 (1 unanswered)\r\nShare details.\r\n› Type your answer (optional)\r\nenter to submit answer | esc to interrupt'],
-    ['grok', 'Grok Build  1.0.50', 'Choose a colour.\r\n1 (○) Blue\r\n2 (○) Green\r\nOther (type your own answer)\r\nTab/Space: question'],
+    ['grok', grokTitle, '┃  Choose a colour.\r\n┃  1 (○) Blue\r\n┃  2 (○) Green\r\n┃  (○) Other (type your own answer)\r\nTab/Space:question'],
+    ['grok', grokTitle, '│  Choose colours.\r\n│  1 [x] Blue\r\n│  2 [ ] Green\r\n│  z [ ] Other (type your own answer)\r\nTab/Space:question'],
   ] as const)('recognises %s current question controls and rejects quoted/scrollback copies', (provider, title, body) => {
     const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules(provider)
     screen.write(redraw(body, title)); expect(rules.read(screen).state).toBe('needs-you')
     screen.write(redraw(body.split('\r\n').map(line => `> ${line}`).join('\r\n'), title)); expect(rules.read(screen).state).toBeUndefined()
+    if (provider === 'grok') {
+      screen.write(redraw(body.replace(/[│┃]/gu, ''), title)); expect(rules.read(screen).state).toBeUndefined()
+      screen.write(redraw(body.replace('Tab/Space:question', 'Tab:next answer  │  Esc:scrollback  │  X:dismiss'), title))
+      expect(rules.read(screen).state).toBe('needs-you')
+    }
     screen.write(redraw(body, title)); screen.write('\r\n' + 'ordinary output\r\n'.repeat(40)); expect(rules.read(screen).state).toBeUndefined()
+  })
+  it.each([
+    '• Working (0s • esc to interrupt)',
+    'Working (1m 00s • esc to interrupt)',
+    '• Mapping the app structure (1h 00m 00s • esc to interrupt) • 1 background process',
+  ])('recognises the native Codex timed status row %s, including reduced motion', body => {
+    const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules('codex')
+    screen.write(redraw(body, codexTitle)); expect(rules.read(screen).state).toBe('working')
+    screen.write(redraw(`> ${body}`, codexTitle)); expect(rules.read(screen).state).toBeUndefined()
+  })
+  it.each(['┃', '│'])('requires Grok permission card chrome with the %s rail and a final native hint', rail => {
+    const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules('grok')
+    const body = grokPermission.replaceAll('┃', rail)
+    screen.write(redraw(body, grokTitle)); expect(rules.read(screen).state).toBe('needs-you')
+    screen.write(redraw(body.replace('Tab/Space:permission', 'Ctrl+c:cancel  │  Tab/Space: permission  │  Ctrl+/:shortcuts'), grokTitle))
+    expect(rules.read(screen).state).toBe('needs-you')
+    screen.write(redraw(body.replace('Tab/Space:permission', '1/2:select  │  Tab:next option  │  Ctrl+c:cancel'), grokTitle))
+    expect(rules.read(screen).state).toBe('needs-you')
+    screen.write(redraw(body.split('\r\n').map(line => `> ${line}`).join('\r\n'), grokTitle)); expect(rules.read(screen).state).toBeUndefined()
+    screen.write(redraw(body + '\r\nOrdinary output after the example', grokTitle)); expect(rules.read(screen).state).toBeUndefined()
+    screen.write(redraw(body.replace(`${rail}  Allow Execute?\r\n`, ''), grokTitle)); expect(rules.read(screen).state).toBeUndefined()
+    screen.write(redraw(`⠧ Thinking… 0.2s       0.2s [stop]\r\n${body}`, grokTitle)); expect(rules.read(screen).state).toBe('working')
+    screen.write(redraw(body, grokTitle)); screen.write('\r\n' + 'ordinary output\r\n'.repeat(40)); expect(rules.read(screen).state).toBeUndefined()
   })
   it('recognises the inspected Grok 1.0.50 bordered prompt and mode footer', () => {
     const screen = new TerminalAgentScreen(120, 30), rules = new TerminalScreenRules('grok')
