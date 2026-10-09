@@ -6,7 +6,7 @@ Proved in the built app on September 24, 2026, on Windows 11, from `main` at `e4
 
 Git, every repository and its owned bare remote are real. GitHub is the scripted `gh` in `tests/fixtures/fakeGh.mjs`, reached through the host's test seam (`SOTTO_E2E_GH_SCRIPT`, development builds only), and the threads run on the fake providers in `tests/fixtures/`. No live GitHub or provider was contacted.
 
-The images named here are in `artifacts/git-interface/`. The run writes every capture to `artifacts/git-interface-run/`, which is not committed. Where a surface was already proved with its own captures, this note reruns that spec and links its note rather than capturing it again.
+The images named here are in `artifacts/git-interface/`. Current runs write every capture to ignored `artifacts/e2e-runs/git-interface-run/` by default, or `artifacts/git-interface-run/` with `SOTTO_E2E_EVIDENCE=publish`. See [E2e evidence](../ci.md#e2e-evidence) for the root override. Where a surface was already proved with its own captures, this note reruns that spec and links its note rather than capturing it again.
 
 ## The run
 

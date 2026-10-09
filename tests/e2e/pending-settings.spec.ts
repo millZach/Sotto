@@ -4,7 +4,10 @@ import { closeSotto, launchSottoWithVoice, openThreads, resizeWindow, type Launc
 import { REMOTE_PERMISSION_DENIED } from '../../src/main/agents/authority'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-/** Every capture this spec takes; the verification note copies the few it cites into `artifacts/pending-settings/`. */
+/**
+ * Every capture this spec takes; the verification note copies the few it cites into artifacts/pending-settings/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
 const ARTIFACTS = evidenceDirectory('artifacts/pending-settings-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 

@@ -6,6 +6,7 @@ import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivit
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Every capture of the run; docs/verification/workflow-agent-rows.md cites copies in artifacts/workflow-agent-rows/.
+// See "E2e evidence" in docs/ci.md for default, publish and root override paths.
 const shots = evidenceDirectory('artifacts/workflow-agent-rows-run')
 const started = new Date(Date.now() - 15 * 60_000).toISOString()
 const workflow: ObservedAgent = { id: 'claude-agent-flow', assignmentId: 'claude-task-wf', kind: 'workflow', title: 'Implement the phase 1 perf issues', description: 'phase-1-perf',

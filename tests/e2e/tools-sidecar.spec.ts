@@ -14,6 +14,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // Real Electron shell, native browser, PTY, files and Git. Only coding providers use E2E fixtures.
 // Every file and shell command below belongs to the launch helper's disposable profile. Captures go to a
 // generated folder; the verification note's images are copied from it into artifacts/tools-rail.
+// See "E2e evidence" in docs/ci.md for default, publish and root override paths.
 const run = promisify(execFile)
 const SHOTS = evidenceDirectory('artifacts/tools-rail-run')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const

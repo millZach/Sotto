@@ -6,7 +6,10 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 const run = evidenceDirectory('artifacts/review-385')
 
-/** Every capture this spec takes; the verification note cites a few, copied to artifacts/staged-images/. */
+/**
+ * Every capture this spec takes; the verification note cites a few, copied to artifacts/staged-images/.
+ * See "E2e evidence" in docs/ci.md for default, publish and root override paths.
+ */
 const RUN = evidenceDirectory('artifacts/staged-images-run')
 
 test('repairs a missing staged screenshot when the user attaches the same image again', async () => {
