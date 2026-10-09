@@ -4,9 +4,9 @@ import { dictationSocketPath, parseDictationArguments } from './dictationCommand
 import { readDictationEndpoint, validateDictationFolder } from './dictationEndpoint'
 import { assertDictationDirectories, validateDictationRuntime } from './dictationRuntime'
 
-const command = parseDictationArguments(process.argv.slice(2))
-if (command === null) {
-  console.error('Use: sotto dictation start|stop|toggle|cancel')
+const request = parseDictationArguments(process.argv.slice(2))
+if (request === null) {
+  console.error('Use: sotto dictation start|stop|toggle|cancel [--at epoch-ns]')
   process.exitCode = 2
 } else {
   let guidance = 'Dictation needs a private desktop runtime folder owned by you, with no folder links. Open Sotto in a desktop session that provides one, then try again.'
@@ -28,7 +28,7 @@ if (command === null) {
     }
     socket.setTimeout(1_000, fail)
     socket.once('error', fail)
-    socket.once('connect', () => socket.write(`${command}\n`))
+    socket.once('connect', () => socket.write(`${request.command}${request.at === undefined ? '' : ` --at ${request.at}`}\n`))
     let reply = ''
     socket.setEncoding('utf8')
     socket.on('data', data => {

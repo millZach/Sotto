@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DictationSocket } from '../../src/main/hotkeys/dictationSocket'
-import { dictationSocketPath } from '../../src/main/hotkeys/dictationCommand'
+import { DICTATION_REQUEST_MAX_BYTES, dictationSocketPath, type CompositorDictationCommand } from '../../src/main/hotkeys/dictationCommand'
 import { validateDictationRuntime } from '../../src/main/hotkeys/dictationRuntime'
 
 describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
@@ -14,7 +14,7 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
   const services: DictationSocket[] = []
   beforeEach(() => { runtime = mkdtempSync(join(tmpdir(), 'sotto-')) })
   afterEach(() => { vi.restoreAllMocks(); services.splice(0).forEach(service => service.dispose()); rmSync(runtime, { recursive: true, force: true }) })
-  function service(dispatch = vi.fn(async () => true)): DictationSocket {
+  function service(dispatch: (command: CompositorDictationCommand) => Promise<boolean> = vi.fn(async () => true)): DictationSocket {
     const instance = new DictationSocket(runtime, dispatch)
     services.push(instance)
     return instance
@@ -50,8 +50,74 @@ describe.skipIf(process.platform !== 'linux')('dictation Unix socket', () => {
   it('rejects text, multiple commands, and oversized messages without dispatch', async () => {
     const dispatch = vi.fn(async () => true)
     await service(dispatch).start()
-    for (const input of ['retry\n', 'start\nstop\n', `${'x'.repeat(17)}\n`, 'start \n']) expect(await send(input)).toBe('invalid\n')
+    for (const input of ['retry\n', 'start\nstop\n', `${'x'.repeat(DICTATION_REQUEST_MAX_BYTES)}\n`, 'start \n', 'start --at 123\nstop\n']) expect(await send(input)).toBe('invalid\n')
     expect(dispatch).not.toHaveBeenCalled()
+  })
+  it.each(['stop', 'cancel'])('does not start recording when an unpaired stamped %s arrives before an older start', async end => {
+    const dispatch = vi.fn(async () => true)
+    const at = BigInt(Date.now()) * 1_000_000n
+    await service(dispatch).start()
+    expect(await send(`${end} --at ${at}\n`)).toBe('ok\n')
+    expect(await send(`start --at ${at - 15_000_000n}\n`)).toBe('ok\n')
+    expect(await send(`start --at ${at}\n`)).toBe('ok\n')
+    // The renderer never receives a microphone start, including an equal-stamp replay.
+    expect(dispatch.mock.calls).toEqual([[end]])
+    expect(await send('start\n')).toBe('ok\n')
+    expect(dispatch.mock.calls).toEqual([[end], ['start']])
+  })
+  it('records a normal stamped hold and permits the next hold after its release', async () => {
+    let recording = false
+    const dispatch = vi.fn(async (command: CompositorDictationCommand) => {
+      recording = command === 'start'
+      return true
+    })
+    const at = BigInt(Date.now()) * 1_000_000n - 100_000_000n
+    await service(dispatch).start()
+    expect(await send(`start --at ${at}\n`)).toBe('ok\n')
+    expect(recording).toBe(true)
+    expect(await send(`stop --at ${at + 15_000_000n}\n`)).toBe('ok\n')
+    expect(recording).toBe(false)
+    expect(await send(`start --at ${at + 20_000_000n}\n`)).toBe('ok\n')
+    expect(recording).toBe(true)
+    expect(await send(`stop --at ${at + 30_000_000n}\n`)).toBe('ok\n')
+    expect(recording).toBe(false)
+    expect(dispatch.mock.calls).toEqual([['start'], ['stop'], ['start'], ['stop']])
+  })
+  it('keeps the latest end stamp when an older release arrives later', async () => {
+    const dispatch = vi.fn(async () => true)
+    const at = BigInt(Date.now()) * 1_000_000n
+    await service(dispatch).start()
+    await send(`stop --at ${at}\n`)
+    await send(`cancel --at ${at - 30_000_000n}\n`)
+    await send(`start --at ${at - 15_000_000n}\n`)
+    expect(dispatch.mock.calls).toEqual([['stop'], ['cancel']])
+  })
+  it('rejects stale and future stamps before they affect delivery or the release stamp', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_791_486_000_000)
+    const at = BigInt(Date.now()) * 1_000_000n
+    const dispatch = vi.fn(async () => true)
+    await service(dispatch).start()
+    for (const stamp of [at - 5_000_000_001n, at + 250_000_001n]) {
+      expect(await send(`stop --at ${stamp}\n`)).toBe('invalid\n')
+    }
+    expect(dispatch).not.toHaveBeenCalled()
+    for (const stamp of [at - 5_000_000_000n, at, at + 250_000_000n]) {
+      expect(await send(`start --at ${stamp}\n`)).toBe('ok\n')
+    }
+    expect(dispatch).toHaveBeenCalledTimes(3)
+  })
+  it('ignores an older start while delivery of the release is pending', async () => {
+    const held = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<void>()
+    const dispatch = vi.fn(async () => { entered.resolve(); await held.promise; return true })
+    await service(dispatch).start()
+    const at = BigInt(Date.now()) * 1_000_000n
+    const stopping = send(`stop --at ${at}\n`)
+    await entered.promise
+    const starting = send(`start --at ${at - 15_000_000n}\n`)
+    held.resolve()
+    expect(await Promise.all([stopping, starting])).toEqual(['ok\n', 'ok\n'])
+    expect(dispatch.mock.calls).toEqual([['stop']])
   })
   it.each([false, 'throw'])('reports failed delivery (%s) without crashing', async result => {
     await service(vi.fn(async () => { if (result === 'throw') throw new Error('private failure'); return false })).start()

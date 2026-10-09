@@ -87,4 +87,14 @@ describe('dictation command client endpoint validation', () => {
     expect(process.exitCode).toBeUndefined()
     expect(guidance).not.toHaveBeenCalled()
   })
+  it('passes the binding stamp through without replacing it with client startup time', async () => {
+    process.argv.push('--at', '1791486000123456789')
+    const socket = Object.assign(new EventEmitter(), {
+      setTimeout: vi.fn(), setEncoding: vi.fn(), write: vi.fn(), destroy: vi.fn(),
+    })
+    connect.mockReturnValue(socket)
+    await import('../../../src/main/hotkeys/dictationClient')
+    socket.emit('connect')
+    expect(socket.write).toHaveBeenCalledWith('start --at 1791486000123456789\n')
+  })
 })

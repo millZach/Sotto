@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSync, unlinkSync, type Stats } from 'node:fs'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { basename, dirname, join } from 'node:path'
-import { dictationSocketPath, parseDictationCommand, type CompositorDictationCommand } from './dictationCommand'
+import { DICTATION_REQUEST_MAX_BYTES, DICTATION_STAMP_FUTURE_SKEW_NS, DICTATION_STAMP_MAX_AGE_NS, dictationSocketPath, parseDictationRequest, type CompositorDictationCommand, type DictationRequest } from './dictationCommand'
 import { assertDictationDirectories, validateDictationRuntime, type DictationDirectory } from './dictationRuntime'
 import { privateDictationSocketPattern, readDictationEndpoint, validateDictationFolder, type DictationEndpoint } from './dictationEndpoint'
 
@@ -16,6 +16,8 @@ export class DictationSocket {
   private ownedEndpoint: Stats | null = null
   private disposed = false
   private directories: DictationDirectory[] = []
+  private latestEndStamp: bigint | null = null
+  private delivery: Promise<unknown> = Promise.resolve()
   readonly path: string
   private readonly listeningPath: string
 
@@ -157,16 +159,36 @@ export class DictationSocket {
     socket.setEncoding('utf8')
     socket.on('data', data => {
       input += data
-      if (input.length > 16) { socket.removeAllListeners('data'); socket.end('invalid\n'); return }
+      if (Buffer.byteLength(input) > DICTATION_REQUEST_MAX_BYTES) { socket.removeAllListeners('data'); socket.end('invalid\n'); return }
       if (!input.includes('\n')) return
       socket.removeAllListeners('data')
-      const command = parseDictationCommand(input.slice(0, -1))
-      if (command === null || !input.endsWith('\n')) { socket.end('invalid\n'); return }
-      void this.dispatch(command).then(
+      const request = parseDictationRequest(input.slice(0, -1))
+      if (request === null || !input.endsWith('\n') || !this.acceptStamp(request)) { socket.end('invalid\n'); return }
+      // Keep delivery ordered too: recreating the main window must not let a
+      // later release dispatch first, followed by a delayed microphone start.
+      const delivery = this.delivery.then(() => {
+        if (this.disposed) return false
+        if (request.command === 'start' && request.at !== undefined &&
+          this.latestEndStamp !== null && request.at <= this.latestEndStamp) return true
+        return this.dispatch(request.command)
+      })
+      this.delivery = delivery.catch(() => {})
+      void delivery.then(
         delivered => socket.end(delivered ? 'ok\n' : 'unavailable\n'),
         () => socket.end('unavailable\n'),
       )
     })
+  }
+
+  private acceptStamp({ command, at }: DictationRequest): boolean {
+    if (at === undefined) return true
+    const now = BigInt(Date.now()) * 1_000_000n
+    if (at < now - DICTATION_STAMP_MAX_AGE_NS || at > now + DICTATION_STAMP_FUTURE_SKEW_NS) return false
+    if ((command === 'stop' || command === 'cancel') && (this.latestEndStamp === null || at > this.latestEndStamp)) {
+      // Remember even an unpaired release; a late key-down must not open the mic.
+      this.latestEndStamp = at
+    }
+    return true
   }
 
   private cleanupEndpoint(): void {
