@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { E2E_TRANSCRIPT, E2E_PRESERVED_CLIPBOARD } from '../../src/shared/e2e'
@@ -38,6 +39,26 @@ test('Linux clipboard failure keeps text in Dictate while the main window is hid
     await expect(page.getByRole('textbox', { name: 'Completed dictation text' })).toHaveValue(E2E_TRANSCRIPT)
     await expect(page.getByRole('button', { name: 'Copy text' })).toBeVisible()
     await expect(page.getByText(/Super\+V/)).toHaveCount(0)
+    const widgetPng = await app.evaluate(async ({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/widget.html'))!
+      return (await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG().toString('base64')
+    })
+    await writeFile(join(process.cwd(), 'artifacts/linux-hyprland-paste/clipboard-failure-widget.png'), Buffer.from(widgetPng, 'base64'))
+    for (const appearance of ['light', 'dark'] as const) {
+      await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
+      for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+        await page.setViewportSize({ width, height })
+        await expect(page.getByRole('button', { name: 'Copy text' })).toBeInViewport()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        if (width === 820) {
+          const png = await app.evaluate(async ({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/index.html'))!
+            return (await window.webContents.capturePage({ x: 0, y: 0, width: 820, height: 560 }, { stayHidden: true, stayAwake: true })).toPNG().toString('base64')
+          })
+          await writeFile(join(process.cwd(), `artifacts/linux-hyprland-paste/clipboard-recovery-820x560-${appearance}.png`), Buffer.from(png, 'base64'))
+        }
+      }
+    }
   } finally { await closeSotto(launched) }
 })
 

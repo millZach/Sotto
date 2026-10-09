@@ -168,3 +168,6 @@ artifacts/linux-hyprland-paste/*
 !artifacts/linux-hyprland-paste/nested-paste-real.png
 !artifacts/linux-hyprland-paste/nested-paste-results.json
 !artifacts/linux-hyprland-paste/nested-proof.txt
+!artifacts/linux-hyprland-paste/clipboard-failure-widget.png
+!artifacts/linux-hyprland-paste/clipboard-recovery-820x560-light.png
+!artifacts/linux-hyprland-paste/clipboard-recovery-820x560-dark.png
