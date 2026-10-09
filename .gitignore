@@ -151,6 +151,11 @@ artifacts/computer-use-guidance/
 # Hidden-player verification; retain only the capture cited by the note.
 artifacts/hidden-player-typing/
 
+# Terminal truth verification; keep only evidence cited by its note.
+artifacts/terminal-truths/*
+!artifacts/terminal-truths/provider-exit-820-dark.png
+!artifacts/terminal-truths/interrupted-820-light.png
+
 # Disabled-coordinator verification; retain only the capture cited by the note.
 artifacts/disabled-coordinator-voice/
 

@@ -407,6 +407,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async acquireCheckoutRead(threadId: string): Promise<() => void> {
     return this.checkoutMutations.acquire(this.threadCheckoutFolder(threadId), 'send', { kind: 'checkpoint' })
   }
+  async acquireTerminalStart(folder: string): Promise<() => void> {
+    return this.checkoutMutations.acquire(folder, 'send', { kind: 'terminal-start' })
+  }
   async isCheckoutMutating(threadId: string): Promise<boolean> {
     return this.checkoutMutations.isMutating(this.threadCheckoutFolder(threadId))
   }
@@ -911,6 +914,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { releaseStatus?.(); release() }
     })
   }
+  /** Terminal-owned folders obey the same checkout reservation and thread-use checks as thread-owned folders. */
+  async acquireWorktreeReclaim(folder: string): Promise<() => void> {
+    await this.initialize()
+    const release = await this.checkoutMutations.acquire(folder, 'mutation', { kind: 'remove-folder' })
+    const releaseStatus = this.gitStatus?.hold?.(folder)
+    try {
+      await this.gitStatus?.idle?.(folder)
+      if (!await this.checkoutIsUnreferenced(folder)) throw new Error('A thread works in this folder too, so it stays.')
+      return () => { releaseStatus?.(); release() }
+    } catch (error) { releaseStatus?.(); release(); throw error }
+  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -958,6 +972,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async ownsCheckoutAlone(threadId: string): Promise<boolean> {
     const metadata = this.thread(threadId).worktree
     if (!metadata || metadata.reused || !metadata.path) return false
+    return this.checkoutIsUnreferenced(metadata.path, threadId)
+  }
+  private async checkoutIsUnreferenced(folder: string, exceptThreadId?: string): Promise<boolean> {
     // Threads often share a project folder. Discover that exact path once for this
     // decision; the next rename/removal must revalidate every path from scratch.
     const identities = new Map<string, Promise<string>>()
@@ -967,8 +984,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return pending
     }
     try {
-      const identity = await identify(metadata.path)
-      const others = this.state.snapshot.threads.filter(other => other.id !== threadId)
+      const identity = await identify(folder)
+      const others = this.state.snapshot.threads.filter(other => other.id !== exceptThreadId)
       for (const other of others) {
         if (other.worktree?.reclaimedAt) continue
         if (other.nativeSessionStarted === false && other.worktree?.mode === 'independent' && !other.worktree.path && !other.worktree.existingWorktreePath) continue

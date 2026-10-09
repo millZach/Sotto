@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join, win32 as win32Path } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentProject, AgentWorktree } from '../../shared/agents'
@@ -9,12 +9,13 @@ import {
   TERMINAL_IMAGE_MAX_BYTES, TERMINALS_MAX, terminalOpenSchema, workspaceTerminalImageSchema, workspaceTerminalRequestSchema, workspaceTerminalResizeSchema, workspaceTerminalWriteSchema,
   type TerminalLaunch, type WorkspaceTerminal, type WorkspaceTerminalEvent, type WorkspaceTerminalSnapshot,
 } from '../../shared/terminalWorkspace'
-import type { RunGit, ThreadWorktrees } from '../agents/threadWorktrees'
+import { checkoutIdentity, type RunGit, type ThreadWorktrees } from '../agents/threadWorktrees'
 import { ToolOperations, fail, parse } from '../tools/common'
+import { TerminalShell } from './shell'
 
 export interface TerminalWorkspaceDependencies {
   projects: () => readonly AgentProject[]
-  worktrees: Pick<ThreadWorktrees, 'allocate' | 'ensure' | 'workingDirectory'>
+  worktrees: Pick<ThreadWorktrees, 'allocate' | 'ensure' | 'workingDirectory' | 'reclaim'>
   emit(event: WorkspaceTerminalEvent): void
   /** Best-effort Git for the branch shown under a terminal; failures leave it blank. */
   git?: RunGit
@@ -22,6 +23,8 @@ export interface TerminalWorkspaceDependencies {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
   executableExists?: (path: string) => Promise<boolean>
+  /** Holds the desktop's checkout while proving that no thread or Tools/drawer shell still uses it. */
+  acquireReclaim?: (directory: string) => Promise<() => void>
   now?: () => number
 }
 
@@ -35,6 +38,8 @@ interface LiveTerminal {
   ready?: Promise<void> | undefined
   /** Folder preparation belongs to the terminal, so Reopen can await work begun by an earlier process lifecycle. */
   folder?: Promise<{ worktree: AgentWorktree; workingDirectory: string }> | undefined
+  /** Restart waits for removal, then ensures the checkout again on its retained branch. */
+  reclaiming?: Promise<void> | undefined
   output: string
   sequence: number
   subscriptions: { dispose(): void }[]
@@ -42,8 +47,6 @@ interface LiveTerminal {
 
 interface Launcher { readonly file: string; readonly args: string[]; readonly command: string }
 type SpawnProcess = (file: string, args: string[], options: IPtyForkOptions) => IPty
-/** `discovered` marks a shell found by scanning PATH: only that one can disappear under the cache. */
-interface ResolvedShell { readonly path: string; readonly discovered: boolean }
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
@@ -59,16 +62,17 @@ const powerShellQuote = (token: string): string => `'${token.replace(/['\u2018-\
  */
 export class TerminalWorkspaceService extends ToolOperations {
   private readonly terminals = new Map<string, LiveTerminal>()
-  private cachedShell: ResolvedShell | null = null
-  private shellLookup: Promise<ResolvedShell> | null = null
+  private readonly reclaimingCheckouts = new Set<string>()
+  private readonly shell: TerminalShell
   private spawnLoad: Promise<SpawnProcess> | null = null
   constructor(private readonly dependencies: TerminalWorkspaceDependencies) {
     super()
+    this.shell = new TerminalShell(dependencies)
     this.warm()
   }
   /** Pays for the shell lookup and for loading node-pty once, before the first terminal is asked for. */
   private warm(): void {
-    void this.shellFor().catch(() => { /* Reported when a terminal actually starts. */ })
+    void this.shell.resolve().catch(() => { /* Reported when a terminal actually starts. */ })
     void this.spawner().catch(() => { /* Reported when a terminal actually starts. */ })
   }
   private now(): number { return this.dependencies.now?.() ?? Date.now() }
@@ -87,7 +91,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   list() { return this.run(async () => {
-    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shellFor(), this.dependencies.platform ?? process.platform) }
+    return { terminals: [...this.terminals.values()].map(record => ({ ...record.terminal })), shell: shellName(await this.shell.resolve(), this.dependencies.platform ?? process.platform) }
   }) }
 
   open(payload: unknown) { return this.run(async () => {
@@ -142,6 +146,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   }
 
   private async prepareFolder(record: LiveTerminal, generation: number): Promise<void> {
+    if (this.disposed || generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
     const worktree = record.terminal.worktree
     if (!worktree) return
     record.folder ??= (async () => {
@@ -165,37 +170,6 @@ export class TerminalWorkspaceService extends ToolOperations {
   private async branch(directory: string): Promise<string | null> {
     if (!this.dependencies.git) return null
     try { return (await this.dependencies.git(directory, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || null } catch { return null }
-  }
-
-  /**
-   * The shell, resolved once for the session: PATH is scanned for the first terminal and not again, unless the shell
-   * it found has since disappeared.
-   */
-  private async shellFor(): Promise<string> {
-    const cached = this.cachedShell
-    if (cached && (!cached.discovered || await this.exists(cached.path))) return cached.path
-    this.cachedShell = null
-    const lookup = this.shellLookup ??= this.shell().finally(() => { this.shellLookup = null })
-    const found = await lookup
-    this.cachedShell = found
-    return found.path
-  }
-
-  private exists(path: string): Promise<boolean> {
-    const check = this.dependencies.executableExists ?? (async (target: string) => { try { await access(target); return true } catch { return false } })
-    return check(path)
-  }
-
-  /** The shell for this platform: pwsh when installed, else Windows PowerShell; the login shell elsewhere. */
-  private async shell(): Promise<ResolvedShell> {
-    const platform = this.dependencies.platform ?? process.platform
-    const env = this.environment(platform)
-    if (platform !== 'win32') return { path: env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/sh'), discovered: false }
-    for (const entry of (env.PATH ?? env.Path ?? '').split(win32Path.delimiter).filter(Boolean)) {
-      const candidate = win32Path.join(entry, 'pwsh.exe')
-      if (await this.exists(candidate)) return { path: candidate, discovered: true }
-    }
-    return { path: win32Path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), discovered: false }
   }
 
   /** node-pty, imported once for the session; the injected spawn stands in for it under test. */
@@ -224,12 +198,19 @@ export class TerminalWorkspaceService extends ToolOperations {
   /** What to spawn: the shell alone, or the shell running the provider's CLI so the user's PATH and profile apply. */
   private async launcher(launch: TerminalLaunch): Promise<Launcher> {
     const platform = this.dependencies.platform ?? process.platform
-    const shell = await this.shellFor()
+    const shell = await this.shell.resolve()
     const argv = providerCommand({ provider: launch.provider, model: launch.modelId === null ? null : nativeModelName(launch.modelId), reasoning: launch.reasoning, permission: launch.permission })
     if (argv.length === 0) return { file: shell, args: platform === 'win32' ? ['-NoLogo'] : ['-l'], command: shellName(shell, platform) }
     const command = commandLine(argv)
-    if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-Command', `& ${argv.map(powerShellQuote).join(' ')}`], command }
-    return { file: shell, args: ['-l', '-i', '-c', `exec ${argv.map(posixQuote).join(' ')}`], command }
+    const exitMessage = `${launch.provider} exited with code`
+    if (platform === 'win32') return { file: shell, args: ['-NoLogo', '-NoExit', '-Command',
+      `$global:LASTEXITCODE = 0; & ${argv.map(powerShellQuote).join(' ')}; if ($?) { $sottoExitCode = 0 } else { $sottoExitCode = $LASTEXITCODE; if (!$sottoExitCode) { $sottoExitCode = 1 } }; Write-Host ("\`n${exitMessage} {0}." -f $sottoExitCode)`,
+    ], command }
+    const run = argv.map(posixQuote).join(' ')
+    const report = shellName(shell, platform) === 'fish'
+      ? `set sotto_exit $status; printf '\\n${exitMessage} %s.\\n' $sotto_exit`
+      : `sotto_exit=$?; printf '\\n${exitMessage} %s.\\n' "$sotto_exit"`
+    return { file: shell, args: ['-l', '-i', '-c', `${run}; ${report}; exec ${posixQuote(shell)} -l`], command }
   }
 
   private async start(record: LiveTerminal, launcher: Launcher, generation: number): Promise<void> {
@@ -241,6 +222,8 @@ export class TerminalWorkspaceService extends ToolOperations {
       const spawn = await this.spawner()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
       if (generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
+      if (this.reclaimingCheckouts.size && this.reclaimingCheckouts.has(await checkoutIdentity(record.terminal.workingDirectory))) return fail('workspace-unavailable', 'This folder is being reclaimed. Wait for Close to finish before opening a terminal here.')
+      if (this.disposed || generation !== record.generation) return fail('session-unavailable', 'This terminal was closed before it could start.')
       // A closed row rejoins the active set only here, without an await between the check and the change.
       if (record.terminal.closedAt !== null) this.requireCapacity()
       record.output = ''
@@ -265,7 +248,7 @@ export class TerminalWorkspaceService extends ToolOperations {
         record.terminal = { ...record.terminal, status: 'exited', exitCode }
         this.publish(record)
       }))
-      this.publish(record)
+      if (!this.disposed) this.publish(record)
     } catch (error) {
       if (this.disposed || generation !== record.generation) throw error
       if (record.terminal.closedAt !== null && error instanceof Error && 'code' in error && error.code === 'busy') throw error
@@ -320,6 +303,7 @@ export class TerminalWorkspaceService extends ToolOperations {
     this.end(record)
     const restarting = (async () => {
       try {
+        await record.reclaiming
         const launcher = await this.launcher(record.terminal.launch)
         await this.prepareFolder(record, generation)
         await this.start(record, launcher, generation)
@@ -341,6 +325,7 @@ export class TerminalWorkspaceService extends ToolOperations {
   }) }
   close(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(workspaceTerminalRequestSchema, payload).id, false)
+    const preparation = record.ready
     ++record.generation
     record.starting = false
     record.ready = undefined
@@ -348,7 +333,38 @@ export class TerminalWorkspaceService extends ToolOperations {
     record.terminal = { ...record.terminal, closedAt: this.now(), status: record.terminal.status === 'starting' ? 'exited' : record.terminal.status }
     record.output = ''
     this.publish(record)
+    // Close remains immediate while a checkout still starts; removal waits for that owned preparation.
+    record.reclaiming ??= this.reclaim(record, preparation).finally(() => { record.reclaiming = undefined })
   }) }
+
+  private async reclaim(record: LiveTerminal, preparation: Promise<void> | undefined): Promise<void> {
+    const metadata = record.terminal.worktree
+    if (!metadata || metadata.mode !== 'independent' || metadata.reused || metadata.reclaimedAt) return
+    try {
+      await preparation
+      const prepared = await record.folder
+      // A Reopen that overtook preparation owns the folder again. Never remove it under a new process.
+      if (record.terminal.closedAt === null || record.pty || this.disposed) return
+      const owner = prepared?.worktree ?? metadata
+      const release = await this.dependencies.acquireReclaim?.(owner.path!)
+      let identity: string | undefined
+      let reserved = false
+      try {
+        identity = await checkoutIdentity(owner.path!)
+        if (this.reclaimingCheckouts.has(identity)) return
+        this.reclaimingCheckouts.add(identity)
+        reserved = true
+        for (const other of this.terminals.values()) {
+          if (other === record || other.terminal.closedAt !== null && !other.starting) continue
+          if (await checkoutIdentity(other.terminal.workingDirectory) === identity) return
+        }
+        const worktree = await this.dependencies.worktrees.reclaim(owner, { automatic: true })
+        record.terminal = { ...record.terminal, worktree }
+        if (!this.disposed) this.publish(record)
+      } finally { if (identity && reserved) this.reclaimingCheckouts.delete(identity); release?.() }
+    } catch { /* Dirty, ignored, reused, locked or replaced folders stay; Close approves no loss. */ }
+    finally { record.folder = undefined }
+  }
   pasteImage(payload: unknown) { return this.run(async () => {
     const request = parse(workspaceTerminalImageSchema, payload)
     const record = await this.owned(request.id)

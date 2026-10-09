@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { IPty, IPtyForkOptions } from 'node-pty'
 import type { AgentWorktree } from '../../../src/shared/agents'
 import { TerminalWorkspaceService, type TerminalWorkspaceDependencies } from '../../../src/main/terminals/service'
@@ -11,6 +11,7 @@ import type { ToolsResult } from '../../../src/shared/tools'
 import { createTerminalWorkspaceBridge } from '../../../src/preload/terminals'
 import { registerTerminalWorkspaceIpc } from '../../../src/main/terminals/ipc'
 import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
+import { runWorktreeGit, ThreadWorktrees, TERMINAL_WORKTREE_HOME } from '../../../src/main/agents/threadWorktrees'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -19,7 +20,7 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await
 const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64')}`
 const shellLaunch = { provider: null, modelId: null, reasoning: null, permission: null } as const
 
-async function fixture(options: Partial<Pick<TerminalWorkspaceDependencies, 'env' | 'platform' | 'executableExists' | 'now'>> = {}) {
+async function fixture(options: Partial<Pick<TerminalWorkspaceDependencies, 'env' | 'platform' | 'executableExists' | 'now' | 'acquireReclaim'>> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminals-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const project = join(directory, 'project'); await mkdir(project)
@@ -34,10 +35,11 @@ async function fixture(options: Partial<Pick<TerminalWorkspaceDependencies, 'env
   })
   const worktrees = {
     allocate: vi.fn(async (path: string, mode: 'independent' | 'shared'): Promise<AgentWorktree> => mode === 'shared' ? { mode, status: 'ready', path } : { mode, status: 'pending', path: checkout, branch: 'sotto/terminal-1', repositoryRoot: path, baseCommit: 'abc' }),
-    ensure: vi.fn(async (metadata: AgentWorktree): Promise<AgentWorktree> => ({ ...metadata, status: 'ready' })),
+    ensure: vi.fn(async (metadata: AgentWorktree): Promise<AgentWorktree> => ({ ...metadata, status: 'ready', reclaimedAt: undefined })),
     workingDirectory: vi.fn(async (metadata: AgentWorktree) => metadata.path!),
+    reclaim: vi.fn(async (metadata: AgentWorktree): Promise<AgentWorktree> => ({ ...metadata, reclaimedAt: new Date().toISOString() })),
   }
-  const git = vi.fn(async (_cwd: string, args: string[]) => args.includes('--abbrev-ref') ? 'main\n' : '')
+  const git = vi.fn(async (_cwd: string, args: string[]): Promise<string> => args.includes('--abbrev-ref') ? 'main\n' : '')
   const createService = () => {
     const service = new TerminalWorkspaceService({
       projects: () => [{ id: 'p1', title: 'Project', path: project }], worktrees, git, spawn, platform: 'win32',
@@ -57,6 +59,92 @@ async function started(service: TerminalWorkspaceService, request: unknown) {
 }
 
 describe('terminal workspace service', () => {
+  it('keeps a worktree when the desktop checkout-use guard refuses reclamation', async () => {
+    const acquireReclaim = vi.fn(async () => { throw new Error('Another thread works here') })
+    const f = await fixture({ acquireReclaim })
+    const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    unwrap(await f.service.close({ id: terminal.id }))
+    await expect.poll(() => acquireReclaim.mock.calls.length).toBe(1)
+    expect(f.worktrees.reclaim).not.toHaveBeenCalled()
+    expect(unwrap(await f.service.list()).terminals[0]!.worktree?.reclaimedAt).toBeUndefined()
+  })
+
+  it('keeps a checkout while another Terminal-mode shell still uses it', async () => {
+    const f = await fixture()
+    const request = { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }
+    const first = await started(f.service, request)
+    const second = await started(f.service, request) // This fixture allocates both records to the same checkout.
+    unwrap(await f.service.close({ id: first.terminal.id }))
+    await f.service.restart({ id: first.terminal.id }) // Waits for the skipped cleanup to settle.
+    expect(f.worktrees.reclaim).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.kill).not.toHaveBeenCalled()
+    unwrap(await f.service.close({ id: second.terminal.id }))
+  })
+
+  it('refuses a late process start while its checkout is being reclaimed', async () => {
+    const f = await fixture()
+    const request = { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }
+    const first = await started(f.service, request)
+    const held = Promise.withResolvers<AgentWorktree>()
+    f.worktrees.reclaim.mockImplementationOnce(() => held.promise)
+    unwrap(await f.service.close({ id: first.terminal.id }))
+    try {
+      await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+      expect((await started(f.service, request)).terminal.status).toBe('unavailable')
+      expect(f.spawn).toHaveBeenCalledOnce()
+    } finally { held.resolve({ ...first.terminal.worktree!, reclaimedAt: new Date().toISOString() }) }
+  })
+  it.each(['win32', 'darwin', 'linux'] as const)('keeps an interactive shell and prints the provider exit on %s', async platform => {
+    const f = await fixture({ platform, env: { SHELL: '/bin/zsh' } })
+    await started(f.service, { projectId: 'p1', title: 'Agent', workingCopy: 'shared', launch: { provider: 'codex', modelId: null, reasoning: null, permission: 'ask' } })
+    const args = f.spawn.mock.calls[0]![1]
+    if (platform === 'win32') expect(args).toContain('-NoExit')
+    else {
+      expect(args.at(-1)).not.toMatch(/^exec /u)
+      expect(args.at(-1)).toContain("exec '/bin/zsh' -l")
+    }
+    expect(args.at(-1)).toContain('codex exited with code')
+  })
+
+  it('reclaims a closed owned worktree with the automatic guards and restores it on Restart', async () => {
+    const f = await fixture()
+    const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    unwrap(await f.service.close({ id: terminal.id }))
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+    expect(f.processes[0]!.pty.kill).toHaveBeenCalledOnce()
+    expect(f.worktrees.reclaim).toHaveBeenCalledWith(terminal.worktree, { automatic: true })
+    await expect.poll(async () => unwrap(await f.service.list()).terminals[0]!.worktree?.reclaimedAt).toBeTruthy()
+    const reopened = unwrap(await f.service.restart({ id: terminal.id }))
+    expect(reopened.terminal.closedAt).toBeNull()
+    expect(f.worktrees.ensure).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits for its in-flight branch read before reclaiming a closed checkout', async () => {
+    const f = await fixture()
+    const branch = Promise.withResolvers<string>(), entered = Promise.withResolvers<void>()
+    f.git.mockImplementationOnce(() => { entered.resolve(); return branch.promise })
+    const opened = unwrap(await f.service.open({ projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch }))
+    await entered.promise
+    unwrap(await f.service.close({ id: opened.terminal.id }))
+    expect(f.worktrees.reclaim).not.toHaveBeenCalled()
+    branch.resolve('main\n')
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+  })
+
+  it('does not recreate a reclaimed checkout from a restart cancelled during shell lookup', async () => {
+    const executableExists = vi.fn(async () => true)
+    const f = await fixture({ executableExists })
+    const { terminal } = await started(f.service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    const shell = Promise.withResolvers<boolean>(), entered = Promise.withResolvers<void>()
+    executableExists.mockImplementationOnce(() => { entered.resolve(); return shell.promise })
+    const restarting = f.service.restart({ id: terminal.id })
+    await entered.promise
+    unwrap(await f.service.close({ id: terminal.id }))
+    shell.resolve(true)
+    expect(await restarting).toMatchObject({ ok: false })
+    await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+    expect(f.worktrees.ensure).toHaveBeenCalledOnce()
+  })
   it.each([false, true])('reserves an overlapping restart before launcher lookup (closed=%s)', async closed => {
     const executableExists = vi.fn(async () => true)
     const f = await fixture({ executableExists })
@@ -116,7 +204,7 @@ describe('terminal workspace service', () => {
     expect(unwrap(await f.service.list()).terminals[0]!.closedAt).not.toBeNull()
   })
 
-  it('Reopen shares the initial checkout preparation after Close invalidates its first start', async () => {
+  it('Reopen waits for initial checkout preparation and reclamation before restoring after Close', async () => {
     const f = await fixture()
     const checkout = Promise.withResolvers<AgentWorktree>(), directory = Promise.withResolvers<string>(), directoryEntered = Promise.withResolvers<void>()
     f.worktrees.ensure.mockImplementationOnce(() => checkout.promise)
@@ -134,14 +222,45 @@ describe('terminal workspace service', () => {
       expect(f.spawn).not.toHaveBeenCalled()
       directory.resolve(f.checkout)
       expect(unwrap(await reopening).terminal).toMatchObject({ status: 'running', workingDirectory: f.checkout, worktree: { status: 'ready' }, closedAt: null })
-      expect(f.worktrees.ensure).toHaveBeenCalledOnce()
-      expect(f.worktrees.workingDirectory).toHaveBeenCalledOnce()
+      expect(f.worktrees.reclaim).toHaveBeenCalledOnce()
+      expect(f.worktrees.ensure).toHaveBeenCalledTimes(2)
+      expect(f.worktrees.workingDirectory).toHaveBeenCalledTimes(2)
       expect(f.spawn).toHaveBeenCalledExactlyOnceWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: f.checkout }))
     } finally {
       checkout.resolve({ ...opened.terminal.worktree!, status: 'ready' }); directory.resolve(f.checkout)
       await reopening; f.service.dispose()
     }
     expect(f.processes[0]!.pty.kill).toHaveBeenCalledOnce()
+  })
+
+  it.each(['clean', 'dirty', 'ignored'] as const)('keeps the branch and protects %s work when a real terminal worktree closes', async kind => {
+    const f = await fixture()
+    await runWorktreeGit(f.project, ['init'])
+    await writeFile(join(f.project, 'tracked.txt'), 'baseline')
+    await writeFile(join(f.project, '.gitignore'), 'local-data/\n')
+    await runWorktreeGit(f.project, ['add', '.'])
+    await runWorktreeGit(f.project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Baseline'])
+    const worktrees = new ThreadWorktrees(dirname(f.project), runWorktreeGit, TERMINAL_WORKTREE_HOME)
+    const reclaim = vi.spyOn(worktrees, 'reclaim')
+    const service = new TerminalWorkspaceService({ projects: () => [{ id: 'p1', title: 'Project', path: f.project }], worktrees, spawn: f.spawn, emit: vi.fn(), platform: 'win32', env: {} })
+    cleanup.push(async () => service.dispose())
+    const { terminal } = await started(service, { projectId: 'p1', title: 'Build', workingCopy: 'independent', launch: shellLaunch })
+    const path = terminal.workingDirectory
+    if (kind === 'dirty') await writeFile(join(path, 'tracked.txt'), 'unsaved work')
+    if (kind === 'ignored') { await mkdir(join(path, 'local-data')); await writeFile(join(path, 'local-data', 'keep.txt'), 'private data') }
+    unwrap(await service.close({ id: terminal.id }))
+    await expect.poll(() => reclaim.mock.results.length).toBe(1)
+    if (kind === 'clean') await reclaim.mock.results[0]!.value
+    else await expect(reclaim.mock.results[0]!.value).rejects.toThrow()
+    expect((await runWorktreeGit(f.project, ['show-ref', '--verify', `refs/heads/${terminal.worktree!.branch}`])).trim()).not.toBe('')
+    if (kind === 'clean') {
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(unwrap(await service.restart({ id: terminal.id })).terminal.workingDirectory).toBe(path)
+      expect(await readFile(join(path, 'tracked.txt'), 'utf8')).toBe('baseline')
+    } else {
+      expect((await stat(path)).isDirectory()).toBe(true)
+      expect(await readFile(join(path, kind === 'dirty' ? 'tracked.txt' : 'local-data/keep.txt'), 'utf8')).toBe(kind === 'dirty' ? 'unsaved work' : 'private data')
+    }
   })
 
   it('disposal during launcher lookup leaves no late process or terminal event', async () => {
@@ -235,6 +354,25 @@ describe('terminal workspace service', () => {
     expect(listing.filter(item => item.closedAt !== null)).toHaveLength(1)
     expect(f.spawn).toHaveBeenCalledTimes(66)
   })
+  it('still reserves the last active slot atomically while another checkout is being reclaimed', async () => {
+    const f = await fixture()
+    await mkdir(join(f.project, '.git'))
+    await mkdir(join(f.checkout, '.git'))
+    const request = { projectId: 'p1', title: 'Build', workingCopy: 'shared', launch: shellLaunch }
+    const closed = [await started(f.service, request), await started(f.service, request)]
+    for (const item of closed) unwrap(await f.service.close({ id: item.terminal.id }))
+    const cleanup = await started(f.service, { ...request, workingCopy: 'independent' })
+    const held = Promise.withResolvers<AgentWorktree>()
+    f.worktrees.reclaim.mockImplementationOnce(() => held.promise)
+    for (let i = 0; i < 63; i++) await started(f.service, request)
+    unwrap(await f.service.close({ id: cleanup.terminal.id }))
+    try {
+      await expect.poll(() => f.worktrees.reclaim.mock.calls.length).toBe(1)
+      const results = await Promise.all(closed.map(item => f.service.restart({ id: item.terminal.id })))
+      expect(results.filter(item => item.ok)).toHaveLength(1)
+      expect(unwrap(await f.service.list()).terminals.filter(item => item.closedAt === null)).toHaveLength(64)
+    } finally { held.resolve({ ...cleanup.terminal.worktree!, reclaimedAt: new Date().toISOString() }) }
+  })
   it('publishes the terminal before its process exists, then its process and its branch', async () => {
     const f = await fixture()
     const opened = unwrap(await f.service.open({ projectId: 'p1', title: 'Build', workingCopy: 'shared', launch: shellLaunch }))
@@ -274,7 +412,7 @@ describe('terminal workspace service', () => {
     // The terminal is published while its checkout is still pending, then again once the folder is there.
     expect(f.events[0]).toMatchObject({ type: 'terminal', terminal: { status: 'starting', workingCopy: 'independent', worktree: { status: 'pending' } } })
     expect(opened.terminal).toMatchObject({ workingDirectory: f.checkout, workingCopy: 'independent', command: 'claude --model claude-sonnet-5 --effort high --dangerously-skip-permissions', worktree: { status: 'ready', branch: 'sotto/terminal-1' } })
-    expect(f.spawn).toHaveBeenCalledWith(expect.stringMatching(/powershell\.exe$/u), ['-NoLogo', '-Command', "& 'claude' '--model' 'claude-sonnet-5' '--effort' 'high' '--dangerously-skip-permissions'"], expect.objectContaining({ cwd: f.checkout }))
+    expect(f.spawn).toHaveBeenCalledWith(expect.stringMatching(/powershell\.exe$/u), ['-NoLogo', '-NoExit', '-Command', expect.stringContaining("& 'claude' '--model' 'claude-sonnet-5' '--effort' 'high' '--dangerously-skip-permissions';")], expect.objectContaining({ cwd: f.checkout }))
     expect(opened.output).toContain('· claude --model claude-sonnet-5 --effort high --dangerously-skip-permissions')
   })
 
@@ -284,15 +422,15 @@ describe('terminal workspace service', () => {
     await started(f.service, { projectId: 'p1', title: 'Agent', workingCopy: 'shared', launch: {
       provider: 'claude', modelId: `native:claude:model:${encodeURIComponent(model)}`, reasoning, permission: 'ask',
     } })
-    expect(f.spawn).toHaveBeenCalledWith(expect.stringMatching(/powershell\.exe$/u), ['-NoLogo', '-Command',
-      `& 'claude' '--model' 'model${quote}${quote}name' '--effort' 'effort${quote}${quote}level'`,
+    expect(f.spawn).toHaveBeenCalledWith(expect.stringMatching(/powershell\.exe$/u), ['-NoLogo', '-NoExit', '-Command',
+      expect.stringContaining(`& 'claude' '--model' 'model${quote}${quote}name' '--effort' 'effort${quote}${quote}level';`),
     ], expect.anything())
   })
 
   it('runs the CLI through a login shell on macOS', async () => {
     const f = await fixture({ platform: 'darwin', env: { SHELL: '/bin/zsh', PATH: '/usr/bin' } })
     await started(f.service, { projectId: 'p1', title: 'Agent', workingCopy: 'shared', launch: { provider: 'codex', modelId: null, reasoning: null, permission: 'edits' } })
-    expect(f.spawn).toHaveBeenCalledWith('/bin/zsh', ['-l', '-i', '-c', "exec 'codex' '--full-auto'"], expect.anything())
+    expect(f.spawn).toHaveBeenCalledWith('/bin/zsh', ['-l', '-i', '-c', expect.stringMatching(/^'codex' '--full-auto';.*exec '\/bin\/zsh' -l$/u)], expect.anything())
     await started(f.service, { projectId: 'p1', title: 'Shell', workingCopy: 'shared', launch: shellLaunch })
     expect(f.spawn).toHaveBeenLastCalledWith('/bin/zsh', ['-l'], expect.anything())
   })

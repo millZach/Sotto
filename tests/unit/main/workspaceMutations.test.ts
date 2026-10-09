@@ -57,6 +57,40 @@ function barrier() {
 }
 const send = (id: string) => ({ type: 'send' as const, threadId: id, commandId: `send-${id}`, messageId: `message-${id}`, text: 'Work' })
 
+it('refuses terminal reclamation while an idle thread still references the checkout', async () => {
+  const f = await fixture()
+  try {
+    await expect(f.host.acquireWorktreeReclaim(f.project.path)).rejects.toThrow('A thread works in this folder too, so it stays.')
+    expect(await f.host.isCheckoutMutating('a')).toBe(false)
+  } finally { await f.stop(); await f.remove() }
+})
+
+it('names a shell startup reservation and refuses another startup during removal', async () => {
+  const f = await fixture()
+  let release: (() => void) | undefined
+  try {
+    release = await f.host.acquireTerminalStart(f.project.path)
+    await expect(f.host.acquireCheckoutMutation('a')).rejects.toThrow('Sotto is starting a terminal in this folder. Try again in a moment.')
+    release(); release = undefined
+    release = await f.host.acquireCheckoutMutation('a', { kind: 'remove-folder' })
+    await expect(f.host.acquireTerminalStart(f.project.path)).rejects.toThrow('Sotto is removing this folder')
+  } finally { release?.(); await f.stop(); await f.remove() }
+})
+
+it('reserves an unused terminal checkout against a new sibling send until removal finishes', async () => {
+  const f = await fixture()
+  let release: (() => void) | undefined
+  try {
+    const terminalWorktrees = new worktrees.ThreadWorktrees(f.root, git, worktrees.TERMINAL_WORKTREE_HOME)
+    const owned = await terminalWorktrees.ensure(await terminalWorktrees.allocate(f.project.path, 'independent'))
+    release = await f.host.acquireWorktreeReclaim(owned.path!)
+    await f.host.configureThreadWorkingCopy('a', { workingCopy: 'independent', existingWorktreePath: owned.path! })
+    await expect(f.host.execute(send('a'))).rejects.toThrow('Sotto is removing this folder')
+    release(); release = undefined
+    await expect(f.host.execute(send('a'))).resolves.toMatchObject({ accepted: true })
+  } finally { release?.(); await f.stop(); await f.remove() }
+})
+
 it('names a post-turn checkpoint read when a sibling tries to change Git', async () => {
   const f = await fixture()
   let release: (() => void) | undefined

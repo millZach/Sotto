@@ -21,7 +21,7 @@ function fakeTerminal(initial: TerminalSession[] = []) {
   let sessions = initial
   const listeners = new Set<(event: TerminalEvent) => void>()
   const bridge: TerminalBridge = {
-    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: sessions.filter(item => item.workspace.threadId === threadId) })),
+    list: vi.fn(async ({ threadId }) => ok({ workspace, sessions: sessions.filter(item => item.workspace.threadId === threadId), capacity: { count: sessions.length, version: 0 } })),
     create: vi.fn(async ({ threadId }) => {
       const created = session(threadId === workspace.threadId ? ID_1 : ID_2, { workspace: { ...workspace, threadId } })
       sessions = [...sessions, created]

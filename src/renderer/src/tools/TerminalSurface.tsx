@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { CircleStop, Plus, RotateCcw, X } from 'lucide-react'
 import type { TerminalBridge, TerminalSession } from '../../../shared/terminal'
+import { TERMINAL_LIMIT_MESSAGE, TERMINAL_SESSIONS_MAX } from '../../../shared/terminal'
 import { TerminalViewProblem } from './TerminalViewProblem'
 import { ToolsChrome } from './ToolsChrome'
 import type { ToolsError } from '../../../shared/tools'
@@ -65,6 +66,7 @@ function sessionNames(sessions: readonly TerminalSession[]): Map<string, string>
  */
 export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFailed, idSuffix = '', chromeTitle = 'Terminal', newLabel = 'New terminal', barEnd, autoStart = false, startSize, focusNextRef }: TerminalSurfaceProps): ReactNode {
   const terminals = useThreadTerminals(store, threadId)
+  const sessionCount = useSyncExternalStore(store.subscribe, store.sessionCount)
   const [confirming, setConfirming] = useState<string | null>(null)
   const internalFocusNext = useRef(false)
   const focusNext = focusNextRef ?? internalFocusNext
@@ -73,11 +75,11 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const chrome = chromeTitle === null ? null : <ToolsChrome title={chromeTitle} />
   // A pane drawer starts its first shell on its own; it never shows "Start terminal" while that is on its way.
   useEffect(() => {
-    if (!autoStart || autoStarted.current || !terminals || terminals.status !== 'ready' || terminals.sessions.length > 0 || terminals.busy || !bridge) return
+    if (!autoStart || autoStarted.current || !terminals || terminals.status !== 'ready' || terminals.sessions.length > 0 || terminals.busy || !bridge || sessionCount >= TERMINAL_SESSIONS_MAX) return
     autoStarted.current = true
     focusNext.current = true
     void store.create(bridge, threadId, startSize?.())
-  }, [autoStart, terminals, bridge, store, threadId, focusNext])
+  }, [autoStart, terminals, bridge, store, threadId, focusNext, sessionCount])
   if (!terminals || terminals.status === 'loading' && terminals.sessions.length === 0) return <>{chrome}<p className="files-preview__loading" role="status">Loading terminals…</p></>
   if (terminals.status === 'error' && terminals.sessions.length === 0) {
     return <>{chrome}<div className="files-problem files-problem--root" role="status">
@@ -89,18 +91,20 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const { sessions } = terminals
   const active = sessions.find(session => session.id === terminals.activeSessionId) ?? null
   const names = sessionNames(sessions)
-  const full = sessions.length >= 32
+  const full = sessionCount >= TERMINAL_SESSIONS_MAX
+  const limitHint = TERMINAL_LIMIT_MESSAGE
 
   if (sessions.length === 0) {
     // An attempt that is still on its way shows only a quiet status; one that failed falls through to the usual
     // empty state below, whose button lets it be retried and whose notice says what happened.
-    if (autoStart && !terminals.notice) return <div className="terminal-surface">{chrome}<p className="files-preview__loading" role="status">Starting terminal…</p></div>
+    if (autoStart && !terminals.notice && !full) return <div className="terminal-surface">{chrome}<p className="files-preview__loading" role="status">Starting terminal…</p></div>
     return <div className="terminal-surface">
       {chrome}
       <div className="files-problem files-problem--root terminal-empty">
         <strong>No terminal is open for this thread.</strong>
         <p>A terminal starts in the thread’s working folder and keeps running while you work elsewhere.</p>
-        <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={terminals.busy || !bridge} onClick={start}>Start terminal</button>
+        <button type="button" className="tt-button tt-button--primary tt-focusable" title={full ? limitHint : undefined} disabled={terminals.busy || full || !bridge} onClick={start}>Start terminal</button>
+        {full ? <p className="terminal-notice" role="status">{limitHint}</p> : null}
         {terminals.notice ? <p className="terminal-notice" role="alert">{terminals.notice}</p> : null}
       </div>
     </div>
@@ -109,7 +113,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const focusTab = (id: string): void => document.getElementById(`terminal-tab-${id}`)?.focus()
   const interrupt = active?.status === 'running' ? <button type="button" className="files-icon tt-focusable" aria-label="Send Ctrl+C" title="Send Ctrl+C (stop the running command)"
     onClick={() => store.interrupt(bridge, threadId, active.id)}><CircleStop size={16} aria-hidden="true" /></button> : null
-  const newShell = <button type="button" className="files-icon tt-focusable" aria-label={newLabel} title={full ? 'A thread can keep 32 terminals' : newLabel}
+  const newShell = <button type="button" className="files-icon tt-focusable" aria-label={newLabel} title={full ? limitHint : newLabel}
     disabled={terminals.busy || full || !bridge} onClick={start}><Plus size={16} aria-hidden="true" /></button>
   return <div className="terminal-surface">
     <div className="terminal-bar tools-chrome">
@@ -144,7 +148,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
     {confirming !== null && confirming === active?.id ? <CloseConfirm name={names.get(active.id) ?? 'this terminal'}
       onEnd={() => { setConfirming(null); void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activeSessionId; if (next) focusTab(next) }) }}
       onKeep={() => { setConfirming(null); focusTab(active.id) }} /> : null}
-    {terminals.notice ? <p className="terminal-notice" role="alert">{terminals.notice}</p> : null}
+    {terminals.notice || full ? <p className="terminal-notice" role={terminals.notice ? 'alert' : 'status'}>{terminals.notice ?? limitHint}</p> : null}
     {active ? <TerminalScreen key={active.id} session={active} name={names.get(active.id) ?? 'Terminal'} threadId={threadId} store={store} bridge={bridge}
       viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} screenId={screenId} /> : null}
   </div>
@@ -191,7 +195,7 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, v
   const ended = session.status !== 'running'
   return <div className="terminal-screen" id={screenId} role="tabpanel" aria-labelledby={`terminal-tab-${sessionId}`} data-ended={ended || undefined}>
     {ended ? <div className="terminal-ended" role="status">
-      <p><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? 'The output below is what it showed before; the shell is gone.'
+      <p><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? 'Nothing it showed was kept.'
         : session.status === 'unavailable' ? 'The shell could not start in this folder.' : 'Its output stays here until you close it.'}</p>
       <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => { focusNext.current = true; void store.reopen(bridge, threadId, sessionId) }}>
         <RotateCcw size={14} aria-hidden="true" />Reopen</button>

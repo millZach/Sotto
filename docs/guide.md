@@ -96,6 +96,12 @@ When the Codex app changes its connection, Sotto refreshes the thread's tools be
 
 In Terminal mode, **Close** releases the terminal's output and keeps its row on **Closed** until Sotto quits. **Reopen** starts the same command with fresh output. **Stop**, a command finishing, or hiding its pane keeps the output readable. Up to 64 terminals can be open at once; Closed rows do not count toward that limit.
 
+When Claude Code, Codex or Grok Build exits, its exit code is printed and the terminal stays at an interactive shell in the same folder. **Restart** runs the provider again. **Stop** ends the shell too.
+
+All three terminal surfaces use the same shell: PowerShell 7 when `pwsh.exe` is on PATH, otherwise Windows PowerShell; your `SHELL` on macOS and Linux, with zsh and sh as their respective fallbacks. On macOS, Command+C copies a selection; Ctrl+C interrupts.
+
+Closing a terminal in a new worktree tries to reclaim its folder, keeping its branch and commits. Uncommitted work, ignored files other than installed dependencies, outside links, locked or replaced folders and nested work that needs your answer keep the folder. A folder another thread or open terminal still uses stays too. Reopen restores a reclaimed folder on its retained branch before starting the command. Closing while the worktree is being prepared waits for that preparation before trying to reclaim it.
+
 ### Sending, steering and screenshots
 
 If a permission arrives while you type, the composer keeps focus and your draft. It becomes read-only until you allow or deny the request above. Tab still reaches the other controls.
@@ -171,6 +177,8 @@ Standalone Chats, including Talk and Generate prompt, has been removed. With **K
 Claude Code, Codex and Grok Build run one process per thread; if one stops, only that thread is affected. A reply it was writing says it may be cut short, and the client starts again there when you send a message.
 
 ### Terminal drawer
+
+Tools and drawer shells share a limit of 32 across every thread, including ended shells. Close a terminal to free a slot. After Sotto quits, a shell that was running returns as **Ended when Sotto closed** with no saved output. Reopen starts a fresh shell in its working folder. Output is never written to disk.
 
 Each thread pane has a **Terminal drawer** button in its header, beside Tools. It opens a terminal across the bottom third of the pane, under the composer, starting in the thread's working copy: the same folder its agent works in. Ctrl+J (Cmd+J on a Mac) opens and hides the drawer of the pane you are in, even from inside the terminal; opening it this way puts you in the terminal, and hiding it puts you back in the composer. Drag the line above the drawer to make it taller or shorter, or focus it and use the arrow keys; double-click it to go back to a third. **+** starts another shell, and each shell has a tab. Hiding the drawer leaves its shells running. Closing a shell's tab ends it, and closing the last one hides the drawer. Hiding the drawer from inside it, with **Hide terminal drawer** or by closing its last shell, puts you back in the composer. These shells are separate from the Terminal in Tools: one never shows the other's. Every pane of a split has its own drawer, and each thread remembers whether its drawer is open and how tall it is. If your dictation shortcut is Ctrl+J, the drawer leaves the shortcut to dictation and you open it with the button. In the Terminal in Tools and in Terminal mode, Ctrl+J still goes to the shell. Escape always goes to the shell, so it never hides the drawer. With **Frosted window** on, the drawer lets the desktop through as well, a little more solid than the room. A thread on a paired host has no drawer: its terminal is on the host machine.
 

@@ -28,7 +28,7 @@ function fakeTerminal(initial: TerminalSession[], snapshots: Record<string, Term
   const pendingRead: { release: (() => void) | null } = { release: null }
   const hold = { read: false }
   const bridge: TerminalBridge = {
-    list: vi.fn(async () => ok({ workspace, sessions })),
+    list: vi.fn(async () => ok({ workspace, sessions, capacity: { count: sessions.length, version: 0 } })),
     create: vi.fn(async () => {
       const created = session(ID_2)
       sessions = [...sessions, created]
@@ -225,6 +225,7 @@ describe('Terminal surface', () => {
     const ended = await within(panel()).findByRole('tab', { name: 'PowerShell, Ended when Sotto closed' })
     await userEvent.click(ended)
     expect(within(panel()).getByText('Ended when Sotto closed.')).toBeInTheDocument()
+    expect(within(panel()).getByText('Nothing it showed was kept.')).toBeInTheDocument()
     expect(within(panel()).queryByRole('button', { name: 'Send Ctrl+C' })).toBeNull()
     await userEvent.click(within(panel()).getByRole('button', { name: 'Reopen' }))
     expect(terminal.bridge.reopen).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, sessionId: ID_1 })
@@ -249,6 +250,19 @@ describe('Terminal surface', () => {
     await waitFor(() => expect(within(panel()).queryByRole('tab', { name: 'cmd' })).toBeNull())
     expect(terminal.bridge.close).toHaveBeenCalledWith({ threadId: 'visual-gate', workspaceId: TOKEN_A, sessionId: ID_2 })
     expect(within(panel()).getByRole('tab', { name: 'PowerShell', selected: true })).toHaveFocus()
+  })
+
+  it('disables New terminal when other threads and drawer shells fill the shared limit', async () => {
+    const terminal = fakeTerminal([session(ID_1, { status: 'exited' })])
+    vi.mocked(terminal.bridge.list).mockResolvedValueOnce(ok({ workspace, sessions: [session(ID_1, { status: 'exited' })], capacity: { count: 32, version: 1 } }))
+    setup(terminal)
+    const button = await within(panel()).findByRole('button', { name: 'New terminal' })
+    expect(button).toBeDisabled()
+    expect(within(panel()).getByText('Tools and drawer shells across all threads share 32 terminals, including ended shells. Close a terminal to open another.')).toBeVisible()
+    expect(button).toHaveAttribute('title', 'Tools and drawer shells across all threads share 32 terminals, including ended shells. Close a terminal to open another.')
+    act(() => terminal.emit({ type: 'capacity', capacity: { count: 31, version: 2 } }))
+    expect(button).toBeEnabled()
+    expect(button).toHaveAttribute('title', 'New terminal')
   })
 
   it('follows session and closed events from main', async () => {
