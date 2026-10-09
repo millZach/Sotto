@@ -124,10 +124,13 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
   panel.setAttribute('aria-label', 'Open terminal link')
   panel.setAttribute('popover', 'auto')
   let returnFocus: HTMLElement | null = null
-  const hide = (): void => { panel.hidePopover?.(); panel.hidden = true; panel.remove(); returnFocus?.focus() }
+  let placementFrame = 0
+  const stopFollowing = (): void => { cancelAnimationFrame(placementFrame); placementFrame = 0 }
+  const hide = (): void => { stopFollowing(); panel.hidePopover?.(); panel.hidden = true; panel.remove(); returnFocus?.focus() }
   panel.addEventListener('toggle', event => { if ((event as ToggleEvent).newState === 'closed' && !panel.hidden) hide() })
   return {
     open(): void {
+      stopFollowing()
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       panel.replaceChildren()
       const header = document.createElement('header'), title = document.createElement('strong'), close = document.createElement('button')
@@ -148,18 +151,27 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
       if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = 'No web links in this output.'; list.append(empty) }
       panel.append(list); panel.hidden = false; element.append(panel)
       // The top layer escapes a short drawer's clipping while the DOM stays inside its keyboard/focus boundary.
-      const anchor = returnFocus?.getBoundingClientRect() ?? element.getBoundingClientRect()
-      const width = Math.min(360, window.innerWidth - 24)
-      panel.style.width = `${width}px`
-      panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`
-      panel.style.top = '12px'
-      panel.style.maxHeight = `${window.innerHeight - 24}px`
       panel.showPopover?.()
-      const height = panel.getBoundingClientRect().height
-      panel.style.top = `${Math.max(12, Math.min(anchor.bottom + 8 + height <= window.innerHeight - 12 ? anchor.bottom + 8 : anchor.top - height - 8, window.innerHeight - height - 12))}px`
+      let placed = ''
+      const place = (): void => {
+        const anchor = returnFocus?.getBoundingClientRect() ?? element.getBoundingClientRect()
+        const state = `${anchor.right} ${anchor.top} ${anchor.bottom} ${panel.offsetHeight} ${window.innerWidth} ${window.innerHeight}`
+        if (state === placed) return
+        placed = state
+        const width = Math.min(360, window.innerWidth - 24)
+        panel.style.width = `${width}px`
+        panel.style.left = `${Math.max(12, Math.min(anchor.right - width, window.innerWidth - width - 12))}px`
+        panel.style.maxHeight = `${window.innerHeight - 24}px`
+        const height = panel.getBoundingClientRect().height
+        panel.style.top = `${Math.max(12, Math.min(anchor.bottom + 8 + height <= window.innerHeight - 12 ? anchor.bottom + 8 : anchor.top - height - 8, window.innerHeight - height - 12))}px`
+      }
+      place()
+      // Native resize and pane layout can settle after the resize event; follow the same anchor before paint.
+      const follow = (): void => { place(); placementFrame = requestAnimationFrame(follow) }
+      placementFrame = requestAnimationFrame(follow)
       ;(list.querySelector('button') ?? close).focus()
     },
     close(): boolean { if (panel.hidden) return false; hide(); return true },
-    dispose(): void { panel.remove() },
+    dispose(): void { stopFollowing(); panel.remove() },
   }
 }

@@ -74,3 +74,25 @@ it('provides named destinations, native keyboard controls, empty feedback and fo
     expect(document.activeElement).toBe(trigger)
   } finally { picker.dispose(); element.remove(); trigger.remove() }
 })
+
+it('keeps open link choices inside the resized viewport and stops following after close', () => {
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal('requestAnimationFrame', vi.fn(callback => { frame = callback; return 1 }))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  vi.stubGlobal('innerWidth', 1600); vi.stubGlobal('innerHeight', 1000)
+  const element = document.createElement('div'), trigger = document.createElement('button')
+  document.body.append(element, trigger); trigger.focus()
+  vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ right: 1550, top: 80, bottom: 100 } as DOMRect)
+  const picker = terminalLinkPicker(element, { list: () => [], clear() {}, dispose() {} }, vi.fn())
+  try {
+    picker.open()
+    const panel = element.querySelector<HTMLElement>('.terminal-links')!
+    expect(panel.style.left).toBe('1190px')
+    vi.stubGlobal('innerWidth', 820); vi.stubGlobal('innerHeight', 560)
+    frame!(0)
+    expect(panel.style.left).toBe('448px')
+    expect(panel.style.maxHeight).toBe('536px')
+    picker.close()
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1)
+  } finally { picker.dispose(); element.remove(); trigger.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks() }
+})

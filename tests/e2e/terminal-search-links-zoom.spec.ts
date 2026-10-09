@@ -247,6 +247,17 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       expect((await readFile(join(clipboardFolder, saved))).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
       await input.press('Control+f'); await find.fill('needle')
       await mkdir(SHOTS, { recursive: true })
+      // Earlier font/reload checks can make ConPTY redraw old text without its OSC 8 metadata.
+      await input.press('Control+l'); await find.focus()
+      await linkControl.press('Enter')
+      await expect(namedLink).toBeFocused()
+      await resizeWindow(launched, 820, 560)
+      await expect(async () => {
+        const bounds = await picker.boundingBox()
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(820)
+        expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(560)
+      }).toPass()
+      await namedLink.press('Escape'); await find.focus()
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
         await input.press('Control+l')
@@ -267,12 +278,15 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
           await page.screenshot({ path: join(SHOTS, `${surface}-search-${width}x${height}-${appearance}.png`) })
           await linkControl.focus(); await linkControl.press('Enter')
           await expect(namedLink).toBeFocused()
-          const linksBox = await picker.boundingBox()
-          const viewport = page.viewportSize() ?? { width, height }
-          expect(linksBox!.x).toBeGreaterThanOrEqual(0)
-          expect(linksBox!.x + linksBox!.width).toBeLessThanOrEqual(viewport.width)
-          expect(linksBox!.y).toBeGreaterThanOrEqual(0)
-          expect(linksBox!.y + linksBox!.height).toBeLessThanOrEqual(viewport.height)
+          // Chromium can return the previous composited popover quad immediately after native resize.
+          await expect(async () => {
+            const linksBox = await picker.boundingBox()
+            const viewport = page.viewportSize() ?? { width, height }
+            expect(linksBox!.x).toBeGreaterThanOrEqual(0)
+            expect(linksBox!.x + linksBox!.width).toBeLessThanOrEqual(viewport.width)
+            expect(linksBox!.y).toBeGreaterThanOrEqual(0)
+            expect(linksBox!.y + linksBox!.height).toBeLessThanOrEqual(viewport.height)
+          }).toPass()
           await page.screenshot({ path: join(SHOTS, `${surface}-links-${width}x${height}-${appearance}.png`) })
           await namedLink.press('Escape'); await find.focus()
         }
@@ -291,7 +305,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         await divider.press('Home'); await expect(divider).toHaveAttribute('aria-valuenow', '120')
         await input.press('Control+f'); await expect(divider).toHaveAttribute('aria-valuenow', '184')
         await find.press('Control+k')
-        await expect(page.locator('.history-find__input')).toBeFocused()
+        await expect(page.getByRole('region', { name: 'Transcript history' }).getByRole('heading', { name: 'History', exact: true })).toBeVisible()
       }
       if (surface === 'workspace') {
         await input.press('Control+b')
