@@ -26,6 +26,11 @@ const owned = createOwnedProofProcesses(console.log)
 const temporaryRoot = mkdtempSync('/tmp/sp-')
 assert.equal(statSync(temporaryRoot).mode & 0o777, 0o700)
 console.log(`Temporary root ${temporaryRoot}: mode 700`)
+const temporaryEnvironment = {
+  TMPDIR: temporaryRoot, TMP: temporaryRoot, TEMP: temporaryRoot,
+  XDG_CONFIG_HOME: join(temporaryRoot, 'config'), XDG_CACHE_HOME: join(temporaryRoot, 'cache'),
+  PWTEST_CACHE_DIR: join(temporaryRoot, 'playwright-cache'),
+}
 let compositor, signature, display, folderIdentity
 const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.stop(), [() => {
   if (signature && !before.has(signature) && signature !== live.HYPRLAND_INSTANCE_SIGNATURE) {
@@ -49,7 +54,7 @@ try {
   const config = join(temporaryRoot, 'hyprland.lua')
   writeFileSync(config, 'hl.monitor({ output = "", mode = "1600x1000@60", position = "0x0", scale = 1 })\nhl.config({ animations = { enabled = false } })\n')
   compositor = owned.start('nested Hyprland', 'Hyprland', ['-c', config], {
-    env: { ...process.env, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: live.WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE: '', HYPRLAND_NO_SD_NOTIFY: '1', TMPDIR: temporaryRoot, XDG_CACHE_HOME: join(temporaryRoot, 'cache') }, stdio: 'ignore',
+    env: { ...process.env, ...temporaryEnvironment, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: live.WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE: '', HYPRLAND_NO_SD_NOTIFY: '1' }, stdio: 'ignore',
   })
   const deadline = Date.now() + 20_000
   let instance
@@ -67,7 +72,7 @@ try {
   assert.notEqual(display, live.WAYLAND_DISPLAY)
   folderIdentity = statSync(join(instanceRoot, signature))
   console.log(`nested Hyprland PID ${compositor.pid}: ${signature} on ${display}; live instance untouched`)
-  const env = { ...process.env, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: display, HYPRLAND_INSTANCE_SIGNATURE: signature, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland', TMPDIR: temporaryRoot, TMP: temporaryRoot, TEMP: temporaryRoot, XDG_CACHE_HOME: join(temporaryRoot, 'cache'), PWTEST_CACHE_DIR: join(temporaryRoot, 'playwright-cache'), SOTTO_PROOF_CAPTURE_DIR: captures, SOTTO_PROOF_LIVE_SIGNATURE: live.HYPRLAND_INSTANCE_SIGNATURE }
+  const env = { ...process.env, ...temporaryEnvironment, XDG_RUNTIME_DIR: runtime, WAYLAND_DISPLAY: display, HYPRLAND_INSTANCE_SIGNATURE: signature, XDG_CURRENT_DESKTOP: 'Hyprland', XDG_SESSION_TYPE: 'wayland', ELECTRON_OZONE_PLATFORM_HINT: 'wayland', SOTTO_PROOF_CAPTURE_DIR: captures, SOTTO_PROOF_LIVE_SIGNATURE: live.HYPRLAND_INSTANCE_SIGNATURE }
   delete env.ELECTRON_RUN_AS_NODE
   const specs = process.argv.slice(2)
   const child = owned.start('Linux Playwright proof', process.execPath, [join(checkout, 'node_modules/@playwright/test/cli.js'), 'test', ...(specs.length ? specs : ['tests/e2e/linux-shell-plumbing.spec.ts']), '--workers=1', `--output=${join(temporaryRoot, 'test-results')}`], { env, stdio: 'inherit' })
