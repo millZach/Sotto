@@ -38,6 +38,7 @@ const customSettings = {
   browserWithoutAsking: false,
   visualsInThreads: false,
   babysitPullRequests: false,
+  commandCenterInFlightLimit: 6,
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   hotkey: 'Alt+D',
@@ -118,6 +119,17 @@ describe('settings', () => {
     expect(parseSettings({}).babysitPullRequests).toBe(true)
     expect(parseSettings({ babysitPullRequests: false }).babysitPullRequests).toBe(false)
     expect(parseSettings({ babysitPullRequests: 'no' }).babysitPullRequests).toBe(true)
+  })
+  it('defaults command-center capacity to four and accepts only integers from one to eight', () => {
+    expect(parseSettings({}).commandCenterInFlightLimit).toBe(4)
+    for (const commandCenterInFlightLimit of [1, 4, 8]) {
+      expect(parseSettings({ commandCenterInFlightLimit }).commandCenterInFlightLimit).toBe(commandCenterInFlightLimit)
+      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, commandCenterInFlightLimit }).success).toBe(true)
+    }
+    for (const commandCenterInFlightLimit of [0, 9, 2.5, '4', null]) {
+      expect(parseSettings({ commandCenterInFlightLimit }).commandCenterInFlightLimit).toBe(4)
+      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, commandCenterInFlightLimit }).success).toBe(false)
+    }
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -265,6 +277,7 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
+      commandCenterInFlightLimit: 4,
       memoryEnabled: false,
       webLinkDestination: 'external',
       responseStreaming: 'live',

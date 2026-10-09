@@ -4,6 +4,14 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 ## Threads
 
+**Command center.** The one current native agent thread on a computer given Sotto's bounded thread tools and brokered project reads, with its own room (ADR-0063). Earlier conversations become command-center history when its provider changes. Avoid: the old "Coordinator", "assignment", "Agents room".
+
+**Overview.** The command center room's sidebar list of all other threads, grouped by what the user must do, with source and read times. It is a projection, not a work queue or attention store; its groups are Needs you, Ready for review, Working, Landing, Quiet and Idle.
+
+**Command-center request.** A particular user instruction to the command center, with main's identity, root user-message reference and budgets. Qualify it to distinguish it from an agent's pending question or permission request; retries and wake-ups keep its identity and budgets.
+
+**Thread card.** A main-backed reference or receipt in the command center's transcript opening a real thread pane. It is distinct from a request card, where the user answers the owning thread, and from a visual; it answers and approves nothing.
+
 **Thread.** A conversation with one coding agent about one project, owned by Sotto. A thread has a Sotto thread ID, a title, a project, a model, a status (idle, running, error), messages and pending requests. In a project, a thread opens at once on its new-thread defaults; a model chosen afterward for that thread overrides its starting choice without changing the setting. Threads are a core Sotto function: memory, drafts, follow-up queues and delivery evidence refer to threads by Sotto thread ID and never by a provider's own identifier. Avoid: "T3 thread", "conversation", "chat" when referring to a project-bound thread.
 
 **New-thread defaults.** What a thread in a project opens on, with saved native account choices supplying the model when no explicit default is set: the model, reasoning effort and permission mode chosen in Settings → Agents' "New threads start with" row. A create-thread that leaves one of them unset takes the default instead, fit to what the model it lands on actually offers: the nearest safer permission mode when the model does not offer the chosen one, and the effort at the same position among the levels the model does offer; a provider with its own permission profiles (Devin) always starts on its first, never the chosen default. An empty install keeps today's behaviour until the row is used: the model follows the reasoning-based default, and effort and permission follow the provider's own starting choice. An explicit choice made for one thread's own creation always wins over these. `src/shared/newThreadDefaults.ts`.

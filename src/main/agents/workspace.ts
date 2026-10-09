@@ -39,6 +39,7 @@ import { markSendStage } from './sendStages'
 import { babysitRecordSchema, publishedBabysitting, type BabysitRecord } from './babysitNews'
 import type { BabysitStore, BabysitThread } from './babysitting'
 import { BABYSITTING_PER_THREAD_MAX } from '../../shared/babysitting'
+import { migrateWorkspaceThreadKinds } from './commandCenterRecords'
 
 /** Keep a Unicode character whole at an event boundary so SQLite preserves its text. */
 function historyTextChunks(text: string): string[] {
@@ -128,7 +129,7 @@ function organizationOnly(thread: AgentThread, keepActivities = false): AgentThr
 }
 
 const workspaceSchema = z.object({
-  snapshot: agentHostSnapshotSchema,
+  snapshot: z.preprocess(migrateWorkspaceThreadKinds, agentHostSnapshotSchema),
   projectAliases: z.array(z.object({ providerProjectId: z.string(), projectId: z.string() })).default([]),
   creations: z.array(z.object({ threadId: z.string(), projectId: z.string(), commandId: z.string(), phase: z.enum(['unstarted', 'starting', 'retryable', 'started']) })),
 })
@@ -1912,6 +1913,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // A new provider registration may have a different project ID. The original Sotto
       // project remains the workspace/memory scope for a thread created beneath it.
       const merged: AgentThread = { ...thread,
+        kind: old?.kind ?? 'project',
         subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
         // A name the user set by hand, or one Sotto gave this thread, outranks whatever the provider still calls it.
         ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource }

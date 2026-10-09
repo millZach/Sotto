@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,8 @@ import { AgentCredentials, type CredentialEncryption } from '../../../src/main/a
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { commandCenterRecordFixture } from '../../fixtures/commandCenter'
+import { emptyCommandCenterRecord } from '../../../src/shared/commandCenter'
 
 const roots: string[] = []
 const controls: AgentControl[] = []
@@ -18,18 +20,18 @@ const encryption: CredentialEncryption = {
   decryptString: value => value.toString(),
 }
 
-async function fixture() {
+async function fixture(historyEnabled = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-persistence-'))
   roots.push(root)
   const credentials = new AgentCredentials(root, encryption)
   await credentials.load()
   const host = new E2EAgentHost()
-  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
+  const control = new AgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => historyEnabled,
   })
   controls.push(control)
   await control.start()
   if (!control.get().host.connected) await control.command({ type: 'connect' })
-  return { root, host, control }
+  return { root, host, control, credentials }
 }
 
 afterEach(async () => {
@@ -39,6 +41,51 @@ afterEach(async () => {
 })
 
 describe('coordinator persistence', () => {
+  it('migrates an older agents store without adopting a thread named Command center or old management', async () => {
+    const f = await fixture()
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    delete saved.commandCenter
+    saved.assignments = [{ threadId: 'workshop', instruction: 'Retired words', mode: 'managed' }]
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const reopened = new AgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: e2eAgentReasoner })
+    controls.push(reopened); await reopened.start(); reopened.dispose(); await reopened.closed()
+    const migrated = JSON.parse(await readFile(path, 'utf8'))
+    expect(migrated.commandCenter).toEqual(emptyCommandCenterRecord())
+    expect(migrated).not.toHaveProperty('assignments')
+    expect(migrated.configuration).toEqual(saved.configuration)
+    expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
+  })
+
+  it('retains text-free command-center uncertainty, budgets and ownership across history-off restarts', async () => {
+    const f = await fixture(false)
+    f.control.dispose(); await f.control.closed()
+    const path = join(f.root, 'agents.json')
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    const record = commandCenterRecordFixture()
+    saved.commandCenter = record
+    await writeFile(path, JSON.stringify(saved), 'utf8')
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    for (let restart = 0; restart < 2; restart++) {
+      const host = new E2EAgentHost()
+      const reopened = new AgentControl({ directory: f.root, host, credentials: f.credentials, reasoner: e2eAgentReasoner, historyEnabled: () => false })
+      controls.push(reopened); await reopened.start()
+      host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_COMMAND_CENTER_REQUEST' })
+      host.event({ type: 'stream', threadId: 'workshop', messageId: 'private-reply', text: 'DISTINCT_PRIVATE_FILE_CONTENT', status: 'idle' })
+      reopened.dispose(); await reopened.closed()
+      expect(JSON.parse(await readFile(path, 'utf8')).commandCenter).toEqual(record)
+      // No recovery writer may mistake a retained uncertain operation for new work.
+      expect((await host.snapshot()).threads.flatMap(thread => thread.messages).filter(message => message.commandId)).toEqual([])
+    }
+    for (const name of await readdir(f.root)) {
+      if (!name.endsWith('.json') && !name.includes('.tmp-') && !name.includes('.corrupt-')) continue
+      const text = await readFile(join(f.root, name), 'utf8')
+      expect(text).not.toContain('DISTINCT_PRIVATE_COMMAND_CENTER_REQUEST')
+      expect(text).not.toContain('DISTINCT_PRIVATE_FILE_CONTENT')
+    }
+    expect(warnings.mock.calls.flat().join(' ')).not.toContain('DISTINCT_PRIVATE')
+  })
   function agentsWriteSpy() {
     const realWrite = AtomicJsonStore.prototype.write
     const spy = vi.spyOn(AtomicJsonStore.prototype, 'write')

@@ -30,6 +30,9 @@ export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
 export type ProviderId = z.infer<typeof providerIdSchema>
+/** Absent on older live snapshots; ordinary threads have the project kind. */
+export const agentThreadKindSchema = z.enum(['project', 'command-center', 'command-center-history'])
+export type AgentThreadKind = z.infer<typeof agentThreadKindSchema>
 /**
  * Why a provider is not connected, as a stable code the Hosts page's tiles decide on (ADR-0037): its client is not
  * there, is older than Sotto supports, is there but not signed in, or is there and could not be started or checked.
@@ -305,6 +308,7 @@ export const agentThreadSchema = z.object({
   clientReconnecting: z.boolean().optional(),
   hostId: z.uuid().optional(),
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
+  kind: agentThreadKindSchema.optional(),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),

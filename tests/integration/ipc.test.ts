@@ -1,5 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { SettingsRepository } from '../../src/main/storage/settingsRepository'
 
 import {
   bootstrapSotto,
@@ -1327,6 +1331,26 @@ describe('IPC validation and lifecycle', () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { babysitPullRequests: false })).resolves.toMatchObject({ babysitPullRequests: false })
     expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
+  })
+  it('saves command-center capacity through the allow-list and reads back the saved value', async () => {
+    const { ipc, settings } = createIpcHarness()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-command-center-setting-'))
+    try {
+      const path = join(root, 'settings.json')
+      const repository = new SettingsRepository(path)
+      settings.update.mockImplementation(patch => repository.update(patch))
+      settings.get.mockImplementation(() => repository.get())
+      await expect(ipc.invoke(SETTINGS_UPDATE, { commandCenterInFlightLimit: 7 })).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ commandCenterInFlightLimit: 7 })
+      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
+      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ commandCenterInFlightLimit: 7 })
+      for (const commandCenterInFlightLimit of [0, 9, 2.5, '4']) {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { commandCenterInFlightLimit })).rejects.toThrow('Invalid IPC payload')
+      }
+      expect(settings.update).toHaveBeenCalledTimes(1)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('persists phone access and the name phones show through the settings allow-list (ADR-0033)', async () => {

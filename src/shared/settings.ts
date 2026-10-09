@@ -133,6 +133,8 @@ export interface AppSettings {
    * started ends at once; what the user started from the Pull request surface stays.
    */
   babysitPullRequests: boolean
+  /** Computer-wide command-center capacity; lowering it holds admission and stops nothing. */
+  commandCenterInFlightLimit: number
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -280,6 +282,7 @@ const fieldSchemas = {
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
+  commandCenterInFlightLimit: z.number().int().min(1).max(8),
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -363,6 +366,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserWithoutAsking: true,
   visualsInThreads: true,
   babysitPullRequests: true,
+  commandCenterInFlightLimit: 4,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -486,6 +490,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
+    commandCenterInFlightLimit: parseField(persisted, 'commandCenterInFlightLimit', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
