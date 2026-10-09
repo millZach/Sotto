@@ -139,6 +139,10 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// Authority for this paired client, refreshed with the shell. Older hosts send it only in hello.
     public let clientCapabilities: Hello.Capabilities?
     public let configuration: ThreadStartPreferences?
+    /// Every thread's follow-up queue, in order. Older hosts send none.
+    public let followups: [Followup]?
+    /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
+    public let followupReceipts: [DeliveryReceipt]?
     public func validate(hostID: String) throws {
         guard hostId == hostID, host.hostId == hostID,
               host.threads.allSatisfy({ $0.hostId == nil || $0.hostId == hostID }) else { throw ClientError.invalidIdentity }
@@ -162,6 +166,8 @@ public struct Provider: Decodable, Equatable, Sendable { public let id: String; 
 public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     public let submit: Bool; public let interrupt: Bool; public let questions: Bool; public let permissions: Bool
     public let projects: Bool?; public let threads: Bool?
+    /// Whether the provider takes a message into a running turn, and compacts a thread's context when asked.
+    public let steer: Bool?; public let compact: Bool?
 }
 public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String
@@ -177,6 +183,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
     public let worktree: ThreadWorktree?
+    /// False when the thread's provider says it can't compact this thread, or its native session hasn't started yet.
+    /// Absent means not known, as from an older computer.
+    public let manualCompactionSupported: Bool?; public let nativeSessionStarted: Bool?
     /// Current provider-confirmed work only; never infer it from retained activity or messages.
     public struct BackgroundWork: Decodable, Equatable, Sendable { public let type: String }
     public struct Compaction: Decodable, Equatable, Sendable { public let status: String }
@@ -242,6 +251,37 @@ public struct ThreadWorktree: Decodable, Equatable, Sendable {
     }
 }
 
+/// A message in a thread's follow-up queue (`agentFollowupSchema` in src/shared/agents.ts): one of the user's, waiting
+/// for the running turn to end, or Sotto's one wake-up (ADR-0061), which is removable and never steered. `status` is
+/// `queued`, `dispatching`, `uncertain`, `failed` or `paused`, kept a string so a status this build doesn't know still
+/// shows. Only the fields the queue's cards read; the optional ones are read on their own.
+public struct Followup: Decodable, Identifiable, Equatable, Sendable {
+    public let id: String; public let threadId: String; public let draftId: String; public let text: String
+    public let status: String
+    public let createdAt: String?; public let updatedAt: String?
+    public let error: String?
+    /// The message it became, once it was dispatched.
+    public let messageId: String?
+    public let wakeUp: Bool?
+    /// How many photos it carries. Their handles stay on the computer.
+    public let attachmentCount: Int
+    private enum Keys: String, CodingKey { case id, threadId, draftId, text, status, createdAt, updatedAt, error, messageId, wakeUp, attachments }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        id = try c.decode(String.self, forKey: .id)
+        threadId = try c.decode(String.self, forKey: .threadId)
+        draftId = try c.decode(String.self, forKey: .draftId)
+        text = try c.decode(String.self, forKey: .text)
+        status = try c.decode(String.self, forKey: .status)
+        createdAt = c.tolerant(String.self, .createdAt)
+        updatedAt = c.tolerant(String.self, .updatedAt)
+        error = c.tolerant(String.self, .error)
+        messageId = c.tolerant(String.self, .messageId)
+        wakeUp = c.tolerant(Bool.self, .wakeUp)
+        attachmentCount = c.tolerant([JSONValue].self, .attachments)?.count ?? 0
+    }
+}
+
 private extension KeyedDecodingContainer {
     /// The value at `key`, or nil when it is missing, null or of another type.
     func tolerant<T: Decodable>(_ type: T.Type, _ key: Key) -> T? {
@@ -300,7 +340,7 @@ public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
 }
 public struct RequestOption: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let description: String? }
 public struct Question: Decodable, Equatable, Identifiable, Sendable {
-    public let id: String; public let question: String; public let options: [RequestOption]
+    public let id: String; public let question: String; public let header: String?; public let options: [RequestOption]
     public let multiSelect: Bool; public let allowFreeText: Bool; public let required: Bool?; public let unavailableReason: String?
 }
 public struct PermissionChoice: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let kind: String; public let description: String? }
