@@ -5,8 +5,15 @@
   window layouts, and everything it covers that you might need while dictating is marked.
 
   Every combination is a link: #place=p0..p5&layout=full|split-left|split-right|three
-  &focus=sotto|terminal|editor&state=listening|transcribing|failed&theme=dark|light, plus
-  notif=1 (a notification arrives), marks=0 (hide the marking) and motion=reduced.
+  &focus=sotto|terminal|editor&state=listening|transcribing|failed&theme=dark|light
+  &notif=0|1 (1: a notification arrives)&marks=0|1 (0: hide the marking)&motion=auto|reduced.
+  The page writes every key. A key that is missing or has a value it does not know takes the
+  default (place=p1, layout=split-left, focus=terminal, state=listening, theme=dark, notif=0,
+  marks=1, motion=auto); case does not matter.
+
+  Decided by the owner on #850, October 8: P1 is the default, the pill can be dragged and snaps
+  to the nearest screen edge as the Windows pill does, and it shows on the focused display. The
+  page draws P1 where it starts; it does not draw the drag.
 
   The look is the #839 prototype's (prototype/omarchy-widget-chrome, 5b90bf2a): B's pill, the bar,
   the tiled windows, chrome 1, Tokyo Night and Catppuccin Latte. Positions come from omarchy-shell
@@ -422,7 +429,7 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
     <ul class="covers" id="covers"></ul>
 
     <h2>Placement trade-offs</h2>
-    <div class="trade" data-trade="p1"><h3>P1 · Top centre, under the bar</h3><p>Hangs from the bar's centre, under Sotto's indicator, where the shell already opens the clock's popup. It only ever covers the tops of the windows that meet in the middle: a header, a title, a terminal's oldest lines. It never moves, needs nothing from Hyprland but the monitor, and keeps clear of notifications (top right) and the OSD (bottom centre). It is the furthest from the prompt you are looking at.</p></div>
+    <div class="trade" data-trade="p1"><h3>P1 · Top centre, under the bar</h3><p>Hangs from the bar's centre, under Sotto's indicator, where the shell already opens the clock's popup. It only ever covers the tops of the windows that meet in the middle: a header, a title, a terminal's oldest lines. It moves only when you drag it, needs nothing from Hyprland but the focused monitor, and keeps clear of notifications (top right) and the OSD (bottom centre). It is the furthest from the prompt you are looking at.</p></div>
     <div class="trade" data-trade="p2"><h3>P2 · Bottom centre of the focused window <span class="dropped">Dropped</span></h3><p>It sits on the focused window's input, which is where your words go: Sotto's composer, Claude Code's prompt. It hides the text you are adding to, in every layout. It also has to follow focus, which P5’s card costs out.</p></div>
     <div class="trade" data-trade="p3"><h3>P3 · Bottom right of the screen, lifted</h3><p>Near where your eyes are, and never on the seam. Lifted 150 px it clears a composer at its resting height, but it lands on the right end of the latest reply, and a composer that grows with a long draft grows into it. Dropped into the corner itself, it would cover Sotto's send and stop button whenever Sotto is on the right.</p></div>
     <div class="trade" data-trade="p4"><h3>P4 · Top right, under the bar's right group</h3><p>Covers little in the windows. But it is exactly where notifications appear (top right, 380 px wide, the same anchor) and where the network, Bluetooth and audio panels open. A notification while you dictate lands on the pill or under it. Tick “A notification arrives” to see it.</p></div>
@@ -442,9 +449,16 @@ pre.rule{margin:6px 0 0;padding:10px;border-radius:8px;background:#0b0d10;border
       <li>If the bar is moved to the bottom (<code>omarchy bar position</code>), P1 would follow it to the bottom centre, back on the seam. The plugin should then keep to the top edge.</li>
     </ul>
 
+    <h2>Decided on #850</h2>
+    <div class="rec">
+      <p><b>P1 is where the pill starts.</b> Top centre, just under the bar, hanging from Sotto's indicator.</p>
+      <p><b>It moves like the Windows pill.</b> Drag it, and on release it snaps to the nearest screen edge and keeps its place along that edge, as <code>snapToEdge</code> does on Windows. Sotto saves the place, so the pill comes back where you left it. A layer-shell surface can change its margins while it shows, so the plugin can do this. This page does not draw the drag.</p>
+      <p><b>It follows the focused display.</b> The pill shows on Hyprland's focused monitor. Omarchy's focus follows the mouse, so the pill moves to the display the mouse is on, even while you dictate, and a saved edge place applies on whichever display shows it. The bar indicator shows on every display's bar.</p>
+    </div>
+
     <h2>Designer's recommendation</h2>
     <div class="rec">
-      <p><b>P1, top centre under the bar.</b> It is the only placement that covers nothing you need in every layout and every focus here, with or without a notification on screen. It never moves, and it reads as part of the bar it hangs from, beside the indicator that carries the same state, in the place the shell already uses for the centre group's popups. Its cost is distance: it is far from a prompt at the bottom of the screen. The dictation hotkey, not a trip with the mouse, is how most dictations end.</p>
+      <p><b>P1, top centre under the bar.</b> It is the only placement that covers nothing you need in every layout and every focus here, with or without a notification on screen. It stays put until you drag it, and it reads as part of the bar it hangs from, beside the indicator that carries the same state, in the place the shell already uses for the centre group's popups. Its cost is distance: it is far from a prompt at the bottom of the screen. The dictation hotkey, not a trip with the mouse, is how most dictations end.</p>
       <p><b>P5 is the runner-up</b> if the pill should show which window your words go to. It earns that with a focus listener and a pill that jumps.</p>
     </div>
   </section>
@@ -645,8 +659,8 @@ function terminal(s, win) {
       ${tl('  <span class="dim">Read 212 lines</span>')}${tl('')}
       ${tl('<span class="grn">●</span> A bar widget watches a file and redraws when it changes. The')}
       ${tl('  Agents widget reads <span class="cyn">~/.local/state/omarchy/agents/usage/*.json</span>')}
-      ${tl('  this way, so Sotto can write one state file and a plugin can')}
-      ${tl('  follow it without a socket.')}${tl('')}
+      ${tl('  this way, so Sotto can write one state file for a plugin to')}
+      ${tl('  follow. The pill\'s buttons answer with <span class="cyn">sotto dictation stop</span>.')}${tl('')}
       ${tl('<span class="dim">></span> And the pill? It has to take clicks.')}${tl('')}
       ${tl('<span class="grn">●</span> <span class="bri">Read</span>(/usr/share/omarchy/shell/plugins/osd/Osd.qml)')}
       ${tl('  <span class="dim">Read 197 lines</span>')}${tl('')}
@@ -833,24 +847,22 @@ const frame = document.getElementById('frame')
 const loupes = [...document.querySelectorAll('[data-loupe]')]
 let lastTargets = {}
 
+/* A link says everything: a missing key or a value the page does not know takes the default, not what is on screen. */
+const DEFAULTS = { place: 'p1', layout: 'split-left', focus: 'terminal', state: 'listening', theme: 'dark', notif: false, marks: true, motion: false }
+const CHOICES = { place: Object.keys(PLACES), layout: Object.keys(LAYOUT_NAMES), focus: ['sotto', 'terminal', 'editor'], state: STATES, theme: ['dark', 'light'] }
+const FLAGS = { notif: ['0', '1'], marks: ['0', '1'], motion: ['auto', 'reduced'] }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1))
-  const pick = (key, allowed) => (allowed.includes(p.get(key)) ? p.get(key) : null)
-  S.place = pick('place', Object.keys(PLACES)) ?? S.place
-  S.layout = pick('layout', Object.keys(LAYOUT_NAMES)) ?? S.layout
-  S.focus = pick('focus', ['sotto', 'terminal', 'editor']) ?? S.focus
-  S.state = pick('state', STATES) ?? S.state
-  S.theme = pick('theme', ['dark', 'light']) ?? S.theme
-  if (p.has('notif')) S.notif = p.get('notif') === '1'
-  if (p.has('marks')) S.marks = p.get('marks') !== '0'
-  if (p.has('motion')) S.motion = p.get('motion') === 'reduced'
-  if (!focusable(S.layout).includes(S.focus)) S.focus = 'terminal'
+  const get = (key) => (p.get(key) ?? '').trim().toLowerCase()
+  const patch = {}
+  for (const [key, allowed] of Object.entries(CHOICES)) patch[key] = allowed.includes(get(key)) ? get(key) : DEFAULTS[key]
+  for (const [key, values] of Object.entries(FLAGS)) patch[key] = values.includes(get(key)) ? get(key) === values[1] : DEFAULTS[key]
+  return patch
 }
 function writeHash() {
-  const p = new URLSearchParams({ place: S.place, layout: S.layout, focus: S.focus, state: S.state, theme: S.theme })
-  if (S.notif) p.set('notif', '1')
-  if (!S.marks) p.set('marks', '0')
-  if (S.motion) p.set('motion', 'reduced')
+  const p = new URLSearchParams()
+  for (const key of Object.keys(CHOICES)) p.set(key, S[key])
+  for (const [key, [off, on]] of Object.entries(FLAGS)) p.set(key, S[key] ? on : off)
   history.replaceState(null, '', `#${p}`)
 }
 function syncControls() {
@@ -955,7 +967,8 @@ for (const select of document.querySelectorAll('.pick-more select')) select.addE
 document.getElementById('notif').addEventListener('change', (e) => set({ notif: e.target.checked }))
 document.getElementById('marks').addEventListener('change', (e) => set({ marks: e.target.checked }))
 document.getElementById('motion').addEventListener('change', (e) => set({ motion: e.target.checked }))
-window.addEventListener('hashchange', () => { readHash(); syncControls(); render() })
+/* A link, Back or Forward resets the clock and progress as the controls do. replaceState fires no hashchange. */
+window.addEventListener('hashchange', () => set(readHash()))
 new ResizeObserver(layout).observe(document.querySelector('.stage'))
 
 /* The listening clock ticks; nothing else depends on it. */
@@ -965,9 +978,7 @@ setInterval(() => {
   for (const el of document.querySelectorAll('.js-elapsed')) el.textContent = fmt(S.elapsed)
 }, 1000)
 
-readHash()
-syncControls()
-render()
+set(readHash())
 /* The pill's width depends on the inlined fonts; measure again once they are ready. */
 document.fonts.ready.then(() => { shownPlace = null; render() })
 </script>
