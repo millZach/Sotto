@@ -9,10 +9,10 @@ $ mise exec node@24.21.0 -- npm run lint
 exit: 0
 
 $ mise exec node@24.21.0 -- npm test -- --maxWorkers=2
-Test Files  627 passed | 50 skipped (677)
-      Tests  9289 passed | 182 skipped (9471)
-   Start at  08:52:37
-   Duration  507.67s (transform 10.46s, setup 39.54s, import 97.04s, tests 746.71s, environment 75.75s)
+ Test Files  628 passed | 50 skipped (678)
+      Tests  9298 passed | 182 skipped (9480)
+   Start at  09:31:30
+   Duration  506.95s (transform 10.31s, setup 39.26s, import 96.01s, tests 747.26s, environment 75.02s)
 exit: 0
 
 $ mise exec node@24.21.0 -- npm run notices:verify
@@ -22,14 +22,42 @@ $ mise exec node@24.21.0 -- npm run notices:verify
 Verified 174 third-party notice components.
 exit: 0
 
-$ mise exec node@24.21.0 -- node --input-type=module -e "import { readFileSync } from 'node:fs'; import { verifyExternalDependencyInventories } from './scripts/release-external-dependencies.mjs'; verifyExternalDependencyInventories({ main: JSON.parse(readFileSync('out/main/external-dependencies.json','utf8')), preload: JSON.parse(readFileSync('out/preload/external-dependencies.json','utf8')) }, ['node-pty','zod','electron']); console.log('allowlist check: PASS')"
+$ mise exec node@24.21.0 -- npm run build
+Build passed.
+exit: 0
+
+Main/preload external inventory check after the final package build:
 allowlist check: PASS
 exit: 0
 
 Final build-input comparison against out/build-provenance.json:
-final packaged inputs: 6f7be9ae3568b731b5f5dfa8cba7c617ec55bc041f7d424cd3ba827fdc03285e (MATCH)
+final packaged inputs: 29458ea79f427dcbbb69f8edb6f5dedcccebe808a2996ca0da7d1d8a7439760b (MATCH)
 
 Nested Hyprland, one Playwright worker:
-  4 passed (14.3s)
+5 passed (16.0s)
 Owned processes still running: []
 exit: 0
+
+ADR duplicate-number check:
+$ ls docs/adr | cut -c1-4 | sort | uniq -d
+(no output)
+
+Linux-only brand regeneration: PASS; 16 existing Windows/macOS/phone outputs are byte-identical.
+{
+  "build/icon.png": "9d976aaa99619488986264b92aa5d9844d8516b8918f31207876bd4db97065fe",
+  "build/icon.ico": "9205d689b0b85efab7669ea524f1150a6db3b85c9d5f9468f378e9e0e541bd7d",
+  "build/installer-sidebar.bmp": "6b10957fb42c721165d441e07cb4680bed2e019bd35d3822025ac73c92fb2723",
+  "resources/tray/sottoTemplate.png": "1d0ed0408d64a53003afeca6b7e7050f4f1773c24b9107fa9f8ca5f56b348ae7",
+  "resources/tray/sottoTemplate@2x.png": "8537d38b0b390fe55129e52fd8301e84acb72aae2f76b6845986d5ffc674ae84",
+  "apps/ios/Sotto/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png": "b1ba1398e82f19dfaf9119b5b8a3ce9504f12d1aa5f7ed98aad74b08d310c64f",
+  "apps/android/app/src/main/res/mipmap-hdpi/ic_launcher.png": "436d29c0807a5377606d65630916bfb09051dbddaf93d09177dc981dfa54041a",
+  "apps/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png": "0bc010032833cda3f868b2dbd48a1de833365bf95ad1954161f16f4a10d7ad59",
+  "apps/android/app/src/main/res/mipmap-mdpi/ic_launcher.png": "89617bd95df56a7e2aa454867d0f757ea39921f25c1c380f2d889424c6cc49ad",
+  "apps/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png": "87b6b13c52a63c6621f09ecf67331b92a7ae4dce2b0421b17899511009c4ee41",
+  "apps/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": "88259ce1c5c458ce0e1abf21559ad860cc17f56b77846d4c20aef51c4e3906b1",
+  "apps/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png": "96bea6a1b20c662d374d4c611dae1821f0eab7068d36d34f18bd47f4c18264fa",
+  "apps/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": "6e2f311f393a617b96e76275912f1939c8f028fc83f344d123ce7cdeefe33f75",
+  "apps/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png": "23eb847d24f053078cad8159eb45690932527956c90e4e867085f1332a7549e8",
+  "apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": "ee6b2587610bf15c5b48b52628f7f81cee19a4c7871718e2ac6e8b0fe9b349c0",
+  "apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png": "206477a86a2d0f24c6ecf5866cec0d9dbfaf52c4c566a2ba20f27da50a525fa3"
+}

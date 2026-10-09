@@ -52,18 +52,18 @@
       }
     ]
   },
-  "extractedPackage": {
+  "extracted": {
     "storage": {
       "ready": true,
       "packaged": true,
       "version": "0.1.34",
-      "executable": "/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/extracted-root/opt/sotto/sotto",
+      "executable": "/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/review-extracted-root/opt/sotto/sotto",
       "passwordStore": "gnome-libsecret",
       "available": true,
       "backend": "gnome_libsecret"
     },
     "trayRegistered": true,
-    "autostartWritten": "[Desktop Entry]\nType=Application\nName=Sotto\nExec=\"/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/extracted-root/opt/sotto/sotto\"\nIcon=sotto\nTerminal=false\nCategories=Utility;\n",
+    "autostartWritten": "[Desktop Entry]\nType=Application\nName=Sotto\nExec=\"/home/zach/Projects/Sotto/.worktrees/linux-package/artifacts/linux-package/review-extracted-root/opt/sotto/sotto\"\nIcon=sotto\nTerminal=false\nCategories=Utility;\n",
     "autostartGenerated": true,
     "autostartRemoved": true,
     "captures": [],
@@ -72,5 +72,21 @@
       "exitCode": 0,
       "result": ""
     }
+  },
+  "packagePermissions": {
+    "package": "sotto-bin-0.1.34-2-x86_64.pkg.tar.zst",
+    "accessModesChecked": 289,
+    "sandbox": {
+      "uid": 0,
+      "gid": 0,
+      "mode": "0o4755"
+    },
+    "onlySpecialPermissionEntry": "opt/sotto/chrome-sandbox",
+    "allEntriesOwnedByRoot": true
+  },
+  "nestedX11Isolation": {
+    "displayPresent": false,
+    "xauthorityPresent": false,
+    "scopeRunnerPassed": true
   }
 }

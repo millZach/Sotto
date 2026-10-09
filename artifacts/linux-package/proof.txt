@@ -1,10 +1,57 @@
+Nested X11 isolation
+Started nested Hyprland PID 668948 in sotto-proof-c730f6a65f9f4ff480a0f3002371eee2-0.scope
+nested display: wayland-2; live display: wayland-1 (untouched)
+Started node PID 668960 in sotto-proof-c730f6a65f9f4ff480a0f3002371eee2-1.scope
+nested X11 isolation: PASS; DISPLAY and XAUTHORITY absent
+Stopped nested Hyprland PID 668948
+Stopped node PID 668960
+Stopped proof slice app-sottoproofc730f6a65f9f4ff480a0f3002371eee2.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
+Owned processes still running: []
+
+Unpacked launch
+Started nested Hyprland PID 867517 in sotto-proof-769f71f30af34729a099b366bf72d6bb-0.scope
+nested display: wayland-4; live display: wayland-1 (untouched)
+Started node PID 867536 in sotto-proof-769f71f30af34729a099b366bf72d6bb-1.scope
+packaged app PID: 867556
+Settings startup toggle: wrote, generated and removed the autostart entry
 packaged launch: ready=true; backend=gnome_libsecret; tray=registered
 packaged autostart: wrote sotto.desktop; XDG generator accepted it; removed sotto.desktop
+Stopped nested Hyprland PID 867517
+Stopped node PID 867536
+Stopped proof slice app-sottoproof769f71f30af34729a099b366bf72d6bb.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
 Owned processes still running: []
+
+Extracted package launch
+Started nested Hyprland PID 876248 in sotto-proof-da3b7afc371243a4b4108bbbe30a513a-0.scope
+nested display: wayland-4; live display: wayland-1 (untouched)
+Started node PID 876298 in sotto-proof-da3b7afc371243a4b4108bbbe30a513a-1.scope
+packaged app PID: 876311
+Settings startup toggle: wrote, generated and removed the autostart entry
 packaged launch: ready=true; backend=gnome_libsecret; tray=registered
 packaged autostart: wrote sotto.desktop; XDG generator accepted it; removed sotto.desktop
 extracted launcher: sotto dictation toggle; exit=0
+Stopped nested Hyprland PID 876248
+Stopped node PID 876298
+Stopped proof slice app-sottoproofda3b7afc371243a4b4108bbbe30a513a.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
 Owned processes still running: []
-  4 passed (14.3s)
+
+Desktop journeys
+Started nested Hyprland PID 782041 in sotto-proof-c0e67a0d466d495289fdadd2d05a9b18-0.scope
+nested display: wayland-2; live display: wayland-1 (untouched)
+Started npx PID 782055 in sotto-proof-c0e67a0d466d495289fdadd2d05a9b18-1.scope
+  5 passed (16.0s)
+Stopped nested Hyprland PID 782041
+Stopped npx PID 782055
+Stopped proof slice app-sottoproofc0e67a0d466d495289fdadd2d05a9b18.slice
+Recorded PIDs still running: []
+Proof cgroup processes after cleanup: []
 Owned processes still running: []
-==> Finished making: sotto-bin 0.1.34-1 (Fri Oct  9 08:40:23 2026)
+
+==> Finished making: sotto-bin 0.1.34-2 (Fri Oct  9 09:44:58 2026)
+pacman package permissions: PASS; 289 access modes matched; chrome-sandbox uid=0 gid=0 mode=4755; no other setuid/setgid entry
