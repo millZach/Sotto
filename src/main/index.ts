@@ -121,7 +121,7 @@ import {
 } from './storage/widgetPlacementRepository'
 import { NativeSettingsCoordinator } from './settings/nativeSettingsCoordinator'
 import { StartupService } from './startup/startupService'
-import { linuxAutostart } from './startup/linuxAutostart'
+import { linuxAutostart, type LinuxAutostartEvent } from './startup/linuxAutostart'
 import {
   TrayController,
   type TrayAdapter,
@@ -244,6 +244,7 @@ const profile = platformProfile(platform)
 const platformDefaults = defaultSettings(profile.defaultHotkey)
 
 type NativeDiagnostic =
+  | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
   | RendererDiagnostic
@@ -594,7 +595,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const agentMemoryEnabled = startupSettings.memoryEnabled
   let e2eOpenAtLogin = false
   const startup = new StartupService(platform === 'linux' ? linuxAutostart({
-    isPackaged: app.isPackaged, executable: process.execPath, configHome: process.env.XDG_CONFIG_HOME,
+    isPackaged: app.isPackaged, executable: process.execPath, configHome: process.env.XDG_CONFIG_HOME, log: logOperational,
   }) : e2eConfiguration !== null ? {
     getLoginItemSettings: () => ({ openAtLogin: e2eOpenAtLogin }),
     setLoginItemSettings: ({ openAtLogin }) => { e2eOpenAtLogin = openAtLogin },

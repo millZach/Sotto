@@ -1,16 +1,54 @@
 // @vitest-environment node
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import * as fs from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { linuxAutostart } from '../../../src/main/startup/linuxAutostart'
 import { StartupService } from '../../../src/main/startup/startupService'
 
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync), mkdirSync: vi.fn(actual.mkdirSync) }
+})
+
 const roots: string[] = []
 const temporary = () => { const root = mkdtempSync(join(tmpdir(), 'sotto-autostart-')); roots.push(root); return root }
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('Linux XDG autostart', () => {
+  it.each([false, true])('keeps startup running with remembered startup=%s when the entry is unreadable', enabled => {
+    const log = vi.fn()
+    const configHome = temporary()
+    const read = vi.spyOn(fs, 'readFileSync').mockImplementation(() => { throw Object.assign(new Error('private path'), { code: 'EACCES' }) })
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome, log }))
+    expect(startup.set(enabled)).toEqual({ enabled: false, supported: false })
+    expect(startup.get()).toEqual({ enabled: false, supported: false })
+    expect(log.mock.calls).toEqual([['linux-autostart-read-failed']])
+    expect(read).toHaveBeenCalledOnce()
+    expect(existsSync(join(configHome, 'autostart'))).toBe(false)
+  })
+
+  it.each([false, true])('keeps startup running with remembered startup=%s when the entry is a directory', enabled => {
+    const configHome = temporary()
+    const file = join(configHome, 'autostart/sotto.desktop')
+    mkdirSync(file, { recursive: true })
+    const log = vi.fn()
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome, log }))
+    expect(startup.set(enabled)).toEqual({ enabled: false, supported: false })
+    expect(fs.statSync(file).isDirectory()).toBe(true)
+    expect(log.mock.calls).toEqual([['linux-autostart-read-failed']])
+  })
+
+  it('contains a failed write rather than aborting startup', () => {
+    const configHome = temporary()
+    const log = vi.fn()
+    vi.spyOn(fs, 'mkdirSync').mockImplementation(() => { throw Object.assign(new Error('private path'), { code: 'EACCES' }) })
+    const startup = new StartupService(linuxAutostart({ isPackaged: true, executable: '/opt/sotto/sotto', configHome, log }))
+    expect(startup.set(true)).toEqual({ enabled: false, supported: false })
+    expect(log.mock.calls).toEqual([['linux-autostart-write-failed']])
+  })
+
   it('writes and removes a packaged sign-in command in XDG_CONFIG_HOME, idempotently', () => {
     const configHome = temporary()
     const file = join(configHome, 'autostart', 'sotto.desktop')

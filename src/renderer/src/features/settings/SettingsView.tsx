@@ -588,8 +588,9 @@ export function SettingsView({
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                   <Toggle label="Show floating widget when idle" checked={settings.showWidgetWhenIdle} onCheckedChange={(checked) => void save({ showWidgetWhenIdle: checked })} description="Keep the small dictation sliver on screen between sessions. Click it to dictate." />
                   <Toggle label={copy.settingsLaunchAtStartupLabel} checked={settings.launchAtStartup}
-                    {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Starting at sign-in comes with the installed package.' } : {})} onCheckedChange={async (checked) => {
+                    {...(platform === 'linux' && !linuxStartupSupported ? { disabled: true, description: 'Sotto cannot change sign-in startup here.' } : {})} onCheckedChange={async (checked) => {
                     const result = await onSetStartup(checked).catch(() => null)
+                    if (platform === 'linux') setLinuxStartupSupported(result?.supported === true)
                     setNotice(result?.enabled !== checked
                       ? { text: copy.settingsStartupFailureNotice, error: true }
                       : result.approvalRequired === true
