@@ -304,6 +304,7 @@ const posix = process.platform !== 'win32'
 function probe(configuration: Configuration, env: NodeJS.ProcessEnv): Promise<Outcome> {
   const child = spawn('/bin/sh', ['-c', NODE_PROBE_SOURCE, 'sotto-launch', JSON.stringify({ ...configuration, op: 'launch', nodeRange: `>=${major} <${major + 1}` }), NODE_CHECK_SOURCE], { env })
   children.push(child)
+  child.stdin.end(LAUNCH_SCRIPT_SOURCE)
   return collect(child)
 }
 it.skipIf(!posix)('finds a Node that only a version manager puts on the path, then runs the launch script on it', async () => {

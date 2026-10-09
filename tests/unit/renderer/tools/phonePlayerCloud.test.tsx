@@ -4,7 +4,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BrowserBridge } from '../../../../src/shared/browser'
-import type { CloudEvent, CloudSession } from '../../../../src/shared/cloudIphone'
+import type { CloudSession } from '../../../../src/shared/cloudIphone'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { PhonePlayer } from '../../../../src/renderer/src/tools/PhonePlayer'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
@@ -15,24 +15,7 @@ import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 const ok = <T,>(value: T): ToolsResult<T> => ({ ok: true, value })
 
 function fakeEmptyBrowser(): BrowserBridge {
-
-  return browserBridgeFixture({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' },
-    commands: { tasks: vi.fn(async () => ok([])),
-    list: vi.fn(async () => ok({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' }, pages: [] })),
-    create: vi.fn(),
-    navigate: vi.fn(),
-    back: vi.fn(),
-    forward: vi.fn(),
-    reload: vi.fn(),
-    close: vi.fn(),
-    mount: vi.fn(async () => ok(undefined)),
-    share: vi.fn(),
-    viewport: vi.fn(),
-    capture: vi.fn(),
-    controlTask: vi.fn(),
-    answerAction: vi.fn(),
-    stopGrant: vi.fn(async () => ok(undefined)),
-    openLink: vi.fn() } }).bridge
+  return browserBridgeFixture({ workspace: { threadId: 'visual-gate', projectId: 'workshop', workingDirectory: 'D:/work', workspaceId: 'workspace' } }).bridge
 }
 
 const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSession({
@@ -45,13 +28,13 @@ const session = (patch: Partial<CloudSession> = {}): CloudSession => cloudSessio
 
 function fakeCloudBridge(initial: CloudSession[]) {
 
-  const { bridge, listeners } = cloudIphoneBridgeFixture({ commands: { status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
+  const { bridge, publish } = cloudIphoneBridgeFixture({ commands: { status: vi.fn(async () => ok({ keySaved: true, month: '2026-10', monthMinutes: 38, capMinutes: 750, recent: [] })),
     setKey: vi.fn(),
     sessions: vi.fn(async () => ok(initial)),
     answer: vi.fn(),
     end: vi.fn(async ({ sessionId }) => ok(session({ id: sessionId, status: 'ended', endReason: 'user' }))),
     mount: vi.fn(async () => ok(undefined)) } })
-  return { bridge, emit: (event: CloudEvent) => { for (const listener of [...listeners]) listener(event) } }
+  return { bridge, emit: publish }
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

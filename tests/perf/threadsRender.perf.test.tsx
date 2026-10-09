@@ -7,10 +7,9 @@
  *   npx vitest run tests/perf/threadsRender.perf.test.tsx --maxWorkers=1 --disable-console-intercept
  */
 import { agentContextFixture } from '../fixtures/agentContext'
-import { withChunk, receive } from './support/transcriptState'
+import { stateAround, withChunk } from './support/transcriptState'
 import { round } from '../fixtures/perfBench'
 import { upperMedian as median } from './support/statistics.mjs'
-import { threadsStateFixture } from '../fixtures/agentState'
 import React, { Profiler, type ReactNode } from 'react'
 import { mkdtemp, readFile, copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,7 +17,8 @@ import { join } from 'node:path'
 import { copyPerfHistory, hydratePerfHistory, perfDataDirectory } from '../fixtures/perfWorkspace'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, type AgentHostSnapshot, type AgentState } from '../../src/shared/agents'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
+import { share } from '../../src/renderer/src/agents/stateSharing'
 import { useAgents } from '../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
@@ -29,21 +29,6 @@ vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn(
 const ITERATIONS = 20
 const WARMUP = 10
 const NOW = Date.parse('2026-09-16T12:00:00Z')
-
-function stateAround(host: AgentHostSnapshot, activeThreadId: string): AgentState {
-  return threadsStateFixture({
-    cloneOverrides: false,
-    configuration: defaultAgentConfiguration(),
-    host,
-    topLevel: {
-      connection: 'connected', assignments: [], queue: [], activeThreadId, activeProjectId: host.threads.find(thread => thread.id === activeThreadId)?.projectId ?? host.projects[0]?.id ?? null,
-      draft: '', draftThreadId: null, composing: false, draftRequestId: null, draftAttachments: [], deliveredDrafts: [],
-      threadDrafts: [], deliveries: [], pendingRequest: '', globalLaneBusy: false, notice: '', error: null, speech: { id: 0, text: '' },
-      voice: { status: 'off', error: null, action: 'none', revision: 0 }, credentials: { reasoning: false, grokSpeech: false, secure: true },
-      reasoningAccounts: [],
-    },
-  })
-}
 
 /** One streaming chunk on the open thread's newest assistant message, as a whole new state object off the wire. */
 
@@ -93,7 +78,7 @@ describe('threads render cost', async () => {
       if (index === WARMUP) { commits = 0; committed = 0 }
       const started = performance.now()
       // Where the receive path shares structure with the previous state, that work belongs in the measurement.
-      state = receive(state, update)
+      state = share(state, update)
       act(() => { rendered.rerender(view()) })
       if (index >= WARMUP) samples.push(performance.now() - started)
     })

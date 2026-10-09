@@ -1,5 +1,5 @@
-import { ownedE2EProfile } from './e2eProfile'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
@@ -42,10 +42,6 @@ export function e2eEnvironment(scenario: E2EScenario, userData: string): Record<
   }).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE'))
 }
 
-async function removeOwnedProfile(path: string): Promise<void> {
-  await rm(requireOwnedE2EProfile(path), { recursive: true, force: true })
-}
-
 export async function firstSottoWindow(application: ElectronApplication): Promise<Page> {
   const first = await application.firstWindow()
   await first.waitForLoadState('domcontentloaded')
@@ -62,7 +58,7 @@ const defaultDependencies: LaunchDependencies = {
   createProfile: async () => (await ownedE2EProfile()).directory,
   launch: (options) => electron.launch(options),
   firstWindow: firstSottoWindow,
-  removeProfile: removeOwnedProfile,
+  removeProfile: removeOwnedE2EProfile,
 }
 
 export async function launchSotto(
@@ -71,7 +67,7 @@ export async function launchSotto(
   dependencies: LaunchDependencies = defaultDependencies,
 ): Promise<LaunchedSotto> {
   const ownsUserData = userData === undefined
-  const profile = userData ?? await dependencies.createProfile()
+  const profile = userData ?? requireOwnedE2EProfile(await dependencies.createProfile())
   let application: ElectronApplication | undefined
   try {
     application = await dependencies.launch({
@@ -93,7 +89,7 @@ export { captureWindow } from './sottoCapture'
 
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
-  if (launched.ownsUserData) await removeOwnedProfile(launched.userData)
+  if (launched.ownsUserData) await removeOwnedE2EProfile(launched.userData)
 }
 
 /** The Threads page landmark, whichever sidebar mode the window last remembered. */

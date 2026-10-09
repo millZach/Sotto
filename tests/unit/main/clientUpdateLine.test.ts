@@ -281,12 +281,14 @@ describe('the client update line', () => {
           canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }
       }
       override async install(_provider: ProviderId, _executable: string | undefined, _environment: NodeJS.ProcessEnv, onStep?: (step: number) => void) {
-        onStep?.(1); const pending3 = deferred<void>();
-next = pending3.resolve;
-await pending3.promise
-        onStep?.(2); const pending4 = deferred<void>();
-next = pending4.resolve;
-await pending4.promise
+        onStep?.(1)
+        const miseUpgrade = deferred<void>()
+        next = miseUpgrade.resolve
+        await miseUpgrade.promise
+        onStep?.(2)
+        const grokInstall = deferred<void>()
+        next = grokInstall.resolve
+        await grokInstall.promise
         return { ok: false, step: 2, failure: 'install-step' as const, detail: 'EACCES: permission denied' }
       }
     })()
